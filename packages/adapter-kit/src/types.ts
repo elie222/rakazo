@@ -18,6 +18,19 @@ export interface AdapterDescriptor<TCapabilities> {
   capabilities: TCapabilities;
 }
 
+/**
+ * OAuth material is carried only in-process from the encrypted credential
+ * store to a runtime. It is intentionally not part of any persisted or RPC
+ * contract.
+ */
+export interface AgentModelOAuthCredential {
+  type: "oauth";
+  access: string;
+  refresh: string;
+  expires: number;
+  [key: string]: unknown;
+}
+
 export interface PortableFile {
   path: string;
   content: Uint8Array;
@@ -164,7 +177,15 @@ export interface AgentRunRequest {
   instructions: string;
   history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   tools: ConnectorTool[];
-  model: { provider: string; id: string; apiKey?: string };
+  model: {
+    provider: string;
+    id: string;
+    apiKey?: string;
+    /** OAuth credential resolved from the encrypted app store for this run. */
+    oauth?: AgentModelOAuthCredential;
+    /** Persists a provider-issued OAuth refresh without exposing its value. */
+    persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
+  };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
   executeTool?: (

@@ -119,7 +119,7 @@ export function loadProviderOAuth(providerId: string): OAuthAuth | undefined {
   return builtinModels().getProvider(providerId)?.auth.oauth;
 }
 
-export async function resolveModelApiKey(
+export async function resolveModelSecret(
   plaintext: string,
   provider: string,
   opts?: {
@@ -128,9 +128,9 @@ export async function resolveModelApiKey(
     oauth?: Pick<OAuthAuth, "refresh" | "toAuth">;
     signal?: AbortSignal;
   },
-): Promise<string> {
+): Promise<StoredModelSecret> {
   const parsed = parseModelSecret(plaintext);
-  if (parsed.kind === "api_key") return parsed.key;
+  if (parsed.kind === "api_key") return parsed;
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
     throw new Error(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
@@ -141,11 +141,44 @@ export async function resolveModelApiKey(
     credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
     await opts?.persist?.(serializeModelSecret({ kind: "oauth", credential }));
   }
-  const auth = await oauth.toAuth(credential);
+  return { kind: "oauth", credential };
+}
+
+export async function resolveModelAuth(
+  plaintext: string,
+  provider: string,
+  opts?: {
+    persist?: (next: string) => Promise<void>;
+    now?: number;
+    oauth?: Pick<OAuthAuth, "refresh" | "toAuth">;
+    signal?: AbortSignal;
+  },
+): Promise<{ secret: StoredModelSecret; apiKey?: string }> {
+  const secret = await resolveModelSecret(plaintext, provider, opts);
+  if (secret.kind === "api_key") return { secret, apiKey: secret.key };
+  const oauth = opts?.oauth ?? loadProviderOAuth(provider);
+  if (!oauth) {
+    throw new Error(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
+  }
+  const auth = await oauth.toAuth(secret.credential);
   if (!auth.apiKey) {
     throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
   }
-  return auth.apiKey;
+  return { secret, apiKey: auth.apiKey };
+}
+
+export async function resolveModelApiKey(
+  plaintext: string,
+  provider: string,
+  opts?: {
+    persist?: (next: string) => Promise<void>;
+    now?: number;
+    oauth?: Pick<OAuthAuth, "refresh" | "toAuth">;
+    signal?: AbortSignal;
+  },
+): Promise<string> {
+  const resolved = await resolveModelAuth(plaintext, provider, opts);
+  return resolved.apiKey ?? "";
 }
 
 export class PiOAuthLogins {
