@@ -26,10 +26,30 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
+import { observationToolResult, parseComputerActions } from "./computer-tools.js";
+import {
+  checkpointAndRecordComputerWorkspace,
+  restoreComputerWorkspace,
+} from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { parseModelSecret, resolveModelApiKey, secretValuesToRedact } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
+
+const READ_ONLY_AGENT_TOOLS = new Set([
+  "computer_observe",
+  "list_files",
+  "read_file",
+  "request_takeover",
+  "run_subagent",
+]);
+const MAX_MODEL_FILE_BYTES = 250_000;
+const GRAPHICAL_AGENT_TOOLS = new Set([
+  "computer_observe",
+  "computer_act",
+  "open_path",
+  "launch_app",
+]);
 
 export interface ExecutorDeps {
   prisma: PrismaClient;
@@ -215,10 +235,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const tools = [
-          ...builtinAgentTools,
-          ...discovered.filter((tool) => !builtinAgentTools.some((b) => b.name === tool.name)),
-        ];
         const history = messages.map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
@@ -230,38 +246,180 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const apiKey = resolved.apiKey;
         const runSecrets = [...deps.secrets, ...resolved.redact];
         const computer = await ensureComputer(deps, bot.id, context);
+        const graphical =
+          computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+        const builtins = graphical
+          ? builtinAgentTools
+          : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name));
+        const tools = [
+          ...builtins,
+          ...discovered.filter(
+            (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
+          ),
+        ];
+        const computerInstruction = graphical
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Another user may interact with the same desktop while you run, so re-observe when it may have changed."
+          : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
 
         let assembled = "";
         let pendingProgress = "";
         let lastProgressAt = 0;
+        let lastComputerFrameId: string | undefined;
+        let terminalCheckpointComplete = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted
           ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
           : undefined;
+        const formatObservation = (
+          observation: Awaited<ReturnType<SandboxProvider["observe"]>>,
+          note?: string,
+        ) => {
+          const result = observationToolResult(observation, note, lastComputerFrameId);
+          lastComputerFrameId = observation.frameId;
+          return result;
+        };
 
         const applyTool = async (
           name: string,
           args: Record<string, unknown>,
           executionId: string,
         ) => {
-          const applied = await recordEffect(deps, run, name, executionId, args);
-          if (applied.duplicate) return applied.effect.result ?? { duplicate: true };
+          const applied = READ_ONLY_AGENT_TOOLS.has(name)
+            ? undefined
+            : await recordEffect(deps, run, name, executionId, args);
+          if (applied?.duplicate) {
+            if (applied.effect.status === "completed") {
+              return applied.effect.result ?? { duplicate: true };
+            }
+            throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+          }
+          const finish = async (result: unknown) => {
+            if (applied) await completeEffect(deps, applied.effect.id, result);
+            return result;
+          };
+          if (name === "computer_observe") {
+            return formatObservation(await deps.sandbox.observe(computer, context));
+          }
+          if (name === "computer_act") {
+            const result = await deps.sandbox.act(
+              computer,
+              {
+                actions: parseComputerActions(args.actions),
+                observe: args.observe !== false,
+                settleMs: Number(args.settle_ms ?? 350),
+              },
+              context,
+            );
+            return finish(
+              result.observation
+                ? formatObservation(
+                    result.observation,
+                    `completed ${result.completed} computer action${result.completed === 1 ? "" : "s"}`,
+                  )
+                : { ok: true, completed: result.completed },
+            );
+          }
+          if (name === "list_files") {
+            return {
+              path: String(args.path ?? ""),
+              entries: await deps.sandbox.listFiles(computer, String(args.path ?? ""), context),
+            };
+          }
+          if (name === "read_file") {
+            const filePath = String(args.path ?? "");
+            let bytes: Uint8Array;
+            try {
+              bytes = await deps.sandbox.readFile(computer, filePath, context, {
+                maxBytes: MAX_MODEL_FILE_BYTES,
+              });
+            } catch (error) {
+              if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
+                return {
+                  error: "file is too large for model context",
+                  path: filePath,
+                };
+              }
+              throw error;
+            }
+            if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
+              return {
+                error: "file is too large for model context",
+                path: filePath,
+                size: bytes.byteLength,
+              };
+            }
+            try {
+              return {
+                path: filePath,
+                content: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+              };
+            } catch {
+              return {
+                error: "file is not UTF-8 text; use open_path to inspect it",
+                path: filePath,
+              };
+            }
+          }
           if (name === "write_file") {
             const filePath = String(args.path ?? "notes/result.txt");
             const content = String(args.content ?? "");
-            await deps.home.writeFile(bot.id, filePath, content, context);
-            return { ok: true, path: filePath };
+            await deps.sandbox.writeFile(
+              computer,
+              { path: filePath, content: new TextEncoder().encode(content) },
+              context,
+            );
+            return finish({ ok: true, path: filePath });
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
-            const cwd = String(args.cwd ?? (computer.kind === "desktop" ? "." : "/home/rakazo"));
-            return runSandboxCommand(
+            const cwd = args.cwd ? String(args.cwd) : undefined;
+            const result = await runSandboxCommand(
               deps.sandbox,
               computer,
               ["bash", "-lc", command],
               cwd,
               context,
+            );
+            return finish(result);
+          }
+          if (name === "open_path") {
+            const result = await deps.sandbox.act(
+              computer,
+              {
+                actions: [{ kind: "open", path: String(args.path ?? "") }],
+                observe: true,
+                settleMs: 600,
+              },
+              context,
+            );
+            return finish(
+              result.observation
+                ? formatObservation(result.observation, `opened ${String(args.path ?? "")}`)
+                : { ok: true },
+            );
+          }
+          if (name === "launch_app") {
+            const application = String(args.application ?? "");
+            const result = await deps.sandbox.act(
+              computer,
+              {
+                actions: [
+                  {
+                    kind: "launch",
+                    application,
+                    uri: args.uri ? String(args.uri) : undefined,
+                  },
+                ],
+                observe: true,
+                settleMs: 600,
+              },
+              context,
+            );
+            return finish(
+              result.observation
+                ? formatObservation(result.observation, `launched ${application}`)
+                : { ok: true },
             );
           }
           if (name === "remember") {
@@ -276,7 +434,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               context,
             );
-            return { ok: true };
+            return finish({ ok: true });
           }
           if (name === "request_takeover") return { ok: true };
           if (name === "run_subagent") {
@@ -299,7 +457,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
             });
-            if ("error" in spawned) return spawned;
+            if ("error" in spawned) return finish(spawned);
             await publishMessage(deps, run, "bot", [
               {
                 kind: "child_bot",
@@ -317,8 +475,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               type: "bot.spawned",
               payload: { childBotId: spawned.botId, name: spawned.name },
             });
-            await completeEffect(deps, applied.effect.id, spawned);
-            return spawned;
+            return finish(spawned);
           }
           if (name === "delete_bot") {
             const removed = await deleteSpawnedBot(
@@ -336,7 +493,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               context,
             );
-            if ("error" in removed) return removed;
+            if ("error" in removed) return finish(removed);
             await publishMessage(deps, run, "bot", [
               {
                 kind: "child_bot",
@@ -353,8 +510,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               type: "bot.deleted",
               payload: { childBotId: removed.botId, name: removed.name },
             });
-            await completeEffect(deps, applied.effect.id, removed);
-            return removed;
+            return finish(removed);
           }
           if (deps.connector) {
             let result: unknown = { error: `unknown tool ${name}` };
@@ -378,9 +534,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               if (event.type === "error") result = { error: event.message };
             }
-            return result;
+            return finish(result);
           }
-          return { error: `unknown tool ${name}` };
+          return finish({ error: `unknown tool ${name}` });
         };
 
         const pluginLine =
@@ -397,7 +553,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               prompt: task.prompt,
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
-                "You have a persistent computer. Use write_file to save files into your home (they appear in Files). Use shell to run commands in that computer. Use remember for durable facts. Use request_takeover when the user must type on the screen. Use destination_write only for connected destination records.",
+                `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
@@ -471,6 +627,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMessage(deps, run, "bot", [
                 { kind: "ask", text: safeText, detail: safeDetail },
               ]);
+              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
                 data: { status: "waiting_input", leaseOwner: null, leaseExpiresAt: null },
@@ -512,6 +669,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 where: { botId: bot.id },
                 data: { state: "running", controlHolder: "none" },
               });
+              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
                 data: { status: "waiting_takeover", leaseOwner: null, leaseExpiresAt: null },
@@ -531,6 +689,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
               return;
             } else if (event.type === "tool") {
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                type: "agent.tool.called",
+                runId,
+                payload: { name: event.name, executionId: event.executionId },
+              });
               if (scripted) await applyTool(event.name, event.args, event.executionId);
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);
@@ -586,7 +752,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           for (const turn of script ?? []) {
             for (const file of turn.files ?? []) {
-              await deps.home.writeFile(bot.id, file.path, file.content, context);
+              await deps.sandbox.writeFile(
+                computer,
+                { path: file.path, content: new TextEncoder().encode(file.content) },
+                context,
+              );
             }
             for (const mem of turn.memory ?? []) {
               await deps.memory.commit(
@@ -610,6 +780,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             }
           }
+
+          await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+          terminalCheckpointComplete = true;
 
           const text = redactSecrets(assembled || "done.", runSecrets);
           if (containsSecret(text, runSecrets)) {
@@ -655,6 +828,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           }
         } catch (error) {
+          if (!terminalCheckpointComplete) {
+            await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context).catch(
+              () => undefined,
+            );
+          }
           const message = redactSecrets(
             error instanceof Error ? error.message : String(error),
             runSecrets,
@@ -816,17 +994,20 @@ async function recordEffect(
       request: request as never,
     },
   });
-  await deps.prisma.externalEffect.update({
-    where: { id: effect.id },
-    data: { status: "completed", result: { ok: true } },
-  });
   return { duplicate: false, effect };
 }
 
 async function completeEffect(deps: ExecutorDeps, effectId: string, result: unknown) {
+  const storedResult =
+    result &&
+    typeof result === "object" &&
+    (result as { kind?: unknown }).kind === "agent_tool_result" &&
+    "details" in result
+      ? (result as { details: unknown }).details
+      : result;
   await deps.prisma.externalEffect.update({
     where: { id: effectId },
-    data: { result: result as never },
+    data: { status: "completed", result: storedResult as never },
   });
 }
 
@@ -850,23 +1031,39 @@ async function ensureComputer(
     where: { botId },
     data: { state: "booting" },
   });
+  let provisioned: ComputerRef | undefined;
   try {
     const ref = await deps.sandbox.provision(
-      { botId, homePath, providerRef: existing?.providerRef ?? undefined },
+      {
+        botId,
+        homePath,
+        providerRef: existing?.providerRef ?? undefined,
+        providerKind: existing?.kind as ComputerRef["kind"] | undefined,
+      },
       context,
     );
+    provisioned = ref;
+    const replacement =
+      ref.fresh === true ||
+      !existing?.providerRef ||
+      existing.providerRef !== ref.providerRef ||
+      existing.kind !== ref.kind;
+    if (replacement) await restoreComputerWorkspace(deps.home, deps.sandbox, botId, ref, context);
     await deps.prisma.computer.updateMany({
       where: { botId },
       data: {
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
-        controlHolder: "bot",
+        controlHolder: existing?.controlHolder === "user" ? "user" : "bot",
       },
     });
     scheduleComputerSleep(deps.jobs, botId);
     return ref;
   } catch (error) {
+    if (provisioned?.fresh) {
+      await deps.sandbox.destroy(provisioned, context).catch(() => undefined);
+    }
     await deps.prisma.computer.updateMany({
       where: { botId },
       data: { state: "error" },
@@ -879,7 +1076,7 @@ async function runSandboxCommand(
   sandbox: SandboxProvider,
   computer: ComputerRef,
   argv: string[],
-  cwd: string,
+  cwd: string | undefined,
   context: {
     operationId: string;
     traceId: string;

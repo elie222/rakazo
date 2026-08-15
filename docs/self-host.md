@@ -49,7 +49,7 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
 
 - **Docker** is the default for local use and the quickest self-hosted setup. Each bot gets a container and persistent home. Keep the supervisor private, as the included Compose file does. A public single-machine Docker deployment still shares one Docker host between its bot containers.
-- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments.
+- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
 - **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
 - **Fake** is only an emulator for verification.
 
@@ -144,8 +144,8 @@ To run a hosted product (same codebase):
 1. Push `main` (this checkout may be ahead of GitHub).
 2. Provision managed Postgres 16 and run `pnpm db:migrate`.
 3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
-4. Persist `DATA_DIR` (bot homes, artifacts). Today that is a local filesystem (`LocalAgentHomeStore`), so attach a volume. Object-storage-backed homes are not wired yet.
-5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` for a public or multi-user production service. Each bot keeps one sandbox id (`providerRef`) and a graphical desktop with a browser. Take control, sign in, then release — the bot keeps that session. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
+4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
+5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` for a public or multi-user production service. Each bot normally reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside E2B at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
 6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
 7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
 8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). Docker noVNC connections use short-lived signed `/novnc/*` capabilities; do not replace that route with an unrestricted port proxy.

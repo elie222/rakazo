@@ -1,15 +1,25 @@
+import path from "node:path";
 import type {
   AdapterContext,
   CommandRequest,
+  ComputerActionRequest,
+  ComputerFileEntry,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
   ControlLeaseRef,
+  PortableFile,
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { resolveSupervisorToken } from "@rakazo/core";
+import {
+  boundedComputerActions,
+  computerObservation,
+  normalizeWorkspacePath,
+} from "./computer-support.js";
 
 export class DockerSandboxProvider implements SandboxProvider {
   private readonly supervisorToken: string;
@@ -66,8 +76,14 @@ export class DockerSandboxProvider implements SandboxProvider {
       const detail = await res.text().catch(() => "");
       throw new Error(`sandbox provision failed: ${res.status} ${detail}`.trim());
     }
-    const body = (await res.json()) as { id: string };
-    return { id: body.id, botId: request.botId, kind: "docker", providerRef: body.id };
+    const body = (await res.json()) as { id: string; resumed?: boolean };
+    return {
+      id: body.id,
+      botId: request.botId,
+      kind: "docker",
+      providerRef: body.id,
+      fresh: body.resumed !== true,
+    };
   }
 
   async *execute(
@@ -78,7 +94,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
-      body: JSON.stringify({ ...request, cwd: request.cwd ?? "/home/rakazo" }),
+      body: JSON.stringify({ ...request, cwd: dockerCwd(request.cwd) }),
       signal: context.signal,
     });
     if (!res.ok) {
@@ -130,6 +146,129 @@ export class DockerSandboxProvider implements SandboxProvider {
     }
   }
 
+  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
+    const res = await fetch(this.url(`/computers/${computer.id}/observe`), {
+      method: "POST",
+      headers: this.headers(context, computer.botId),
+      signal: context.signal,
+    });
+    if (!res.ok) throw new Error(`sandbox observation failed: ${res.status}`);
+    const body = (await res.json()) as {
+      image: string;
+      mimeType: "image/png" | "image/jpeg";
+      width: number;
+      height: number;
+      cursor?: { x: number; y: number };
+      activeWindow?: { id: string; title?: string };
+    };
+    return computerObservation(Uint8Array.from(Buffer.from(body.image, "base64")), {
+      mimeType: body.mimeType,
+      width: body.width,
+      height: body.height,
+      cursor: body.cursor,
+      activeWindow: body.activeWindow,
+    });
+  }
+
+  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
+    const actions = boundedComputerActions(request.actions);
+    const res = await fetch(this.url(`/computers/${computer.id}/actions`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({
+        actions,
+        observe: request.observe,
+        settleMs: clamp(request.settleMs ?? 0, 0, 5_000),
+      }),
+      signal: context.signal,
+    });
+    if (!res.ok) throw new Error(`sandbox action failed: ${res.status}`);
+    const body = (await res.json()) as {
+      completed: number;
+      observation?: {
+        image: string;
+        mimeType: "image/png" | "image/jpeg";
+        width: number;
+        height: number;
+        cursor?: { x: number; y: number };
+        activeWindow?: { id: string; title?: string };
+      };
+    };
+    return {
+      completed: body.completed,
+      ...(body.observation
+        ? {
+            observation: computerObservation(
+              Uint8Array.from(Buffer.from(body.observation.image, "base64")),
+              body.observation,
+            ),
+          }
+        : {}),
+    };
+  }
+
+  async listFiles(
+    computer: ComputerRef,
+    directory: string,
+    context: AdapterContext,
+  ): Promise<ComputerFileEntry[]> {
+    const path = normalizeWorkspacePath(directory);
+    const res = await fetch(
+      this.url(`/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=list`),
+      { headers: this.headers(context, computer.botId), signal: context.signal },
+    );
+    if (!res.ok) throw new Error(`sandbox file listing failed: ${res.status}`);
+    return (await res.json()) as ComputerFileEntry[];
+  }
+
+  async readFile(
+    computer: ComputerRef,
+    filePath: string,
+    context: AdapterContext,
+    options?: { maxBytes?: number },
+  ) {
+    const path = normalizeWorkspacePath(filePath);
+    const maxBytes = options?.maxBytes;
+    const res = await fetch(
+      this.url(
+        `/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=read${maxBytes === undefined ? "" : `&maxBytes=${maxBytes}`}`,
+      ),
+      { headers: this.headers(context, computer.botId), signal: context.signal },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
+    }
+    const body = (await res.json()) as { content: string };
+    return Uint8Array.from(Buffer.from(body.content, "base64"));
+  }
+
+  async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    const res = await fetch(this.url(`/computers/${computer.id}/files`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({
+        path: normalizeWorkspacePath(file.path),
+        content: Buffer.from(file.content).toString("base64"),
+        executable: file.executable === true,
+      }),
+      signal: context.signal,
+    });
+    if (!res.ok) throw new Error(`sandbox file write failed: ${res.status}`);
+  }
+
+  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
+    yield* this.walkWorkspace(computer, "", context);
+  }
+
+  async importWorkspace(
+    computer: ComputerRef,
+    files: AsyncIterable<PortableFile>,
+    context: AdapterContext,
+  ) {
+    for await (const file of files) await this.writeFile(computer, file, context);
+  }
+
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
     return { id: `docker-snap-${computer.id}`, createdAt: new Date().toISOString() };
   }
@@ -149,4 +288,45 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
   }
+
+  private async *walkWorkspace(
+    computer: ComputerRef,
+    directory: string,
+    context: AdapterContext,
+  ): AsyncIterable<PortableFile> {
+    const entries = await this.listFiles(computer, directory, context);
+    for (let index = 0; index < entries.length; ) {
+      const entry = entries[index]!;
+      if (entry.kind === "dir") {
+        yield* this.walkWorkspace(computer, entry.path, context);
+        index += 1;
+        continue;
+      }
+      const files = [];
+      while (index < entries.length && entries[index]?.kind === "file" && files.length < 8) {
+        files.push(entries[index]!);
+        index += 1;
+      }
+      const batch = await Promise.all(
+        files.map(async (file) => ({
+          path: file.path,
+          content: await this.readFile(computer, file.path, context),
+          executable: file.executable,
+        })),
+      );
+      for (const file of batch) yield file;
+    }
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(Math.round(value), min), max);
+}
+
+function dockerCwd(cwd: string | undefined) {
+  if (!cwd || cwd === "." || cwd === "/" || cwd === "/home/rakazo") return "/home/rakazo";
+  const relative = cwd.startsWith("/home/rakazo/")
+    ? cwd.slice("/home/rakazo/".length)
+    : normalizeWorkspacePath(cwd);
+  return path.posix.join("/home/rakazo", relative);
 }

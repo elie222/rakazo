@@ -2,9 +2,11 @@ import { homedir } from "node:os";
 import type {
   AdapterContext,
   CommandRequest,
+  ComputerActionRequest,
   ComputerInput,
   ComputerRef,
   ControlLeaseRef,
+  PortableFile,
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
@@ -67,11 +69,23 @@ export class HostAwareSandbox implements SandboxProvider {
   }
 
   async provision(
-    request: { botId: string; homePath: string; providerRef?: string },
+    request: {
+      botId: string;
+      homePath: string;
+      providerRef?: string;
+      providerKind?: ComputerRef["kind"];
+    },
     context: AdapterContext,
   ) {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.provision(request, context);
+    const providerKind = provider.describe().id;
+    return provider.provision(
+      {
+        ...request,
+        providerRef: request.providerKind === providerKind ? request.providerRef : undefined,
+      },
+      context,
+    );
   }
 
   async *execute(
@@ -93,6 +107,43 @@ export class HostAwareSandbox implements SandboxProvider {
     context: AdapterContext,
   ) {
     return this.route(computer).sendInput(computer, input, lease, context);
+  }
+
+  observe(computer: ComputerRef, context: AdapterContext) {
+    return this.route(computer).observe(computer, context);
+  }
+
+  act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
+    return this.route(computer).act(computer, request, context);
+  }
+
+  listFiles(computer: ComputerRef, path: string, context: AdapterContext) {
+    return this.route(computer).listFiles(computer, path, context);
+  }
+
+  readFile(
+    computer: ComputerRef,
+    path: string,
+    context: AdapterContext,
+    options?: { maxBytes?: number },
+  ) {
+    return this.route(computer).readFile(computer, path, context, options);
+  }
+
+  writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    return this.route(computer).writeFile(computer, file, context);
+  }
+
+  exportWorkspace(computer: ComputerRef, context: AdapterContext) {
+    return this.route(computer).exportWorkspace(computer, context);
+  }
+
+  importWorkspace(
+    computer: ComputerRef,
+    files: AsyncIterable<PortableFile>,
+    context: AdapterContext,
+  ) {
+    return this.route(computer).importWorkspace(computer, files, context);
   }
 
   snapshot(computer: ComputerRef, context: AdapterContext) {

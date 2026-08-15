@@ -1,18 +1,27 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
   CommandRequest,
+  ComputerActionRequest,
+  ComputerFileEntry,
   ComputerInput,
   ComputerRef,
   ControlLeaseRef,
+  PortableFile,
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import {
+  applyPlaceholderAction,
+  boundedComputerActions,
+  normalizeWorkspacePath,
+  placeholderObservation,
+} from "./computer-support.js";
 
 interface DesktopBox {
   ref: ComputerRef;
@@ -32,10 +41,10 @@ export class DesktopSandboxProvider implements SandboxProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        graphical: true,
+        graphical: false,
         pty: true,
         snapshots: true,
-        takeover: true,
+        takeover: false,
         persistentHome: true,
       },
     };
@@ -45,14 +54,27 @@ export class DesktopSandboxProvider implements SandboxProvider {
     request: { botId: string; homePath: string },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
-    const id = `desktop-${request.botId}-${randomUUID().slice(0, 8)}`;
     const home = path.resolve(
       this.opts.root ?? path.join(process.cwd(), "data"),
       "desktop-computers",
       request.botId,
     );
+    const existing = [...this.boxes.values()].find(
+      (box) => box.ref.botId === request.botId || box.home === home,
+    );
+    if (existing) {
+      existing.running = true;
+      return { ...existing.ref, fresh: false };
+    }
+    const id = `desktop-${request.botId}`;
     await mkdir(home, { recursive: true });
-    const ref: ComputerRef = { id, botId: request.botId, kind: "desktop", providerRef: home };
+    const ref: ComputerRef = {
+      id,
+      botId: request.botId,
+      kind: "desktop",
+      providerRef: home,
+      fresh: true,
+    };
     this.boxes.set(id, {
       ref,
       home,
@@ -106,7 +128,94 @@ export class DesktopSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
   ): Promise<void> {
     const box = this.boxFor(computer);
-    if (box && input.kind === "clipboard") box.screen = input.text;
+    if (box) applyPlaceholderAction(box, input);
+  }
+
+  async observe(computer: ComputerRef) {
+    return placeholderObservation(this.requiredBox(computer).screen);
+  }
+
+  async act(computer: ComputerRef, request: ComputerActionRequest, _context: AdapterContext) {
+    const box = this.requiredBox(computer);
+    const actions = boundedComputerActions(request.actions);
+    for (const action of actions) applyPlaceholderAction(box, action);
+    return {
+      completed: actions.length,
+      ...(request.observe === false ? {} : { observation: await this.observe(computer) }),
+    };
+  }
+
+  async listFiles(
+    computer: ComputerRef,
+    directory: string,
+    _context: AdapterContext,
+  ): Promise<ComputerFileEntry[]> {
+    const box = this.requiredBox(computer);
+    const relative = normalizeWorkspacePath(directory);
+    const target = await localWorkspaceTarget(box.home, relative, true);
+    const entries = await readdir(target, { withFileTypes: true });
+    const listed = await Promise.all(
+      entries.map(async (entry) => {
+        const child = await localWorkspaceTarget(
+          box.home,
+          relative ? `${relative}/${entry.name}` : entry.name,
+          true,
+        );
+        const info = await stat(child);
+        return {
+          path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
+          kind: info.isDirectory() ? ("dir" as const) : ("file" as const),
+          size: info.size,
+          ...(info.isFile() && info.mode & 0o100 ? { executable: true } : {}),
+        };
+      }),
+    );
+    return listed;
+  }
+
+  async readFile(
+    computer: ComputerRef,
+    filePath: string,
+    _context?: AdapterContext,
+    options?: { maxBytes?: number },
+  ) {
+    const box = this.requiredBox(computer);
+    const target = await localWorkspaceTarget(box.home, filePath, true);
+    const info = await stat(target);
+    if (options?.maxBytes !== undefined && info.size > options.maxBytes) {
+      throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+    }
+    return new Uint8Array(await readFile(target));
+  }
+
+  async writeFile(computer: ComputerRef, file: PortableFile) {
+    const box = this.requiredBox(computer);
+    const target = await localWorkspaceTarget(box.home, file.path, false);
+    await mkdir(path.dirname(target), { recursive: true });
+    const handle = await open(
+      target,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      file.executable ? 0o700 : 0o600,
+    );
+    try {
+      await handle.writeFile(file.content);
+      if (file.executable) await handle.chmod(0o700);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async *exportWorkspace(computer: ComputerRef): AsyncIterable<PortableFile> {
+    const box = this.requiredBox(computer);
+    yield* walkDesktopWorkspace(box.home, "");
+  }
+
+  async importWorkspace(
+    computer: ComputerRef,
+    files: AsyncIterable<PortableFile>,
+    _context: AdapterContext,
+  ) {
+    for await (const file of files) await this.writeFile(computer, file);
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
@@ -149,8 +258,49 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return box;
   }
 
+  private requiredBox(computer: ComputerRef): DesktopBox {
+    const box = this.boxFor(computer);
+    if (!box) throw new Error("computer not found");
+    return box;
+  }
+
   private allowedRoots(home: string) {
     return [home, ...(this.opts.hostRoots ?? [])];
+  }
+}
+
+async function localWorkspaceTarget(home: string, relative: string, mustExist: boolean) {
+  const normalized = normalizeWorkspacePath(relative);
+  const candidate = path.resolve(home, normalized);
+  if (!allowedPath(candidate, [home])) throw new Error("Path escapes the computer workspace");
+  if (!mustExist) {
+    const parent = path.dirname(candidate);
+    await mkdir(parent, { recursive: true });
+    const resolvedParent = await realpath(parent);
+    if (!allowedPath(resolvedParent, [home]))
+      throw new Error("Path escapes the computer workspace");
+    return path.join(resolvedParent, path.basename(candidate));
+  }
+  const resolved = await realpath(candidate);
+  if (!allowedPath(resolved, [home])) throw new Error("Path escapes the computer workspace");
+  return resolved;
+}
+
+async function* walkDesktopWorkspace(home: string, directory: string): AsyncIterable<PortableFile> {
+  const target = await localWorkspaceTarget(home, directory, true);
+  for (const entry of await readdir(target, { withFileTypes: true })) {
+    const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
+    const child = await localWorkspaceTarget(home, relative, true).catch(() => null);
+    if (!child) continue;
+    const info = await stat(child);
+    if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative);
+    else if (info.isFile()) {
+      yield {
+        path: relative,
+        content: new Uint8Array(await readFile(child)),
+        executable: Boolean(info.mode & 0o100),
+      };
+    }
   }
 }
 

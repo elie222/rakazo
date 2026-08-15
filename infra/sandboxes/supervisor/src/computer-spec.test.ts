@@ -39,8 +39,10 @@ describe("graphical computer spec", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
+    const browser = readFileSync(path.join(root, "rakazo-browser"), "utf8");
     expect(dockerfile).toMatch(/chromium/);
     expect(start).toMatch(/rakazo-browser/);
+    expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });
 

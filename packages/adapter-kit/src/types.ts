@@ -29,6 +29,8 @@ export interface ComputerRef {
   botId: string;
   kind: SandboxKind;
   providerRef: string;
+  /** True when the provider created an empty replacement rather than reconnecting existing state. */
+  fresh?: boolean;
 }
 
 export interface CommandRequest {
@@ -63,6 +65,53 @@ export type ComputerInput =
       type: "move" | "down" | "up" | "click";
     }
   | { kind: "clipboard"; text: string };
+
+export type ComputerAction =
+  | ComputerInput
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | { kind: "wait"; ms: number }
+  | { kind: "open"; path: string }
+  | { kind: "launch"; application: string; uri?: string };
+
+export interface ComputerObservation {
+  frameId: string;
+  capturedAt: string;
+  mimeType: "image/png" | "image/jpeg";
+  image: Uint8Array;
+  width: number;
+  height: number;
+  cursor?: { x: number; y: number };
+  activeWindow?: { id: string; title?: string };
+}
+
+export interface ComputerActionRequest {
+  actions: ComputerAction[];
+  observe?: boolean;
+  settleMs?: number;
+}
+
+export interface ComputerActionResult {
+  completed: number;
+  observation?: ComputerObservation;
+}
+
+export interface ComputerFileEntry {
+  path: string;
+  kind: "file" | "dir";
+  size: number;
+  executable?: boolean;
+}
+
+export type AgentToolResultContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
+
+/** A provider-neutral tool result an agent runtime can forward without flattening images. */
+export interface AgentToolExecutionResult {
+  kind: "agent_tool_result";
+  content: AgentToolResultContent[];
+  details: unknown;
+}
 
 export interface ControlLeaseRef {
   leaseId: string;

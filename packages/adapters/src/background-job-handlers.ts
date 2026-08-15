@@ -1,4 +1,9 @@
-import type { BackgroundJobHandlers, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AgentHomeStore,
+  BackgroundJobHandlers,
+  JobPublisher,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
@@ -7,6 +12,7 @@ export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
   prisma: PrismaClient;
   sandbox: SandboxProvider;
+  home: AgentHomeStore;
   jobs: JobPublisher;
   events: ThreadEvents;
   workerId: string;

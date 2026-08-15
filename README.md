@@ -60,7 +60,7 @@ pnpm dev
 
 `pnpm dev` starts the API (`:3100`), Graphile Worker, Vite web app (`:5173`), and sandbox supervisor (`:7091`).
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign up, pick a model from the Pi catalog (paste an API key, sign in with ChatGPT / Copilot / SuperGrok, or Skip if the deployment key is set), create a bot, send a message. The computer pane is a live Linux desktop with a browser. Take control to sign in; the bot keeps that session after you release. Ask a bot to spawn another bot, or to run a subagent for work that should stay inside this turn.
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign up, pick a model from the Pi catalog (paste an API key, sign in with ChatGPT / Copilot / SuperGrok, or Skip if the deployment key is set), create a bot, send a message. The computer pane is a live Linux desktop. The model can observe and control the screen, use browsers and other graphical applications, run terminal commands, and work with files. You can interact with the same desktop while it runs; taking control makes the viewer editable but does not impose an exclusive agent/user lock. Ask a bot to spawn another bot, or to run a subagent for work that should stay inside this turn.
 
 Confirm the product path:
 
@@ -79,7 +79,7 @@ The app you open and the computer provider are separate choices. Web, Electron, 
 | `SANDBOX_PROVIDER` | Where agent commands run | Best fit | Isolation notes |
 | --- | --- | --- | --- |
 | `docker` (default) | A per-bot Docker container on your machine. The Electron app can switch this to This Mac without changing the env var. | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
-| `e2b` | A remote E2B sandbox | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. This Mac is not available. |
+| `e2b` | A remote E2B desktop through the E2B SDK | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. Bot workspace and browser-profile data are checkpointed into Rakazo-owned `DATA_DIR`, so the provider machine is not the durable source of truth. This Mac is not available. |
 | `desktop` | Directly on the API/worker host. Working directories under the process user's home folder are allowed. | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. The Electron first-run "This Mac" choice uses this provider while leaving `SANDBOX_PROVIDER=docker`. |
 | `fake` | An in-process emulator | Tests only | Does not run a real computer. |
 
@@ -117,7 +117,13 @@ Outputs land in `apps/desktop/out/` (macOS dmg/zip, Windows NSIS, Linux AppImage
 pnpm verify:fast       # unit, property, and in-process contract tests
 pnpm verify            # Postgres via Testcontainers, emulators, API, Playwright
 pnpm verify:providers  # optional live OpenRouter / E2B canaries
+# explicit real vision-model + real E2B desktop acceptance test:
+COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm e2e:computer
 ```
+
+The computer acceptance test is never selected by the normal test commands. It also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
+
+See [`docs/computer-runtime.md`](./docs/computer-runtime.md) for the agent/runtime boundary, provider switching, and persistence contract.
 
 ## Layout
 

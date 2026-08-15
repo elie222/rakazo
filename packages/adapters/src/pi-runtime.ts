@@ -1,4 +1,4 @@
-import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
@@ -6,6 +6,7 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
+  AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
@@ -73,10 +74,13 @@ export class PiAgentRuntime implements AgentRuntime {
         const agent = new Agent({
           streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
           getApiKey: async () => apiKey,
+          transformContext: async (messages) => pruneComputerScreenshotContext(messages),
           initialState: {
             systemPrompt:
               request.instructions ||
-              "You are a Rakazo bot with a real computer. Use write_file, shell, remember, and request_takeover when they are the right tools. Be concise.",
+              (toolDefs.some((tool) => tool.name === "computer_observe")
+                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
+                : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
             thinkingLevel: "off",
             tools,
@@ -264,6 +268,23 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "write_file") {
         return { path: String(raw.path ?? "notes/result.txt"), content: String(raw.content ?? "") };
       }
+      if (tool.name === "computer_act") {
+        return {
+          actions: Array.isArray(raw.actions) ? raw.actions : [],
+          observe: raw.observe === undefined ? true : Boolean(raw.observe),
+          settle_ms: Number(raw.settle_ms ?? 350),
+        };
+      }
+      if (tool.name === "list_files") return { path: String(raw.path ?? "") };
+      if (tool.name === "read_file" || tool.name === "open_path") {
+        return { path: String(raw.path ?? "") };
+      }
+      if (tool.name === "launch_app") {
+        return {
+          application: String(raw.application ?? ""),
+          uri: raw.uri ? String(raw.uri) : "",
+        };
+      }
       if (tool.name === "shell") {
         return {
           command: String(raw.command ?? ""),
@@ -317,6 +338,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       }
       if (host.request.executeTool) {
         const result = await host.request.executeTool(tool.name, args, executionId);
+        if (isAgentToolExecutionResult(result)) return result;
         return {
           content: [{ type: "text", text: summarizeToolResult(result) }],
           details: result,
@@ -356,6 +378,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
   const nested = new Agent({
     streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
     getApiKey: async () => host.apiKey,
+    transformContext: async (messages) => pruneComputerScreenshotContext(messages),
     initialState: {
       systemPrompt: [
         `You are a Rakazo subagent named "${name}".`,
@@ -484,7 +507,7 @@ function parametersFor(tool: ConnectorTool) {
   if (tool.name === "shell") {
     return Type.Object({
       command: Type.String(),
-      cwd: Type.String(),
+      cwd: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "run_subagent") {
@@ -511,6 +534,66 @@ function parametersFor(tool: ConnectorTool) {
   return jsonSchemaParameters(tool.inputSchema);
 }
 
+/** Keep recent visual state without repeatedly resending every earlier full screenshot. */
+export function pruneComputerScreenshotContext(
+  messages: AgentMessage[],
+  screenshotsToKeep = 2,
+): AgentMessage[] {
+  let remaining = Math.max(0, screenshotsToKeep);
+  let transformed: AgentMessage[] | undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!isComputerScreenshotMessage(message)) continue;
+    if (remaining > 0) {
+      remaining -= 1;
+      continue;
+    }
+    transformed ??= [...messages];
+    transformed[index] = {
+      ...message,
+      content: message.content.filter((part) => part.type !== "image"),
+    };
+  }
+  return transformed ?? messages;
+}
+
+function isComputerScreenshotMessage(
+  message: AgentMessage | undefined,
+): message is Extract<AgentMessage, { role: "toolResult" }> {
+  if (message?.role !== "toolResult" || !message.content.some((part) => part.type === "image")) {
+    return false;
+  }
+  const details = message.details;
+  return Boolean(
+    details &&
+      typeof details === "object" &&
+      "frameId" in details &&
+      typeof (details as { frameId?: unknown }).frameId === "string",
+  );
+}
+
+function isAgentToolExecutionResult(result: unknown): result is AgentToolExecutionResult {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    (result as { kind?: unknown }).kind !== "agent_tool_result" ||
+    !("content" in result)
+  ) {
+    return false;
+  }
+  const content = (result as { content?: unknown }).content;
+  return (
+    Array.isArray(content) &&
+    content.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        ((item as { type?: unknown }).type === "text" ||
+          (item as { type?: unknown }).type === "image"),
+    )
+  );
+}
+
 function jsonSchemaParameters(schema: Record<string, unknown>) {
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
@@ -525,14 +608,15 @@ function jsonSchemaParameters(schema: Record<string, unknown>) {
 }
 
 function jsonField(spec: unknown): ReturnType<typeof Type.String> {
-  const type =
-    spec && typeof spec === "object" && "type" in spec
-      ? String((spec as { type?: unknown }).type)
-      : "string";
+  const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
+  if (Array.isArray(definition.enum) && definition.enum.length > 0) {
+    return Type.Union(definition.enum.map((value) => Type.Literal(value))) as never;
+  }
+  const type = "type" in definition ? String(definition.type) : "string";
   if (type === "number" || type === "integer") return Type.Number() as never;
   if (type === "boolean") return Type.Boolean() as never;
-  if (type === "array") return Type.Array(Type.Unknown()) as never;
-  if (type === "object") return Type.Record(Type.String(), Type.Unknown()) as never;
+  if (type === "array") return Type.Array(jsonField(definition.items)) as never;
+  if (type === "object") return jsonSchemaParameters(definition) as never;
   return Type.String();
 }
 

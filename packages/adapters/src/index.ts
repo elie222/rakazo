@@ -5,6 +5,8 @@ export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";
 export * from "./composio-connector.js";
 export * from "./computer-idle.js";
+export * from "./computer-tools.js";
+export * from "./computer-workspace.js";
 export * from "./desktop-sandbox.js";
 export * from "./destination-emulator.js";
 export * from "./docker-sandbox.js";

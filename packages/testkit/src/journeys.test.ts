@@ -103,6 +103,12 @@ describeJourneys("required product journeys", () => {
     expect(chiefFile.content).toContain("isolation-ok");
     const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
     expect(computer.state).toBe("running");
+    await rpc(app, ada, "computer/stop", { botId: chief.id });
+    const persisted = await rpc<{ content: string }>(app, ada, "computer/readFile", {
+      botId: chief.id,
+      path: "notes/result.txt",
+    });
+    expect(persisted.content).toContain("isolation-ok");
     const coderMem = await rpc<Array<{ content: string }>>(app, ada, "memory/list", {
       botId: coder.id,
     });
@@ -156,6 +162,7 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(waiting.messages)).not.toMatch(/password|secret|token/i);
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    await rpc(app, cookie, "computer/release", { botId: bot.id });
     const done = await waitFor(
       app,
       cookie,

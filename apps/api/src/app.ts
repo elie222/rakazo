@@ -142,6 +142,7 @@ export async function createApp(
     executor,
     prisma,
     sandbox,
+    home,
     jobs,
     events,
     workerId: "api",

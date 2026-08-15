@@ -65,6 +65,7 @@ async function main() {
   const connector = stack.destination;
   await connector.start();
   const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
+  const home = new LocalAgentHomeStore(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
@@ -73,7 +74,7 @@ async function main() {
     runtime,
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
-    home: new LocalAgentHomeStore(dataDir),
+    home,
     connector: stack.connector,
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
       Boolean,
@@ -90,6 +91,7 @@ async function main() {
     executor,
     prisma,
     sandbox,
+    home,
     jobs,
     events,
     workerId: process.pid.toString(),

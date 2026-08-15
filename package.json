@@ -20,6 +20,7 @@
     "verify": "tsx packages/testkit/src/cli/verify.ts",
     "verify:providers": "tsx packages/testkit/src/cli/verify.ts --providers",
     "e2e": "pnpm --filter @rakazo/web exec playwright test",
+    "e2e:computer": "tsx packages/testkit/src/cli/computer-e2e.ts",
     "compose:up": "docker compose -f infra/compose/docker-compose.yml up --build",
     "compose:down": "docker compose -f infra/compose/docker-compose.yml down -v"
   },
