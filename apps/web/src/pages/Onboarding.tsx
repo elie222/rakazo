@@ -122,10 +122,19 @@ export function OnboardingPage() {
   async function saveModel() {
     setError(null);
     try {
-      if (apiKey) {
+      // Gate on acceptsKey (not apiKey): setDefault only updates an EXISTING
+      // credential row, so a keyless local provider (Ollama, Local MLX — no
+      // key needed, apiKey left blank) must still get one created here, or
+      // setDefault silently no-ops (0 rows matched, no error) and the
+      // account never has a working default model.
+      if (acceptsKey) {
+        // The server's apiKey field requires 8+ chars; a keyless local
+        // provider's own auth resolver ignores the value entirely, so any
+        // placeholder that clears validation is fine.
+        const keyToSend = apiKey || (selected?.keyless ? "not-required-local-provider" : apiKey);
         await rpc.models.connect({
           provider,
-          apiKey,
+          apiKey: keyToSend,
           modelId,
           label: selected?.providerName ?? provider,
         });
