@@ -10,10 +10,11 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { withLocalProviders } from "./local-providers.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 
 const running = new Map<string, AbortController>();
-const catalogModels = builtinModels();
+const catalogModels = withLocalProviders(builtinModels());
 const MAX_PARALLEL_SUBAGENTS = 4;
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
@@ -178,13 +179,15 @@ function modelsForRequest(request: AgentRunRequest, provider: string): Models {
   if (!oauth) return catalogModels;
 
   const persist = oauth.persist;
-  return builtinModels({
-    credentials: new PiRuntimeCredentialStore(
-      provider,
-      toOAuthCredential(oauth.credential),
-      persist ? (next) => persist(next) : undefined,
-    ),
-  });
+  return withLocalProviders(
+    builtinModels({
+      credentials: new PiRuntimeCredentialStore(
+        provider,
+        toOAuthCredential(oauth.credential),
+        persist ? (next) => persist(next) : undefined,
+      ),
+    }),
+  );
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
