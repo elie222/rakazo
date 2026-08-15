@@ -6,6 +6,7 @@
     },
     "build": {
       "dependsOn": ["^build", "^generate"],
+      "env": ["BETTER_AUTH_SECRET", "DATABASE_URL", "ENCRYPTION_KEY"],
       "outputs": ["dist/**", "src/generated/**"]
     },
     "check": {
