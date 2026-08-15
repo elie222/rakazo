@@ -56,6 +56,8 @@ jobs:
       - run: pnpm build
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
+          ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
       - name: Electron smoke
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
 
