@@ -1,9 +1,23 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 
 export class LocalAgentHomeStore implements AgentHomeStore {
+  private readonly botWrites = new Map<string, Promise<void>>();
+
   constructor(private readonly root: string) {}
 
   describe() {
@@ -11,7 +25,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       id: "local-fs",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { revisions: true },
+      capabilities: { revisions: false },
     };
   }
 
@@ -27,6 +41,8 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   }
 
   async checkout(botId: string, dest: string, _context: AdapterContext): Promise<string> {
+    await this.waitForBotWrite(botId);
+    await this.recoverInterruptedCommit(botId);
     await mkdir(dest, { recursive: true });
     const src = this.botDir(botId);
     await mkdir(src, { recursive: true });
@@ -35,13 +51,36 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   }
 
   async commit(botId: string, src: string, _context: AdapterContext): Promise<string> {
-    const dest = this.botDir(botId);
-    await rm(dest, { recursive: true, force: true });
-    await mkdir(dest, { recursive: true });
-    await copyDir(src, dest);
-    const revision = `rev-${Date.now()}`;
-    await writeFile(path.join(dest, ".revision"), revision, "utf8");
-    return revision;
+    return this.withBotWrite(botId, async () => {
+      await this.recoverInterruptedCommit(botId);
+      const dest = this.botDir(botId);
+      const parent = path.dirname(dest);
+      const staging = path.join(parent, `.${botId}.staging-${randomUUID()}`);
+      const previous = `${dest}.previous`;
+      await mkdir(parent, { recursive: true });
+      await mkdir(staging, { recursive: true });
+      try {
+        await copyDir(src, staging);
+        await rm(previous, { recursive: true, force: true });
+        if (await pathExists(dest)) await rename(dest, previous);
+        try {
+          await rename(staging, dest);
+        } catch (error) {
+          if (!(await pathExists(dest)) && (await pathExists(previous))) {
+            await rename(previous, dest).catch(() => undefined);
+          }
+          throw error;
+        }
+        await rm(previous, { recursive: true, force: true });
+        return this.writeRevision(botId);
+      } finally {
+        await rm(staging, { recursive: true, force: true });
+      }
+    });
+  }
+
+  async revise(botId: string): Promise<string> {
+    return this.withBotWrite(botId, async () => this.writeRevision(botId));
   }
 
   async restore(
@@ -54,15 +93,30 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   }
 
   async *exportHome(botId: string, _context: AdapterContext): AsyncIterable<PortableFile> {
+    await this.waitForBotWrite(botId);
+    await this.recoverInterruptedCommit(botId);
     const dir = this.botDir(botId);
     await mkdir(dir, { recursive: true });
     yield* walkFiles(dir, dir);
   }
 
-  async readFile(botId: string, filePath: string, _context: AdapterContext): Promise<string> {
+  async readFile(
+    botId: string,
+    filePath: string,
+    _context: AdapterContext,
+    options?: { maxBytes?: number },
+  ): Promise<string> {
+    await this.waitForBotWrite(botId);
+    await this.recoverInterruptedCommit(botId);
     const full = await containedExistingPath(this.botDir(botId), filePath);
     const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
+      if (options?.maxBytes !== undefined) {
+        const info = await handle.stat();
+        if (info.size > options.maxBytes) {
+          throw new Error(`agent home file exceeds ${options.maxBytes} bytes`);
+        }
+      }
       return await handle.readFile("utf8");
     } finally {
       await handle.close();
@@ -75,20 +129,25 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     content: string,
     _context: AdapterContext,
   ): Promise<void> {
-    const full = await containedWritePath(this.botDir(botId), filePath);
-    const handle = await open(
-      full,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
-      0o666,
-    );
-    try {
-      await handle.writeFile(content, "utf8");
-    } finally {
-      await handle.close();
-    }
+    await this.withBotWrite(botId, async () => {
+      await this.recoverInterruptedCommit(botId);
+      const full = await containedWritePath(this.botDir(botId), filePath);
+      const handle = await open(
+        full,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+        0o666,
+      );
+      try {
+        await handle.writeFile(content, "utf8");
+      } finally {
+        await handle.close();
+      }
+    });
   }
 
   async list(botId: string, dirPath: string, _context: AdapterContext) {
+    await this.waitForBotWrite(botId);
+    await this.recoverInterruptedCommit(botId);
     const root = this.botDir(botId);
     const candidate = safeJoin(root, dirPath);
     const full = await ensureContainedDirectory(root, candidate);
@@ -106,6 +165,41 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       }),
     );
     return listed.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }
+
+  private async writeRevision(botId: string) {
+    const revision = `rev-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const directory = path.join(this.root, "home-revisions");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, `${botId}.txt`), revision, "utf8");
+    return revision;
+  }
+
+  private async recoverInterruptedCommit(botId: string) {
+    const dest = this.botDir(botId);
+    const previous = `${dest}.previous`;
+    if (!(await pathExists(dest)) && (await pathExists(previous))) await rename(previous, dest);
+  }
+
+  private async withBotWrite<T>(botId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.botWrites.get(botId) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current);
+    this.botWrites.set(botId, queued);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.botWrites.get(botId) === queued) this.botWrites.delete(botId);
+    }
+  }
+
+  private async waitForBotWrite(botId: string) {
+    await (this.botWrites.get(botId) ?? Promise.resolve());
   }
 }
 
@@ -178,6 +272,15 @@ function isMissing(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
+async function pathExists(target: string) {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function copyDir(src: string, dest: string, sourceRoot = src, visited = new Set<string>()) {
   await mkdir(dest, { recursive: true });
   const current = await containedTarget(sourceRoot, src).catch(() => null);
@@ -192,7 +295,7 @@ async function copyDir(src: string, dest: string, sourceRoot = src, visited = ne
     const to = path.join(dest, entry.name);
     const info = await stat(from);
     if (info.isDirectory()) await copyDir(from, to, sourceRoot, visited);
-    else if (info.isFile()) await writeFile(to, await readFile(from));
+    else if (info.isFile()) await writeFile(to, await readFile(from), { mode: info.mode & 0o777 });
   }
 }
 
@@ -220,6 +323,7 @@ async function* walkFiles(
       yield {
         path: portablePath,
         content: new Uint8Array(content),
+        executable: Boolean(info.mode & 0o100),
       };
     }
   }

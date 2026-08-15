@@ -3,7 +3,6 @@ import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { GITHUB_URL } from "../site";
 
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
@@ -11,29 +10,96 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
 
 <BaseLayout
   title="Privacy · Rakazo"
-  description="How Rakazo treats information on this marketing site."
+  description="How Inbox Zero Inc. collects, uses, and protects information when you use Rakazo."
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">
       <h1>Privacy</h1>
+      <p><strong>Last updated: August 14, 2026</strong></p>
       <p>
-        This page is for rakazo.com, the public marketing site. The open-source product is self-hosted; we do
-        not operate your bots or see your model keys.
+        This policy explains how Inbox Zero Inc. (“Inbox Zero,” “we,” or “us”) handles personal information
+        when you use the Rakazo mobile app, a Rakazo service that we host, or rakazo.com. A third party that
+        operates a self-hosted Rakazo deployment is responsible for its own privacy practices.
       </p>
+
+      <h2>Information we collect</h2>
+      <p>Depending on how you use Rakazo, we collect:</p>
       <ul>
-        <li>The site is static. It does not set an account cookie or require sign-in.</li>
+        <li>Account information, including your name, email address, and authentication records.</li>
         <li>
-          GitHub star counts are fetched at build time from the public
-          <a href={GITHUB_URL}>elie222/rakazo</a> API.
+          Content you provide to the service, including bot instructions, messages, tasks, memories, files,
+          routines, and support communications.
         </li>
         <li>
-          “Join the waitlist” opens your mail client. If you write to us, we will use that address only to
-          follow up about Rakazo Cloud.
+          Connection information you choose to provide, such as encrypted credentials or tokens for model
+          providers, connected applications, and browser sessions.
+        </li>
+        <li>
+          Technical information needed to operate and secure the service, such as IP address, user agent,
+          session records, device push token, timestamps, and diagnostic information.
         </li>
       </ul>
+
+      <h2>How we use information</h2>
+      <p>We use this information to:</p>
+      <ul>
+        <li>Provide, maintain, secure, and troubleshoot Rakazo.</li>
+        <li>Authenticate you and synchronize your account across supported clients.</li>
+        <li>Run the bots, routines, connections, and notifications you request.</li>
+        <li>Respond to support requests and comply with legal obligations.</li>
+      </ul>
+
+      <h2>Service providers and AI processing</h2>
       <p>
-        Questions: open an issue on <a href={GITHUB_URL}>GitHub</a>.
+        Rakazo sends information to services only as needed to perform the work you request. Depending on the
+        deployment and integrations you select, those services may host infrastructure, run sandboxes,
+        deliver push notifications, connect third-party apps, store data, or process prompts with an AI model.
+        Information sent to a model or connected app is also governed by that provider’s terms and privacy
+        policy. We do not sell personal information or use Rakazo content for third-party advertising.
+      </p>
+
+      <h2>Self-hosted deployments</h2>
+      <p>
+        The Rakazo mobile app can connect to a server that you or another organization operates. In that case,
+        the server operator—not Inbox Zero—controls the information sent to that deployment. The app stores the
+        selected server address and session token securely on your device.
+      </p>
+
+      <h2>Retention and deletion</h2>
+      <p>
+        We keep hosted account information and content while your account is active and as reasonably needed to
+        provide the service. You can permanently delete your hosted account and associated personal workspace
+        data from the Account screen in the Rakazo app. We may retain limited information when required by law,
+        to resolve disputes, or to enforce agreements. Information already sent to a third-party provider is
+        subject to that provider’s retention practices.
+      </p>
+
+      <h2>Security and international transfers</h2>
+      <p>
+        We use reasonable technical and organizational safeguards designed to protect personal information. No
+        system is completely secure. We and our service providers may process information in the United States
+        and other countries, which may have different data-protection laws than your country.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        Rakazo is not directed to children under 13, and we do not knowingly collect personal information from
+        children under 13.
+      </p>
+
+      <h2>Your rights</h2>
+      <p>
+        Depending on where you live, you may have rights to access, correct, delete, restrict, or receive a copy
+        of your personal information, or to object to certain processing. Contact us to make a request.
+      </p>
+
+      <h2>Contact us</h2>
+      <p>
+        Inbox Zero Inc.<br />
+        131 Continental Dr, Suite 305<br />
+        Newark, Delaware 19713, United States<br />
+        <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>
       </p>
     </main>
     <Footer />

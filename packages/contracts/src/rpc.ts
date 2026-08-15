@@ -103,9 +103,7 @@ export const appContract = {
     remove: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   threads: {
-    get: oc
-      .input(z.object({ botId: Id, afterSeq: z.number().int().min(-1).optional() }))
-      .output(ThreadSnapshotSchema),
+    get: oc.input(z.object({ botId: Id })).output(ThreadSnapshotSchema),
     subscribe: oc
       .input(z.object({ botId: Id, cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),

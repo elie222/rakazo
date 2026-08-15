@@ -2,6 +2,10 @@ name: ci
 on:
   push:
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -44,3 +48,47 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm verify:fast
+
+  deploy-production:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    needs: [lint, check, verify-fast]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://app.rakazo.com
+    steps:
+      - name: Configure production SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/rakazo-production"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rakazo-production" "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/rakazo-production" >/dev/null
+
+      - name: Deploy successful main revision
+        env:
+          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          test -n "$SSH_HOST"
+          test -n "$SSH_USER"
+          ssh -F /dev/null \
+            -i "$HOME/.ssh/rakazo-production" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$SSH_USER@$SSH_HOST" deploy-main

@@ -2,31 +2,50 @@
   "expo": {
     "name": "Rakazo",
     "slug": "rakazo",
+    "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#050506"
-    },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#050506"
+        }
+      ],
       "expo-router",
       "expo-secure-store",
-      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#2965EC" }]
+      "@react-native-vector-icons/ionicons",
+      "@react-native-vector-icons/material-design-icons",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2965EC"
+        }
+      ]
     ],
     "ios": {
-      "supportsTablet": true,
+      "bundleIdentifier": "com.rakazo.app",
+      "buildNumber": "1",
+      "supportsTablet": false,
       "icon": "./assets/icon.png",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
       }
     },
     "android": {
+      "package": "com.rakazo.app",
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -34,6 +53,14 @@
         "backgroundColor": "#2965EC"
       }
     },
-    "web": { "favicon": "./assets/favicon.png" }
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+      }
+    }
   }
 }

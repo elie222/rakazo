@@ -1,3 +1,4 @@
+import { progressMessageId, progressMessageText } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
 import {
@@ -10,6 +11,12 @@ import {
 const ENDPOINT_KEY = "rakazo.api_base";
 
 let cachedApiBase: string | undefined;
+
+function responseErrorMessage(body: unknown, fallback: string): string {
+  return typeof body === "object" && body && "message" in body
+    ? String((body as { message?: string }).message ?? fallback)
+    : fallback;
+}
 
 export function currentApiBase() {
   return cachedApiBase ?? defaultApiBase();
@@ -73,11 +80,7 @@ export async function signIn(email: string, password: string) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message =
-      typeof body === "object" && body && "message" in body
-        ? String((body as { message?: string }).message ?? "Could not sign in")
-        : "Could not sign in";
-    throw new Error(message);
+    throw new Error(responseErrorMessage(body, "Could not sign in"));
   }
   const token = tokenFromAuthResponse(res, body);
   if (!token) throw new Error("Sign-in did not return a session");
@@ -90,6 +93,19 @@ export async function signOut() {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
   }).catch(() => undefined);
+  await clearSessionToken();
+}
+
+export async function deleteAccount(password: string) {
+  const res = await fetch(`${currentApiBase()}/api/auth/delete-user`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },
+    body: JSON.stringify({ password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(responseErrorMessage(body, "Could not delete account"));
+  }
   await clearSessionToken();
 }
 
@@ -223,9 +239,13 @@ export function applyMobileThreadEvent(
 ): MobileSnapshot | null {
   if (!prev) return prev;
   if (event.type === "thread.progress") {
-    const text = String(event.payload?.text ?? "");
+    const progressId = progressMessageId(event);
+    const previous = prev.messages.find((message) => message.id === progressId);
+    const previousText =
+      previous?.blocks[0]?.kind === "progress" ? String(previous.blocks[0].text ?? "") : "";
+    const text = progressMessageText(event.payload, previousText);
     const streaming: MobileMessage = {
-      id: `progress:${event.runId ?? event.id ?? "live"}`,
+      id: progressId,
       role: "bot",
       blocks: [{ kind: "progress", text }],
     };

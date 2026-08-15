@@ -23,8 +23,8 @@
     "@tanstack/react-query": "^5.85.5",
     "better-auth": "^1.6.27",
     "lucide-react": "^0.542.0",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-router-dom": "^7.8.2",
     "zod": "^4.1.5"
   },

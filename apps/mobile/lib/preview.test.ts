@@ -12,7 +12,7 @@ describe("previewSnippet", () => {
       "",
       "The inbox is **completely empty** and those drafts were **permanently deleted**.",
       "",
-      "- 🗓️ **elie@getinboxzero.com**",
+      "- 🗓️ **alex@example.com**",
       "- follow-up parked",
       "",
       "No data was lost.",

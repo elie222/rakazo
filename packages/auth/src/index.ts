@@ -13,6 +13,7 @@ export interface AuthEnv {
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
+  beforeDeleteUser?: (userId: string) => Promise<void>;
 }
 
 function newId(): string {
@@ -29,6 +30,36 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     emailAndPassword: {
       enabled: true,
       disableSignUp: !signupsOpen(env.signupsEnabled),
+    },
+    user: {
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (user) => {
+          await env.beforeDeleteUser?.(user.id);
+          const memberships = await prisma.member.findMany({
+            where: { userId: user.id },
+            select: {
+              organizationId: true,
+              organization: { select: { members: { select: { userId: true } } } },
+            },
+          });
+          const personalOrganizationIds = memberships
+            .filter(({ organization }) =>
+              organization.members.every((member) => member.userId === user.id),
+            )
+            .map(({ organizationId }) => organizationId);
+
+          await prisma.$transaction([
+            prisma.deploymentSettings.updateMany({
+              where: { ownerUserId: user.id },
+              data: { ownerUserId: null },
+            }),
+            prisma.organization.deleteMany({
+              where: { id: { in: personalOrganizationIds } },
+            }),
+          ]);
+        },
+      },
     },
     plugins: [
       bearer(),

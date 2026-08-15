@@ -1,0 +1,171 @@
+name: rakazo-prod
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 2g
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rakazo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rakazo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rakazo} -d ${POSTGRES_DB:-rakazo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    restart: unless-stopped
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1536m
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: e2b
+      WAKEUP_DRIVER: graphile
+      AGENT_RUNTIME: pi
+    expose:
+      - "3100"
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 2g
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: e2b
+      WAKEUP_DRIVER: graphile
+      AGENT_RUNTIME: pi
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:3100
+    expose:
+      - "5173"
+    networks:
+      - edge
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 128
+    mem_limit: 256m
+    environment:
+      RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${CADDYFILE_PATH:-./Caddyfile.prod}:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    networks:
+      - edge
+      - app
+    tmpfs:
+      - /tmp
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  pgdata:
+  appdata:
+  caddydata:
+  caddyconfig:
+
+networks:
+  edge:
+  app:
+  data:
+    internal: true

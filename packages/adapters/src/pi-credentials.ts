@@ -5,15 +5,16 @@ import type {
   CredentialStore,
   OAuthCredential,
 } from "@earendil-works/pi-ai";
+import type { AgentModelOAuthCredential } from "@rakazo/adapter-kit";
+
+export function toOAuthCredential(value: AgentModelOAuthCredential): OAuthCredential {
+  return { ...value, type: "oauth" };
+}
 
 /**
- * A request-scoped Pi credential store.
- *
- * Pi's built-in Models collection defaults to an in-memory store, which is
- * appropriate for the CLI but cannot see Rakazo's encrypted database. This
- * store exposes only the already-authorized credential for the current run
- * and serializes refreshes. A rotated OAuth credential is handed back to the
- * caller immediately so the application can encrypt and persist it.
+ * Request-scoped Pi store for one already-authorized provider. Pi's default
+ * in-memory store cannot see Rakazo's encrypted database; refreshes are
+ * serialized here and published back for encryption.
  */
 export class PiRuntimeCredentialStore implements CredentialStore {
   private credential?: Credential;

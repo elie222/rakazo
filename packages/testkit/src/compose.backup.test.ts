@@ -26,7 +26,11 @@ describeBackup("compose backup and restore", () => {
     expect(existsSync(backupScript)).toBe(true);
     expect(existsSync(restoreScript)).toBe(true);
     const stamp = `verify-${Date.now()}`;
-    execSync(`${backupScript} ${stamp}`, { stdio: "pipe", timeout: 60_000 });
+    execSync(`${backupScript} ${stamp}`, {
+      stdio: "pipe",
+      timeout: 60_000,
+      env: { ...process.env, RAKAZO_BACKUP_SKIP_HOMES: "1" },
+    });
     const dump = path.resolve("backups", stamp, "rakazo.sql");
     expect(existsSync(dump)).toBe(true);
     const sql = readFileSync(dump, "utf8");

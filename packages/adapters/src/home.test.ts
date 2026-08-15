@@ -27,10 +27,35 @@ async function fixture() {
 }
 
 describe("LocalAgentHomeStore path containment", () => {
+  it("keeps revision metadata external without reserving a workspace file name", async () => {
+    const { root, store } = await fixture();
+    const source = path.join(root, "checkpoint-source");
+    await mkdir(source);
+    await writeFile(path.join(source, "result.txt"), "durable");
+    await writeFile(path.join(source, ".revision"), "belongs to the user");
+
+    const revision = await store.commit("bot-1", source, context);
+    const exported = [];
+    for await (const file of store.exportHome("bot-1", context)) exported.push(file.path);
+
+    expect(revision).toMatch(/^rev-/);
+    expect(store.describe().capabilities.revisions).toBe(false);
+    expect(exported.sort()).toEqual([".revision", "result.txt"]);
+  });
+
   it("rejects lexical traversal and sibling-prefix paths", async () => {
     const { store } = await fixture();
     await expect(store.readFile("bot-1", "../../homes-other/secret", context)).rejects.toThrow(
       /escapes|invalid/i,
+    );
+  });
+
+  it("rejects oversized reads before loading their contents", async () => {
+    const { store, home } = await fixture();
+    await writeFile(path.join(home, "large.txt"), "12345");
+
+    await expect(store.readFile("bot-1", "large.txt", context, { maxBytes: 4 })).rejects.toThrow(
+      /exceeds 4 bytes/,
     );
   });
 

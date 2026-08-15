@@ -1,7 +1,14 @@
 import { rm } from "node:fs/promises";
-import type { AdapterContext, AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  AgentHomeStore,
+  JobPublisher,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { createRepos, type PrismaClient } from "@rakazo/db";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { createRepos, createThreadMessage, type PrismaClient } from "@rakazo/db";
 import { resolveAgentHomePath } from "./home.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
@@ -18,9 +25,7 @@ export function confirmSpawnedBotName(confirmName: string, botName: string) {
 export async function spawnBot(
   deps: {
     prisma: PrismaClient;
-    wakeup?: {
-      enqueue: (job: { name: string; payload: Record<string, unknown> }) => Promise<void>;
-    };
+    jobs: JobPublisher;
   },
   input: {
     spawnedBy: {
@@ -55,26 +60,20 @@ export async function spawnBot(
   });
 
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { botId: created.id } });
-  await deps.prisma.message.create({
-    data: {
-      threadId: thread.id,
-      seq: 0,
-      role: "system",
-      blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
-      runId: input.runId,
-    },
+  await createThreadMessage(deps.prisma, {
+    threadId: thread.id,
+    role: "system",
+    blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
+    runId: input.runId,
   });
 
   const prompt = (input.prompt ?? "").trim();
   if (prompt) {
-    await deps.prisma.message.create({
-      data: {
-        threadId: thread.id,
-        seq: 1,
-        role: "user",
-        blocks: [{ kind: "text", text: prompt }],
-        runId: input.runId,
-      },
+    await createThreadMessage(deps.prisma, {
+      threadId: thread.id,
+      role: "user",
+      blocks: [{ kind: "text", text: prompt }],
+      runId: input.runId,
     });
     const task = await deps.prisma.task.create({
       data: {
@@ -97,7 +96,7 @@ export async function spawnBot(
         trigger: "spawn",
       },
     });
-    await deps.wakeup?.enqueue({ name: "run.continue", payload: { runId: run.id } });
+    await deps.jobs.enqueue(runContinueJob(run.id));
   }
 
   return {
@@ -182,7 +181,7 @@ export async function destroyBot(
   await deps.prisma.run.updateMany({
     where: {
       botId,
-      status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+      status: { in: [...ACTIVE_RUN_STATUSES] },
     },
     data: { status: "cancelled", completedAt: new Date() },
   });

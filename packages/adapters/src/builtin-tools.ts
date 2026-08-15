@@ -4,6 +4,66 @@ export const DELEGATION_TOOL_NAMES = new Set(["run_subagent", "spawn_bot", "dele
 
 export const builtinAgentTools: ConnectorTool[] = [
   {
+    name: "computer_observe",
+    description:
+      "Capture the current screen of this bot's computer. Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "computer_act",
+    description:
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: {
+                type: "string",
+                enum: ["click", "move", "down", "up", "type", "key", "scroll", "wait"],
+              },
+              x: { type: "number" },
+              y: { type: "number" },
+              button: { type: "string", enum: ["left", "right"] },
+              double: { type: "boolean" },
+              text: { type: "string" },
+              key: { type: "string" },
+              modifiers: { type: "array", items: { type: "string" } },
+              direction: { type: "string", enum: ["up", "down"] },
+              amount: { type: "number" },
+              ms: { type: "number" },
+            },
+            required: ["kind"],
+          },
+        },
+        observe: { type: "boolean" },
+        settle_ms: { type: "number" },
+      },
+      required: ["actions"],
+    },
+  },
+  {
+    name: "list_files",
+    description: "List files and directories inside this bot's portable computer workspace.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+    },
+  },
+  {
+    name: "read_file",
+    description:
+      "Read a UTF-8 text file from this bot's portable computer workspace. Open visual or binary files with open_path instead.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+  },
+  {
     name: "write_file",
     description:
       "Write a UTF-8 file into this bot's private home filesystem. The file shows up in Files.",
@@ -27,6 +87,29 @@ export const builtinAgentTools: ConnectorTool[] = [
         cwd: { type: "string" },
       },
       required: ["command"],
+    },
+  },
+  {
+    name: "open_path",
+    description:
+      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+  },
+  {
+    name: "launch_app",
+    description:
+      "Launch an installed graphical application on this bot's computer, optionally with a URI, and return the resulting screen.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        application: { type: "string" },
+        uri: { type: "string" },
+      },
+      required: ["application"],
     },
   },
   {

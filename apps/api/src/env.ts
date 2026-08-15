@@ -2,6 +2,7 @@ import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from 
 
 export interface AppEnv {
   databaseUrl: string;
+  realtimeDatabaseUrl: string;
   authSecret: string;
   authUrl: string;
   webOrigin: string;
@@ -27,6 +28,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
   return {
     databaseUrl: required(source, "DATABASE_URL"),
+    realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
     authSecret,
     authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",

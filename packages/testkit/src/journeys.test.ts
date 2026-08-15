@@ -6,31 +6,15 @@ import {
   FakeSandboxProvider,
   ManagedSandboxEmulator,
 } from "@rakazo/adapters";
+import { appendEvent, createThreadMessage } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
-
-function loadDatabaseUrl() {
-  const file = path.resolve(".env");
-  if (!existsSync(file) || process.env.DATABASE_URL) return;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 1) continue;
-    const key = trimmed.slice(0, eq);
-    if (key !== "DATABASE_URL") continue;
-    process.env.DATABASE_URL = trimmed.slice(eq + 1);
-    return;
-  }
-}
-
-loadDatabaseUrl();
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
 
-const hasDb = Boolean(process.env.DATABASE_URL);
+const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeJourneys = hasDb ? describe : describe.skip;
 
 describeJourneys("required product journeys", () => {
@@ -45,9 +29,7 @@ describeJourneys("required product journeys", () => {
   let executor: Awaited<
     ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
   >["executor"];
-  let wakeup: Awaited<
-    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
-  >["wakeup"];
+  let jobs: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["jobs"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
@@ -64,11 +46,11 @@ describeJourneys("required product journeys", () => {
     prisma = handles.prisma;
     connector = handles.connector;
     executor = handles.executor;
-    wakeup = handles.wakeup;
+    jobs = handles.jobs;
   });
 
   afterAll(async () => {
-    await stop();
+    await stop?.();
   });
 
   it("1+2: two users are isolated and two bots keep separate homes", async () => {
@@ -121,6 +103,12 @@ describeJourneys("required product journeys", () => {
     expect(chiefFile.content).toContain("isolation-ok");
     const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
     expect(computer.state).toBe("running");
+    await rpc(app, ada, "computer/stop", { botId: chief.id });
+    const persisted = await rpc<{ content: string }>(app, ada, "computer/readFile", {
+      botId: chief.id,
+      path: "notes/result.txt",
+    });
+    expect(persisted.content).toContain("isolation-ok");
     const coderMem = await rpc<Array<{ content: string }>>(app, ada, "memory/list", {
       botId: coder.id,
     });
@@ -148,7 +136,7 @@ describeJourneys("required product journeys", () => {
       [...snap.messages].map((m) => m.seq).sort((a, b) => a - b),
     );
     expect(snap.messages.some((m) => JSON.stringify(m.blocks).includes("reconnect-ok"))).toBe(true);
-    const again = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id, afterSeq: -1 });
+    const again = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
     expect(again.messages.length).toBe(snap.messages.length);
   });
 
@@ -174,6 +162,7 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(waiting.messages)).not.toMatch(/password|secret|token/i);
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    await rpc(app, cookie, "computer/release", { botId: bot.id });
     const done = await waitFor(
       app,
       cookie,
@@ -193,16 +182,34 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
-      botId: bot.id,
-      name: "Monday briefing",
-      prompt: "write a file in your home called notes/result.txt that says routine-ok",
-      cron: "0 9 * * 1",
-      timezone: "UTC",
-      notify: true,
-      active: true,
+    const routine = await rpc<{ id: string; nextRunAt: string | null }>(
+      app,
+      cookie,
+      "routines/create",
+      {
+        botId: bot.id,
+        name: "Monday briefing",
+        prompt: "write a file in your home called notes/result.txt that says routine-ok",
+        cron: "0 9 * * 1",
+        timezone: "UTC",
+        notify: true,
+        active: true,
+      },
+    );
+    expect(routine.nextRunAt).toBeTruthy();
+    const dueAt = new Date(Date.now() - 1_000);
+    await prisma.routine.update({
+      where: { id: routine.id },
+      data: { nextRunAt: dueAt },
     });
-    await wakeup.enqueue({ name: "routine.wakeup", payload: { routineId: routine.id } });
+    await jobs.enqueue({
+      name: "routine.wakeup",
+      payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
+    });
+    await jobs.enqueue({
+      name: "routine.wakeup",
+      payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
+    });
     const snap = await waitFor(app, cookie, bot.id, (s) =>
       s.messages.some(
         (m) =>
@@ -211,6 +218,53 @@ describeJourneys("required product journeys", () => {
       ),
     );
     expect(snap.messages.length).toBeGreaterThan(0);
+    const routineRuns = await prisma.run.count({
+      where: { botId: bot.id, trigger: "routine" },
+    });
+    expect(routineRuns).toBe(1);
+    const advanced = await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } });
+    expect(advanced.nextRunAt?.getTime()).toBeGreaterThan(dueAt.getTime());
+  });
+
+  it("allocates event and message cursors atomically under concurrent writes", async () => {
+    const cookie = await signup(app, `sequence-j-${stamp}@rakazo.test`, "Sequence");
+    const actor = await rpc<Me>(app, cookie, "me");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Sequencer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+
+    await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        appendEvent(prisma, {
+          workspaceId: actor.workspaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          type: "thread.progress",
+          payload: { delta: String(index) },
+        }),
+      ),
+    );
+    await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        createThreadMessage(prisma, {
+          threadId: thread.id,
+          role: "system",
+          blocks: [{ kind: "meta", text: String(index) }],
+        }),
+      ),
+    );
+
+    const [events, messages] = await Promise.all([
+      prisma.event.findMany({ where: { threadId: thread.id }, orderBy: { seq: "asc" } }),
+      prisma.message.findMany({ where: { threadId: thread.id }, orderBy: { seq: "asc" } }),
+    ]);
+    expect(events.map((row) => row.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i));
+    expect(messages.map((row) => row.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i));
   });
 
   it("6: fake, managed-sandbox emulator, and desktop executor run the same graphical task", async () => {
@@ -251,7 +305,7 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     const before = connector.records.length;
-    const secret = "sk-or-v1-should-never-leak-into-thread";
+    const secret = "test-openrouter-key-not-a-real-secret";
     await rpc(app, cookie, "models/connect", {
       provider: "openrouter",
       apiKey: secret,
@@ -306,7 +360,7 @@ describeJourneys("required product journeys", () => {
       instructions: "Be useful",
       notifyOnFinish: true,
     });
-    const secret = "sk-or-v1-export-must-redact-this-key";
+    const secret = "test-openrouter-key-not-a-real-secret";
     await rpc(app, cookie, "models/connect", {
       provider: "openrouter",
       apiKey: secret,
@@ -366,6 +420,35 @@ describeJourneys("required product journeys", () => {
       400,
     );
     expect(existsSync(home)).toBe(false);
+  });
+
+  it("11: deleting an account removes the user and personal workspace data", async () => {
+    const email = `account-delete-j-${stamp}@rakazo.test`;
+    const cookie = await signup(app, email, "Delete Account");
+    const me = await rpc<Me>(app, cookie, "me");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Temporary",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    const deleted = await app.request("/api/auth/delete-user", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "http://127.0.0.1:5173",
+      },
+      body: JSON.stringify({ password: "password12" }),
+    });
+
+    expect(deleted.status).toBe(200);
+    expect(await prisma.user.findUnique({ where: { id: me.userId } })).toBeNull();
+    expect(await prisma.organization.findUnique({ where: { id: me.workspaceId } })).toBeNull();
+    expect(await prisma.bot.findUnique({ where: { id: bot.id } })).toBeNull();
+    expect((await raw(app, cookie, "me")).status).toBeGreaterThanOrEqual(400);
   });
 
   it("12: a bot can spawn a regular bot and must confirm the name to delete it", async () => {

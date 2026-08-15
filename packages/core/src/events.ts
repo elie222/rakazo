@@ -41,9 +41,14 @@ export function projectMessages(
       continue;
     }
     if (event.type === "thread.progress") {
-      const text = String(payload.text ?? "");
+      const progressId = progressMessageId(event);
+      const previousText: string =
+        streaming?.id === progressId && streaming.blocks[0]?.kind === "progress"
+          ? streaming.blocks[0].text
+          : "";
+      const text = progressMessageText(payload, previousText);
       streaming = {
-        id: `progress:${event.runId ?? event.id}`,
+        id: progressId,
         threadId: event.threadId,
         seq: event.seq,
         role: "bot",
@@ -80,6 +85,19 @@ export function projectMessages(
   return messages;
 }
 
+export function progressMessageId(event: { runId?: string | null; id?: string }): string {
+  return `progress:${event.runId ?? event.id ?? "live"}`;
+}
+
+export function progressMessageText(
+  payload: Record<string, unknown> | undefined,
+  previousText = "",
+): string {
+  return typeof payload?.delta === "string"
+    ? previousText + payload.delta
+    : String(payload?.text ?? "");
+}
+
 export function subagentBlockFromPayload(
   payload: Record<string, unknown>,
 ): Extract<MessageBlock, { kind: "subagent" }> {
@@ -105,6 +123,45 @@ export function redactSecrets(value: string, secrets: string[]): string {
 export function containsSecret(value: unknown, secrets: string[]): boolean {
   const text = JSON.stringify(value);
   return secrets.some((secret) => secret.length > 0 && text.includes(secret));
+}
+
+export function createStreamingRedactor(secrets: string[]) {
+  const values = [...new Set(secrets.filter(Boolean))].sort((a, b) => b.length - a.length);
+  const maxLength = values[0]?.length ?? 0;
+  let buffer = "";
+
+  const drain = (final: boolean) => {
+    if (values.length === 0) {
+      const output = buffer;
+      buffer = "";
+      return output;
+    }
+    const safeStartLimit = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
+    let offset = 0;
+    let output = "";
+    while (offset < safeStartLimit) {
+      const secret = values.find((value) => buffer.startsWith(value, offset));
+      if (secret) {
+        output += "[redacted]";
+        offset += secret.length;
+      } else {
+        output += buffer[offset];
+        offset += 1;
+      }
+    }
+    buffer = buffer.slice(offset);
+    return output;
+  };
+
+  return {
+    push(chunk: string) {
+      buffer += chunk;
+      return drain(false);
+    },
+    finish() {
+      return drain(true);
+    },
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

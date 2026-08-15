@@ -8,10 +8,13 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  abortableDelay,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
   presetFromCron,
+  progressMessageId,
+  progressMessageText,
   subagentBlockFromPayload,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
@@ -72,8 +75,8 @@ export function ShellPage() {
     const snap = await rpc.threads.get({ botId: id });
     setSnapshot(snap);
     setComputer(snap.computer);
-    const r = await rpc.routines.list({ botId: id });
-    setRoutines(r);
+    const routines = await rpc.routines.list({ botId: id });
+    setRoutines(routines);
     if (panel === "computer" || computerOpen) {
       const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
       setScreenUrl(screen.url);
@@ -90,52 +93,54 @@ export function ShellPage() {
   useEffect(() => {
     if (!active) return;
     const abort = new AbortController();
-    let fallback: number | undefined;
     void (async () => {
       const snap = await refreshThread(active.id).catch(() => null);
       if (abort.signal.aborted) return;
-      try {
-        const events = await rpc.threads.subscribe(
-          { botId: active.id, cursor: snap?.cursor ?? -1 },
-          { signal: abort.signal },
-        );
-        for await (const event of events) {
-          if (abort.signal.aborted) break;
-          applyThreadEvent(event, setSnapshot, setComputer);
-          if (
-            event.type === "bot.spawned" ||
-            event.type === "bot.deleted" ||
-            event.type === "run.completed"
-          ) {
-            void refreshBots().catch(() => undefined);
-          }
-          if (event.type === "thread.message.created") {
-            const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
-            if (blocks.some((block) => block.kind === "child_bot")) {
+      let cursor = snap?.cursor ?? -1;
+      let retryMs = 250;
+      while (!abort.signal.aborted) {
+        try {
+          const events = await rpc.threads.subscribe(
+            { botId: active.id, cursor },
+            { signal: abort.signal },
+          );
+          for await (const event of events) {
+            if (abort.signal.aborted) break;
+            cursor = Math.max(cursor, event.seq);
+            retryMs = 250;
+            applyThreadEvent(event, setSnapshot, setComputer);
+            if (
+              event.type === "bot.spawned" ||
+              event.type === "bot.deleted" ||
+              event.type === "run.completed"
+            ) {
               void refreshBots().catch(() => undefined);
             }
+            if (event.type === "thread.message.created") {
+              const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+              if (blocks.some((block) => block.kind === "child_bot")) {
+                void refreshBots().catch(() => undefined);
+              }
+            }
+            if (
+              event.type === "run.completed" ||
+              event.type === "computer.status" ||
+              event.type === "computer.takeover.granted"
+            ) {
+              void refreshThread(active.id).catch(() => undefined);
+            }
           }
-          if (
-            event.type === "thread.message.created" ||
-            event.type === "run.completed" ||
-            event.type === "computer.status" ||
-            event.type === "computer.takeover.granted"
-          ) {
-            void refreshThread(active.id).catch(() => undefined);
-          }
+        } catch {
+          // The durable cursor below makes reconnects safe after a transient network failure.
         }
-      } catch {
-        if (!abort.signal.aborted) {
-          fallback = window.setInterval(
-            () => void refreshThread(active.id).catch(() => undefined),
-            2500,
-          );
-        }
+        if (abort.signal.aborted) break;
+        await refreshThread(active.id).catch(() => null);
+        await abortableDelay(retryMs, abort.signal);
+        retryMs = Math.min(retryMs * 2, 5_000);
       }
     })();
     return () => {
       abort.abort();
-      if (fallback !== undefined) window.clearInterval(fallback);
     };
   }, [active?.id]);
 
@@ -785,11 +790,14 @@ function applyThreadEvent(
   setComputer: Dispatch<SetStateAction<ComputerStatus | null>>,
 ) {
   if (event.type === "thread.progress") {
-    const text = String(event.payload.text ?? "");
     setSnapshot((prev) => {
       if (!prev) return prev;
+      const progressId = progressMessageId(event);
+      const previous = prev.messages.find((message) => message.id === progressId);
+      const previousText = previous?.blocks[0]?.kind === "progress" ? previous.blocks[0].text : "";
+      const text = progressMessageText(event.payload, previousText);
       const streaming: ThreadMessage = {
-        id: `progress:${event.runId ?? event.id}`,
+        id: progressId,
         threadId: event.threadId,
         seq: event.seq,
         role: "bot",

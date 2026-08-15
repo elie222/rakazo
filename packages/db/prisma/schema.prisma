@@ -208,6 +208,8 @@ model Thread {
   bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId      String
   createdAt   DateTime @default(now())
+  nextEventSeq   Int   @default(0)
+  nextMessageSeq Int   @default(0)
   messages    Message[]
   events      Event[]
   tasks       Task[]
@@ -248,6 +250,7 @@ model Event {
   @@unique([threadId, seq])
   @@index([workspaceId, createdAt])
   @@index([threadId, seq])
+  @@index([runId, type, seq])
   @@map("events")
 }
 

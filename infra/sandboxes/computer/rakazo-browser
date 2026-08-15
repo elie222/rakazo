@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
-HOME="${HOME:-/home/rakazo}"
-PROFILE="$HOME/.config/rakazo-chromium"
+RAKAZO_HOME="${HOME:-/home/rakazo}"
+PROFILE="$RAKAZO_HOME/.browser-profiles/chromium"
 mkdir -p "$PROFILE"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then

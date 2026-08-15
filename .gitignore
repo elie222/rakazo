@@ -20,6 +20,7 @@ apps/desktop/dist
 apps/desktop/out
 apps/mobile/.expo
 apps/mobile/dist
+apps/mobile/ios
 packages/db/src/generated
 infra/sandboxes/supervisor/dist
 *.log
@@ -29,5 +30,7 @@ artifacts
 backups
 verify-report
 .astro
+.deploy.lock
+.last-deployed-revision
 design/
 PRODUCT_PLAN.md

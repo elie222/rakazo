@@ -1,10 +1,10 @@
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
-import { resolveAuthSecret } from "@rakazo/core";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
+import { resolveAuthSecret } from "../../packages/core/src/secrets-guard.ts";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -108,6 +108,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
 export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
+  const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const screenProxySecret = resolveAuthSecret({
     ...process.env,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? rootEnv.BETTER_AUTH_SECRET,
@@ -134,6 +135,7 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
+      allowedHosts: [previewHost],
       proxy: {
         "/api": { target: api, changeOrigin: true },
         "/rpc": { target: api, changeOrigin: true },

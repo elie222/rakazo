@@ -5,8 +5,14 @@ import type {
   AgentRuntimeCapabilities,
   AgentRuntimeEvent,
   ArtifactPut,
+  BackgroundJob,
+  BackgroundJobHandlers,
   CommandRequest,
+  ComputerActionRequest,
+  ComputerActionResult,
+  ComputerFileEntry,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
   ConnectorCall,
   ConnectorCapabilities,
@@ -29,13 +35,17 @@ import type {
   ScreenSession,
   SecretRecord,
   SnapshotRef,
-  WakeupJob,
 } from "./types.js";
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
   provision(
-    request: { botId: string; homePath: string; providerRef?: string },
+    request: {
+      botId: string;
+      homePath: string;
+      providerRef?: string;
+      providerKind?: ComputerRef["kind"];
+    },
     context: AdapterContext,
   ): Promise<ComputerRef>;
   execute(
@@ -54,7 +64,32 @@ export interface SandboxProvider {
     lease: ControlLeaseRef,
     context: AdapterContext,
   ): Promise<void>;
+  observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation>;
+  act(
+    computer: ComputerRef,
+    request: ComputerActionRequest,
+    context: AdapterContext,
+  ): Promise<ComputerActionResult>;
+  listFiles(
+    computer: ComputerRef,
+    path: string,
+    context: AdapterContext,
+  ): Promise<ComputerFileEntry[]>;
+  readFile(
+    computer: ComputerRef,
+    path: string,
+    context: AdapterContext,
+    options?: { maxBytes?: number },
+  ): Promise<Uint8Array>;
+  writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext): Promise<void>;
+  exportWorkspace(computer: ComputerRef, context: AdapterContext): AsyncIterable<PortableFile>;
+  importWorkspace(
+    computer: ComputerRef,
+    files: AsyncIterable<PortableFile>,
+    context: AdapterContext,
+  ): Promise<void>;
   snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef>;
+  keepAlive?(computer: ComputerRef): Promise<void>;
   stop(computer: ComputerRef, context: AdapterContext): Promise<void>;
   destroy(computer: ComputerRef, context: AdapterContext): Promise<void>;
 }
@@ -104,12 +139,14 @@ export interface ModelProvider {
   listModels(): Promise<Array<{ provider: string; id: string; label: string; billing: string }>>;
 }
 
-export interface WakeupDriver {
-  describe(): AdapterDescriptor<{ cron: boolean; delay: boolean }>;
-  enqueue(job: WakeupJob): Promise<void>;
-  start(
-    handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>,
-  ): Promise<void>;
+export interface JobPublisher {
+  enqueue(job: BackgroundJob): Promise<void>;
+  cancel(key: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface JobWorkerHost {
+  start(handlers: BackgroundJobHandlers): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -119,7 +156,12 @@ export interface AgentHomeStore {
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
   exportHome(botId: string, context: AdapterContext): AsyncIterable<PortableFile>;
-  readFile(botId: string, path: string, context: AdapterContext): Promise<string>;
+  readFile(
+    botId: string,
+    path: string,
+    context: AdapterContext,
+    options?: { maxBytes?: number },
+  ): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
   list(
     botId: string,
@@ -143,9 +185,10 @@ export interface SecretStore {
 }
 
 export interface RealtimeFanout {
-  describe(): AdapterDescriptor<{ postgres: boolean }>;
-  publish(channel: string, payload: string): Promise<void>;
-  subscribe(channel: string, onMessage: (payload: string) => void): Promise<() => Promise<void>>;
+  describe(): AdapterDescriptor<{ distributed: boolean; push: boolean }>;
+  publish(topic: string, payload: string): Promise<void>;
+  subscribe(topic: string, onMessage: (payload: string) => void): Promise<() => Promise<void>>;
+  close(): Promise<void>;
 }
 
 export interface NotificationProvider {

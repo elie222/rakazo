@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { rpc } from "./api";
 
@@ -6,8 +7,9 @@ export async function registerPushToken() {
   const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
   if (!granted) return;
   try {
-    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-    const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {})).data;
+    const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) return;
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
     await rpc("notifications/registerPush", { token });
   } catch {

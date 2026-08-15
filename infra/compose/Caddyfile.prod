@@ -1,0 +1,19 @@
+{$RAKAZO_HOST:app.example.com} {
+	encode zstd gzip
+
+	handle /health {
+		reverse_proxy api:3100
+	}
+
+	handle /api/* {
+		reverse_proxy api:3100
+	}
+
+	handle /rpc/* {
+		reverse_proxy api:3100
+	}
+
+	handle {
+		reverse_proxy web:5173
+	}
+}

@@ -1,0 +1,245 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const live = process.env.RUN_COMPUTER_E2E === "1";
+const describeLive = live ? describe : describe.skip;
+
+describeLive("real model and E2B computer journey", () => {
+  let dataDir: string | undefined;
+  let handles: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts")["createApp"]>>;
+  let computer: ComputerRef | undefined;
+
+  beforeAll(async () => {
+    for (const key of ["DATABASE_URL", "E2B_API_KEY", "OPENROUTER_API_KEY", "COMPUTER_E2E_MODEL"]) {
+      if (!process.env[key]) throw new Error(`${key} is required for pnpm e2e:computer`);
+    }
+    dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-computer-e2e-"));
+    const { createApp } = await import("../../../apps/api/src/app.ts");
+    handles = await createApp({
+      databaseUrl: process.env.DATABASE_URL!,
+      dataDir,
+      sandboxProvider: "e2b",
+      agentRuntime: "pi",
+      e2bApiKey: process.env.E2B_API_KEY,
+      openRouterKey: process.env.OPENROUTER_API_KEY,
+      defaultProvider: "openrouter",
+      defaultModel: process.env.COMPUTER_E2E_MODEL,
+      wakeupDriver: "memory",
+    });
+    await handles.prisma.deploymentSettings.update({
+      where: { id: "default" },
+      data: {
+        defaultModelProvider: "openrouter",
+        defaultModelId: process.env.COMPUTER_E2E_MODEL,
+      },
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    if (computer) {
+      await handles.sandbox.destroy(computer, testContext(computer.botId)).catch(() => undefined);
+    }
+    await handles?.stop().catch(() => undefined);
+    if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("observes and clicks a real browser, then uses terminal and files", async () => {
+    const stamp = Date.now();
+    const signup = await handles.app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
+      body: JSON.stringify({
+        email: `computer-${stamp}@rakazo.test`,
+        password: "password12",
+        name: "Computer E2E",
+      }),
+    });
+    expect(signup.status).toBeLessThan(400);
+    const cookie = cookieHeader(signup);
+    const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
+      name: "Operator",
+      title: "Computer acceptance test",
+      description: "Uses the visible desktop and its tools.",
+      instructions:
+        "This is an acceptance test. Follow the requested computer tool sequence exactly and do not claim a visual action succeeded until its result is visible.",
+      notifyOnFinish: false,
+    });
+    await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
+    const stored = await handles.prisma.computer.findUniqueOrThrow({ where: { botId: bot.id } });
+    computer = {
+      id: stored.providerRef!,
+      providerRef: stored.providerRef!,
+      botId: bot.id,
+      kind: "e2b",
+    };
+    await installVisualFixture(handles.sandbox, computer);
+
+    const sent = await rpc<{ runId: string }>(handles.app, cookie, "threads/send", {
+      botId: bot.id,
+      text: [
+        "Open http://127.0.0.1:8765 using open_path.",
+        "Call computer_observe, locate the large CLICK TO PASS button visually, and click it with computer_act.",
+        "Re-observe until the page visibly says VISUAL E2E PASSED.",
+        "Then use shell to read results/visual-click.txt.",
+        "Finally use write_file to create results/llm-confirmed.txt containing exactly visual-e2e-ok.",
+      ].join(" "),
+    });
+    const snapshot = await waitFor(handles.app, cookie, bot.id, 180_000);
+    expect(snapshot.run?.status).toBe("completed");
+
+    const clickMarker = new TextDecoder().decode(
+      await handles.sandbox.readFile(computer, "results/visual-click.txt", testContext(bot.id)),
+    );
+    expect(clickMarker).toBe("visual-click-ok");
+    const confirmed = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
+      botId: bot.id,
+      path: "results/llm-confirmed.txt",
+    });
+    expect(confirmed.content).toBe("visual-e2e-ok");
+
+    const toolEvents = await handles.prisma.event.findMany({
+      where: { runId: sent.runId },
+      select: { type: true, payload: true },
+    });
+    const used = new Set(
+      toolEvents.flatMap((event) => {
+        if (
+          event.type !== "agent.tool.called" ||
+          !event.payload ||
+          typeof event.payload !== "object"
+        ) {
+          return [];
+        }
+        const name = "name" in event.payload ? event.payload.name : undefined;
+        return typeof name === "string" ? [name] : [];
+      }),
+    );
+    for (const required of [
+      "open_path",
+      "computer_observe",
+      "computer_act",
+      "shell",
+      "write_file",
+    ]) {
+      expect(used).toContain(required);
+    }
+
+    const originalRef = computer.providerRef;
+    await handles.sandbox.destroy(computer, testContext(bot.id));
+    await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
+    const replacement = await handles.prisma.computer.findUniqueOrThrow({
+      where: { botId: bot.id },
+    });
+    expect(replacement.providerRef).not.toBe(originalRef);
+    computer = {
+      id: replacement.providerRef!,
+      providerRef: replacement.providerRef!,
+      botId: bot.id,
+      kind: "e2b",
+    };
+    const restored = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
+      botId: bot.id,
+      path: "results/llm-confirmed.txt",
+    });
+    expect(restored.content).toBe("visual-e2e-ok");
+  }, 240_000);
+});
+
+async function installVisualFixture(sandbox: SandboxProvider, computer: ComputerRef) {
+  const source = `
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+PAGE = b'''<!doctype html><meta charset="utf-8"><title>Rakazo visual test</title>
+<style>body{font-family:sans-serif;text-align:center;padding-top:120px}button{width:760px;height:300px;font-size:58px;background:#2563eb;color:white;border:0;border-radius:24px}</style>
+<button onclick="fetch('/passed',{method:'POST'}).then(()=>document.body.innerHTML='<h1 style=font-size:72px>VISUAL E2E PASSED</h1>')">CLICK TO PASS</button>'''
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+    def do_GET(self):
+        self.send_response(200); self.send_header('Content-Type', 'text/html'); self.end_headers(); self.wfile.write(PAGE)
+    def do_POST(self):
+        Path('results').mkdir(exist_ok=True)
+        Path('results/visual-click.txt').write_text('visual-click-ok')
+        self.send_response(204); self.end_headers()
+
+HTTPServer(('127.0.0.1', 8765), Handler).serve_forever()
+`;
+  const context = testContext(computer.botId);
+  await sandbox.writeFile(
+    computer,
+    { path: "visual_server.py", content: new TextEncoder().encode(source) },
+    context,
+  );
+  for await (const event of sandbox.execute(
+    computer,
+    { argv: ["bash", "-lc", "nohup python3 visual_server.py > visual-server.log 2>&1 &"] },
+    context,
+  )) {
+    if (event.type === "exit" && event.code !== 0)
+      throw new Error("fixture server failed to start");
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let ready = false;
+    for await (const event of sandbox.execute(
+      computer,
+      { argv: ["bash", "-lc", "curl -fsS http://127.0.0.1:8765 >/dev/null"] },
+      context,
+    )) {
+      if (event.type === "exit") ready = event.code === 0;
+    }
+    if (ready) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("visual fixture did not become ready");
+}
+
+function testContext(botId: string) {
+  return {
+    operationId: "computer-e2e",
+    traceId: "computer-e2e",
+    workspaceId: "computer-e2e",
+    userId: "computer-e2e",
+    botId,
+    signal: new AbortController().signal,
+  };
+}
+
+type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type Snapshot = { run: { status: string } | null };
+
+function cookieHeader(response: Response) {
+  const many = response.headers.getSetCookie?.() ?? [];
+  if (many.length) return many.map((cookie) => cookie.split(";")[0]).join("; ");
+  return response.headers.get("set-cookie")?.split(",")[0]?.split(";")[0] ?? "";
+}
+
+async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown): Promise<T> {
+  const response = await app.request(`/rpc/${procedure}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie, origin: "http://127.0.0.1:5173" },
+    body: JSON.stringify({ json: body }),
+  });
+  const parsed = (await response.json()) as { json?: T; error?: { message?: string } };
+  if (!response.ok || parsed.error) {
+    throw new Error(`${procedure} ${response.status}: ${parsed.error?.message ?? "failed"}`);
+  }
+  return parsed.json as T;
+}
+
+async function waitFor(app: App, cookie: string, botId: string, timeoutMs: number) {
+  const started = Date.now();
+  let snapshot: Snapshot | undefined;
+  while (Date.now() - started < timeoutMs) {
+    snapshot = await rpc<Snapshot>(app, cookie, "threads/get", { botId });
+    if (snapshot.run && ["completed", "failed", "cancelled"].includes(snapshot.run.status)) {
+      return snapshot;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`computer E2E timed out with status ${snapshot?.run?.status ?? "unknown"}`);
+}

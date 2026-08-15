@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { config } from "dotenv";
 
 function loadRootEnv() {
@@ -22,27 +23,35 @@ function loadRootEnv() {
 loadRootEnv();
 
 import {
+  createBackgroundJobHandlers,
   createConnectorStack,
+  createJobReconciler,
   createRunExecutor,
   createRunSandbox,
   EncryptedSecretStore,
   ExpoPushProvider,
-  GraphileWakeupDriver,
-  InMemoryWakeupDriver,
+  GraphileJobPublisher,
+  GraphileJobWorkerHost,
+  InMemoryJobQueue,
   isComposioEnabled,
   LocalAgentHomeStore,
   PiAgentRuntime,
+  PostgresRealtimeFanout,
   ScriptedAgentRuntime,
-  sleepComputerIfIdle,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
-import { createDb } from "@rakazo/db";
+import { createDb, createThreadEvents } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  const { prisma } = createDb(databaseUrl);
+  const { prisma, pool } = createDb(databaseUrl);
+  const realtime = new PostgresRealtimeFanout({
+    connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
+    publisher: pool,
+  });
+  const events = createThreadEvents(prisma, realtime);
   const runtime =
     process.env.AGENT_RUNTIME === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const dataDir = process.env.DATA_DIR ?? "./data";
@@ -56,16 +65,16 @@ async function main() {
   const connector = stack.destination;
   await connector.start();
   const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
-  const wakeup =
-    process.env.WAKEUP_DRIVER === "memory"
-      ? new InMemoryWakeupDriver()
-      : new GraphileWakeupDriver(databaseUrl);
+  const home = new LocalAgentHomeStore(dataDir);
+  const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
+  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
+  const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
   const executor = createRunExecutor({
     prisma,
     runtime,
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
-    home: new LocalAgentHomeStore(dataDir),
+    home,
     connector: stack.connector,
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
       Boolean,
@@ -74,20 +83,37 @@ async function main() {
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
-    wakeup,
+    jobs,
+    events,
   });
 
-  await wakeup.start({
-    "run.continue": async (payload) => {
-      await executor.continueRun(String(payload.runId), process.pid.toString());
-    },
-    "routine.wakeup": async (payload) => {
-      await executor.wakeRoutine(String(payload.routineId), process.pid.toString());
-    },
-    "computer.sleep": async (payload) => {
-      await sleepComputerIfIdle({ prisma, sandbox, wakeup }, String(payload.botId));
-    },
+  const jobHandlers = createBackgroundJobHandlers({
+    executor,
+    prisma,
+    sandbox,
+    home,
+    jobs,
+    events,
+    workerId: process.pid.toString(),
   });
+  await jobHost.start(jobHandlers);
+  const reconciler = createJobReconciler({ prisma, jobs });
+  reconciler.start();
+
+  let stopping = false;
+  const stop = async () => {
+    if (stopping) return;
+    stopping = true;
+    await reconciler.stop();
+    await jobHost.stop();
+    await jobs.close();
+    await realtime.close();
+    await connector.stop();
+    await prisma.$disconnect().catch(() => undefined);
+    await pool.end().catch(() => undefined);
+  };
+  process.once("SIGTERM", () => void stop());
+  process.once("SIGINT", () => void stop());
 
   console.log("rakazo worker ready");
 }

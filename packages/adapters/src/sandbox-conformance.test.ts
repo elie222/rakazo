@@ -1,5 +1,5 @@
 import { execSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
@@ -54,6 +54,56 @@ describe("sandbox conformance", () => {
     await desktop.destroy(c, ctx);
   });
 
+  it("offers the same observation, action, and workspace contract across providers", async () => {
+    const providers: SandboxProvider[] = [
+      new FakeSandboxProvider(),
+      new ManagedSandboxEmulator(),
+      new DesktopSandboxProvider(),
+    ];
+    for (const [index, provider] of providers.entries()) {
+      const computer = await provider.provision(
+        { botId: `portable-${index}`, homePath: `/tmp/portable-${index}` },
+        ctx,
+      );
+      await provider.writeFile(
+        computer,
+        { path: "notes/result.txt", content: new TextEncoder().encode("portable") },
+        ctx,
+      );
+      expect(await provider.listFiles(computer, "notes", ctx)).toEqual([
+        { path: "notes/result.txt", kind: "file", size: 8 },
+      ]);
+      expect(
+        new TextDecoder().decode(await provider.readFile(computer, "notes/result.txt", ctx)),
+      ).toBe("portable");
+      const binary = Uint8Array.from([0, 255, 1, 128]);
+      await provider.writeFile(
+        computer,
+        { path: "bin/tool", content: binary, executable: true },
+        ctx,
+      );
+      expect(await provider.readFile(computer, "bin/tool", ctx)).toEqual(binary);
+      expect(await provider.listFiles(computer, "bin", ctx)).toEqual([
+        { path: "bin/tool", kind: "file", size: 4, executable: true },
+      ]);
+      const acted = await provider.act(
+        computer,
+        { actions: [{ kind: "clipboard", text: "visible" }], observe: true },
+        ctx,
+      );
+      expect(acted.completed).toBe(1);
+      expect(acted.observation?.image.byteLength).toBeGreaterThan(0);
+      const exported = [];
+      for await (const file of provider.exportWorkspace(computer, ctx)) exported.push(file);
+      expect(exported.map((file) => file.path)).toContain("notes/result.txt");
+      expect(exported.find((file) => file.path === "bin/tool")).toMatchObject({
+        content: binary,
+        executable: true,
+      });
+      await provider.destroy(computer, ctx);
+    }
+  });
+
   it("desktop executor refuses paths outside the computer home", async () => {
     const desktop = new DesktopSandboxProvider();
     const computer = await desktop.provision({ botId: "grant", homePath: "/tmp/grant" }, ctx);
@@ -70,6 +120,40 @@ describe("sandbox conformance", () => {
     expect(code).toBe(1);
     expect(stderr).toMatch(/outside this computer's home/i);
     await desktop.destroy(computer, ctx);
+  });
+
+  it("reuses one desktop machine per bot", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-reuse-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const first = await desktop.provision({ botId: "stable", homePath: "/unused" }, ctx);
+    const second = await desktop.provision({ botId: "stable", homePath: "/unused" }, ctx);
+
+    expect(first).toMatchObject({ fresh: true });
+    expect(second).toMatchObject({ id: first.id, providerRef: first.providerRef, fresh: false });
+    expect(desktop.boxes.size).toBe(1);
+
+    await desktop.destroy(second, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("desktop file writes do not follow a final symlink outside the workspace", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-symlink-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "symlink", homePath: "/unused" }, ctx);
+    const outside = path.join(root, "outside.txt");
+    writeFileSync(outside, "before");
+    symlinkSync(outside, path.join(computer.providerRef, "escape.txt"));
+
+    await expect(
+      desktop.writeFile(computer, {
+        path: "escape.txt",
+        content: new TextEncoder().encode("after"),
+      }),
+    ).rejects.toThrow();
+    expect(readFileSync(outside, "utf8")).toBe("before");
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
   });
 });
 

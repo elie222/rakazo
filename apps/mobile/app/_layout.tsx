@@ -1,5 +1,4 @@
-import { DarkTheme, ThemeProvider } from "@react-navigation/native";
-import { Stack } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
@@ -30,6 +29,7 @@ export default function Layout() {
       >
         <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+        <Stack.Screen name="account" options={{ title: "Account" }} />
         <Stack.Screen
           name="new"
           options={{

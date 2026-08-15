@@ -16,7 +16,6 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/memory": "workspace:*",
-    "graphile-worker": "^0.17.3",
     "pino": "^9.9.0",
     "dotenv": "^17.2.1"
   },

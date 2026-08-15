@@ -1,6 +1,12 @@
 import type { RunStatus } from "@rakazo/contracts";
 
-const ACTIVE: RunStatus[] = ["queued", "leased", "running", "waiting_input", "waiting_takeover"];
+export const ACTIVE_RUN_STATUSES = [
+  "queued",
+  "leased",
+  "running",
+  "waiting_input",
+  "waiting_takeover",
+] as const satisfies readonly RunStatus[];
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 
 const allowed: Record<RunStatus, RunStatus[]> = {
@@ -25,7 +31,7 @@ export function assertTransition(from: RunStatus, to: RunStatus): void {
 }
 
 export function isActive(status: RunStatus): boolean {
-  return ACTIVE.includes(status);
+  return (ACTIVE_RUN_STATUSES as readonly RunStatus[]).includes(status);
 }
 
 export function isTerminal(status: RunStatus): boolean {

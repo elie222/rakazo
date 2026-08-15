@@ -14,6 +14,10 @@ function credential(overrides: Partial<OAuthCredential> = {}): OAuthCredential {
 }
 
 describe("PiRuntimeCredentialStore", () => {
+  it("does not configure openai-codex without a stored OAuth credential", async () => {
+    expect(await builtinModels().getAuth("openai-codex")).toBeUndefined();
+  });
+
   it("bridges an encrypted OAuth credential into the OAuth-only Codex provider", async () => {
     const store = new PiRuntimeCredentialStore("openai-codex", credential());
     const models = builtinModels({ credentials: store });

@@ -25,7 +25,7 @@ export const slots = {
   home: "home",
   artifacts: "artifacts",
   secrets: "secrets",
-  wakeup: "wakeup",
+  jobs: "jobs",
   realtime: "realtime",
   notifications: "notifications",
   models: "models",

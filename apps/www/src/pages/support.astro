@@ -1,0 +1,37 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { fetchGithubStars, formatStarCount } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { DOCS_URL, GITHUB_URL } from "../site";
+
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+---
+
+<BaseLayout title="Support · Rakazo" description="Get help with the Rakazo app and self-hosted Rakazo.">
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="privacy-copy">
+      <h1>Rakazo support</h1>
+      <p>
+        For help with the Rakazo mobile app or a hosted Rakazo account, email{" "}
+        <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>. Include the email address on your
+        account, what you expected to happen, and any error message you saw. Do not send passwords, API keys,
+        access tokens, or other secrets.
+      </p>
+      <h2>Self-hosted Rakazo</h2>
+      <p>
+        Start with the <a href={DOCS_URL}>self-hosting guide</a>. For reproducible bugs or feature requests,
+        open an issue in the <a href={`${GITHUB_URL}/issues`}>Rakazo GitHub repository</a>.
+      </p>
+      <h2>Account deletion</h2>
+      <p>
+        In the mobile app, open <strong>Account</strong>, enter your current password under{" "}
+        <strong>Delete account</strong>, and confirm. This permanently deletes the hosted account and its
+        associated personal workspace data.
+      </p>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

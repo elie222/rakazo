@@ -1,60 +1,58 @@
-import type { SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
-import { appendEvent } from "@rakazo/db";
+import {
+  type AgentHomeStore,
+  type ComputerRef,
+  computerSleepJob,
+  type JobPublisher,
+  type SandboxProvider,
+} from "@rakazo/adapter-kit";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
-
-const ACTIVE_RUN = ["queued", "leased", "running", "waiting_input", "waiting_takeover"] as const;
 
 export function sandboxIdleMs(): number {
   const raw = Number(process.env.SANDBOX_IDLE_MS ?? DEFAULT_SANDBOX_IDLE_MS);
   return Number.isFinite(raw) && raw >= 30_000 ? raw : DEFAULT_SANDBOX_IDLE_MS;
 }
 
-export function scheduleComputerSleep(wakeup: WakeupDriver | undefined, botId: string): void {
-  if (!wakeup || !botId) return;
-  void wakeup.enqueue({
-    name: "computer.sleep",
-    payload: { botId },
-    runAt: new Date(Date.now() + sandboxIdleMs()),
-    jobKey: `computer.sleep:${botId}`,
-  });
+export function scheduleComputerSleep(jobs: JobPublisher, botId: string): void {
+  if (!botId) return;
+  void jobs.enqueue(computerSleepJob(botId, new Date(Date.now() + sandboxIdleMs())));
 }
 
 export async function touchRunningComputer(
-  deps: { sandbox: SandboxProvider; wakeup?: WakeupDriver },
+  deps: { sandbox: SandboxProvider; jobs: JobPublisher },
   computer: { botId: string; providerRef: string; kind: string },
 ): Promise<void> {
-  scheduleComputerSleep(deps.wakeup, computer.botId);
-  const sandbox = deps.sandbox as SandboxProvider & {
-    keepAlive?: (ref: {
-      id: string;
-      botId: string;
-      kind: "docker" | "e2b" | "desktop" | "fake";
-      providerRef: string;
-    }) => Promise<void>;
-  };
-  await sandbox.keepAlive?.({
+  scheduleComputerSleep(deps.jobs, computer.botId);
+  await deps.sandbox.keepAlive?.({
     id: computer.providerRef,
     botId: computer.botId,
-    kind: computer.kind as "docker" | "e2b" | "desktop" | "fake",
+    kind: computer.kind as ComputerRef["kind"],
     providerRef: computer.providerRef,
   });
 }
 
 export async function sleepComputerIfIdle(
-  deps: { prisma: PrismaClient; sandbox: SandboxProvider; wakeup?: WakeupDriver },
+  deps: {
+    prisma: PrismaClient;
+    sandbox: SandboxProvider;
+    home: AgentHomeStore;
+    jobs: JobPublisher;
+    events: ThreadEvents;
+  },
   botId: string,
 ): Promise<void> {
   const computer = await deps.prisma.computer.findUnique({ where: { botId } });
   if (!computer?.providerRef) return;
   if (computer.state !== "running") return;
   const active = await deps.prisma.run.findFirst({
-    where: { botId, status: { in: [...ACTIVE_RUN] } },
+    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
     select: { id: true },
   });
   if (active) {
-    scheduleComputerSleep(deps.wakeup, botId);
+    scheduleComputerSleep(deps.jobs, botId);
     return;
   }
   const ctx = {
@@ -65,32 +63,48 @@ export async function sleepComputerIfIdle(
     botId,
     signal: new AbortController().signal,
   };
-  await deps.sandbox.stop(
-    {
-      id: computer.providerRef,
-      botId,
-      kind: computer.kind as "docker" | "e2b" | "desktop" | "fake",
-      providerRef: computer.providerRef,
-    },
-    ctx,
-  );
+  const ref = {
+    id: computer.providerRef,
+    botId,
+    kind: computer.kind as "docker" | "e2b" | "desktop" | "fake",
+    providerRef: computer.providerRef,
+  };
+  await checkpointAndRecordComputerWorkspace(deps, botId, ref, ctx);
+  const [current, activeAfterCheckpoint] = await Promise.all([
+    deps.prisma.computer.findUnique({
+      where: { botId },
+      select: { state: true, providerRef: true, updatedAt: true },
+    }),
+    deps.prisma.run.findFirst({
+      where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    }),
+  ]);
+  if (
+    activeAfterCheckpoint ||
+    current?.state !== "running" ||
+    current.providerRef !== computer.providerRef ||
+    current.updatedAt.getTime() !== computer.updatedAt.getTime()
+  ) {
+    scheduleComputerSleep(deps.jobs, botId);
+    return;
+  }
+  await deps.sandbox.stop(ref, ctx);
   await deps.prisma.computer.update({
     where: { botId },
     data: { state: "suspended", controlHolder: "none" },
   });
-  if (computer.botId) {
-    const bot = await deps.prisma.bot.findUnique({
-      where: { id: botId },
-      include: { thread: true },
+  const bot = await deps.prisma.bot.findUnique({
+    where: { id: botId },
+    include: { thread: true },
+  });
+  if (bot?.thread) {
+    await deps.events.append({
+      workspaceId: computer.workspaceId,
+      threadId: bot.thread.id,
+      botId,
+      type: "computer.status",
+      payload: { status: "suspended" },
     });
-    if (bot?.thread) {
-      await appendEvent(deps.prisma, {
-        workspaceId: computer.workspaceId,
-        threadId: bot.thread.id,
-        botId,
-        type: "computer.status",
-        payload: { status: "suspended" },
-      });
-    }
   }
 }

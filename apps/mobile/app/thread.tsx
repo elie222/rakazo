@@ -1,4 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import { abortableDelay } from "@rakazo/core";
 import { Link, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -35,39 +36,46 @@ export default function Thread() {
   useEffect(() => {
     if (!botId) return;
     const abort = new AbortController();
-    let fallback: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       const next = await refresh().catch((err: Error) => {
         setError(err.message);
         return null;
       });
       if (abort.signal.aborted) return;
-      fallback = setInterval(() => void refresh().catch(() => undefined), 2500);
-      try {
-        await subscribeThread(
-          botId,
-          next?.cursor ?? -1,
-          (event) => {
-            if (
-              event.type === "thread.progress" ||
-              event.type === "thread.message.created" ||
-              event.type === "thread.subagent"
-            ) {
-              setSnap((prev) => applyMobileThreadEvent(prev, event));
-            }
-            if (event.type === "thread.message.created" || event.type === "run.completed") {
-              void refresh().catch(() => undefined);
-            }
-          },
-          abort.signal,
-        );
-      } catch {
-        // Keep polling; live subscribe is best-effort on device.
+      let cursor = next?.cursor ?? -1;
+      let retryMs = 250;
+      while (!abort.signal.aborted) {
+        try {
+          await subscribeThread(
+            botId,
+            cursor,
+            (event) => {
+              cursor = Math.max(cursor, event.seq ?? -1);
+              retryMs = 250;
+              if (
+                event.type === "thread.progress" ||
+                event.type === "thread.message.created" ||
+                event.type === "thread.subagent"
+              ) {
+                setSnap((prev) => applyMobileThreadEvent(prev, event));
+              }
+              if (event.type === "run.completed") {
+                void refresh().catch(() => undefined);
+              }
+            },
+            abort.signal,
+          );
+        } catch {
+          // A full refresh reconciles visible state; the event cursor still resumes without gaps.
+        }
+        if (abort.signal.aborted) break;
+        await refresh().catch(() => undefined);
+        await abortableDelay(retryMs, abort.signal);
+        retryMs = Math.min(retryMs * 2, 5_000);
       }
     })();
     return () => {
       abort.abort();
-      if (fallback) clearInterval(fallback);
     };
   }, [botId]);
 

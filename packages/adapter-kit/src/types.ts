@@ -19,16 +19,16 @@ export interface AdapterDescriptor<TCapabilities> {
 }
 
 /**
- * OAuth material is carried only in-process from the encrypted credential
- * store to a runtime. It is intentionally not part of any persisted or RPC
- * contract.
+ * In-process OAuth material for a single agent run. Not part of any RPC or
+ * persisted contract. Extra provider fields such as `accountId` are copied
+ * through at runtime.
  */
 export interface AgentModelOAuthCredential {
   type: "oauth";
   access: string;
   refresh: string;
   expires: number;
-  [key: string]: unknown;
+  accountId?: string;
 }
 
 export interface PortableFile {
@@ -42,6 +42,8 @@ export interface ComputerRef {
   botId: string;
   kind: SandboxKind;
   providerRef: string;
+  /** True when the provider created an empty replacement rather than reconnecting existing state. */
+  fresh?: boolean;
 }
 
 export interface CommandRequest {
@@ -76,6 +78,53 @@ export type ComputerInput =
       type: "move" | "down" | "up" | "click";
     }
   | { kind: "clipboard"; text: string };
+
+export type ComputerAction =
+  | ComputerInput
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | { kind: "wait"; ms: number }
+  | { kind: "open"; path: string }
+  | { kind: "launch"; application: string; uri?: string };
+
+export interface ComputerObservation {
+  frameId: string;
+  capturedAt: string;
+  mimeType: "image/png" | "image/jpeg";
+  image: Uint8Array;
+  width: number;
+  height: number;
+  cursor?: { x: number; y: number };
+  activeWindow?: { id: string; title?: string };
+}
+
+export interface ComputerActionRequest {
+  actions: ComputerAction[];
+  observe?: boolean;
+  settleMs?: number;
+}
+
+export interface ComputerActionResult {
+  completed: number;
+  observation?: ComputerObservation;
+}
+
+export interface ComputerFileEntry {
+  path: string;
+  kind: "file" | "dir";
+  size: number;
+  executable?: boolean;
+}
+
+export type AgentToolResultContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
+
+/** A provider-neutral tool result an agent runtime can forward without flattening images. */
+export interface AgentToolExecutionResult {
+  kind: "agent_tool_result";
+  content: AgentToolResultContent[];
+  details: unknown;
+}
 
 export interface ControlLeaseRef {
   leaseId: string;
@@ -181,10 +230,11 @@ export interface AgentRunRequest {
     provider: string;
     id: string;
     apiKey?: string;
-    /** OAuth credential resolved from the encrypted app store for this run. */
-    oauth?: AgentModelOAuthCredential;
-    /** Persists a provider-issued OAuth refresh without exposing its value. */
-    persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /** In-process OAuth credential from the encrypted store for this run. */
+    oauth?: {
+      credential: AgentModelOAuthCredential;
+      persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    };
   };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
@@ -231,12 +281,26 @@ export interface AgentRuntimeCapabilities {
   scripted: boolean;
 }
 
-export interface WakeupJob {
-  name: string;
-  payload: Record<string, unknown>;
-  runAt?: Date;
-  jobKey?: string;
+export interface BackgroundJobPayloads {
+  "run.continue": { runId: string };
+  "routine.wakeup": { routineId: string; scheduledFor: string };
+  "computer.sleep": { botId: string };
 }
+
+export type BackgroundJobName = keyof BackgroundJobPayloads;
+
+export type BackgroundJob = {
+  [Name in BackgroundJobName]: {
+    name: Name;
+    payload: BackgroundJobPayloads[Name];
+    availableAt?: Date;
+    replaceKey?: string;
+  };
+}[BackgroundJobName];
+
+export type BackgroundJobHandlers = {
+  [Name in BackgroundJobName]: (payload: BackgroundJobPayloads[Name]) => Promise<void>;
+};
 
 export interface SecretRecord {
   id: string;

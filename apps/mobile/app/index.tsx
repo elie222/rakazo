@@ -1,11 +1,8 @@
 import { Redirect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
-  Alert,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -16,16 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
-import {
-  currentApiBase,
-  displayApiHost,
-  isCustomApiBase,
-  loadSessionToken,
-  type MobileBot,
-  type MobileMe,
-  rpc,
-  signOut,
-} from "../lib/api";
+import { loadSessionToken, type MobileBot, type MobileMe, rpc } from "../lib/api";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
@@ -91,40 +79,10 @@ export default function Home() {
   }
   if (!hasSession) return <Redirect href="/sign-in" />;
 
-  function openAccountMenu() {
-    const title = me?.name || "You";
-    const details = [me?.email, isCustomApiBase() ? displayApiHost(currentApiBase()) : ""]
-      .filter(Boolean)
-      .join("\n");
-    const onSignOut = () => void signOut().then(() => setHasSession(false));
-
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title,
-          message: details || undefined,
-          options: ["Sign out", "Cancel"],
-          destructiveButtonIndex: 0,
-          cancelButtonIndex: 1,
-          userInterfaceStyle: "dark",
-        },
-        (index) => {
-          if (index === 0) onSignOut();
-        },
-      );
-      return;
-    }
-
-    Alert.alert(title, details || undefined, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Sign out", style: "destructive", onPress: onSignOut },
-    ]);
-  }
-
   return (
     <View style={[styles.screen, { paddingTop: Math.max(insets.top, 20) }]}>
       <View style={styles.header}>
-        <CircleButton accessibilityLabel="Account" onPress={openAccountMenu}>
+        <CircleButton accessibilityLabel="Account" onPress={() => router.push("/account")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
         <View style={styles.headerActions}>

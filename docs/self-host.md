@@ -49,7 +49,7 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
 
 - **Docker** is the default for local use and the quickest self-hosted setup. Each bot gets a container and persistent home. Keep the supervisor private, as the included Compose file does. A public single-machine Docker deployment still shares one Docker host between its bot containers.
-- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments.
+- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
 - **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
 - **Fake** is only an emulator for verification.
 
@@ -60,6 +60,68 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 ```
 
 This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
+
+## Public single-VM deployment
+
+`infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
+and automatic HTTPS through Caddy. It uses E2B for bot computers, so the VM never exposes a Docker
+supervisor or browser containers.
+
+Before deploying to a new Ubuntu host, create and verify a key-only `deploy` account, then apply the
+idempotent host-hardening baseline. It disables SSH passwords and root login, rate-limits SSH, allows
+only SSH/HTTP/HTTPS through UFW, enables fail2ban, unattended security updates, AppArmor, audit rules,
+and conservative kernel/network protections. Keep the provider console open until a fresh SSH login
+succeeds after the script reloads SSH.
+
+```bash
+sudo DEPLOY_USER=deploy bash infra/compose/harden-host.sh
+```
+
+The production host also uses `infra/compose/docker-daemon.json` to enable live restore, bounded local
+container logs, default no-new-privileges, and the kernel NAT path instead of Docker's userland proxy.
+
+1. Point an `A`/`AAAA` record such as `app.example.com` at the VM and allow inbound TCP 80/443 and
+   UDP 443. If you use Cloudflare, enable the proxy with **Full (strict)** TLS and copy
+   `Caddyfile.cloudflare.example` to an operator-controlled path outside the public checkout. Set
+   `CADDYFILE_PATH` to that absolute path. The example drops application requests that do not come
+   from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/); reconcile those ranges
+   whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
+2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
+   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
+   `RAKAZO_HOST`, and the three public origins. Use URL-safe random values for database credentials.
+3. Keep registration allowlisted while the service is private:
+
+```env
+NODE_ENV=production
+RAKAZO_HOST=app.example.com
+# Optional operator-owned override, for example the Cloudflare allowlist file:
+# CADDYFILE_PATH=/etc/rakazo/Caddyfile.prod
+BETTER_AUTH_URL=https://app.example.com
+WEB_ORIGIN=https://app.example.com
+API_URL=https://app.example.com
+SIGNUPS_ENABLED=true
+SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
+SANDBOX_PROVIDER=e2b
+AGENT_RUNTIME=pi
+WAKEUP_DRIVER=graphile
+DATA_DIR=/data
+```
+
+4. Start the stack and verify its public health endpoint:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --build
+curl --fail https://app.example.com/health
+```
+
+The root `.env` is excluded from both Git and the Docker build context. The database, application data,
+and Caddy certificates live in named Docker volumes.
+
+For the single-VM production layout, install `infra/compose/backup-prod.sh` as
+`/usr/local/sbin/rakazo-backup` and enable the supplied `rakazo-backup.timer`. It creates a verified
+Postgres custom-format dump plus an application-data archive under `/var/backups/rakazo`, with mode
+`0600` and seven-day rotation. These local snapshots help with operator mistakes but are not a
+substitute for an encrypted off-host backup or provider snapshot.
 
 ## Restore
 
@@ -82,12 +144,12 @@ To run a hosted product (same codebase):
 1. Push `main` (this checkout may be ahead of GitHub).
 2. Provision managed Postgres 16 and run `pnpm db:migrate`.
 3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
-4. Persist `DATA_DIR` (bot homes, artifacts). Today that is a local filesystem (`LocalAgentHomeStore`), so attach a volume. Object-storage-backed homes are not wired yet.
-5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` for a public or multi-user production service. Each bot keeps one sandbox id (`providerRef`) and a graphical desktop with a browser. Take control, sign in, then release — the bot keeps that session. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
+4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
+5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` for a public or multi-user production service. Each bot normally reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside E2B at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
 6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
 7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
 8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). Docker noVNC connections use short-lived signed `/novnc/*` capabilities; do not replace that route with an unrestricted port proxy.
-9. Deploy `apps/www` to `rakazo.com` and point `app.rakazo.com` (or similar) at the product origin.
+9. Deploy `apps/www` to your public website and point `app.example.com` (or similar) at the product origin.
 10. Turn on `SIGNUP_ALLOWLIST` until you want open registration. There is no Rakazo-managed model billing in version 1 — users bring keys.
 
 Expo / desktop installers are clients of that origin (`EXPO_PUBLIC_API_URL`, `RAKAZO_WEB_URL`). They are not a Cloud control plane.

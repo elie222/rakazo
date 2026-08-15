@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectMessages } from "./events.js";
+import { createStreamingRedactor, projectMessages } from "./events.js";
 
 describe("projectMessages", () => {
   it("replays durable messages and trailing live tokens from progress events", () => {
@@ -27,7 +27,7 @@ describe("projectMessages", () => {
         seq: 2,
         type: "thread.progress",
         runId: "r1",
-        payload: { text: "Lisbon", streaming: true },
+        payload: { delta: "bon", streaming: true },
         createdAt: "2026-01-01T00:00:02.000Z",
       },
     ]);
@@ -126,5 +126,24 @@ describe("projectMessages", () => {
     ]);
     expect(durable).toHaveLength(1);
     expect(durable[0]?.blocks[0]).toMatchObject({ status: "completed", result: "ok" });
+  });
+});
+
+describe("createStreamingRedactor", () => {
+  it("never emits a secret split across streaming chunks", () => {
+    const redactor = createStreamingRedactor(["fake-secret-123"]);
+    const output = [
+      redactor.push("before fake-se"),
+      redactor.push("cret-123 after"),
+      redactor.finish(),
+    ].join("");
+    expect(output).toBe("before [redacted] after");
+    expect(output).not.toContain("fake-secret-123");
+  });
+
+  it("does not delay chunks when there are no known secrets", () => {
+    const redactor = createStreamingRedactor([]);
+    expect(redactor.push("hello")).toBe("hello");
+    expect(redactor.finish()).toBe("");
   });
 });
