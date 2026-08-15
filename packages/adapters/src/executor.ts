@@ -68,14 +68,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           trigger: "routine",
         },
       });
+      const lastRunAt = new Date();
+      const nextRunAt = nextCronDate(routine.cron, new Date(), routine.timezone);
       await deps.prisma.routine.update({
         where: { id: routine.id },
         data: {
-          lastRunAt: new Date(),
-          nextRunAt: nextCronDate(routine.cron, new Date(), routine.timezone),
+          lastRunAt,
+          nextRunAt,
         },
       });
       await this.continueRun(run.id, workerId);
+      if (deps.wakeup && !Number.isNaN(nextRunAt.getTime())) {
+        await deps.wakeup.enqueue({
+          name: "routine.wakeup",
+          payload: { routineId: routine.id },
+          runAt: nextRunAt,
+          jobKey: `routine:${routine.id}`,
+        });
+      }
     },
 
     async continueRun(runId: string, workerId: string) {
