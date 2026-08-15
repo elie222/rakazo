@@ -50,7 +50,10 @@ jobs:
       - run: pnpm verify:fast
 
   deploy-production:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     needs: [lint, check, verify-fast]
     runs-on: ubuntu-latest
     timeout-minutes: 30
