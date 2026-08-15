@@ -1,0 +1,245 @@
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
+import { afterEach, describe, expect, it } from "vitest";
+import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { ManagedSandboxEmulator } from "./e2b-emulator.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
+
+const context = {
+  operationId: "sandbox-fault-test",
+  traceId: "sandbox-fault-test",
+  workspaceId: "workspace",
+  userId: "user",
+  signal: new AbortController().signal,
+};
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
+
+describe.each([
+  ["fake", () => Promise.resolve(new FakeSandboxProvider())],
+  ["managed emulator", () => Promise.resolve(new ManagedSandboxEmulator())],
+  [
+    "desktop",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-sandbox-faults-"));
+      temporaryRoots.push(root);
+      return new DesktopSandboxProvider({ root: await realpath(root) });
+    },
+  ],
+] as const)("%s sandbox negative contract", (_name, makeProvider) => {
+  it("rejects traversal through every portable workspace entry point", async () => {
+    const provider = await makeProvider();
+    const computer = await provider.provision({ botId: "traversal", homePath: "/unused" }, context);
+    const escapingFile = {
+      path: "safe/../../outside.txt",
+      content: new TextEncoder().encode("nope"),
+    };
+
+    await expect(provider.listFiles(computer, "../outside", context)).rejects.toThrow(
+      /escapes the computer workspace/i,
+    );
+    await expect(provider.readFile(computer, "..\\outside.txt", context)).rejects.toThrow(
+      /escapes the computer workspace/i,
+    );
+    await expect(provider.writeFile(computer, escapingFile, context)).rejects.toThrow(
+      /escapes the computer workspace/i,
+    );
+    await expect(
+      provider.importWorkspace(computer, portableFiles([escapingFile]), context),
+    ).rejects.toThrow(/escapes the computer workspace/i);
+  });
+
+  it("reports missing and oversized reads without returning partial data", async () => {
+    const provider = await makeProvider();
+    const computer = await provider.provision({ botId: "reads", homePath: "/unused" }, context);
+    await provider.writeFile(
+      computer,
+      { path: "payload.bin", content: Uint8Array.from([0, 1, 2, 3, 255]) },
+      context,
+    );
+
+    await expect(provider.readFile(computer, "missing.bin", context)).rejects.toThrow(
+      /not found|no such file/i,
+    );
+    await expect(
+      provider.readFile(computer, "payload.bin", context, { maxBytes: 4 }),
+    ).rejects.toThrow("computer file exceeds 4 bytes");
+    expect(
+      await provider.readFile(computer, "payload.bin", context, {
+        maxBytes: 5,
+      }),
+    ).toEqual(Uint8Array.from([0, 1, 2, 3, 255]));
+  });
+
+  it("rejects oversized action batches before applying any action", async () => {
+    const provider = await makeProvider();
+    const computer = await provider.provision({ botId: "actions", homePath: "/unused" }, context);
+    const before = await provider.observe(computer, context);
+
+    await expect(
+      provider.act(
+        computer,
+        {
+          actions: Array.from({ length: 25 }, (_, index) => ({
+            kind: "clipboard" as const,
+            text: `action-${index}`,
+          })),
+          observe: true,
+        },
+        context,
+      ),
+    ).rejects.toThrow("computer action batch exceeds 24 actions");
+    expect((await provider.observe(computer, context)).activeWindow).toEqual(before.activeWindow);
+  });
+
+  it("stops idempotently, resumes the same machine, and provisions fresh after destroy", async () => {
+    const provider = await makeProvider();
+    const request = { botId: "lifecycle", homePath: "/unused" };
+    const first = await provider.provision(request, context);
+    await provider.writeFile(
+      first,
+      { path: "state.txt", content: new TextEncoder().encode("preserved") },
+      context,
+    );
+
+    await provider.stop(first, context);
+    await provider.stop(first, context);
+    const resumed = await provider.provision(request, context);
+    expect(resumed).toMatchObject({
+      id: first.id,
+      providerRef: first.providerRef,
+      fresh: false,
+    });
+    expect(new TextDecoder().decode(await provider.readFile(resumed, "state.txt", context))).toBe(
+      "preserved",
+    );
+
+    await provider.destroy(resumed, context);
+    await provider.destroy(resumed, context);
+    const replacement = await provider.provision(request, context);
+    expect(replacement.fresh).toBe(true);
+    await provider.destroy(replacement, context);
+  });
+
+  it("surfaces injected lifecycle and transfer failures and remains retryable", async () => {
+    const provider = await makeProvider();
+    const faulted = faultOnce(provider, ["provision", "importWorkspace", "exportWorkspace"]);
+    const request = { botId: "faults", homePath: "/unused" };
+
+    await expect(faulted.provision(request, context)).rejects.toThrow("injected provision failure");
+    const computer = await faulted.provision(request, context);
+    expect(computer.fresh).toBe(true);
+
+    const file = {
+      path: "retry.bin",
+      content: Uint8Array.from([0, 255, 128, 1]),
+      executable: true,
+    };
+    await expect(faulted.importWorkspace(computer, portableFiles([file]), context)).rejects.toThrow(
+      "injected importWorkspace failure",
+    );
+    await faulted.importWorkspace(computer, portableFiles([file]), context);
+
+    await expect(collect(faulted.exportWorkspace(computer, context))).rejects.toThrow(
+      "injected exportWorkspace failure",
+    );
+    const exported = await collect(faulted.exportWorkspace(computer, context));
+    expect(exported).toEqual([file]);
+  });
+});
+
+describe("portable workspace transfer", () => {
+  it("preserves binary bytes and executable metadata across every provider pairing", async () => {
+    const sourceProviders = await providerSet("source");
+    const targetProviders = await providerSet("target");
+    const binary = Uint8Array.from([0, 255, 1, 128, 2, 127]);
+
+    for (const [sourceName, source] of sourceProviders) {
+      const sourceComputer = await source.provision(
+        { botId: `source-${sourceName}`, homePath: "/unused" },
+        context,
+      );
+      await source.writeFile(
+        sourceComputer,
+        { path: "bin/tool", content: binary, executable: true },
+        context,
+      );
+      const exported = await collect(source.exportWorkspace(sourceComputer, context));
+
+      for (const [targetName, target] of targetProviders) {
+        const targetComputer = await target.provision(
+          { botId: `${sourceName}-to-${targetName}`, homePath: "/unused" },
+          context,
+        );
+        await target.importWorkspace(targetComputer, portableFiles(exported), context);
+
+        expect(await target.readFile(targetComputer, "bin/tool", context)).toEqual(binary);
+        expect(await target.listFiles(targetComputer, "bin", context)).toEqual([
+          {
+            path: "bin/tool",
+            kind: "file",
+            size: binary.byteLength,
+            executable: true,
+          },
+        ]);
+      }
+    }
+  });
+});
+
+type FaultableMethod = "provision" | "importWorkspace" | "exportWorkspace";
+
+function faultOnce(provider: SandboxProvider, methods: FaultableMethod[]): SandboxProvider {
+  const pending = new Set(methods);
+  return new Proxy(provider, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      if (
+        property !== "provision" &&
+        property !== "importWorkspace" &&
+        property !== "exportWorkspace"
+      ) {
+        return value.bind(target);
+      }
+      return (...args: unknown[]) => {
+        if (!pending.delete(property)) return Reflect.apply(value, target, args);
+        const error = new Error(`injected ${property} failure`);
+        if (property !== "exportWorkspace") return Promise.reject(error);
+        return {
+          [Symbol.asyncIterator]() {
+            return { next: () => Promise.reject(error) };
+          },
+        } satisfies AsyncIterable<PortableFile>;
+      };
+    },
+  });
+}
+
+async function providerSet(label: string): Promise<Array<[string, SandboxProvider]>> {
+  const root = await mkdtemp(path.join(tmpdir(), `rakazo-sandbox-transfer-${label}-`));
+  temporaryRoots.push(root);
+  return [
+    ["fake", new FakeSandboxProvider()],
+    ["managed", new ManagedSandboxEmulator()],
+    ["desktop", new DesktopSandboxProvider({ root: await realpath(root) })],
+  ];
+}
+
+async function* portableFiles(files: Iterable<PortableFile>): AsyncIterable<PortableFile> {
+  yield* files;
+}
+
+async function collect(files: AsyncIterable<PortableFile>): Promise<PortableFile[]> {
+  const collected: PortableFile[] = [];
+  for await (const file of files) collected.push(file);
+  return collected;
+}

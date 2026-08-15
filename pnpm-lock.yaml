@@ -86,6 +86,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.55.0
+        version: 1.62.1
       electron:
         specifier: ^37.3.1
         version: 37.10.3
