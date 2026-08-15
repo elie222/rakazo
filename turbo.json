@@ -24,7 +24,7 @@
     },
     "dev": {
       "cache": false,
-      "env": ["PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY"],
+      "env": ["PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY", "WEB_PORT"],
       "persistent": true
     }
   }
