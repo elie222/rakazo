@@ -42,13 +42,16 @@ describeE2b("live E2B canary", () => {
       { botId: "canary", homePath: "/home/user/rakazo-home" },
       ctx,
     );
-    let stdout = "";
-    for await (const event of sandbox.execute(computer, { argv: ["echo", "e2b-ok"] }, ctx)) {
-      if (event.type === "stdout") stdout += event.data;
-      if (event.type === "exit") expect(event.code).toBe(0);
+    try {
+      let stdout = "";
+      for await (const event of sandbox.execute(computer, { argv: ["echo", "e2b-ok"] }, ctx)) {
+        if (event.type === "stdout") stdout += event.data;
+        if (event.type === "exit") expect(event.code).toBe(0);
+      }
+      expect(stdout).toContain("e2b-ok");
+    } finally {
+      await sandbox.destroy(computer, ctx);
     }
-    expect(stdout).toContain("e2b-ok");
-    await sandbox.destroy(computer, ctx);
   }, 120_000);
 });
 

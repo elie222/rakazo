@@ -1,0 +1,116 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rakazo
+      POSTGRES_PASSWORD: topology-only-password
+      POSTGRES_DB: rakazo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rakazo -d rakazo"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  computer-image:
+    image: ${TOPOLOGY_COMPUTER_IMAGE:-rakazo/computer:topology}
+    build:
+      context: ../sandboxes/computer
+    command: ["true"]
+    restart: "no"
+
+  app-image:
+    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.topology
+    command: ["true"]
+    restart: "no"
+
+  supervisor:
+    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
+    user: root
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data
+      SUPERVISOR_HOST: "0.0.0.0"
+      SUPERVISOR_PORT: "7091"
+      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token
+      DOCKER_SOCKET: /var/run/docker.sock
+      RAKAZO_COMPUTER_IMAGE: ${TOPOLOGY_COMPUTER_IMAGE:-rakazo/computer:topology}
+      SANDBOX_SCREEN_NETWORK: internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - appdata:/data
+    depends_on:
+      app-image:
+        condition: service_completed_successfully
+      computer-image:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7091/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  api:
+    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+    environment: &app-environment
+      NODE_ENV: production
+      DATABASE_URL: postgres://rakazo:topology-only-password@postgres:5432/rakazo
+      DATA_DIR: /data
+      BETTER_AUTH_SECRET: topology-only-auth-secret-at-least-32-characters
+      BETTER_AUTH_URL: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
+      WEB_ORIGIN: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
+      ENCRYPTION_KEY: topology-only-encryption-key-at-least-32-characters
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token
+      SIGNUPS_ENABLED: "true"
+      WAKEUP_DRIVER: graphile
+      SANDBOX_PROVIDER: docker
+      AGENT_RUNTIME: scripted
+      API_PORT: "3100"
+    ports:
+      - "127.0.0.1:${TOPOLOGY_API_PORT:-3199}:3100"
+    volumes:
+      - appdata:/data
+    depends_on:
+      app-image:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      supervisor:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 5s
+      retries: 45
+
+  worker:
+    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    environment: *app-environment
+    volumes:
+      - appdata:/data
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:

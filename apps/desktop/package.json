@@ -10,12 +10,14 @@
     "pack": "pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm build && electron-builder --dir",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --root ../.. apps/desktop/src",
+    "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "electron": "^37.3.1",
     "electron-builder": "^26.0.12",
     "typescript": "^5.9.2",

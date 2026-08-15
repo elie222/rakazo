@@ -1,0 +1,45 @@
+appId: com.rakazo.app
+name: Rakazo mobile smoke
+---
+- launchApp:
+    clearState: true
+
+- assertVisible: "Sign in to Rakazo"
+- tapOn: "Email"
+- inputText: ${RAKAZO_E2E_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_E2E_PASSWORD}
+- hideKeyboard
+- tapOn: "Continue with email"
+
+- extendedWaitUntil:
+    visible: "New bot"
+    timeout: 30000
+- tapOn: "New bot"
+- assertVisible: "Name this bot"
+- tapOn: "Name this bot"
+- inputText: ${RAKAZO_E2E_BOT_NAME}
+- hideKeyboard
+- tapOn: "Create"
+
+- extendedWaitUntil:
+    visible: "Message…"
+    timeout: 30000
+- tapOn: "Message…"
+- inputText: ${RAKAZO_E2E_MESSAGE}
+- pressKey: Enter
+- assertVisible: ${RAKAZO_E2E_MESSAGE}
+
+- tapOn: "Open computer →"
+- extendedWaitUntil:
+    visible: "Open computer"
+    timeout: 30000
+- tapOn: "Open computer"
+- extendedWaitUntil:
+    visible: "You have control"
+    timeout: 90000
+- tapOn: "Close computer"
+- tapOn: "Release"
+- extendedWaitUntil:
+    visible: "Take control"
+    timeout: 30000

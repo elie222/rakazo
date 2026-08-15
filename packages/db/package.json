@@ -15,7 +15,7 @@
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --root ../.. packages/db/src"
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",

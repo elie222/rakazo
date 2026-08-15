@@ -4,9 +4,16 @@ import path from "node:path";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 const providers = process.argv.includes("--providers");
+const integrationOnly = process.argv.includes("--integration");
+const webOnly = process.argv.includes("--web");
+
+if (integrationOnly && webOnly) {
+  throw new Error("Choose either --integration or --web, not both");
+}
 
 async function main() {
-  const reportDir = path.resolve("verify-report");
+  const mode = integrationOnly ? "integration" : webOnly ? "web" : "full";
+  const reportDir = path.resolve("verify-report", mode);
   await mkdir(reportDir, { recursive: true });
   const container = await new PostgreSqlContainer("postgres:16-alpine").start();
   try {
@@ -45,7 +52,32 @@ async function main() {
       cwd: path.resolve("packages/db"),
     });
 
-    execSync("pnpm verify:fast", { stdio: "inherit", env: process.env });
+    if (integrationOnly) {
+      execSync(
+        [
+          "pnpm exec vitest run --no-file-parallelism",
+          "packages/testkit/src/journeys.test.ts",
+          "packages/testkit/src/authorization.test.ts",
+          "packages/testkit/src/executor-lifecycle.test.ts",
+        ].join(" "),
+        {
+          stdio: "inherit",
+          env: process.env,
+        },
+      );
+      await writeSummary(reportDir, {
+        ok: true,
+        mode,
+        providers,
+        sandbox: process.env.SANDBOX_PROVIDER,
+        runtime: process.env.AGENT_RUNTIME,
+      });
+      return;
+    }
+
+    if (!webOnly) {
+      execSync("pnpm verify:fast", { stdio: "inherit", env: process.env });
+    }
 
     const { createApp } = await import("../../../../apps/api/src/app.ts");
     const { serve } = await import("@hono/node-server");
@@ -58,22 +90,15 @@ async function main() {
         ...process.env,
         CI: "1",
       });
-      await writeFile(
-        path.join(reportDir, "summary.json"),
-        JSON.stringify(
-          {
-            ok: true,
-            providers,
-            sandbox: process.env.SANDBOX_PROVIDER,
-            runtime: process.env.AGENT_RUNTIME,
-            apiPort,
-            webPort,
-            at: new Date().toISOString(),
-          },
-          null,
-          2,
-        ),
-      );
+      await writeSummary(reportDir, {
+        ok: true,
+        mode,
+        providers,
+        sandbox: process.env.SANDBOX_PROVIDER,
+        runtime: process.env.AGENT_RUNTIME,
+        apiPort,
+        webPort,
+      });
     } finally {
       server.close();
       await handles.stop().catch(() => undefined);
@@ -81,6 +106,13 @@ async function main() {
   } finally {
     await container.stop().catch(() => undefined);
   }
+}
+
+async function writeSummary(reportDir: string, summary: Record<string, unknown>) {
+  await writeFile(
+    path.join(reportDir, "summary.json"),
+    JSON.stringify({ ...summary, at: new Date().toISOString() }, null, 2),
+  );
 }
 
 function run(command: string, args: string[], env: NodeJS.ProcessEnv) {

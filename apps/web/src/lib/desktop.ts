@@ -1,12 +1,6 @@
-export interface RakazoDesktop {
-  platform: string;
-  window: {
-    close: () => Promise<void>;
-    minimize: () => Promise<void>;
-    toggleMaximize: () => Promise<void>;
-    state: () => Promise<{ minimized: boolean; maximized: boolean; fullScreen: boolean }>;
-  };
-}
+import type { RakazoDesktop } from "@rakazo/contracts";
+
+export type { RakazoDesktop } from "@rakazo/contracts";
 
 declare global {
   interface Window {

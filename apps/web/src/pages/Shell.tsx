@@ -13,15 +13,13 @@ import {
   defaultCronPreset,
   formatCron,
   presetFromCron,
-  progressMessageId,
-  progressMessageText,
-  subagentBlockFromPayload,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
+import { reduceComputerStatus, reduceThreadSnapshot } from "../lib/thread-events";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { RoutineSchedule } from "./RoutineSchedule";
@@ -241,8 +239,8 @@ export function ShellPage() {
 
   async function releaseComputer() {
     if (!active) return;
-    await rpc.computer.release({ botId: active.id }).catch(() => undefined);
     setComputerOpen(false);
+    await rpc.computer.release({ botId: active.id }).catch(() => undefined);
     await refreshThread(active.id);
   }
 
@@ -789,96 +787,16 @@ function applyThreadEvent(
   setSnapshot: Dispatch<SetStateAction<ThreadSnapshot | null>>,
   setComputer: Dispatch<SetStateAction<ComputerStatus | null>>,
 ) {
-  if (event.type === "thread.progress") {
-    setSnapshot((prev) => {
-      if (!prev) return prev;
-      const progressId = progressMessageId(event);
-      const previous = prev.messages.find((message) => message.id === progressId);
-      const previousText = previous?.blocks[0]?.kind === "progress" ? previous.blocks[0].text : "";
-      const text = progressMessageText(event.payload, previousText);
-      const streaming: ThreadMessage = {
-        id: progressId,
-        threadId: event.threadId,
-        seq: event.seq,
-        role: "bot",
-        blocks: [{ kind: "progress", text }],
-        runId: event.runId,
-        createdAt: event.createdAt,
-      };
-      const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
-      return { ...prev, cursor: event.seq, messages: [...without, streaming] };
-    });
-    return;
-  }
-  if (event.type === "thread.subagent") {
-    const block = subagentBlockFromPayload(event.payload);
-    const next: ThreadMessage = {
-      id: `subagent:${block.agentId}`,
-      threadId: event.threadId,
-      seq: event.seq,
-      role: "bot",
-      blocks: [block],
-      runId: event.runId,
-      createdAt: event.createdAt,
-    };
-    setSnapshot((prev) => {
-      if (!prev) return prev;
-      const without = prev.messages.filter(
-        (message) => message.id !== next.id && !message.id.startsWith("progress:"),
-      );
-      const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
-      return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
-    });
-    return;
-  }
-  if (event.type === "thread.message.created") {
-    const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
-    const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
-    const next: ThreadMessage = {
-      id: String(event.payload.messageId ?? event.id),
-      threadId: event.threadId,
-      seq: event.seq,
-      role,
-      blocks,
-      runId: event.runId,
-      createdAt: event.createdAt,
-    };
-    setSnapshot((prev) => {
-      if (!prev) return prev;
-      const without = prev.messages.filter(
-        (message) =>
-          message.id !== next.id &&
-          !message.id.startsWith("progress:") &&
-          !replacedSubagent(message, blocks),
-      );
-      return { ...prev, cursor: event.seq, messages: [...without, next] };
-    });
+  if (
+    event.type === "thread.progress" ||
+    event.type === "thread.subagent" ||
+    event.type === "thread.message.created"
+  ) {
+    setSnapshot((prev) => reduceThreadSnapshot(prev, event));
   }
   if (event.type === "computer.status" || event.type === "computer.takeover.granted") {
-    const status = String(event.payload.status ?? "");
-    setComputer((prev) =>
-      prev
-        ? {
-            ...prev,
-            controlHolder: event.type === "computer.takeover.granted" ? "user" : prev.controlHolder,
-            state:
-              event.type === "computer.status" &&
-              ["stopped", "booting", "running", "suspended", "error"].includes(status)
-                ? (status as ComputerStatus["state"])
-                : prev.state,
-            screenAvailable: status === "running" || status === "booting" || prev.screenAvailable,
-          }
-        : prev,
-    );
+    setComputer((prev) => reduceComputerStatus(prev, event));
   }
-}
-
-function replacedSubagent(message: ThreadMessage, blocks: ThreadMessage["blocks"]) {
-  const agentIds = new Set(
-    blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
-  );
-  if (agentIds.size === 0) return false;
-  return message.blocks.some((block) => block.kind === "subagent" && agentIds.has(block.agentId));
 }
 
 function MessageView({

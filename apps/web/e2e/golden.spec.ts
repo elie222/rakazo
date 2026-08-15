@@ -47,7 +47,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
   });
   await page.getByTitle("Agent computer").click();
   await page.getByRole("button", { name: "Take control" }).click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Release" }).last().click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
   await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({ timeout: 30_000 });
 
   await page.getByText("+ New routine").click();

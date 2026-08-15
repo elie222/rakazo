@@ -1,0 +1,67 @@
+name: nightly verification
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      run_live_providers:
+        description: Run secret-gated OpenRouter and E2B canaries
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-verification
+  cancel-in-progress: false
+
+jobs:
+  topology:
+    name: Production topology smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:topology
+
+  live-providers:
+    name: Live provider canaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      RUN_LIVE_PROVIDERS: ${{ github.event_name == 'schedule' || inputs.run_live_providers }}
+    steps:
+      - name: Check secret-gated canaries
+        id: gate
+        shell: bash
+        run: |
+          if [[ "$RUN_LIVE_PROVIDERS" == "true" && ( -n "$E2B_API_KEY" || -n "$OPENROUTER_API_KEY" ) ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No requested live canary has a configured key; skipping safely."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.gate.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.gate.outputs.enabled == 'true'
+        run: pnpm canary:providers
