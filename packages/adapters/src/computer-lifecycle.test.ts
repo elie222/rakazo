@@ -34,6 +34,13 @@ describe("computer execution leases", () => {
         where: expect.objectContaining({
           id: "computer-1",
           controlHolder: { not: "user" },
+          OR: [
+            { executionRunId: null },
+            {
+              executionLeaseExpiresAt: { lt: expect.any(Date) },
+              controlHolder: { not: "user" },
+            },
+          ],
         }),
         data: expect.objectContaining({
           executionRunId: "run-1",
@@ -75,6 +82,57 @@ describe("computer execution leases", () => {
         botId: "bot-2",
       }),
     ).rejects.toThrow("Computer is busy");
+  });
+
+  it("does not reclaim an active lease from another worker on the same run", async () => {
+    const prisma = leasePrisma({ scope: "team", acquired: 0 });
+
+    await expect(
+      acquireComputerExecutionLease(prisma.client, {
+        computerId: "computer-1",
+        runId: "run-1",
+        botId: "bot-1",
+      }),
+    ).rejects.toThrow("Computer is busy");
+    expect(prisma.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { executionRunId: null },
+            {
+              executionLeaseExpiresAt: { lt: expect.any(Date) },
+              controlHolder: { not: "user" },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("only reclaims an active same-run lease when resuming a held takeover", async () => {
+    const prisma = leasePrisma({ scope: "team", acquired: 1, fence: 8 });
+
+    await acquireComputerExecutionLease(prisma.client, {
+      computerId: "computer-1",
+      runId: "run-1",
+      botId: "bot-1",
+      resumeHeldLease: true,
+    });
+
+    expect(prisma.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { executionRunId: null },
+            { executionRunId: "run-1" },
+            {
+              executionLeaseExpiresAt: { lt: expect.any(Date) },
+              controlHolder: { not: "user" },
+            },
+          ],
+        }),
+      }),
+    );
   });
 });
 

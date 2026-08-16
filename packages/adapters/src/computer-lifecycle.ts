@@ -102,7 +102,12 @@ export interface ComputerExecutionLease {
 
 export async function acquireComputerExecutionLease(
   prisma: PrismaClient,
-  input: { computerId: string; runId: string; botId: string },
+  input: {
+    computerId: string;
+    runId: string;
+    botId: string;
+    resumeHeldLease?: boolean;
+  },
 ): Promise<ComputerExecutionLease | null> {
   const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
   if (computer.scope !== "team") return null;
@@ -114,7 +119,7 @@ export async function acquireComputerExecutionLease(
       controlHolder: { not: "user" },
       OR: [
         { executionRunId: null },
-        { executionRunId: input.runId },
+        ...(input.resumeHeldLease ? [{ executionRunId: input.runId }] : []),
         {
           executionLeaseExpiresAt: { lt: now },
           controlHolder: { not: "user" },

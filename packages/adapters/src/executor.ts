@@ -209,6 +209,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           computerId: leaseTarget.computerId,
           runId,
           botId: run.botId,
+          resumeHeldLease: resumeFromTakeover,
         });
       } catch (error) {
         if (!(error instanceof ComputerBusyError)) throw error;
