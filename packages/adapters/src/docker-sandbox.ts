@@ -111,11 +111,13 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   async connectScreen(
     computer: ComputerRef,
-    _request: ScreenRequest,
+    request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    const res = await fetch(this.url(`/computers/${computer.id}`), {
-      headers: this.headers(context, computer.botId),
+    const res = await fetch(this.url(`/computers/${computer.id}/screen-mode`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({ interactive: request.interactive === true }),
       signal: context.signal,
     });
     if (!res.ok) {
@@ -127,6 +129,16 @@ export class DockerSandboxProvider implements SandboxProvider {
       mimeType: "text/html",
       close: async () => undefined,
     };
+  }
+
+  async setScreenControl(computer: ComputerRef, interactive: boolean, context: AdapterContext) {
+    const res = await fetch(this.url(`/computers/${computer.id}/screen-mode`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({ interactive }),
+      signal: context.signal,
+    });
+    if (!res.ok) throw new Error(`sandbox screen mode failed: ${res.status}`);
   }
 
   async sendInput(

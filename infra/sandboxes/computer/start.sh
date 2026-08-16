@@ -64,7 +64,7 @@ if [[ "$browser_up" -ne 1 ]]; then
   xterm -geometry 100x28+48+48 -bg "#111113" -fg "#E8E8EA" -cr "#E8E8EA" -title "Terminal" >/tmp/rakazo/xterm.log 2>&1 &
 fi
 
-x11vnc -display :1 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
+x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
 
 NOVNC_ROOT=/usr/share/novnc
 if [[ ! -d "$NOVNC_ROOT" ]]; then

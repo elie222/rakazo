@@ -506,6 +506,13 @@ export function createRouter(deps: RouterDeps) {
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.computer?.providerRef) {
+          await deps.sandbox.setScreenControl?.(
+            computerRef(bot.id, bot.computer),
+            false,
+            computerContext(context.actor, bot.id, "screen.release"),
+          );
+        }
         await deps.prisma.computer.update({
           where: { botId: bot.id },
           data: { controlHolder: "bot", controlLeaseId: null },
@@ -602,7 +609,7 @@ export function createRouter(deps: RouterDeps) {
         }
         const session = await deps.sandbox.connectScreen(
           computerRef(bot.id, bot.computer),
-          { view: "stream" },
+          { view: "stream", interactive: bot.computer.controlHolder === "user" },
           computerContext(context.actor, bot.id, "screen"),
         );
         if (!session.url) return { url: null };

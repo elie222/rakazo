@@ -13,12 +13,13 @@ function signedPath(
   secret: string,
   rest = "/embed.html",
   hostname = "127.0.0.1",
+  policy: "view" | "control" = "view",
 ) {
   const signature = createHmac("sha256", secret)
-    .update(`${hostname}:${port}:${expiresAt}`)
+    .update(`${hostname}:${port}:${policy}:${expiresAt}`)
     .digest("base64url");
   const target = Buffer.from(hostname).toString("base64url");
-  return `/novnc/${target}/${port}/${expiresAt}.${signature}${rest}`;
+  return `/novnc/${target}/${port}/${policy}/${expiresAt}.${signature}${rest}`;
 }
 
 describe("noVNC proxy authorization", () => {
@@ -26,7 +27,8 @@ describe("noVNC proxy authorization", () => {
     expect(resolveNovncTarget(signedPath(49152, 2_000, "secret"), "secret", 1_000)).toEqual({
       hostname: "127.0.0.1",
       port: 49152,
-      path: "/embed.html",
+      path: "/embed.html?view_only=true",
+      interactive: false,
     });
   });
 
@@ -34,6 +36,36 @@ describe("noVNC proxy authorization", () => {
     expect(resolveNovncTarget("/novnc/5432/index.html", "secret", 1_000)).toBeNull();
     expect(resolveNovncTarget(signedPath(49152, 2_000, "wrong"), "secret", 1_000)).toBeNull();
     expect(resolveNovncTarget(signedPath(49152, 999, "secret"), "secret", 1_000)).toBeNull();
+  });
+
+  it("binds server-enforced view mode while allowing required noVNC paths", () => {
+    const viewOnly = signedPath(49152, 2_000, "secret", "/embed.html?view_only=true");
+    expect(resolveNovncTarget(viewOnly, "secret", 1_000)?.path).toBe("/embed.html?view_only=true");
+    expect(
+      resolveNovncTarget(viewOnly.replace("view_only=true", "view_only=false"), "secret", 1_000),
+    ).toMatchObject({ path: "/embed.html?view_only=true", interactive: false });
+    expect(
+      resolveNovncTarget(
+        viewOnly.replace(/\/embed\.html\?view_only=true$/, "/websockify"),
+        "secret",
+        1_000,
+      ),
+    ).toMatchObject({ path: "/websockify", interactive: false });
+    expect(resolveNovncTarget(viewOnly.replace("/view/", "/control/"), "secret", 1_000)).toBeNull();
+    expect(resolveNovncTarget(viewOnly.replace("/49152/", "/49153/"), "secret", 1_000)).toBeNull();
+
+    const control = signedPath(
+      49153,
+      2_000,
+      "secret",
+      "/embed.html?view_only=true",
+      "127.0.0.1",
+      "control",
+    );
+    expect(resolveNovncTarget(control, "secret", 1_000)).toMatchObject({
+      path: "/embed.html?view_only=false",
+      interactive: true,
+    });
   });
 
   it("does not forward application credentials", () => {

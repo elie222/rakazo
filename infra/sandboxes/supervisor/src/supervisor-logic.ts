@@ -106,6 +106,22 @@ export function workspaceTarget(relative: string) {
   return relative ? path.posix.join("/home/rakazo", relative) : "/home/rakazo";
 }
 
+export function interactiveScreenCommand(interactive: boolean) {
+  const stop =
+    "pkill -f '^x11vnc .* -rfbport 5901' || true; " +
+    "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true";
+  if (!interactive) return stop;
+  return [
+    "pgrep -f '^x11vnc .* -rfbport 5901' >/dev/null && pgrep -f '^/usr/bin/python3 .*websockify.*6081' >/dev/null && exit 0 || true",
+    stop,
+    "export DISPLAY=:1",
+    "(x11vnc -display :1 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5901 -xkb -ncache 0 >/tmp/rakazo/x11vnc-control.log 2>&1 &)",
+    "(websockify --web=/usr/share/novnc 0.0.0.0:6081 127.0.0.1:5901 >/tmp/rakazo/novnc-control.log 2>&1 &)",
+    "for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/6081) >/dev/null 2>&1 && exit 0; sleep 0.1; done",
+    "exit 1",
+  ].join("; ");
+}
+
 export function parseObservation(output: string) {
   const geometry = output.match(/^GEOM\s+(\d+)\s+(\d+)$/m);
   const cursorLine = output.match(/^CURSOR\s+(.+)$/m)?.[1] ?? "";

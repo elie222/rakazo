@@ -35,8 +35,11 @@ describe("E2B computer backend", () => {
         disconnect: async () => undefined,
       };
     });
+    const getStreamUrl = vi.fn(() => "https://desktop.test/vnc.html");
     const desktop = {
       sandboxId: "e2b-test-box",
+      display: ":0",
+      getHost: (port: number) => `${port}-desktop.test`,
       commands: { run: command },
       files: {
         makeDir: vi.fn(async () => undefined),
@@ -64,7 +67,7 @@ describe("E2B computer backend", () => {
         start: vi.fn(async () => undefined),
         stop: vi.fn(async () => undefined),
         getAuthKey: () => "screen-key",
-        getUrl: () => "https://desktop.test/vnc.html",
+        getUrl: getStreamUrl,
       },
       launch: vi.fn(async () => undefined),
       open: vi.fn(async () => undefined),
@@ -144,5 +147,32 @@ describe("E2B computer backend", () => {
     const screen = await provider.connectScreen(computer, { view: "stream" }, context);
     expect(screen.url).toBe("https://desktop.test/vnc.html");
     expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
+    expect(getStreamUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),
+    );
+    expect(command).toHaveBeenCalledWith("x11vnc -R viewonly");
+
+    const control = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true },
+      context,
+    );
+    expect(control.url).toMatch(/^https:\/\/6081-desktop\.test\/vnc\.html\?/);
+    expect(command.mock.calls.some(([value]) => String(value).includes("-rfbport 5901"))).toBe(
+      true,
+    );
+
+    await provider.setScreenControl(computer, false);
+    expect(
+      command.mock.calls.some(([value]) =>
+        String(value).includes("pkill -f '^x11vnc .* -rfbport 5901'"),
+      ),
+    ).toBe(true);
+    const replacementControl = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true },
+      context,
+    );
+    expect(replacementControl.url).not.toBe(control.url);
   });
 });

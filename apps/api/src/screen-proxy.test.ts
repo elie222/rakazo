@@ -12,7 +12,9 @@ describe("screen proxy capability", () => {
       ),
     );
     expect(result.origin).toBe("https://app.example");
-    expect(result.pathname).toMatch(/^\/novnc\/[\w-]+\/49152\/3600100\.[\w-]{43}\/embed\.html$/);
+    expect(result.pathname).toMatch(
+      /^\/novnc\/[\w-]+\/49152\/view\/3600100\.[\w-]{43}\/embed\.html$/,
+    );
     expect(result.searchParams.get("view_only")).toBe("true");
   });
 

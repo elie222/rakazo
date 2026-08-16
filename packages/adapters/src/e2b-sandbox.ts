@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Sandbox } from "@e2b/desktop";
 import type {
   AdapterContext,
@@ -72,6 +73,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
   private readonly lastTouchedAt = new Map<string, number>();
   private readonly streamReady = new Set<string>();
+  private readonly controlStreamPasswords = new Map<string, string>();
 
   constructor(
     private readonly apiKey: string,
@@ -119,6 +121,12 @@ export class E2BSandboxProvider implements SandboxProvider {
       .run("pkill -x x11vnc || true; pkill -f '[n]ovnc_proxy|[w]ebsockify.*6080' || true")
       .catch(() => undefined);
     await desktop.stream.start({ requireAuth: true });
+    try {
+      await desktop.commands.run("x11vnc -R viewonly");
+    } catch (error) {
+      await desktop.stream.stop().catch(() => undefined);
+      throw error;
+    }
     this.streamReady.add(desktop.sandboxId);
   }
 
@@ -184,11 +192,24 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async connectScreen(
     computer: ComputerRef,
-    _request: ScreenRequest,
+    request: ScreenRequest,
     _context: AdapterContext,
   ): Promise<ScreenSession> {
     const desktop = await this.box(computer);
     await this.startStream(desktop);
+    if (request.interactive) {
+      const password = await this.startControlStream(desktop);
+      const url = new URL(`https://${desktop.getHost(6081)}/vnc.html`);
+      url.searchParams.set("autoconnect", "true");
+      url.searchParams.set("resize", "scale");
+      url.searchParams.set("password", password);
+      return {
+        url: url.toString(),
+        mimeType: "text/html",
+        close: async () => undefined,
+      };
+    }
+    await this.stopControlStream(desktop);
     let authKey: string | undefined;
     try {
       authKey = desktop.stream.getAuthKey();
@@ -199,6 +220,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       typeof desktop.stream.getUrl === "function"
         ? desktop.stream.getUrl({
             autoConnect: true,
+            viewOnly: true,
             resize: "scale",
             ...(authKey ? { authKey } : {}),
           })
@@ -211,6 +233,12 @@ export class E2BSandboxProvider implements SandboxProvider {
         this.streamReady.delete(desktop.sandboxId);
       },
     };
+  }
+
+  async setScreenControl(computer: ComputerRef, interactive: boolean): Promise<void> {
+    const desktop = await this.box(computer);
+    if (interactive) await this.startControlStream(desktop);
+    else await this.stopControlStream(desktop);
   }
 
   async sendInput(
@@ -355,6 +383,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
+    this.controlStreamPasswords.delete(id);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
       return;
@@ -369,7 +398,41 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
+    this.controlStreamPasswords.delete(id);
   }
+
+  private async startControlStream(desktop: Sandbox): Promise<string> {
+    const existing = this.controlStreamPasswords.get(desktop.sandboxId);
+    if (existing) return existing;
+    const password = randomBytes(6).toString("base64url");
+    const passwordFile = "/tmp/rakazo-control.vncpass";
+    const command = [
+      controlStreamStopCommand(),
+      `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
+      `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport 5901 -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
+      "cd /opt/noVNC/utils",
+      "(nohup ./novnc_proxy --vnc localhost:5901 --listen 6081 --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)",
+      "for i in $(seq 1 50); do netstat -tuln | grep -q ':6081 ' && exit 0; sleep 0.1; done",
+      "exit 1",
+    ].join(" && ");
+    const result = await desktop.commands.run(command);
+    if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
+    this.controlStreamPasswords.set(desktop.sandboxId, password);
+    return password;
+  }
+
+  private async stopControlStream(desktop: Sandbox): Promise<void> {
+    await desktop.commands.run(controlStreamStopCommand());
+    this.controlStreamPasswords.delete(desktop.sandboxId);
+  }
+}
+
+function controlStreamStopCommand() {
+  return [
+    "pkill -f '^x11vnc .* -rfbport 5901' || true",
+    "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true",
+    "rm -f /tmp/rakazo-control.vncpass",
+  ].join("; ");
 }
 
 async function observeE2BDesktop(

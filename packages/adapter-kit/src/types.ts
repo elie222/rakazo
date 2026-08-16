@@ -60,6 +60,8 @@ export type ProcessEvent =
 
 export interface ScreenRequest {
   view: "stream" | "snapshot";
+  /** Request a separately authorized control stream instead of the read-only viewer. */
+  interactive?: boolean;
 }
 
 export interface ScreenSession {
