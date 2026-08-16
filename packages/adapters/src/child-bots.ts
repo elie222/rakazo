@@ -50,6 +50,27 @@ export async function spawnBot(
     email: "",
     isDeploymentOwner: false,
   };
+  const existing = await deps.prisma.bot.findFirst({
+    where: {
+      workspaceId: input.spawnedBy.workspaceId,
+      userId: input.spawnedBy.userId,
+      parentBotId: input.spawnedBy.id,
+      name,
+    },
+    include: { thread: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (existing) {
+    if (!existing.thread) throw new Error(`Spawned bot ${existing.id} is missing its thread`);
+    return {
+      ok: true as const,
+      duplicate: true as const,
+      botId: existing.id,
+      name: existing.name,
+      title: existing.title,
+      threadId: existing.thread.id,
+    };
+  }
   const created = await createRepos(deps.prisma).createBot(actor, {
     name,
     title: (input.title ?? "").trim(),
