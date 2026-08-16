@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Sandbox } from "@e2b/desktop";
+import { Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
@@ -193,7 +193,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       if (result.stderr) yield { type: "stderr", data: result.stderr };
       yield { type: "exit", code: result.exitCode ?? 0 };
     } catch (error) {
-      if (isCommandTimeout(error)) {
+      if (error instanceof TimeoutError) {
         yield { type: "stderr", data: `command timed out after ${timeoutMs} ms\n` };
         yield { type: "exit", code: 124 };
         return;
@@ -451,10 +451,6 @@ export class E2BSandboxProvider implements SandboxProvider {
       this.controlStreams.delete(desktop.sandboxId);
     }
   }
-}
-
-function isCommandTimeout(error: unknown) {
-  return error instanceof Error && /timed?\s*out|timeout/i.test(`${error.name} ${error.message}`);
 }
 
 function controlStreamStopCommand(controlToken?: string) {

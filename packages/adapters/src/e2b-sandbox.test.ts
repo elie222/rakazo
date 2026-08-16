@@ -1,4 +1,4 @@
-import type { Sandbox } from "@e2b/desktop";
+import { type Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import {
   E2BSandboxProvider,
@@ -29,9 +29,7 @@ describe("E2B computer backend", () => {
     const command = vi.fn(async (value: string, _options?: Record<string, unknown>) => {
       if (value.startsWith('test "$(readlink')) throw new Error("profiles are not configured");
       if (value.includes("hang")) {
-        const error = new Error("command timed out");
-        error.name = "TimeoutError";
-        throw error;
+        throw new TimeoutError("command timed out");
       }
       return {
         stdout: "",

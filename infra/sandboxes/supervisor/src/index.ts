@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -23,6 +24,7 @@ import {
   interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
+  sandboxCommandTimedOut,
   sandboxTimeoutCommand,
   toSandboxInput,
   workspaceTarget,
@@ -591,7 +593,13 @@ async function runContainerCommand(
   options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const timeoutMs = options.timeoutMs;
-  const command = timeoutMs ? sandboxTimeoutCommand(argv, timeoutMs) : argv;
+  const completionMarker = timeoutMs
+    ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
+    : undefined;
+  const command =
+    completionMarker && timeoutMs !== undefined
+      ? sandboxTimeoutCommand(argv, timeoutMs, completionMarker)
+      : argv;
   const exec = await container.exec({
     Cmd: command,
     AttachStdout: true,
@@ -608,11 +616,26 @@ async function runContainerCommand(
   });
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;
+  const completedWithExit124 =
+    code === 124 && completionMarker
+      ? await consumeCompletionMarker(container, completionMarker)
+      : false;
+  const timedOut = sandboxCommandTimedOut(code, completedWithExit124);
   return {
     stdout: stripDockerStream(Buffer.concat(chunks)),
-    stderr: timeoutMs && code === 124 ? `command timed out after ${timeoutMs} ms\n` : "",
+    stderr: timedOut ? `command timed out after ${timeoutMs} ms\n` : "",
     code,
   };
+}
+
+async function consumeCompletionMarker(container: Docker.Container, marker: string) {
+  const result = await runContainerCommand(container, [
+    "sh",
+    "-c",
+    'if [ -f "$0" ]; then rm -f "$0"; exit 0; fi; exit 1',
+    marker,
+  ]);
+  return result.code === 0;
 }
 
 async function applyContainerActions(

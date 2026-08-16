@@ -10,9 +10,10 @@ export function sandboxCommandTimeoutMs(
 
 export function boundedSandboxCommandTimeoutMs(
   requested: number | undefined,
-  fallback = sandboxCommandTimeoutMs(),
+  fallback?: number,
 ): number {
   if (validSandboxCommandTimeout(requested)) return requested;
+  if (fallback === undefined) return sandboxCommandTimeoutMs();
   return validSandboxCommandTimeout(fallback) ? fallback : DEFAULT_SANDBOX_COMMAND_TIMEOUT_MS;
 }
 
