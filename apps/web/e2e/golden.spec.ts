@@ -80,7 +80,12 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
+  await expect(page.getByRole("button", { name: "Archive bot" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete bot" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete bot" }).click();
+  await expect(page.getByRole("radio", { name: /Keep memories/ })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /Delete memories too/ })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
   await captureScreenshot(page, testInfo, "12-bot-settings");
 });
 

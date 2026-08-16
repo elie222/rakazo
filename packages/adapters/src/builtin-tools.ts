@@ -1,6 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 
-export const DELEGATION_TOOL_NAMES = new Set(["run_subagent", "spawn_bot", "delete_bot"]);
+export const DELEGATION_TOOL_NAMES = new Set([
+  "run_subagent",
+  "spawn_bot",
+  "archive_bot",
+  "delete_bot",
+]);
 
 export const builtinAgentTools: ConnectorTool[] = [
   {
@@ -174,17 +179,17 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
-    name: "delete_bot",
+    name: "archive_bot",
     description:
-      "Permanently delete a bot this bot created, including its thread, computer, memory, and files. Only do this when the user asked or that bot is finished and unused. confirm_name must exactly match its name. This cannot delete you, bots the user created, or bots another bot created.",
+      "Archive a bot this bot created. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you, bots the user created, or bots another bot created.",
     inputSchema: {
       type: "object",
       properties: {
-        confirm_name: { type: "string", description: "Exact current name of the bot to delete." },
+        confirm_name: { type: "string", description: "Exact current name of the bot to archive." },
         bot_id: {
           type: "string",
           description:
-            "Optional bot id. If omitted, the unique bot this bot created with confirm_name is deleted.",
+            "Optional bot id. If omitted, the unique bot this bot created with confirm_name is archived.",
         },
       },
       required: ["confirm_name"],

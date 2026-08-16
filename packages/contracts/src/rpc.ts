@@ -99,12 +99,17 @@ export const appContract = {
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
+    listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
     duplicate: oc.input(botId).output(BotSchema),
     update: oc.input(UpdateBotInput).output(BotSchema),
     setComputer: oc.input(z.object({ botId: Id, mode: ComputerModeSchema })).output(BotSchema),
-    remove: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    archive: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    remove: oc
+      .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   threads: {
     get: oc.input(z.object({ botId: Id })).output(ThreadSnapshotSchema),

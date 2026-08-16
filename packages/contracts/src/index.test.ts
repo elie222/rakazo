@@ -12,6 +12,8 @@ describe("contracts", () => {
     expect(appContract.models.beginOAuth).toBeTruthy();
     expect(appContract.models.completeOAuth).toBeTruthy();
     expect(appContract.bots.create).toBeTruthy();
+    expect(appContract.bots.archive).toBeTruthy();
+    expect(appContract.bots.restore).toBeTruthy();
     expect(appContract.bots.remove).toBeTruthy();
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.notifications.registerPush).toBeTruthy();

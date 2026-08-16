@@ -30,6 +30,7 @@ export const ProductEventType = z.enum([
   "effect.reconciled",
   "usage.recorded",
   "bot.spawned",
+  "bot.archived",
   "bot.deleted",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
@@ -84,7 +85,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     botId: z.string(),
     name: z.string(),
     title: z.string().optional(),
-    status: z.enum(["created", "deleted"]),
+    status: z.enum(["created", "archived", "deleted"]),
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;

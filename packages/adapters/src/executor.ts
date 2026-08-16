@@ -29,7 +29,7 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
-import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
+import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
@@ -377,7 +377,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            if (name !== "spawn_bot") {
+            if (name !== "spawn_bot" && name !== "archive_bot" && name !== "delete_bot") {
               throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
             }
           }
@@ -595,8 +595,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             return spawned;
           }
-          if (name === "delete_bot") {
-            const removed = await deleteSpawnedBot(
+          if (name === "archive_bot" || name === "delete_bot") {
+            const archived = await archiveSpawnedBot(
               deps,
               {
                 spawnedByBotId: bot.id,
@@ -611,24 +611,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               context,
             );
-            if ("error" in removed) return finish(removed);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "child_bot",
-                botId: removed.botId,
-                name: removed.name,
-                status: "deleted",
-              },
-            ]);
-            await deps.events.append({
-              workspaceId: run.workspaceId,
-              threadId: thread.id,
-              botId: bot.id,
-              runId: run.id,
-              type: "bot.deleted",
-              payload: { childBotId: removed.botId, name: removed.name },
-            });
-            return finish(removed);
+            if ("error" in archived) return finish(archived);
+            await finish(archived);
+            try {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "child_bot",
+                  botId: archived.botId,
+                  name: archived.name,
+                  status: "archived",
+                },
+              ]);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.archived",
+                payload: { childBotId: archived.botId, name: archived.name },
+              });
+            } catch (error) {
+              console.error("archived bot notification", error);
+            }
+            return archived;
           }
           if (deps.connector) {
             let result: unknown = { error: `unknown tool ${name}` };
@@ -677,7 +682,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
-                "delete_bot permanently destroys a bot this bot created, and only that bot. Only delete when the user asked or that bot is finished and unused. confirm_name must exactly match its name.",
+                "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
               ]

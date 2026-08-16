@@ -526,7 +526,7 @@ describeJourneys("required product journeys", () => {
     expect(rawJson).not.toMatch(/browserProfile|ciphertext|sessionCookie/i);
   });
 
-  it("10: deleting a bot removes it, its home, and is isolated", async () => {
+  it("10: bots can be archived safely and deleted with or without their memories", async () => {
     const ada = await signup(app, `delete-j-${stamp}@rakazo.test`, "Delete Ada");
     const bob = await signup(app, `delete-bob-j-${stamp}@rakazo.test`, "Delete Bob");
     const keep = await rpc<Bot>(app, ada, "bots/create", {
@@ -544,6 +544,21 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
       computerMode: "dedicated",
     });
+    const forget = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Forget",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const goneMemory = await prisma.memoryDocument.findFirstOrThrow({ where: { botId: gone.id } });
+    const forgetMemory = await prisma.memoryDocument.findFirstOrThrow({
+      where: { botId: forget.id },
+    });
+    await prisma.memoryDocument.update({
+      where: { id: goneMemory.id },
+      data: { content: "important retained context" },
+    });
     await sendAndWait(
       app,
       ada,
@@ -553,17 +568,40 @@ describeJourneys("required product journeys", () => {
     const home = path.join(dataDir, "homes", gone.id);
     expect(existsSync(home)).toBe(true);
 
-    const stolen = await raw(app, bob, "bots/remove", { botId: gone.id });
+    const stolen = await raw(app, bob, "bots/archive", { botId: gone.id });
     expect(stolen.status).toBeGreaterThanOrEqual(400);
     expect((await rpc<Bot[]>(app, ada, "bots/list")).map((bot) => bot.id)).toContain(gone.id);
 
-    await rpc(app, ada, "bots/remove", { botId: gone.id });
+    await rpc(app, ada, "bots/archive", { botId: gone.id });
+    expect((await rpc<Bot[]>(app, ada, "bots/list")).map((bot) => bot.id)).not.toContain(gone.id);
+    expect((await rpc<Bot[]>(app, ada, "bots/listArchived")).map((bot) => bot.id)).toContain(
+      gone.id,
+    );
+    expect(existsSync(home)).toBe(true);
+
+    await rpc(app, ada, "bots/restore", { botId: gone.id });
+    expect((await rpc<Bot[]>(app, ada, "bots/list")).map((bot) => bot.id)).toContain(gone.id);
+
+    await rpc(app, ada, "bots/remove", { botId: gone.id, deleteMemories: false });
     const list = await rpc<Bot[]>(app, ada, "bots/list");
-    expect(list.map((bot) => bot.id)).toEqual([keep.id]);
+    expect(list.map((bot) => bot.id)).toEqual(expect.arrayContaining([keep.id, forget.id]));
     expect((await raw(app, ada, "bots/get", { botId: gone.id })).status).toBeGreaterThanOrEqual(
       400,
     );
+    expect(
+      await prisma.memoryDocument.findUniqueOrThrow({ where: { id: goneMemory.id } }),
+    ).toMatchObject({
+      botId: null,
+      scope: "user",
+      content: "important retained context",
+    });
+    expect(await prisma.botDeletion.findUniqueOrThrow({ where: { id: gone.id } })).toMatchObject({
+      memoriesPreserved: true,
+    });
     expect(existsSync(home)).toBe(false);
+
+    await rpc(app, ada, "bots/remove", { botId: forget.id, deleteMemories: true });
+    expect(await prisma.memoryDocument.findUnique({ where: { id: forgetMemory.id } })).toBeNull();
   });
 
   it("11: deleting an account removes the user and personal workspace data", async () => {

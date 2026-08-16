@@ -85,6 +85,7 @@ model Organization {
   members     Member[]
   invitations Invitation[]
   bots        Bot[]
+  botDeletions BotDeletion[]
   threads     Thread[]
   events      Event[]
   tasks       Task[]
@@ -180,6 +181,7 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  archivedAt     DateTime?
   parentBotId    String?
   spawnKey       String?
   parent         Bot?     @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
@@ -199,11 +201,24 @@ model Bot {
   tasks          Task[]
   runs           Run[]
 
-  @@index([workspaceId, userId, pinned, updatedAt])
+  @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([computerId])
   @@index([parentBotId])
   @@unique([workspaceId, spawnKey])
   @@map("bots")
+}
+
+model BotDeletion {
+  id                String   @id
+  workspaceId       String
+  workspace         Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name              String
+  deletedByUserId   String
+  memoriesPreserved Boolean
+  deletedAt         DateTime @default(now())
+
+  @@index([workspaceId, deletedAt])
+  @@map("bot_deletions")
 }
 
 model Thread {

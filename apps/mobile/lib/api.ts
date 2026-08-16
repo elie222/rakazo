@@ -1,4 +1,4 @@
-import type { ComputerMode } from "@rakazo/contracts";
+import type { Bot, ComputerMode } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -127,18 +127,20 @@ export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
   return parsed.json as T;
 }
 
-export type MobileBot = {
-  id: string;
-  name: string;
-  preview: string;
-  title: string;
-  color: string;
-  pinned: boolean;
-  unread: boolean;
-  updatedAt: string;
-  parentBotId?: string | null;
-  computerMode: ComputerMode;
-};
+export type MobileBot = Pick<
+  Bot,
+  | "id"
+  | "name"
+  | "preview"
+  | "title"
+  | "color"
+  | "pinned"
+  | "archivedAt"
+  | "unread"
+  | "updatedAt"
+  | "computerMode"
+> &
+  Partial<Pick<Bot, "parentBotId">>;
 
 export type MobileMe = {
   name: string;
@@ -206,7 +208,7 @@ export function blockText(message: MobileMessage) {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
       }
       if (block.kind === "child_bot") {
-        return `${block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+        return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
       }
       return block.text ?? block.state ?? "";
     })

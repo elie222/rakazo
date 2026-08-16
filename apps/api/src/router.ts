@@ -13,6 +13,7 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   acquireComputerExecutionLease,
+  archiveBot,
   type ComposioConnector,
   ComputerBusyError,
   type ComputerExecutionLease,
@@ -219,6 +220,9 @@ export function createRouter(deps: RouterDeps) {
     },
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
+      listArchived: authed.bots.listArchived.handler(async ({ context }) =>
+        repos.listBots(context.actor, { archived: true }),
+      ),
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
@@ -310,16 +314,38 @@ export function createRouter(deps: RouterDeps) {
           });
         }
       }),
+      archive: authed.bots.archive.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        await archiveBot(
+          {
+            prisma: deps.prisma,
+            sandbox: deps.sandbox,
+            home: deps.home,
+            jobs: deps.jobs,
+            dataDir: deps.dataDir,
+          },
+          bot,
+          computerContext(context.actor, bot.id, "archive"),
+        );
+        return { ok: true as const };
+      }),
+      restore: authed.bots.restore.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        if (!bot.archivedAt) return { ok: true as const };
+        await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+        return { ok: true as const };
+      }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
         await destroyBot(
           {
             prisma: deps.prisma,
             sandbox: deps.sandbox,
             home: deps.home,
+            jobs: deps.jobs,
             dataDir: deps.dataDir,
           },
-          bot.id,
+          bot,
           {
             operationId: "destroy",
             traceId: "destroy",
@@ -327,6 +353,7 @@ export function createRouter(deps: RouterDeps) {
             userId: context.actor.userId,
             signal: new AbortController().signal,
           },
+          { deleteMemories: input.deleteMemories },
         );
         return { ok: true as const };
       }),

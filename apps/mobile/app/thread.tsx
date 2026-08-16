@@ -2,7 +2,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { abortableDelay } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -15,6 +15,7 @@ import {
   rpc,
   subscribeThread,
 } from "../lib/api";
+import { confirmDeleteBot } from "../lib/bot-lifecycle";
 
 export default function Thread() {
   const navigation = useNavigation();
@@ -29,8 +30,41 @@ export default function Thread() {
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: name || "Thread" });
-  }, [name, navigation]);
+    navigation.setOptions({
+      title: name || "Thread",
+      headerRight: () => (
+        <Pressable accessibilityLabel="Bot actions" hitSlop={8} onPress={showBotActions}>
+          <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color="#ECECEE" />
+        </Pressable>
+      ),
+    });
+  }, [botId, name, navigation]);
+
+  function leaveBot() {
+    router.dismissAll();
+    router.replace("/");
+  }
+
+  function showBotActions() {
+    if (!botId) return;
+    const bot = { id: botId, name: name || "Bot" };
+    Alert.alert(bot.name, "Archive keeps everything and can be undone. Delete is permanent.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Archive",
+        onPress: () =>
+          void rpc("bots/archive", { botId })
+            .then(leaveBot)
+            .catch((error) =>
+              Alert.alert(
+                "Could not archive bot",
+                error instanceof Error ? error.message : "Try again.",
+              ),
+            ),
+      },
+      { text: "Delete…", style: "destructive", onPress: () => confirmDeleteBot(bot, leaveBot) },
+    ]);
+  }
 
   async function refresh() {
     if (!botId) return;
@@ -277,10 +311,10 @@ function MessageBubble({
     );
   }
   if (special?.kind === "child_bot") {
-    const deleted = special.status === "deleted";
+    const removed = special.status === "deleted" || special.status === "archived";
     return (
       <Pressable
-        disabled={deleted}
+        disabled={removed}
         onPress={() => onOpenBot(special.botId ?? "", special.name ?? "Bot")}
         style={{
           width: "90%",
@@ -290,20 +324,26 @@ function MessageBubble({
           backgroundColor: "#17171A",
           paddingHorizontal: 16,
           paddingVertical: 14,
-          opacity: deleted ? 0.6 : 1,
+          opacity: removed ? 0.6 : 1,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
           <Text style={{ color: "#ECECEE", fontSize: 15, fontWeight: "600" }}>
             {special.name || "Bot"}
           </Text>
-          <Text style={{ color: deleted ? "#E65707" : "#4ECB71", fontSize: 13 }}>
-            {deleted ? "deleted" : "bot"}
+          <Text style={{ color: removed ? "#E65707" : "#4ECB71", fontSize: 13 }}>
+            {special.status === "archived"
+              ? "archived"
+              : special.status === "deleted"
+                ? "deleted"
+                : "bot"}
           </Text>
         </View>
         <Text style={{ color: "#A8A8AD", marginTop: 8, fontSize: 14.5, lineHeight: 21 }}>
-          {deleted
-            ? "Removed this bot, including its chat, computer, and memory."
+          {removed
+            ? special.status === "archived"
+              ? "Archived this bot. Its chat, memory, and files are preserved."
+              : "Removed this bot, including its chat, computer, and memory."
             : special.title || "Opened its own thread. Tap to switch."}
         </Text>
       </Pressable>

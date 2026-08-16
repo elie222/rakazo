@@ -156,8 +156,8 @@ export function inferScript(
     const name = namedBot(prompt) ?? "Scout";
     return [
       {
-        assistant: "removing that bot permanently.",
-        toolCalls: [{ name: "delete_bot", args: { confirm_name: name } }],
+        assistant: "archiving that bot.",
+        toolCalls: [{ name: "archive_bot", args: { confirm_name: name } }],
         complete: true,
       },
     ];

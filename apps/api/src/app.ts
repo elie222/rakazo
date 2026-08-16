@@ -105,18 +105,23 @@ export async function createApp(
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
         where: { userId },
-        select: { id: true, workspaceId: true },
+        select: { id: true, workspaceId: true, name: true, archivedAt: true },
       });
       await Promise.all(
         bots.map((bot) =>
-          destroyBot({ prisma, sandbox, home, dataDir: env.dataDir }, bot.id, {
-            operationId: `account-delete:${userId}`,
-            traceId: `account-delete:${userId}`,
-            workspaceId: bot.workspaceId,
-            userId,
-            botId: bot.id,
-            signal: new AbortController().signal,
-          }),
+          destroyBot(
+            { prisma, sandbox, home, jobs, dataDir: env.dataDir },
+            bot,
+            {
+              operationId: `account-delete:${userId}`,
+              traceId: `account-delete:${userId}`,
+              workspaceId: bot.workspaceId,
+              userId,
+              botId: bot.id,
+              signal: new AbortController().signal,
+            },
+            { deleteMemories: true },
+          ),
         ),
       );
       await rm(pushTokenPath(env.dataDir, userId), { force: true }).catch(() => undefined);

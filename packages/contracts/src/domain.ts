@@ -15,6 +15,7 @@ export const BotSchema = z.object({
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
+  archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
   threadId: Id,

@@ -59,10 +59,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/completeOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["bots/list"],
+      ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/update", { botId: "missing-bot", name: "Nope" }],
+      ["bots/archive", { botId: "missing-bot" }],
+      ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
       ["threads/get", { botId: "missing-bot" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
@@ -208,6 +211,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/get", { botId: ownerBot.id }],
       ["bots/duplicate", { botId: ownerBot.id }],
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
+      ["bots/archive", { botId: ownerBot.id }],
+      ["bots/restore", { botId: ownerBot.id }],
       ["threads/get", { botId: ownerBot.id }],
       ["threads/messages", { botId: ownerBot.id, before: 1 }],
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],
@@ -301,7 +306,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
-    await expectDenied(app, intruder, "bots/remove", { botId: ownerBot.id });
+    await expectDenied(app, intruder, "bots/remove", {
+      botId: ownerBot.id,
+      deleteMemories: true,
+    });
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
   });
 

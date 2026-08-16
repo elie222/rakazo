@@ -46,7 +46,11 @@ export async function provisionComputer(
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
   await mkdir(homePath, { recursive: true });
   const claimed = await deps.prisma.computer.updateMany({
-    where: { id: computerId, state: { not: "suspending" } },
+    where: {
+      id: computerId,
+      state: { not: "suspending" },
+      ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+    },
     data: { state: "booting" },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
@@ -78,8 +82,12 @@ export async function provisionComputer(
       context,
     );
     const activeControl = hasActiveComputerControl(existing);
-    await deps.prisma.computer.update({
-      where: { id: computerId },
+    const activated = await deps.prisma.computer.updateMany({
+      where: {
+        id: computerId,
+        state: "booting",
+        ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+      },
       data: {
         state: "running",
         providerRef: ref.providerRef,
@@ -90,11 +98,15 @@ export async function provisionComputer(
           : {}),
       },
     });
+    if (activated.count !== 1) {
+      await deps.sandbox.stop(ref, context).catch(() => deps.sandbox.destroy(ref, context));
+      throw new ComputerBusyError();
+    }
     return ref;
   } catch (error) {
     if (provisioned?.fresh) await deps.sandbox.destroy(provisioned, context).catch(() => undefined);
     await deps.prisma.computer.updateMany({
-      where: { id: computerId },
+      where: { id: computerId, state: "booting" },
       data: { state: "error" },
     });
     throw error;

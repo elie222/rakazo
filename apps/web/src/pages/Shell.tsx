@@ -49,6 +49,8 @@ export function ShellPage() {
   const navigate = useNavigate();
   const session = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
+  const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
   const [draft, setDraft] = useState("");
@@ -131,15 +133,19 @@ export function ShellPage() {
     [markBotRead],
   );
 
-  async function refreshBots() {
-    const list = await rpc.bots.list();
+  async function refreshBots(includeArchived = false) {
+    const [list, archived] = await Promise.all([
+      rpc.bots.list(),
+      includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
+    ]);
     setBots(list);
-    if (list.length === 0) {
+    if (archived) setArchivedBots(archived);
+    if (includeArchived && list.length === 0 && archived?.length === 0) {
       navigate("/onboarding", { replace: true });
       return;
     }
     if (!botId || !list.some((bot) => bot.id === botId)) {
-      navigate(`/app/${list[0]!.id}`, { replace: true });
+      navigate(list[0] ? `/app/${list[0].id}` : "/app", { replace: true });
     }
   }
 
@@ -201,7 +207,7 @@ export function ShellPage() {
   }
 
   useEffect(() => {
-    void refreshBots();
+    void refreshBots(true);
     const poll = window.setInterval(() => void refreshBots().catch(() => undefined), 4000);
     return () => window.clearInterval(poll);
   }, []);
@@ -244,7 +250,9 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, setSnapshot, setComputer);
-            if (
+            if (event.type === "bot.archived") {
+              void refreshBots(true).catch(() => undefined);
+            } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
               event.type === "run.completed"
@@ -467,6 +475,46 @@ export function ShellPage() {
               </div>
             </button>
           ))}
+          {archivedBots.length > 0 ? (
+            <div className="mt-2 border-t border-[#202023] pt-2">
+              <button
+                type="button"
+                aria-expanded={archivedOpen}
+                onClick={() => setArchivedOpen((open) => !open)}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+              >
+                <span>Archived</span>
+                <span>{archivedBots.length}</span>
+              </button>
+              {archivedOpen
+                ? archivedBots.map((bot) => (
+                    <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <BotAvatar color={bot.color} size={28} />
+                      <span className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]">
+                        {bot.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.bots.restore({ botId: bot.id }).then(() => refreshBots(true))
+                        }
+                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${bot.name}`}
+                        onClick={() => setDeleteTarget(bot)}
+                        className="text-[12.5px] text-[#FF5364]"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))
+                : null}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -822,11 +870,12 @@ export function ShellPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                onDelete={async () => {
-                  await rpc.bots.remove({ botId: active.id });
+                onArchive={async () => {
+                  await rpc.bots.archive({ botId: active.id });
                   setPanel(null);
-                  await refreshBots();
+                  await refreshBots(true);
                 }}
+                onDelete={() => setDeleteTarget(active)}
               />
             ) : null}
             {panel === "routine" ? (
@@ -922,6 +971,10 @@ export function ShellPage() {
               navigate(`/app/${bot.id}`);
             });
           }}
+          onArchive={() => {
+            setBotMenu(null);
+            void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
+          }}
           onDelete={() => {
             setDeleteTarget(contextBot);
             setBotMenu(null);
@@ -933,11 +986,11 @@ export function ShellPage() {
         <DeleteBotDialog
           bot={deleteTarget}
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={async () => {
-            await rpc.bots.remove({ botId: deleteTarget.id });
+          onConfirm={async (deleteMemories) => {
+            await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });
             setDeleteTarget(null);
             setPanel(null);
-            await refreshBots();
+            await refreshBots(true);
           }}
         />
       ) : null}
@@ -1128,12 +1181,12 @@ function MessageView({
           );
         }
         if (block.kind === "child_bot") {
-          const deleted = block.status === "deleted";
+          const removed = block.status === "deleted" || block.status === "archived";
           return (
             <button
               key={i}
               type="button"
-              disabled={deleted}
+              disabled={removed}
               onClick={() => onOpenBot(block.botId)}
               className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-left disabled:opacity-60"
             >
@@ -1142,16 +1195,22 @@ function MessageView({
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
-                    background: deleted ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
-                    color: deleted ? "#E65707" : "#4ECB71",
+                    background: removed ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
+                    color: removed ? "#E65707" : "#4ECB71",
                   }}
                 >
-                  {deleted ? "deleted" : "bot"}
+                  {block.status === "archived"
+                    ? "archived"
+                    : block.status === "deleted"
+                      ? "deleted"
+                      : "bot"}
                 </span>
               </div>
               <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
-                {deleted
-                  ? "Removed this bot, including its chat, computer, and memory."
+                {removed
+                  ? block.status === "archived"
+                    ? "Archived this bot. Its chat, memory, and files are preserved."
+                    : "Removed this bot, including its chat, computer, and memory."
                   : block.title || "Opened its own thread. Tap to switch."}
               </div>
             </button>
@@ -1421,6 +1480,7 @@ function BotSettings({
   bot,
   onSave,
   onExport,
+  onArchive,
   onDelete,
 }: {
   bot: Bot;
@@ -1432,15 +1492,15 @@ function BotSettings({
     computerMode: ComputerMode;
   }) => Promise<void>;
   onExport: () => Promise<void>;
-  onDelete: () => Promise<void>;
+  onArchive: () => Promise<void>;
+  onDelete: () => void;
 }) {
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
-  const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -1474,7 +1534,7 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-      {error && !confirming ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
@@ -1503,51 +1563,23 @@ function BotSettings({
         >
           Export
         </button>
-        {confirming ? (
-          <div className="w-full rounded-[11px] border border-[#3A1F14] bg-[#1A100C] px-3.5 py-3">
-            <p className="text-[13.5px] leading-[1.45] text-[#C9C9CE]">
-              This permanently deletes {bot.name}, including its thread, memory, and routines. Bots
-              it created stay in your list.
-            </p>
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => {
-                  setConfirming(false);
-                  setError(null);
-                }}
-                className="text-[14px] text-[#85858A] disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => {
-                  setDeleting(true);
-                  setError(null);
-                  void onDelete().catch((err: unknown) => {
-                    setError(err instanceof Error ? err.message : "Could not delete bot");
-                    setDeleting(false);
-                  });
-                }}
-                className="rounded-[11px] bg-[#E65707] px-3.5 py-1.5 text-[14px] text-[#F1F1EF] disabled:opacity-40"
-              >
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-            {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className="text-[14px] text-[#E65707]"
-          >
-            Delete bot
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={archiving}
+          onClick={() => {
+            setArchiving(true);
+            setError(null);
+            void onArchive()
+              .catch((err) => setError(err instanceof Error ? err.message : "Could not archive"))
+              .finally(() => setArchiving(false));
+          }}
+          className="text-[14px] text-[#85858A] disabled:opacity-40"
+        >
+          {archiving ? "Archiving…" : "Archive bot"}
+        </button>
+        <button type="button" onClick={onDelete} className="text-[14px] text-[#E65707]">
+          Delete bot…
+        </button>
       </div>
     </div>
   );
@@ -1560,9 +1592,10 @@ function DeleteBotDialog({
 }: {
   bot: Bot;
   onCancel: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
   const [deleting, setDeleting] = useState(false);
+  const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1593,9 +1626,40 @@ function DeleteBotDialog({
           Delete {bot.name}?
         </h2>
         <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          This permanently deletes its conversation, computer, memory, and routines. Bots it created
-          stay in your list.
+          Its conversation, files, and routines will be permanently deleted. Bots it created stay in
+          your list.
         </p>
+        <fieldset className="mt-4 space-y-2">
+          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">What about its memories?</legend>
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+            <input
+              type="radio"
+              name="delete-memory"
+              checked={!deleteMemories}
+              onChange={() => setDeleteMemories(false)}
+            />
+            <span>
+              <span className="block text-[14px] text-[#ECECEE]">Keep memories</span>
+              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+                Move them to your shared memory.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+            <input
+              type="radio"
+              name="delete-memory"
+              checked={deleteMemories}
+              onChange={() => setDeleteMemories(true)}
+            />
+            <span>
+              <span className="block text-[14px] text-[#ECECEE]">Delete memories too</span>
+              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+                This cannot be undone.
+              </span>
+            </span>
+          </label>
+        </fieldset>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
@@ -1612,7 +1676,7 @@ function DeleteBotDialog({
             onClick={() => {
               setDeleting(true);
               setError(null);
-              void onConfirm().catch((err: unknown) => {
+              void onConfirm(deleteMemories).catch((err: unknown) => {
                 setError(err instanceof Error ? err.message : "Could not delete bot");
                 setDeleting(false);
               });

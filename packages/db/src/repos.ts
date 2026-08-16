@@ -15,6 +15,7 @@ function mapBot(
     color: string;
     notifyOnFinish: boolean;
     pinned: boolean;
+    archivedAt: Date | null;
     parentBotId: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -37,6 +38,7 @@ function mapBot(
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,
+    archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: bot.thread.unread,
     parentBotId: bot.parentBotId,
     threadId: bot.thread.id,
@@ -50,9 +52,13 @@ function mapBot(
 
 export function createRepos(prisma: PrismaClient) {
   return {
-    async listBots(actor: Actor): Promise<Bot[]> {
+    async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
       const bots = await prisma.bot.findMany({
-        where: { workspaceId: actor.workspaceId, userId: actor.userId },
+        where: {
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          archivedAt: options.archived ? { not: null } : null,
+        },
         include: {
           thread: {
             include: {
@@ -80,9 +86,14 @@ export function createRepos(prisma: PrismaClient) {
       });
     },
 
-    async getBot(actor: Actor, botId: string) {
+    async getBot(actor: Actor, botId: string, options: { includeArchived?: boolean } = {}) {
       const bot = await prisma.bot.findFirst({
-        where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
+        where: {
+          id: botId,
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          ...(options.includeArchived ? {} : { archivedAt: null }),
+        },
         include: { thread: true, computer: true },
       });
       if (!bot) throw new IsolationError();

@@ -86,11 +86,11 @@ describe("scripted runtime", () => {
     expect(types.at(-1)).toBe("done");
   });
 
-  it("deletes a spawned bot by exact name", () => {
+  it("archives a spawned bot by exact name", () => {
     const script = inferScript("delete the bot named Scout");
     expect(
       script?.some((t) =>
-        t.toolCalls?.some((c) => c.name === "delete_bot" && c.args.confirm_name === "Scout"),
+        t.toolCalls?.some((c) => c.name === "archive_bot" && c.args.confirm_name === "Scout"),
       ),
     ).toBe(true);
   });
@@ -107,7 +107,7 @@ describe("builtin tools", () => {
         "request_takeover",
         "run_subagent",
         "spawn_bot",
-        "delete_bot",
+        "archive_bot",
       ]),
     );
   });

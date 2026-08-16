@@ -1,10 +1,94 @@
-import type { PrismaClient } from "@rakazo/db";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type {
+  AdapterContext,
+  AgentHomeStore,
+  JobPublisher,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
+  provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
 } from "./computer-lifecycle.js";
+
+const context = {
+  operationId: "test",
+  traceId: "test",
+  workspaceId: "workspace-1",
+  userId: "user-1",
+  botId: "bot-1",
+  signal: new AbortController().signal,
+} satisfies AdapterContext;
+
+describe("computer provisioning", () => {
+  it("stops a provider when archive invalidates its boot claim", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-race-"));
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const updateMany = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 0 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "cloud",
+          scope: "dedicated",
+          state: "stopped",
+          controlLeaseId: null,
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue({
+        id: "provider-1",
+        botId: "bot-1",
+        kind: "cloud",
+        providerRef: "provider-1",
+      }),
+      stop,
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).rejects.toThrow("Computer is busy");
+      expect(stop).toHaveBeenCalledOnce();
+      expect(updateMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: {
+            id: "computer-1",
+            state: "booting",
+            bots: { some: { id: "bot-1", archivedAt: null } },
+          },
+        }),
+      );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("computer execution leases", () => {
   it("does not serialize dedicated computers", async () => {
