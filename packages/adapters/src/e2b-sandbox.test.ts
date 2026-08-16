@@ -162,6 +162,14 @@ describe("E2B computer backend", () => {
       true,
     );
 
+    await provider.connectScreen(computer, { view: "stream" }, context);
+    const sameControl = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true, controlToken: "lease-1" },
+      context,
+    );
+    expect(sameControl.url).toBe(control.url);
+
     await provider.setScreenControl(computer, false, context, "lease-1");
     expect(
       command.mock.calls.some(([value]) =>

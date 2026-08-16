@@ -95,6 +95,17 @@ describe("computer control leases", () => {
     expect(harness.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
   });
 
+  it("retries atomic lease cleanup when release-event persistence fails", async () => {
+    const harness = controlHarness({ finalizeError: new Error("event unavailable") });
+
+    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).rejects.toThrow(
+      "event unavailable",
+    );
+    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).resolves.toBe(true);
+
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledTimes(2);
+  });
+
   it("does not revoke a replacement lease", async () => {
     const harness = controlHarness({ controlLeaseId: "lease-2" });
     await expect(expireComputerControl(harness.deps, "bot", "lease-1")).resolves.toBe(false);
@@ -108,6 +119,7 @@ function controlHarness(
     controlLeaseId?: string;
     controlLeaseExpiresAt?: Date | null;
     revokeError?: Error;
+    finalizeError?: Error;
   } = {},
 ) {
   const computer = {
@@ -139,9 +151,13 @@ function controlHarness(
   const sandbox = { setScreenControl };
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
+  const finalizeComputerControlRelease = vi.fn().mockResolvedValue(true);
+  if (options.finalizeError) {
+    finalizeComputerControlRelease.mockRejectedValueOnce(options.finalizeError);
+  }
   const events = {
     append: vi.fn().mockResolvedValue({}),
-    finalizeComputerControlRelease: vi.fn().mockResolvedValue(true),
+    finalizeComputerControlRelease,
   };
   return {
     prisma,
