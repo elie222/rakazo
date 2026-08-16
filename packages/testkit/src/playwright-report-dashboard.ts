@@ -110,8 +110,8 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
         <p class="subtitle">Persistent visual evidence and results from the emulated end-to-end suite.</p>
       </div>
       <div class="actions">
-        <a class="button" href="./latest/screenshots/index.html" id="latest-screenshots">Latest screenshots</a>
-        <a class="button" href="./latest/report/index.html" id="latest-report">Latest report</a>
+        <a class="button" href="#" id="latest-screenshots">Latest screenshots</a>
+        <a class="button" href="#" id="latest-report">Latest report</a>
         <a class="button" href="https://github.com/elie222/rakazo/actions">GitHub Actions</a>
       </div>
     </header>
@@ -141,6 +141,9 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       empty.hidden = false;
       latestReport.hidden = true;
       latestScreenshots.hidden = true;
+    } else {
+      latestReport.href = history[0].reportUrl;
+      latestScreenshots.href = history[0].screenshotsUrl;
     }
 
     const latest = history[0];

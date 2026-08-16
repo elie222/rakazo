@@ -83,25 +83,6 @@ aws s3 sync \
   "$bucket_uri/runs/$run_key/screenshots/" \
   --endpoint-url "$S3_ENDPOINT" \
   --cache-control "public,max-age=31536000,immutable"
-
-latest_run_id=$(jq -r '.[0].id' "$history_path")
-latest_run_attempt=$(jq -r '.[0].attempt' "$history_path")
-if [[ "$latest_run_id" == "$PLAYWRIGHT_RUN_ID" && "$latest_run_attempt" == "$PLAYWRIGHT_RUN_ATTEMPT" ]]; then
-  aws s3 sync \
-    "$report_dir/" \
-    "$bucket_uri/latest/report/" \
-    --endpoint-url "$S3_ENDPOINT" \
-    --delete \
-    --cache-control "no-cache"
-  aws s3 sync \
-    "$gallery_dir/" \
-    "$bucket_uri/latest/screenshots/" \
-    --endpoint-url "$S3_ENDPOINT" \
-    --delete \
-    --cache-control "no-cache"
-else
-  echo "Published historical run $run_key without replacing the newer latest report."
-fi
 aws s3 cp \
   "$history_path" \
   "$bucket_uri/history.json" \
@@ -120,7 +101,6 @@ summary=$(cat <<EOF
 - [Screenshot gallery]($screenshots_url)
 - [Full report]($report_url)
 - [Dashboard]($public_base_url/index.html)
-- [Latest screenshots]($public_base_url/latest/screenshots/index.html)
 EOF
 )
 

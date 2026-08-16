@@ -71,6 +71,8 @@ describe("renderPlaywrightDashboard", () => {
 
     expect(html).not.toContain("</script><script>alert(1)</script>");
     expect(html).toContain("\\u003c/script>\\u003cscript>alert(1)\\u003c/script>");
+    expect(html).toContain("latestReport.href = history[0].reportUrl");
+    expect(html).toContain("latestScreenshots.href = history[0].screenshotsUrl");
   });
 });
 
