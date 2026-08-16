@@ -13,7 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { createSandboxProvider } from "./sandbox-factory.js";
+import { createSandboxProvider, type SandboxProviderOptions } from "./sandbox-factory.js";
 
 export function sandboxKindForBot(envKind: string, computerHost: string | null | undefined) {
   if (envKind === "docker" && computerHost === "this-mac") return "desktop";
@@ -22,13 +22,7 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
 
 export function createRunSandbox(
   kind: string,
-  opts: {
-    supervisorUrl?: string;
-    supervisorToken?: string;
-    e2bApiKey?: string;
-    dataDir?: string;
-    prisma?: PrismaClient;
-  },
+  opts: SandboxProviderOptions & { prisma?: PrismaClient },
 ): SandboxProvider {
   if (kind === "desktop") {
     return new DesktopSandboxProvider({

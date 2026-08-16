@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
@@ -26,6 +27,7 @@ import {
   shellQuote,
   workspacePath,
 } from "./computer-support.js";
+import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
@@ -118,6 +120,9 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async startStream(desktop: Sandbox) {
+    if (this.boxes.get(desktop.sandboxId) !== desktop) {
+      throw new Error("screen stream stopped during computer teardown");
+    }
     if (this.streamReady.has(desktop.sandboxId)) return;
     const pending = this.streamStarts.get(desktop.sandboxId);
     if (pending) return pending;
@@ -138,6 +143,10 @@ export class E2BSandboxProvider implements SandboxProvider {
     } catch (error) {
       await desktop.stream.stop().catch(() => undefined);
       throw error;
+    }
+    if (this.boxes.get(desktop.sandboxId) !== desktop) {
+      await desktop.stream.stop().catch(() => undefined);
+      throw new Error("screen stream stopped during computer teardown");
     }
     this.streamReady.add(desktop.sandboxId);
   }
@@ -411,12 +420,10 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
+    const pending = this.streamStarts.get(id);
     const desktop = this.boxes.get(id);
-    this.boxes.delete(id);
-    this.lastTouchedAt.delete(id);
-    this.streamReady.delete(id);
-    this.streamStarts.delete(id);
-    this.controlStreams.delete(id);
+    this.forget(id);
+    await settleForTeardown(pending);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
       return;
@@ -425,9 +432,15 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    const desktop = await this.box(computer).catch(() => undefined);
-    await desktop?.kill();
     const id = computer.providerRef || computer.id;
+    const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
+    const pending = this.streamStarts.get(id);
+    this.forget(id);
+    await settleForTeardown(pending);
+    await desktop?.kill();
+  }
+
+  private forget(id: string): void {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
@@ -464,6 +477,11 @@ export class E2BSandboxProvider implements SandboxProvider {
       this.controlStreams.delete(desktop.sandboxId);
     }
   }
+}
+
+async function settleForTeardown(pending: Promise<void> | undefined): Promise<void> {
+  if (!pending) return;
+  await Promise.race([pending.catch(() => undefined), delay(5_000, undefined, { ref: false })]);
 }
 
 function controlStreamStopCommand(controlToken?: string) {
@@ -639,35 +657,6 @@ async function* walkE2BWorkspace(
     }
   }
   for (const relative of directories) yield* walkE2BWorkspace(desktop, relative, context);
-}
-
-export function shouldSkipPortableWorkspaceFile(relative: string) {
-  if (!relative.startsWith(".browser-profiles/")) return false;
-  const segments = relative.split("/");
-  const name = segments.at(-1) ?? "";
-  return (
-    segments.some((segment) =>
-      [
-        "Cache",
-        "Code Cache",
-        "GPUCache",
-        "GrShaderCache",
-        "ShaderCache",
-        "DawnGraphiteCache",
-        "DawnWebGPUCache",
-        "Crashpad",
-      ].includes(segment),
-    ) ||
-    [
-      "BrowserMetrics",
-      "DevToolsActivePort",
-      "SingletonCookie",
-      "SingletonLock",
-      "SingletonSocket",
-      ".parentlock",
-      "lock",
-    ].includes(name)
-  );
 }
 
 function e2bCwd(cwd: string | undefined): string {

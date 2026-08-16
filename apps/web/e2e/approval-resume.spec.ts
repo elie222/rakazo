@@ -12,9 +12,8 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await composer.fill("ask me which city to use");
   await page.keyboard.press("Enter");
 
-  await expect(page.getByText("Which city should I use?", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+  const prompt = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
+  await expect(prompt).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Reply with one city name.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send it" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit first" })).toBeVisible();
@@ -27,7 +26,6 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "21-approval-custom-answer");
   await page.getByRole("button", { name: "Send answer" }).click();
 
-  const prompt = page.getByText("Which city should I use?", { exact: true });
   await expect(prompt).toHaveCount(2, { timeout: 30_000 });
   await expect(
     page.getByText("Answered: ask me which city to use again", { exact: true }),

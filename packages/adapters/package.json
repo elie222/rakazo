@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@composio/core": "0.16.0",
+    "@daytona/sdk": "^0.204.1",
     "@e2b/desktop": "^2.3.1",
     "@earendil-works/pi-agent-core": "^0.84.1",
     "@earendil-works/pi-ai": "^0.84.1",

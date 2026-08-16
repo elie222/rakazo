@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, realSandboxTimeout, signup } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -49,7 +49,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await expect
     .poll(() => threadRunStatus(page), {
-      timeout: process.env.SANDBOX_PROVIDER === "e2b" ? 90_000 : 30_000,
+      timeout: realSandboxTimeout(90_000, 30_000),
       message: "the protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");

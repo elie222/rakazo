@@ -1,10 +1,7 @@
 import { type Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
-import {
-  E2BSandboxProvider,
-  type E2BSandboxSdk,
-  shouldSkipPortableWorkspaceFile,
-} from "./e2b-sandbox.js";
+import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
+import { E2BSandboxProvider, type E2BSandboxSdk } from "./e2b-sandbox.js";
 
 const context = {
   operationId: "e2b-test",
@@ -39,6 +36,8 @@ describe("E2B computer backend", () => {
       };
     });
     const getStreamUrl = vi.fn(() => "https://desktop.test/vnc.html");
+    const streamStart = vi.fn(async () => undefined);
+    const streamStop = vi.fn(async () => undefined);
     const desktop = {
       sandboxId: "e2b-test-box",
       display: ":0",
@@ -67,8 +66,8 @@ describe("E2B computer backend", () => {
         }),
       },
       stream: {
-        start: vi.fn(async () => undefined),
-        stop: vi.fn(async () => undefined),
+        start: streamStart,
+        stop: streamStop,
         getAuthKey: () => "screen-key",
         getUrl: getStreamUrl,
       },
@@ -215,5 +214,22 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(stillCurrent.url).toBe(replacementControl.url);
+
+    await screen.close();
+    let finishStart!: () => void;
+    streamStart.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishStart = () => resolve(undefined);
+        }),
+    );
+    const connecting = provider.connectScreen(computer, { view: "stream" }, context);
+    await vi.waitFor(() => expect(desktop.stream.start).toHaveBeenCalledTimes(2));
+    const stopping = provider.stop(computer, context);
+    finishStart();
+    await expect(connecting).rejects.toThrow(/teardown/);
+    await stopping;
+    expect(desktop.pause).toHaveBeenCalled();
+    expect(streamStop).toHaveBeenCalled();
   });
 });

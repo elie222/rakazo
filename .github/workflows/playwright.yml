@@ -10,6 +10,7 @@ on:
         options:
           - fake
           - e2b
+          - daytona
         default: fake
   workflow_call:
     inputs:
@@ -38,6 +39,9 @@ on:
       E2B_API_KEY:
         description: E2B API key used only when the E2B sandbox is selected
         required: false
+      DAYTONA_API_KEY:
+        description: Daytona API key used only when the Daytona sandbox is selected
+        required: false
 
 permissions:
   contents: read
@@ -65,11 +69,18 @@ jobs:
         env:
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
         run: test -n "$E2B_API_KEY"
+      - name: Validate Daytona credentials
+        if: inputs.sandbox_provider == 'daytona'
+        env:
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+        run: test -n "$DAYTONA_API_KEY"
       - name: Run Playwright tests
         id: playwright_tests
         env:
+          SANDBOX_TEST_PROVIDER: ${{ inputs.sandbox_provider }}
           E2B_API_KEY: ${{ inputs.sandbox_provider == 'e2b' && secrets.E2B_API_KEY || '' }}
-        run: pnpm test:e2e -- --sandbox=${{ inputs.sandbox_provider }}
+          DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
+        run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER"
       - name: Record Playwright result
         if: always() && inputs.upload_artifacts
         env:

@@ -40,6 +40,9 @@ async function main() {
   const sandbox = createRunSandbox(process.env.SANDBOX_PROVIDER ?? "docker", {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     e2bApiKey: process.env.E2B_API_KEY,
+    daytonaApiKey: process.env.DAYTONA_API_KEY,
+    daytonaApiUrl: process.env.DAYTONA_API_URL,
+    daytonaTarget: process.env.DAYTONA_TARGET,
     dataDir,
     prisma,
   });

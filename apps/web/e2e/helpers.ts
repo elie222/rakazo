@@ -1,5 +1,9 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 
+export function realSandboxTimeout(real: number, emulated: number) {
+  return ["e2b", "daytona"].includes(process.env.SANDBOX_PROVIDER ?? "") ? real : emulated;
+}
+
 export async function completeOnboarding(page: Page, answers: string[], testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
   const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });

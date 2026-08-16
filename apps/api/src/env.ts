@@ -17,6 +17,9 @@ export interface AppEnv {
   agentRuntime: string;
   openRouterKey: string | undefined;
   e2bApiKey: string | undefined;
+  daytonaApiKey: string | undefined;
+  daytonaApiUrl: string | undefined;
+  daytonaTarget: string | undefined;
   composioApiKey: string | undefined;
   defaultProvider: string;
   defaultModel: string;
@@ -43,6 +46,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     openRouterKey: source.OPENROUTER_API_KEY,
     e2bApiKey: source.E2B_API_KEY,
+    daytonaApiKey: source.DAYTONA_API_KEY,
+    daytonaApiUrl: source.DAYTONA_API_URL,
+    daytonaTarget: source.DAYTONA_TARGET,
     composioApiKey: source.COMPOSIO_API_KEY,
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
     defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",

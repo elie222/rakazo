@@ -18,14 +18,17 @@ const e2eGrep = grepArg?.slice("--grep=".length);
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (sandboxProvider !== "fake" && sandboxProvider !== "e2b") {
-  throw new Error('Sandbox must be "fake" or "e2b"');
+if (!["fake", "e2b", "daytona"].includes(sandboxProvider)) {
+  throw new Error('Sandbox must be "fake", "e2b", or "daytona"');
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
 }
 if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
   throw new Error("E2B_API_KEY is required when --sandbox=e2b");
+}
+if (sandboxProvider === "daytona" && !process.env.DAYTONA_API_KEY) {
+  throw new Error("DAYTONA_API_KEY is required when --sandbox=daytona");
 }
 
 async function main() {
@@ -149,7 +152,7 @@ async function main() {
       });
     } finally {
       const cleanupErrors: unknown[] = [];
-      const computers = await e2bComputers(handles).catch((error) => {
+      const computers = await managedComputers(handles).catch((error) => {
         cleanupErrors.push(error);
         return [];
       });
@@ -158,31 +161,33 @@ async function main() {
         await new Promise<void>((resolve) => requestWaiters.add(resolve));
       }
       await handles.stop().catch(() => undefined);
-      for (const computer of computers) {
-        if (!computer.providerRef) continue;
-        try {
-          await handles.sandbox.destroy(
-            {
-              id: computer.providerRef,
-              botId: computer.homeKey,
-              kind: "e2b",
-              providerRef: computer.providerRef,
-            },
-            {
-              operationId: "e2e-cleanup",
-              traceId: "e2e-cleanup",
-              workspaceId: computer.workspaceId,
-              userId: computer.userId,
-              signal: new AbortController().signal,
-            },
-          );
-        } catch (error) {
-          cleanupErrors.push(error);
+      for (let index = 0; index < computers.length; index += 4) {
+        const results = await Promise.allSettled(
+          computers.slice(index, index + 4).map((computer) =>
+            handles.sandbox.destroy(
+              {
+                id: computer.providerRef!,
+                botId: computer.homeKey,
+                kind: computer.kind as "e2b" | "daytona",
+                providerRef: computer.providerRef!,
+              },
+              {
+                operationId: "e2e-cleanup",
+                traceId: "e2e-cleanup",
+                workspaceId: computer.workspaceId,
+                userId: computer.userId,
+                signal: new AbortController().signal,
+              },
+            ),
+          ),
+        );
+        for (const result of results) {
+          if (result.status === "rejected") cleanupErrors.push(result.reason);
         }
       }
       if (cleanupErrors.length) {
         console.error(
-          new AggregateError(cleanupErrors, "Could not destroy every E2B test sandbox"),
+          new AggregateError(cleanupErrors, "Could not destroy every managed test sandbox"),
         );
         process.exitCode = 1;
       }
@@ -196,11 +201,11 @@ type AppHandles = Awaited<
   ReturnType<typeof import("../../../../apps/api/src/app.ts")["createApp"]>
 >;
 
-async function e2bComputers(handles: AppHandles) {
-  if (sandboxProvider !== "e2b") return [];
+async function managedComputers(handles: AppHandles) {
+  if (sandboxProvider !== "e2b" && sandboxProvider !== "daytona") return [];
   return handles.prisma.computer.findMany({
     where: { providerRef: { not: null } },
-    select: { homeKey: true, providerRef: true, userId: true, workspaceId: true },
+    select: { homeKey: true, kind: true, providerRef: true, userId: true, workspaceId: true },
   });
 }
 

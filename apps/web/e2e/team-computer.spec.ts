@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, realSandboxTimeout, signup } from "./helpers";
 
 test("Team Computer gives bots a home folder plus shared space while Private stays isolated", async ({
   page,
@@ -247,7 +247,7 @@ async function waitForRun(page: Page, botId: string, runId: string) {
         return snapshot.messages.some((message) => message.runId === runId);
       },
       {
-        timeout: process.env.SANDBOX_PROVIDER === "e2b" ? 90_000 : 20_000,
+        timeout: realSandboxTimeout(90_000, 20_000),
         message: `run ${runId} must finish before its result is inspected`,
       },
     )
@@ -257,7 +257,7 @@ async function waitForRun(page: Page, botId: string, runId: string) {
 async function waitForIdle(page: Page, botId: string) {
   await expect
     .poll(async () => (await threadSnapshot(page, botId)).run?.status ?? "idle", {
-      timeout: process.env.SANDBOX_PROVIDER === "e2b" ? 90_000 : 20_000,
+      timeout: realSandboxTimeout(90_000, 20_000),
     })
     .toBe("idle");
 }

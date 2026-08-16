@@ -3,12 +3,19 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 
 /** Managed-provider protocol emulator backed by deterministic local state. */
 export class ManagedSandboxEmulator extends FakeSandboxProvider {
-  readonly dest = this.boxes;
+  constructor(
+    private readonly emulator: {
+      id: string;
+      kind: ComputerRef["kind"];
+    } = { id: "e2b-emulator", kind: "e2b" },
+  ) {
+    super();
+  }
 
   override describe() {
     return {
       ...super.describe(),
-      id: "e2b-emulator",
+      id: this.emulator.id,
     };
   }
 
@@ -17,6 +24,6 @@ export class ManagedSandboxEmulator extends FakeSandboxProvider {
     context: AdapterContext,
   ): Promise<ComputerRef> {
     const ref = await super.provision(request, context);
-    return { ...ref, kind: "e2b" };
+    return { ...ref, kind: this.emulator.kind };
   }
 }
