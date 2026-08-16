@@ -36,6 +36,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
+  const oauthAbortRef = useRef<AbortController | null>(null);
 
   async function refresh() {
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
@@ -67,6 +68,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
         setError(err instanceof Error ? err.message : "Could not load model settings"),
       )
       .finally(() => setLoading(false));
+    return () => oauthAbortRef.current?.abort();
   }, []);
 
   const groups = useMemo(() => {
@@ -156,24 +158,36 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setError(null);
     setNotice(null);
     setOauthPending(true);
+    const controller = new AbortController();
+    oauthAbortRef.current = controller;
     try {
       const started = await rpc.models.beginOAuth({
         provider: selected.provider,
         modelId: selected.id,
         label: selected.providerName ?? selected.provider,
       });
+      if (controller.signal.aborted) return;
       setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      await waitForModelOAuth(started.loginId);
+      await waitForModelOAuth(started.loginId, controller.signal);
+      if (controller.signal.aborted) return;
       setOauth(null);
       await refresh();
+      if (controller.signal.aborted) return;
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      setOauthPending(false);
+      if (oauthAbortRef.current === controller) oauthAbortRef.current = null;
+      if (!controller.signal.aborted) setOauthPending(false);
     }
+  }
+
+  function handleClose() {
+    oauthAbortRef.current?.abort();
+    onClose();
   }
 
   return (
@@ -189,7 +203,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             aria-label="Close model settings"
-            onClick={onClose}
+            onClick={handleClose}
             className="text-[#85858A]"
           >
             ✕

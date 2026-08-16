@@ -465,6 +465,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       isDefault: false,
       defaultModel: "older/model",
     });
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(listed.filter((row) => row.provider === "duplicate-provider").map((row) => row.id)).toEqual([
+      newer.id,
+      older.id,
+    ]);
   });
 
   it("restricts deployment settings to the deployment owner", async () => {

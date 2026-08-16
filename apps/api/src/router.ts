@@ -57,6 +57,7 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { addScreenProxyCapability } from "./screen-proxy.js";
+import { withSerializableRetry } from "./serializable-retry.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
@@ -170,6 +171,7 @@ export function createRouter(deps: RouterDeps) {
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         });
         return rows.map((row) => ({
           id: row.id,
@@ -212,34 +214,36 @@ export function createRouter(deps: RouterDeps) {
         return { status: "connected" as const, credential };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
-        await deps.prisma.$transaction(
-          async (tx) => {
-            const credential = await tx.userModelCredential.findFirst({
-              where: {
-                userId: context.actor.userId,
-                workspaceId: context.actor.workspaceId,
-                provider: input.provider,
-              },
-              orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-            });
-            if (!credential) {
-              throw new ORPCError("NOT_FOUND", {
-                message: `No model credential is connected for ${input.provider} in this workspace.`,
+        await withSerializableRetry(() =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              const credential = await tx.userModelCredential.findFirst({
+                where: {
+                  userId: context.actor.userId,
+                  workspaceId: context.actor.workspaceId,
+                  provider: input.provider,
+                },
+                orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
               });
-            }
-            await tx.userModelCredential.updateMany({
-              where: {
-                userId: context.actor.userId,
-                workspaceId: context.actor.workspaceId,
-              },
-              data: { isDefault: false },
-            });
-            await tx.userModelCredential.update({
-              where: { id: credential.id },
-              data: { defaultModel: input.modelId, isDefault: true },
-            });
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+              if (!credential) {
+                throw new ORPCError("NOT_FOUND", {
+                  message: `No model credential is connected for ${input.provider} in this workspace.`,
+                });
+              }
+              await tx.userModelCredential.updateMany({
+                where: {
+                  userId: context.actor.userId,
+                  workspaceId: context.actor.workspaceId,
+                },
+                data: { isDefault: false },
+              });
+              await tx.userModelCredential.update({
+                where: { id: credential.id },
+                data: { defaultModel: input.modelId, isDefault: true },
+              });
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          ),
         );
         return { ok: true as const };
       }),
@@ -1631,34 +1635,36 @@ async function persistModelCredential(
     userId: actor.userId,
     signal: new AbortController().signal,
   });
-  const cred = await deps.prisma.$transaction(
-    async (tx) => {
-      const secret = await tx.secret.create({
-        data: {
-          id: stored.id,
-          userId: actor.userId,
-          workspaceId: actor.workspaceId,
-          kind: "model",
-          ciphertext: stored.ciphertext,
-        },
-      });
-      await tx.userModelCredential.updateMany({
-        where: { userId: actor.userId, workspaceId: actor.workspaceId },
-        data: { isDefault: false },
-      });
-      return tx.userModelCredential.create({
-        data: {
-          userId: actor.userId,
-          workspaceId: actor.workspaceId,
-          provider: input.provider,
-          label: input.label ?? input.provider,
-          secretId: secret.id,
-          isDefault: true,
-          defaultModel: input.modelId ?? deps.env.defaultModel,
-        },
-      });
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  const cred = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const secret = await tx.secret.create({
+          data: {
+            id: stored.id,
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+            kind: "model",
+            ciphertext: stored.ciphertext,
+          },
+        });
+        await tx.userModelCredential.updateMany({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId },
+          data: { isDefault: false },
+        });
+        return tx.userModelCredential.create({
+          data: {
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+            provider: input.provider,
+            label: input.label ?? input.provider,
+            secretId: secret.id,
+            isDefault: true,
+            defaultModel: input.modelId ?? deps.env.defaultModel,
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
   );
   return {
     id: cred.id,

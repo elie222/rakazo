@@ -1,5 +1,5 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -12,17 +12,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import { waitForModelOAuth } from "../lib/model-auth";
 import { native } from "../lib/native";
 
 type OAuthNotice = {
   verificationUri: string;
   userCode: string;
 };
-
-type CompleteOAuthResult =
-  | { status: "pending" }
-  | { status: "connected"; credential: MobileModelCredential }
-  | { status: "error"; error: string };
 
 type ModelSelection = {
   provider?: string;
@@ -42,6 +38,7 @@ export default function Models() {
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const oauthAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async (preferred: ModelSelection = {}) => {
     setError(null);
@@ -78,6 +75,7 @@ export default function Models() {
           setError(err instanceof Error ? err.message : "Could not load model settings"),
         )
         .finally(() => setLoading(false));
+      return () => oauthAbortRef.current?.abort();
     }, [load]),
   );
 
@@ -157,6 +155,8 @@ export default function Models() {
     setError(null);
     setNotice(null);
     setOauthPending(true);
+    const controller = new AbortController();
+    oauthAbortRef.current = controller;
     try {
       const started = await rpc<{
         loginId: string;
@@ -167,17 +167,22 @@ export default function Models() {
         modelId: selected.id,
         label: selected.providerName ?? selected.provider,
       });
+      if (controller.signal.aborted) return;
       setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
       await Linking.openURL(started.verificationUri);
-      await waitForOAuth(started.loginId);
+      await waitForModelOAuth(started.loginId, controller.signal);
+      if (controller.signal.aborted) return;
       setOauth(null);
       await load({ provider, modelId });
+      if (controller.signal.aborted) return;
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      setOauthPending(false);
+      if (oauthAbortRef.current === controller) oauthAbortRef.current = null;
+      if (!controller.signal.aborted) setOauthPending(false);
     }
   }
 
@@ -368,16 +373,6 @@ export default function Models() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-async function waitForOAuth(loginId: string) {
-  for (let i = 0; i < 180; i += 1) {
-    const result = await rpc<CompleteOAuthResult>("models/completeOAuth", { loginId });
-    if (result.status === "connected") return result;
-    if (result.status === "error") throw new Error(result.error);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-  throw new Error("Sign-in timed out. Try again.");
 }
 
 const styles = StyleSheet.create({

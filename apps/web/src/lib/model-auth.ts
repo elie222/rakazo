@@ -34,12 +34,42 @@ export function providerHint(entry: ModelCatalogEntry) {
 type CompleteOAuthResult = Awaited<ReturnType<typeof rpc.models.completeOAuth>>;
 type ConnectedOAuthResult = Extract<CompleteOAuthResult, { status: "connected" }>;
 
-export async function waitForModelOAuth(loginId: string): Promise<ConnectedOAuthResult> {
+export async function waitForModelOAuth(
+  loginId: string,
+  signal?: AbortSignal,
+): Promise<ConnectedOAuthResult> {
   for (let i = 0; i < 180; i += 1) {
+    throwIfAborted(signal);
     const result = await rpc.models.completeOAuth({ loginId });
+    throwIfAborted(signal);
     if (result.status === "connected") return result;
     if (result.status === "error") throw new Error(result.error);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await waitForNextPoll(signal);
   }
   throw new Error("Sign-in timed out. Try again.");
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw signal.reason ?? new Error("OAuth polling cancelled");
+}
+
+function waitForNextPoll(signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new Error("OAuth polling cancelled"));
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, 5000);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
