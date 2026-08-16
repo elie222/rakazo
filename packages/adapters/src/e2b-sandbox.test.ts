@@ -1,4 +1,4 @@
-import type { Sandbox } from "@e2b/desktop";
+import { type Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import {
   E2BSandboxProvider,
@@ -26,8 +26,11 @@ describe("E2B computer backend", () => {
     const files = new Map<string, Uint8Array>();
     const leftClick = vi.fn(async () => undefined);
     const typeText = vi.fn(async () => undefined);
-    const command = vi.fn(async (value: string) => {
+    const command = vi.fn(async (value: string, _options?: Record<string, unknown>) => {
       if (value.startsWith('test "$(readlink')) throw new Error("profiles are not configured");
+      if (value.includes("hang")) {
+        throw new TimeoutError("command timed out");
+      }
       return {
         stdout: "",
         stderr: "",
@@ -111,6 +114,23 @@ describe("E2B computer backend", () => {
         // Empty durable home on first boot.
       })(),
       context,
+    );
+
+    const timeoutEvents = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["hang"], timeoutMs: 42 },
+      context,
+    )) {
+      timeoutEvents.push(event);
+    }
+    expect(timeoutEvents).toEqual([
+      { type: "stderr", data: "command timed out after 42 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
+    expect(command).toHaveBeenCalledWith(
+      "'hang'",
+      expect.objectContaining({ timeoutMs: 42, signal: context.signal }),
     );
 
     await provider.writeFile(

@@ -14,7 +14,7 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import {
   boundedComputerActions,
   clampRounded,
@@ -95,7 +95,11 @@ export class DockerSandboxProvider implements SandboxProvider {
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
-      body: JSON.stringify({ ...request, cwd: dockerCwd(request.cwd) }),
+      body: JSON.stringify({
+        ...request,
+        cwd: dockerCwd(request.cwd),
+        timeoutMs: boundedSandboxCommandTimeoutMs(request.timeoutMs),
+      }),
       signal: context.signal,
     });
     if (!res.ok) {

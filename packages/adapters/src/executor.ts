@@ -20,6 +20,7 @@ import {
   nextCronDate,
   nextFence,
   redactSecrets,
+  sandboxCommandTimeoutMs,
 } from "@rakazo/core";
 import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -37,6 +38,7 @@ import {
 } from "./computer-lifecycle.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -299,6 +301,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             | "system",
           content: blocksToText(m.blocks as MessageBlock[]),
         }));
+        const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -357,7 +360,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            if (name !== "spawn_bot") {
+              throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            }
           }
           const finish = async (result: unknown) => {
             if (applied) await completeEffect(deps, applied.effect.id, result);
@@ -517,30 +522,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
               },
               runId,
+              spawnKey: executionId,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
             });
             if ("error" in spawned) return finish(spawned);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "child_bot",
-                botId: spawned.botId,
-                name: spawned.name,
-                title: spawned.title,
-                status: "created",
-              },
-            ]);
-            await deps.events.append({
-              workspaceId: run.workspaceId,
-              threadId: thread.id,
-              botId: bot.id,
-              runId: run.id,
-              type: "bot.spawned",
-              payload: { childBotId: spawned.botId, name: spawned.name },
-            });
-            return finish(spawned);
+            await finish(spawned);
+            try {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "child_bot",
+                  botId: spawned.botId,
+                  name: spawned.name,
+                  title: spawned.title,
+                  status: "created",
+                },
+              ]);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.spawned",
+                payload: { childBotId: spawned.botId, name: spawned.name },
+              });
+            } catch (error) {
+              console.error("spawned bot notification", error);
+            }
+            return spawned;
           }
           if (name === "delete_bot") {
             const removed = await deleteSpawnedBot(
@@ -618,6 +629,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               prompt: task.prompt,
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
@@ -625,7 +637,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "delete_bot permanently destroys a bot this bot created, and only that bot. Only delete when the user asked or that bot is finished and unused. confirm_name must exactly match its name.",
                 pluginLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
-              ].join("\n\n"),
+              ]
+                .filter((instruction): instruction is string => Boolean(instruction))
+                .join("\n\n"),
               history,
               tools,
               model: {
@@ -1124,7 +1138,11 @@ async function runSandboxCommand(
   let stdout = "";
   let stderr = "";
   let code = 0;
-  for await (const event of sandbox.execute(computer, { argv, cwd }, context)) {
+  for await (const event of sandbox.execute(
+    computer,
+    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
+    context,
+  )) {
     if (event.type === "stdout") stdout += event.data;
     if (event.type === "stderr") stderr += event.data;
     if (event.type === "exit") code = event.code;

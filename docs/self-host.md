@@ -39,6 +39,7 @@ SANDBOX_PROVIDER=docker   # or e2b. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
+SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 ```
 

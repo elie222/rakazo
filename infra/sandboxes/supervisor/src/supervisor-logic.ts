@@ -106,6 +106,23 @@ export function workspaceTarget(relative: string) {
   return relative ? path.posix.join("/home/rakazo", relative) : "/home/rakazo";
 }
 
+export function sandboxTimeoutCommand(argv: string[], timeoutMs: number, completionMarker: string) {
+  return [
+    "timeout",
+    "--kill-after=1s",
+    `${timeoutMs / 1_000}s`,
+    "sh",
+    "-c",
+    '"$@"; status=$?; if [ "$status" -eq 124 ]; then : > "$0"; fi; exit "$status"',
+    completionMarker,
+    ...argv,
+  ];
+}
+
+export function sandboxCommandTimedOut(exitCode: number, completedWithExit124: boolean) {
+  return exitCode === 124 && !completedWithExit124;
+}
+
 export function interactiveScreenCommand(interactive: boolean, controlToken?: string) {
   const tokenFile = "/tmp/rakazo/control-token";
   const stopProcesses =

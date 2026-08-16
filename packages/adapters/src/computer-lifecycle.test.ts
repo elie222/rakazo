@@ -31,7 +31,10 @@ describe("computer execution leases", () => {
     expect(lease).toEqual({ computerId: "computer-1", runId: "run-1", fence: 7 });
     expect(prisma.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: "computer-1" }),
+        where: expect.objectContaining({
+          id: "computer-1",
+          controlHolder: { not: "user" },
+        }),
         data: expect.objectContaining({
           executionRunId: "run-1",
           executionBotId: "bot-1",

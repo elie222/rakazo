@@ -111,6 +111,7 @@ export async function acquireComputerExecutionLease(
     where: {
       id: input.computerId,
       state: { not: "suspending" },
+      controlHolder: { not: "user" },
       OR: [
         { executionRunId: null },
         { executionRunId: input.runId },

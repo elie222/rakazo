@@ -51,6 +51,8 @@ export interface CommandRequest {
   cwd?: string;
   env?: Record<string, string>;
   pty?: boolean;
+  /** Maximum wall-clock runtime before the command and its descendants are terminated. */
+  timeoutMs?: number;
 }
 
 export type ProcessEvent =
@@ -180,7 +182,13 @@ export interface MemoryReadRequest {
 }
 
 export interface MemorySnapshot {
-  documents: Array<{ id: string; path: string; content: string; revision: number }>;
+  documents: Array<{
+    id: string;
+    path: string;
+    content: string;
+    revision: number;
+    updatedAt?: string;
+  }>;
 }
 
 export interface MemorySearchRequest {

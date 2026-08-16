@@ -8,6 +8,8 @@ import {
   interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
+  sandboxCommandTimedOut,
+  sandboxTimeoutCommand,
 } from "./supervisor-logic.js";
 
 const token = resolveSupervisorToken(process.env);
@@ -96,6 +98,26 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
     });
+  });
+
+  it("wraps sandbox commands in a process-tree timeout", () => {
+    expect(sandboxTimeoutCommand(["bash", "-lc", "sleep 10"], 2_500, "/tmp/completed-124")).toEqual(
+      [
+        "timeout",
+        "--kill-after=1s",
+        "2.5s",
+        "sh",
+        "-c",
+        '"$@"; status=$?; if [ "$status" -eq 124 ]; then : > "$0"; fi; exit "$status"',
+        "/tmp/completed-124",
+        "bash",
+        "-lc",
+        "sleep 10",
+      ],
+    );
+    expect(sandboxCommandTimedOut(124, false)).toBe(true);
+    expect(sandboxCommandTimedOut(124, true)).toBe(false);
+    expect(sandboxCommandTimedOut(1, false)).toBe(false);
   });
 
   it("keeps the viewer read-only and uses a separate process for takeover control", () => {

@@ -1,10 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -23,6 +24,8 @@ import {
   interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
+  sandboxCommandTimedOut,
+  sandboxTimeoutCommand,
   toSandboxInput,
   workspaceTarget,
 } from "./supervisor-logic.js";
@@ -141,6 +144,7 @@ app.post("/computers/:id/exec", async (c) => {
       argv: z.array(z.string()),
       cwd: z.string().optional(),
       env: z.record(z.string(), z.string()).optional(),
+      timeoutMs: z.number().int().positive().optional(),
     })
     .parse(await c.req.json());
   try {
@@ -162,6 +166,7 @@ app.post("/computers/:id/exec", async (c) => {
           "PIP_USER=1",
           ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
         ],
+        timeoutMs: boundedSandboxCommandTimeoutMs(body.timeoutMs),
       },
     );
     return c.json(result);
@@ -585,10 +590,18 @@ function stripDockerStream(buffer: Buffer) {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[] } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  const timeoutMs = options.timeoutMs;
+  const completionMarker = timeoutMs
+    ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
+    : undefined;
+  const command =
+    completionMarker && timeoutMs !== undefined
+      ? sandboxTimeoutCommand(argv, timeoutMs, completionMarker)
+      : argv;
   const exec = await container.exec({
-    Cmd: argv,
+    Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
     WorkingDir: options.workingDir ?? "/home/rakazo",
@@ -602,11 +615,27 @@ async function runContainerCommand(
     stream.on("error", reject);
   });
   const inspect = await exec.inspect();
+  const code = inspect.ExitCode ?? 0;
+  const completedWithExit124 =
+    code === 124 && completionMarker
+      ? await consumeCompletionMarker(container, completionMarker)
+      : false;
+  const timedOut = sandboxCommandTimedOut(code, completedWithExit124);
   return {
     stdout: stripDockerStream(Buffer.concat(chunks)),
-    stderr: "",
-    code: inspect.ExitCode ?? 0,
+    stderr: timedOut ? `command timed out after ${timeoutMs} ms\n` : "",
+    code,
   };
+}
+
+async function consumeCompletionMarker(container: Docker.Container, marker: string) {
+  const result = await runContainerCommand(container, [
+    "sh",
+    "-c",
+    'if [ -f "$0" ]; then rm -f "$0"; exit 0; fi; exit 1',
+    marker,
+  ]);
+  return result.code === 0;
 }
 
 async function applyContainerActions(

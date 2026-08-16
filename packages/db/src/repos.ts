@@ -1,6 +1,7 @@
-import { type Actor, BOT_COLORS, type Bot } from "@rakazo/contracts";
+import { type Actor, BOT_COLORS, type Bot, type MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
+import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
 
 function mapBot(
@@ -99,6 +100,12 @@ export function createRepos(prisma: PrismaClient) {
         color?: string;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
+        spawnKey?: string;
+        initialMessage?: {
+          role: "user" | "bot" | "system";
+          blocks: MessageBlock[];
+          runId?: string;
+        };
       },
     ): Promise<Bot> {
       let color = input.color;
@@ -141,15 +148,22 @@ export function createRepos(prisma: PrismaClient) {
             color,
             parentBotId: input.parentBotId ?? null,
             computerId: teamComputer.id,
+            spawnKey: input.spawnKey,
           },
         });
-        await tx.thread.create({
+        const thread = await tx.thread.create({
           data: {
             workspaceId: actor.workspaceId,
             botId: created.id,
             userId: actor.userId,
           },
         });
+        if (input.initialMessage) {
+          await createThreadMessageInTransaction(tx, {
+            threadId: thread.id,
+            ...input.initialMessage,
+          });
+        }
         if (input.computerMode === "dedicated") {
           const dedicated = await ensureComputerRecord(tx, {
             mode: "dedicated",

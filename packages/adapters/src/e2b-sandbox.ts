@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Sandbox } from "@e2b/desktop";
+import { Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
@@ -16,6 +16,7 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { sandboxIdleMs } from "./computer-idle.js";
 import {
   boundedComputerActions,
@@ -176,18 +177,29 @@ export class E2BSandboxProvider implements SandboxProvider {
   async *execute(
     computer: ComputerRef,
     request: CommandRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     const desktop = await this.box(computer);
     const cmd = request.argv.map(shellQuote).join(" ");
-    const result = await desktop.commands.run(cmd, {
-      cwd: e2bCwd(request.cwd),
-      envs: request.env,
-      signal: _context.signal,
-    });
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
-    if (result.stderr) yield { type: "stderr", data: result.stderr };
-    yield { type: "exit", code: result.exitCode ?? 0 };
+    const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
+    try {
+      const result = await desktop.commands.run(cmd, {
+        cwd: e2bCwd(request.cwd),
+        envs: request.env,
+        signal: context.signal,
+        timeoutMs,
+      });
+      if (result.stdout) yield { type: "stdout", data: result.stdout };
+      if (result.stderr) yield { type: "stderr", data: result.stderr };
+      yield { type: "exit", code: result.exitCode ?? 0 };
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        yield { type: "stderr", data: `command timed out after ${timeoutMs} ms\n` };
+        yield { type: "exit", code: 124 };
+        return;
+      }
+      throw error;
+    }
   }
 
   async connectScreen(

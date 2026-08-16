@@ -16,6 +16,7 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
@@ -87,7 +88,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
   async *execute(
     computer: ComputerRef,
     request: CommandRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     const box = this.boxFor(computer);
     if (!box) {
@@ -103,7 +104,12 @@ export class DesktopSandboxProvider implements SandboxProvider {
     }
     await mkdir(cwd, { recursive: true });
     const argv = request.argv.length ? request.argv : ["echo", "ready"];
-    const result = await runCommand(argv, cwd);
+    const result = await runCommand(
+      argv,
+      cwd,
+      boundedSandboxCommandTimeoutMs(request.timeoutMs),
+      context.signal,
+    );
     if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.stderr) yield { type: "stderr", data: result.stderr };
     yield { type: "exit", code: result.code };
@@ -320,11 +326,38 @@ function allowedPath(target: string, roots: string[]) {
 function runCommand(
   argv: string[],
   cwd: string,
+  timeoutMs: number,
+  signal: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
-    const child = spawn(argv[0]!, argv.slice(1), { cwd, env: process.env });
+    const child = spawn(argv[0]!, argv.slice(1), {
+      cwd,
+      env: process.env,
+      detached: process.platform !== "win32",
+    });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const finish = (result: { stdout: string; stderr: string; code: number }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      resolve(result);
+    };
+    const terminate = (message: string, code: number) => {
+      killProcessTree(child.pid);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      finish({ stdout, stderr: appendLine(stderr, message), code });
+    };
+    const abort = () => terminate("command aborted", 130);
+    const timeout = setTimeout(
+      () => terminate(`command timed out after ${timeoutMs} ms`, 124),
+      timeoutMs,
+    );
+    timeout.unref?.();
+    signal.addEventListener("abort", abort, { once: true });
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
@@ -333,13 +366,36 @@ function runCommand(
     });
     child.on("error", (error) => {
       if (argv[0] === "echo") {
-        resolve({ stdout: `${argv.slice(1).join(" ")}\n`, stderr: "", code: 0 });
+        finish({ stdout: `${argv.slice(1).join(" ")}\n`, stderr: "", code: 0 });
         return;
       }
-      resolve({ stdout: "", stderr: error.message, code: 1 });
+      finish({ stdout: "", stderr: error.message, code: 1 });
     });
     child.on("close", (code) => {
-      resolve({ stdout, stderr, code: code ?? 0 });
+      finish({ stdout, stderr, code: code ?? 0 });
     });
+    if (signal.aborted) abort();
   });
+}
+
+function killProcessTree(pid: number | undefined) {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+    killer.unref();
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // The process exited between the timeout and termination attempt.
+    }
+  }
+}
+
+function appendLine(existing: string, message: string) {
+  return `${existing}${existing && !existing.endsWith("\n") ? "\n" : ""}${message}\n`;
 }
