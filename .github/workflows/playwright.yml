@@ -45,6 +45,13 @@ jobs:
       - name: Run Playwright tests
         id: playwright_tests
         run: pnpm test:e2e
+      - name: Record Playwright result
+        if: always() && inputs.upload_artifacts
+        env:
+          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
+        run: |
+          mkdir -p test-report/e2e
+          printf '%s\n' "$PLAYWRIGHT_RESULT" > test-report/e2e/outcome.txt
       - name: Upload Playwright artifacts
         if: always() && inputs.upload_artifacts
         uses: actions/upload-artifact@v4
@@ -53,7 +60,7 @@ jobs:
           path: |
             playwright-report
             apps/web/test-results
-            test-report/e2e/summary.json
+            test-report/e2e
           retention-days: 7
           if-no-files-found: warn
       - name: Publish Playwright visual report
