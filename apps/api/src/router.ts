@@ -51,7 +51,7 @@ import {
   createRepos,
   createThreadMessage,
   IsolationError,
-  type Prisma,
+  Prisma,
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
@@ -111,7 +111,8 @@ export function createRouter(deps: RouterDeps) {
       const actor = context.actor;
       const user = await deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
       const cred = await deps.prisma.userModelCredential.findFirst({
-        where: { userId: actor.userId, isDefault: true },
+        where: { userId: actor.userId, workspaceId: actor.workspaceId, isDefault: true },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
       });
       const settings = await deps.prisma.deploymentSettings.findUnique({
         where: { id: "default" },
@@ -211,10 +212,35 @@ export function createRouter(deps: RouterDeps) {
         return { status: "connected" as const, credential };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
-        await deps.prisma.userModelCredential.updateMany({
-          where: { userId: context.actor.userId, provider: input.provider },
-          data: { defaultModel: input.modelId, isDefault: true },
-        });
+        await deps.prisma.$transaction(
+          async (tx) => {
+            const credential = await tx.userModelCredential.findFirst({
+              where: {
+                userId: context.actor.userId,
+                workspaceId: context.actor.workspaceId,
+                provider: input.provider,
+              },
+              orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+            });
+            if (!credential) {
+              throw new ORPCError("NOT_FOUND", {
+                message: `No model credential is connected for ${input.provider} in this workspace.`,
+              });
+            }
+            await tx.userModelCredential.updateMany({
+              where: {
+                userId: context.actor.userId,
+                workspaceId: context.actor.workspaceId,
+              },
+              data: { isDefault: false },
+            });
+            await tx.userModelCredential.update({
+              where: { id: credential.id },
+              data: { defaultModel: input.modelId, isDefault: true },
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
         return { ok: true as const };
       }),
     },
@@ -1605,30 +1631,35 @@ async function persistModelCredential(
     userId: actor.userId,
     signal: new AbortController().signal,
   });
-  const secret = await deps.prisma.secret.create({
-    data: {
-      id: stored.id,
-      userId: actor.userId,
-      workspaceId: actor.workspaceId,
-      kind: "model",
-      ciphertext: stored.ciphertext,
+  const cred = await deps.prisma.$transaction(
+    async (tx) => {
+      const secret = await tx.secret.create({
+        data: {
+          id: stored.id,
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          kind: "model",
+          ciphertext: stored.ciphertext,
+        },
+      });
+      await tx.userModelCredential.updateMany({
+        where: { userId: actor.userId, workspaceId: actor.workspaceId },
+        data: { isDefault: false },
+      });
+      return tx.userModelCredential.create({
+        data: {
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          provider: input.provider,
+          label: input.label ?? input.provider,
+          secretId: secret.id,
+          isDefault: true,
+          defaultModel: input.modelId ?? deps.env.defaultModel,
+        },
+      });
     },
-  });
-  await deps.prisma.userModelCredential.updateMany({
-    where: { userId: actor.userId },
-    data: { isDefault: false },
-  });
-  const cred = await deps.prisma.userModelCredential.create({
-    data: {
-      userId: actor.userId,
-      workspaceId: actor.workspaceId,
-      provider: input.provider,
-      label: input.label ?? input.provider,
-      secretId: secret.id,
-      isDefault: true,
-      defaultModel: input.modelId ?? deps.env.defaultModel,
-    },
-  });
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
   return {
     id: cred.id,
     provider: cred.provider,
