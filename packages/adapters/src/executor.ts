@@ -21,6 +21,7 @@ import {
   nextCronDate,
   nextFence,
   redactSecrets,
+  sandboxCommandTimeoutMs,
 } from "@rakazo/core";
 import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -1117,7 +1118,11 @@ async function runSandboxCommand(
   let stdout = "";
   let stderr = "";
   let code = 0;
-  for await (const event of sandbox.execute(computer, { argv, cwd }, context)) {
+  for await (const event of sandbox.execute(
+    computer,
+    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
+    context,
+  )) {
     if (event.type === "stdout") stdout += event.data;
     if (event.type === "stderr") stderr += event.data;
     if (event.type === "exit") code = event.code;

@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -23,6 +23,7 @@ import {
   interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
+  sandboxTimeoutCommand,
   toSandboxInput,
   workspaceTarget,
 } from "./supervisor-logic.js";
@@ -141,6 +142,7 @@ app.post("/computers/:id/exec", async (c) => {
       argv: z.array(z.string()),
       cwd: z.string().optional(),
       env: z.record(z.string(), z.string()).optional(),
+      timeoutMs: z.number().int().positive().optional(),
     })
     .parse(await c.req.json());
   try {
@@ -162,6 +164,7 @@ app.post("/computers/:id/exec", async (c) => {
           "PIP_USER=1",
           ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
         ],
+        timeoutMs: boundedSandboxCommandTimeoutMs(body.timeoutMs),
       },
     );
     return c.json(result);
@@ -585,10 +588,12 @@ function stripDockerStream(buffer: Buffer) {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[] } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  const timeoutMs = options.timeoutMs;
+  const command = timeoutMs ? sandboxTimeoutCommand(argv, timeoutMs) : argv;
   const exec = await container.exec({
-    Cmd: argv,
+    Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
     WorkingDir: options.workingDir ?? "/home/rakazo",
@@ -602,10 +607,11 @@ async function runContainerCommand(
     stream.on("error", reject);
   });
   const inspect = await exec.inspect();
+  const code = inspect.ExitCode ?? 0;
   return {
     stdout: stripDockerStream(Buffer.concat(chunks)),
-    stderr: "",
-    code: inspect.ExitCode ?? 0,
+    stderr: timeoutMs && code === 124 ? `command timed out after ${timeoutMs} ms\n` : "",
+    code,
   };
 }
 

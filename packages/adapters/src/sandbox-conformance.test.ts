@@ -2,7 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, describe, expect, it } from "vitest";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
@@ -120,6 +120,61 @@ describe("sandbox conformance", () => {
     expect(code).toBe(1);
     expect(stderr).toMatch(/outside this computer's home/i);
     await desktop.destroy(computer, ctx);
+  });
+
+  it("desktop executor times out and kills descendants that inherited its pipes", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-timeout-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "timeout", homePath: "/unused" }, ctx);
+    const marker = path.join(computer.providerRef, "descendant-survived");
+    const events: ProcessEvent[] = [];
+    const startedAt = Date.now();
+
+    for await (const event of desktop.execute(
+      computer,
+      {
+        argv: ["bash", "-lc", "(sleep 0.2; printf survived > descendant-survived) & wait"],
+        timeoutMs: 40,
+      },
+      ctx,
+    )) {
+      events.push(event);
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(events).toContainEqual({ type: "exit", code: 124 });
+    expect(events).toContainEqual({
+      type: "stderr",
+      data: "command timed out after 40 ms\n",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(() => readFileSync(marker)).toThrow();
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("desktop executor aborts and kills a running command", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-abort-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "abort", homePath: "/unused" }, ctx);
+    const controller = new AbortController();
+    const events: ProcessEvent[] = [];
+    setTimeout(() => controller.abort(), 25);
+
+    for await (const event of desktop.execute(
+      computer,
+      { argv: ["bash", "-lc", "sleep 10"], timeoutMs: 5_000 },
+      { ...ctx, signal: controller.signal },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "exit", code: 130 });
+    expect(events).toContainEqual({ type: "stderr", data: "command aborted\n" });
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("reuses one desktop machine per bot", async () => {

@@ -3,5 +3,6 @@ export * from "./cron.js";
 export * from "./events.js";
 export * from "./message-pages.js";
 export * from "./run-state.js";
+export * from "./sandbox-command.js";
 export * from "./secrets-guard.js";
 export * from "./signup-policy.js";

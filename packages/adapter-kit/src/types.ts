@@ -51,6 +51,8 @@ export interface CommandRequest {
   cwd?: string;
   env?: Record<string, string>;
   pty?: boolean;
+  /** Maximum wall-clock runtime before the command and its descendants are terminated. */
+  timeoutMs?: number;
 }
 
 export type ProcessEvent =
