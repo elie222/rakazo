@@ -14,7 +14,3 @@ SET
         ELSE "controlHolder"
     END
 WHERE "controlHolder" = 'user';
-
-CREATE INDEX "computers_controlLeaseExpiresAt_id_idx"
-ON "computers"("controlLeaseExpiresAt", "id")
-WHERE "controlLeaseId" IS NOT NULL;

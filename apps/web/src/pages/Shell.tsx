@@ -82,6 +82,9 @@ export function ShellPage() {
   computerVisible.current = panel === "computer" || computerOpen;
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const activeBotId = useRef<string | undefined>(active?.id);
+  activeBotId.current = active?.id;
+  const screenRequest = useRef(0);
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const updateBotUnread = useCallback((id: string, unread: boolean) => {
@@ -162,7 +165,15 @@ export function ShellPage() {
 
   async function refreshComputerScreen(id: string) {
     if (!computerVisible.current) return;
+    const request = ++screenRequest.current;
     const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+    if (
+      request !== screenRequest.current ||
+      activeBotId.current !== id ||
+      !computerVisible.current
+    ) {
+      return;
+    }
     setScreenUrl(screen.url);
   }
 
@@ -211,6 +222,8 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
+    screenRequest.current += 1;
+    setScreenUrl(null);
     expandedHistoryThread.current = null;
     const abort = new AbortController();
     void (async () => {

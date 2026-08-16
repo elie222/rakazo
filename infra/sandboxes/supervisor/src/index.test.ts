@@ -101,9 +101,10 @@ describe("sandbox supervisor input containment", () => {
   it("keeps the viewer read-only and uses a separate process for takeover control", () => {
     expect(interactiveScreenCommand(false)).toMatch(/pkill .*5901/);
     expect(interactiveScreenCommand(false)).not.toMatch(/x11vnc -display/);
-    expect(interactiveScreenCommand(true)).toMatch(/x11vnc -display .* -rfbport 5901/);
-    expect(interactiveScreenCommand(true)).toMatch(/6081/);
-    expect(interactiveScreenCommand(true)).not.toMatch(/-rfbport 5900/);
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/x11vnc -display .* -rfbport 5901/);
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6081/);
+    expect(interactiveScreenCommand(true, "lease-new")).not.toMatch(/-rfbport 5900/);
+    expect(interactiveScreenCommand(false, "lease-old")).toContain("!= 'lease-old'");
   });
 
   it("parses a captured frame without trusting optional desktop metadata", () => {

@@ -317,14 +317,28 @@ app.get("/computers/:id/screen", async (c) => {
 });
 
 app.post("/computers/:id/screen-mode", async (c) => {
-  const body = z.object({ interactive: z.boolean() }).parse(await c.req.json());
+  const body = z
+    .object({
+      interactive: z.boolean(),
+      controlToken: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,128}$/)
+        .optional(),
+      revokeControl: z.boolean().optional(),
+    })
+    .refine((value) => !value.interactive || value.controlToken, {
+      message: "interactive screen requires a control token",
+    })
+    .parse(await c.req.json());
   try {
     const { container, info } = await managedContainer(
       c.req.param("id"),
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-workspace-id"),
     );
-    await setInteractiveScreen(container, body.interactive);
+    if (body.interactive || body.revokeControl !== false) {
+      await setInteractiveScreen(container, body.interactive, body.controlToken);
+    }
     const screenUrl = await publishedScreenUrl(container, info, body.interactive ? "6081" : "6080");
     return c.json({ screenUrl });
   } catch (error) {
@@ -525,11 +539,15 @@ async function publishedScreenUrl(
   throw new Error("computer screen port was not published");
 }
 
-async function setInteractiveScreen(container: Docker.Container, interactive: boolean) {
+async function setInteractiveScreen(
+  container: Docker.Container,
+  interactive: boolean,
+  controlToken?: string,
+) {
   const result = await runContainerCommand(container, [
     "bash",
     "-lc",
-    interactiveScreenCommand(interactive),
+    interactiveScreenCommand(interactive, controlToken),
   ]);
   if (result.code !== 0) throw new Error(result.stderr || "control screen failed to start");
 }

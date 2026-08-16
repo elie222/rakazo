@@ -18,8 +18,17 @@ export interface AppendEventInput {
 
 export interface ThreadEvents {
   append(input: AppendEventInput): Promise<ProductEvent>;
+  finalizeComputerControlRelease(input: FinalizeComputerControlReleaseInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<boolean>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
+}
+
+export interface FinalizeComputerControlReleaseInput {
+  workspaceId: string;
+  botId: string;
+  leaseId: string;
+  holder: "bot" | "none";
+  reason: "expired" | "released";
 }
 
 interface FinalizeRunBase {
@@ -43,10 +52,54 @@ export function createThreadEvents(
 ): ThreadEvents {
   return {
     append: (input) => appendEvent(prisma, input, realtime),
+    finalizeComputerControlRelease: (input) =>
+      finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
+}
+
+export async function finalizeComputerControlRelease(
+  prisma: PrismaClient,
+  input: FinalizeComputerControlReleaseInput,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const cleared = await tx.computer.updateMany({
+      where: { botId: input.botId, controlLeaseId: input.leaseId },
+      data: {
+        controlHolder: input.holder,
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+      },
+    });
+    if (cleared.count !== 1) return null;
+
+    const bot = await tx.bot.findUnique({
+      where: { id: input.botId },
+      select: { thread: { select: { id: true } } },
+    });
+    if (!bot?.thread) return { threadId: null, seq: null };
+    const event = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: bot.thread.id,
+      botId: input.botId,
+      type: "computer.takeover.released",
+      payload: {
+        holder: input.holder,
+        leaseId: input.leaseId,
+        reason: input.reason,
+      },
+    });
+    return { threadId: event.threadId, seq: event.seq };
+  });
+
+  if (!committed) return false;
+  if (committed.threadId && committed.seq !== null) {
+    await notifyRealtime(realtime, committed.threadId, committed.seq);
+  }
+  return true;
 }
 
 export async function appendEvent(

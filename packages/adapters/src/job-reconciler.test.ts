@@ -92,7 +92,7 @@ describe("createJobReconciler", () => {
     );
   });
 
-  it("pages near-due control leases by their persisted deadline", async () => {
+  it("finishes a frozen control scan before admitting leases ahead of its cursor", async () => {
     const firstExpiry = new Date(Date.now() + 10_000);
     const secondExpiry = new Date(Date.now() + 20_000);
     const controls = [
@@ -118,7 +118,15 @@ describe("createJobReconciler", () => {
     const computerFindMany = vi
       .fn()
       .mockResolvedValueOnce(controls.slice(0, 2))
-      .mockResolvedValueOnce(controls.slice(2));
+      .mockResolvedValueOnce(controls.slice(2))
+      .mockResolvedValueOnce([
+        {
+          id: "computer-0",
+          botId: "bot-0",
+          controlLeaseId: "lease-0",
+          controlLeaseExpiresAt: firstExpiry,
+        },
+      ]);
     const prisma = {
       run: { findMany: vi.fn(async () => []) },
       routine: { findMany: vi.fn(async () => []) },
@@ -129,8 +137,9 @@ describe("createJobReconciler", () => {
 
     await reconciler.reconcileOnce();
     await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
 
-    expect(enqueue).toHaveBeenCalledTimes(3);
+    expect(enqueue).toHaveBeenCalledTimes(4);
     expect(computerFindMany.mock.calls[1]?.[0]).toMatchObject({
       orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
       where: {
@@ -147,6 +156,15 @@ describe("createJobReconciler", () => {
         ],
       },
     });
+    const firstDeadline =
+      computerFindMany.mock.calls[0]?.[0].where.AND[1].OR[1].controlLeaseExpiresAt.lte;
+    const secondDeadline =
+      computerFindMany.mock.calls[1]?.[0].where.AND[1].OR[1].controlLeaseExpiresAt.lte;
+    expect(secondDeadline).toEqual(firstDeadline);
+    expect(computerFindMany.mock.calls[2]?.[0].where.AND).toHaveLength(2);
+    expect(enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: { botId: "bot-0", leaseId: "lease-0" } }),
+    );
   });
 
   it("advances stable cursors so recoverable work beyond one batch is dispatched", async () => {

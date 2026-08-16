@@ -62,6 +62,7 @@ export interface SandboxProvider {
     computer: ComputerRef,
     interactive: boolean,
     context: AdapterContext,
+    controlToken?: string,
   ): Promise<void>;
   sendInput(
     computer: ComputerRef,

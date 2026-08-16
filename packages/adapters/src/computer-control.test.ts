@@ -67,20 +67,15 @@ describe("computer control leases", () => {
       expect.objectContaining({ providerRef: "computer" }),
       false,
       expect.objectContaining({ operationId: "computer.control-expire" }),
+      "lease-1",
     );
-    expect(harness.prisma.computer.updateMany.mock.calls[1]?.[0]).toMatchObject({
-      data: {
-        controlHolder: "none",
-        controlLeaseId: null,
-        controlLeaseExpiresAt: null,
-      },
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith({
+      workspaceId: "workspace",
+      botId: "bot",
+      leaseId: "lease-1",
+      holder: "none",
+      reason: "expired",
     });
-    expect(harness.events.append).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "computer.takeover.released",
-        payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
-      }),
-    );
   });
 
   it("keeps the denied lease retryable when provider revocation fails", async () => {
@@ -97,7 +92,7 @@ describe("computer control leases", () => {
       where: { botId: "bot", controlLeaseId: "lease-1" },
       data: { controlHolder: "none" },
     });
-    expect(harness.events.append).not.toHaveBeenCalled();
+    expect(harness.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
   });
 
   it("does not revoke a replacement lease", async () => {
@@ -144,7 +139,10 @@ function controlHarness(
   const sandbox = { setScreenControl };
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
-  const events = { append: vi.fn().mockResolvedValue({}) };
+  const events = {
+    append: vi.fn().mockResolvedValue({}),
+    finalizeComputerControlRelease: vi.fn().mockResolvedValue(true),
+  };
   return {
     prisma,
     setScreenControl,

@@ -104,6 +104,7 @@ export function createJobReconciler(
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
+  let controlScanDeadline: Date | undefined;
 
   const reconcileOnce = async () => {
     if (reconciling) return reconciling;
@@ -111,6 +112,7 @@ export function createJobReconciler(
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
       const now = new Date();
+      controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
       const runCursorFilter = runCursor
         ? {
             OR: [
@@ -184,7 +186,7 @@ export function createJobReconciler(
                   { controlLeaseExpiresAt: null },
                   {
                     controlLeaseExpiresAt: {
-                      lte: new Date(now.getTime() + CONTROL_LOOKAHEAD_MS),
+                      lte: controlScanDeadline,
                     },
                   },
                 ],
@@ -235,6 +237,7 @@ export function createJobReconciler(
         controls.length === batchSize && lastControl
           ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
           : undefined;
+      if (!controlCursor) controlScanDeadline = undefined;
     })().finally(() => {
       reconciling = undefined;
     });

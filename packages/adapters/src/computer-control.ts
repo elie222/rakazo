@@ -86,31 +86,15 @@ export async function expireComputerControl(
       },
       false,
       context,
+      leaseId,
     );
   }
 
-  const cleared = await deps.prisma.computer.updateMany({
-    where: { botId, controlLeaseId: leaseId },
-    data: {
-      controlHolder: "none",
-      controlLeaseId: null,
-      controlLeaseExpiresAt: null,
-    },
+  return deps.events.finalizeComputerControlRelease({
+    workspaceId: computer.workspaceId,
+    botId,
+    leaseId,
+    holder: "none",
+    reason: "expired",
   });
-  if (cleared.count !== 1) return false;
-
-  const bot = await deps.prisma.bot.findUnique({
-    where: { id: botId },
-    include: { thread: true },
-  });
-  if (bot?.thread) {
-    await deps.events.append({
-      workspaceId: computer.workspaceId,
-      threadId: bot.thread.id,
-      botId,
-      type: "computer.takeover.released",
-      payload: { holder: "none", leaseId, reason: "expired" },
-    });
-  }
-  return true;
 }

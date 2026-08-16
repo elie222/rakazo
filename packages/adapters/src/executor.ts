@@ -26,7 +26,7 @@ import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@raka
 import { builtinAgentTools } from "./builtin-tools.js";
 import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
-import { hasActiveComputerControl } from "./computer-control.js";
+import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import {
@@ -1031,7 +1031,14 @@ async function ensureComputer(
 ): Promise<ComputerRef> {
   const homePath = resolveAgentHomePath(deps.home, botId, deps.dataDir ?? "./data");
   await mkdir(homePath, { recursive: true });
-  const existing = await deps.prisma.computer.findUnique({ where: { botId } });
+  let existing = await deps.prisma.computer.findUnique({ where: { botId } });
+  if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
+    await expireComputerControl(deps, botId, existing.controlLeaseId);
+    existing = await deps.prisma.computer.findUnique({ where: { botId } });
+    if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
+      throw new Error("computer control revocation is still in progress");
+    }
+  }
   await deps.prisma.computer.updateMany({
     where: { botId },
     data: { state: "booting" },

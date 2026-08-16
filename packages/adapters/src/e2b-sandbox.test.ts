@@ -154,7 +154,7 @@ describe("E2B computer backend", () => {
 
     const control = await provider.connectScreen(
       computer,
-      { view: "stream", interactive: true },
+      { view: "stream", interactive: true, controlToken: "lease-1" },
       context,
     );
     expect(control.url).toMatch(/^https:\/\/6081-desktop\.test\/vnc\.html\?/);
@@ -162,7 +162,7 @@ describe("E2B computer backend", () => {
       true,
     );
 
-    await provider.setScreenControl(computer, false);
+    await provider.setScreenControl(computer, false, context, "lease-1");
     expect(
       command.mock.calls.some(([value]) =>
         String(value).includes("pkill -f '^x11vnc .* -rfbport 5901'"),
@@ -170,9 +170,18 @@ describe("E2B computer backend", () => {
     ).toBe(true);
     const replacementControl = await provider.connectScreen(
       computer,
-      { view: "stream", interactive: true },
+      { view: "stream", interactive: true, controlToken: "lease-2" },
       context,
     );
     expect(replacementControl.url).not.toBe(control.url);
+
+    await provider.setScreenControl(computer, false, context, "lease-1");
+    expect(command).toHaveBeenLastCalledWith(expect.stringContaining("!= 'lease-1'"));
+    const stillCurrent = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true, controlToken: "lease-2" },
+      context,
+    );
+    expect(stillCurrent.url).toBe(replacementControl.url);
   });
 });

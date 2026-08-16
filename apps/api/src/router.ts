@@ -542,7 +542,11 @@ export function createRouter(deps: RouterDeps) {
         const leaseId = randomUUID();
         const expiresAt = new Date(Date.now() + takeoverLeaseMs());
         const granted = await deps.prisma.computer.updateMany({
-          where: { botId: bot.id, controlHolder: { not: "user" } },
+          where: {
+            botId: bot.id,
+            controlHolder: { not: "user" },
+            controlLeaseId: null,
+          },
           data: {
             controlHolder: "user",
             controlLeaseId: leaseId,
@@ -604,8 +608,10 @@ export function createRouter(deps: RouterDeps) {
             computerRef(bot.id, bot.computer),
             false,
             computerContext(context.actor, bot.id, "screen.release"),
+            bot.computer.controlLeaseId ?? undefined,
           );
         }
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.id));
         await deps.prisma.computer.update({
           where: { botId: bot.id },
           data: {
@@ -614,7 +620,6 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseExpiresAt: null,
           },
         });
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.id));
         if (bot.thread && controlChanged) {
           await deps.events.append({
             workspaceId: context.actor.workspaceId,
@@ -723,7 +728,11 @@ export function createRouter(deps: RouterDeps) {
         }
         const session = await deps.sandbox.connectScreen(
           computerRef(bot.id, bot.computer),
-          { view: "stream", interactive: hasActiveComputerControl(bot.computer) },
+          {
+            view: "stream",
+            interactive: hasActiveComputerControl(bot.computer),
+            controlToken: bot.computer.controlLeaseId ?? undefined,
+          },
           computerContext(context.actor, bot.id, "screen"),
         );
         if (!session.url) return { url: null };

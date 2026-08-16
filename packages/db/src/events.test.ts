@@ -1,7 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { followThreadEvents } from "./events.js";
+import { finalizeComputerControlRelease, followThreadEvents } from "./events.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -79,5 +79,61 @@ describe("followThreadEvents", () => {
     await expect(stream.next()).resolves.toMatchObject({ value: { seq: 0 }, done: false });
     abort.abort();
     await stream.return(undefined);
+  });
+});
+
+describe("finalizeComputerControlRelease", () => {
+  it("clears the matching lease and appends its release event in one transaction", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      bot: {
+        findUnique: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn().mockResolvedValue({
+          ...event(7),
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          botId: "bot-1",
+          leaseId: "lease-1",
+          holder: "none",
+          reason: "expired",
+        },
+        fanout,
+      ),
+    ).resolves.toBe(true);
+
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { botId: "bot-1", controlLeaseId: "lease-1" },
+      data: {
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+      },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
+        }),
+      }),
+    );
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
   });
 });
