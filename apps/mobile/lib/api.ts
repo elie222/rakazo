@@ -132,6 +132,7 @@ export type MobileBot = {
   preview: string;
   title: string;
   color: string;
+  pinned: boolean;
   updatedAt: string;
   parentBotId?: string | null;
 };

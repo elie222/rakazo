@@ -12,6 +12,7 @@ function mapBot(
     instructions: string;
     color: string;
     notifyOnFinish: boolean;
+    pinned: boolean;
     parentBotId: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -32,6 +33,7 @@ function mapBot(
     instructions: bot.instructions,
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
+    pinned: bot.pinned,
     parentBotId: bot.parentBotId,
     threadId: bot.thread.id,
     preview,
@@ -60,7 +62,7 @@ export function createRepos(prisma: PrismaClient) {
             take: 1,
           },
         },
-        orderBy: { updatedAt: "desc" },
+        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
       });
       return bots.map((bot) => {
         const blocks = (bot.thread?.messages[0]?.blocks ?? []) as Array<{
@@ -93,10 +95,13 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
       },
     ): Promise<Bot> {
-      const count = await prisma.bot.count({
-        where: { workspaceId: actor.workspaceId, userId: actor.userId },
-      });
-      const color = input.color ?? BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
+      let color = input.color;
+      if (color === undefined) {
+        const count = await prisma.bot.count({
+          where: { workspaceId: actor.workspaceId, userId: actor.userId },
+        });
+        color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
+      }
       if (input.parentBotId) {
         const parent = await prisma.bot.findFirst({
           where: {

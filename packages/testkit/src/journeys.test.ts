@@ -89,6 +89,21 @@ describeJourneys("required product journeys", () => {
     const forbidden = await raw(app, bob, "bots/get", { botId: chief.id });
     expect(forbidden.status).toBeGreaterThanOrEqual(400);
 
+    const pinned = await rpc<Bot>(app, ada, "bots/update", { botId: coder.id, pinned: true });
+    expect(pinned.pinned).toBe(true);
+    const duplicate = await rpc<Bot>(app, ada, "bots/duplicate", { botId: chief.id });
+    expect(duplicate).toMatchObject({
+      name: "Chief copy",
+      title: chief.title,
+      description: chief.description,
+      instructions: chief.instructions,
+      notifyOnFinish: chief.notifyOnFinish,
+      color: chief.color,
+      pinned: false,
+    });
+    expect(duplicate.id).not.toBe(chief.id);
+    expect((await rpc<Bot[]>(app, ada, "bots/list"))[0]?.id).toBe(coder.id);
+
     await sendAndWait(
       app,
       ada,
@@ -706,7 +721,17 @@ describeJourneys("required product journeys", () => {
 });
 
 type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };
-type Bot = { id: string; name: string; title?: string; parentBotId?: string | null };
+type Bot = {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  notifyOnFinish: boolean;
+  color: string;
+  pinned: boolean;
+  parentBotId?: string | null;
+};
 type Snap = {
   messages: Array<{ seq: number; blocks: unknown[] }>;
   run: { status: string } | null;

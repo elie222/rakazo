@@ -114,6 +114,35 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("bot context menu pins, duplicates, edits, and confirms deletion", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `menu-${stamp}@rakazo.test`, "password12", "Menu");
+  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+
+  const chief = page.getByRole("button", { name: /Chief/ }).first();
+  await chief.click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for Chief" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Edit Profile" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+
+  await chief.click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Unpin", exact: true })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.getByText("Chief copy").first()).toBeVisible();
+
+  const copy = page.getByRole("button", { name: /Chief copy/ }).first();
+  await copy.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Delete Chief copy?" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await chief.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit Profile" }).click();
+  await expect(page.locator("label:has-text('Name') input")).toHaveValue("Chief");
+});
+
 async function completeOnboarding(page: Page, answers: string[]) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
   const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });

@@ -61,6 +61,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/list"],
       ["bots/get", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
+      ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/update", { botId: "missing-bot", name: "Nope" }],
       ["bots/remove", { botId: "missing-bot" }],
       ["threads/get", { botId: "missing-bot" }],
@@ -195,6 +196,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     const botIdCalls: Array<[string, unknown]> = [
       ["bots/get", { botId: ownerBot.id }],
+      ["bots/duplicate", { botId: ownerBot.id }],
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
       ["threads/get", { botId: ownerBot.id }],
       ["threads/messages", { botId: ownerBot.id, before: 1 }],

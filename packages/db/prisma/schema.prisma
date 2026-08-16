@@ -179,6 +179,7 @@ model Bot {
   instructions   String   @default("")
   color          String
   notifyOnFinish Boolean  @default(true)
+  pinned         Boolean  @default(false)
   parentBotId    String?
   parent         Bot?     @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
   children       Bot[]    @relation("BotChildren")
@@ -195,7 +196,7 @@ model Bot {
   tasks          Task[]
   runs           Run[]
 
-  @@index([workspaceId, userId])
+  @@index([workspaceId, userId, pinned, updatedAt])
   @@index([parentBotId])
   @@map("bots")
 }

@@ -15,7 +15,15 @@ import {
   presetFromCron,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
@@ -25,6 +33,7 @@ import {
   reduceComputerStatus,
   reduceThreadSnapshot,
 } from "../lib/thread-events";
+import { BotContextMenu, type ContextMenuPosition } from "./BotContextMenu";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { RoutineSchedule } from "./RoutineSchedule";
@@ -45,6 +54,11 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [botMenu, setBotMenu] = useState<{
+    botId: string;
+    position: ContextMenuPosition;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [routineDraft, setRoutineDraft] = useState({
@@ -64,6 +78,8 @@ export function ShellPage() {
   const messageScroll = useRef<HTMLDivElement>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
+  const closeBotMenu = useCallback(() => setBotMenu(null), []);
 
   async function refreshBots() {
     const list = await rpc.bots.list();
@@ -326,6 +342,10 @@ export function ShellPage() {
               key={bot.id}
               type="button"
               onClick={() => navigate(`/app/${bot.id}`)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setBotMenu({ botId: bot.id, position: { x: event.clientX, y: event.clientY } });
+              }}
               className="flex gap-3 rounded-xl px-2.5 py-[11px] text-left"
               style={{
                 background: active?.id === bot.id ? "#161618" : "transparent",
@@ -751,6 +771,49 @@ export function ShellPage() {
           </div>
         ) : null}
       </aside>
+
+      {contextBot && botMenu ? (
+        <BotContextMenu
+          bot={contextBot}
+          position={botMenu.position}
+          onClose={closeBotMenu}
+          onTogglePinned={() => {
+            setBotMenu(null);
+            void rpc.bots
+              .update({ botId: contextBot.id, pinned: !contextBot.pinned })
+              .then(() => refreshBots());
+          }}
+          onEdit={() => {
+            navigate(`/app/${contextBot.id}`);
+            setPanel("settings");
+            setBotMenu(null);
+          }}
+          onDuplicate={() => {
+            setBotMenu(null);
+            void rpc.bots.duplicate({ botId: contextBot.id }).then(async (bot) => {
+              await refreshBots();
+              navigate(`/app/${bot.id}`);
+            });
+          }}
+          onDelete={() => {
+            setDeleteTarget(contextBot);
+            setBotMenu(null);
+          }}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <DeleteBotDialog
+          bot={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            await rpc.bots.remove({ botId: deleteTarget.id });
+            setDeleteTarget(null);
+            setPanel(null);
+            await refreshBots();
+          }}
+        />
+      ) : null}
 
       {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
 
@@ -1211,6 +1274,80 @@ function BotSettings({
             Delete bot
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function DeleteBotDialog({
+  bot,
+  onCancel,
+  onConfirm,
+}: {
+  bot: Bot;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !deleting) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deleting, onCancel]);
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!deleting) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-bot-title"
+        aria-describedby="delete-bot-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          Delete {bot.name}?
+        </h2>
+        <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+          This permanently deletes its conversation, computer, memory, and routines. Bots it created
+          stay in your list.
+        </p>
+        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => {
+              setDeleting(true);
+              setError(null);
+              void onConfirm().catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not delete bot");
+                setDeleting(false);
+              });
+            }}
+            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
       </div>
     </div>
   );

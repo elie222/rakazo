@@ -100,6 +100,7 @@ export const appContract = {
     list: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
+    duplicate: oc.input(botId).output(BotSchema),
     update: oc.input(UpdateBotInput).output(BotSchema),
     remove: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },

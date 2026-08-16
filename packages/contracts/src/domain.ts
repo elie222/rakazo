@@ -11,6 +11,7 @@ export const BotSchema = z.object({
   instructions: z.string(),
   color: z.string(),
   notifyOnFinish: z.boolean(),
+  pinned: z.boolean(),
   parentBotId: Id.nullable(),
   threadId: Id,
   preview: z.string(),
@@ -38,6 +39,7 @@ export const UpdateBotInput = z.object({
   instructions: z.string().max(20000).optional(),
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
+  pinned: z.boolean().optional(),
 });
 
 export const RoutineSchema = z.object({

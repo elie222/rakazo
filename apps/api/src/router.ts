@@ -229,6 +229,17 @@ export function createRouter(deps: RouterDeps) {
       create: authed.bots.create.handler(async ({ context, input }) =>
         repos.createBot(context.actor, input),
       ),
+      duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
+        const source = await repos.getBot(context.actor, input.botId);
+        return repos.createBot(context.actor, {
+          name: duplicateBotName(source.name),
+          title: source.title,
+          description: source.description,
+          instructions: source.instructions,
+          notifyOnFinish: source.notifyOnFinish,
+          color: source.color,
+        });
+      }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
         await deps.prisma.bot.update({
@@ -240,6 +251,7 @@ export function createRouter(deps: RouterDeps) {
             instructions: input.instructions,
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
+            pinned: input.pinned,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1322,4 +1334,8 @@ function withViewOnly(url: string, viewOnly: boolean) {
     const join = url.includes("?") ? "&" : "?";
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
+}
+
+function duplicateBotName(name: string) {
+  return `${name.slice(0, 75)} copy`;
 }
