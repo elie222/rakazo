@@ -17,9 +17,19 @@ body,
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }
+.rk-scroll {
+  scrollbar-color: #2a2a2e transparent;
+  scrollbar-width: thin;
+}
+.rk-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
 .rk-scroll::-webkit-scrollbar-thumb {
   background: #2a2a2e;
   border-radius: 3px;
+}
+.rk-scroll::-webkit-scrollbar-thumb:hover {
+  background: #414147;
 }
 
 .app-drag {
