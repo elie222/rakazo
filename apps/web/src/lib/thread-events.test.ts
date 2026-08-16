@@ -177,6 +177,26 @@ describe("computer event reduction", () => {
       reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
     ).toBe(granted);
   });
+
+  it("applies the authoritative holder when a takeover is released or expires", () => {
+    const initial = computer({ state: "running", controlHolder: "user" });
+    const expired = reduceComputerStatus(
+      initial,
+      event({
+        type: "computer.takeover.released",
+        payload: { holder: "none", reason: "expired" },
+      }),
+    );
+    const released = reduceComputerStatus(
+      initial,
+      event({
+        type: "computer.takeover.released",
+        payload: { holder: "bot", reason: "released" },
+      }),
+    );
+    expect(expired).toMatchObject({ state: "running", controlHolder: "none" });
+    expect(released).toMatchObject({ state: "running", controlHolder: "bot" });
+  });
 });
 
 function snapshot(messages: ThreadMessage[], olderCursor: number | null = null): ThreadSnapshot {

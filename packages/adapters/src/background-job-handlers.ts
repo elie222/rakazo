@@ -5,7 +5,8 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { sleepComputerIfIdle } from "./computer-idle.js";
+import { expireComputerControl } from "./computer-control.js";
+import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 
 export function createBackgroundJobHandlers(deps: {
@@ -26,6 +27,11 @@ export function createBackgroundJobHandlers(deps: {
     },
     "computer.sleep": async (payload) => {
       await sleepComputerIfIdle(deps, payload.botId);
+    },
+    "computer.control-expire": async (payload) => {
+      if (await expireComputerControl(deps, payload.botId, payload.leaseId)) {
+        scheduleComputerSleep(deps.jobs, payload.botId);
+      }
     },
   };
 }

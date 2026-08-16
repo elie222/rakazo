@@ -7,6 +7,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -44,11 +45,19 @@ export async function sleepComputerIfIdle(
   },
   botId: string,
 ): Promise<void> {
-  const computer = await deps.prisma.computer.findUnique({ where: { botId } });
+  let computer = await deps.prisma.computer.findUnique({ where: { botId } });
   if (!computer?.providerRef) return;
   if (computer.state !== "running") return;
+  if (computer.controlLeaseId && !hasActiveComputerControl(computer)) {
+    await expireComputerControl(deps, botId, computer.controlLeaseId);
+    computer = await deps.prisma.computer.findUnique({ where: { botId } });
+    if (!computer?.providerRef || computer.state !== "running") return;
+  }
+  const activeStatuses = hasActiveComputerControl(computer)
+    ? [...ACTIVE_RUN_STATUSES]
+    : ACTIVE_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
   const active = await deps.prisma.run.findFirst({
-    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    where: { botId, status: { in: activeStatuses } },
     select: { id: true },
   });
   if (active) {
@@ -76,7 +85,7 @@ export async function sleepComputerIfIdle(
       select: { state: true, providerRef: true, updatedAt: true },
     }),
     deps.prisma.run.findFirst({
-      where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      where: { botId, status: { in: activeStatuses } },
       select: { id: true },
     }),
   ]);
@@ -92,7 +101,12 @@ export async function sleepComputerIfIdle(
   await deps.sandbox.stop(ref, ctx);
   await deps.prisma.computer.update({
     where: { botId },
-    data: { state: "suspended", controlHolder: "none" },
+    data: {
+      state: "suspended",
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+    },
   });
   const bot = await deps.prisma.bot.findUnique({
     where: { id: botId },

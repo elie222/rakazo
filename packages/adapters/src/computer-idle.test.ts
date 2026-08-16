@@ -32,6 +32,24 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("does not let an abandoned waiting takeover prevent idle suspension", async () => {
+    const harness = idleHarness();
+    harness.prisma.computer.findUnique
+      .mockResolvedValueOnce(harness.computer)
+      .mockResolvedValueOnce({
+        state: "running",
+        providerRef: harness.computer.providerRef,
+        updatedAt: harness.computer.updatedAt,
+      });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting" } : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, "bot");
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
   it("rechecks the lease boundary after checkpointing before it suspends", async () => {
     const harness = idleHarness();
     harness.prisma.computer.findUnique
@@ -68,7 +86,12 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).toHaveBeenCalledWith({
       where: { botId: "bot" },
-      data: { state: "suspended", controlHolder: "none" },
+      data: {
+        state: "suspended",
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+      },
     });
     expect(harness.events.append).toHaveBeenCalledWith(
       expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
@@ -124,6 +147,9 @@ function idleHarness(options: { exportError?: Error } = {}) {
     state: "running",
     workspaceId: "workspace",
     userId: "user",
+    controlHolder: "none",
+    controlLeaseId: null,
+    controlLeaseExpiresAt: null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
   const prisma = {

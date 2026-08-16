@@ -20,19 +20,37 @@ function publisher() {
 function fakePrisma(
   runs: Array<{ id: string; updatedAt: Date }> = [],
   routines: Array<{ id: string; nextRunAt: Date | null }> = [],
+  controls: Array<{
+    id: string;
+    botId: string;
+    controlLeaseId: string | null;
+    controlLeaseExpiresAt: Date | null;
+    updatedAt: Date;
+  }> = [],
 ) {
   return {
     run: { findMany: vi.fn(async () => runs) },
     routine: { findMany: vi.fn(async () => routines) },
+    computer: { findMany: vi.fn(async () => controls) },
   } as unknown as PrismaClient;
 }
 
 describe("createJobReconciler", () => {
   it("restores queued runs and near-due routines with stable replacement keys", async () => {
     const scheduledFor = new Date(Date.now() + 30_000);
+    const controlExpiresAt = new Date(Date.now() + 15_000);
     const prisma = fakePrisma(
       [{ id: "run-1", updatedAt: new Date() }],
       [{ id: "routine-1", nextRunAt: scheduledFor }],
+      [
+        {
+          id: "computer-1",
+          botId: "bot-1",
+          controlLeaseId: "lease-1",
+          controlLeaseExpiresAt: controlExpiresAt,
+          updatedAt: new Date(),
+        },
+      ],
     );
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs });
@@ -49,6 +67,85 @@ describe("createJobReconciler", () => {
       payload: { routineId: "routine-1", scheduledFor: scheduledFor.toISOString() },
       availableAt: scheduledFor,
       replaceKey: "routine:routine-1",
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "computer.control-expire",
+      payload: { botId: "bot-1", leaseId: "lease-1" },
+      availableAt: controlExpiresAt,
+      replaceKey: "computer.control-expire:bot-1",
+    });
+    expect(vi.mocked(prisma.computer.findMany)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { controlLeaseId: { not: null } },
+            {
+              OR: [
+                { controlLeaseExpiresAt: null },
+                { controlLeaseExpiresAt: { lte: expect.any(Date) } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
+      }),
+    );
+  });
+
+  it("pages near-due control leases by their persisted deadline", async () => {
+    const firstExpiry = new Date(Date.now() + 10_000);
+    const secondExpiry = new Date(Date.now() + 20_000);
+    const controls = [
+      {
+        id: "computer-1",
+        botId: "bot-1",
+        controlLeaseId: "lease-1",
+        controlLeaseExpiresAt: firstExpiry,
+      },
+      {
+        id: "computer-2",
+        botId: "bot-2",
+        controlLeaseId: "lease-2",
+        controlLeaseExpiresAt: secondExpiry,
+      },
+      {
+        id: "computer-3",
+        botId: "bot-3",
+        controlLeaseId: "lease-3",
+        controlLeaseExpiresAt: null,
+      },
+    ];
+    const computerFindMany = vi
+      .fn()
+      .mockResolvedValueOnce(controls.slice(0, 2))
+      .mockResolvedValueOnce(controls.slice(2));
+    const prisma = {
+      run: { findMany: vi.fn(async () => []) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: computerFindMany },
+    } as unknown as PrismaClient;
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });
+
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledTimes(3);
+    expect(computerFindMany.mock.calls[1]?.[0]).toMatchObject({
+      orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
+      where: {
+        AND: [
+          expect.anything(),
+          expect.anything(),
+          {
+            OR: [
+              { controlLeaseExpiresAt: { gt: secondExpiry } },
+              { controlLeaseExpiresAt: secondExpiry, id: { gt: "computer-2" } },
+              { controlLeaseExpiresAt: null },
+            ],
+          },
+        ],
+      },
     });
   });
 
@@ -75,6 +172,7 @@ describe("createJobReconciler", () => {
     const prisma = {
       run: { findMany: runFindMany },
       routine: { findMany: routineFindMany },
+      computer: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });
@@ -140,6 +238,7 @@ describe("createJobReconciler", () => {
 
     expect(prisma.run.findMany).not.toHaveBeenCalled();
     expect(prisma.routine.findMany).not.toHaveBeenCalled();
+    expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(leadership.release).toHaveBeenCalledOnce();
   });

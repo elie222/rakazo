@@ -476,6 +476,7 @@ model Computer {
   state        String   @default("stopped")
   controlHolder String  @default("none")
   controlLeaseId String?
+  controlLeaseExpiresAt DateTime?
   controlFence Int      @default(0)
   screenUrl    String?
   createdAt    DateTime @default(now())

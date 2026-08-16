@@ -106,9 +106,14 @@ export function reduceComputerStatus(
   event: ProductEvent,
 ): ComputerStatus | null {
   if (!prev) return prev;
-  if (event.type !== "computer.status" && event.type !== "computer.takeover.granted") return prev;
+  if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.granted") {
     return prev.controlHolder === "user" ? prev : { ...prev, controlHolder: "user" };
+  }
+  if (event.type === "computer.takeover.released") {
+    const holder = event.payload.holder;
+    if (holder !== "bot" && holder !== "none") return prev;
+    return prev.controlHolder === holder ? prev : { ...prev, controlHolder: holder };
   }
   const status = event.payload.status;
   if (!isComputerState(status)) return prev;
@@ -119,6 +124,14 @@ export function reduceComputerStatus(
     state: status,
     screenAvailable,
   };
+}
+
+export function isComputerStatusEvent(event: ProductEvent): boolean {
+  return (
+    event.type === "computer.status" ||
+    event.type === "computer.takeover.granted" ||
+    event.type === "computer.takeover.released"
+  );
 }
 
 function isComputerState(value: unknown): value is ComputerStatus["state"] {

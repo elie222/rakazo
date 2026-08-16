@@ -199,6 +199,92 @@ describeJourneys("required product journeys", () => {
     );
     expect(JSON.stringify(done.messages).toLowerCase()).toMatch(/signed in|session/);
     expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
+
+    const releaseEvents = await prisma.event.count({
+      where: { botId: bot.id, type: "computer.takeover.released" },
+    });
+    await rpc(app, cookie, "computer/release", { botId: bot.id });
+    expect(
+      await prisma.event.count({
+        where: { botId: bot.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(releaseEvents);
+  });
+
+  it("4b: an expired takeover denies input and reconciles API and database state", async () => {
+    const previousTakeoverTtl = process.env.COMPUTER_TAKEOVER_TTL_MS;
+    process.env.COMPUTER_TAKEOVER_TTL_MS = "1000";
+    try {
+      const cookie = await signup(app, `takeover-expiry-j-${stamp}@rakazo.test`, "Expiry");
+      const bot = await rpc<Bot>(app, cookie, "bots/create", {
+        name: "Chief",
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+      await rpc(app, cookie, "threads/send", {
+        botId: bot.id,
+        text: "install the gsc cli and sign in",
+      });
+      await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_takeover");
+      await rpc(app, cookie, "computer/boot", { botId: bot.id });
+      const lease = await rpc<{ leaseId: string; expiresAt: string }>(
+        app,
+        cookie,
+        "computer/takeover",
+        { botId: bot.id },
+      );
+      expect(new Date(lease.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(1000);
+      expect(
+        (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id }))
+          .url,
+      ).toContain("view_only=false");
+      await rpc(app, cookie, "computer/input", {
+        botId: bot.id,
+        kind: "key",
+        payload: { key: "a" },
+      });
+
+      await waitForDatabase(async () => {
+        const computer = await prisma.computer.findUniqueOrThrow({ where: { botId: bot.id } });
+        return computer.controlLeaseId === null && computer.controlHolder === "none";
+      });
+
+      expect(
+        (await rpc<{ controlHolder: string }>(app, cookie, "computer/status", { botId: bot.id }))
+          .controlHolder,
+      ).toBe("none");
+      expect(
+        (await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", { botId: bot.id }))
+          .url,
+      ).toContain("view_only=true");
+      expect(
+        (
+          await raw(app, cookie, "computer/input", {
+            botId: bot.id,
+            kind: "key",
+            payload: { key: "b" },
+          })
+        ).status,
+      ).toBeGreaterThanOrEqual(400);
+      expect((await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id })).run?.status).toBe(
+        "waiting_takeover",
+      );
+
+      await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+      await rpc(app, cookie, "computer/release", { botId: bot.id });
+      const done = await waitFor(
+        app,
+        cookie,
+        bot.id,
+        (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+      );
+      expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
+    } finally {
+      if (previousTakeoverTtl === undefined) delete process.env.COMPUTER_TAKEOVER_TTL_MS;
+      else process.env.COMPUTER_TAKEOVER_TTL_MS = previousTakeoverTtl;
+    }
   });
 
   it("5: a routine wakes the bot and posts into the existing thread", async () => {
@@ -811,4 +897,13 @@ async function waitFor(app: App, cookie: string, botId: string, pred: (snap: Sna
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+}
+
+async function waitForDatabase(pred: () => Promise<boolean>) {
+  const start = Date.now();
+  while (Date.now() - start < 10_000) {
+    if (await pred()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("timeout waiting for database state");
 }

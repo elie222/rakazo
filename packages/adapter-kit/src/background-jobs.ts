@@ -13,6 +13,10 @@ const payloadSchemas = {
     scheduledFor: z.string().datetime({ offset: true }),
   }),
   "computer.sleep": z.object({ botId: z.string().min(1) }),
+  "computer.control-expire": z.object({
+    botId: z.string().min(1),
+    leaseId: z.string().min(1),
+  }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -44,6 +48,10 @@ export function computerSleepJobKey(botId: string): string {
   return `computer.sleep:${botId}`;
 }
 
+export function computerControlExpireJobKey(botId: string): string {
+  return `computer.control-expire:${botId}`;
+}
+
 export function runContinueJob(runId: string): BackgroundJob {
   return {
     name: "run.continue",
@@ -67,5 +75,18 @@ export function computerSleepJob(botId: string, availableAt: Date): BackgroundJo
     payload: { botId },
     availableAt,
     replaceKey: computerSleepJobKey(botId),
+  };
+}
+
+export function computerControlExpireJob(
+  botId: string,
+  leaseId: string,
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "computer.control-expire",
+    payload: { botId, leaseId },
+    availableAt,
+    replaceKey: computerControlExpireJobKey(botId),
   };
 }

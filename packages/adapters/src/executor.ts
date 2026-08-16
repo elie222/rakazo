@@ -26,6 +26,7 @@ import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@raka
 import { builtinAgentTools } from "./builtin-tools.js";
 import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
+import { hasActiveComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import {
@@ -686,7 +687,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
               await deps.prisma.computer.updateMany({
                 where: { botId: bot.id },
-                data: { state: "running", controlHolder: "none" },
+                data: {
+                  state: "running",
+                  controlHolder: "none",
+                  controlLeaseId: null,
+                  controlLeaseExpiresAt: null,
+                },
               });
               await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
               const paused = await deps.prisma.run.updateMany({
@@ -1048,13 +1054,15 @@ async function ensureComputer(
       existing.providerRef !== ref.providerRef ||
       existing.kind !== ref.kind;
     if (replacement) await restoreComputerWorkspace(deps.home, deps.sandbox, botId, ref, context);
+    const activeControl = hasActiveComputerControl(existing);
     await deps.prisma.computer.updateMany({
       where: { botId },
       data: {
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
-        controlHolder: existing?.controlHolder === "user" ? "user" : "bot",
+        controlHolder: activeControl ? "user" : "bot",
+        ...(!activeControl ? { controlLeaseId: null, controlLeaseExpiresAt: null } : {}),
       },
     });
     scheduleComputerSleep(deps.jobs, botId);
