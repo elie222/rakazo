@@ -42,6 +42,13 @@ services:
     command: ["true"]
     restart: "no"
 
+  data-init:
+    image: busybox:1
+    command: ["chown", "-R", "1000:1000", "/data"]
+    restart: "no"
+    volumes:
+      - ../../data:/data
+
   api:
     build:
       context: ../..
@@ -63,6 +70,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -83,6 +92,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
 
   web:
     build:

@@ -881,7 +881,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           }
         }
-      } catch {
+      } catch (setupError) {
+        console.error("run setup failed", setupError);
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: {
