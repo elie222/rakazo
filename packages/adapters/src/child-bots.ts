@@ -14,7 +14,7 @@ import {
   createThreadMessageInTransaction,
   type PrismaClient,
 } from "@rakazo/db";
-import { toComputerRef } from "./computer-lifecycle.js";
+import { toComputerRef } from "./computer-support.js";
 import { resolveAgentHomePath } from "./home.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {

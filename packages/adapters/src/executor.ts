@@ -22,7 +22,12 @@ import {
   redactSecrets,
   sandboxCommandTimeoutMs,
 } from "@rakazo/core";
-import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import {
+  createThreadMessage,
+  type PrismaClient,
+  parseComputerMode,
+  type ThreadEvents,
+} from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
@@ -36,6 +41,12 @@ import {
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
 } from "./computer-lifecycle.js";
+import {
+  displayBotWorkspacePath,
+  resolveBotWorkspaceCwd,
+  resolveBotWorkspacePath,
+  teamBotWorkspaceDirectory,
+} from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
@@ -313,6 +324,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runSecrets.push(...resolved.redact);
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;
+        const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         scheduleComputerSleep(deps.jobs, storedComputer.id);
         const graphical =
@@ -329,6 +341,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const computerInstruction = graphical
           ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Another user may interact with the same desktop while you run, so re-observe when it may have changed."
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+        const workspaceInstruction =
+          computerMode === "team"
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
+            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
 
         let assembled = "";
         let pendingProgress = "";
@@ -392,16 +408,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (name === "list_files") {
+            const requestedPath = String(args.path ?? "");
+            const entries = await deps.sandbox.listFiles(
+              computer,
+              resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
+              context,
+            );
             return {
-              path: String(args.path ?? ""),
-              entries: await deps.sandbox.listFiles(computer, String(args.path ?? ""), context),
+              path: requestedPath,
+              entries: entries.map((entry) => ({
+                ...entry,
+                path: displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+              })),
             };
           }
           if (name === "read_file") {
             const filePath = String(args.path ?? "");
+            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(computer, filePath, context, {
+              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
                 maxBytes: MAX_MODEL_FILE_BYTES,
               });
             } catch (error) {
@@ -437,14 +463,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const content = String(args.content ?? "");
             await deps.sandbox.writeFile(
               computer,
-              { path: filePath, content: new TextEncoder().encode(content) },
+              {
+                path: resolveBotWorkspacePath(computerMode, bot.id, filePath),
+                content: new TextEncoder().encode(content),
+              },
               context,
             );
             return finish({ ok: true, path: filePath });
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
-            const cwd = args.cwd ? String(args.cwd) : undefined;
+            const cwd = resolveBotWorkspaceCwd(
+              computerMode,
+              bot.id,
+              args.cwd ? String(args.cwd) : undefined,
+            );
             const result = await runSandboxCommand(
               deps.sandbox,
               computer,
@@ -455,10 +488,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(result);
           }
           if (name === "open_path") {
+            const requestedPath = String(args.path ?? "");
             const result = await deps.sandbox.act(
               computer,
               {
-                actions: [{ kind: "open", path: String(args.path ?? "") }],
+                actions: [
+                  {
+                    kind: "open",
+                    path: /^https?:\/\//i.test(requestedPath)
+                      ? requestedPath
+                      : resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
+                  },
+                ],
                 observe: true,
                 settleMs: 600,
               },
@@ -466,7 +507,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
             return finish(
               result.observation
-                ? formatObservation(result.observation, `opened ${String(args.path ?? "")}`)
+                ? formatObservation(result.observation, `opened ${requestedPath}`)
                 : { ok: true },
             );
           }
@@ -632,6 +673,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
+                workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
@@ -847,7 +889,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             for (const file of turn.files ?? []) {
               await deps.sandbox.writeFile(
                 computer,
-                { path: file.path, content: new TextEncoder().encode(file.content) },
+                {
+                  path: resolveBotWorkspacePath(computerMode, bot.id, file.path),
+                  content: new TextEncoder().encode(file.content),
+                },
                 context,
               );
             }

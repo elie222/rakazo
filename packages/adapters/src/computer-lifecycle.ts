@@ -6,9 +6,9 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { type PrismaClient, parseComputerMode, type ThreadEvents } from "@rakazo/db";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
-import { restoreComputerWorkspace } from "./computer-workspace.js";
+import { ensureComputerWorkspaceLayout, restoreComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 
 const EXECUTION_LEASE_MS = 5 * 60_000;
@@ -20,7 +20,7 @@ export class ComputerBusyError extends Error {
   }
 }
 
-export { type StoredComputerRef, toComputerRef } from "./computer-support.js";
+export { toComputerRef } from "./computer-support.js";
 
 export async function provisionComputer(
   deps: {
@@ -70,6 +70,13 @@ export async function provisionComputer(
     if (replacement) {
       await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, ref, context);
     }
+    await ensureComputerWorkspaceLayout(
+      deps.sandbox,
+      ref,
+      parseComputerMode(existing.scope),
+      context.botId,
+      context,
+    );
     const activeControl = hasActiveComputerControl(existing);
     await deps.prisma.computer.update({
       where: { id: computerId },

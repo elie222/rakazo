@@ -18,6 +18,7 @@ import {
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
   destroyBot,
+  displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
   hasActiveComputerControl,
@@ -25,6 +26,7 @@ import {
   type PiOAuthLogins,
   provisionComputer,
   releaseComputerExecutionLease,
+  resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerControlExpiry,
@@ -50,6 +52,7 @@ import {
   IsolationError,
   type Prisma,
   type PrismaClient,
+  parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -777,36 +780,47 @@ export function createRouter(deps: RouterDeps) {
       }),
       files: authed.computer.files.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const computer = bot.computer;
+        const computerMode = parseComputerMode(computer.scope);
         const ctx = computerContext(context.actor, bot.id, "files");
-        if (bot.computer?.state === "running" && bot.computer.providerRef) {
+        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        let entries: Awaited<ReturnType<SandboxProvider["listFiles"]>>;
+        if (computer.state === "running" && computer.providerRef) {
           await deps.prisma.computer.updateMany({
-            where: { id: bot.computer.id, state: "running" },
+            where: { id: computer.id, state: "running" },
             data: { updatedAt: new Date() },
           });
-          scheduleComputerSleep(deps.jobs, bot.computer.id);
-          return deps.sandbox.listFiles(toComputerRef(bot.computer), input.path, ctx);
+          scheduleComputerSleep(deps.jobs, computer.id);
+          entries = await deps.sandbox.listFiles(toComputerRef(computer), storedPath, ctx);
+        } else {
+          entries = await deps.home.list(computer.homeKey, storedPath, ctx);
         }
-        if (!bot.computer) throw new IsolationError();
-        return deps.home.list(bot.computer.homeKey, input.path, ctx);
+        return entries.map((entry) => ({
+          ...entry,
+          path: displayBotWorkspacePath(computerMode, bot.id, input.path, entry.path),
+        }));
       }),
       readFile: authed.computer.readFile.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const computerMode = parseComputerMode(bot.computer.scope);
         const ctx = computerContext(context.actor, bot.id, "read");
+        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
         let content: string;
-        if (bot.computer?.state === "running" && bot.computer.providerRef) {
+        if (bot.computer.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
             where: { id: bot.computer.id, state: "running" },
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
-          const bytes = await deps.sandbox.readFile(toComputerRef(bot.computer), input.path, ctx, {
+          const bytes = await deps.sandbox.readFile(toComputerRef(bot.computer), storedPath, ctx, {
             maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
           });
           content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
         } else {
-          if (!bot.computer) throw new IsolationError();
           try {
-            content = await deps.home.readFile(bot.computer.homeKey, input.path, ctx, {
+            content = await deps.home.readFile(bot.computer.homeKey, storedPath, ctx, {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             });
           } catch (error) {

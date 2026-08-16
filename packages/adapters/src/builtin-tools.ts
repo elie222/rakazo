@@ -47,7 +47,8 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "list_files",
-    description: "List files and directories inside this bot's portable computer workspace.",
+    description:
+      "List files and directories in this bot's home. On a Team Computer, relative paths use the bot folder; use shared/... for shared work or bots/... to inspect the Team root.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },
@@ -56,7 +57,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "read_file",
     description:
-      "Read a UTF-8 text file from this bot's portable computer workspace. Open visual or binary files with open_path instead.",
+      "Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },
@@ -66,7 +67,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "write_file",
     description:
-      "Write a UTF-8 file into this bot's private home filesystem. The file shows up in Files.",
+      "Write a UTF-8 file into this bot's home. On a Team Computer, relative paths use the bot folder; use shared/... only for work other bots should share.",
     inputSchema: {
       type: "object",
       properties: {
@@ -79,7 +80,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "shell",
     description:
-      "Run a command inside this bot's computer (the sandbox). cwd defaults to the bot home.",
+      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
     inputSchema: {
       type: "object",
       properties: {

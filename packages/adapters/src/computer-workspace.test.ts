@@ -1,8 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { checkpointComputerWorkspace, restoreComputerWorkspace } from "./computer-workspace.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  checkpointComputerWorkspace,
+  ensureComputerWorkspaceLayout,
+  restoreComputerWorkspace,
+} from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 
@@ -20,6 +24,23 @@ afterEach(async () => {
 });
 
 describe("provider-neutral computer workspace", () => {
+  it("prepares shared and bot folders for a Team Computer", async () => {
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "team-workspace", homePath: "/ignored" },
+      context,
+    );
+    const execute = vi.spyOn(provider, "execute");
+
+    await ensureComputerWorkspaceLayout(provider, computer, "team", "bot-1", context);
+
+    expect(execute).toHaveBeenCalledWith(
+      computer,
+      { argv: ["mkdir", "-p", "shared", "bots/bot-1"] },
+      context,
+    );
+  });
+
   it("restores a checkpoint into a replacement provider machine", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
     roots.push(root);

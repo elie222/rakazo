@@ -1,9 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 
-test("Team Computer shares work while Private Computer stays isolated and reusable", async ({
+test("Team Computer gives bots a home folder plus shared space while Private stays isolated", async ({
   page,
 }) => {
   const stamp = Date.now();
+  const personalMarker = `personal-${stamp}`;
   const sharedMarker = `shared-${stamp}`;
   const privateMarker = `private-${stamp}`;
 
@@ -18,14 +19,23 @@ test("Team Computer shares work while Private Computer stays isolated and reusab
   await sendAndWait(
     page,
     writerId,
-    `write a file in your home called notes/result.txt that says ${sharedMarker}`,
+    `write a file in your home called notes/result.txt that says ${personalMarker}`,
   );
 
-  await expect
-    .poll(() => readFile(page, chiefId, "notes/result.txt"), {
-      message: "Chief should see work written by another bot on the Team Computer",
-    })
-    .toContain(sharedMarker);
+  await expect(readFile(page, writerId, "notes/result.txt")).resolves.toContain(personalMarker);
+  await expect(readFileResponse(page, chiefId, "notes/result.txt")).resolves.toMatchObject({
+    ok: false,
+  });
+  await expect(readFile(page, chiefId, `bots/${writerId}/notes/result.txt`)).resolves.toContain(
+    personalMarker,
+  );
+
+  await sendAndWait(
+    page,
+    writerId,
+    `write a file called shared/notes/result.txt that says ${sharedMarker}`,
+  );
+  await expect(readFile(page, chiefId, "shared/notes/result.txt")).resolves.toContain(sharedMarker);
 
   const privateId = await createBot(page, "Private Writer", "dedicated");
   await openComputerPanel(page);
@@ -39,14 +49,21 @@ test("Team Computer shares work while Private Computer stays isolated and reusab
     privateId,
     `write a file in your home called notes/result.txt that says ${privateMarker}`,
   );
-  await expect(readFile(page, chiefId, "notes/result.txt")).resolves.toContain(sharedMarker);
+  await expect(readFileResponse(page, chiefId, "notes/result.txt")).resolves.toMatchObject({
+    ok: false,
+  });
 
   await setComputerMode(page, "Private Writer", privateId, "team");
-  await expect(readFile(page, privateId, "notes/result.txt")).resolves.toContain(sharedMarker);
+  await expect(readFileResponse(page, privateId, "notes/result.txt")).resolves.toMatchObject({
+    ok: false,
+  });
+  await expect(readFile(page, privateId, "shared/notes/result.txt")).resolves.toContain(
+    sharedMarker,
+  );
 
   await setComputerMode(page, "Private Writer", privateId, "dedicated");
   await expect(readFile(page, privateId, "notes/result.txt")).resolves.toContain(privateMarker);
-  await expect(readFile(page, writerId, "notes/result.txt")).resolves.toContain(sharedMarker);
+  await expect(readFile(page, writerId, "notes/result.txt")).resolves.toContain(personalMarker);
 });
 
 test("user control blocks another Team bot until the computer is released", async ({ page }) => {
@@ -93,7 +110,9 @@ test("user control blocks another Team bot until the computer is released", asyn
 
   await waitForRun(page, workerId);
   await expect(readFile(page, workerId, "notes/result.txt")).resolves.toContain(marker);
-  await expect(readFile(page, chiefId, "notes/result.txt")).resolves.toContain(marker);
+  await expect(readFileResponse(page, chiefId, "notes/result.txt")).resolves.toMatchObject({
+    ok: false,
+  });
 });
 
 test("an active Team bot must be stopped before user takeover", async ({ page }) => {

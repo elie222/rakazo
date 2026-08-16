@@ -216,11 +216,13 @@ export function inferScript(
   ) {
     const said = /says?\s+(.+)$/i.exec(prompt)?.[1]?.replace(/[.]+$/, "") ?? prompt;
     const content = `${said.trim()}\n`;
+    const filePath =
+      /(?:called|named)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ?? "notes/result.txt";
     return [
       { assistant: "writing that into my home now." },
       {
-        toolCalls: [{ name: "write_file", args: { path: "notes/result.txt", content } }],
-        files: [{ path: "notes/result.txt", content }],
+        toolCalls: [{ name: "write_file", args: { path: filePath, content } }],
+        files: [{ path: filePath, content }],
         complete: true,
       },
     ];

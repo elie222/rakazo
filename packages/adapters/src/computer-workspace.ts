@@ -8,8 +8,9 @@ import type {
   PortableFile,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { normalizeWorkspacePath } from "./computer-support.js";
+import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { LocalAgentHomeStore } from "./home.js";
 
 export async function restoreComputerWorkspace(
@@ -21,6 +22,29 @@ export async function restoreComputerWorkspace(
 ): Promise<void> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
   await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
+}
+
+export async function ensureComputerWorkspaceLayout(
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+  scope: ComputerMode,
+  botId: string | undefined,
+  context: AdapterContext,
+): Promise<void> {
+  if (scope !== "team" || !botId) return;
+  let exitCode: number | undefined;
+  let stderr = "";
+  for await (const event of sandbox.execute(
+    computer,
+    { argv: ["mkdir", "-p", "shared", teamBotWorkspaceDirectory(botId)] },
+    context,
+  )) {
+    if (event.type === "stderr") stderr += event.data;
+    if (event.type === "exit") exitCode = event.code;
+  }
+  if (exitCode !== 0) {
+    throw new Error(`Could not prepare Team Computer folders${stderr ? `: ${stderr.trim()}` : ""}`);
+  }
 }
 
 export async function checkpointComputerWorkspace(
