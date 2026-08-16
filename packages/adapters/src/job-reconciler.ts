@@ -198,7 +198,7 @@ export function createJobReconciler(
           take: batchSize,
           select: {
             id: true,
-            botId: true,
+            controlBotId: true,
             controlLeaseId: true,
             controlLeaseExpiresAt: true,
           },
@@ -212,13 +212,17 @@ export function createJobReconciler(
             ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
             : [],
         ),
-        ...controls.map((computer) =>
-          scheduleComputerControlExpiry(
-            deps.jobs,
-            computer.botId,
-            computer.controlLeaseId!,
-            computer.controlLeaseExpiresAt ?? now,
-          ),
+        ...controls.flatMap((computer) =>
+          computer.controlBotId
+            ? [
+                scheduleComputerControlExpiry(
+                  deps.jobs,
+                  computer.id,
+                  computer.controlLeaseId!,
+                  computer.controlLeaseExpiresAt ?? now,
+                ),
+              ]
+            : [],
         ),
       ]);
 

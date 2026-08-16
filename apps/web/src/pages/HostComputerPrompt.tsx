@@ -40,7 +40,7 @@ export function HostComputerPrompt() {
       <div className="w-[440px] rounded-[20px] border border-[#26262A] bg-[#121214] p-6">
         <h2 className="text-[22px] font-medium text-[#F1F1F2]">Where should bots run?</h2>
         <p className="mt-2 text-[14px] leading-relaxed text-[#85858A]">
-          Docker is the default: each bot gets an isolated Linux desktop with a browser.
+          Docker is the default: bots use a shared Team Computer.
           {mac
             ? " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
             : ` Your OS will not ask for extra permission if you let bots run on ${hostLabel} — they run as you.`}

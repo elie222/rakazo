@@ -41,10 +41,28 @@ describe("computer copy", () => {
     );
     expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
     expect(
-      controlLabel({ state: "running", controlHolder: "user", screenAvailable: true }, "Chief"),
+      controlLabel(
+        {
+          state: "running",
+          controlHolder: "user",
+          screenAvailable: true,
+          mode: "team",
+          busyBotName: null,
+        },
+        "Chief",
+      ),
     ).toBe("You have control");
     expect(
-      controlLabel({ state: "suspended", controlHolder: "none", screenAvailable: false }, "Chief"),
+      controlLabel(
+        {
+          state: "suspended",
+          controlHolder: "none",
+          screenAvailable: false,
+          mode: "team",
+          busyBotName: null,
+        },
+        "Chief",
+      ),
     ).toBe("Asleep");
   });
 });

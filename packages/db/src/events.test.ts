@@ -89,7 +89,10 @@ describe("finalizeComputerControlRelease", () => {
     const tx = {
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       bot: {
-        findUnique: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+        findUnique: vi.fn().mockResolvedValue({
+          computerId: "computer-1",
+          thread: { id: "thread-1" },
+        }),
       },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       event: {
@@ -109,6 +112,7 @@ describe("finalizeComputerControlRelease", () => {
         prisma,
         {
           workspaceId: "workspace-1",
+          computerId: "computer-1",
           botId: "bot-1",
           leaseId: "lease-1",
           holder: "none",
@@ -119,11 +123,12 @@ describe("finalizeComputerControlRelease", () => {
     ).resolves.toBe(true);
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
-      where: { botId: "bot-1", controlLeaseId: "lease-1" },
+      where: { id: "computer-1", controlLeaseId: "lease-1" },
       data: {
         controlHolder: "none",
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
+        controlBotId: null,
       },
     });
     expect(tx.event.create).toHaveBeenCalledWith(
@@ -135,5 +140,28 @@ describe("finalizeComputerControlRelease", () => {
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
+  });
+
+  it("clears the lease even if its controlling bot was deleted", async () => {
+    const tx = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      bot: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(prisma, {
+        workspaceId: "workspace-1",
+        computerId: "computer-1",
+        botId: "deleted-bot",
+        leaseId: "lease-1",
+        holder: "none",
+        reason: "expired",
+      }),
+    ).resolves.toBe(true);
+
+    expect(tx.computer.updateMany).toHaveBeenCalledOnce();
   });
 });

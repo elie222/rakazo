@@ -186,7 +186,9 @@ model Bot {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   thread         Thread?
-  computer       Computer?
+  computerId     String?
+  computer       Computer? @relation(fields: [computerId], references: [id], onDelete: SetNull)
+  computerSwitching Boolean @default(false)
   routines       Routine[]
   memoryDocuments MemoryDocument[]
   agentHome      AgentHome?
@@ -197,6 +199,7 @@ model Bot {
   runs           Run[]
 
   @@index([workspaceId, userId, pinned, updatedAt])
+  @@index([computerId])
   @@index([parentBotId])
   @@map("bots")
 }
@@ -465,23 +468,32 @@ model BrowserProfile {
 }
 
 model Computer {
-  id           String   @id @default(cuid())
-  workspaceId  String
-  workspace    Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  botId        String   @unique
-  bot          Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId       String
-  kind         String
-  providerRef  String?
-  state        String   @default("stopped")
-  controlHolder String  @default("none")
-  controlLeaseId String?
-  controlLeaseExpiresAt DateTime?
-  controlFence Int      @default(0)
-  screenUrl    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  workspaceId             String
+  workspace               Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId                   String
+  scope                    String   @default("team")
+  scopeKey                 String   @unique
+  homeKey                  String   @unique
+  homeRevision             String   @default("empty")
+  kind                     String
+  providerRef              String?
+  state                    String   @default("stopped")
+  controlHolder            String   @default("none")
+  controlLeaseId           String?
+  controlLeaseExpiresAt    DateTime?
+  controlBotId             String?
+  controlFence             Int      @default(0)
+  executionRunId           String?
+  executionBotId           String?
+  executionLeaseExpiresAt  DateTime?
+  executionFence           Int      @default(0)
+  screenUrl                String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  bots                     Bot[]
 
+  @@index([workspaceId, scope])
   @@map("computers")
 }
 

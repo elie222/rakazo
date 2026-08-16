@@ -1,5 +1,6 @@
 import { type Actor, BOT_COLORS, type Bot } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { IsolationError } from "./scope.js";
 
 function mapBot(
@@ -17,6 +18,7 @@ function mapBot(
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string; unread: boolean } | null;
+    computer: { scope: string } | null;
   },
   preview = "",
   status = "idle",
@@ -39,6 +41,7 @@ function mapBot(
     threadId: bot.thread.id,
     preview,
     status,
+    computerMode: bot.computer ? parseComputerMode(bot.computer.scope) : "team",
     createdAt: bot.createdAt.toISOString(),
     updatedAt: bot.updatedAt.toISOString(),
   };
@@ -62,6 +65,7 @@ export function createRepos(prisma: PrismaClient) {
             orderBy: { createdAt: "desc" },
             take: 1,
           },
+          computer: { select: { scope: true } },
         },
         orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
       });
@@ -94,6 +98,7 @@ export function createRepos(prisma: PrismaClient) {
         notifyOnFinish: boolean;
         color?: string;
         parentBotId?: string | null;
+        computerMode?: ComputerMode;
       },
     ): Promise<Bot> {
       let color = input.color;
@@ -118,6 +123,12 @@ export function createRepos(prisma: PrismaClient) {
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
       const bot = await prisma.$transaction(async (tx) => {
+        const teamComputer = await ensureComputerRecord(tx, {
+          mode: "team",
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          kind,
+        });
         const created = await tx.bot.create({
           data: {
             workspaceId: actor.workspaceId,
@@ -129,6 +140,7 @@ export function createRepos(prisma: PrismaClient) {
             notifyOnFinish: input.notifyOnFinish,
             color,
             parentBotId: input.parentBotId ?? null,
+            computerId: teamComputer.id,
           },
         });
         await tx.thread.create({
@@ -138,22 +150,16 @@ export function createRepos(prisma: PrismaClient) {
             userId: actor.userId,
           },
         });
-        await tx.computer.create({
-          data: {
+        if (input.computerMode === "dedicated") {
+          const dedicated = await ensureComputerRecord(tx, {
+            mode: "dedicated",
             workspaceId: actor.workspaceId,
-            botId: created.id,
             userId: actor.userId,
+            botId: created.id,
             kind,
-            state: "stopped",
-          },
-        });
-        await tx.agentHome.create({
-          data: {
-            workspaceId: actor.workspaceId,
-            botId: created.id,
-            userId: actor.userId,
-          },
-        });
+          });
+          await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
+        }
         await tx.browserProfile.create({
           data: {
             workspaceId: actor.workspaceId,
@@ -173,10 +179,31 @@ export function createRepos(prisma: PrismaClient) {
         });
         return tx.bot.findFirstOrThrow({
           where: { id: created.id },
-          include: { thread: true },
+          include: { thread: true, computer: true },
         });
       });
       return mapBot(bot);
+    },
+
+    async setBotComputer(actor: Actor, botId: string, mode: ComputerMode): Promise<Bot> {
+      const bot = await prisma.bot.findFirst({
+        where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
+        include: { computer: true },
+      });
+      if (!bot?.computer) throw new IsolationError();
+      const computer = await ensureComputerRecord(prisma, {
+        mode,
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        botId,
+        kind: bot.computer.kind,
+      });
+      const updated = await prisma.bot.update({
+        where: { id: botId },
+        data: { computerId: computer.id },
+        include: { thread: true, computer: true },
+      });
+      return mapBot(updated);
     },
   };
 }

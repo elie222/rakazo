@@ -78,8 +78,8 @@ The app you open and the computer provider are separate choices. Web, Electron, 
 
 | `SANDBOX_PROVIDER` | Where agent commands run | Best fit | Isolation notes |
 | --- | --- | --- | --- |
-| `docker` (default) | A per-bot Docker container on your machine. The Electron app can switch this to This Mac without changing the env var. | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
-| `e2b` | A remote E2B desktop through the E2B SDK | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. Bot workspace and browser-profile data are checkpointed into Rakazo-owned `DATA_DIR`, so the provider machine is not the durable source of truth. This Mac is not available. |
+| `docker` (default) | A Docker computer on your machine. The Electron app can switch this to This Mac without changing the env var. | Quick local setup and trusted single-machine self-hosting | Workspace bots share the Team Computer by default; Private computers are optional. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
+| `e2b` | A remote E2B desktop through the E2B SDK | Public or multi-user deployments | Team and Private computers are isolated from the Rakazo application host. Requires `E2B_API_KEY`. Workspace and browser-profile data are checkpointed into Rakazo-owned `DATA_DIR`, so the provider machine is not the durable source of truth. This Mac is not available. |
 | `desktop` | Directly on the API/worker host. Working directories under the process user's home folder are allowed. | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. The Electron first-run "This Mac" choice uses this provider while leaving `SANDBOX_PROVIDER=docker`. |
 | `fake` | An in-process emulator | Tests only | Does not run a real computer. |
 

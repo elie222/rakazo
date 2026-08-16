@@ -26,11 +26,11 @@ export function createBackgroundJobHandlers(deps: {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
     },
     "computer.sleep": async (payload) => {
-      await sleepComputerIfIdle(deps, payload.botId);
+      await sleepComputerIfIdle(deps, payload.computerId);
     },
     "computer.control-expire": async (payload) => {
-      if (await expireComputerControl(deps, payload.botId, payload.leaseId)) {
-        scheduleComputerSleep(deps.jobs, payload.botId);
+      if (await expireComputerControl(deps, payload.computerId, payload.leaseId)) {
+        scheduleComputerSleep(deps.jobs, payload.computerId);
       }
     },
   };

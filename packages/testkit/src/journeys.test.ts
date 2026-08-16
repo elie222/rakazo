@@ -54,7 +54,7 @@ describeJourneys("required product journeys", () => {
     await stop?.();
   });
 
-  it("1+2: two users are isolated and two bots keep separate homes", async () => {
+  it("1+2: users are isolated and workspace bots share the Team Computer", async () => {
     const ada = await signup(app, `ada-j-${stamp}@rakazo.test`, "Ada Journey");
     const bob = await signup(app, `bob-j-${stamp}@rakazo.test`, "Bob Journey");
 
@@ -83,6 +83,15 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
+    const [chiefRecord, coderRecord, bobRecord] = await Promise.all(
+      [chief.id, coder.id, bobBot.id].map((id) =>
+        prisma.bot.findUniqueOrThrow({ where: { id }, include: { computer: true } }),
+      ),
+    );
+    expect(chief.computerMode).toBe("team");
+    expect(coder.computerMode).toBe("team");
+    expect(chiefRecord.computerId).toBe(coderRecord.computerId);
+    expect(chiefRecord.computerId).not.toBe(bobRecord.computerId);
 
     const bobList = await rpc<Bot[]>(app, bob, "bots/list");
     expect(bobList.map((b) => b.id)).not.toContain(chief.id);
@@ -141,6 +150,22 @@ describeJourneys("required product journeys", () => {
       botId: coder.id,
     });
     expect(coderMem.some((m) => m.content.toLowerCase().includes("rust"))).toBe(true);
+    const dedicated = await rpc<Bot>(app, ada, "bots/setComputer", {
+      botId: coder.id,
+      mode: "dedicated",
+    });
+    expect(dedicated.computerMode).toBe("dedicated");
+    const dedicatedRecord = await prisma.bot.findUniqueOrThrow({
+      where: { id: coder.id },
+      include: { computer: true },
+    });
+    expect(dedicatedRecord.computerId).not.toBe(chiefRecord.computerId);
+    await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "team" });
+    const backOnTeam = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
+    expect(backOnTeam.computerId).toBe(chiefRecord.computerId);
+    await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "dedicated" });
+    const reusedDedicated = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
+    expect(reusedDedicated.computerId).toBe(dedicatedRecord.computerId);
     expect(bobBot.id).not.toBe(chief.id);
   });
 
@@ -247,7 +272,11 @@ describeJourneys("required product journeys", () => {
       });
 
       await waitForDatabase(async () => {
-        const computer = await prisma.computer.findUniqueOrThrow({ where: { botId: bot.id } });
+        const storedBot = await prisma.bot.findUniqueOrThrow({
+          where: { id: bot.id },
+          include: { computer: true },
+        });
+        const computer = storedBot.computer!;
         return computer.controlLeaseId === null && computer.controlHolder === "none";
       });
 
@@ -513,6 +542,7 @@ describeJourneys("required product journeys", () => {
       description: "",
       instructions: "",
       notifyOnFinish: true,
+      computerMode: "dedicated",
     });
     await sendAndWait(
       app,
@@ -829,6 +859,7 @@ type Bot = {
   color: string;
   pinned: boolean;
   unread: boolean;
+  computerMode: "team" | "dedicated";
   parentBotId?: string | null;
 };
 type Snap = {

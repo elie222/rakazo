@@ -39,23 +39,23 @@ describe("InMemoryJobQueue", () => {
     await queue.start(target);
     await queue.enqueue({
       name: "computer.sleep",
-      payload: { botId: "old" },
+      payload: { computerId: "old" },
       availableAt: new Date(Date.now() + 1_000),
       replaceKey: "computer.sleep:1",
     });
     await queue.enqueue({
       name: "computer.sleep",
-      payload: { botId: "new" },
+      payload: { computerId: "new" },
       availableAt: new Date(Date.now() + 1_000),
       replaceKey: "computer.sleep:1",
     });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
-    expect(target["computer.sleep"]).toHaveBeenCalledWith({ botId: "new" });
+    expect(target["computer.sleep"]).toHaveBeenCalledWith({ computerId: "new" });
 
     await queue.enqueue({
       name: "computer.sleep",
-      payload: { botId: "cancelled" },
+      payload: { computerId: "cancelled" },
       availableAt: new Date(Date.now() + 1_000),
       replaceKey: "computer.sleep:2",
     });

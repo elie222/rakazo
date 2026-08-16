@@ -266,7 +266,13 @@ function snapshot(
     messages,
     olderCursor,
     run: null,
-    computer: { state: "running", controlHolder: "bot", screenAvailable: true },
+    computer: {
+      state: "running",
+      controlHolder: "bot",
+      screenAvailable: true,
+      mode: "team",
+      busyBotName: null,
+    },
   };
 }
 

@@ -70,8 +70,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
     const received: string[] = [];
     const target = handlers({
-      "computer.sleep": async ({ botId }) => {
-        received.push(botId);
+      "computer.sleep": async ({ computerId }) => {
+        received.push(computerId);
       },
     });
     const key = `contract:replacement:${Date.now()}`;
@@ -80,13 +80,13 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await host.start(target);
       await publisher.enqueue({
         name: "computer.sleep",
-        payload: { botId: "old" },
+        payload: { computerId: "old" },
         availableAt: new Date(Date.now() + 300),
         replaceKey: key,
       });
       await publisher.enqueue({
         name: "computer.sleep",
-        payload: { botId: "replacement" },
+        payload: { computerId: "replacement" },
         availableAt: new Date(Date.now() + 800),
         replaceKey: key,
       });
@@ -111,7 +111,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await host.start(target);
       await publisher.enqueue({
         name: "computer.sleep",
-        payload: { botId: "cancelled" },
+        payload: { computerId: "cancelled" },
         availableAt: new Date(Date.now() + 300),
         replaceKey: key,
       });

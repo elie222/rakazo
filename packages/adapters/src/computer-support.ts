@@ -1,6 +1,23 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { ComputerAction, ComputerObservation } from "@rakazo/adapter-kit";
+import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
+
+export interface StoredComputerRef {
+  id: string;
+  homeKey: string;
+  kind: string;
+  providerRef: string | null;
+}
+
+export function toComputerRef(computer: StoredComputerRef): ComputerRef {
+  if (!computer.providerRef) throw new Error("computer provider reference is missing");
+  return {
+    id: computer.providerRef,
+    botId: computer.homeKey,
+    kind: computer.kind as ComputerRef["kind"],
+    providerRef: computer.providerRef,
+  };
+}
 
 const EMPTY_PNG = Uint8Array.from(
   Buffer.from(

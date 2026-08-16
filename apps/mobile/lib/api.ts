@@ -1,3 +1,4 @@
+import type { ComputerMode } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -136,6 +137,7 @@ export type MobileBot = {
   unread: boolean;
   updatedAt: string;
   parentBotId?: string | null;
+  computerMode: ComputerMode;
 };
 
 export type MobileMe = {
@@ -170,7 +172,13 @@ export type MobileSnapshot = {
   messages: MobileMessage[];
   olderCursor: number | null;
   run: { status: string } | null;
-  computer: { state: string; controlHolder: string; screenAvailable: boolean };
+  computer: {
+    state: string;
+    controlHolder: string;
+    screenAvailable: boolean;
+    mode: ComputerMode;
+    busyBotName: string | null;
+  };
 };
 
 export type MobileMessagePage = ThreadHistory<MobileMessage>;

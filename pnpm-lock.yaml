@@ -101,6 +101,9 @@ importers:
       '@rakazo/chat-ui':
         specifier: workspace:*
         version: link:../../packages/chat-ui
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core

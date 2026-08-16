@@ -1,12 +1,15 @@
+import type { ComputerMode } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { ComputerModePicker } from "../components/computer-mode-picker";
 import { currentApiBase, rpc } from "../lib/api";
 import {
   COMPUTER_HEARTBEAT_MS,
   type ComputerStatus,
+  computerLabel,
   controlLabel,
   embeddableScreenUrl,
   previewPlaceholder,
@@ -22,15 +25,17 @@ export default function Computer() {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [booting, setBooting] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [computerOpen, setComputerOpen] = useState(false);
   const autoBooted = useRef<string | null>(null);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
   const hasControl = computer?.controlHolder === "user";
+  const label = computerLabel(computer?.mode, name);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: `${name}’s computer` });
-  }, [name, navigation]);
+    navigation.setOptions({ title: label });
+  }, [label, navigation]);
 
   async function refresh() {
     if (!botId) return;
@@ -119,7 +124,26 @@ export default function Computer() {
     await refresh().catch(() => undefined);
   }
 
-  const placeholder = screenError ?? previewPlaceholder(computer?.state, booting, name);
+  async function setComputerMode(mode: ComputerMode) {
+    if (!botId || mode === computer?.mode) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      if (hasControl) await rpc("computer/release", { botId });
+      await rpc("bots/setComputer", { botId, mode });
+      setComputer(null);
+      setScreenUrl(null);
+      autoBooted.current = null;
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch computer");
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  const placeholder =
+    screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0A0A0B", padding: 24 }}>
@@ -192,6 +216,11 @@ export default function Computer() {
           </Pressable>
         )}
       </View>
+      <ComputerModePicker
+        value={computer?.mode}
+        disabled={switching}
+        onChange={(mode) => void setComputerMode(mode)}
+      />
 
       <Modal
         visible={booting || computerOpen}
@@ -215,7 +244,7 @@ export default function Computer() {
             <Text
               style={{ color: "#F1F1F2", fontSize: 19, fontWeight: "500", textAlign: "center" }}
             >
-              Booting up {name}’s computer
+              Booting {label}
             </Text>
             <View
               style={{
@@ -257,7 +286,7 @@ export default function Computer() {
                   numberOfLines={1}
                   style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "500" }}
                 >
-                  {name}’s computer
+                  {label}
                 </Text>
                 {hasControl ? (
                   <View
@@ -329,7 +358,9 @@ export default function Computer() {
                   style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}
                 >
                   <Text style={{ color: "#6C6C70", textAlign: "center" }}>
-                    {computer?.state === "suspended" ? "Computer is asleep" : `${name}’s screen`}
+                    {computer?.state === "suspended"
+                      ? "Computer is asleep"
+                      : computerLabel(computer?.mode, name)}
                   </Text>
                 </View>
               )}

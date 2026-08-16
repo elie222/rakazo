@@ -1,6 +1,7 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
+  ComputerMode,
   ComputerStatus,
   ProductEvent,
   Routine,
@@ -289,13 +290,19 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
-  async function createBot(input: { name: string; title: string; description: string }) {
+  async function createBot(input: {
+    name: string;
+    title: string;
+    description: string;
+    computerMode: ComputerMode;
+  }) {
     const bot = await rpc.bots.create({
       name: input.name.trim(),
       title: input.title,
       description: input.description,
       instructions: input.description,
       notifyOnFinish: true,
+      computerMode: input.computerMode,
     });
     await refreshBots();
     navigate(`/app/${bot.id}`);
@@ -680,7 +687,11 @@ export function ShellPage() {
                     />
                   ) : (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      {computerPlaceholder(computer?.state, booting, active.name)}
+                      {computerPlaceholder(
+                        computer?.state,
+                        booting,
+                        computerLabel(computer?.mode, active.name),
+                      )}
                     </div>
                   )}
                   <button
@@ -692,11 +703,13 @@ export function ShellPage() {
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13.5px] text-[#85858A]">
-                    {computer?.controlHolder === "user"
-                      ? "You have control"
-                      : computer?.state === "suspended"
-                        ? "Asleep"
-                        : `${active.name}’s screen`}
+                    {computer?.busyBotName
+                      ? `${computer.busyBotName} is using it`
+                      : computer?.controlHolder === "user"
+                        ? "You have control"
+                        : computer?.state === "suspended"
+                          ? "Asleep"
+                          : computerLabel(computer?.mode, active.name)}
                   </span>
                   {computer?.controlHolder === "user" ? (
                     <Button
@@ -778,7 +791,13 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
-                onSave={async (patch) => {
+                onSave={async ({ computerMode, ...patch }) => {
+                  if (computerMode !== active.computerMode) {
+                    await rpc.bots.setComputer({
+                      botId: active.id,
+                      mode: computerMode,
+                    });
+                  }
                   await rpc.bots.update({ botId: active.id, ...patch });
                   await refreshBots();
                 }}
@@ -931,7 +950,7 @@ export function ShellPage() {
             <div className="flex min-w-0 items-center gap-3">
               <BotAvatar color={active.color} size={28} />
               <span className="truncate text-[15.5px] font-medium text-[#ECECEE]">
-                {active.name}’s computer
+                {computerLabel(computer?.mode, active.name)}
               </span>
               {computer?.controlHolder === "user" ? (
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
@@ -986,7 +1005,9 @@ export function ShellPage() {
               />
             ) : (
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                {computer?.state === "suspended" ? "Computer is asleep" : `${active.name}’s screen`}
+                {computer?.state === "suspended"
+                  ? "Computer is asleep"
+                  : computerLabel(computer?.mode, active.name)}
               </div>
             )}
           </div>
@@ -1201,16 +1222,53 @@ function MessageView({
   );
 }
 
+function ComputerModePicker({
+  value,
+  onChange,
+}: {
+  value: ComputerMode;
+  onChange: (value: ComputerMode) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <div className="text-[14px] text-[#85858A]">Computer</div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {(["team", "dedicated"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={value === mode}
+            onClick={() => onChange(mode)}
+            className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize ${
+              value === mode
+                ? "border-[#6C6C70] bg-[#1A1A1D] text-[#ECECEE]"
+                : "border-[#26262A] text-[#85858A]"
+            }`}
+          >
+            {mode === "team" ? "Team" : "Private"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CreateBotForm({
   onCreate,
   onCancel,
 }: {
-  onCreate: (input: { name: string; title: string; description: string }) => void;
+  onCreate: (input: {
+    name: string;
+    title: string;
+    description: string;
+    computerMode: ComputerMode;
+  }) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [computerMode, setComputerMode] = useState<ComputerMode>("team");
 
   return (
     <div>
@@ -1248,10 +1306,11 @@ function CreateBotForm({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       <button
         type="button"
         disabled={!name.trim()}
-        onClick={() => onCreate({ name, title, description })}
+        onClick={() => onCreate({ name, title, description, computerMode })}
         className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
       >
         Create
@@ -1272,6 +1331,7 @@ function BotSettings({
     title?: string;
     description?: string;
     instructions?: string;
+    computerMode: ComputerMode;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -1279,7 +1339,9 @@ function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1313,11 +1375,26 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      {error && !confirming ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
-          onClick={() => void onSave({ name, title, description, instructions: description })}
-          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
+          disabled={saving}
+          onClick={() => {
+            setSaving(true);
+            setError(null);
+            void onSave({
+              name,
+              title,
+              description,
+              instructions: description,
+              computerMode,
+            })
+              .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
+              .finally(() => setSaving(false));
+          }}
+          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
         >
           Save
         </button>
@@ -1331,8 +1408,8 @@ function BotSettings({
         {confirming ? (
           <div className="w-full rounded-[11px] border border-[#3A1F14] bg-[#1A100C] px-3.5 py-3">
             <p className="text-[13.5px] leading-[1.45] text-[#C9C9CE]">
-              This permanently deletes {bot.name}, including thread, computer, memory, and routines.
-              Bots it created stay in your list.
+              This permanently deletes {bot.name}, including its thread, memory, and routines. Bots
+              it created stay in your list.
             </p>
             <div className="mt-3 flex items-center gap-3">
               <button
@@ -1482,11 +1559,15 @@ function screenIframeSandbox(url: string | null) {
 function computerPlaceholder(
   state: ComputerStatus["state"] | undefined,
   booting: boolean,
-  botName: string,
+  label: string,
 ) {
   if (state === "booting" || booting) return "Booting live desktop…";
-  if (state === "running") return `${botName}’s screen`;
+  if (state === "running") return label;
   if (state === "suspended") return "Computer is asleep — take control to wake it";
   if (state === "error") return "Computer failed to boot";
   return "Computer is stopped";
+}
+
+function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
+  return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
 }

@@ -70,6 +70,7 @@ function bot(id: string, name: string, title: string, preview: string) {
   return {
     id,
     name,
+    computerMode: "team" as const,
     title,
     preview,
     color: "#9B5CF6",

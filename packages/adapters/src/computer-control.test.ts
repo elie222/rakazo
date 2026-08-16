@@ -42,14 +42,19 @@ describe("computer control leases", () => {
     const harness = controlHarness({ controlLeaseExpiresAt: expiresAt });
 
     await expect(
-      expireComputerControl(harness.deps, "bot", "lease-1", new Date("2026-01-01T00:00:00.000Z")),
+      expireComputerControl(
+        harness.deps,
+        "computer-id",
+        "lease-1",
+        new Date("2026-01-01T00:00:00.000Z"),
+      ),
     ).resolves.toBe(false);
 
     expect(harness.enqueue).toHaveBeenCalledWith({
       name: "computer.control-expire",
-      payload: { botId: "bot", leaseId: "lease-1" },
+      payload: { computerId: "computer-id", leaseId: "lease-1" },
       availableAt: expiresAt,
-      replaceKey: "computer.control-expire:bot",
+      replaceKey: "computer.control-expire:computer-id",
     });
     expect(harness.setScreenControl).not.toHaveBeenCalled();
   });
@@ -57,10 +62,10 @@ describe("computer control leases", () => {
   it("denies control, revokes the stream, clears the lease, and publishes expiry", async () => {
     const harness = controlHarness();
 
-    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).resolves.toBe(true);
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
 
     expect(harness.prisma.computer.updateMany.mock.calls[0]?.[0]).toMatchObject({
-      where: { botId: "bot", controlLeaseId: "lease-1" },
+      where: { id: "computer-id", controlLeaseId: "lease-1" },
       data: { controlHolder: "none" },
     });
     expect(harness.setScreenControl).toHaveBeenCalledWith(
@@ -71,6 +76,7 @@ describe("computer control leases", () => {
     );
     expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith({
       workspaceId: "workspace",
+      computerId: "computer-id",
       botId: "bot",
       leaseId: "lease-1",
       holder: "none",
@@ -83,13 +89,13 @@ describe("computer control leases", () => {
       revokeError: new Error("provider unavailable"),
     });
 
-    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).rejects.toThrow(
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).rejects.toThrow(
       "provider unavailable",
     );
 
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledTimes(1);
     expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
-      where: { botId: "bot", controlLeaseId: "lease-1" },
+      where: { id: "computer-id", controlLeaseId: "lease-1" },
       data: { controlHolder: "none" },
     });
     expect(harness.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
@@ -98,17 +104,19 @@ describe("computer control leases", () => {
   it("retries atomic lease cleanup when release-event persistence fails", async () => {
     const harness = controlHarness({ finalizeError: new Error("event unavailable") });
 
-    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).rejects.toThrow(
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).rejects.toThrow(
       "event unavailable",
     );
-    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).resolves.toBe(true);
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
 
     expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledTimes(2);
   });
 
   it("does not revoke a replacement lease", async () => {
     const harness = controlHarness({ controlLeaseId: "lease-2" });
-    await expect(expireComputerControl(harness.deps, "bot", "lease-1")).resolves.toBe(false);
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(
+      false,
+    );
     expect(harness.setScreenControl).not.toHaveBeenCalled();
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
   });
@@ -123,12 +131,14 @@ function controlHarness(
   } = {},
 ) {
   const computer = {
-    botId: "bot",
+    id: "computer-id",
+    homeKey: "team-workspace",
     providerRef: "computer",
     kind: "docker",
     state: "running",
     controlHolder: "user",
     controlLeaseId: options.controlLeaseId ?? "lease-1",
+    controlBotId: "bot",
     controlLeaseExpiresAt:
       options.controlLeaseExpiresAt === undefined
         ? new Date("2026-01-01T00:00:00.000Z")
@@ -142,7 +152,11 @@ function controlHarness(
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     bot: {
-      findUnique: vi.fn().mockResolvedValue({ id: "bot", thread: { id: "thread" } }),
+      findUnique: vi.fn().mockResolvedValue({
+        id: "bot",
+        thread: { id: "thread" },
+        computer,
+      }),
     },
   };
   const setScreenControl = vi.fn(async () => {

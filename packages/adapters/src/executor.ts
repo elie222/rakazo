@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import type {
   AgentHomeStore,
   AgentModelOAuthCredential,
@@ -26,14 +25,18 @@ import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@raka
 import { builtinAgentTools } from "./builtin-tools.js";
 import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
-import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
-import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import {
-  checkpointAndRecordComputerWorkspace,
-  restoreComputerWorkspace,
-} from "./computer-workspace.js";
-import { resolveAgentHomePath } from "./home.js";
+  acquireComputerExecutionLease,
+  ComputerBusyError,
+  type ComputerExecutionLease,
+  holdComputerExecutionLeaseForTakeover,
+  provisionComputer,
+  releaseComputerExecutionLease,
+  renewComputerExecutionLease,
+} from "./computer-lifecycle.js";
+import { observationToolResult, parseComputerActions } from "./computer-tools.js";
+import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -189,18 +192,55 @@ export function createRunExecutor(deps: ExecutorDeps) {
         data: { status: "running", startedAt: current.startedAt ?? new Date() },
       });
       if (started.count !== 1) return;
-      const attempt = await deps.prisma.attempt.create({
-        data: { runId, fence, status: "running" },
+      const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
+        where: { id: run.botId },
+        select: { computerId: true, computerSwitching: true },
       });
+      if (!leaseTarget.computerId) throw new Error("Bot has no computer");
+      if (leaseTarget.computerSwitching) {
+        await requeueComputerRun(deps, runId, workerId, fence);
+        return;
+      }
+      let computerLease: ComputerExecutionLease | null = null;
+      try {
+        computerLease = await acquireComputerExecutionLease(deps.prisma, {
+          computerId: leaseTarget.computerId,
+          runId,
+          botId: run.botId,
+        });
+      } catch (error) {
+        if (!(error instanceof ComputerBusyError)) throw error;
+        await requeueComputerRun(deps, runId, workerId, fence);
+        return;
+      }
+      const attempt = await deps.prisma.attempt
+        .create({
+          data: { runId, fence, status: "running" },
+        })
+        .catch(async (error) => {
+          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+          throw error;
+        });
 
       let leaseValid = true;
       let lastLeaseCheckAt = 0;
+      let retainComputerLease = false;
+      let runAbortController: AbortController | null = null;
       const heartbeat = setInterval(() => {
-        void renewRunLease(deps, runId, workerId, fence)
-          .then((renewed) => {
-            if (!renewed) leaseValid = false;
+        void Promise.all([
+          renewRunLease(deps, runId, workerId, fence),
+          renewComputerExecutionLease(deps.prisma, computerLease),
+        ])
+          .then(([runRenewed, computerRenewed]) => {
+            if (!runRenewed || !computerRenewed) {
+              leaseValid = false;
+              runAbortController?.abort();
+            }
           })
-          .catch(() => undefined);
+          .catch(() => {
+            leaseValid = false;
+            runAbortController?.abort();
+          });
       }, 60_000);
       heartbeat.unref?.();
 
@@ -208,7 +248,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
       try {
         const [bot, thread, messages, task, connectedPlugins, credential, settings] =
           await Promise.all([
-            deps.prisma.bot.findUniqueOrThrow({ where: { id: run.botId } }),
+            deps.prisma.bot.findUniqueOrThrow({
+              where: { id: run.botId },
+              include: { computer: true },
+            }),
             deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
             deps.prisma.message.findMany({
               where: { threadId: run.threadId },
@@ -226,6 +269,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
+        runAbortController = new AbortController();
+        if (!leaseValid) runAbortController.abort();
         const context = {
           operationId: runId,
           traceId: runId,
@@ -233,7 +278,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          signal: new AbortController().signal,
+          signal: runAbortController.signal,
           connectedProviders: connectedPlugins.map((row) => row.provider),
         };
 
@@ -262,7 +307,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
-        const computer = await ensureComputer(deps, bot.id, context);
+        if (!bot.computer) throw new Error("Bot has no computer");
+        const storedComputer = bot.computer;
+        const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+        scheduleComputerSleep(deps.jobs, storedComputer.id);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
         const builtins = graphical
@@ -647,7 +695,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMessage(deps, run, "bot", [
                 { kind: "ask", text: safeText, detail: safeDetail },
               ]);
-              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
                 data: { status: "waiting_input", leaseOwner: null, leaseExpiresAt: null },
@@ -686,20 +734,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 payload: { reason: safeReason },
               });
               await deps.prisma.computer.updateMany({
-                where: { botId: bot.id },
+                where: { id: storedComputer.id },
                 data: {
                   state: "running",
                   controlHolder: "none",
                   controlLeaseId: null,
                   controlLeaseExpiresAt: null,
+                  controlBotId: null,
                 },
               });
-              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
+                throw new Error("Computer lease expired before takeover");
+              }
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
                 data: { status: "waiting_takeover", leaseOwner: null, leaseExpiresAt: null },
               });
               if (paused.count !== 1) return;
+              retainComputerLease = true;
               await deps.prisma.attempt.update({
                 where: { id: attempt.id },
                 data: { status: "waiting_takeover", finishedAt: new Date() },
@@ -806,7 +859,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+          await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
           terminalCheckpointComplete = true;
 
           const text = redactSecrets(assembled || "done.", runSecrets);
@@ -838,9 +891,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         } catch (error) {
           if (!terminalCheckpointComplete) {
-            await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context).catch(
-              () => undefined,
-            );
+            await checkpointAndRecordComputerWorkspace(
+              deps,
+              storedComputer,
+              computer,
+              context,
+            ).catch(() => undefined);
           }
           const message = redactSecrets(
             error instanceof Error ? error.message : String(error),
@@ -870,18 +926,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
       } catch (setupError) {
-        console.error(
-          "run setup failed",
-          redactSecrets(
-            setupError instanceof Error ? setupError.message : String(setupError),
-            runSecrets,
-          ),
-        );
+        const computerBusy = setupError instanceof ComputerBusyError;
+        if (!computerBusy) {
+          console.error(
+            "run setup failed",
+            redactSecrets(
+              setupError instanceof Error ? setupError.message : String(setupError),
+              runSecrets,
+            ),
+          );
+        }
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: {
             status: "queued",
-            error: "Run setup failed; retrying",
+            error: computerBusy ? null : "Run setup failed; retrying",
             leaseOwner: null,
             leaseExpiresAt: null,
           },
@@ -895,10 +954,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               finishedAt: new Date(),
             },
           });
+          if (computerBusy) {
+            await deps.jobs.enqueue({
+              ...runContinueJob(runId),
+              availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+            });
+            return;
+          }
           throw new Error("Run setup failed; retrying");
         }
       } finally {
         clearInterval(heartbeat);
+        if (!retainComputerLease) {
+          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+        }
         await deps.prisma.attempt
           .updateMany({
             where: { id: attempt.id, status: "running" },
@@ -939,6 +1008,27 @@ async function renewRunLease(
     data: { leaseExpiresAt: new Date(Date.now() + 5 * 60_000) },
   });
   return renewed.count === 1;
+}
+
+function computerRetryDelay(fence: number): number {
+  return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+async function requeueComputerRun(
+  deps: ExecutorDeps,
+  runId: string,
+  workerId: string,
+  fence: number,
+): Promise<void> {
+  const released = await deps.prisma.run.updateMany({
+    where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+    data: { status: "queued", error: null, leaseOwner: null, leaseExpiresAt: null },
+  });
+  if (released.count !== 1) return;
+  await deps.jobs.enqueue({
+    ...runContinueJob(runId),
+    availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+  });
 }
 
 async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
@@ -1014,76 +1104,6 @@ async function completeEffect(deps: ExecutorDeps, effectId: string, result: unkn
     where: { id: effectId },
     data: { status: "completed", result: storedResult as never },
   });
-}
-
-async function ensureComputer(
-  deps: ExecutorDeps,
-  botId: string,
-  context: {
-    operationId: string;
-    traceId: string;
-    workspaceId: string;
-    userId: string;
-    botId?: string;
-    runId?: string;
-    signal: AbortSignal;
-  },
-): Promise<ComputerRef> {
-  const homePath = resolveAgentHomePath(deps.home, botId, deps.dataDir ?? "./data");
-  await mkdir(homePath, { recursive: true });
-  let existing = await deps.prisma.computer.findUnique({ where: { botId } });
-  if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
-    await expireComputerControl(deps, botId, existing.controlLeaseId);
-    existing = await deps.prisma.computer.findUnique({ where: { botId } });
-    if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
-      throw new Error("computer control revocation is still in progress");
-    }
-  }
-  await deps.prisma.computer.updateMany({
-    where: { botId },
-    data: { state: "booting" },
-  });
-  let provisioned: ComputerRef | undefined;
-  try {
-    const ref = await deps.sandbox.provision(
-      {
-        botId,
-        homePath,
-        providerRef: existing?.providerRef ?? undefined,
-        providerKind: existing?.kind as ComputerRef["kind"] | undefined,
-      },
-      context,
-    );
-    provisioned = ref;
-    const replacement =
-      ref.fresh === true ||
-      !existing?.providerRef ||
-      existing.providerRef !== ref.providerRef ||
-      existing.kind !== ref.kind;
-    if (replacement) await restoreComputerWorkspace(deps.home, deps.sandbox, botId, ref, context);
-    const activeControl = hasActiveComputerControl(existing);
-    await deps.prisma.computer.updateMany({
-      where: { botId },
-      data: {
-        state: "running",
-        providerRef: ref.providerRef,
-        kind: ref.kind,
-        controlHolder: activeControl ? "user" : "bot",
-        ...(!activeControl ? { controlLeaseId: null, controlLeaseExpiresAt: null } : {}),
-      },
-    });
-    scheduleComputerSleep(deps.jobs, botId);
-    return ref;
-  } catch (error) {
-    if (provisioned?.fresh) {
-      await deps.sandbox.destroy(provisioned, context).catch(() => undefined);
-    }
-    await deps.prisma.computer.updateMany({
-      where: { botId },
-      data: { state: "error" },
-    });
-    throw error;
-  }
 }
 
 async function runSandboxCommand(

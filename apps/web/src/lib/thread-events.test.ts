@@ -214,11 +214,13 @@ function snapshot(messages: ThreadMessage[], olderCursor: number | null = null):
 function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   return {
     botId: "bot-1",
+    mode: "team",
     kind: "fake",
     state: "booting",
     controlHolder: "none",
     screenAvailable: false,
     homeRevision: null,
+    busyBotName: null,
     ...overrides,
   };
 }

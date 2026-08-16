@@ -15,30 +15,30 @@ import { LocalAgentHomeStore } from "./home.js";
 export async function restoreComputerWorkspace(
   home: AgentHomeStore,
   sandbox: SandboxProvider,
-  botId: string,
+  homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<void> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
-  await sandbox.importWorkspace(computer, home.exportHome(botId, context), context);
+  await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
 }
 
 export async function checkpointComputerWorkspace(
   home: AgentHomeStore,
   sandbox: SandboxProvider,
-  botId: string,
+  homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) {
-    return home.revise(botId);
+    return home.revise(homeKey);
   }
   const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));
   try {
     for await (const file of sandbox.exportWorkspace(computer, context)) {
       await writePortableFile(staging, file);
     }
-    return await home.commit(botId, staging, context);
+    return await home.commit(homeKey, staging, context);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -46,18 +46,21 @@ export async function checkpointComputerWorkspace(
 
 export async function checkpointAndRecordComputerWorkspace(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
-  botId: string,
+  computerRecord: { id: string; homeKey: string },
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string> {
   const revision = await checkpointComputerWorkspace(
     deps.home,
     deps.sandbox,
-    botId,
+    computerRecord.homeKey,
     computer,
     context,
   );
-  await deps.prisma.agentHome.updateMany({ where: { botId }, data: { revision } });
+  await deps.prisma.computer.updateMany({
+    where: { id: computerRecord.id },
+    data: { homeRevision: revision },
+  });
   return revision;
 }
 

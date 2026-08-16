@@ -2,6 +2,9 @@ import * as z from "zod";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 
+export const ComputerModeSchema = z.enum(["team", "dedicated"]);
+export type ComputerMode = z.infer<typeof ComputerModeSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -17,6 +20,7 @@ export const BotSchema = z.object({
   threadId: Id,
   preview: z.string(),
   status: z.string(),
+  computerMode: ComputerModeSchema,
   updatedAt: z.string(),
   createdAt: z.string(),
 });
@@ -29,6 +33,7 @@ export const CreateBotInput = z.object({
   instructions: z.string().max(20000).default(""),
   notifyOnFinish: z.boolean().default(true),
   color: z.string().optional(),
+  computerMode: ComputerModeSchema.default("team"),
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
@@ -133,11 +138,13 @@ export const UsageRecordSchema = z.object({
 
 export const ComputerStatusSchema = z.object({
   botId: Id,
+  mode: ComputerModeSchema,
   kind: SandboxKind,
   state: z.enum(["stopped", "booting", "running", "suspended", "error"]),
   controlHolder: z.enum(["bot", "user", "none"]),
   screenAvailable: z.boolean(),
   homeRevision: z.string().nullable(),
+  busyBotName: z.string().nullable(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

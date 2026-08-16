@@ -34,18 +34,21 @@ describe("background job contracts", () => {
     ).toThrow();
     expect(() => parseBackgroundJob("run.continue", { runId: "" })).toThrow();
     expect(() =>
-      parseBackgroundJob("computer.control-expire", { botId: "bot-1", leaseId: "" }),
+      parseBackgroundJob("computer.control-expire", {
+        computerId: "computer-1",
+        leaseId: "",
+      }),
     ).toThrow();
   });
 
   it("validates and dispatches a control-expiry job", async () => {
     const target = handlers();
     await dispatchBackgroundJob(target, "computer.control-expire", {
-      botId: "bot-1",
+      computerId: "computer-1",
       leaseId: "lease-1",
     });
     expect(target["computer.control-expire"]).toHaveBeenCalledWith({
-      botId: "bot-1",
+      computerId: "computer-1",
       leaseId: "lease-1",
     });
   });

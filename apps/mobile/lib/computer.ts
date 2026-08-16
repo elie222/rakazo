@@ -1,9 +1,13 @@
+import type { ComputerMode } from "@rakazo/contracts";
+
 export const COMPUTER_HEARTBEAT_MS = 60_000;
 
 export type ComputerStatus = {
   state: string;
   controlHolder: string;
   screenAvailable: boolean;
+  mode: ComputerMode;
+  busyBotName: string | null;
 };
 
 function isLocalHostname(hostname: string) {
@@ -34,16 +38,22 @@ export function previewPlaceholder(
   state: string | undefined,
   booting: boolean,
   name: string,
+  mode?: ComputerMode,
 ): string {
   if (state === "booting" || booting) return "Booting live desktop…";
-  if (state === "running") return `${name}’s screen`;
+  if (state === "running") return computerLabel(mode, name);
   if (state === "suspended") return "Computer is asleep — take control to wake it";
   if (state === "error") return "Computer failed to boot";
   return "Computer is stopped";
 }
 
 export function controlLabel(computer: ComputerStatus | null, name: string) {
+  if (computer?.busyBotName) return `${computer.busyBotName} is using it`;
   if (computer?.controlHolder === "user") return "You have control";
   if (computer?.state === "suspended") return "Asleep";
-  return `${name}’s screen`;
+  return computerLabel(computer?.mode, name);
+}
+
+export function computerLabel(mode: ComputerMode | undefined, name: string) {
+  return mode === "dedicated" ? `${name}’s computer` : "Team Computer";
 }

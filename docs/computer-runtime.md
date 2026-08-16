@@ -14,6 +14,8 @@ Pi runs in the Rakazo API/worker process. It is not installed in, or executed by
 
 ## Computer contract
 
+Each workspace gets one Team Computer by default, so bots share its files, browser sessions, and installed tools. A bot can instead use a Private Computer. Team Computer runs are serialized with a fenced database lease.
+
 `SandboxProvider` is the provider boundary. A backend must implement:
 
 - lifecycle: provision/reconnect, stop, and destroy;
@@ -33,9 +35,9 @@ The database stores the provider kind and opaque `providerRef`. That reference i
 
 ## Persistence
 
-The portable bot workspace is the durable boundary. E2B uses `/home/user/rakazo-home`; Docker and local providers expose the equivalent bot home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Rakazo checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Rakazo-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
+The portable computer workspace is the durable boundary. E2B uses `/home/user/rakazo-home`; Docker and local providers expose the equivalent home. Browser profiles are rooted under `.browser-profiles` in that workspace on E2B. Rakazo checkpoints transferred workspaces into `AgentHomeStore` at run completion or failure, before explicit stop, and before idle suspension. Docker mounts the Rakazo-owned home directly and only advances its revision marker at those boundaries. New or replacement machines import the latest stored workspace before use.
 
-`LocalAgentHomeStore` currently keeps the latest workspace under `DATA_DIR/homes/<bot-id>` and checkpoint metadata separately under `DATA_DIR/home-revisions`. Replacements are staged before the current copy is swapped, and checkpoints are serialized per bot. This implementation is latest-only rather than an immutable revision archive. Production deployments must put `DATA_DIR` on a Rakazo-owned persistent volume, encrypt that volume at rest, and include it in off-host backups. The storage interface is deliberately independent of E2B so an object-store-backed implementation can replace the local volume without changing agent tools or sandbox providers.
+`LocalAgentHomeStore` currently keeps the latest workspace under `DATA_DIR/homes/<computer-home-key>` and checkpoint metadata separately under `DATA_DIR/home-revisions`. Replacements are staged before the current copy is swapped, and checkpoints are serialized per computer. This implementation is latest-only rather than an immutable revision archive. Production deployments must put `DATA_DIR` on a Rakazo-owned persistent volume, encrypt that volume at rest, and include it in off-host backups. The storage interface is deliberately independent of E2B so an object-store-backed implementation can replace the local volume without changing agent tools or sandbox providers.
 
 Before exporting a remote workspace, the E2B backend quiesces desktop browsers so profile databases and login state are copied consistently. It excludes only transient cache/lock files inside `.browser-profiles`; similarly named project files remain durable.
 
