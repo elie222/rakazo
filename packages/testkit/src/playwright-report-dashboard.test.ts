@@ -31,7 +31,24 @@ describe("updatePlaywrightHistory", () => {
 
     expect(history).toHaveLength(100);
     expect(history[0]?.id).toBe("200");
-    expect(history.at(-1)?.id).toBe("98");
+    expect(history.at(-1)?.id).toBe("6");
+  });
+
+  it("keeps a delayed older run behind the newest run", () => {
+    const newestRun = getRun({ id: "300", runNumber: 11 });
+    const delayedRun = getRun({ id: "250", runNumber: 10 });
+
+    expect(updatePlaywrightHistory([newestRun], delayedRun)).toEqual([newestRun, delayedRun]);
+  });
+
+  it("orders rerun attempts from newest to oldest", () => {
+    const firstAttempt = getRun({ attempt: 1 });
+    const secondAttempt = getRun({ attempt: 2 });
+
+    expect(updatePlaywrightHistory([secondAttempt], firstAttempt)).toEqual([
+      secondAttempt,
+      firstAttempt,
+    ]);
   });
 
   it("drops malformed and unsafe history entries", () => {

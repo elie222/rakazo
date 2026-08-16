@@ -43,7 +43,16 @@ export function updatePlaywrightHistory(
     ...history.filter(
       (previousRun) => previousRun.id !== run.id || previousRun.attempt !== run.attempt,
     ),
-  ].slice(0, MAX_HISTORY_LENGTH);
+  ]
+    .sort(compareRunRecency)
+    .slice(0, MAX_HISTORY_LENGTH);
+}
+
+function compareRunRecency(left: PlaywrightRun, right: PlaywrightRun): number {
+  const leftId = BigInt(left.id);
+  const rightId = BigInt(right.id);
+  if (leftId !== rightId) return leftId > rightId ? -1 : 1;
+  return right.attempt - left.attempt;
 }
 
 export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
@@ -293,6 +302,7 @@ function isPlaywrightRun(value: unknown): value is PlaywrightRun {
     typeof run.createdAt === "string" &&
     typeof run.event === "string" &&
     typeof run.id === "string" &&
+    /^\d+$/.test(run.id) &&
     isHttpsUrl(run.reportUrl) &&
     typeof run.result === "string" &&
     typeof run.runNumber === "number" &&
