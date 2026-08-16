@@ -21,7 +21,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
       <section class="hero">
         <a class="hero__pill" href="#selfhost">
           <span class="hero__badge">Apache-2.0</span>
-          <span>Open source alternative to Grok Bot — run it on your own machine</span>
+          <span>Open source alternative to Grok Bot<span class="hero__pill-tail"> — run it on your own machine</span></span>
         </a>
         <h1>AI teammates you actually own</h1>
         <p class="lead">
@@ -30,7 +30,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
         </p>
         <div class="hero__actions">
           <Button href={GITHUB_URL} external>View on GitHub</Button>
-          <Button href={GITHUB_URL} variant="secondary" external>Star on GitHub</Button>
+          <Button href="#demo" variant="secondary">See it in action</Button>
         </div>
       </section>
 
@@ -132,7 +132,6 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
           <p>Clone the repo, add a model key, and hand it something you have been putting off.</p>
           <div class="cta-actions">
             <Button href={GITHUB_URL} external>View on GitHub</Button>
-            <Button href={GITHUB_URL} variant="secondary" external>Star on GitHub</Button>
           </div>
         </div>
         <div class="stats-grid">
