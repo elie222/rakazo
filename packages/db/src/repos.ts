@@ -1,5 +1,6 @@
-import { type Actor, BOT_COLORS, type Bot } from "@rakazo/contracts";
+import { type Actor, BOT_COLORS, type Bot, type MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
 
 function mapBot(
@@ -94,6 +95,12 @@ export function createRepos(prisma: PrismaClient) {
         notifyOnFinish: boolean;
         color?: string;
         parentBotId?: string | null;
+        spawnKey?: string;
+        initialMessage?: {
+          role: "user" | "bot" | "system";
+          blocks: MessageBlock[];
+          runId?: string;
+        };
       },
     ): Promise<Bot> {
       let color = input.color;
@@ -129,15 +136,22 @@ export function createRepos(prisma: PrismaClient) {
             notifyOnFinish: input.notifyOnFinish,
             color,
             parentBotId: input.parentBotId ?? null,
+            spawnKey: input.spawnKey,
           },
         });
-        await tx.thread.create({
+        const thread = await tx.thread.create({
           data: {
             workspaceId: actor.workspaceId,
             botId: created.id,
             userId: actor.userId,
           },
         });
+        if (input.initialMessage) {
+          await createThreadMessageInTransaction(tx, {
+            threadId: thread.id,
+            ...input.initialMessage,
+          });
+        }
         await tx.computer.create({
           data: {
             workspaceId: actor.workspaceId,

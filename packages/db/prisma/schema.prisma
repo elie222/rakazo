@@ -181,6 +181,7 @@ model Bot {
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
   parentBotId    String?
+  spawnKey       String?
   parent         Bot?     @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
   children       Bot[]    @relation("BotChildren")
   createdAt      DateTime @default(now())
@@ -198,6 +199,7 @@ model Bot {
 
   @@index([workspaceId, userId, pinned, updatedAt])
   @@index([parentBotId])
+  @@unique([workspaceId, spawnKey])
   @@map("bots")
 }
 

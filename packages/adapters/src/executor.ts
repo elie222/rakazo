@@ -309,7 +309,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            if (name !== "spawn_bot") {
+              throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            }
           }
           const finish = async (result: unknown) => {
             if (applied) await completeEffect(deps, applied.effect.id, result);
@@ -469,30 +471,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
               },
               runId,
+              spawnKey: executionId,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
             });
             if ("error" in spawned) return finish(spawned);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "child_bot",
-                botId: spawned.botId,
-                name: spawned.name,
-                title: spawned.title,
-                status: "created",
-              },
-            ]);
-            await deps.events.append({
-              workspaceId: run.workspaceId,
-              threadId: thread.id,
-              botId: bot.id,
-              runId: run.id,
-              type: "bot.spawned",
-              payload: { childBotId: spawned.botId, name: spawned.name },
-            });
-            return finish(spawned);
+            await finish(spawned);
+            try {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "child_bot",
+                  botId: spawned.botId,
+                  name: spawned.name,
+                  title: spawned.title,
+                  status: "created",
+                },
+              ]);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.spawned",
+                payload: { childBotId: spawned.botId, name: spawned.name },
+              });
+            } catch (error) {
+              console.error("spawned bot notification", error);
+            }
+            return spawned;
           }
           if (name === "delete_bot") {
             const removed = await deleteSpawnedBot(
