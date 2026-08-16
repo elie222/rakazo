@@ -15,7 +15,7 @@ describeLive("real model and E2B computer journey", () => {
 
   beforeAll(async () => {
     for (const key of ["DATABASE_URL", "E2B_API_KEY", "OPENROUTER_API_KEY", "COMPUTER_E2E_MODEL"]) {
-      if (!process.env[key]) throw new Error(`${key} is required for pnpm e2e:computer`);
+      if (!process.env[key]) throw new Error(`${key} is required for pnpm test:computer`);
     }
     dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-computer-e2e-"));
     const { createApp } = await import("../../../apps/api/src/app.ts");

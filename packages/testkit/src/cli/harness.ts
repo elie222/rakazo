@@ -3,17 +3,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
-const providers = process.argv.includes("--providers");
-const integrationOnly = process.argv.includes("--integration");
-const webOnly = process.argv.includes("--web");
+const integration = process.argv.includes("--integration");
+const e2e = process.argv.includes("--e2e");
 
-if (integrationOnly && webOnly) {
-  throw new Error("Choose either --integration or --web, not both");
+if (Number(integration) + Number(e2e) !== 1) {
+  throw new Error("Pass exactly one of --integration or --e2e");
 }
 
 async function main() {
-  const mode = integrationOnly ? "integration" : webOnly ? "web" : "full";
-  const reportDir = path.resolve("verify-report", mode);
+  const mode = integration ? "integration" : "e2e";
+  const reportDir = path.resolve("test-report", mode);
   await mkdir(reportDir, { recursive: true });
   const container = await new PostgreSqlContainer("postgres:16-alpine").start();
   try {
@@ -27,13 +26,8 @@ async function main() {
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = "fake";
     process.env.AGENT_RUNTIME = "scripted";
-    if (providers) {
-      process.env.VERIFY_PROVIDERS = "1";
-      if (process.env.E2B_API_KEY) process.env.SANDBOX_PROVIDER = "e2b";
-      if (process.env.OPENROUTER_API_KEY) process.env.AGENT_RUNTIME = "pi";
-    }
-    process.env.BETTER_AUTH_SECRET = "verify-secret-verify-secret-32ch";
-    process.env.ENCRYPTION_KEY = "verify-encryption-key-verify-encryption-key";
+    process.env.BETTER_AUTH_SECRET = "test-secret-test-secret-32chars!";
+    process.env.ENCRYPTION_KEY = "test-encryption-key-test-encryption-key";
     process.env.BETTER_AUTH_URL = webOrigin;
     process.env.WEB_ORIGIN = webOrigin;
     process.env.API_PORT = String(apiPort);
@@ -52,13 +46,14 @@ async function main() {
       cwd: path.resolve("packages/db"),
     });
 
-    if (integrationOnly) {
+    if (integration) {
       execSync(
         [
           "pnpm exec vitest run --no-file-parallelism",
           "packages/testkit/src/journeys.test.ts",
           "packages/testkit/src/authorization.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
+          "packages/testkit/src/graphile-jobs.test.ts",
         ].join(" "),
         {
           stdio: "inherit",
@@ -68,15 +63,10 @@ async function main() {
       await writeSummary(reportDir, {
         ok: true,
         mode,
-        providers,
         sandbox: process.env.SANDBOX_PROVIDER,
         runtime: process.env.AGENT_RUNTIME,
       });
       return;
-    }
-
-    if (!webOnly) {
-      execSync("pnpm verify:fast", { stdio: "inherit", env: process.env });
     }
 
     const { createApp } = await import("../../../../apps/api/src/app.ts");
@@ -93,7 +83,6 @@ async function main() {
       await writeSummary(reportDir, {
         ok: true,
         mode,
-        providers,
         sandbox: process.env.SANDBOX_PROVIDER,
         runtime: process.env.AGENT_RUNTIME,
         apiPort,

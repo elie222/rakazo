@@ -14,7 +14,7 @@ describe("loadEnv", () => {
     expect(env.wakeupDriver).toBe("graphile");
   });
 
-  it("keeps explicit emulator settings for pnpm verify:fast", () => {
+  it("keeps explicit emulator settings for pnpm test", () => {
     const env = loadEnv({
       ...base,
       AGENT_RUNTIME: "scripted",

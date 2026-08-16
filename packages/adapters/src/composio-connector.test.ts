@@ -88,7 +88,7 @@ describe("composio tool mapping", () => {
   });
 });
 
-describe("Composio during verify:fast", () => {
+describe("Composio during pnpm test", () => {
   it("does not construct a live Platform client under Vitest", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);

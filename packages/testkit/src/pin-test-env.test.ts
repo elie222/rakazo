@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const describeFast = process.env.VERIFY_PROVIDERS ? describe.skip : describe;
 const itOffline = process.env.VERIFY_DATABASE ? it.skip : it;
 
-describeFast("pnpm verify:fast emulator pin", () => {
+describeFast("pnpm test emulator pin", () => {
   it("forces scripted runtime, fake sandbox, and in-memory wakeup", () => {
     expect(process.env.AGENT_RUNTIME).toBe("scripted");
     expect(process.env.SANDBOX_PROVIDER).toBe("fake");
@@ -24,11 +24,21 @@ describeFast("pnpm verify:fast emulator pin", () => {
     },
   );
 
-  it("runs through vitest rather than the live-provider canary CLI", () => {
+  it("exposes one test command family and no leftover verify/e2e aliases", () => {
     const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
-    expect(pkg.scripts["verify:fast"]).toBe("vitest run");
-    expect(pkg.scripts["verify:providers"]).toContain("verify.ts --providers");
+    expect(pkg.scripts.test).toBe("vitest run");
+    expect(pkg.scripts["test:integration"]).toContain("harness.ts --integration");
+    expect(pkg.scripts["test:e2e"]).toContain("harness.ts --e2e");
+    expect(pkg.scripts["test:topology"]).toContain("cli/topology.ts");
+    expect(pkg.scripts["test:canary"]).toContain("cli/canary.ts");
+    expect(pkg.scripts["test:computer"]).toContain("cli/computer.ts");
+    expect(pkg.scripts.verify).toBeUndefined();
+    expect(pkg.scripts["verify:fast"]).toBeUndefined();
+    expect(pkg.scripts["verify:providers"]).toBeUndefined();
+    expect(pkg.scripts.e2e).toBeUndefined();
+    expect(pkg.scripts["e2e:computer"]).toBeUndefined();
+    expect(pkg.scripts["canary:providers"]).toBeUndefined();
   });
 });

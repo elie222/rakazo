@@ -444,7 +444,11 @@ export function ShellPage() {
             {snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status) ? (
               <button
                 type="button"
-                onClick={() => active && void rpc.threads.stop({ botId: active.id })}
+                aria-label="Stop"
+                onClick={() =>
+                  active &&
+                  void rpc.threads.stop({ botId: active.id }).then(() => refreshThread(active.id))
+                }
                 className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
               >
                 ■
@@ -452,6 +456,7 @@ export function ShellPage() {
             ) : (
               <button
                 type="button"
+                aria-label="Send"
                 onClick={() => void send()}
                 className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
               >

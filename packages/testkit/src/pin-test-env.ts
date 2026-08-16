@@ -1,5 +1,5 @@
 /**
- * pnpm verify:fast must stay emulator-only even when a developer .env points at
+ * `pnpm test` must stay emulator-only even when a developer .env points at
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.
  */
 if (!process.env.VERIFY_PROVIDERS) {

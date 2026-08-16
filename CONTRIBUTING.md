@@ -19,15 +19,18 @@ pnpm dev
 
 ## Checks before you open a PR
 
-| Command | What it does |
+| Command | When to run |
 | --- | --- |
-| `pnpm verify:fast` | **Default PR bar.** Unit, property, and in-process contract tests. Uses scripted runtime, fake sandbox, and in-memory wakeup — no live Composio or OpenRouter. |
-| `pnpm verify` | Optional. Postgres via Testcontainers, emulators, API, Playwright. Needs Docker. |
-| `pnpm verify:providers` | Optional. Live OpenRouter / E2B canaries. Needs Docker and real API keys. |
+| `pnpm test` | Default. Units, properties, and in-process contracts. Scripted runtime, fake sandbox, in-memory wakeup — no live Composio or OpenRouter. |
+| `pnpm test:integration` | Postgres via Testcontainers: product journeys, authorization, executor lifecycle, Graphile / LISTEN/NOTIFY. Needs Docker. |
+| `pnpm test:e2e` | Playwright against the emulated API. Needs Docker. |
+| `pnpm test:topology` | Local product-path smoke: Docker computer + Graphile worker recovery. Needs Docker. Not PR CI. |
+| `pnpm test:canary` | Live OpenRouter / E2B canaries. Needs keys. Not PR CI. |
+| `pnpm test:computer` | Real vision model + E2B desktop. Needs keys; see README. Not PR CI. |
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
-CI runs `pnpm lint`, `pnpm check`, and `pnpm verify:fast` on every PR.
+CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
 
 ## Secrets and configuration
 
@@ -43,7 +46,7 @@ The product path is **Pi + Docker + Graphile**. Emulator settings (`AGENT_RUNTIM
 
 - Keep PRs small and easy to review.
 - Target the `main` branch.
-- Describe what changed and **how you tested** (e.g. `pnpm verify:fast`, manual steps).
+- Describe what changed and **how you tested** (e.g. `pnpm test`, manual steps).
 - Link related issues when applicable.
 
 ## Contact

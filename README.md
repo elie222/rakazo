@@ -70,7 +70,7 @@ curl -s http://127.0.0.1:3100/health
 
 You want `"runtime":"pi"`, `"sandbox":"docker"`, `"jobs":"graphile"`, and `"realtime":"postgres"`. `"composio":true` only if the Composio key is set.
 
-Product defaults are Pi + Docker + Graphile. `pnpm verify:fast` pins the emulators (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) so default tests never call live models or Composio.
+Product defaults are Pi + Docker + Graphile. `pnpm test` pins the emulators (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) so default tests never call live models or Composio.
 
 ### Computer and app modes
 
@@ -111,17 +111,19 @@ pnpm --filter @rakazo/desktop pack
 
 Outputs land in `apps/desktop/out/` (macOS dmg/zip, Windows NSIS, Linux AppImage). Those builds still need a running API and web origin.
 
-## Verify
+## Test
 
 ```bash
-pnpm verify:fast       # unit, property, and in-process contract tests
-pnpm verify            # Postgres via Testcontainers, emulators, API, Playwright
-pnpm verify:providers  # optional live OpenRouter / E2B canaries
+pnpm test              # unit, property, and in-process contract tests
+pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
+pnpm test:e2e          # Playwright against the emulated stack
+pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
+pnpm test:canary       # live OpenRouter / E2B canaries
 # explicit real vision-model + real E2B desktop acceptance test:
-COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm e2e:computer
+COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
-The computer acceptance test is never selected by the normal test commands. It also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
+`pnpm test:topology`, `pnpm test:canary`, and `pnpm test:computer` are for running the product path on your machine. They are not part of pull-request CI. The computer acceptance test also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
 
 See [`docs/computer-runtime.md`](./docs/computer-runtime.md) for the agent/runtime boundary, provider switching, and persistence contract.
 

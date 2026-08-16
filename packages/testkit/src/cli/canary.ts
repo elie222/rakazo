@@ -21,7 +21,7 @@ async function main() {
       BETTER_AUTH_URL: "http://127.0.0.1:5173",
       WEB_ORIGIN: "http://127.0.0.1:5173",
       SIGNUPS_ENABLED: "true",
-      DATA_DIR: path.resolve("verify-report/providers/data"),
+      DATA_DIR: path.resolve("test-report/canary/data"),
     };
     if (postgres) {
       execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env });

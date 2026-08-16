@@ -28,6 +28,7 @@ infra/sandboxes/supervisor/dist
 .cache
 artifacts
 backups
+test-report
 verify-report
 .astro
 .deploy.lock

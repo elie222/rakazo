@@ -70,8 +70,48 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
     await page.getByTitle("Agent computer").click();
   }
   await gear.click();
-  await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
   await expect(page.getByRole("button", { name: "Delete bot" })).toBeVisible();
+});
+
+test("sign-in, spawn, and stop work in the shell", async ({ page }) => {
+  const stamp = Date.now();
+  const email = `shell-${stamp}@rakazo.test`;
+  await signup(page, email, "password12", "Shell");
+  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+
+  const composer = page.getByPlaceholder(/Message/);
+  await composer.fill("spawn a bot named Scout to research venues");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("complementary").getByRole("button", { name: /Scout/ })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: /^Chief/ })
+    .click();
+  await composer.fill("keep working until I stop you");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
+
+  await page.context().clearCookies();
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("Your email address").fill(email);
+  await page.getByPlaceholder("Password").fill("password12");
+  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.waitForURL(/\/app/, { timeout: 20_000 });
+  await expect(
+    page.getByRole("complementary").getByRole("button", { name: /^Chief/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary").getByRole("button", { name: /Scout/ }),
+  ).toBeVisible();
 });
 
 async function completeOnboarding(page: Page, answers: string[]) {
