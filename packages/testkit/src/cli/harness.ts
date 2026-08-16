@@ -1,8 +1,9 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { runProcess } from "./process.js";
 
 loadRootEnv();
 
@@ -118,7 +119,7 @@ async function main() {
 
     try {
       try {
-        await run(
+        await runProcess(
           "pnpm",
           [
             "--filter",
@@ -214,17 +215,6 @@ async function writeSummary(reportDir: string, summary: Record<string, unknown>)
     path.join(reportDir, "summary.json"),
     JSON.stringify({ ...summary, at: new Date().toISOString() }, null, 2),
   );
-}
-
-function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit", env, shell: false });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command} ${args.join(" ")} exited ${code}`));
-    });
-  });
 }
 
 async function waitForHealth(url: string, ms: number) {

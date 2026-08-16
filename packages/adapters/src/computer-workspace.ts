@@ -13,33 +13,38 @@ import type { PrismaClient } from "@rakazo/db";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { LocalAgentHomeStore } from "./home.js";
 
+export const PORTABLE_BROWSER_STOP_COMMAND =
+  "pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true";
+export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
+
+const skippedBrowserProfileDirectories = new Set([
+  "Cache",
+  "Code Cache",
+  "GPUCache",
+  "GrShaderCache",
+  "ShaderCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
+  "Crashpad",
+]);
+const skippedBrowserProfileFiles = new Set([
+  "BrowserMetrics",
+  "DevToolsActivePort",
+  "SingletonCookie",
+  "SingletonLock",
+  "SingletonSocket",
+  ".parentlock",
+  "lock",
+]);
+
 /** Excludes transient browser state that is unsafe or wasteful to restore. */
 export function shouldSkipPortableWorkspaceFile(relative: string) {
   if (!relative.startsWith(".browser-profiles/")) return false;
   const segments = relative.split("/");
   const name = segments.at(-1) ?? "";
   return (
-    segments.some((segment) =>
-      [
-        "Cache",
-        "Code Cache",
-        "GPUCache",
-        "GrShaderCache",
-        "ShaderCache",
-        "DawnGraphiteCache",
-        "DawnWebGPUCache",
-        "Crashpad",
-      ].includes(segment),
-    ) ||
-    [
-      "BrowserMetrics",
-      "DevToolsActivePort",
-      "SingletonCookie",
-      "SingletonLock",
-      "SingletonSocket",
-      ".parentlock",
-      "lock",
-    ].includes(name)
+    segments.some((segment) => skippedBrowserProfileDirectories.has(segment)) ||
+    skippedBrowserProfileFiles.has(name)
   );
 }
 

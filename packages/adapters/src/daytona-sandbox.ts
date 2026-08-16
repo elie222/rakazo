@@ -33,11 +33,14 @@ import {
   shellQuote,
   workspacePath,
 } from "./computer-support.js";
-import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
+import {
+  PORTABLE_BROWSER_STOP_COMMAND,
+  PORTABLE_TRANSFER_BATCH_BYTES,
+  shouldSkipPortableWorkspaceFile,
+} from "./computer-workspace.js";
 
 const DAYTONA_VNC_PORT = 6080;
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
-const DAYTONA_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
 export type DaytonaSandboxSdk = Pick<Daytona, "create" | "get">;
 
@@ -53,6 +56,10 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   private readonly screenPreviews = new Map<
     string,
     { url: string; token: string; expiresAt: number }
+  >();
+  private readonly screenPreviewStarts = new Map<
+    string,
+    Promise<{ url: string; token: string; expiresAt: number }>
   >();
   private readonly pointerDown = new Map<
     string,
@@ -114,8 +121,21 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       { timeout: 120 },
     );
     this.boxes.set(sandbox.id, sandbox);
-    await this.prepareWorkspace(sandbox);
-    return this.ref(sandbox, request.botId, true);
+    try {
+      await this.prepareWorkspace(sandbox);
+      return this.ref(sandbox, request.botId, true);
+    } catch (error) {
+      this.forget(sandbox.id);
+      try {
+        await sandbox.delete(120, true);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Daytona workspace preparation and sandbox cleanup failed",
+        );
+      }
+      throw error;
+    }
   }
 
   async *execute(
@@ -322,7 +342,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
       if (
         batch.length >= 8 ||
-        batchBytes + file.content.byteLength > DAYTONA_TRANSFER_BATCH_BYTES
+        batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
       ) {
         await flush();
       }
@@ -346,21 +366,29 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
-    const sandbox = this.boxes.get(id) ?? (await this.client.get(id).catch(() => undefined));
-    if (sandbox) {
-      await this.revokeScreenPreview(sandbox);
-      await sandbox.computerUse.stop().catch(() => undefined);
-      await sandbox.stop(120).catch(() => undefined);
+    const sandbox = await this.findForTeardown(id);
+    if (!sandbox) {
+      this.forget(id);
+      return;
     }
+    const preview = this.screenPreviews.get(id);
     this.forget(id);
+    await this.revokeScreenPreview(sandbox, preview);
+    await sandbox.computerUse.stop().catch(() => undefined);
+    await sandbox.stop(120);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
-    const sandbox = this.boxes.get(id) ?? (await this.client.get(id).catch(() => undefined));
-    if (sandbox) await this.revokeScreenPreview(sandbox);
-    await sandbox?.delete(120, true);
+    const sandbox = await this.findForTeardown(id);
+    if (!sandbox) {
+      this.forget(id);
+      return;
+    }
+    const preview = this.screenPreviews.get(id);
     this.forget(id);
+    await this.revokeScreenPreview(sandbox, preview);
+    await sandbox.delete(120, true);
   }
 
   private ref(sandbox: Sandbox, botId: string, fresh: boolean): ComputerRef {
@@ -378,13 +406,17 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (existing) return existing;
     const pending = this.connections.get(id);
     if (pending) return pending;
-    const connection = (async () => {
+    let connection!: Promise<Sandbox>;
+    connection = (async () => {
       const sandbox = await this.client.get(id);
       if (sandbox.state !== SandboxState.STARTED) await sandbox.start(120);
+      if (this.connections.get(id) !== connection) {
+        throw new Error("Daytona connection was invalidated during teardown");
+      }
       this.boxes.set(id, sandbox);
       return sandbox;
     })().finally(() => {
-      this.connections.delete(id);
+      if (this.connections.get(id) === connection) this.connections.delete(id);
     });
     this.connections.set(id, connection);
     return connection;
@@ -394,13 +426,24 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return this.connect(computer.providerRef || computer.id);
   }
 
+  private async findForTeardown(id: string): Promise<Sandbox | undefined> {
+    const existing = this.boxes.get(id);
+    if (existing) return existing;
+    try {
+      return await this.client.get(id);
+    } catch (error) {
+      if (isUnrecoverableDaytonaError(error)) return undefined;
+      throw error;
+    }
+  }
+
   private async workspaceRoot(sandbox: Sandbox): Promise<string> {
     const cached = this.workspaceRoots.get(sandbox.id);
     if (cached) return cached;
     const home = (await sandbox.getUserHomeDir()) ?? (await sandbox.getWorkDir());
     if (!home) throw new Error("Daytona did not report a sandbox home directory");
     const root = path.posix.join(home, "rakazo-home");
-    this.workspaceRoots.set(sandbox.id, root);
+    if (this.boxes.get(sandbox.id) === sandbox) this.workspaceRoots.set(sandbox.id, root);
     return root;
   }
 
@@ -408,16 +451,22 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (this.prepared.has(sandbox.id)) return;
     const pending = this.preparations.get(sandbox.id);
     if (pending) return pending;
-    const preparation = (async () => {
+    let preparation!: Promise<void>;
+    preparation = (async () => {
       const root = await this.workspaceRoot(sandbox);
       const result = await sandbox.process.executeCommand(`mkdir -p -- ${shellQuote(root)}`);
       if (result.exitCode !== 0) {
         throw new Error(result.result || "could not create Daytona workspace");
       }
       await configurePortableBrowserProfiles(sandbox, root);
+      if (this.preparations.get(sandbox.id) !== preparation) {
+        throw new Error("Daytona workspace preparation was invalidated during teardown");
+      }
       this.prepared.add(sandbox.id);
     })().finally(() => {
-      this.preparations.delete(sandbox.id);
+      if (this.preparations.get(sandbox.id) === preparation) {
+        this.preparations.delete(sandbox.id);
+      }
     });
     this.preparations.set(sandbox.id, preparation);
     return preparation;
@@ -427,13 +476,19 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (this.desktopReady.has(sandbox.id)) return;
     const pending = this.desktopStarts.get(sandbox.id);
     if (pending) return pending;
-    const start = sandbox.computerUse
+    let start!: Promise<void>;
+    start = sandbox.computerUse
       .start()
       .then(() => {
+        if (this.desktopStarts.get(sandbox.id) !== start) {
+          throw new Error("Daytona desktop start was invalidated during teardown");
+        }
         this.desktopReady.add(sandbox.id);
       })
       .finally(() => {
-        this.desktopStarts.delete(sandbox.id);
+        if (this.desktopStarts.get(sandbox.id) === start) {
+          this.desktopStarts.delete(sandbox.id);
+        }
       });
     this.desktopStarts.set(sandbox.id, start);
     return start;
@@ -527,19 +582,39 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   private async screenPreview(sandbox: Sandbox) {
     const cached = this.screenPreviews.get(sandbox.id);
     if (cached && cached.expiresAt > Date.now() + 60_000) return cached;
-    const preview = await sandbox.getSignedPreviewUrl(DAYTONA_VNC_PORT, DAYTONA_SCREEN_TTL_SECONDS);
-    const cachedPreview = {
-      url: preview.url,
-      token: preview.token,
-      expiresAt: Date.now() + DAYTONA_SCREEN_TTL_SECONDS * 1_000,
-    };
-    this.screenPreviews.set(sandbox.id, cachedPreview);
-    return cachedPreview;
+    const pending = this.screenPreviewStarts.get(sandbox.id);
+    if (pending) return pending;
+    let start!: Promise<{ url: string; token: string; expiresAt: number }>;
+    start = sandbox
+      .getSignedPreviewUrl(DAYTONA_VNC_PORT, DAYTONA_SCREEN_TTL_SECONDS)
+      .then(async (preview) => {
+        const cachedPreview = {
+          url: preview.url,
+          token: preview.token,
+          expiresAt: Date.now() + DAYTONA_SCREEN_TTL_SECONDS * 1_000,
+        };
+        if (this.screenPreviewStarts.get(sandbox.id) !== start) {
+          await sandbox
+            .expireSignedPreviewUrl(DAYTONA_VNC_PORT, preview.token)
+            .catch(() => undefined);
+          throw new Error("Daytona screen preview was invalidated during teardown");
+        }
+        this.screenPreviews.set(sandbox.id, cachedPreview);
+        return cachedPreview;
+      })
+      .finally(() => {
+        if (this.screenPreviewStarts.get(sandbox.id) === start) {
+          this.screenPreviewStarts.delete(sandbox.id);
+        }
+      });
+    this.screenPreviewStarts.set(sandbox.id, start);
+    return start;
   }
 
-  private async revokeScreenPreview(sandbox: Sandbox): Promise<void> {
-    const preview = this.screenPreviews.get(sandbox.id);
-    this.screenPreviews.delete(sandbox.id);
+  private async revokeScreenPreview(
+    sandbox: Sandbox,
+    preview = this.screenPreviews.get(sandbox.id),
+  ): Promise<void> {
     if (!preview) return;
     await sandbox.expireSignedPreviewUrl(DAYTONA_VNC_PORT, preview.token).catch(() => undefined);
   }
@@ -553,6 +628,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     this.desktopReady.delete(id);
     this.desktopStarts.delete(id);
     this.screenPreviews.delete(id);
+    this.screenPreviewStarts.delete(id);
     this.pointerDown.delete(id);
   }
 }
@@ -631,9 +707,7 @@ async function configurePortableBrowserProfiles(sandbox: Sandbox, root: string):
 }
 
 async function stopDaytonaBrowsers(sandbox: Sandbox): Promise<void> {
-  await sandbox.process
-    .executeCommand("pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true")
-    .catch(() => undefined);
+  await sandbox.process.executeCommand(PORTABLE_BROWSER_STOP_COMMAND).catch(() => undefined);
 }
 
 async function launchDaytonaApplication(
@@ -667,15 +741,17 @@ async function* walkDaytonaWorkspace(
 ): AsyncIterable<PortableFile> {
   if (context.signal.aborted) throw context.signal.reason ?? new Error("export aborted");
   const entries = await sandbox.fs.listFiles(workspacePath(root, directory));
-  const files = entries.filter((entry) => !entry.isDir);
+  const files = entries
+    .filter((entry) => !entry.isDir)
+    .map((entry) => ({
+      entry,
+      relative: normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name),
+    }))
+    .filter(({ relative }) => !shouldSkipPortableWorkspaceFile(relative));
   const directories = entries.filter((entry) => entry.isDir);
-  for (let index = 0; index < files.length; index += 8) {
+  for (const entries of daytonaExportBatches(files)) {
     const batch = await Promise.all(
-      files.slice(index, index + 8).map(async (entry) => {
-        const relative = normalizeWorkspacePath(
-          directory ? `${directory}/${entry.name}` : entry.name,
-        );
-        if (shouldSkipPortableWorkspaceFile(relative)) return undefined;
+      entries.map(async ({ entry, relative }) => {
         const content = await sandbox.fs.downloadFile(workspacePath(root, relative));
         return {
           path: relative,
@@ -684,7 +760,7 @@ async function* walkDaytonaWorkspace(
         };
       }),
     );
-    for (const file of batch) if (file) yield file;
+    for (const file of batch) yield file;
   }
   for (const entry of directories) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
@@ -692,4 +768,24 @@ async function* walkDaytonaWorkspace(
       yield* walkDaytonaWorkspace(sandbox, root, relative, context);
     }
   }
+}
+
+function daytonaExportBatches<T extends { entry: { size: number } }>(files: readonly T[]): T[][] {
+  const batches: T[][] = [];
+  let batch: T[] = [];
+  let batchBytes = 0;
+  for (const file of files) {
+    if (
+      batch.length > 0 &&
+      (batch.length >= 8 || batchBytes + file.entry.size > PORTABLE_TRANSFER_BATCH_BYTES)
+    ) {
+      batches.push(batch);
+      batch = [];
+      batchBytes = 0;
+    }
+    batch.push(file);
+    batchBytes += file.entry.size;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
 }

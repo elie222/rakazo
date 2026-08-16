@@ -89,19 +89,13 @@ describe("DaytonaSandboxProvider", () => {
     expect(fixture.type).toHaveBeenCalledWith("hello");
     expect(fixture.scroll).toHaveBeenCalledWith(10, 20, "down", 2);
 
-    const screen = await provider.connectScreen(
-      computer,
-      { view: "stream", interactive: false },
-      context,
-    );
+    const [screen, interactiveScreen] = await Promise.all([
+      provider.connectScreen(computer, { view: "stream", interactive: false }, context),
+      provider.connectScreen(computer, { view: "stream", interactive: true }, context),
+    ]);
     expect(screen.url).toContain("/vnc.html");
     expect(screen.url).toContain("view_only=true");
     await screen.close();
-    const interactiveScreen = await provider.connectScreen(
-      computer,
-      { view: "stream", interactive: true },
-      context,
-    );
     expect(interactiveScreen.url).toContain("view_only=false");
     expect(fixture.getSignedPreviewUrl).toHaveBeenCalledTimes(1);
 
@@ -163,15 +157,57 @@ describe("DaytonaSandboxProvider", () => {
       ),
     ).toHaveLength(1);
   });
+
+  it("deletes a fresh sandbox when workspace preparation fails", async () => {
+    const fixture = daytonaFixture({ prepareFails: true });
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+
+    await expect(
+      provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).rejects.toThrow(/could not create Daytona workspace/);
+    expect(fixture.deleteSandbox).toHaveBeenCalledWith(120, true);
+  });
+
+  it("surfaces transient stop failures so cleanup can retry", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    fixture.stop.mockRejectedValueOnce(new Error("temporary Daytona outage"));
+
+    await expect(provider.stop(computer, context)).rejects.toThrow("temporary Daytona outage");
+    await expect(provider.stop(computer, context)).resolves.toBeUndefined();
+    expect(fixture.get).toHaveBeenCalledTimes(1);
+    expect(fixture.stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("distinguishes transient lookup failures from an already deleted sandbox", async () => {
+    const fixture = daytonaFixture({ id: "remote" });
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = {
+      id: "remote",
+      botId: "bot-a",
+      kind: "daytona" as const,
+      providerRef: "remote",
+      fresh: false,
+    };
+    fixture.get.mockRejectedValueOnce(new Error("temporary Daytona outage"));
+    fixture.get.mockRejectedValueOnce({ statusCode: 404 });
+
+    await expect(provider.stop(computer, context)).rejects.toThrow("temporary Daytona outage");
+    await expect(provider.stop(computer, context)).resolves.toBeUndefined();
+  });
 });
 
-function daytonaFixture(options: { id?: string; state?: string } = {}) {
+function daytonaFixture(options: { id?: string; state?: string; prepareFails?: boolean } = {}) {
   const files = new Map<string, Buffer>();
   const modes = new Map<string, string>();
   const id = options.id ?? "daytona-box";
   const executeCommand = vi.fn(
     async (command: string, _cwd?: string, _env?: Record<string, string>, _timeout?: number) => {
       if (command === "'echo' 'hello'") return { exitCode: 0, result: "hello\n" };
+      if (options.prepareFails && command.startsWith("mkdir -p -- ")) {
+        return { exitCode: 1, result: "could not create Daytona workspace" };
+      }
       if (command.startsWith("chmod 700 -- ")) {
         for (const match of command.matchAll(/'([^']+)'/g)) modes.set(match[1]!, "0755");
       }

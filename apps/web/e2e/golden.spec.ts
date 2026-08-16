@@ -1,5 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, realSandboxTimeout, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  realSandboxTimeout,
+  rpc,
+  signup,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -180,10 +187,8 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
 });
 
 async function threadRunStatus(page: Page) {
-  const botId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1);
-  if (!botId || botId === "app") throw new Error(`missing bot id in ${page.url()}`);
-  const response = await page.request.post("/rpc/threads/get", { data: { json: { botId } } });
-  const result = (await response.json()) as { json?: { run?: { status?: string } | null } };
-  if (!response.ok()) throw new Error(`threads/get ${response.status()}`);
-  return result.json?.run?.status ?? "idle";
+  const result = await rpc<{ run?: { status?: string } | null }>(page, "threads/get", {
+    botId: activeBotId(page),
+  });
+  return result.run?.status ?? "idle";
 }

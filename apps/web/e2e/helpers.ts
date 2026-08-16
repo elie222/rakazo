@@ -1,7 +1,26 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 
+export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
+  return provider === "e2b" || provider === "daytona";
+}
+
 export function realSandboxTimeout(real: number, emulated: number) {
-  return ["e2b", "daytona"].includes(process.env.SANDBOX_PROVIDER ?? "") ? real : emulated;
+  return isRealSandboxProvider() ? real : emulated;
+}
+
+export function activeBotId(page: Page) {
+  const id = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1);
+  if (!id || id === "app") throw new Error(`missing bot id in ${page.url()}`);
+  return id;
+}
+
+export async function rpc<T>(page: Page, procedure: string, body: unknown): Promise<T> {
+  const response = await page.request.post(`/rpc/${procedure}`, { data: { json: body } });
+  const parsed = (await response.json()) as { json?: T; error?: { message?: string } };
+  if (!response.ok() || parsed.error) {
+    throw new Error(`${procedure} ${response.status()}: ${parsed.error?.message ?? "failed"}`);
+  }
+  return parsed.json as T;
 }
 
 export async function completeOnboarding(page: Page, answers: string[], testInfo?: TestInfo) {

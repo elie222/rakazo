@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { isRealSandboxProvider } from "./e2e/helpers";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${webPort}`;
-const realSandbox = ["e2b", "daytona"].includes(process.env.SANDBOX_PROVIDER ?? "");
+const realSandbox = isRealSandboxProvider();
 const reporters = [
   ...(process.env.CI ? ([["github"]] as const) : []),
   ["list"] as const,

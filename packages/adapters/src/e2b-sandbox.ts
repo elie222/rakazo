@@ -27,7 +27,11 @@ import {
   shellQuote,
   workspacePath,
 } from "./computer-support.js";
-import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
+import {
+  PORTABLE_BROWSER_STOP_COMMAND,
+  PORTABLE_TRANSFER_BATCH_BYTES,
+  shouldSkipPortableWorkspaceFile,
+} from "./computer-workspace.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
@@ -126,8 +130,11 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (this.streamReady.has(desktop.sandboxId)) return;
     const pending = this.streamStarts.get(desktop.sandboxId);
     if (pending) return pending;
-    const start = this.initializeStream(desktop).finally(() => {
-      this.streamStarts.delete(desktop.sandboxId);
+    let start!: Promise<void>;
+    start = this.initializeStream(desktop).finally(() => {
+      if (this.streamStarts.get(desktop.sandboxId) === start) {
+        this.streamStarts.delete(desktop.sandboxId);
+      }
     });
     this.streamStarts.set(desktop.sandboxId, start);
     return start;
@@ -144,8 +151,9 @@ export class E2BSandboxProvider implements SandboxProvider {
       await desktop.stream.stop().catch(() => undefined);
       throw error;
     }
-    if (this.boxes.get(desktop.sandboxId) !== desktop) {
-      await desktop.stream.stop().catch(() => undefined);
+    const current = this.boxes.get(desktop.sandboxId);
+    if (current !== desktop) {
+      if (!current) await desktop.stream.stop().catch(() => undefined);
       throw new Error("screen stream stopped during computer teardown");
     }
     this.streamReady.add(desktop.sandboxId);
@@ -396,7 +404,10 @@ export class E2BSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
-      if (batch.length >= 32 || batchBytes + file.content.byteLength > 8 * 1024 * 1024) {
+      if (
+        batch.length >= 32 ||
+        batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
+      ) {
         await flush();
       }
       batch.push(file);
@@ -573,9 +584,7 @@ async function configurePortableBrowserProfiles(desktop: Sandbox): Promise<boole
 }
 
 async function stopDesktopBrowsers(desktop: Sandbox): Promise<void> {
-  await desktop.commands
-    .run("pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true")
-    .catch(() => undefined);
+  await desktop.commands.run(PORTABLE_BROWSER_STOP_COMMAND).catch(() => undefined);
 }
 
 async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise<void> {
