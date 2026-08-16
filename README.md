@@ -123,6 +123,11 @@ pnpm test:canary       # live OpenRouter / E2B canaries
 COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
+Pull requests retain the Playwright HTML report, screenshots, traces, and videos as short-lived
+GitHub Actions artifacts. Successful merges and the nightly verification publish a persistent run
+history plus a scan-friendly screenshot gallery at
+<https://rakazogithubactions.fsn1.your-objectstorage.com/playwright/index.html>.
+
 `pnpm test:topology`, `pnpm test:canary`, and `pnpm test:computer` are for running the product path on your machine. They are not part of pull-request CI. The computer acceptance test also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
 
 See [`docs/computer-runtime.md`](./docs/computer-runtime.md) for the agent/runtime boundary, provider switching, and persistence contract.

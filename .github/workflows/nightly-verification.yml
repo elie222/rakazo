@@ -19,6 +19,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  visual-web:
+    name: Daily web screenshots
+    uses: ./.github/workflows/playwright.yml
+    with:
+      publish_report: true
+    secrets: inherit
+
   topology:
     name: Production topology smoke
     runs-on: ubuntu-latest
