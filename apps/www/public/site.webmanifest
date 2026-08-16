@@ -1,7 +1,7 @@
 {
   "name": "Rakazo",
   "short_name": "Rakazo",
-  "description": "Open-source home for persistent AI bots that can do real work.",
+  "description": "An open source Grok Bot alternative for persistent AI teammates that do real work.",
   "start_url": "/",
   "display": "browser",
   "background_color": "#FDFDFD",

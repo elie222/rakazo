@@ -5,11 +5,15 @@ import { SITE_NAME, SITE_URL } from "../site";
 type Props = {
   title?: string;
   description: string;
+  structuredData?: object;
 };
 
-const { title = SITE_NAME, description } = Astro.props;
+const { title = SITE_NAME, description, structuredData } = Astro.props;
 const canonical = new URL(Astro.url.pathname, SITE_URL).toString();
 const socialImage = new URL("/og-image.png", SITE_URL).toString();
+const structuredDataJson = structuredData
+  ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
+  : null;
 ---
 
 <!doctype html>
@@ -18,6 +22,7 @@ const socialImage = new URL("/og-image.png", SITE_URL).toString();
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#FDFDFD" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -36,6 +41,7 @@ const socialImage = new URL("/og-image.png", SITE_URL).toString();
     <meta name="twitter:image" content={socialImage} />
     <meta name="twitter:image:alt" content="Rakazo — AI teammates you actually own. Your keys, your model, your machine." />
     <link rel="canonical" href={canonical} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -46,6 +52,7 @@ const socialImage = new URL("/og-image.png", SITE_URL).toString();
       href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap"
       rel="stylesheet"
     />
+    {structuredDataJson && <script is:inline type="application/ld+json" set:html={structuredDataJson} />}
     <title>{title}</title>
   </head>
   <body>

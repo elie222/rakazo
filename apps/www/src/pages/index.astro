@@ -7,13 +7,44 @@ import { ProductDemo } from "../components/ProductDemo";
 import { DEMO_ROSTER } from "../demo";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { DOCS_URL, GITHUB_URL, SITE_DESCRIPTION, WAITLIST_HREF } from "../site";
+import { DOCS_URL, GITHUB_URL, SITE_DESCRIPTION, SITE_NAME, SITE_URL, WAITLIST_HREF } from "../site";
 
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: SITE_NAME,
+      description: SITE_DESCRIPTION,
+      inLanguage: "en",
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${SITE_URL}/#software`,
+      name: SITE_NAME,
+      url: `${SITE_URL}/`,
+      description: SITE_DESCRIPTION,
+      applicationCategory: "BusinessApplication",
+      applicationSubCategory: "AI agent platform",
+      operatingSystem: "Web, macOS, Linux, iOS, Android",
+      isAccessibleForFree: true,
+      codeRepository: GITHUB_URL,
+      license: `${GITHUB_URL}/blob/main/LICENSE`,
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+    },
+  ],
+};
 ---
 
-<BaseLayout title="Rakazo" description={SITE_DESCRIPTION}>
+<BaseLayout title="Rakazo" description={SITE_DESCRIPTION} {structuredData}>
   <div class="container">
     <Header starsLabel={starsLabel} />
 
