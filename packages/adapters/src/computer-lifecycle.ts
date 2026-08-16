@@ -112,7 +112,7 @@ export async function acquireComputerExecutionLease(
   const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
   if (computer.scope !== "team") return null;
   const now = new Date();
-  const acquired = await prisma.computer.updateMany({
+  const [leased] = await prisma.computer.updateManyAndReturn({
     where: {
       id: input.computerId,
       state: { not: "suspending" },
@@ -132,12 +132,9 @@ export async function acquireComputerExecutionLease(
       executionLeaseExpiresAt: new Date(now.getTime() + EXECUTION_LEASE_MS),
       executionFence: { increment: 1 },
     },
-  });
-  if (acquired.count !== 1) throw new ComputerBusyError();
-  const leased = await prisma.computer.findUniqueOrThrow({
-    where: { id: input.computerId },
     select: { executionFence: true },
   });
+  if (!leased) throw new ComputerBusyError();
   return { computerId: input.computerId, runId: input.runId, fence: leased.executionFence };
 }
 

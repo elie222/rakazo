@@ -17,7 +17,7 @@ describe("computer execution leases", () => {
         botId: "bot-1",
       }),
     ).resolves.toBeNull();
-    expect(prisma.updateMany).not.toHaveBeenCalled();
+    expect(prisma.updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   it("fences Team Computer use and releases only the matching lease", async () => {
@@ -29,7 +29,7 @@ describe("computer execution leases", () => {
     });
 
     expect(lease).toEqual({ computerId: "computer-1", runId: "run-1", fence: 7 });
-    expect(prisma.updateMany).toHaveBeenCalledWith(
+    expect(prisma.updateManyAndReturn).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           id: "computer-1",
@@ -47,6 +47,7 @@ describe("computer execution leases", () => {
           executionBotId: "bot-1",
           executionFence: { increment: 1 },
         }),
+        select: { executionFence: true },
       }),
     );
 
@@ -94,7 +95,7 @@ describe("computer execution leases", () => {
         botId: "bot-1",
       }),
     ).rejects.toThrow("Computer is busy");
-    expect(prisma.updateMany).toHaveBeenCalledWith(
+    expect(prisma.updateManyAndReturn).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           OR: [
@@ -119,7 +120,7 @@ describe("computer execution leases", () => {
       resumeHeldLease: true,
     });
 
-    expect(prisma.updateMany).toHaveBeenCalledWith(
+    expect(prisma.updateManyAndReturn).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           OR: [
@@ -137,16 +138,19 @@ describe("computer execution leases", () => {
 });
 
 function leasePrisma(options: { scope: string; acquired?: number; fence?: number }) {
-  const updateMany = vi.fn().mockResolvedValue({ count: options.acquired ?? 1 });
+  const acquired = options.acquired ?? 1;
+  const updateMany = vi.fn().mockResolvedValue({ count: acquired });
+  const updateManyAndReturn = vi
+    .fn()
+    .mockResolvedValue(acquired === 1 ? [{ executionFence: options.fence ?? 1 }] : []);
   const computer = {
-    findUniqueOrThrow: vi
-      .fn()
-      .mockResolvedValueOnce({ scope: options.scope })
-      .mockResolvedValue({ executionFence: options.fence ?? 1 }),
+    findUniqueOrThrow: vi.fn().mockResolvedValue({ scope: options.scope }),
     updateMany,
+    updateManyAndReturn,
   };
   return {
     client: { computer } as unknown as PrismaClient,
     updateMany,
+    updateManyAndReturn,
   };
 }
