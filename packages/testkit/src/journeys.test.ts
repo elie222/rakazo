@@ -100,6 +100,7 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: chief.notifyOnFinish,
       color: chief.color,
       pinned: false,
+      unread: false,
     });
     expect(duplicate.id).not.toBe(chief.id);
     expect((await rpc<Bot[]>(app, ada, "bots/list"))[0]?.id).toBe(coder.id);
@@ -110,6 +111,17 @@ describeJourneys("required product journeys", () => {
       chief.id,
       "write a file in your home called notes/result.txt that says isolation-ok",
     );
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === chief.id)?.unread,
+    ).toBe(true);
+    await rpc(app, ada, "threads/markRead", { botId: chief.id });
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === chief.id)?.unread,
+    ).toBe(false);
+    await rpc(app, ada, "threads/markUnread", { botId: chief.id });
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === chief.id)?.unread,
+    ).toBe(true);
     await sendAndWait(app, ada, coder.id, "remember that coder prefers rust");
 
     const chiefFile = await rpc<{ path: string; content: string }>(app, ada, "computer/readFile", {
@@ -730,6 +742,7 @@ type Bot = {
   notifyOnFinish: boolean;
   color: string;
   pinned: boolean;
+  unread: boolean;
   parentBotId?: string | null;
 };
 type Snap = {

@@ -16,7 +16,7 @@ function mapBot(
     parentBotId: string | null;
     createdAt: Date;
     updatedAt: Date;
-    thread: { id: string } | null;
+    thread: { id: string; unread: boolean } | null;
   },
   preview = "",
   status = "idle",
@@ -34,6 +34,7 @@ function mapBot(
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,
+    unread: bot.thread.unread,
     parentBotId: bot.parentBotId,
     threadId: bot.thread.id,
     preview,

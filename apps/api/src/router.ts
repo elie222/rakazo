@@ -438,6 +438,14 @@ export function createRouter(deps: RouterDeps) {
         await deps.jobs.enqueue(runContinueJob(input.runId));
         return { ok: true as const };
       }),
+      markRead: authed.threads.markRead.handler(async ({ context, input }) => {
+        await setThreadUnread(deps.prisma, context.actor, input.botId, false);
+        return { ok: true as const };
+      }),
+      markUnread: authed.threads.markUnread.handler(async ({ context, input }) => {
+        await setThreadUnread(deps.prisma, context.actor, input.botId, true);
+        return { ok: true as const };
+      }),
     },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -1338,4 +1346,12 @@ function withViewOnly(url: string, viewOnly: boolean) {
 
 function duplicateBotName(name: string) {
   return `${name.slice(0, 75)} copy`;
+}
+
+async function setThreadUnread(prisma: PrismaClient, actor: Actor, botId: string, unread: boolean) {
+  const result = await prisma.thread.updateMany({
+    where: { botId, workspaceId: actor.workspaceId, userId: actor.userId },
+    data: { unread },
+  });
+  if (result.count !== 1) throw new IsolationError();
 }

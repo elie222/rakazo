@@ -125,6 +125,13 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
   await expect(page.getByRole("menuitem", { name: "Edit Profile" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Mark as Unread" }).click();
+
+  await chief.click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Mark as Read" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Mark as Read" }).click();
+
+  await chief.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
 
   await chief.click({ button: "right" });

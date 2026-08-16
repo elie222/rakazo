@@ -8,6 +8,7 @@ export function BotContextMenu({
   position,
   onClose,
   onTogglePinned,
+  onToggleUnread,
   onEdit,
   onDuplicate,
   onDelete,
@@ -16,6 +17,7 @@ export function BotContextMenu({
   position: ContextMenuPosition;
   onClose: () => void;
   onTogglePinned: () => void;
+  onToggleUnread: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -32,7 +34,7 @@ export function BotContextMenu({
   }, [onClose]);
 
   const menuWidth = 264;
-  const menuHeight = 210;
+  const menuHeight = 252;
   const margin = 8;
   const left = Math.min(position.x, window.innerWidth - menuWidth - margin);
   const top = Math.min(position.y, window.innerHeight - menuHeight - margin);
@@ -60,6 +62,11 @@ export function BotContextMenu({
           icon={<PinIcon />}
           label={bot.pinned ? "Unpin" : "Pin"}
           onSelect={onTogglePinned}
+        />
+        <MenuItem
+          icon={<ReadStatusIcon unread={bot.unread} />}
+          label={bot.unread ? "Mark as Read" : "Mark as Unread"}
+          onSelect={onToggleUnread}
         />
         <div className="my-1 border-t border-[#343438]" />
         <MenuItem icon={<EditIcon />} label="Edit Profile" onSelect={onEdit} />
@@ -125,6 +132,15 @@ function EditIcon() {
     <svg {...iconProps}>
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function ReadStatusIcon({ unread }: { unread: boolean }) {
+  return (
+    <svg {...iconProps}>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+      {unread ? <circle cx="18" cy="5" r="3" fill="currentColor" stroke="none" /> : null}
     </svg>
   );
 }

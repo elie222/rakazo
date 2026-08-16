@@ -189,6 +189,7 @@ function BotRow({ bot }: { bot: MobileBot }) {
   const tag = botTag(bot.title, bot.name);
   return (
     <Pressable
+      accessibilityLabel={`${bot.name}${bot.unread ? ", unread" : ""}`}
       onPress={() =>
         router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
       }
@@ -209,9 +210,16 @@ function BotRow({ bot }: { bot: MobileBot }) {
               </View>
             ) : null}
           </View>
-          {time ? <Text style={styles.time}>{time}</Text> : null}
+          <View style={styles.rowMeta}>
+            {time ? <Text style={styles.time}>{time}</Text> : null}
+            {bot.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+          </View>
         </View>
-        <Text style={styles.preview} numberOfLines={1} ellipsizeMode="tail">
+        <Text
+          style={[styles.preview, bot.unread && styles.unreadPreview]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {preview}
         </Text>
       </View>
@@ -310,6 +318,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
+  rowMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
   name: {
     flexShrink: 1,
     color: native.label,
@@ -336,5 +349,15 @@ const styles = StyleSheet.create({
     color: native.secondaryLabel,
     fontSize: 15,
     lineHeight: 20,
+  },
+  unreadPreview: {
+    color: native.label,
+    fontWeight: "600",
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#8B5CF6",
   },
 });

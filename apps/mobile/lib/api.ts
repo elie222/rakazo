@@ -133,6 +133,7 @@ export type MobileBot = {
   title: string;
   color: string;
   pinned: boolean;
+  unread: boolean;
   updatedAt: string;
   parentBotId?: string | null;
 };

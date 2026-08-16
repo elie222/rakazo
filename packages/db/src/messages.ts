@@ -20,7 +20,10 @@ export async function createThreadMessageInTransaction(
 ) {
   const thread = await tx.thread.update({
     where: { id: input.threadId },
-    data: { nextMessageSeq: { increment: 1 } },
+    data: {
+      nextMessageSeq: { increment: 1 },
+      unread: input.role === "bot" ? true : undefined,
+    },
     select: { nextMessageSeq: true },
   });
   return tx.message.create({

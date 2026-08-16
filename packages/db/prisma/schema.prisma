@@ -211,6 +211,7 @@ model Thread {
   createdAt   DateTime @default(now())
   nextEventSeq   Int   @default(0)
   nextMessageSeq Int   @default(0)
+  unread      Boolean  @default(false)
   messages    Message[]
   events      Event[]
   tasks       Task[]

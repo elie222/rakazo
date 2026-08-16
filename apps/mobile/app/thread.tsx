@@ -2,7 +2,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { abortableDelay } from "@rakazo/core";
 import { Link, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -64,6 +64,14 @@ export default function Thread() {
     if (!botId) return;
     expandedHistoryThread.current = null;
     const abort = new AbortController();
+    const markRead = () => void rpc("threads/markRead", { botId }).catch(() => undefined);
+    const markReadIfVisible = () => {
+      if (AppState.currentState === "active" && navigation.isFocused()) markRead();
+    };
+    markReadIfVisible();
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") markReadIfVisible();
+    });
     void (async () => {
       const next = await refresh().catch((err: Error) => {
         setError(err.message);
@@ -87,6 +95,9 @@ export default function Thread() {
               ) {
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }
+              if (event.type === "thread.message.created" && event.payload?.role === "bot") {
+                markReadIfVisible();
+              }
               if (event.type === "run.completed") {
                 void refresh().catch(() => undefined);
               }
@@ -104,8 +115,9 @@ export default function Thread() {
     })();
     return () => {
       abort.abort();
+      appState.remove();
     };
-  }, [botId]);
+  }, [botId, navigation]);
 
   async function send() {
     if (!botId || !draft.trim()) return;

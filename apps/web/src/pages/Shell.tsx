@@ -80,6 +80,30 @@ export function ShellPage() {
   const active = bots.find((b) => b.id === botId) ?? bots[0];
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
+  const updateBotUnread = useCallback((id: string, unread: boolean) => {
+    setBots((current) => {
+      const bot = current.find((candidate) => candidate.id === id);
+      if (!bot || bot.unread === unread) return current;
+      return current.map((candidate) =>
+        candidate.id === id ? { ...candidate, unread } : candidate,
+      );
+    });
+  }, []);
+  const markBotRead = useCallback(
+    async (id: string) => {
+      await rpc.threads.markRead({ botId: id });
+      updateBotUnread(id, false);
+    },
+    [updateBotUnread],
+  );
+  const markBotReadIfVisible = useCallback(
+    (id: string) => {
+      if (document.visibilityState === "visible" && document.hasFocus()) {
+        void markBotRead(id).catch(() => undefined);
+      }
+    },
+    [markBotRead],
+  );
 
   async function refreshBots() {
     const list = await rpc.bots.list();
@@ -147,6 +171,20 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
+    const markVisibleBotRead = () => {
+      markBotReadIfVisible(active.id);
+    };
+    markVisibleBotRead();
+    window.addEventListener("focus", markVisibleBotRead);
+    document.addEventListener("visibilitychange", markVisibleBotRead);
+    return () => {
+      window.removeEventListener("focus", markVisibleBotRead);
+      document.removeEventListener("visibilitychange", markVisibleBotRead);
+    };
+  }, [active?.id, markBotReadIfVisible]);
+
+  useEffect(() => {
+    if (!active) return;
     expandedHistoryThread.current = null;
     const abort = new AbortController();
     void (async () => {
@@ -177,6 +215,7 @@ export function ShellPage() {
               if (blocks.some((block) => block.kind === "child_bot")) {
                 void refreshBots().catch(() => undefined);
               }
+              if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
             if (
               event.type === "run.completed" ||
@@ -198,7 +237,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id]);
+  }, [active?.id, markBotReadIfVisible]);
 
   const filtered = useMemo(
     () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
@@ -354,12 +393,32 @@ export function ShellPage() {
               <BotAvatar color={bot.color} size={38} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[15px] font-medium text-[#ECECEE]">{bot.name}</span>
+                  <span
+                    className={`text-[15px] text-[#ECECEE] ${
+                      bot.unread ? "font-semibold" : "font-medium"
+                    }`}
+                  >
+                    {bot.name}
+                    {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                  </span>
                   <span className="shrink-0 text-[12.5px] text-[#6C6C70]">
-                    {bot.status === "idle" ? "" : bot.status}
+                    {bot.unread ? (
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                      />
+                    ) : bot.status === "idle" ? (
+                      ""
+                    ) : (
+                      bot.status
+                    )}
                   </span>
                 </div>
-                <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                <div
+                  className={`mt-0.5 truncate text-[13.5px] ${
+                    bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                  }`}
+                >
                   {bot.preview || bot.title}
                 </div>
               </div>
@@ -782,6 +841,14 @@ export function ShellPage() {
             void rpc.bots
               .update({ botId: contextBot.id, pinned: !contextBot.pinned })
               .then(() => refreshBots());
+          }}
+          onToggleUnread={() => {
+            const unread = !contextBot.unread;
+            setBotMenu(null);
+            const request = unread
+              ? rpc.threads.markUnread({ botId: contextBot.id })
+              : rpc.threads.markRead({ botId: contextBot.id });
+            void request.then(() => updateBotUnread(contextBot.id, unread)).catch(() => undefined);
           }}
           onEdit={() => {
             navigate(`/app/${contextBot.id}`);
