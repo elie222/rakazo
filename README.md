@@ -117,6 +117,7 @@ Outputs land in `apps/desktop/out/` (macOS dmg/zip, Windows NSIS, Linux AppImage
 pnpm test              # unit, property, and in-process contract tests
 pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
 pnpm test:e2e          # Playwright against the emulated stack
+pnpm test:e2e -- --sandbox=e2b # the same deterministic suite against real E2B
 pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
 pnpm test:canary       # live OpenRouter / E2B canaries
 # explicit real vision-model + real E2B desktop acceptance test:
@@ -127,6 +128,10 @@ Pull requests retain the Playwright HTML report, screenshots, traces, and videos
 GitHub Actions artifacts. Successful merges and the nightly verification publish a persistent run
 history plus a scan-friendly screenshot gallery at
 <https://rakazogithubactions.fsn1.your-objectstorage.com/playwright/index.html>.
+
+The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`.
+That option requires `E2B_API_KEY`, keeps the deterministic scripted agent runtime, and destroys
+the provider machines after the run. The default and all automatic runs remain on `fake`.
 
 `pnpm test:topology`, `pnpm test:canary`, and `pnpm test:computer` are for running the product path on your machine. They are not part of pull-request CI. The computer acceptance test also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
 

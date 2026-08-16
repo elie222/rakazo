@@ -1,13 +1,31 @@
 import { execSync, spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
+
+loadRootEnv();
 
 const integration = process.argv.includes("--integration");
 const e2e = process.argv.includes("--e2e");
+const sandboxArg = process.argv.find((arg) => arg.startsWith("--sandbox="));
+const specArg = process.argv.find((arg) => arg.startsWith("--spec="));
+const grepArg = process.argv.find((arg) => arg.startsWith("--grep="));
+const sandboxProvider = sandboxArg?.slice("--sandbox=".length) ?? "fake";
+const e2eSpec = specArg?.slice("--spec=".length);
+const e2eGrep = grepArg?.slice("--grep=".length);
 
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
+}
+if (sandboxProvider !== "fake" && sandboxProvider !== "e2b") {
+  throw new Error('Sandbox must be "fake" or "e2b"');
+}
+if (integration && sandboxProvider !== "fake") {
+  throw new Error("Integration tests only support the fake sandbox");
+}
+if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
+  throw new Error("E2B_API_KEY is required when --sandbox=e2b");
 }
 
 async function main() {
@@ -24,8 +42,9 @@ async function main() {
     process.env.DATABASE_URL = databaseUrl;
     process.env.VERIFY_DATABASE = "1";
     process.env.WAKEUP_DRIVER = "memory";
-    process.env.SANDBOX_PROVIDER = "fake";
+    process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = "scripted";
+    process.env.COMPOSIO_API_KEY = "";
     process.env.BETTER_AUTH_SECRET = "test-secret-test-secret-32chars!";
     process.env.ENCRYPTION_KEY = "test-encryption-key-test-encryption-key";
     process.env.BETTER_AUTH_URL = webOrigin;
@@ -74,14 +93,52 @@ async function main() {
     const { createApp } = await import("../../../../apps/api/src/app.ts");
     const { serve } = await import("@hono/node-server");
     const handles = await createApp({ databaseUrl, prisma: undefined });
-    const server = serve({ fetch: handles.app.fetch, port: apiPort, hostname: "127.0.0.1" });
+    let activeRequests = 0;
+    const requestWaiters = new Set<() => void>();
+    const server = serve({
+      fetch: async (request) => {
+        activeRequests += 1;
+        try {
+          return await handles.app.fetch(request);
+        } finally {
+          activeRequests -= 1;
+          if (activeRequests === 0) {
+            for (const resolve of requestWaiters) resolve();
+            requestWaiters.clear();
+          }
+        }
+      },
+      port: apiPort,
+      hostname: "127.0.0.1",
+    });
     await waitForHealth(`http://127.0.0.1:${apiPort}/health`, 15_000);
 
     try {
-      await run("pnpm", ["--filter", "@rakazo/web", "exec", "playwright", "test"], {
-        ...process.env,
-        CI: "1",
-      });
+      try {
+        await run(
+          "pnpm",
+          [
+            "--filter",
+            "@rakazo/web",
+            "exec",
+            "playwright",
+            "test",
+            ...(e2eSpec ? [e2eSpec] : []),
+            ...(e2eGrep ? ["--grep", e2eGrep] : []),
+          ],
+          {
+            ...process.env,
+            CI: "1",
+          },
+        );
+      } catch (error) {
+        const failedRuns = await handles.prisma.run.findMany({
+          where: { status: "failed" },
+          select: { id: true, error: true },
+        });
+        if (failedRuns.length) console.error("Failed agent runs:", failedRuns);
+        throw error;
+      }
       await writeSummary(reportDir, {
         ok: true,
         mode,
@@ -91,12 +148,60 @@ async function main() {
         webPort,
       });
     } finally {
-      server.close();
+      const cleanupErrors: unknown[] = [];
+      const computers = await e2bComputers(handles).catch((error) => {
+        cleanupErrors.push(error);
+        return [];
+      });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (activeRequests > 0) {
+        await new Promise<void>((resolve) => requestWaiters.add(resolve));
+      }
       await handles.stop().catch(() => undefined);
+      for (const computer of computers) {
+        if (!computer.providerRef) continue;
+        try {
+          await handles.sandbox.destroy(
+            {
+              id: computer.providerRef,
+              botId: computer.homeKey,
+              kind: "e2b",
+              providerRef: computer.providerRef,
+            },
+            {
+              operationId: "e2e-cleanup",
+              traceId: "e2e-cleanup",
+              workspaceId: computer.workspaceId,
+              userId: computer.userId,
+              signal: new AbortController().signal,
+            },
+          );
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length) {
+        console.error(
+          new AggregateError(cleanupErrors, "Could not destroy every E2B test sandbox"),
+        );
+        process.exitCode = 1;
+      }
     }
   } finally {
     await container.stop().catch(() => undefined);
   }
+}
+
+type AppHandles = Awaited<
+  ReturnType<typeof import("../../../../apps/api/src/app.ts")["createApp"]>
+>;
+
+async function e2bComputers(handles: AppHandles) {
+  if (sandboxProvider !== "e2b") return [];
+  return handles.prisma.computer.findMany({
+    where: { providerRef: { not: null } },
+    select: { homeKey: true, providerRef: true, userId: true, workspaceId: true },
+  });
 }
 
 async function writeSummary(reportDir: string, summary: Record<string, unknown>) {
@@ -133,7 +238,10 @@ async function waitForHealth(url: string, ms: number) {
   throw new Error(`API health check failed for ${url}: ${last}`);
 }
 
-main().catch(async (error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().then(
+  () => process.exit(process.exitCode ?? 0),
+  (error) => {
+    console.error(error);
+    process.exit(1);
+  },
+);

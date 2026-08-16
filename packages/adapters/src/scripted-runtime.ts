@@ -222,7 +222,6 @@ export function inferScript(
       { assistant: "writing that into my home now." },
       {
         toolCalls: [{ name: "write_file", args: { path: filePath, content } }],
-        files: [{ path: filePath, content }],
         complete: true,
       },
     ];

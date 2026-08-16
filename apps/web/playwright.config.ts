@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${webPort}`;
+const realSandbox = process.env.SANDBOX_PROVIDER === "e2b";
 const reporters = [
   ...(process.env.CI ? ([["github"]] as const) : []),
   ["list"] as const,
@@ -12,8 +13,9 @@ export default defineConfig({
   testDir: "./e2e",
   forbidOnly: Boolean(process.env.CI),
   fullyParallel: false,
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  workers: realSandbox ? 1 : undefined,
+  timeout: realSandbox ? 300_000 : 120_000,
+  expect: { timeout: realSandbox ? 90_000 : 20_000 },
   reporter: reporters,
   use: {
     baseURL,

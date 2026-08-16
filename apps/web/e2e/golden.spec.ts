@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -47,6 +47,12 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText(/sign in to continue|protected input/i).first()).toBeVisible({
     timeout: 30_000,
   });
+  await expect
+    .poll(() => threadRunStatus(page), {
+      timeout: process.env.SANDBOX_PROVIDER === "e2b" ? 90_000 : 30_000,
+      message: "the protected-input run must be ready for takeover",
+    })
+    .toBe("waiting_takeover");
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await page.getByTitle("Agent computer").click();
   await page.getByRole("button", { name: "Take control" }).click();
@@ -111,7 +117,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await page.keyboard.press("Enter");
   await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "14-active-bot-work");
-  await page.getByRole("button", { name: "Stop" }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
 
   await page.context().clearCookies();
@@ -172,3 +178,12 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
   await expect(page.locator("label:has-text('Name') input")).toHaveValue("Chief");
   await captureScreenshot(page, testInfo, "19-edit-profile");
 });
+
+async function threadRunStatus(page: Page) {
+  const botId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1);
+  if (!botId || botId === "app") throw new Error(`missing bot id in ${page.url()}`);
+  const response = await page.request.post("/rpc/threads/get", { data: { json: { botId } } });
+  const result = (await response.json()) as { json?: { run?: { status?: string } | null } };
+  if (!response.ok()) throw new Error(`threads/get ${response.status()}`);
+  return result.json?.run?.status ?? "idle";
+}

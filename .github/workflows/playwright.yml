@@ -1,8 +1,23 @@
 name: Playwright
 
 on:
+  workflow_dispatch:
+    inputs:
+      sandbox_provider:
+        description: Sandbox provider
+        required: true
+        type: choice
+        options:
+          - fake
+          - e2b
+        default: fake
   workflow_call:
     inputs:
+      sandbox_provider:
+        description: Sandbox provider
+        required: false
+        type: string
+        default: fake
       publish_report:
         description: Publish this run to the persistent visual dashboard
         required: false
@@ -20,6 +35,9 @@ on:
       S3_SECRET_ACCESS_KEY:
         description: Secret key used to publish visual reports
         required: false
+      E2B_API_KEY:
+        description: E2B API key used only when the E2B sandbox is selected
+        required: false
 
 permissions:
   contents: read
@@ -28,7 +46,7 @@ jobs:
   playwright:
     name: Web E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     concurrency:
       group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
       cancel-in-progress: false
@@ -42,9 +60,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --filter @rakazo/web exec playwright install --with-deps chromium
+      - name: Validate E2B credentials
+        if: inputs.sandbox_provider == 'e2b'
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+        run: test -n "$E2B_API_KEY"
       - name: Run Playwright tests
         id: playwright_tests
-        run: pnpm test:e2e
+        env:
+          E2B_API_KEY: ${{ inputs.sandbox_provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+        run: pnpm test:e2e -- --sandbox=${{ inputs.sandbox_provider }}
       - name: Record Playwright result
         if: always() && inputs.upload_artifacts
         env:

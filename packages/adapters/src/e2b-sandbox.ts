@@ -74,6 +74,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
   private readonly lastTouchedAt = new Map<string, number>();
   private readonly streamReady = new Set<string>();
+  private readonly streamStarts = new Map<string, Promise<void>>();
   private readonly controlStreams = new Map<string, { password: string; controlToken: string }>();
 
   constructor(
@@ -118,6 +119,16 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   private async startStream(desktop: Sandbox) {
     if (this.streamReady.has(desktop.sandboxId)) return;
+    const pending = this.streamStarts.get(desktop.sandboxId);
+    if (pending) return pending;
+    const start = this.initializeStream(desktop).finally(() => {
+      this.streamStarts.delete(desktop.sandboxId);
+    });
+    this.streamStarts.set(desktop.sandboxId, start);
+    return start;
+  }
+
+  private async initializeStream(desktop: Sandbox) {
     await desktop.commands
       .run("pkill -x x11vnc || true; pkill -f '[n]ovnc_proxy|[w]ebsockify.*6080' || true")
       .catch(() => undefined);
@@ -404,6 +415,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
+    this.streamStarts.delete(id);
     this.controlStreams.delete(id);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
@@ -419,6 +431,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
+    this.streamStarts.delete(id);
     this.controlStreams.delete(id);
   }
 

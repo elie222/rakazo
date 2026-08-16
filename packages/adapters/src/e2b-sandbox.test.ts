@@ -164,9 +164,13 @@ describe("E2B computer backend", () => {
       true,
     );
     expect(command.mock.calls.some(([value]) => String(value).includes("cp -a"))).toBe(false);
-    const screen = await provider.connectScreen(computer, { view: "stream" }, context);
+    const [screen] = await Promise.all([
+      provider.connectScreen(computer, { view: "stream" }, context),
+      provider.connectScreen(computer, { view: "stream" }, context),
+    ]);
     expect(screen.url).toBe("https://desktop.test/vnc.html");
     expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
+    expect(desktop.stream.start).toHaveBeenCalledTimes(1);
     expect(getStreamUrl).toHaveBeenCalledWith(
       expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),
     );
