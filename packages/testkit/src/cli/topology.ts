@@ -131,7 +131,7 @@ async function signup(baseUrl: string) {
     body: JSON.stringify({
       email: `topology-${Date.now()}@rakazo.test`,
       password: "password12",
-      name: "Topology Smoke",
+      name: "Topology",
     }),
   });
   if (!response.ok) throw new Error(`signup failed ${response.status}: ${await response.text()}`);

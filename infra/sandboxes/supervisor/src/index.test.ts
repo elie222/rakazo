@@ -5,6 +5,7 @@ import {
   assertRequestIdentity,
   containerActionStep,
   hasValidBearerToken,
+  interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
 } from "./supervisor-logic.js";
@@ -26,6 +27,7 @@ describe("sandbox supervisor HTTP boundary", () => {
       ["GET", "/computers/id/files"],
       ["POST", "/computers/id/files"],
       ["GET", "/computers/id/screen"],
+      ["POST", "/computers/id/screen-mode"],
       ["POST", "/computers/id/input"],
       ["POST", "/computers/id/stop"],
       ["DELETE", "/computers/id"],
@@ -94,6 +96,14 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
     });
+  });
+
+  it("keeps the viewer read-only and uses a separate process for takeover control", () => {
+    expect(interactiveScreenCommand(false)).toMatch(/pkill .*5901/);
+    expect(interactiveScreenCommand(false)).not.toMatch(/x11vnc -display/);
+    expect(interactiveScreenCommand(true)).toMatch(/x11vnc -display .* -rfbport 5901/);
+    expect(interactiveScreenCommand(true)).toMatch(/6081/);
+    expect(interactiveScreenCommand(true)).not.toMatch(/-rfbport 5900/);
   });
 
   it("parses a captured frame without trusting optional desktop metadata", () => {

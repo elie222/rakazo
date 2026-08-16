@@ -31,7 +31,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify:topology
+      - run: pnpm test:topology
 
   live-providers:
     name: Live provider canaries
@@ -64,4 +64,4 @@ jobs:
       - if: steps.gate.outputs.enabled == 'true'
         run: pnpm install --frozen-lockfile
       - if: steps.gate.outputs.enabled == 'true'
-        run: pnpm canary:providers
+        run: pnpm test:canary

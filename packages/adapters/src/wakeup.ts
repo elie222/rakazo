@@ -46,7 +46,11 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
 
   constructor(
     private readonly connectionString: string,
-    private readonly options: { concurrency?: number; pollInterval?: number } = {},
+    private readonly options: {
+      concurrency?: number;
+      pollInterval?: number;
+      noHandleSignals?: boolean;
+    } = {},
   ) {}
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {
@@ -61,6 +65,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       connectionString: this.connectionString,
       concurrency: this.options.concurrency ?? 4,
       pollInterval: this.options.pollInterval ?? 500,
+      noHandleSignals: this.options.noHandleSignals,
       taskList,
     });
   }

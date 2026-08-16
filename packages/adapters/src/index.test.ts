@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { inferScript } from "./scripted-runtime.js";
+import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 describe("secret store", () => {
@@ -46,6 +46,44 @@ describe("scripted runtime", () => {
   it("runs an in-thread subagent", () => {
     const script = inferScript("run a subagent to summarize the notes");
     expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "run_subagent"))).toBe(true);
+  });
+
+  it("asks when it needs a decision", () => {
+    const script = inferScript("ask me which city to use");
+    expect(script?.some((t) => t.ask?.text.toLowerCase().includes("city"))).toBe(true);
+  });
+
+  it("stops hang work when aborted", async () => {
+    const runtime = new ScriptedAgentRuntime();
+    const ctx = {
+      operationId: "1",
+      traceId: "1",
+      workspaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    };
+    const types: string[] = [];
+    const iterating = (async () => {
+      for await (const event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "hang-1",
+          prompt: "keep working until I stop you",
+          instructions: "",
+          history: [],
+          tools: [],
+          model: { provider: "scripted", id: "scripted" },
+        },
+        ctx,
+      )) {
+        types.push(event.type);
+        if (event.type === "progress") await runtime.abort("hang-1");
+      }
+    })();
+    await iterating;
+    expect(types).toContain("progress");
+    expect(types.at(-1)).toBe("done");
   });
 
   it("deletes a spawned bot by exact name", () => {

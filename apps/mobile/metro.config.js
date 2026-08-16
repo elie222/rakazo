@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const { resolveTypeScriptSource } = require("./metro-resolver");
 
 const projectRoot = __dirname;
 const config = getDefaultConfig(projectRoot);
@@ -18,9 +19,9 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
   if (defaultResolveRequest) {
-    return defaultResolveRequest(context, moduleName, platform);
+    return resolveTypeScriptSource(context, moduleName, platform, defaultResolveRequest);
   }
-  return context.resolveRequest(context, moduleName, platform);
+  return resolveTypeScriptSource(context, moduleName, platform, context.resolveRequest);
 };
 
 module.exports = config;

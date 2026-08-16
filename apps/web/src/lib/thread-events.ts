@@ -2,9 +2,16 @@ import type {
   ComputerStatus,
   ProductEvent,
   ThreadMessage,
+  ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { progressMessageId, progressMessageText, subagentBlockFromPayload } from "@rakazo/core";
+import {
+  mergeThreadHistory,
+  prependThreadHistoryPage,
+  progressMessageId,
+  progressMessageText,
+  subagentBlockFromPayload,
+} from "@rakazo/core";
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
@@ -13,6 +20,21 @@ const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "suspended",
   "error",
 ]);
+
+export function mergeThreadSnapshot(
+  prev: ThreadSnapshot | null,
+  next: ThreadSnapshot,
+  preserveLoadedHistory = false,
+): ThreadSnapshot {
+  return mergeThreadHistory(prev, next, preserveLoadedHistory);
+}
+
+export function prependThreadMessagePage(
+  prev: ThreadSnapshot | null,
+  page: ThreadMessagePage,
+): ThreadSnapshot | null {
+  return prependThreadHistoryPage(prev, page);
+}
 
 export function reduceThreadSnapshot(
   prev: ThreadSnapshot | null,

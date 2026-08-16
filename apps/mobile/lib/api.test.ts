@@ -4,6 +4,8 @@ import {
   applyMobileThreadEvent,
   type MobileMessage,
   type MobileSnapshot,
+  mergeMobileSnapshot,
+  prependMobileMessagePage,
   rpc,
   signIn,
   signOut,
@@ -161,6 +163,40 @@ describe("mobile thread subscription", () => {
 });
 
 describe("mobile thread event reduction", () => {
+  it("prepends ordered history pages without duplicating the boundary message", () => {
+    const initial = snapshot([mobileMessage("m-2", [], 2), mobileMessage("m-3", [], 3)], 2);
+
+    const next = prependMobileMessagePage(initial, {
+      threadId: "thread-1",
+      messages: [
+        mobileMessage("m-0", [], 0),
+        mobileMessage("m-1", [], 1),
+        mobileMessage("m-2", [], 2),
+      ],
+      olderCursor: null,
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2", "m-3"]);
+    expect(next?.olderCursor).toBeNull();
+  });
+
+  it("retains loaded history across refresh while dropping stale progress", () => {
+    const initial = snapshot(
+      [
+        mobileMessage("m-0", [], 0),
+        mobileMessage("m-1", [], 1),
+        mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }], 8),
+      ],
+      null,
+    );
+    const refreshed = snapshot([mobileMessage("m-1", [], 1), mobileMessage("m-2", [], 2)], 1);
+
+    const next = mergeMobileSnapshot(initial, refreshed, true);
+
+    expect(next.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2"]);
+    expect(next.olderCursor).toBeNull();
+  });
+
   it("accumulates progress deltas for the same run", () => {
     const first = applyMobileThreadEvent(snapshot(), {
       type: "thread.progress",
@@ -219,17 +255,21 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-function snapshot(messages: MobileMessage[] = []): MobileSnapshot {
+function snapshot(
+  messages: MobileMessage[] = [],
+  olderCursor: number | null = null,
+): MobileSnapshot {
   return {
     botId: "bot-1",
     threadId: "thread-1",
     cursor: 3,
     messages,
+    olderCursor,
     run: null,
     computer: { state: "running", controlHolder: "bot", screenAvailable: true },
   };
 }
 
-function mobileMessage(id: string, blocks: MobileMessage["blocks"]): MobileMessage {
-  return { id, role: "bot", blocks };
+function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number): MobileMessage {
+  return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }

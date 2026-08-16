@@ -61,7 +61,7 @@ jobs:
       - name: Electron smoke
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
 
-  verify-fast:
+  test:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
@@ -75,9 +75,9 @@ jobs:
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm verify:fast
+      - run: pnpm test
 
-  verify-integration:
+  test-integration:
     name: Postgres journeys
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -89,9 +89,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify:integration
+      - run: pnpm test:integration
 
-  verify-web:
+  test-e2e:
     name: Web E2E
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -105,14 +105,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --filter @rakazo/web exec playwright install --with-deps chromium
-      - run: pnpm verify:web
+      - run: pnpm test:e2e
 
   deploy-production:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
-    needs: [lint, check, build, verify-fast, verify-integration, verify-web]
+    needs: [lint, check, build, test, test-integration, test-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

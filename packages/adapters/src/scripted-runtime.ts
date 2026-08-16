@@ -4,6 +4,7 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
+import { abortableDelay } from "@rakazo/core";
 
 const running = new Map<string, AbortController>();
 
@@ -26,9 +27,19 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.set(request.runId, controller);
     const signal = context.signal ?? controller.signal;
     try {
+      if (shouldHang(request.prompt)) {
+        yield { type: "progress", text: "still working…" };
+        while (!controller.signal.aborted && !signal.aborted) {
+          await abortableDelay(50, controller.signal);
+          if (controller.signal.aborted || signal.aborted) break;
+          yield { type: "progress", text: "still working…" };
+        }
+        yield { type: "done", text: "stopped" };
+        return;
+      }
       const script = request.script ?? inferScript(request.prompt, request.resumeFromCheckpoint);
       for (const turn of script) {
-        if (signal.aborted) {
+        if (signal.aborted || controller.signal.aborted) {
           yield { type: "done", text: "stopped" };
           return;
         }
@@ -95,6 +106,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
       yield { type: "text", text: "done." };
       yield { type: "done", text: "done." };
     } finally {
+      controller.abort();
       running.delete(request.runId);
     }
   }
@@ -115,6 +127,18 @@ export function inferScript(
         assistant:
           "signed in. the session stays in this computer — protected input never hit the thread.",
         complete: true,
+      },
+    ];
+  }
+  if (
+    lower.includes("ask me") ||
+    lower.includes("which city") ||
+    lower.includes("need a decision")
+  ) {
+    return [
+      {
+        assistant: "i need a decision before i continue.",
+        ask: { text: "Which city should I use?", detail: "Reply with one city name." },
       },
     ];
   }
@@ -219,6 +243,16 @@ export function inferScript(
       complete: true,
     },
   ];
+}
+
+function shouldHang(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return (
+    lower.includes("keep working") ||
+    lower.includes("work until i stop") ||
+    lower.includes("until i stop you") ||
+    lower.includes("hang until stopped")
+  );
 }
 
 function namedBot(prompt: string) {

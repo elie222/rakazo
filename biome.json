@@ -17,6 +17,7 @@
       "!**/apps/mobile/.expo",
       "!**/playwright-report",
       "!**/test-results",
+      "!**/test-report",
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",

@@ -5,9 +5,44 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { reduceComputerStatus, reduceThreadSnapshot } from "./thread-events.js";
+import {
+  mergeThreadSnapshot,
+  prependThreadMessagePage,
+  reduceComputerStatus,
+  reduceThreadSnapshot,
+} from "./thread-events.js";
 
 describe("thread event reduction", () => {
+  it("prepends older pages in order, removes overlaps, and advances the history cursor", () => {
+    const initial = snapshot([message("m-2", [], 2), message("m-3", [], 3)], 2);
+
+    const next = prependThreadMessagePage(initial, {
+      threadId: "thread-1",
+      messages: [message("m-0", [], 0), message("m-1", [], 1), message("m-2", [], 2)],
+      olderCursor: null,
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2", "m-3"]);
+    expect(next?.olderCursor).toBeNull();
+  });
+
+  it("merges a refreshed recent page with loaded history and drops stale live messages", () => {
+    const previous = snapshot(
+      [
+        message("m-0", [], 0),
+        message("m-1", [], 1),
+        message("progress:run-1", [{ kind: "progress", text: "draft" }], 9),
+      ],
+      null,
+    );
+    const recent = snapshot([message("m-1", [], 1), message("m-2", [], 2)], 1);
+
+    const next = mergeThreadSnapshot(previous, recent, true);
+
+    expect(next.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2"]);
+    expect(next.olderCursor).toBeNull();
+  });
+
   it("accumulates progress deltas and keeps only the active progress message", () => {
     const stale = message("progress:older", [{ kind: "progress", text: "old run" }]);
     const initial = snapshot([stale]);
@@ -144,12 +179,13 @@ describe("computer event reduction", () => {
   });
 });
 
-function snapshot(messages: ThreadMessage[]): ThreadSnapshot {
+function snapshot(messages: ThreadMessage[], olderCursor: number | null = null): ThreadSnapshot {
   return {
     botId: "bot-1",
     threadId: "thread-1",
     cursor: 3,
     messages,
+    olderCursor,
     run: null,
     computer: computer(),
   };
@@ -167,11 +203,11 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
   };
 }
 
-function message(id: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
+function message(id: string, blocks: ThreadMessage["blocks"], seq = 3): ThreadMessage {
   return {
     id,
     threadId: "thread-1",
-    seq: 3,
+    seq,
     role: "bot",
     blocks,
     createdAt: "2026-08-16T00:00:00.000Z",

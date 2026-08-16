@@ -35,8 +35,8 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or e2b. Keep fake only for pnpm verify:fast.
-AGENT_RUNTIME=pi          # Keep scripted only for pnpm verify:fast.
+SANDBOX_PROVIDER=docker   # or e2b. Keep fake only for pnpm test.
+AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b

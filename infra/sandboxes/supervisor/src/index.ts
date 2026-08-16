@@ -20,6 +20,7 @@ import {
   computerActionSchema,
   containerActionStep,
   hasValidBearerToken,
+  interactiveScreenCommand,
   normalizeWorkspaceRelative,
   parseObservation,
   toSandboxInput,
@@ -315,6 +316,23 @@ app.get("/computers/:id/screen", async (c) => {
   }
 });
 
+app.post("/computers/:id/screen-mode", async (c) => {
+  const body = z.object({ interactive: z.boolean() }).parse(await c.req.json());
+  try {
+    const { container, info } = await managedContainer(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-workspace-id"),
+    );
+    await setInteractiveScreen(container, body.interactive);
+    const screenUrl = await publishedScreenUrl(container, info, body.interactive ? "6081" : "6080");
+    return c.json({ screenUrl });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ error: message }, 400);
+  }
+});
+
 app.post("/computers/:id/input", async (c) => {
   const id = c.req.param("id");
   const body = z
@@ -489,6 +507,7 @@ function loadRootEnv() {
 async function publishedScreenUrl(
   container: Docker.Container,
   initialInfo?: Docker.ContainerInspectInfo,
+  containerPort = "6080",
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
@@ -497,13 +516,22 @@ async function publishedScreenUrl(
       const address = networkMode
         ? info.NetworkSettings?.Networks?.[networkMode]?.IPAddress
         : undefined;
-      if (address) return screenUrlFor("6080", address);
+      if (address) return screenUrlFor(containerPort, address);
     }
-    const hostPort = info.NetworkSettings?.Ports?.["6080/tcp"]?.[0]?.HostPort;
+    const hostPort = info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort;
     if (hostPort) return screenUrlFor(hostPort);
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("computer screen port was not published");
+}
+
+async function setInteractiveScreen(container: Docker.Container, interactive: boolean) {
+  const result = await runContainerCommand(container, [
+    "bash",
+    "-lc",
+    interactiveScreenCommand(interactive),
+  ]);
+  if (result.code !== 0) throw new Error(result.stderr || "control screen failed to start");
 }
 
 function computerNetworkMode(info: Docker.ContainerInspectInfo | undefined) {

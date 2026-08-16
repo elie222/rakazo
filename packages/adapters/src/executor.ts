@@ -52,6 +52,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
+const MAX_AGENT_HISTORY_MESSAGES = 200;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -209,7 +210,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
             deps.prisma.message.findMany({
               where: { threadId: run.threadId },
-              orderBy: { seq: "asc" },
+              orderBy: { seq: "desc" },
+              take: MAX_AGENT_HISTORY_MESSAGES,
               select: { role: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
@@ -243,7 +245,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const history = messages.map((m) => ({
+        const history = [...messages].reverse().map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
             | "assistant"
@@ -799,35 +801,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
-          await publishMessage(deps, run, "bot", [{ kind: "text", text }]);
-          const completed = await deps.prisma.run.updateMany({
-            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-            data: {
-              status: "completed",
-              completedAt: new Date(),
-              leaseOwner: null,
-              leaseExpiresAt: null,
-            },
-          });
-          if (completed.count !== 1) return;
-          await deps.prisma.attempt.update({
-            where: { id: attempt.id },
-            data: { status: "completed", finishedAt: new Date() },
-          });
-          await deps.prisma.task.update({
-            where: { id: run.taskId },
-            data: { status: "completed" },
-          });
-          await deps.events.append({
+          const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
             botId: bot.id,
-            type: "run.completed",
             runId,
-            payload: {},
+            taskId: run.taskId,
+            attemptId: attempt.id,
+            leaseOwner: workerId,
+            leaseFence: fence,
+            outcome: "completed",
+            blocks: [{ kind: "text", text }],
           });
-          await clearRunProgress(deps, runId);
-          await deps.prisma.bot.update({ where: { id: bot.id }, data: { updatedAt: new Date() } });
+          if (!completed) return;
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "completion",
@@ -847,30 +833,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
-          const failed = await deps.prisma.run.updateMany({
-            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-            data: {
-              status: "failed",
-              error: message,
-              completedAt: new Date(),
-              leaseOwner: null,
-              leaseExpiresAt: null,
-            },
-          });
-          if (failed.count !== 1) return;
-          await deps.prisma.attempt.update({
-            where: { id: attempt.id },
-            data: { status: "failed", error: message, finishedAt: new Date() },
-          });
-          await deps.events.append({
+          const failed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
             botId: bot.id,
-            type: "run.failed",
             runId,
-            payload: { error: message },
+            taskId: run.taskId,
+            attemptId: attempt.id,
+            leaseOwner: workerId,
+            leaseFence: fence,
+            outcome: "failed",
+            error: message,
           });
-          await clearRunProgress(deps, runId);
+          if (!failed) return;
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "failure",

@@ -200,6 +200,7 @@ button {
   padding: 7px 14px;
   color: #525252;
   font-size: 14px;
+  white-space: nowrap;
   box-shadow: var(--shadow-soft);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
@@ -209,6 +210,75 @@ button {
 .button:hover,
 .button:focus-visible {
   transform: translateY(-1px);
+}
+
+.site-menu {
+  position: relative;
+  display: none;
+}
+
+.site-menu__toggle {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+  list-style: none;
+  cursor: pointer;
+}
+
+.site-menu__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.site-menu__icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.site-menu__icon--close,
+.site-menu[open] .site-menu__icon--open {
+  display: none;
+}
+
+.site-menu[open] .site-menu__icon--close {
+  display: block;
+}
+
+.site-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 208px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: #fff;
+  padding: 8px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.12);
+}
+
+.site-menu__panel a {
+  border-radius: 10px;
+  padding: 11px 12px;
+  color: var(--body);
+  font-size: 15.5px;
+}
+
+.site-menu__panel a:hover,
+.site-menu__panel a:focus-visible {
+  background: var(--surface-soft);
+  color: var(--ink);
 }
 
 .button {
@@ -264,6 +334,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  max-width: 100%;
   margin-bottom: 30px;
   padding: 6px 14px 6px 8px;
   border: 1px solid var(--blue-line);
@@ -271,13 +342,17 @@ button {
   background: linear-gradient(to bottom, var(--blue-soft), var(--blue-soft-2));
   color: var(--blue);
   font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
 }
 
 .hero__badge {
+  flex: none;
   border-radius: 999px;
   background: #fff;
   padding: 2px 8px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .hero h1,
@@ -1729,19 +1804,18 @@ button {
   }
 }
 
-@media (max-width: 960px) {
-  .site-header,
-  .site-header__left,
-  .site-header__right {
-    flex-direction: column;
-    align-items: stretch;
+@media (max-width: 1000px) {
+  .site-header__left {
+    gap: 26px;
   }
 
   .site-nav {
-    flex-wrap: wrap;
-    gap: 14px 20px;
+    gap: 18px;
+    font-size: 14.5px;
   }
+}
 
+@media (max-width: 960px) {
   .card-grid-3,
   .comparison-grid,
   .stats-band {
@@ -1755,6 +1829,20 @@ button {
 }
 
 @media (max-width: 860px) {
+  .site-header {
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .site-nav,
+  .site-header__cta {
+    display: none;
+  }
+
+  .site-menu {
+    display: block;
+  }
+
   .product-demo__frame,
   .product-demo__frame.is-collapsed {
     display: block;
@@ -1781,11 +1869,30 @@ button {
   }
 
   .hero {
-    padding-top: 32px;
+    padding-top: 26px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.375rem, 9vw, 3rem);
   }
 
   .hero__pill {
-    text-align: left;
+    margin-bottom: 22px;
+    padding: 5px 12px 5px 6px;
+    font-size: 12.5px;
+  }
+
+  .hero__pill-tail {
+    display: none;
+  }
+
+  .lead {
+    margin-top: 18px;
+    font-size: 17px;
+  }
+
+  .hero__actions {
+    margin-top: 26px;
   }
 
   .hero__actions,

@@ -17,6 +17,8 @@ async function main() {
     DATABASE_URL: database.getConnectionUri(),
     REALTIME_DATABASE_URL: database.getConnectionUri(),
     RUN_COMPUTER_E2E: "1",
+    VERIFY_PROVIDERS: "1",
+    COMPOSIO_API_KEY: "",
     WAKEUP_DRIVER: "memory",
     SANDBOX_PROVIDER: "e2b",
     AGENT_RUNTIME: "pi",

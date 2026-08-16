@@ -8,17 +8,29 @@ type Props = {
 };
 
 const { starsLabel } = Astro.props;
+
+const NAV_LINKS = [
+  { href: "/#demo", label: "Product" },
+  { href: "/#roster", label: "Bots" },
+  { href: "/#selfhost", label: "Self-host" },
+  { href: "/#open-source", label: "Open source" },
+  { href: DOCS_URL, label: "Docs", external: true },
+];
+
+const externalAttrs = { target: "_blank", rel: "noreferrer" };
 ---
 
 <header class="site-header">
   <div class="site-header__left">
     <Logo />
     <nav class="site-nav" aria-label="Primary">
-      <a href="/#demo">Product</a>
-      <a href="/#roster">Bots</a>
-      <a href="/#selfhost">Self-host</a>
-      <a href="/#open-source">Open source</a>
-      <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs</a>
+      {
+        NAV_LINKS.map((link) => (
+          <a href={link.href} {...(link.external ? externalAttrs : {})}>
+            {link.label}
+          </a>
+        ))
+      }
     </nav>
   </div>
   <div class="site-header__right">
@@ -26,6 +38,45 @@ const { starsLabel } = Astro.props;
       <span aria-hidden="true">★</span>
       <span>{starsLabel}</span>
     </a>
-    <Button href={GITHUB_URL} size="sm" external>View on GitHub</Button>
+    <div class="site-header__cta">
+      <Button href={GITHUB_URL} size="sm" external>View on GitHub</Button>
+    </div>
+    <details class="site-menu" data-site-menu>
+      <summary class="site-menu__toggle" aria-label="Menu">
+        <svg class="site-menu__icon site-menu__icon--open" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 6h14M3 10h14M3 14h14" />
+        </svg>
+        <svg class="site-menu__icon site-menu__icon--close" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M5 5l10 10M15 5L5 15" />
+        </svg>
+      </summary>
+      <nav class="site-menu__panel" aria-label="Site">
+        {
+          NAV_LINKS.map((link) => (
+            <a href={link.href} {...(link.external ? externalAttrs : {})}>
+              {link.label}
+            </a>
+          ))
+        }
+      </nav>
+    </details>
   </div>
 </header>
+
+<script>
+  const menu = document.querySelector<HTMLDetailsElement>("[data-site-menu]");
+
+  if (menu) {
+    menu.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a")) menu.open = false;
+    });
+
+    document.addEventListener("click", (event) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") menu.open = false;
+    });
+  }
+</script>

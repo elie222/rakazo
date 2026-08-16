@@ -7,6 +7,7 @@ import {
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
+  createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
   EncryptedSecretStore,
@@ -78,7 +79,11 @@ async function main() {
     workerId: process.pid.toString(),
   });
   await jobHost.start(jobHandlers);
-  const reconciler = createJobReconciler({ prisma, jobs });
+  const reconciler = createJobReconciler({
+    prisma,
+    jobs,
+    leadership: createPostgresReconciliationLeadership(pool),
+  });
   reconciler.start();
 
   let stopping = false;

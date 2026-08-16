@@ -58,6 +58,11 @@ export interface SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession>;
+  setScreenControl?(
+    computer: ComputerRef,
+    interactive: boolean,
+    context: AdapterContext,
+  ): Promise<void>;
   sendInput(
     computer: ComputerRef,
     input: ComputerInput,

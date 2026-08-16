@@ -40,11 +40,12 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "rakazo.botId": input.botId,
       "rakazo.workspaceId": input.workspaceId,
     },
-    ExposedPorts: { "6080/tcp": {} },
+    ExposedPorts: { "6080/tcp": {}, "6081/tcp": {} },
     HostConfig: {
       Binds: [`${input.homePath}:/home/rakazo`],
       PortBindings: {
         "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
+        "6081/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
       },
       ShmSize: 256 * 1024 * 1024,
       ReadonlyPaths: ["/usr/share/novnc"],

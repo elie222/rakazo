@@ -544,10 +544,169 @@ describeJourneys("required product journeys", () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(text).toMatch(/This Mac mode is only available/i);
   });
+
+  it("15: ask, answer, stop, follow-up, and clientNonce stay consistent", async () => {
+    const cookie = await signup(app, `ask-j-${stamp}@rakazo.test`, "Ask");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "bots/update", { botId: bot.id, title: "Updated chief" });
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).title).toBe(
+      "Updated chief",
+    );
+
+    const asked = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "ask me which city to use",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_input",
+    );
+    expect(JSON.stringify(waiting.messages)).toMatch(/which city/i);
+    await rpc(app, cookie, "threads/answer", {
+      botId: bot.id,
+      runId: asked.runId,
+      answer: "Paris",
+    });
+    const answered = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    expect(answered.run?.status ?? "completed").toBe("completed");
+
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await waitFor(app, cookie, bot.id, (snap) =>
+      ["queued", "leased", "running"].includes(snap.run?.status ?? ""),
+    );
+    const hanging = await prisma.run.findFirstOrThrow({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "desc" },
+    });
+    await rpc(app, cookie, "threads/stop", { botId: bot.id });
+    await waitFor(app, cookie, bot.id, (snap) => !snap.run);
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: hanging.id } })).status).toBe(
+      "cancelled",
+    );
+
+    await rpc(app, cookie, "threads/followUp", {
+      botId: bot.id,
+      text: "write a file in your home called notes/result.txt that says followup-ok",
+    });
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+    expect(
+      (
+        await rpc<{ content: string }>(app, cookie, "computer/readFile", {
+          botId: bot.id,
+          path: "notes/result.txt",
+        })
+      ).content,
+    ).toContain("followup-ok");
+
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "write a file in your home called notes/result.txt that says nonce-ok",
+      clientNonce: `nonce-${stamp}`,
+    });
+    const second = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "write a file in your home called notes/result.txt that says nonce-dup",
+      clientNonce: `nonce-${stamp}`,
+    });
+    expect(second.runId).toBe(first.runId);
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+    const file = await rpc<{ content: string }>(app, cookie, "computer/readFile", {
+      botId: bot.id,
+      path: "notes/result.txt",
+    });
+    expect(file.content).toContain("nonce-ok");
+    expect(file.content).not.toContain("nonce-dup");
+  });
+
+  it("16: routine test-run and plugin connect/revoke", async () => {
+    const ada = await signup(app, `plug-j-${stamp}@rakazo.test`, "Plug Ada");
+    const bob = await signup(app, `plug-bob-j-${stamp}@rakazo.test`, "Plug Bob");
+    const bot = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await rpc<{ id: string }>(app, ada, "routines/create", {
+      botId: bot.id,
+      name: "Test now",
+      prompt: "write a file in your home called notes/result.txt that says testrun-ok",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const tested = await rpc<{ runId: string }>(app, ada, "routines/testRun", {
+      routineId: routine.id,
+    });
+    expect(tested.runId).toBeTruthy();
+    await waitFor(
+      app,
+      ada,
+      bot.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+    const file = await rpc<{ content: string }>(app, ada, "computer/readFile", {
+      botId: bot.id,
+      path: "notes/result.txt",
+    });
+    expect(file.content).toContain("testrun-ok");
+
+    const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
+      app,
+      ada,
+      "connections/begin",
+      { provider: "gmail", displayName: "Gmail" },
+    );
+    expect(started.authorizationUrl).toBeNull();
+    const connected = await rpc<{ status: string }>(app, ada, "connections/complete", {
+      connectionId: started.connectionId,
+    });
+    expect(connected.status).toBe("connected");
+    await rpc(app, bob, "connections/revoke", { connectionId: started.connectionId });
+    expect(
+      (await rpc<Array<{ id: string; status: string }>>(app, ada, "connections/list")).find(
+        (row) => row.id === started.connectionId,
+      )?.status,
+    ).toBe("connected");
+    await rpc(app, ada, "connections/revoke", { connectionId: started.connectionId });
+    expect(
+      (await rpc<Array<{ id: string; status: string }>>(app, ada, "connections/list")).find(
+        (row) => row.id === started.connectionId,
+      )?.status,
+    ).toBe("revoked");
+  });
 });
 
 type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };
-type Bot = { id: string; name: string; parentBotId?: string | null };
+type Bot = { id: string; name: string; title?: string; parentBotId?: string | null };
 type Snap = {
   messages: Array<{ seq: number; blocks: unknown[] }>;
   run: { status: string } | null;
