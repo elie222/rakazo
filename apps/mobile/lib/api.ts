@@ -262,6 +262,9 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev) return prev;
+  if (event.type === "thread.cleared") {
+    return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
+  }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);
     const previous = prev.messages.find((message) => message.id === progressId);

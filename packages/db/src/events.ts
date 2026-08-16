@@ -18,9 +18,21 @@ export interface AppendEventInput {
 
 export interface ThreadEvents {
   append(input: AppendEventInput): Promise<ProductEvent>;
+  clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
   finalizeComputerControlRelease(input: FinalizeComputerControlReleaseInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<boolean>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
+}
+
+export interface ClearThreadInput {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+}
+
+export interface ClearThreadResult {
+  event: ProductEvent;
+  cancelledRunIds: string[];
 }
 
 export interface FinalizeComputerControlReleaseInput {
@@ -52,12 +64,75 @@ export function createThreadEvents(
 ): ThreadEvents {
   return {
     append: (input) => appendEvent(prisma, input, realtime),
+    clearThread: (input) => clearThread(prisma, input, realtime),
     finalizeComputerControlRelease: (input) =>
       finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
+}
+
+export async function clearThread(
+  prisma: PrismaClient,
+  input: ClearThreadInput,
+  realtime?: RealtimeFanout,
+): Promise<ClearThreadResult> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.thread.update({
+      where: {
+        id: input.threadId,
+        workspaceId: input.workspaceId,
+        botId: input.botId,
+      },
+      data: { unread: false },
+    });
+    const activeRuns = await tx.run.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+      },
+      select: { id: true, taskId: true },
+    });
+    const now = new Date();
+    const runIds = activeRuns.map((run) => run.id);
+    const taskIds = activeRuns.map((run) => run.taskId);
+    if (runIds.length > 0) {
+      await tx.run.updateMany({
+        where: { id: { in: runIds } },
+        data: {
+          status: "cancelled",
+          completedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
+      });
+      await tx.attempt.updateMany({
+        where: { runId: { in: runIds }, status: "running" },
+        data: { status: "cancelled", finishedAt: now },
+      });
+      await tx.task.updateMany({
+        where: { id: { in: taskIds } },
+        data: { status: "cancelled" },
+      });
+    }
+    await tx.message.deleteMany({ where: { threadId: input.threadId } });
+    await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    await tx.bot.update({
+      where: { id: input.botId, workspaceId: input.workspaceId },
+      data: { updatedAt: now },
+    });
+    const event = await appendEventInTransaction(tx, {
+      ...input,
+      type: "thread.cleared",
+      payload: {},
+    });
+    return { event, cancelledRunIds: runIds };
+  });
+  await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  return { event: mapProductEvent(committed.event), cancelledRunIds: committed.cancelledRunIds };
 }
 
 export async function finalizeComputerControlRelease(

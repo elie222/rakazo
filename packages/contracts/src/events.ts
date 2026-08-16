@@ -3,6 +3,7 @@ import { Id } from "./ids.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
+  "thread.cleared",
   "thread.progress",
   "thread.artifact",
   "thread.ask",

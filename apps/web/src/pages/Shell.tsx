@@ -60,6 +60,7 @@ export function ShellPage() {
     position: ContextMenuPosition;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
+  const [clearTarget, setClearTarget] = useState<Bot | null>(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [routineDraft, setRoutineDraft] = useState({
@@ -794,6 +795,7 @@ export function ShellPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
+                onClear={() => setClearTarget(active)}
                 onDelete={async () => {
                   await rpc.bots.remove({ botId: active.id });
                   setPanel(null);
@@ -894,6 +896,10 @@ export function ShellPage() {
               navigate(`/app/${bot.id}`);
             });
           }}
+          onClear={() => {
+            setClearTarget(contextBot);
+            setBotMenu(null);
+          }}
           onDelete={() => {
             setDeleteTarget(contextBot);
             setBotMenu(null);
@@ -909,6 +915,24 @@ export function ShellPage() {
             await rpc.bots.remove({ botId: deleteTarget.id });
             setDeleteTarget(null);
             setPanel(null);
+            await refreshBots();
+          }}
+        />
+      ) : null}
+
+      {clearTarget ? (
+        <ClearConversationDialog
+          bot={clearTarget}
+          onCancel={() => setClearTarget(null)}
+          onConfirm={async () => {
+            await rpc.threads.clear({ botId: clearTarget.id });
+            if (active?.id === clearTarget.id) {
+              expandedHistoryThread.current = null;
+              setSnapshot((current) =>
+                current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+              );
+            }
+            setClearTarget(null);
             await refreshBots();
           }}
         />
@@ -1264,6 +1288,7 @@ function BotSettings({
   bot,
   onSave,
   onExport,
+  onClear,
   onDelete,
 }: {
   bot: Bot;
@@ -1274,6 +1299,7 @@ function BotSettings({
     instructions?: string;
   }) => Promise<void>;
   onExport: () => Promise<void>;
+  onClear: () => void;
   onDelete: () => Promise<void>;
 }) {
   const [name, setName] = useState(bot.name);
@@ -1328,6 +1354,9 @@ function BotSettings({
         >
           Export
         </button>
+        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+          Clear conversation
+        </button>
         {confirming ? (
           <div className="w-full rounded-[11px] border border-[#3A1F14] bg-[#1A100C] px-3.5 py-3">
             <p className="text-[13.5px] leading-[1.45] text-[#C9C9CE]">
@@ -1373,6 +1402,83 @@ function BotSettings({
             Delete bot
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ClearConversationDialog({
+  bot,
+  onCancel,
+  onConfirm,
+}: {
+  bot: Bot;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [clearing, setClearing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !clearing) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clearing, onCancel]);
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!clearing) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="clear-conversation-title"
+        aria-describedby="clear-conversation-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          Clear {bot.name}’s conversation?
+        </h2>
+        <p
+          id="clear-conversation-description"
+          className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
+        >
+          This permanently removes every message and stops current work. The bot, computer, memory,
+          and routines are kept.
+        </p>
+        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={onCancel}
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={() => {
+              setClearing(true);
+              setError(null);
+              void onConfirm().catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not clear conversation");
+                setClearing(false);
+              });
+            }}
+            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+          >
+            {clearing ? "Clearing…" : "Clear"}
+          </button>
+        </div>
       </div>
     </div>
   );

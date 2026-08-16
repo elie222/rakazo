@@ -2,7 +2,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { abortableDelay } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -29,8 +29,51 @@ export default function Thread() {
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: name || "Thread" });
-  }, [name, navigation]);
+    navigation.setOptions({
+      title: name || "Thread",
+      headerRight: () => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Conversation actions"
+          hitSlop={8}
+          onPress={() => {
+            Alert.alert(
+              "Clear conversation?",
+              "This removes every message and stops current work. The bot, computer, memory, and routines are kept.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Clear",
+                  style: "destructive",
+                  onPress: () => {
+                    if (!botId) return;
+                    setError(null);
+                    void rpc("threads/clear", { botId })
+                      .then(() => {
+                        expandedHistoryThread.current = null;
+                        setSnap((current) =>
+                          current
+                            ? { ...current, messages: [], olderCursor: null, run: null }
+                            : current,
+                        );
+                      })
+                      .catch((err: unknown) =>
+                        setError(
+                          err instanceof Error ? err.message : "Could not clear conversation",
+                        ),
+                      );
+                  },
+                },
+              ],
+            );
+          }}
+          style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+        >
+          <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" color="#C9C9CE" />
+        </Pressable>
+      ),
+    });
+  }, [botId, name, navigation]);
 
   async function refresh() {
     if (!botId) return;
@@ -102,7 +145,8 @@ export default function Thread() {
               if (
                 event.type === "thread.progress" ||
                 event.type === "thread.message.created" ||
-                event.type === "thread.subagent"
+                event.type === "thread.subagent" ||
+                event.type === "thread.cleared"
               ) {
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }

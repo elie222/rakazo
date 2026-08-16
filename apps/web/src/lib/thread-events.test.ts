@@ -148,6 +148,36 @@ describe("thread event reduction", () => {
     expect(next?.messages.map((item) => item.id)).toEqual(["subagent:other", "durable"]);
     expect(next?.messages[1]?.blocks).toEqual([completedBlock]);
   });
+
+  it("clears durable and transient history when another client clears the thread", () => {
+    const initial = snapshot(
+      [
+        message("message-1", [{ kind: "text", text: "old" }]),
+        message("progress:run-1", [{ kind: "progress", text: "draft" }]),
+      ],
+      1,
+    );
+    initial.run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "running",
+      trigger: "user",
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({ type: "thread.cleared", seq: 12, runId: undefined }),
+    );
+
+    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
+  });
 });
 
 describe("computer event reduction", () => {

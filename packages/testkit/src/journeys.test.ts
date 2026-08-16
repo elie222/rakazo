@@ -144,6 +144,94 @@ describeJourneys("required product journeys", () => {
     expect(bobBot.id).not.toBe(chief.id);
   });
 
+  it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
+    const cookie = await signup(app, `clear-j-${stamp}@rakazo.test`, "Clear Journey");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Keeps its setup",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/result.txt that says kept-after-clear",
+    );
+    const memories = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: memories[0]!.id,
+      content: "# Keeper\n\nRemember this after clearing.",
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Kept routine",
+      prompt: "Check in",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const task = await prisma.task.create({
+      data: {
+        workspaceId: thread.workspaceId,
+        userId: thread.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        prompt: "queued before clear",
+        status: "queued",
+      },
+    });
+    const run = await prisma.run.create({
+      data: {
+        workspaceId: thread.workspaceId,
+        userId: thread.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        taskId: task.id,
+        status: "queued",
+        trigger: "user",
+      },
+    });
+
+    await rpc(app, cookie, "threads/clear", { botId: bot.id });
+
+    const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(snap.messages).toEqual([]);
+    expect(snap.run).toBeNull();
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
+      { type: "thread.cleared" },
+    ]);
+    expect(await prisma.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(
+      (await rpc<Bot[]>(app, cookie, "bots/list")).find((item) => item.id === bot.id),
+    ).toMatchObject({
+      preview: "",
+      unread: false,
+    });
+    expect(
+      await rpc(app, cookie, "computer/readFile", { botId: bot.id, path: "notes/result.txt" }),
+    ).toMatchObject({ content: expect.stringContaining("kept-after-clear") });
+    expect(await rpc(app, cookie, "memory/list", { botId: bot.id })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining("Remember this") }),
+      ]),
+    );
+    expect(await rpc(app, cookie, "routines/list", { botId: bot.id })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: routine.id })]),
+    );
+  });
+
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {
     const cookie = await signup(app, `cursor-j-${stamp}@rakazo.test`, "Cursor");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

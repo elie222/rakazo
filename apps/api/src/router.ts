@@ -11,6 +11,7 @@ import {
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
+  runJobKey,
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -382,6 +383,19 @@ export function createRouter(deps: RouterDeps) {
             runId: { in: activeRuns.map((run) => run.id) },
           },
         });
+        return { ok: true as const };
+      }),
+      clear: authed.threads.clear.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.thread) throw new IsolationError();
+        const { cancelledRunIds } = await deps.events.clearThread({
+          workspaceId: context.actor.workspaceId,
+          threadId: bot.thread.id,
+          botId: bot.id,
+        });
+        await Promise.all(
+          cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
+        );
         return { ok: true as const };
       }),
       followUp: authed.threads.followUp.handler(async ({ context, input }) => {

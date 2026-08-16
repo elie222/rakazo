@@ -241,6 +241,15 @@ describe("mobile thread event reduction", () => {
     expect(next?.messages[1]?.blocks).toEqual([completed]);
   });
 
+  it("clears loaded history and active state when another client clears the thread", () => {
+    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "old" }])], 1);
+    initial.run = { status: "running" };
+
+    const next = applyMobileThreadEvent(initial, { type: "thread.cleared", seq: 12 });
+
+    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
