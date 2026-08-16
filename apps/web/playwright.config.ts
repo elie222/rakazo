@@ -2,17 +2,24 @@ import { defineConfig, devices } from "@playwright/test";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${webPort}`;
+const reporters = [
+  ...(process.env.CI ? ([["github"]] as const) : []),
+  ["list"] as const,
+  ["html", { open: "never", outputFolder: "../../playwright-report" }] as const,
+];
 
 export default defineConfig({
   testDir: "./e2e",
+  forbidOnly: Boolean(process.env.CI),
   fullyParallel: false,
   timeout: 120_000,
   expect: { timeout: 20_000 },
-  reporter: [["list"], ["html", { open: "never", outputFolder: "../../playwright-report" }]],
+  reporter: reporters,
   use: {
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

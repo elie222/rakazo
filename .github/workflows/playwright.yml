@@ -1,0 +1,84 @@
+name: Playwright
+
+on:
+  workflow_call:
+    inputs:
+      publish_report:
+        description: Publish this run to the persistent visual dashboard
+        required: false
+        type: boolean
+        default: false
+      upload_artifacts:
+        description: Retain the report and diagnostics as GitHub artifacts
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      S3_ACCESS_KEY_ID:
+        description: Access key used to publish visual reports
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        description: Secret key used to publish visual reports
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    name: Web E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @rakazo/web exec playwright install --with-deps chromium
+      - name: Run Playwright tests
+        id: playwright_tests
+        run: pnpm test:e2e
+      - name: Record Playwright result
+        if: always() && inputs.upload_artifacts
+        env:
+          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
+        run: |
+          mkdir -p test-report/e2e
+          printf '%s\n' "$PLAYWRIGHT_RESULT" > test-report/e2e/outcome.txt
+      - name: Upload Playwright artifacts
+        if: always() && inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report
+            apps/web/test-results
+            test-report/e2e
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Publish Playwright visual report
+        if: always() && inputs.publish_report
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
+          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
+          PLAYWRIGHT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PLAYWRIGHT_RUN_ID: ${{ github.run_id }}
+          PLAYWRIGHT_RUN_NUMBER: ${{ github.run_number }}
+          PLAYWRIGHT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PLAYWRIGHT_SHA: ${{ github.sha }}
+          PLAYWRIGHT_EVENT: ${{ github.event_name }}
+          PLAYWRIGHT_BRANCH: ${{ github.ref_name }}
+        run: bash scripts/publish-playwright-report.sh
