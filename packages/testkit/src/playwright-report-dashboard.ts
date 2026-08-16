@@ -76,7 +76,7 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
     .value { display: block; margin-top: 8px; font-size: 1.5rem; font-weight: 700; }
     .table-wrap { overflow: hidden; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 16px 18px; border-bottom: 1px solid rgba(63, 63, 70, 0.72); text-align: left; }
+    th, td { padding: 16px 18px; border-bottom: 1px solid rgba(63, 63, 70, 0.72); text-align: left; vertical-align: middle; }
     th { color: #a1a1aa; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; }
     tbody tr:last-child td { border-bottom: 0; }
     tbody tr:hover { background: rgba(46, 16, 101, 0.32); }
@@ -87,7 +87,7 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
     .status.failure, .status.cancelled { color: #fb7185; }
     .status.failure::before, .status.cancelled::before { background: #fb7185; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .links { display: flex; gap: 14px; }
+    .links { display: flex; gap: 14px; white-space: nowrap; }
     .links a { color: #c4b5fd; text-decoration: none; }
     .links a:hover { text-decoration: underline; }
     .empty { padding: 56px 24px; color: #a1a1aa; text-align: center; }
@@ -190,7 +190,8 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       const published = document.createElement("td");
       published.textContent = new Date(run.createdAt).toLocaleString();
       const links = document.createElement("td");
-      links.className = "links";
+      const linkList = document.createElement("div");
+      linkList.className = "links";
       const screenshots = document.createElement("a");
       screenshots.href = run.screenshotsUrl;
       screenshots.textContent = "Screenshots";
@@ -200,7 +201,8 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       const actions = document.createElement("a");
       actions.href = run.runUrl;
       actions.textContent = "Actions";
-      links.append(screenshots, report, actions);
+      linkList.append(screenshots, report, actions);
+      links.append(linkList);
 
       row.append(result, runNumber, commit, event, screenshotCount, published, links);
       runs.append(row);
