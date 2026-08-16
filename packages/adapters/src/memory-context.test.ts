@@ -44,7 +44,7 @@ describe("agent memory context", () => {
 
     const result = await loadAgentMemoryContext(storeWith(read), "bot-1", context, 300);
 
-    expect(new TextEncoder().encode(result).byteLength).toBeLessThanOrEqual(300);
+    expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(300);
     expect(result).toContain("## bot: new.md");
     expect(result).not.toContain("old.md");
     expect(result).not.toContain("�");
