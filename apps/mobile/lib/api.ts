@@ -145,6 +145,30 @@ export type MobileBot = Pick<
 export type MobileMe = {
   name: string;
   email: string;
+  workspaceId?: string;
+  defaultProvider?: string | null;
+  defaultModel?: string | null;
+  needsModel?: boolean;
+};
+
+export type MobileModel = {
+  provider: string;
+  providerName?: string;
+  id: string;
+  label: string;
+  billing: string;
+  auth?: "api-key" | "oauth" | "both";
+  oauthLabel?: string;
+  subscription?: boolean;
+  signIn?: "device-code";
+};
+
+export type MobileModelCredential = {
+  id: string;
+  provider: string;
+  label: string;
+  hasKey: boolean;
+  isDefault: boolean;
 };
 
 export type MobileMessage = {

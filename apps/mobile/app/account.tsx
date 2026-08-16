@@ -93,6 +93,19 @@ export default function Account() {
         <Pressable
           accessibilityRole="button"
           disabled={pending}
+          onPress={() => router.push("/models")}
+          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+        >
+          <View>
+            <Text style={styles.settingsTitle}>Models</Text>
+            <Text style={styles.settingsExplanation}>Choose your provider and active model</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={pending}
           onPress={() => void handleSignOut()}
           style={({ pressed }) => [styles.button, pressed && styles.pressed]}
         >
@@ -236,6 +249,31 @@ const styles = StyleSheet.create({
   archivedDeleteLabel: {
     color: "#FF6961",
     fontSize: 14,
+  },
+  settingsButton: {
+    minHeight: 62,
+    borderRadius: 14,
+    backgroundColor: native.fill,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  settingsTitle: {
+    color: native.label,
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  settingsExplanation: {
+    color: native.secondaryLabel,
+    fontSize: 13,
+    marginTop: 3,
+  },
+  chevron: {
+    color: native.secondaryLabel,
+    fontSize: 28,
+    fontWeight: "300",
   },
   dangerZone: {
     marginTop: 12,

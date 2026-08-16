@@ -30,6 +30,7 @@ export default function Layout() {
         <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
         <Stack.Screen name="account" options={{ title: "Account" }} />
+        <Stack.Screen name="models" options={{ title: "Models" }} />
         <Stack.Screen
           name="new"
           options={{
