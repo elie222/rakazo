@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "./api";
-import { waitForModelOAuth } from "./model-auth";
+import {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
+  waitForModelOAuth,
+} from "./model-auth";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 
@@ -38,5 +42,38 @@ describe("mobile waitForModelOAuth", () => {
 
     await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "connected" });
     expect(mockRpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("mobile OAuth focus lifecycle", () => {
+  it("resets busy state on focus cleanup and protects a newer attempt", () => {
+    const ref = { current: null as AbortController | null };
+    let busy = false;
+    const reset = () => {
+      busy = false;
+    };
+    const startAttempt = () => {
+      const controller = new AbortController();
+      ref.current = controller;
+      busy = true;
+      return controller;
+    };
+
+    const first = startAttempt();
+    cancelModelOAuthAttempt(ref, reset);
+
+    expect(first.signal.aborted).toBe(true);
+    expect(ref.current).toBeNull();
+    expect(busy).toBe(false);
+
+    const second = startAttempt();
+    finishModelOAuthAttempt(ref, first, reset);
+
+    expect(ref.current).toBe(second);
+    expect(busy).toBe(true);
+
+    finishModelOAuthAttempt(ref, second, reset);
+    expect(ref.current).toBeNull();
+    expect(busy).toBe(false);
   });
 });

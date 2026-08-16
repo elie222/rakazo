@@ -12,7 +12,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
-import { waitForModelOAuth } from "../lib/model-auth";
+import {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
+  waitForModelOAuth,
+} from "../lib/model-auth";
 import { native } from "../lib/native";
 
 type OAuthNotice = {
@@ -75,7 +79,11 @@ export default function Models() {
           setError(err instanceof Error ? err.message : "Could not load model settings"),
         )
         .finally(() => setLoading(false));
-      return () => oauthAbortRef.current?.abort();
+      return () =>
+        cancelModelOAuthAttempt(oauthAbortRef, () => {
+          setOauth(null);
+          setOauthPending(false);
+        });
     }, [load]),
   );
 
@@ -181,8 +189,7 @@ export default function Models() {
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      if (oauthAbortRef.current === controller) oauthAbortRef.current = null;
-      if (!controller.signal.aborted) setOauthPending(false);
+      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
     }
   }
 

@@ -6,6 +6,26 @@ type CompleteOAuthResult =
   | { status: "connected"; credential: MobileModelCredential }
   | { status: "error"; error: string };
 
+type OAuthControllerRef = { current: AbortController | null };
+
+export function cancelModelOAuthAttempt(ref: OAuthControllerRef, reset: () => void) {
+  const controller = ref.current;
+  controller?.abort();
+  if (ref.current !== controller) return;
+  ref.current = null;
+  reset();
+}
+
+export function finishModelOAuthAttempt(
+  ref: OAuthControllerRef,
+  controller: AbortController,
+  resetBusy: () => void,
+) {
+  if (ref.current !== controller) return;
+  ref.current = null;
+  resetBusy();
+}
+
 export async function waitForModelOAuth(loginId: string, signal?: AbortSignal) {
   for (let i = 0; i < 180; i += 1) {
     throwIfAborted(signal);
