@@ -180,7 +180,13 @@ export interface MemoryReadRequest {
 }
 
 export interface MemorySnapshot {
-  documents: Array<{ id: string; path: string; content: string; revision: number }>;
+  documents: Array<{
+    id: string;
+    path: string;
+    content: string;
+    revision: number;
+    updatedAt?: string;
+  }>;
 }
 
 export interface MemorySearchRequest {

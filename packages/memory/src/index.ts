@@ -33,6 +33,7 @@ export class MarkdownMemoryStore implements MemoryStore {
         ...(request.botId ? { botId: request.botId } : {}),
         ...(request.path ? { path: request.path } : {}),
       },
+      orderBy: [{ updatedAt: "desc" }, { path: "asc" }],
     });
     return {
       documents: documents.map((doc) => ({
@@ -40,6 +41,7 @@ export class MarkdownMemoryStore implements MemoryStore {
         path: doc.path,
         content: doc.content,
         revision: doc.revision,
+        updatedAt: doc.updatedAt.toISOString(),
       })),
     };
   }

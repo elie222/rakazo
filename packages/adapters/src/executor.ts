@@ -34,6 +34,7 @@ import {
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -254,6 +255,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             | "system",
           content: blocksToText(m.blocks as MessageBlock[]),
         }));
+        const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -578,6 +580,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               prompt: task.prompt,
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
@@ -585,7 +588,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "delete_bot permanently destroys a bot this bot created, and only that bot. Only delete when the user asked or that bot is finished and unused. confirm_name must exactly match its name.",
                 pluginLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
-              ].join("\n\n"),
+              ]
+                .filter((instruction): instruction is string => Boolean(instruction))
+                .join("\n\n"),
               history,
               tools,
               model: {
