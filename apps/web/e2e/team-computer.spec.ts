@@ -107,6 +107,11 @@ test("an active Team bot must be stopped before user takeover", async ({ page })
   await expect
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
+  await expect
+    .poll(
+      async () => (await rpc<{ state: string }>(page, "computer/status", { botId: chiefId })).state,
+    )
+    .toBe("running");
 
   const takeover = await rpcResponse(page, "computer/takeover", { botId: chiefId });
   expect(takeover.ok).toBe(false);
