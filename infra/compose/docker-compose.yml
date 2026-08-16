@@ -17,8 +17,8 @@ services:
 
   supervisor:
     build:
-      context: ../sandboxes/supervisor
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: infra/sandboxes/supervisor/Dockerfile
     env_file:
       - ../../.env
     environment:
@@ -46,7 +46,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    command: ["bash", "-lc", "pnpm --filter @rakazo/db generate && pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start"]
+    command: ["bash", "-lc", "pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start"]
     env_file:
       - ../../.env
     environment:
@@ -89,9 +89,10 @@ services:
       context: ../..
       dockerfile: infra/compose/Dockerfile
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    env_file:
+      - ../../.env
     environment:
       API_PROXY_TARGET: http://api:3100
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
     ports:
       - "5173:5173"
     depends_on:
