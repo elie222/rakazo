@@ -42,6 +42,10 @@ export function boundedComputerActions(actions: readonly ComputerAction[]): Comp
   return [...actions];
 }
 
+export function clampRounded(value: number, min: number, max: number): number {
+  return Math.min(Math.max(Math.round(value), min), max);
+}
+
 export function normalizeWorkspacePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const segments = normalized.split("/").filter(Boolean);

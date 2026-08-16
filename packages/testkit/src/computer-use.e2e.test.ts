@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sessionCookieHeader } from "./index.js";
 
 const live = process.env.RUN_COMPUTER_E2E === "1";
 const describeLive = live ? describe : describe.skip;
@@ -58,7 +59,7 @@ describeLive("real model and E2B computer journey", () => {
       }),
     });
     expect(signup.status).toBeLessThan(400);
-    const cookie = cookieHeader(signup);
+    const cookie = sessionCookieHeader(signup);
     const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
       name: "Operator",
       title: "Computer acceptance test",
@@ -211,12 +212,6 @@ function testContext(botId: string) {
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 type Snapshot = { run: { status: string } | null };
-
-function cookieHeader(response: Response) {
-  const many = response.headers.getSetCookie?.() ?? [];
-  if (many.length) return many.map((cookie) => cookie.split(";")[0]).join("; ");
-  return response.headers.get("set-cookie")?.split(",")[0]?.split(";")[0] ?? "";
-}
 
 async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown): Promise<T> {
   const response = await app.request(`/rpc/${procedure}`, {

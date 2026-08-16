@@ -1,4 +1,4 @@
-export const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
+const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
 

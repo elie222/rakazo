@@ -12,12 +12,9 @@
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
-    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
-    "@rakazo/memory": "workspace:*",
-    "pino": "^9.9.0",
-    "dotenv": "^17.2.1"
+    "@rakazo/memory": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

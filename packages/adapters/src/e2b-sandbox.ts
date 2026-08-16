@@ -18,6 +18,7 @@ import type {
 import { sandboxIdleMs } from "./computer-idle.js";
 import {
   boundedComputerActions,
+  clampRounded,
   computerObservation,
   normalizeWorkspacePath,
   shellQuote,
@@ -237,7 +238,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       await applyE2BAction(desktop, action);
       completed += 1;
     }
-    if (request.settleMs) await desktop.wait(clamp(request.settleMs, 0, 5_000));
+    if (request.settleMs) await desktop.wait(clampRounded(request.settleMs, 0, 5_000));
     return {
       completed,
       ...(request.observe === false
@@ -479,11 +480,11 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
     return;
   }
   if (action.kind === "scroll") {
-    await desktop.scroll(action.direction, clamp(action.amount ?? 3, 1, 20));
+    await desktop.scroll(action.direction, clampRounded(action.amount ?? 3, 1, 20));
     return;
   }
   if (action.kind === "wait") {
-    await desktop.wait(clamp(action.ms, 0, 5_000));
+    await desktop.wait(clampRounded(action.ms, 0, 5_000));
     return;
   }
   if (action.kind === "open") {
@@ -581,10 +582,6 @@ function e2bCwd(cwd: string | undefined): string {
       ? cwd.slice("/home/rakazo/".length)
       : cwd;
   return workspacePath(E2B_WORKSPACE, relative);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(Math.round(value), min), max);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

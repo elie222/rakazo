@@ -21,17 +21,19 @@ export type CronPreset = {
   cron: string;
 };
 
+export type CronPresetInput = {
+  freq: CronFreq;
+  n?: number;
+  unit?: CronUnit;
+  time?: string;
+  cron?: string;
+};
+
 export function defaultCronPreset(): CronPreset {
   return { freq: "Every day", n: 3, unit: "minutes", time: "9:00 AM", cron: "" };
 }
 
-export function cronFromPreset(input: {
-  freq: string;
-  n?: number;
-  unit?: string;
-  time?: string;
-  cron?: string;
-}): string {
+export function cronFromPreset(input: CronPresetInput): string {
   if (input.freq === "Advanced") return input.cron?.trim() || "*/3 * * * *";
   if (input.freq === "Every hour") return "0 * * * *";
   if (input.freq === "Interval") {

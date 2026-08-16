@@ -17,6 +17,7 @@ import type {
 import { resolveSupervisorToken } from "@rakazo/core";
 import {
   boundedComputerActions,
+  clampRounded,
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
@@ -178,7 +179,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       body: JSON.stringify({
         actions,
         observe: request.observe,
-        settleMs: clamp(request.settleMs ?? 0, 0, 5_000),
+        settleMs: clampRounded(request.settleMs ?? 0, 0, 5_000),
       }),
       signal: context.signal,
     });
@@ -317,10 +318,6 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(Math.round(value), min), max);
 }
 
 function dockerCwd(cwd: string | undefined) {

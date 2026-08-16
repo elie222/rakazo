@@ -398,6 +398,14 @@ export function ProductDemo() {
     return null;
   }
 
+  function schedule(callback: () => void, delayMs: number) {
+    const timer = window.setTimeout(() => {
+      timersRef.current = timersRef.current.filter((pending) => pending !== timer);
+      callback();
+    }, delayMs);
+    timersRef.current.push(timer);
+  }
+
   function openComputer() {
     setPanelOpen(true);
     setPanelMode("computer");
@@ -563,17 +571,14 @@ export function ProductDemo() {
       window.clearTimeout(timer);
     }
     setBootPct(8);
-    const steps = [
-      window.setTimeout(() => setBootPct(46), 450),
-      window.setTimeout(() => setBootPct(82), 1100),
-      window.setTimeout(() => setBootPct(100), 1750),
-      window.setTimeout(() => {
-        setBootPct(0);
-        setHasControl(true);
-        setTakeover(true);
-      }, 2300),
-    ];
-    timersRef.current.push(...steps);
+    schedule(() => setBootPct(46), 450);
+    schedule(() => setBootPct(82), 1100);
+    schedule(() => setBootPct(100), 1750);
+    schedule(() => {
+      setBootPct(0);
+      setHasControl(true);
+      setTakeover(true);
+    }, 2300);
   }
 
   function appendMessage(botId: string, message: DemoMessage) {
@@ -596,14 +601,13 @@ export function ProductDemo() {
     const botId = active.id;
     const reply = active.reply;
     appendMessage(botId, { type: "user", text });
-    const typingTimer = window.setTimeout(() => appendMessage(botId, { type: "typing" }), 280);
-    const replyTimer = window.setTimeout(() => {
+    schedule(() => appendMessage(botId, { type: "typing" }), 280);
+    schedule(() => {
       setExtra((current) => {
         const withoutTyping = (current[botId] ?? []).filter((message) => message.type !== "typing");
         return { ...current, [botId]: [...withoutTyping, { type: "bot", text: reply }] };
       });
     }, 1350);
-    timersRef.current.push(typingTimer, replyTimer);
   }
 
   function selectBot(id: string) {

@@ -22,10 +22,6 @@ export function currentApiBase() {
   return cachedApiBase ?? defaultApiBase();
 }
 
-export function isCustomApiBase() {
-  return currentApiBase() !== defaultApiBase();
-}
-
 export async function loadApiBase() {
   try {
     const stored = await SecureStore.getItemAsync(ENDPOINT_KEY);
@@ -67,7 +63,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
-export async function authHeaders(): Promise<Record<string, string>> {
+async function authHeaders(): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return token ? { authorization: `Bearer ${token}` } : {};
 }
@@ -317,5 +313,6 @@ export {
   displayApiHost,
   normalizeApiBase,
   probeApiBase,
+  usesCustomApiBase,
 } from "./endpoint";
 export { loadSessionToken };

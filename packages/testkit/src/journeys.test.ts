@@ -8,6 +8,7 @@ import {
 } from "@rakazo/adapters";
 import { appendEvent, createThreadMessage } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 process.env.WAKEUP_DRIVER = "memory";
@@ -564,14 +565,7 @@ async function signup(app: App, email: string, name: string) {
   if (res.status >= 400) {
     throw new Error(`signup failed ${res.status}: ${await res.text()}`);
   }
-  return cookieHeader(res);
-}
-
-function cookieHeader(res: Response) {
-  const many = res.headers.getSetCookie?.() ?? [];
-  if (many.length) return many.map((c) => c.split(";")[0]).join("; ");
-  const single = res.headers.get("set-cookie");
-  return single ? (single.split(",")[0]?.split(";")[0] ?? "") : "";
+  return sessionCookieHeader(res);
 }
 
 async function raw(app: App, cookie: string, proc: string, body: unknown = {}) {

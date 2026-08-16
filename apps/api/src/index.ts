@@ -1,4 +1,4 @@
-import { loadRootEnv } from "./load-root-env.js";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 
 loadRootEnv();
 

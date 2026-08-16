@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./node/load-root-env": {
+      "types": "./src/node/load-root-env.ts",
+      "development": "./src/node/load-root-env.ts",
+      "default": "./src/node/load-root-env.ts"
     }
   },
   "scripts": {
@@ -15,9 +20,8 @@
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {
-    "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
-    "zod": "^4.1.5"
+    "dotenv": "^17.2.1"
   },
   "devDependencies": {
     "fast-check": "^4.3.0",

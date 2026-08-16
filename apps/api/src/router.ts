@@ -42,7 +42,6 @@ import {
   IsolationError,
   type Prisma,
   type PrismaClient,
-  requireMembership,
   type ThreadEvents,
 } from "@rakazo/db";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -220,11 +219,9 @@ export function createRouter(deps: RouterDeps) {
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
       get: authed.bots.get.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        const [mapped] = await repos.listBots(context.actor);
-        const found = (await repos.listBots(context.actor)).find((b) => b.id === bot.id);
+        const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found ?? mapped;
+        return found;
       }),
       create: authed.bots.create.handler(async ({ context, input }) =>
         repos.createBot(context.actor, input),
@@ -1028,21 +1025,21 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const rows = await deps.prisma.usageRecord.findMany({
+        const result = await deps.prisma.usageRecord.aggregate({
           where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          _sum: { inputTokens: true, outputTokens: true },
+          _count: { _all: true },
         });
         return {
-          inputTokens: rows.reduce((a, r) => a + r.inputTokens, 0),
-          outputTokens: rows.reduce((a, r) => a + r.outputTokens, 0),
-          runs: rows.length,
+          inputTokens: result._sum.inputTokens ?? 0,
+          outputTokens: result._sum.outputTokens ?? 0,
+          runs: result._count._all,
         };
       }),
     },
     export: {
       bot: authed.export.bot.handler(async ({ context, input }) => {
-        const bots = await repos.listBots(context.actor);
-        const bot = bots.find((b) => b.id === input.botId);
-        if (!bot) throw new IsolationError();
+        const bot = await repos.getBot(context.actor, input.botId);
         const snap = await snapshot(deps, context.actor, input.botId);
         const memory = await deps.prisma.memoryDocument.findMany({
           where: { botId: input.botId, workspaceId: context.actor.workspaceId },
@@ -1303,5 +1300,3 @@ function withViewOnly(url: string, viewOnly: boolean) {
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
 }
-
-export { requireMembership };

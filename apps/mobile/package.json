@@ -13,11 +13,8 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.10",
-    "@orpc/client": "^1.15.0",
     "@rakazo/chat-ui": "workspace:*",
-    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
-    "@rakazo/ui-tokens": "workspace:*",
     "@react-native-vector-icons/ionicons": "13.1.2",
     "@react-native-vector-icons/material-design-icons": "13.1.2",
     "expo": "~57.0.13",

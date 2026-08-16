@@ -1,5 +1,5 @@
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
-export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 
 export interface ComputerCreateInput {
   name: string;
@@ -10,7 +10,7 @@ export interface ComputerCreateInput {
   networkMode?: string;
 }
 
-export interface PointerInput {
+interface PointerInput {
   kind: "pointer";
   x: number;
   y: number;

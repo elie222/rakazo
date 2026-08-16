@@ -6,7 +6,7 @@ export type ComputerStatus = {
   screenAvailable: boolean;
 };
 
-export function isLocalHostname(hostname: string) {
+function isLocalHostname(hostname: string) {
   return (
     hostname === "127.0.0.1" ||
     hostname === "localhost" ||

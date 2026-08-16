@@ -22,6 +22,7 @@ import {
   resetApiBase,
   saveApiBase,
   signIn,
+  usesCustomApiBase,
 } from "../lib/api";
 
 export default function SignIn() {
@@ -64,7 +65,7 @@ export default function SignIn() {
     }
   }
 
-  const custom = apiBase !== defaultApiBase();
+  const custom = usesCustomApiBase(apiBase);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F7F7F4" }}>
@@ -289,8 +290,4 @@ function ServerSheet({
       </KeyboardAvoidingView>
     </Modal>
   );
-}
-
-function usesCustomApiBase(url: string) {
-  return url !== defaultApiBase();
 }

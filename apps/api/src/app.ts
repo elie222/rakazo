@@ -236,7 +236,7 @@ export async function createApp(
   };
 }
 
-export function isTrustedOrigin(origin: string, env: AppEnv) {
+function isTrustedOrigin(origin: string, env: AppEnv) {
   if (!origin) return true;
   if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
   if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;

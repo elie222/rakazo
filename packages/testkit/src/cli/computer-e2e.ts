@@ -2,8 +2,8 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { loadRootEnv } from "../../../../apps/api/src/load-root-env.js";
 
 async function main() {
   loadRootEnv();

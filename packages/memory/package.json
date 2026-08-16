@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
-    "@rakazo/contracts": "workspace:*",
     "@rakazo/db": "workspace:*"
   },
   "devDependencies": {

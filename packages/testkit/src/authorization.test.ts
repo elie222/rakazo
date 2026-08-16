@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { appContract } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>;
@@ -346,14 +347,7 @@ async function signup(app: App, email: string, name: string) {
   if (response.status >= 400) {
     throw new Error(`signup failed ${response.status}: ${await response.text()}`);
   }
-  return cookieHeader(response);
-}
-
-function cookieHeader(response: Response) {
-  const cookies = response.headers.getSetCookie?.() ?? [];
-  if (cookies.length) return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
-  const cookie = response.headers.get("set-cookie");
-  return cookie ? (cookie.split(",")[0]?.split(";")[0] ?? "") : "";
+  return sessionCookieHeader(response);
 }
 
 async function raw(app: App, cookie: string, procedure: string, body: unknown = {}) {
