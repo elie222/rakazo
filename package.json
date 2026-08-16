@@ -23,8 +23,8 @@
     "test:topology": "tsx packages/testkit/src/cli/topology.ts",
     "test:canary": "tsx packages/testkit/src/cli/canary.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
-    "compose:up": "docker compose -f infra/compose/docker-compose.yml up --build",
-    "compose:down": "docker compose -f infra/compose/docker-compose.yml down -v"
+    "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
+    "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

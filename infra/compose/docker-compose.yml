@@ -100,10 +100,10 @@ services:
       context: ../..
       dockerfile: infra/compose/Dockerfile
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
-    env_file:
-      - ../../.env
     environment:
       API_PROXY_TARGET: http://api:3100
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
     ports:
       - "5173:5173"
     depends_on:

@@ -203,6 +203,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }, 60_000);
       heartbeat.unref?.();
 
+      const runSecrets = [...deps.secrets];
       try {
         const [bot, thread, messages, task, connectedPlugins, credential, settings] =
           await Promise.all([
@@ -252,8 +253,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             | "system",
           content: blocksToText(m.blocks as MessageBlock[]),
         }));
-        const resolved = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
-        const runSecrets = [...deps.secrets, ...resolved.redact];
+        const resolved = await resolveModelKey(
+          deps,
+          run.userId,
+          run.workspaceId,
+          credential,
+          (values) => runSecrets.push(...values),
+        );
+        runSecrets.push(...resolved.redact);
         const computer = await ensureComputer(deps, bot.id, context);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
@@ -857,7 +864,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
       } catch (setupError) {
-        console.error("run setup failed", setupError);
+        console.error(
+          "run setup failed",
+          redactSecrets(
+            setupError instanceof Error ? setupError.message : String(setupError),
+            runSecrets,
+          ),
+        );
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: {
@@ -1089,6 +1102,7 @@ async function resolveModelKey(
   userId: string,
   workspaceId: string,
   credential: { secretId: string; provider: string } | null,
+  registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
   oauth?: AgentModelOAuthCredential;
@@ -1100,6 +1114,7 @@ async function resolveModelKey(
       const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
       if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
       const plaintext = deps.secretStore!.load(row.ciphertext);
+      registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {
         const stored = await deps.secretStore!.put(next, {
           operationId: "cred",

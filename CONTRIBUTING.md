@@ -9,7 +9,7 @@ See [README.md](README.md) for full details. Quick start from the repo root:
 ```bash
 cp .env.example .env
 # Set BETTER_AUTH_SECRET and ENCRYPTION_KEY to long random strings.
-docker compose -f infra/compose/docker-compose.yml up postgres -d
+docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d
 pnpm install
 pnpm db:generate
 pnpm db:migrate

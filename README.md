@@ -50,7 +50,7 @@ Edit `.env`:
 Then:
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml up postgres -d
+docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d
 pnpm install
 pnpm db:generate
 pnpm db:migrate
