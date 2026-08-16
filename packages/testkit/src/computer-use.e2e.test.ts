@@ -88,8 +88,15 @@ describeLive("real model and E2B computer journey", () => {
         "Finally use write_file to create results/llm-confirmed.txt containing exactly visual-e2e-ok.",
       ].join(" "),
     });
-    const snapshot = await waitFor(handles.app, cookie, bot.id, 180_000);
-    expect(snapshot.run?.status).toBe("completed");
+    const completedRun = await waitForRun(
+      () =>
+        handles.prisma.run.findUnique({
+          where: { id: sent.runId },
+          select: { status: true, error: true },
+        }),
+      180_000,
+    );
+    expect(completedRun.status, completedRun.error ?? undefined).toBe("completed");
 
     const clickMarker = new TextDecoder().decode(
       await handles.sandbox.readFile(computer, "results/visual-click.txt", testContext(bot.id)),
@@ -211,7 +218,7 @@ function testContext(botId: string) {
 }
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
-type Snapshot = { run: { status: string } | null };
+type RunState = { status: string; error: string | null };
 
 async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown): Promise<T> {
   const response = await app.request(`/rpc/${procedure}`, {
@@ -226,15 +233,13 @@ async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown
   return parsed.json as T;
 }
 
-async function waitFor(app: App, cookie: string, botId: string, timeoutMs: number) {
+async function waitForRun(load: () => Promise<RunState | null>, timeoutMs: number) {
   const started = Date.now();
-  let snapshot: Snapshot | undefined;
+  let run: RunState | null = null;
   while (Date.now() - started < timeoutMs) {
-    snapshot = await rpc<Snapshot>(app, cookie, "threads/get", { botId });
-    if (snapshot.run && ["completed", "failed", "cancelled"].includes(snapshot.run.status)) {
-      return snapshot;
-    }
+    run = await load();
+    if (run && ["completed", "failed", "cancelled"].includes(run.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`computer E2E timed out with status ${snapshot?.run?.status ?? "unknown"}`);
+  throw new Error(`computer E2E timed out with status ${run?.status ?? "unknown"}`);
 }
