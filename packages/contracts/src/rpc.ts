@@ -15,6 +15,7 @@ import {
   MeSchema,
   ModelCredentialSchema,
   RoutineSchema,
+  ThreadMessagePageSchema,
   ThreadSnapshotSchema,
   UpdateBotInput,
   UsageRecordSchema,
@@ -104,6 +105,9 @@ export const appContract = {
   },
   threads: {
     get: oc.input(z.object({ botId: Id })).output(ThreadSnapshotSchema),
+    messages: oc
+      .input(z.object({ botId: Id, before: z.number().int().nonnegative() }))
+      .output(ThreadMessagePageSchema),
     subscribe: oc
       .input(z.object({ botId: Id, cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),

@@ -19,7 +19,12 @@ import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useStat
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
-import { reduceComputerStatus, reduceThreadSnapshot } from "../lib/thread-events";
+import {
+  mergeThreadSnapshot,
+  prependThreadMessagePage,
+  reduceComputerStatus,
+  reduceThreadSnapshot,
+} from "../lib/thread-events";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { RoutineSchedule } from "./RoutineSchedule";
@@ -41,6 +46,7 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [booting, setBooting] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -54,6 +60,8 @@ export function ShellPage() {
     runs: number;
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
+  const expandedHistoryThread = useRef<string | null>(null);
+  const messageScroll = useRef<HTMLDivElement>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
 
@@ -70,8 +78,14 @@ export function ShellPage() {
   }
 
   async function refreshThread(id: string) {
+    const scrollElement = messageScroll.current;
+    const stickToEnd =
+      !scrollElement ||
+      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     const snap = await rpc.threads.get({ botId: id });
-    setSnapshot(snap);
+    setSnapshot((prev) =>
+      mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
+    );
     setComputer(snap.computer);
     const routines = await rpc.routines.list({ botId: id });
     setRoutines(routines);
@@ -79,7 +93,34 @@ export function ShellPage() {
       const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
       setScreenUrl(screen.url);
     }
+    if (stickToEnd) {
+      window.requestAnimationFrame(() => {
+        const element = messageScroll.current;
+        if (element) element.scrollTop = element.scrollHeight;
+      });
+    }
     return snap;
+  }
+
+  async function loadOlderMessages() {
+    if (!active || snapshot?.olderCursor == null || loadingOlder) return;
+    const scrollElement = messageScroll.current;
+    const previousHeight = scrollElement?.scrollHeight ?? 0;
+    setLoadingOlder(true);
+    try {
+      const page = await rpc.threads.messages({
+        botId: active.id,
+        before: snapshot.olderCursor,
+      });
+      expandedHistoryThread.current = page.threadId;
+      setSnapshot((prev) => prependThreadMessagePage(prev, page));
+      window.requestAnimationFrame(() => {
+        const element = messageScroll.current;
+        if (element) element.scrollTop += element.scrollHeight - previousHeight;
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
   }
 
   useEffect(() => {
@@ -90,6 +131,7 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
+    expandedHistoryThread.current = null;
     const abort = new AbortController();
     void (async () => {
       const snap = await refreshThread(active.id).catch(() => null);
@@ -401,7 +443,20 @@ export function ShellPage() {
             </svg>
           </button>
         </div>
-        <div className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6">
+        <div
+          ref={messageScroll}
+          className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
+        >
+          {snapshot?.olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void loadOlderMessages()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </button>
+          ) : null}
           {(snapshot?.messages ?? []).map((message) => (
             <MessageView
               key={message.id}

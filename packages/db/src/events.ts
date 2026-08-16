@@ -1,6 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import type { ProductEvent } from "@rakazo/contracts";
+import type { MessageBlock, ProductEvent } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
+import { createThreadMessageInTransaction } from "./messages.js";
 
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
@@ -17,8 +18,23 @@ export interface AppendEventInput {
 
 export interface ThreadEvents {
   append(input: AppendEventInput): Promise<ProductEvent>;
+  finalizeRun(input: FinalizeRunInput): Promise<boolean>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
+
+interface FinalizeRunBase {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+  runId: string;
+  taskId: string;
+  attemptId: string;
+  leaseOwner: string;
+  leaseFence: number;
+}
+
+export type FinalizeRunInput = FinalizeRunBase &
+  ({ outcome: "completed"; blocks: MessageBlock[] } | { outcome: "failed"; error: string });
 
 export function createThreadEvents(
   prisma: PrismaClient,
@@ -27,6 +43,7 @@ export function createThreadEvents(
 ): ThreadEvents {
   return {
     append: (input) => appendEvent(prisma, input, realtime),
+    finalizeRun: (input) => finalizeRun(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
@@ -37,29 +54,127 @@ export async function appendEvent(
   input: AppendEventInput,
   realtime?: RealtimeFanout,
 ): Promise<ProductEvent> {
-  const event = await prisma.$transaction(async (tx) => {
-    const thread = await tx.thread.update({
-      where: { id: input.threadId },
-      data: { nextEventSeq: { increment: 1 } },
-      select: { nextEventSeq: true },
-    });
-    return tx.event.create({
-      data: {
+  const event = await prisma.$transaction((tx: Prisma.TransactionClient) =>
+    appendEventInTransaction(tx, input),
+  );
+  const productEvent = mapProductEvent(event);
+  await notifyRealtime(realtime, event.threadId, event.seq);
+  return productEvent;
+}
+
+export async function finalizeRun(
+  prisma: PrismaClient,
+  input: FinalizeRunInput,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const now = new Date();
+    const terminal = await tx.run.updateMany({
+      where: {
+        id: input.runId,
         workspaceId: input.workspaceId,
         threadId: input.threadId,
         botId: input.botId,
-        seq: thread.nextEventSeq - 1,
-        type: input.type,
-        payload: input.payload as Prisma.InputJsonValue,
-        runId: input.runId,
+        taskId: input.taskId,
+        status: "running",
+        leaseOwner: input.leaseOwner,
+        leaseFence: input.leaseFence,
+      },
+      data: {
+        status: input.outcome,
+        error: input.outcome === "failed" ? input.error : null,
+        completedAt: now,
+        leaseOwner: null,
+        leaseExpiresAt: null,
       },
     });
+    if (terminal.count !== 1) return null;
+
+    const attempt = await tx.attempt.updateMany({
+      where: {
+        id: input.attemptId,
+        runId: input.runId,
+        fence: input.leaseFence,
+        status: "running",
+      },
+      data: {
+        status: input.outcome,
+        error: input.outcome === "failed" ? input.error : null,
+        finishedAt: now,
+      },
+    });
+    if (attempt.count !== 1) throw new Error("Active run attempt was not available to finalize");
+
+    const task = await tx.task.updateMany({
+      where: {
+        id: input.taskId,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+      },
+      data: { status: input.outcome },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to finalize");
+
+    if (input.outcome === "completed") {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: input.threadId,
+        role: "bot",
+        blocks: input.blocks,
+        runId: input.runId,
+      });
+      await appendEventInTransaction(tx, {
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: "thread.message.created",
+        runId: input.runId,
+        payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+      });
+    }
+    const lastEvent = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: input.outcome === "completed" ? "run.completed" : "run.failed",
+      runId: input.runId,
+      payload: input.outcome === "completed" ? {} : { error: input.error },
+    });
+    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
+    return { threadId: lastEvent.threadId, seq: lastEvent.seq };
   });
-  const productEvent = mapProductEvent(event);
-  await realtime
-    ?.publish(threadTopic(event.threadId), JSON.stringify({ cursor: event.seq }))
-    .catch(() => undefined);
-  return productEvent;
+
+  if (!committed) return false;
+  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return true;
+}
+
+async function appendEventInTransaction(tx: Prisma.TransactionClient, input: AppendEventInput) {
+  const thread = await tx.thread.update({
+    where: { id: input.threadId },
+    data: { nextEventSeq: { increment: 1 } },
+    select: { nextEventSeq: true },
+  });
+  return tx.event.create({
+    data: {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      seq: thread.nextEventSeq - 1,
+      type: input.type,
+      payload: input.payload as Prisma.InputJsonValue,
+      runId: input.runId,
+    },
+  });
+}
+
+async function notifyRealtime(
+  realtime: RealtimeFanout | undefined,
+  threadId: string,
+  cursor: number,
+): Promise<void> {
+  await realtime?.publish(threadTopic(threadId), JSON.stringify({ cursor })).catch(() => undefined);
 }
 
 export async function eventsAfter(
