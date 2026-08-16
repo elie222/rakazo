@@ -96,6 +96,33 @@ test("user control blocks another Team bot until the computer is released", asyn
   await expect(readFile(page, chiefId, "notes/result.txt")).resolves.toContain(marker);
 });
 
+test("an active Team bot must be stopped before user takeover", async ({ page }) => {
+  const stamp = Date.now();
+
+  await signup(page, `active-team-control-${stamp}@rakazo.test`, "Active Team Control");
+  await completeOnboarding(page);
+  const chiefId = activeBotId(page);
+
+  await sendMessage(page, "keep working until I stop you");
+  await expect
+    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
+    .toBe("running");
+
+  const takeover = await rpcResponse(page, "computer/takeover", { botId: chiefId });
+  expect(takeover.ok).toBe(false);
+  expect(takeover.status).toBe(409);
+  await expect
+    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
+    .toBe("running");
+
+  await rpc(page, "threads/stop", { botId: chiefId });
+  await waitForRun(page, chiefId);
+  await expect
+    .poll(async () => (await rpcResponse(page, "computer/takeover", { botId: chiefId })).ok)
+    .toBe(true);
+  await rpc(page, "computer/release", { botId: chiefId });
+});
+
 async function signup(page: Page, email: string, name: string) {
   await page.goto("/sign-up");
   await page.getByPlaceholder("Your name").fill(name);
@@ -223,9 +250,11 @@ async function readFile(page: Page, botId: string, path: string) {
 }
 
 async function readFileResponse(page: Page, botId: string, path: string) {
-  const response = await page.request.post(`/rpc/computer/readFile`, {
-    data: { json: { botId, path } },
-  });
+  return rpcResponse(page, "computer/readFile", { botId, path });
+}
+
+async function rpcResponse(page: Page, procedure: string, body: unknown) {
+  const response = await page.request.post(`/rpc/${procedure}`, { data: { json: body } });
   return { ok: response.ok(), status: response.status() };
 }
 

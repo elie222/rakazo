@@ -590,6 +590,31 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.computer) throw new IsolationError();
         assertComputerAvailableToBot(bot.computer, bot.id);
 
+        const executionRunId = bot.computer.executionRunId;
+        const executionFence = bot.computer.executionFence;
+        const executionLeaseActive = Boolean(
+          executionRunId &&
+            (!bot.computer.executionLeaseExpiresAt ||
+              bot.computer.executionLeaseExpiresAt.getTime() > Date.now()),
+        );
+        const executionRun = executionRunId
+          ? await deps.prisma.run.findUnique({
+              where: { id: executionRunId },
+              select: { botId: true, status: true },
+            })
+          : null;
+        const executionRunActive = Boolean(
+          executionRun && ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status),
+        );
+        const waitingForTakeover =
+          executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+        if (executionRunId && !waitingForTakeover && (executionLeaseActive || executionRunActive)) {
+          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+        }
+        const clearStaleExecution = Boolean(
+          executionRunId && !executionLeaseActive && !executionRunActive,
+        );
+
         const leaseId = randomUUID();
         const expiresAt = new Date(Date.now() + takeoverLeaseMs());
         const granted = await deps.prisma.computer.updateMany({
@@ -597,6 +622,8 @@ export function createRouter(deps: RouterDeps) {
             id: bot.computer.id,
             controlHolder: { not: "user" },
             controlLeaseId: null,
+            executionRunId,
+            executionFence,
           },
           data: {
             controlHolder: "user",
@@ -604,6 +631,13 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
             state: "running",
+            ...(clearStaleExecution
+              ? {
+                  executionRunId: null,
+                  executionBotId: null,
+                  executionLeaseExpiresAt: null,
+                }
+              : {}),
           },
         });
         if (granted.count !== 1) {

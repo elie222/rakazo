@@ -146,6 +146,7 @@ export async function renewComputerExecutionLease(
       id: lease.computerId,
       executionRunId: lease.runId,
       executionFence: lease.fence,
+      controlHolder: { not: "user" },
     },
     data: { executionLeaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_MS) },
   });
@@ -162,6 +163,7 @@ export async function holdComputerExecutionLeaseForTakeover(
       id: lease.computerId,
       executionRunId: lease.runId,
       executionFence: lease.fence,
+      controlHolder: { not: "user" },
     },
     data: { executionLeaseExpiresAt: new Date(Date.now() + 24 * 60 * 60_000) },
   });

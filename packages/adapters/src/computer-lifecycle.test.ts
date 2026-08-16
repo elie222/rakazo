@@ -45,6 +45,15 @@ describe("computer execution leases", () => {
 
     prisma.updateMany.mockClear();
     await expect(renewComputerExecutionLease(prisma.client, lease)).resolves.toBe(true);
+    expect(prisma.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        executionRunId: "run-1",
+        executionFence: 7,
+        controlHolder: { not: "user" },
+      },
+      data: { executionLeaseExpiresAt: expect.any(Date) },
+    });
     await releaseComputerExecutionLease(prisma.client, lease);
     expect(prisma.updateMany).toHaveBeenLastCalledWith({
       where: { id: "computer-1", executionRunId: "run-1", executionFence: 7 },
