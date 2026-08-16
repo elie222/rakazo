@@ -153,11 +153,19 @@ export const RunSchema = z.object({
 });
 export type Run = z.infer<typeof RunSchema>;
 
+export const ThreadMessagePageSchema = z.object({
+  threadId: Id,
+  messages: z.array(ThreadMessageSchema),
+  olderCursor: z.number().int().nonnegative().nullable(),
+});
+export type ThreadMessagePage = z.infer<typeof ThreadMessagePageSchema>;
+
 export const ThreadSnapshotSchema = z.object({
   botId: Id,
   threadId: Id,
   cursor: z.number().int().min(-1),
   messages: z.array(ThreadMessageSchema),
+  olderCursor: z.number().int().nonnegative().nullable(),
   run: RunSchema.nullable(),
   computer: ComputerStatusSchema,
 });

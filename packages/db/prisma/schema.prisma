@@ -304,6 +304,7 @@ model Run {
 
   @@unique([workspaceId, clientNonce])
   @@index([status, leaseExpiresAt])
+  @@index([status, updatedAt, id])
   @@index([workspaceId, botId])
   @@map("runs")
 }

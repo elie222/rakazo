@@ -53,7 +53,9 @@ async function main() {
           "packages/testkit/src/journeys.test.ts",
           "packages/testkit/src/authorization.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
-          "packages/testkit/src/graphile-jobs.test.ts",
+          "packages/adapters/src/wakeup.postgres.test.ts",
+          "packages/adapters/src/realtime.postgres.test.ts",
+          "packages/adapters/src/job-reconciler.postgres.test.ts",
         ].join(" "),
         {
           stdio: "inherit",

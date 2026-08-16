@@ -1,4 +1,10 @@
-import { progressMessageId, progressMessageText } from "@rakazo/core";
+import {
+  mergeThreadHistory,
+  prependThreadHistoryPage,
+  progressMessageId,
+  progressMessageText,
+  type ThreadHistory,
+} from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
 import {
@@ -137,6 +143,8 @@ export type MobileMe = {
 
 export type MobileMessage = {
   id: string;
+  threadId?: string;
+  seq?: number;
   role: "user" | "bot" | "system";
   blocks: Array<{
     kind: string;
@@ -158,9 +166,27 @@ export type MobileSnapshot = {
   threadId: string;
   cursor?: number;
   messages: MobileMessage[];
+  olderCursor: number | null;
   run: { status: string } | null;
   computer: { state: string; controlHolder: string; screenAvailable: boolean };
 };
+
+export type MobileMessagePage = ThreadHistory<MobileMessage>;
+
+export function mergeMobileSnapshot(
+  prev: MobileSnapshot | null,
+  next: MobileSnapshot,
+  preserveLoadedHistory = false,
+): MobileSnapshot {
+  return mergeThreadHistory(prev, next, preserveLoadedHistory);
+}
+
+export function prependMobileMessagePage(
+  prev: MobileSnapshot | null,
+  page: MobileMessagePage,
+): MobileSnapshot | null {
+  return prependThreadHistoryPage(prev, page);
+}
 
 export function blockText(message: MobileMessage) {
   return message.blocks

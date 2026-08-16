@@ -45,8 +45,11 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { addScreenProxyCapability } from "./screen-proxy.js";
+import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
+const THREAD_MESSAGE_PAGE_SIZE = 100;
+const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
@@ -269,6 +272,11 @@ export function createRouter(deps: RouterDeps) {
       get: authed.threads.get.handler(async ({ context, input }) =>
         snapshot(deps, context.actor, input.botId),
       ),
+      messages: authed.threads.messages.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.thread) throw new IsolationError();
+        return loadMessagePage(deps.prisma, bot.thread.id, input.before, THREAD_MESSAGE_PAGE_SIZE);
+      }),
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
@@ -295,7 +303,11 @@ export function createRouter(deps: RouterDeps) {
           threadId: bot.thread.id,
           botId: bot.id,
           type: "thread.message.created",
-          payload: { role: "user", blocks: [{ kind: "text", text: input.text }] },
+          payload: {
+            messageId: message.id,
+            role: "user",
+            blocks: [{ kind: "text", text: input.text }],
+          },
         });
         const task = await deps.prisma.task.create({
           data: {
@@ -357,7 +369,7 @@ export function createRouter(deps: RouterDeps) {
       followUp: authed.threads.followUp.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        await createThreadMessage(deps.prisma, {
+        const message = await createThreadMessage(deps.prisma, {
           threadId: bot.thread.id,
           role: "user",
           blocks: [{ kind: "text", text: input.text }],
@@ -367,7 +379,11 @@ export function createRouter(deps: RouterDeps) {
           threadId: bot.thread.id,
           botId: bot.id,
           type: "thread.message.created",
-          payload: { role: "user", blocks: [{ kind: "text", text: input.text }] },
+          payload: {
+            messageId: message.id,
+            role: "user",
+            blocks: [{ kind: "text", text: input.text }],
+          },
         });
         const active = await deps.prisma.run.findFirst({
           where: { botId: bot.id, status: { in: ["running", "queued", "leased"] } },
@@ -1040,23 +1056,33 @@ export function createRouter(deps: RouterDeps) {
     export: {
       bot: authed.export.bot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        const snap = await snapshot(deps, context.actor, input.botId);
-        const memory = await deps.prisma.memoryDocument.findMany({
-          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
-        });
-        const routines = await deps.prisma.routine.findMany({
-          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
-        });
-        const files: Array<{ path: string; content: string }> = [];
-        for await (const file of deps.home.exportHome(input.botId, {
+        if (!bot.thread) throw new IsolationError();
+        const exportContext = {
           operationId: "export",
           traceId: "export",
           workspaceId: context.actor.workspaceId,
           userId: context.actor.userId,
           signal: new AbortController().signal,
-        })) {
-          files.push({ path: file.path, content: new TextDecoder().decode(file.content) });
-        }
+        };
+        const [memory, routines, files, history] = await Promise.all([
+          deps.prisma.memoryDocument.findMany({
+            where: { botId: input.botId, workspaceId: context.actor.workspaceId },
+          }),
+          deps.prisma.routine.findMany({
+            where: { botId: input.botId, workspaceId: context.actor.workspaceId },
+          }),
+          (async () => {
+            const exported: Array<{ path: string; content: string }> = [];
+            for await (const file of deps.home.exportHome(input.botId, exportContext)) {
+              exported.push({
+                path: file.path,
+                content: new TextDecoder().decode(file.content),
+              });
+            }
+            return exported;
+          })(),
+          loadAllMessages(deps.prisma, bot.thread.id, EXPORT_MESSAGE_PAGE_SIZE),
+        ]);
         return {
           version: 1 as const,
           exportedAt: new Date().toISOString(),
@@ -1074,7 +1100,7 @@ export function createRouter(deps: RouterDeps) {
             timezone: r.timezone,
           })),
           files,
-          history: snap.messages,
+          history,
         };
       }),
     },
@@ -1090,11 +1116,8 @@ export function createRouter(deps: RouterDeps) {
 async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<ThreadSnapshot> {
   const bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (!bot.thread) throw new IsolationError();
-  const [rows, run, last, home] = await Promise.all([
-    deps.prisma.message.findMany({
-      where: { threadId: bot.thread.id },
-      orderBy: { seq: "asc" },
-    }),
+  const [messagePage, run, last, home] = await Promise.all([
+    loadMessagePage(deps.prisma, bot.thread.id, undefined, THREAD_MESSAGE_PAGE_SIZE),
     deps.prisma.run.findFirst({
       where: {
         botId,
@@ -1120,15 +1143,7 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
       })
     : [];
   const projected = projectMessages(liveEvents);
-  const persisted = rows.map((row) => ({
-    id: row.id,
-    threadId: row.threadId,
-    seq: row.seq,
-    role: row.role as "user" | "bot" | "system",
-    blocks: row.blocks as ThreadSnapshot["messages"][number]["blocks"],
-    runId: row.runId ?? undefined,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  const persisted = messagePage.messages;
   const live = projected.filter((message) => {
     if (message.blocks.some((block) => block.kind === "progress")) return true;
     if (!message.id.startsWith("subagent:")) return false;
@@ -1144,6 +1159,7 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
     threadId: bot.thread.id,
     cursor: last?.seq ?? -1,
     messages,
+    olderCursor: messagePage.olderCursor,
     run: run
       ? {
           id: run.id,
