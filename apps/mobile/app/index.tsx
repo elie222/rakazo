@@ -187,9 +187,13 @@ function BotRow({ bot }: { bot: MobileBot }) {
   const preview = previewSnippet(bot.preview, 40) || bot.title || "No messages yet";
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
+  // Spelled out because an explicit label replaces the one built from the row's children.
+  const label = [bot.name, tag, bot.unread ? "unread" : null, time, preview]
+    .filter(Boolean)
+    .join(", ");
   return (
     <Pressable
-      accessibilityLabel={`${bot.name}${bot.unread ? ", unread" : ""}`}
+      accessibilityLabel={label}
       onPress={() =>
         router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
       }

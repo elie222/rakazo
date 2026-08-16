@@ -127,6 +127,8 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
   await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Mark as Unread" }).click();
 
+  // Chief is the open bot, so the auto-read on window focus must not undo the manual mark.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await chief.click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Mark as Read" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Mark as Read" }).click();

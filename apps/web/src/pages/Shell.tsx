@@ -76,6 +76,7 @@ export function ShellPage() {
   const autoBooted = useRef<string | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const manuallyUnread = useRef(new Set<string>());
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
@@ -92,12 +93,29 @@ export function ShellPage() {
   const markBotRead = useCallback(
     async (id: string) => {
       await rpc.threads.markRead({ botId: id });
+      manuallyUnread.current.delete(id);
       updateBotUnread(id, false);
     },
     [updateBotUnread],
   );
+  const markBotUnread = useCallback(
+    async (id: string) => {
+      manuallyUnread.current.add(id);
+      try {
+        await rpc.threads.markUnread({ botId: id });
+      } catch (err) {
+        manuallyUnread.current.delete(id);
+        throw err;
+      }
+      updateBotUnread(id, true);
+    },
+    [updateBotUnread],
+  );
+  // A bot the user marked unread by hand stays unread until they open it again,
+  // otherwise the auto-read below would undo the action on the next window focus.
   const markBotReadIfVisible = useCallback(
     (id: string) => {
+      if (manuallyUnread.current.has(id)) return;
       if (document.visibilityState === "visible" && document.hasFocus()) {
         void markBotRead(id).catch(() => undefined);
       }
@@ -171,6 +189,8 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
+    // Opening a bot clears the manual unread flag so it can auto-read again.
+    manuallyUnread.current.delete(active.id);
     const markVisibleBotRead = () => {
       markBotReadIfVisible(active.id);
     };
@@ -401,17 +421,14 @@ export function ShellPage() {
                     {bot.name}
                     {bot.unread ? <span className="sr-only"> (unread)</span> : null}
                   </span>
-                  <span className="shrink-0 text-[12.5px] text-[#6C6C70]">
+                  <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
+                    {bot.status === "idle" ? "" : bot.status}
                     {bot.unread ? (
                       <span
                         aria-hidden="true"
                         className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
                       />
-                    ) : bot.status === "idle" ? (
-                      ""
-                    ) : (
-                      bot.status
-                    )}
+                    ) : null}
                   </span>
                 </div>
                 <div
@@ -845,10 +862,8 @@ export function ShellPage() {
           onToggleUnread={() => {
             const unread = !contextBot.unread;
             setBotMenu(null);
-            const request = unread
-              ? rpc.threads.markUnread({ botId: contextBot.id })
-              : rpc.threads.markRead({ botId: contextBot.id });
-            void request.then(() => updateBotUnread(contextBot.id, unread)).catch(() => undefined);
+            const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
+            void request.catch(() => undefined);
           }}
           onEdit={() => {
             navigate(`/app/${contextBot.id}`);
