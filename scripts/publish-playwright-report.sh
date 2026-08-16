@@ -3,8 +3,8 @@ set -euo pipefail
 
 : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
 : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
-: "${HETZNER_S3_BUCKET:?HETZNER_S3_BUCKET is required}"
-: "${HETZNER_S3_ENDPOINT:?HETZNER_S3_ENDPOINT is required}"
+: "${S3_BUCKET:?S3_BUCKET is required}"
+: "${S3_ENDPOINT:?S3_ENDPOINT is required}"
 : "${PLAYWRIGHT_PUBLIC_BASE_URL:?PLAYWRIGHT_PUBLIC_BASE_URL is required}"
 : "${PLAYWRIGHT_RESULT:?PLAYWRIGHT_RESULT is required}"
 : "${PLAYWRIGHT_RUN_ATTEMPT:?PLAYWRIGHT_RUN_ATTEMPT is required}"
@@ -23,14 +23,14 @@ if [[ ! -f "$report_dir/index.html" ]]; then
   exit 0
 fi
 
-if [[ ! "$HETZNER_S3_BUCKET" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-  echo "HETZNER_S3_BUCKET contains invalid characters." >&2
+if [[ ! "$S3_BUCKET" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+  echo "S3_BUCKET contains invalid characters." >&2
   exit 1
 fi
 
-case "$HETZNER_S3_ENDPOINT" in
+case "$S3_ENDPOINT" in
   https://*) ;;
-  *) echo "HETZNER_S3_ENDPOINT must use HTTPS." >&2; exit 1 ;;
+  *) echo "S3_ENDPOINT must use HTTPS." >&2; exit 1 ;;
 esac
 
 case "$PLAYWRIGHT_PUBLIC_BASE_URL" in
@@ -44,7 +44,7 @@ dashboard_path="$dashboard_dir/index.html"
 gallery_dir="$dashboard_dir/screenshots"
 history_error_path="$dashboard_dir/history-download-error.log"
 run_key="${PLAYWRIGHT_RUN_ID}-${PLAYWRIGHT_RUN_ATTEMPT}"
-bucket_uri="s3://${HETZNER_S3_BUCKET}/playwright"
+bucket_uri="s3://${S3_BUCKET}/playwright"
 public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
 report_url="$public_base_url/runs/$run_key/report/index.html"
 screenshots_url="$public_base_url/runs/$run_key/screenshots/index.html"
@@ -53,7 +53,7 @@ mkdir -p "$dashboard_dir"
 if aws s3 cp \
   "$bucket_uri/history.json" \
   "$history_path" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   2>"$history_error_path"; then
   echo "Downloaded existing Playwright history."
 elif grep -Eq "404|NoSuchKey|Not Found" "$history_error_path"; then
@@ -76,35 +76,35 @@ PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
 aws s3 sync \
   "$report_dir/" \
   "$bucket_uri/runs/$run_key/report/" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --cache-control "public,max-age=31536000,immutable"
 aws s3 sync \
   "$gallery_dir/" \
   "$bucket_uri/runs/$run_key/screenshots/" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --cache-control "public,max-age=31536000,immutable"
 aws s3 sync \
   "$report_dir/" \
   "$bucket_uri/latest/report/" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --delete \
   --cache-control "no-cache"
 aws s3 sync \
   "$gallery_dir/" \
   "$bucket_uri/latest/screenshots/" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --delete \
   --cache-control "no-cache"
 aws s3 cp \
   "$history_path" \
   "$bucket_uri/history.json" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "no-store"
 aws s3 cp \
   "$dashboard_path" \
   "$bucket_uri/index.html" \
-  --endpoint-url "$HETZNER_S3_ENDPOINT" \
+  --endpoint-url "$S3_ENDPOINT" \
   --content-type "text/html" \
   --cache-control "no-store"
 

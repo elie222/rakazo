@@ -13,6 +13,13 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      S3_ACCESS_KEY_ID:
+        description: Access key used to publish visual reports
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        description: Secret key used to publish visual reports
+        required: false
 
 permissions:
   contents: read
@@ -22,6 +29,9 @@ jobs:
     name: Web E2E
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -49,12 +59,12 @@ jobs:
       - name: Publish Playwright visual report
         if: always() && inputs.publish_report
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-          AWS_DEFAULT_REGION: ${{ vars.HETZNER_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
-          HETZNER_S3_BUCKET: ${{ vars.HETZNER_S3_BUCKET }}
-          HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
           PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.run_attempt }}
