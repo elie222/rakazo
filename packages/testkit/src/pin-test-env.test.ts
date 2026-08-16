@@ -25,7 +25,9 @@ describeFast("pnpm test emulator pin", () => {
   );
 
   it("exposes one test command family and no leftover verify/e2e aliases", () => {
-    const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as {
+    const pkg = JSON.parse(
+      readFileSync(path.resolve(import.meta.dirname, "../../../package.json"), "utf8"),
+    ) as {
       scripts: Record<string, string>;
     };
     expect(pkg.scripts.test).toBe("vitest run");
