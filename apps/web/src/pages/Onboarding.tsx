@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { type ModelCatalogEntry, providerHint, waitForModelOAuth } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 
 const QUESTIONS = [
@@ -26,33 +27,10 @@ const QUESTIONS = [
   },
 ];
 
-type CatalogEntry = {
-  provider: string;
-  providerName?: string;
-  id: string;
-  label: string;
-  billing: string;
-  auth?: "api-key" | "oauth" | "both";
-  oauthLabel?: string;
-  subscription?: boolean;
-  signIn?: "device-code";
-};
-
-function providerHint(entry: CatalogEntry) {
-  if (entry.signIn === "device-code") {
-    if (entry.provider === "openai-codex") return "ChatGPT Plus/Pro";
-    if (entry.provider === "github-copilot") return "Copilot";
-    if (entry.provider === "xai") return "SuperGrok / key";
-    return "Sign in";
-  }
-  if (entry.auth === "oauth") return "Skip or deploy key";
-  return "API key";
-}
-
 export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<"loading" | "model" | "bot" | "questions">("loading");
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
@@ -88,7 +66,7 @@ export function OnboardingPage() {
   }, []);
 
   const providers = useMemo(() => {
-    const seen = new Map<string, CatalogEntry>();
+    const seen = new Map<string, ModelCatalogEntry>();
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
@@ -131,7 +109,6 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      await rpc.models.setDefault({ provider, modelId });
       setStep("bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save model");
@@ -152,23 +129,9 @@ export function OnboardingPage() {
         userCode: started.userCode,
       });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      for (let i = 0; i < 180; i += 1) {
-        const row = await rpc.models.completeOAuth({ loginId: started.loginId });
-        if (row.status === "connected") {
-          await rpc.models.setDefault({ provider, modelId });
-          setOauth(null);
-          setStep("bot");
-          return;
-        }
-        if (row.status === "error") {
-          setError(row.error);
-          setOauth(null);
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-      setError("Sign-in timed out. Try again.");
+      await waitForModelOAuth(started.loginId);
       setOauth(null);
+      setStep("bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
