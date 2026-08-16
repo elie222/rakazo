@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -59,11 +59,16 @@ export default function Home() {
   useEffect(() => {
     if (!hasSession) return;
     void registerPushToken().catch(() => undefined);
-    void loadBots();
     void rpc<MobileMe>("me")
       .then(setMe)
       .catch(() => undefined);
-  }, [hasSession, loadBots]);
+  }, [hasSession]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasSession) void loadBots();
+    }, [hasSession, loadBots]),
+  );
 
   const visible = useMemo(() => filterBots(bots, query), [bots, query]);
   const initials = userInitials(me?.name ?? "");
