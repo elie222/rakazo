@@ -15,6 +15,7 @@ describe("DaytonaSandboxProvider", () => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.prepare(computer, context);
 
     expect(computer).toMatchObject({
       id: "daytona-box",
@@ -147,7 +148,11 @@ describe("DaytonaSandboxProvider", () => {
       providerKind: "daytona" as const,
     };
 
-    await Promise.all([provider.provision(request, context), provider.provision(request, context)]);
+    const computers = await Promise.all([
+      provider.provision(request, context),
+      provider.provision(request, context),
+    ]);
+    await Promise.all(computers.map((computer) => provider.prepare(computer, context)));
 
     expect(fixture.get).toHaveBeenCalledTimes(1);
     expect(fixture.start).toHaveBeenCalledTimes(1);
@@ -158,20 +163,23 @@ describe("DaytonaSandboxProvider", () => {
     ).toHaveLength(1);
   });
 
-  it("deletes a fresh sandbox when workspace preparation fails", async () => {
+  it("returns a fresh reference before workspace preparation fails", async () => {
     const fixture = daytonaFixture({ prepareFails: true });
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
 
-    await expect(
-      provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
-    ).rejects.toThrow(/could not create Daytona workspace/);
-    expect(fixture.deleteSandbox).toHaveBeenCalledWith(120, true);
+    expect(computer).toMatchObject({ providerRef: "daytona-box", fresh: true });
+    await expect(provider.prepare(computer, context)).rejects.toThrow(
+      /could not create Daytona workspace/,
+    );
+    expect(fixture.deleteSandbox).not.toHaveBeenCalled();
   });
 
   it("surfaces transient stop failures so cleanup can retry", async () => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.prepare(computer, context);
     fixture.stop.mockRejectedValueOnce(new Error("temporary Daytona outage"));
 
     await expect(provider.stop(computer, context)).rejects.toThrow("temporary Daytona outage");

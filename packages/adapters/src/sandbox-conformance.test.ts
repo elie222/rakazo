@@ -9,6 +9,7 @@ import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { provisionPrepared } from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "1",
@@ -33,10 +34,10 @@ describe("sandbox conformance", () => {
     const managed = new ManagedSandboxEmulator();
     const daytona = new DaytonaSandboxEmulator();
     const desktop = new DesktopSandboxProvider();
-    const a = await fake.provision({ botId: "bot-a", homePath: "/tmp/a" }, ctx);
-    const b = await managed.provision({ botId: "bot-b", homePath: "/tmp/b" }, ctx);
-    const c = await daytona.provision({ botId: "bot-c", homePath: "/tmp/c" }, ctx);
-    const d = await desktop.provision({ botId: "bot-d", homePath: "/tmp/d" }, ctx);
+    const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
+    const b = await provisionPrepared(managed, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
+    const c = await provisionPrepared(daytona, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
+    const d = await provisionPrepared(desktop, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
     const outA = await drain(fake, a);
     const outB = await drain(managed, b);
     const outC = await drain(daytona, c);
@@ -60,10 +61,12 @@ describe("sandbox conformance", () => {
       new DesktopSandboxProvider(),
     ];
     for (const [index, provider] of providers.entries()) {
-      const computer = await provider.provision(
+      const computer = await provisionPrepared(
+        provider,
         { botId: `portable-${index}`, homePath: `/tmp/portable-${index}` },
         ctx,
       );
+      await provider.prepare(computer, ctx);
       await provider.writeFile(
         computer,
         { path: "notes/result.txt", content: new TextEncoder().encode("portable") },
