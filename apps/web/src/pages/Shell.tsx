@@ -698,7 +698,7 @@ export function ShellPage() {
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button
             type="button"
-            aria-label="Bot settings"
+            data-testid="bot-settings-trigger"
             onClick={() => setPanel("settings")}
             className="flex min-w-0 items-center gap-3"
           >

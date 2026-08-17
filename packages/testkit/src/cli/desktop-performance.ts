@@ -421,7 +421,9 @@ async function measureInteractions(app: ElectronApplication, page: Page) {
   await session.send("Performance.enable");
   const settingsBefore = await cdpMetrics(session);
   const settings = await page.evaluate(async () => {
-    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Bot settings"]');
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-testid="bot-settings-trigger"]',
+    );
     const panel = document.querySelector<HTMLElement>('[data-testid="side-panel"]');
     if (!button || !panel) throw new Error("Settings benchmark controls are missing");
     const durationMs = maximumTransitionMs(getComputedStyle(panel));
