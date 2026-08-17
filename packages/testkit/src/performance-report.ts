@@ -6,8 +6,10 @@ export interface NumericSummary {
   max: number;
 }
 
+export const PERFORMANCE_REPORT_SCHEMA_VERSION = 2 as const;
+
 export interface PerformanceReport {
-  schemaVersion: number;
+  schemaVersion: typeof PERFORMANCE_REPORT_SCHEMA_VERSION;
   label: string;
   createdAt: string;
   environment: {
@@ -49,10 +51,10 @@ export interface PerformanceReport {
     settingsSettledMs: number;
     typingKeyPaintMs: NumericSummary;
     idleCpuPercent: NumericSummary;
-    idleSummedPrivateKiB: NumericSummary;
+    idleSummedWorkingSetKiB: NumericSummary;
     streamingCpuPercent: NumericSummary;
     reopenMs: number | null;
-    hiddenSummedPrivateKiB: number | null;
+    hiddenSummedWorkingSetKiB: number | null;
   };
 }
 
@@ -82,6 +84,109 @@ export function percentageDelta(before: number, after: number) {
 
 export function roundMetric(value: number, digits = 2) {
   return Number(value.toFixed(digits));
+}
+
+export function parsePerformanceReport(value: unknown, source: string): PerformanceReport {
+  if (!isRecord(value)) throw invalidReport(source, "expected a JSON object");
+  if (value.schemaVersion !== 1 && value.schemaVersion !== PERFORMANCE_REPORT_SCHEMA_VERSION) {
+    throw invalidReport(
+      source,
+      `unsupported schemaVersion ${JSON.stringify(value.schemaVersion)} (supported: 1, ${PERFORMANCE_REPORT_SCHEMA_VERSION})`,
+    );
+  }
+  if (typeof value.label !== "string") throw invalidReport(source, "label must be a string");
+  if (!isRecord(value.environment)) {
+    throw invalidReport(source, "environment must be an object");
+  }
+  if (!isRecord(value.summary)) throw invalidReport(source, "summary must be an object");
+
+  const normalized =
+    value.schemaVersion === 1
+      ? migrateSchemaOne(value, source)
+      : ({ ...value, schemaVersion: PERFORMANCE_REPORT_SCHEMA_VERSION } as Record<string, unknown>);
+  assertSummary(normalized.summary, source);
+  return normalized as unknown as PerformanceReport;
+}
+
+export function parseTcpPort(value: string, name: string) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error(
+      `${name} must be an integer between 1 and 65535; received ${JSON.stringify(value)}`,
+    );
+  }
+  return parsed;
+}
+
+function migrateSchemaOne(value: Record<string, unknown>, source: string) {
+  const summary = value.summary;
+  if (!isRecord(summary)) throw invalidReport(source, "summary must be an object");
+  if (!("idleSummedPrivateKiB" in summary)) {
+    throw invalidReport(source, "summary.idleSummedPrivateKiB is missing from schema 1 report");
+  }
+  return {
+    ...value,
+    schemaVersion: PERFORMANCE_REPORT_SCHEMA_VERSION,
+    summary: {
+      ...summary,
+      idleSummedWorkingSetKiB: summary.idleSummedPrivateKiB,
+      reopenMs: summary.reopenMs ?? null,
+      hiddenSummedWorkingSetKiB: summary.hiddenSummedPrivateKiB ?? null,
+    },
+  };
+}
+
+function assertSummary(
+  value: unknown,
+  source: string,
+): asserts value is PerformanceReport["summary"] {
+  if (!isRecord(value)) throw invalidReport(source, "summary must be an object");
+  for (const key of [
+    "cacheColdShellUsableMs",
+    "warmShellUsableMs",
+    "typingKeyPaintMs",
+    "idleCpuPercent",
+    "idleSummedWorkingSetKiB",
+    "streamingCpuPercent",
+  ] as const) {
+    if (!isNumericSummary(value[key])) {
+      throw invalidReport(source, `summary.${key} must be a numeric summary`);
+    }
+  }
+  for (const key of ["settingsPaintedMs", "settingsSettledMs"] as const) {
+    if (!isFiniteNumber(value[key])) {
+      throw invalidReport(source, `summary.${key} must be a finite number`);
+    }
+  }
+  for (const key of ["reopenMs", "hiddenSummedWorkingSetKiB"] as const) {
+    if (value[key] !== null && !isFiniteNumber(value[key])) {
+      throw invalidReport(source, `summary.${key} must be a finite number or null`);
+    }
+  }
+}
+
+function isNumericSummary(value: unknown): value is NumericSummary {
+  if (!isRecord(value)) return false;
+  return (
+    Number.isInteger(value.count) &&
+    (value.count as number) > 0 &&
+    isFiniteNumber(value.min) &&
+    isFiniteNumber(value.median) &&
+    isFiniteNumber(value.p95) &&
+    isFiniteNumber(value.max)
+  );
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function invalidReport(source: string, detail: string) {
+  return new Error(`Invalid performance report ${source}: ${detail}`);
 }
 
 function percentile(sorted: number[], quantile: number) {

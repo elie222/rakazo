@@ -1,13 +1,18 @@
 import { readFile } from "node:fs/promises";
-import { type PerformanceReport, percentageDelta, roundMetric } from "../performance-report.js";
+import {
+  type PerformanceReport,
+  parsePerformanceReport,
+  percentageDelta,
+  roundMetric,
+} from "../performance-report.js";
 
 const [beforePath, afterPath] = process.argv.slice(2).filter((value) => value !== "--");
 if (!beforePath || !afterPath) {
   throw new Error("Usage: pnpm perf:compare <before.json> <after.json>");
 }
 
-const before = JSON.parse(await readFile(beforePath, "utf8")) as PerformanceReport;
-const after = JSON.parse(await readFile(afterPath, "utf8")) as PerformanceReport;
+const before = parsePerformanceReport(JSON.parse(await readFile(beforePath, "utf8")), beforePath);
+const after = parsePerformanceReport(JSON.parse(await readFile(afterPath, "utf8")), afterPath);
 assertComparable(before, after);
 warnAboutIntentionalRuntimeChanges(before, after);
 
@@ -35,9 +40,9 @@ const rows = [
     after.summary.idleCpuPercent.median,
   ),
   row(
-    "Idle summed private memory (median KiB)",
-    before.summary.idleSummedPrivateKiB.median,
-    after.summary.idleSummedPrivateKiB.median,
+    "Idle summed working set (median KiB)",
+    before.summary.idleSummedWorkingSetKiB.median,
+    after.summary.idleSummedWorkingSetKiB.median,
   ),
   row(
     "Streaming total CPU (median %)",
@@ -49,14 +54,14 @@ if (typeof before.summary.reopenMs === "number" && typeof after.summary.reopenMs
   rows.push(row("Dock reopen (ms)", before.summary.reopenMs, after.summary.reopenMs));
 }
 if (
-  typeof before.summary.hiddenSummedPrivateKiB === "number" &&
-  typeof after.summary.hiddenSummedPrivateKiB === "number"
+  typeof before.summary.hiddenSummedWorkingSetKiB === "number" &&
+  typeof after.summary.hiddenSummedWorkingSetKiB === "number"
 ) {
   rows.push(
     row(
-      "Hidden app private memory (KiB)",
-      before.summary.hiddenSummedPrivateKiB,
-      after.summary.hiddenSummedPrivateKiB,
+      "Hidden app summed working set (KiB)",
+      before.summary.hiddenSummedWorkingSetKiB,
+      after.summary.hiddenSummedWorkingSetKiB,
     ),
   );
 }

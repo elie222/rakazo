@@ -48,8 +48,8 @@ pnpm perf:compare .context/performance/before.json .context/performance/after.js
   painted.
 - **Settings painted/settled** separates React content paint from the end of the panel transition.
 - **Typing** records keydown to the next animation frame with a 100-message transcript mounted.
-- **Idle CPU/memory** samples every second for 12 seconds. Summed private memory is retained alongside
-  raw per-process samples; Chromium working sets can double-count shared pages.
+- **Idle CPU/memory** samples every second for 12 seconds. Summed working-set memory is retained
+  alongside raw per-process samples; Chromium working sets can double-count shared pages.
 - **Streaming** drives the real subscription/reducer path with scripted progress every 50 ms.
 
 Runtime CPU and launch measurements are informational until enough samples exist on a fixed Mac.

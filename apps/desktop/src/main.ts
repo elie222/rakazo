@@ -7,15 +7,16 @@ import {
   contentType,
   forwardedRendererRequestInit,
   immutableRendererAsset,
+  isRendererAssetMiss,
 } from "./renderer-assets.js";
-import { browserWindowOptions } from "./window-options.js";
+import { browserWindowOptions, warmWindowTtlMs } from "./window-options.js";
 
 const WEB_URL = process.env.RAKAZO_WEB_URL ?? "http://127.0.0.1:5173";
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
 let warmWindowTimer: NodeJS.Timeout | undefined;
-const WARM_WINDOW_TTL_MS = Number(process.env.RAKAZO_WARM_WINDOW_TTL_MS ?? 15 * 60_000);
+const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
 
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
@@ -112,8 +113,7 @@ async function installBundledRenderer() {
           body = await readFile(file);
         }
       } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ENOENT" || code === "EISDIR") continue;
+        if (isRendererAssetMiss(error)) continue;
         throw error;
       }
       const headers = new Headers({

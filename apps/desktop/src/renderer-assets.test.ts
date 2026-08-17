@@ -5,6 +5,7 @@ import {
   contentType,
   forwardedRendererRequestInit,
   immutableRendererAsset,
+  isRendererAssetMiss,
 } from "./renderer-assets.js";
 
 const root = path.resolve("/tmp/rakazo-renderer");
@@ -46,6 +47,14 @@ describe("bundled desktop renderer", () => {
     expect(contentType("app.woff2")).toBe("font/woff2");
     expect(immutableRendererAsset(path.join(root, "assets/app-123.js"))).toBe(true);
     expect(immutableRendererAsset(path.join(root, "index.html"))).toBe(false);
+  });
+
+  it("treats filesystem path misses as renderer fallbacks", () => {
+    for (const code of ["ENOENT", "EISDIR", "ENOTDIR"]) {
+      expect(isRendererAssetMiss(Object.assign(new Error(code), { code }))).toBe(true);
+    }
+    expect(isRendererAssetMiss(Object.assign(new Error("denied"), { code: "EACCES" }))).toBe(false);
+    expect(isRendererAssetMiss(null)).toBe(false);
   });
 
   it("forwards cookies for both app and cross-origin requests", () => {

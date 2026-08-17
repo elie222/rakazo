@@ -51,6 +51,12 @@ export function immutableRendererAsset(file: string) {
   return path.basename(path.dirname(file)) === "assets";
 }
 
+export function isRendererAssetMiss(error: unknown) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  return code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR";
+}
+
 export function forwardedRendererRequestInit(request: Request, webOrigin: string) {
   const init: RequestInit & { bypassCustomProtocolHandlers: boolean } = {
     bypassCustomProtocolHandlers: true,

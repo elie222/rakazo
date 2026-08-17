@@ -18,7 +18,9 @@ import { createThreadMessage, type PrismaClient } from "@rakazo/db";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import {
   type NumericSummary,
+  PERFORMANCE_REPORT_SCHEMA_VERSION,
   type PerformanceReport,
+  parseTcpPort,
   roundMetric,
   summarize,
 } from "../performance-report.js";
@@ -34,9 +36,15 @@ const skipBuild = process.argv.includes("--skip-build");
 const remoteRenderer = process.argv.includes("--remote-renderer");
 const disableWarmWindow = process.argv.includes("--disable-warm-window");
 const assetDelayMs = nonnegativeInteger(argument("--asset-delay") ?? "0");
-const conductorPort = Number(process.env.CONDUCTOR_PORT ?? 55_400);
-const webPort = Number(process.env.PERF_WEB_PORT ?? conductorPort);
-const apiPort = Number(process.env.PERF_API_PORT ?? conductorPort + 1);
+const conductorPort = parseTcpPort(process.env.CONDUCTOR_PORT ?? "55400", "CONDUCTOR_PORT");
+const webPort = parseTcpPort(process.env.PERF_WEB_PORT ?? String(conductorPort), "PERF_WEB_PORT");
+const apiPort = parseTcpPort(
+  process.env.PERF_API_PORT ?? String(conductorPort + 1),
+  "PERF_API_PORT",
+);
+if (webPort === apiPort) {
+  throw new Error(`PERF_WEB_PORT and PERF_API_PORT must differ; both resolved to ${webPort}`);
+}
 const webOrigin = `http://127.0.0.1:${webPort}`;
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const reportDirectory = path.join(root, ".context/performance");
@@ -105,7 +113,7 @@ try {
   const environment = environmentFingerprint(coldLaunches[0]!.main.versions);
   const bundles = await measureBundles();
   const report = {
-    schemaVersion: 1,
+    schemaVersion: PERFORMANCE_REPORT_SCHEMA_VERSION,
     label: outputLabel,
     createdAt: new Date().toISOString(),
     environment,
@@ -434,23 +442,37 @@ async function measureInteractions(app: ElectronApplication, page: Page) {
     const durationMs = maximumTransitionMs(getComputedStyle(panel));
     const transition = new Promise<void>((resolve) => {
       if (durationMs === 0) return resolve();
-      const timeout = window.setTimeout(resolve, durationMs + 100);
+      const controller = new AbortController();
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        controller.abort();
+        resolve();
+      }, durationMs + 100);
       panel.addEventListener(
         "transitionend",
-        () => {
+        (event) => {
+          if (event.target !== panel || settled) return;
+          settled = true;
           window.clearTimeout(timeout);
+          controller.abort();
           resolve();
         },
-        { once: true },
+        { signal: controller.signal },
       );
     });
     const committed = new Promise<number>((resolve) => {
       const observer = new MutationObserver(() => {
-        if (!document.querySelector('[data-testid="bot-settings"]')) return;
+        if (!panel.querySelector('[data-testid="bot-settings"]')) return;
         observer.disconnect();
         resolve(performance.now());
       });
       observer.observe(panel, { childList: true, subtree: true });
+      if (panel.querySelector('[data-testid="bot-settings"]')) {
+        observer.disconnect();
+        resolve(performance.now());
+      }
     });
     const started = performance.now();
     button.click();
@@ -685,28 +707,27 @@ function summarizeProcessSamples(samples: Awaited<ReturnType<typeof sampleAppMet
   const cpu = samples.map((sample) =>
     sample.processes.reduce((total, process) => total + process.cpu, 0),
   );
-  const privateMemory = samples.map((sample) =>
-    sample.processes.reduce((total, process) => total + privateMemoryKiB(process.memory), 0),
+  const workingSet = samples.map((sample) =>
+    sample.processes.reduce((total, process) => total + workingSetKiB(process.memory), 0),
   );
-  const rendererPrivateMemory = samples.map((sample) =>
+  const rendererWorkingSet = samples.map((sample) =>
     sample.processes
       .filter((process) => process.renderer)
-      .reduce((total, process) => total + privateMemoryKiB(process.memory), 0),
+      .reduce((total, process) => total + workingSetKiB(process.memory), 0),
   );
   return {
     cpuPercent: roundedSummary(cpu),
-    summedPrivateKiB: roundedSummary(privateMemory),
-    rendererPrivateKiB: roundedSummary(rendererPrivateMemory),
+    summedWorkingSetKiB: roundedSummary(workingSet),
+    rendererWorkingSetKiB: roundedSummary(rendererWorkingSet),
   };
 }
 
-function privateMemoryKiB(memory: object) {
-  const values = memory as {
-    private?: number;
-    privateBytes?: number;
-    workingSetSize?: number;
-  };
-  return values.private ?? values.privateBytes ?? values.workingSetSize ?? 0;
+function workingSetKiB(memory: object) {
+  const value = (memory as { workingSetSize?: unknown }).workingSetSize;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error("Electron app metrics did not include a valid workingSetSize");
+  }
+  return value;
 }
 
 function environmentFingerprint(versions: { electron?: string; chrome?: string }) {
@@ -776,10 +797,10 @@ function summarizeReport(
     settingsSettledMs: interactions.settings.settledMs,
     typingKeyPaintMs: interactions.typing.summary,
     idleCpuPercent: interactions.idle.summary.cpuPercent,
-    idleSummedPrivateKiB: interactions.idle.summary.summedPrivateKiB,
+    idleSummedWorkingSetKiB: interactions.idle.summary.summedWorkingSetKiB,
     streamingCpuPercent: interactions.streaming.summary.cpuPercent,
     reopenMs: interactions.reopen?.reopenMs ?? null,
-    hiddenSummedPrivateKiB: interactions.reopen?.hidden.summedPrivateKiB.median ?? null,
+    hiddenSummedWorkingSetKiB: interactions.reopen?.hidden.summedWorkingSetKiB.median ?? null,
   };
 }
 
@@ -810,10 +831,10 @@ function renderMarkdown(report: PerformanceReport) {
 | Warm shell usable | ${summary.warmShellUsableMs.median} ms | ${summary.warmShellUsableMs.p95} ms |
 | Keydown to frame | ${summary.typingKeyPaintMs.median} ms | ${summary.typingKeyPaintMs.p95} ms |
 | Idle total CPU | ${summary.idleCpuPercent.median}% | ${summary.idleCpuPercent.p95}% |
-| Idle summed private memory | ${bytesToMib(summary.idleSummedPrivateKiB.median * 1024)} MiB | ${bytesToMib(summary.idleSummedPrivateKiB.p95 * 1024)} MiB |
+| Idle summed working set | ${bytesToMib(summary.idleSummedWorkingSetKiB.median * 1024)} MiB | ${bytesToMib(summary.idleSummedWorkingSetKiB.p95 * 1024)} MiB |
 
 - Settings: ${summary.settingsPaintedMs} ms to painted, ${summary.settingsSettledMs} ms settled.
-- Reopen: ${summary.reopenMs === null ? "not measured" : `${summary.reopenMs} ms`}; hidden app memory: ${summary.hiddenSummedPrivateKiB === null ? "not measured" : `${bytesToMib(summary.hiddenSummedPrivateKiB * 1024)} MiB`}.
+- Reopen: ${summary.reopenMs === null ? "not measured" : `${summary.reopenMs} ms`}; hidden app summed working set: ${summary.hiddenSummedWorkingSetKiB === null ? "not measured" : `${bytesToMib(summary.hiddenSummedWorkingSetKiB * 1024)} MiB`}.
 - Web bundle: ${bytesToMib(report.bundles.web.rawBytes)} MiB raw.
 - Desktop app: ${report.bundles.desktop ? `${bytesToMib(report.bundles.desktop.rawBytes)} MiB` : "not available"}.
 `;

@@ -105,6 +105,8 @@ export function ShellPage() {
   computerVisible.current = panel === "computer" || computerOpen;
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const routeBotId = useRef<string | undefined>(botId);
+  routeBotId.current = botId;
   const activeBotId = useRef<string | undefined>(active?.id);
   activeBotId.current = active?.id;
   const screenRequest = useRef(0);
@@ -166,7 +168,8 @@ export function ShellPage() {
       navigate("/onboarding", { replace: true });
       return;
     }
-    if (!botId || !list.some((bot) => bot.id === botId)) {
+    const currentBotId = routeBotId.current;
+    if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
       navigate(list[0] ? `/app/${list[0].id}` : "/app", { replace: true });
     }
   }
