@@ -28,6 +28,7 @@ function localModel(
   baseUrl: string,
   id: string,
   contextWindow: number,
+  reasoning = false,
 ): Model<"openai-completions"> {
   return {
     id,
@@ -35,7 +36,11 @@ function localModel(
     api: "openai-completions",
     provider,
     baseUrl,
-    reasoning: false,
+    reasoning,
+    // mlx-openai-server's Qwen3.5 chat template reads chat_template_kwargs.enable_thinking;
+    // without this, it defaults to reasoning_effort "xhigh" on every turn, which can burn the
+    // whole maxTokens budget on <think> and never reach an answer.
+    ...(reasoning ? { compat: { thinkingFormat: "qwen-chat-template" as const } } : {}),
     input: ["text"],
     contextWindow,
     maxTokens: DEFAULT_MAX_TOKENS,
@@ -83,7 +88,7 @@ function localMlxProvider(): Provider<"openai-completions"> {
     name: "Local MLX server",
     baseUrl,
     auth: { apiKey: keylessAuth("Local MLX server — no key required") },
-    models: [localModel(LOCAL_MLX_PROVIDER_ID, baseUrl, modelId, LOCAL_MLX_CONTEXT_WINDOW)],
+    models: [localModel(LOCAL_MLX_PROVIDER_ID, baseUrl, modelId, LOCAL_MLX_CONTEXT_WINDOW, true)],
     api: openAICompletionsApi(),
   });
 }
