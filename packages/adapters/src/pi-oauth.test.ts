@@ -20,6 +20,11 @@ const oauthCred = (overrides: Partial<OAuthCredential> = {}): OAuthCredential =>
   ...overrides,
 });
 
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("model secrets", () => {
   it("treats plaintext as an API key", () => {
     expect(parseModelSecret("sk-or-v1-abc")).toEqual({ kind: "api_key", key: "sk-or-v1-abc" });
@@ -137,7 +142,7 @@ describe("PiOAuthLogins", () => {
       modelId: "gpt-5.4",
     });
     finish(oauthCred({ access: "live-access" }));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await flushMicrotasks();
     const done = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
     expect(done).toMatchObject({
       status: "connected",
@@ -208,26 +213,39 @@ describe("PiOAuthLogins", () => {
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     finishLogin(oauthCred());
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await flushMicrotasks();
 
     let releasePersistence!: () => void;
     const persistence = new Promise<void>((resolve) => {
       releasePersistence = resolve;
     });
     let persistenceStarted!: () => void;
+    let persistenceSignal!: AbortSignal;
     const startedPersistence = new Promise<void>((resolve) => {
       persistenceStarted = resolve;
     });
     const finishing = logins.finish(
       started.loginId,
       { userId: "owner", workspaceId: "workspace" },
-      async () => {
+      async (result) => {
+        persistenceSignal = result.signal;
         persistenceStarted();
         await persistence;
         return "saved";
       },
     );
     await startedPersistence;
+    expect(persistenceSignal.aborted).toBe(false);
+
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "owner", workspaceId: "workspace" },
+        async () => {
+          throw new Error("duplicate persistence");
+        },
+      ),
+    ).resolves.toEqual({ status: "pending" });
 
     let cancellationFinished = false;
     const cancelling = logins
@@ -237,11 +255,143 @@ describe("PiOAuthLogins", () => {
       });
     await Promise.resolve();
     expect(cancellationFinished).toBe(false);
+    expect(persistenceSignal.aborted).toBe(false);
 
     releasePersistence();
     await expect(finishing).resolves.toEqual({ status: "connected", value: "saved" });
     await cancelling;
     expect(cancellationFinished).toBe(true);
+    expect(persistenceSignal.aborted).toBe(false);
+  });
+
+  it("does not persist after cancellation wins before finalization", async () => {
+    let finishLogin!: (credential: OAuthCredential) => void;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "CANCEL-FIRST",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>((resolve) => {
+        finishLogin = resolve;
+      });
+    });
+    const started = await logins.begin({
+      userId: "owner",
+      workspaceId: "workspace",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    finishLogin(oauthCred());
+    await flushMicrotasks();
+
+    await logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
+    let persisted = false;
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "owner", workspaceId: "workspace" },
+        async () => {
+          persisted = true;
+          return "saved";
+        },
+      ),
+    ).resolves.toMatchObject({ status: "error" });
+    expect(persisted).toBe(false);
+  });
+
+  it("allows a failed finalization to be retried", async () => {
+    let finishLogin!: (credential: OAuthCredential) => void;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "RETRY",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>((resolve) => {
+        finishLogin = resolve;
+      });
+    });
+    const started = await logins.begin({
+      userId: "owner",
+      workspaceId: "workspace",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    finishLogin(oauthCred());
+    await flushMicrotasks();
+
+    const failure = new Error("persistence failed");
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "owner", workspaceId: "workspace" },
+        async () => {
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(
+      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
+        .status,
+    ).toBe("connected");
+
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "owner", workspaceId: "workspace" },
+        async (result) => result.credential.access,
+      ),
+    ).resolves.toEqual({ status: "connected", value: "access-token" });
+    expect(
+      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" })).status,
+    ).toBe("error");
+  });
+
+  it("does not allow another actor to finish or persist a login", async () => {
+    let finishLogin!: (credential: OAuthCredential) => void;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "OWNER-ONLY",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>((resolve) => {
+        finishLogin = resolve;
+      });
+    });
+    const started = await logins.begin({
+      userId: "owner",
+      workspaceId: "workspace",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    finishLogin(oauthCred());
+    await flushMicrotasks();
+
+    let persisted = false;
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "other", workspaceId: "workspace" },
+        async () => {
+          persisted = true;
+          return "saved";
+        },
+      ),
+    ).resolves.toMatchObject({ status: "error" });
+    expect(persisted).toBe(false);
+    await expect(
+      logins.finish(
+        started.loginId,
+        { userId: "owner", workspaceId: "other-workspace" },
+        async () => {
+          persisted = true;
+          return "saved";
+        },
+      ),
+    ).resolves.toMatchObject({ status: "error" });
+    expect(persisted).toBe(false);
+    expect(
+      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" })).status,
+    ).toBe("connected");
   });
 
   it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {

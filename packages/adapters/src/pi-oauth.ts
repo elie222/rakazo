@@ -78,6 +78,8 @@ type LoginFn = (
   interaction: AuthInteraction,
 ) => Promise<Credential>;
 
+type SessionState = "pending" | "ready" | "finalizing" | "consumed";
+
 type Session = {
   id: string;
   userId: string;
@@ -86,6 +88,7 @@ type Session = {
   modelId?: string;
   label?: string;
   abort: AbortController;
+  state: SessionState;
   credential?: OAuthCredential;
   error?: string;
   finishing?: Promise<void>;
@@ -211,6 +214,7 @@ export class PiOAuthLogins {
       modelId: input.modelId,
       label: input.label,
       abort,
+      state: "pending",
     };
 
     const device = deferred<{
@@ -248,6 +252,7 @@ export class PiOAuthLogins {
           throw new Error("Subscription sign-in did not return an OAuth credential.");
         }
         session.credential = credential;
+        session.state = "ready";
         return credential;
       })
       .catch((error) => {
@@ -292,6 +297,7 @@ export class PiOAuthLogins {
       this.pending.delete(loginId);
       return { status: "error", error: session.error };
     }
+    if (session.state === "finalizing") return { status: "pending" };
     if (session.credential) {
       return {
         status: "connected",
@@ -314,19 +320,24 @@ export class PiOAuthLogins {
     if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
       return { status: "error", error: "Sign-in session not found. Start sign-in again." };
     }
-    if (session.finishing) return { status: "pending" };
+    if (session.state === "finalizing") return { status: "pending" };
     const result = this.complete(loginId, actor);
     if (result.status !== "connected") return result;
 
-    // Claim the session before persistence. Cancellation may request an abort, but waits for
-    // this claim to settle so it can never return before a later credential commit.
+    // The state transition is synchronous, so cancel either wins before this claim or waits for
+    // the finalization to settle. The finalization signal is intentionally detached from cancel.
     const finishing = deferred<void>();
     session.finishing = finishing.promise;
+    session.state = "finalizing";
     try {
-      const value = await persist(result);
+      const value = await persist({ ...result, signal: new AbortController().signal });
+      session.state = "consumed";
       if (this.pending.get(loginId) === session) this.pending.delete(loginId);
       session.abort.abort();
       return { status: "connected", value };
+    } catch (error) {
+      if (this.pending.get(loginId) === session) session.state = "ready";
+      throw error;
     } finally {
       if (this.pending.get(loginId) === session) session.finishing = undefined;
       finishing.resolve(undefined);
@@ -343,11 +354,12 @@ export class PiOAuthLogins {
       ) {
         return;
       }
-      if (session.finishing) {
-        session.abort.abort(new Error("Sign-in cancelled."));
-        await session.finishing;
+      if (session.state === "finalizing") {
+        if (session.finishing) await session.finishing;
+        else return;
         continue;
       }
+      if (session.state === "consumed") return;
       session.abort.abort(new Error("Sign-in cancelled."));
       this.pending.delete(loginId);
       return;
