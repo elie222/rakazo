@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bundledRendererCandidates,
   contentType,
+  forwardedRendererRequestInit,
   immutableRendererAsset,
 } from "./renderer-assets.js";
 
@@ -45,5 +46,21 @@ describe("bundled desktop renderer", () => {
     expect(contentType("app.woff2")).toBe("font/woff2");
     expect(immutableRendererAsset(path.join(root, "assets/app-123.js"))).toBe(true);
     expect(immutableRendererAsset(path.join(root, "index.html"))).toBe(false);
+  });
+
+  it("forwards cookies for both app and cross-origin requests", () => {
+    const appOptions = forwardedRendererRequestInit(new Request(`${origin}/rpc/bots`), origin);
+    const oauthOptions = forwardedRendererRequestInit(
+      new Request("https://oauth.example.com/authorize"),
+      origin,
+    );
+
+    expect(appOptions.credentials).toBe("include");
+    expect(new Headers(appOptions.headers).get("origin")).toBe(origin);
+    expect(oauthOptions).toMatchObject({
+      bypassCustomProtocolHandlers: true,
+      credentials: "include",
+    });
+    expect(oauthOptions.headers).toBeUndefined();
   });
 });

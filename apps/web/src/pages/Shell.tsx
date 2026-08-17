@@ -98,6 +98,7 @@ export function ShellPage() {
   const autoBooted = useRef<string | null>(null);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
+  const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const manuallyUnread = useRef(new Set<string>());
   const computerVisible = useRef(false);
@@ -382,6 +383,15 @@ export function ShellPage() {
       markAfterPaint("rk:renderer:shell-painted");
     }
   }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
+
+  useLayoutEffect(() => {
+    if (!active || snapshot?.botId !== active.id) return;
+    if (initiallyScrolledThread.current === snapshot.threadId) return;
+    const element = messageScroll.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    initiallyScrolledThread.current = snapshot.threadId;
+  }, [active, snapshot?.botId, snapshot?.threadId]);
 
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
@@ -1164,6 +1174,7 @@ const Transcript = memo(function Transcript({
   return (
     <div
       ref={scrollRef}
+      data-testid="transcript"
       className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
     >
       {olderCursor != null ? (

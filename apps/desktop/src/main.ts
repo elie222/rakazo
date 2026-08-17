@@ -5,6 +5,7 @@ import { app, BrowserWindow, ipcMain, net, session } from "electron";
 import {
   bundledRendererCandidates,
   contentType,
+  forwardedRendererRequestInit,
   immutableRendererAsset,
 } from "./renderer-assets.js";
 import { browserWindowOptions } from "./window-options.js";
@@ -94,17 +95,7 @@ async function installBundledRenderer() {
 
   await session.defaultSession.protocol.handle(webUrl.protocol.slice(0, -1), async (request) => {
     const forward = () => {
-      const url = new URL(request.url);
-      if (url.origin !== webUrl.origin) {
-        return net.fetch(request, { bypassCustomProtocolHandlers: true });
-      }
-      const headers = new Headers(request.headers);
-      headers.set("origin", webUrl.origin);
-      return net.fetch(request, {
-        bypassCustomProtocolHandlers: true,
-        credentials: "include",
-        headers,
-      });
+      return net.fetch(request, forwardedRendererRequestInit(request, webUrl.origin));
     };
     if (request.method !== "GET" && request.method !== "HEAD") {
       return forward();

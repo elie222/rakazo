@@ -51,6 +51,17 @@ export function immutableRendererAsset(file: string) {
   return path.basename(path.dirname(file)) === "assets";
 }
 
+export function forwardedRendererRequestInit(request: Request, webOrigin: string) {
+  const init: RequestInit & { bypassCustomProtocolHandlers: boolean } = {
+    bypassCustomProtocolHandlers: true,
+    credentials: "include",
+  };
+  if (new URL(request.url).origin !== webOrigin) return init;
+  const headers = new Headers(request.headers);
+  headers.set("origin", webOrigin);
+  return { ...init, headers };
+}
+
 function matchesPrefix(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }

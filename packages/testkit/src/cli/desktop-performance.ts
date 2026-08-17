@@ -358,6 +358,11 @@ async function launchDesktop(
 
 async function waitForShell(page: Page) {
   await page.locator('[data-testid="shell-root"][data-ready="true"]').waitFor({ timeout: 30_000 });
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector<HTMLElement>('[data-testid="transcript"]');
+    if (!transcript) return false;
+    return transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= 1;
+  });
   await page.waitForFunction(
     () => performance.getEntriesByName("rk:renderer:shell-painted").length === 1,
     undefined,
