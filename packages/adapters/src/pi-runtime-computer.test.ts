@@ -52,6 +52,11 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
+// Computer-tool dispatch is unrelated to local-provider registration; keep the fake models untouched.
+vi.mock("./local-providers.js", () => ({
+  withLocalProviders: (models: unknown) => models,
+}));
+
 import { PiAgentRuntime, pruneComputerScreenshotContext } from "./pi-runtime.js";
 
 const computerObserve: ConnectorTool = {
