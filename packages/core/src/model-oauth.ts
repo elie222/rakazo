@@ -1,8 +1,8 @@
 import { abortableDelay } from "./async.js";
 
-export type ModelOAuthCompletion<TCredential> =
+export type ModelOAuthCompletion =
   | { status: "pending" }
-  | { status: "connected"; credential: TCredential }
+  | { status: "ready" }
   | { status: "error"; error: string };
 
 type OAuthControllerRef = { current: AbortController | null };
@@ -25,17 +25,17 @@ export function finishModelOAuthAttempt(
   resetBusy();
 }
 
-export async function waitForModelOAuthCompletion<TCredential>(
-  complete: () => Promise<ModelOAuthCompletion<TCredential>>,
+export async function waitForModelOAuthCompletion(
+  complete: () => Promise<ModelOAuthCompletion>,
   options: { signal?: AbortSignal; attempts?: number; pollIntervalMs?: number } = {},
-): Promise<{ status: "connected"; credential: TCredential }> {
+): Promise<{ status: "ready" }> {
   const attempts = options.attempts ?? 180;
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     throwIfAborted(options.signal);
     const result = await complete();
     throwIfAborted(options.signal);
-    if (result.status === "connected") return result;
+    if (result.status === "ready") return result;
     if (result.status === "error") throw new Error(result.error);
     if (attempt < attempts) await abortableDelay(pollIntervalMs, options.signal);
   }

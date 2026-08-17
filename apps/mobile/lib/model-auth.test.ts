@@ -24,19 +24,10 @@ describe("mobile waitForModelOAuth", () => {
     expect(mockRpc).toHaveBeenCalledTimes(1);
   });
 
-  it("returns a connected credential normally", async () => {
-    mockRpc.mockResolvedValue({
-      status: "connected",
-      credential: {
-        id: "credential-id",
-        provider: "provider",
-        label: "Provider",
-        hasKey: true,
-        isDefault: true,
-      },
-    });
+  it("returns readiness normally", async () => {
+    mockRpc.mockResolvedValue({ status: "ready" });
 
-    await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "connected" });
+    await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "ready" });
     expect(mockRpc).toHaveBeenCalledTimes(1);
   });
 });

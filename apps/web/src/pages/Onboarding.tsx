@@ -159,6 +159,8 @@ export function OnboardingPage() {
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
       await waitForModelOAuth(started.loginId, controller.signal);
       if (controller.signal.aborted) return;
+      await rpc.models.finishOAuth({ loginId: started.loginId }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       oauthLoginIdRef.current = null;
       setOauth(null);
       setStep("bot");

@@ -76,10 +76,11 @@ export const appContract = {
       .output(
         z.discriminatedUnion("status", [
           z.object({ status: z.literal("pending") }),
-          z.object({ status: z.literal("connected"), credential: ModelCredentialSchema }),
+          z.object({ status: z.literal("ready") }),
           z.object({ status: z.literal("error"), error: z.string() }),
         ]),
       ),
+    finishOAuth: oc.input(z.object({ loginId: z.string() })).output(ModelCredentialSchema),
     cancelOAuth: oc
       .input(z.object({ loginId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),

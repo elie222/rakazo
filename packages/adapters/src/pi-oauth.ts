@@ -53,6 +53,7 @@ export type PiOAuthComplete =
       provider: string;
       modelId?: string;
       label?: string;
+      signal: AbortSignal;
     }
   | { status: "error"; error: string };
 
@@ -293,6 +294,7 @@ export class PiOAuthLogins {
         provider: session.provider,
         modelId: session.modelId,
         label: session.label,
+        signal: session.abort.signal,
       };
     }
     return { status: "pending" };

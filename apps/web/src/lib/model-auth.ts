@@ -16,13 +16,7 @@ export function providerHint(entry: ModelCatalogEntry) {
   return "API key";
 }
 
-type CompleteOAuthResult = Awaited<ReturnType<typeof rpc.models.completeOAuth>>;
-type ConnectedOAuthResult = Extract<CompleteOAuthResult, { status: "connected" }>;
-
-export async function waitForModelOAuth(
-  loginId: string,
-  signal?: AbortSignal,
-): Promise<ConnectedOAuthResult> {
+export async function waitForModelOAuth(loginId: string, signal?: AbortSignal) {
   return waitForModelOAuthCompletion(() => rpc.models.completeOAuth({ loginId }, { signal }), {
     signal,
   });

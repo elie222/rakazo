@@ -44,6 +44,10 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.evaluate(() => {
     window.open = () => null;
   });
+  let finishRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/rpc/models/finishOAuth")) finishRequests += 1;
+  });
 
   await providerSearch.fill("openai-codex");
   await page
@@ -59,6 +63,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await providerSearch.fill("scripted");
   await page.getByRole("button", { name: /Scripted/ }).click();
   await cancelled;
+  expect(finishRequests).toBe(0);
   await expect(page.getByLabel("Replace API key")).toBeEnabled();
   await expect(page.getByText("Waiting for sign-in…")).toBeHidden();
 });

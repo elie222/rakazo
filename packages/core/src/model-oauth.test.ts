@@ -17,15 +17,11 @@ describe("waitForModelOAuthCompletion", () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
-  it("returns a connected credential without another poll", async () => {
-    const complete = vi.fn().mockResolvedValue({
-      status: "connected" as const,
-      credential: { id: "credential-id" },
-    });
+  it("returns readiness without another poll", async () => {
+    const complete = vi.fn().mockResolvedValue({ status: "ready" as const });
 
     await expect(waitForModelOAuthCompletion(complete)).resolves.toEqual({
-      status: "connected",
-      credential: { id: "credential-id" },
+      status: "ready",
     });
     expect(complete).toHaveBeenCalledTimes(1);
   });

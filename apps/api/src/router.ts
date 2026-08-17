@@ -204,17 +204,29 @@ export function createRouter(deps: RouterDeps) {
           userId: context.actor.userId,
           workspaceId: context.actor.workspaceId,
         });
-        if (result.status !== "connected") return result;
-        throwIfAborted(context.signal);
+        return result.status === "connected" ? { status: "ready" as const } : result;
+      }),
+      finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
+        const result = await deps.oauthLogins.complete(input.loginId, context.actor);
+        if (result.status === "pending") {
+          throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
+        }
+        if (result.status === "error") {
+          throw new ORPCError("NOT_FOUND", { message: result.error });
+        }
+        const signal = context.signal
+          ? AbortSignal.any([context.signal, result.signal])
+          : result.signal;
+        throwIfAborted(signal);
         const credential = await persistModelCredential(deps, context.actor, {
           provider: result.provider,
           plaintext: serializeModelSecret({ kind: "oauth", credential: result.credential }),
           label: result.label ?? "ChatGPT Plus/Pro",
           modelId: result.modelId,
-          signal: context.signal,
+          signal,
         });
         deps.oauthLogins.consume(input.loginId);
-        return { status: "connected" as const, credential };
+        return credential;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
         deps.oauthLogins.cancel(input.loginId, context.actor);
@@ -1653,6 +1665,7 @@ async function persistModelCredential(
   const cred = await withSerializableRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
+        throwIfAborted(input.signal);
         const existing = await tx.userModelCredential.findFirst({
           where: {
             userId: actor.userId,
@@ -1661,6 +1674,7 @@ async function persistModelCredential(
           },
           orderBy: newestModelCredentialOrder,
         });
+        throwIfAborted(input.signal);
         const secret = await tx.secret.create({
           data: {
             id: stored.id,
@@ -1670,12 +1684,14 @@ async function persistModelCredential(
             ciphertext: stored.ciphertext,
           },
         });
+        throwIfAborted(input.signal);
         await tx.userModelCredential.updateMany({
           where: { userId: actor.userId, workspaceId: actor.workspaceId },
           data: { isDefault: false },
         });
+        throwIfAborted(input.signal);
         if (!existing) {
-          return tx.userModelCredential.create({
+          const created = await tx.userModelCredential.create({
             data: {
               userId: actor.userId,
               workspaceId: actor.workspaceId,
@@ -1686,6 +1702,8 @@ async function persistModelCredential(
               defaultModel: input.modelId ?? deps.env.defaultModel,
             },
           });
+          throwIfAborted(input.signal);
+          return created;
         }
         const updated = await tx.userModelCredential.update({
           where: { id: existing.id },
@@ -1696,11 +1714,14 @@ async function persistModelCredential(
             defaultModel: input.modelId ?? deps.env.defaultModel,
           },
         });
+        throwIfAborted(input.signal);
         const sharedSecret = await tx.userModelCredential.count({
           where: { id: { not: existing.id }, secretId: existing.secretId },
         });
+        throwIfAborted(input.signal);
         if (sharedSecret === 0) {
           await tx.secret.deleteMany({ where: { id: existing.secretId } });
+          throwIfAborted(input.signal);
         }
         return updated;
       },

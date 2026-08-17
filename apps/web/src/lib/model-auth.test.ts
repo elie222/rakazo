@@ -26,19 +26,10 @@ describe("waitForModelOAuth", () => {
     expect(completeOAuth).toHaveBeenCalledTimes(1);
   });
 
-  it("returns a connected credential without waiting for another poll", async () => {
-    completeOAuth.mockResolvedValue({
-      status: "connected",
-      credential: {
-        id: "credential-id",
-        provider: "provider",
-        label: "Provider",
-        hasKey: true,
-        isDefault: true,
-      },
-    });
+  it("returns readiness without waiting for another poll", async () => {
+    completeOAuth.mockResolvedValue({ status: "ready" });
 
-    await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "connected" });
+    await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "ready" });
     expect(completeOAuth).toHaveBeenCalledTimes(1);
   });
 });

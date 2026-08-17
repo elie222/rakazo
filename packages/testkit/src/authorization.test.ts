@@ -57,6 +57,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
+      ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["bots/list"],
