@@ -2,6 +2,7 @@ export * from "./async.js";
 export * from "./cron.js";
 export * from "./events.js";
 export * from "./message-pages.js";
+export * from "./model-oauth.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";
 export * from "./secrets-guard.js";

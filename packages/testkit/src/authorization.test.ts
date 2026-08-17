@@ -57,6 +57,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
+      ["models/finishOAuth", { loginId: "missing-login" }],
+      ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["bots/list"],
       ["bots/listArchived"],
@@ -313,6 +315,191 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
   });
 
+  it("isolates model defaults by workspace and switches them atomically", async () => {
+    const cookie = await signup(app, `model-defaults-${stamp}@rakazo.test`, "Model Defaults");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const otherWorkspaceId = `other-model-workspace-${stamp}`;
+    const otherSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: otherWorkspaceId,
+        kind: "model",
+        ciphertext: "encrypted-other-workspace-key",
+      },
+    });
+    const otherCredential = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: otherWorkspaceId,
+        provider: "other-provider",
+        label: "Other workspace",
+        secretId: otherSecret.id,
+        isDefault: true,
+        defaultModel: "other/model",
+      },
+    });
+
+    const beforeConnect = await rpc<Me>(app, cookie, "me");
+    expect(beforeConnect.workspaceId).toBe(actor.workspaceId);
+    expect(beforeConnect.defaultProvider).not.toBe("other-provider");
+    expect(beforeConnect.defaultModel).not.toBe("other/model");
+    const expectWorkspaceModelDefault = async (provider: string, defaultModel: string) => {
+      const rows = await handles.prisma.userModelCredential.findMany({
+        where: { userId: actor.userId, workspaceId: actor.workspaceId },
+      });
+      expect(rows.filter((row) => row.isDefault)).toHaveLength(1);
+      expect(rows.find((row) => row.provider === provider)).toMatchObject({
+        isDefault: true,
+        defaultModel,
+      });
+      expect(rows.filter((row) => row.isDefault)[0]?.provider).toBe(provider);
+    };
+
+    const connectedA = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-a",
+      apiKey: "fake-provider-a-key",
+      label: "Provider A",
+      modelId: "a/one",
+    });
+    expect(connectedA.isDefault).toBe(true);
+    const providerABeforeRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+
+    const rotatedA = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-a",
+      apiKey: "fake-provider-a-replacement-key",
+      label: "Provider A rotated",
+      modelId: "a/rotated",
+    });
+    const providerAAfterRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+    expect(rotatedA.id).toBe(connectedA.id);
+    expect(providerAAfterRotation.secretId).not.toBe(providerABeforeRotation.secretId);
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: providerABeforeRotation.secretId } }),
+    ).toBeNull();
+    expect(
+      await handles.prisma.userModelCredential.count({
+        where: {
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          provider: "provider-a",
+        },
+      }),
+    ).toBe(1);
+
+    const connectedB = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-b",
+      apiKey: "fake-provider-b-key",
+      label: "Provider B",
+      modelId: "b/one",
+    });
+    expect(connectedB.isDefault).toBe(true);
+    expect(
+      await handles.prisma.userModelCredential.count({
+        where: { userId: actor.userId, workspaceId: actor.workspaceId, isDefault: true },
+      }),
+    ).toBe(1);
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-a", modelId: "a/two" });
+    await expectWorkspaceModelDefault("provider-a", "a/two");
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-b", modelId: "b/two" });
+    await expectWorkspaceModelDefault("provider-b", "b/two");
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-a", modelId: "a/three" });
+    await expectWorkspaceModelDefault("provider-a", "a/three");
+
+    const otherAfter = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: otherCredential.id },
+    });
+    expect(otherAfter).toMatchObject({ isDefault: true, defaultModel: "other/model" });
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(JSON.stringify(listed)).not.toContain("fake-provider-a-key");
+    expect(JSON.stringify(listed)).not.toContain("fake-provider-b-key");
+
+    const missing = await raw(app, cookie, "models/setDefault", {
+      provider: "missing-provider",
+      modelId: "missing/model",
+    });
+    expect(missing.status).toBeGreaterThanOrEqual(400);
+    expect(await missing.text()).toMatch(/credential/i);
+  });
+
+  it("chooses the newest duplicate provider credential when selecting a default", async () => {
+    const cookie = await signup(app, `model-duplicates-${stamp}@rakazo.test`, "Model Duplicates");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const olderSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        kind: "model",
+        ciphertext: "encrypted-older-key",
+      },
+    });
+    const newerSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        kind: "model",
+        ciphertext: "encrypted-newer-key",
+      },
+    });
+    const older = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+        label: "Older",
+        secretId: olderSecret.id,
+        isDefault: true,
+        defaultModel: "older/model",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    });
+    const newer = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+        label: "Newer",
+        secretId: newerSecret.id,
+        defaultModel: "newer/model",
+        createdAt: new Date("2026-02-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-02-02T00:00:00.000Z"),
+      },
+    });
+
+    await rpc(app, cookie, "models/setDefault", {
+      provider: "duplicate-provider",
+      modelId: "newer/selected",
+    });
+
+    const rows = await handles.prisma.userModelCredential.findMany({
+      where: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+      },
+    });
+    expect(rows.filter((row) => row.isDefault).map((row) => row.id)).toEqual([newer.id]);
+    expect(rows.find((row) => row.id === newer.id)).toMatchObject({
+      isDefault: true,
+      defaultModel: "newer/selected",
+    });
+    expect(rows.find((row) => row.id === older.id)).toMatchObject({
+      isDefault: false,
+      defaultModel: "older/model",
+    });
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(
+      listed.filter((row) => row.provider === "duplicate-provider").map((row) => row.id),
+    ).toEqual([newer.id, older.id]);
+  });
+
   it("restricts deployment settings to the deployment owner", async () => {
     const owner = await signup(app, `deployment-owner-${stamp}@rakazo.test`, "Deployment Owner");
     const other = await signup(app, `deployment-other-${stamp}@rakazo.test`, "Deployment Other");
@@ -419,6 +606,19 @@ async function expectDenied(app: App, cookie: string, procedure: string, body: u
 interface Actor {
   userId: string;
   workspaceId: string;
+}
+
+interface Me extends Actor {
+  defaultProvider: string | null;
+  defaultModel: string | null;
+}
+
+interface ModelCredential {
+  id: string;
+  provider: string;
+  label: string;
+  hasKey: boolean;
+  isDefault: boolean;
 }
 
 interface Bot {

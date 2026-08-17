@@ -189,6 +189,20 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
 });
+export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
+
+export const ModelCatalogEntrySchema = z.object({
+  provider: z.string(),
+  providerName: z.string().optional(),
+  id: z.string(),
+  label: z.string(),
+  billing: z.string(),
+  auth: z.enum(["api-key", "oauth", "both"]).optional(),
+  oauthLabel: z.string().optional(),
+  subscription: z.boolean().optional(),
+  signIn: z.enum(["device-code"]).optional(),
+});
+export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
 export const DeploymentSettingsSchema = z.object({
   ownerUserId: Id.nullable(),
@@ -214,6 +228,15 @@ export const MeSchema = z.object({
   canChooseHostComputer: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
+
+export const AppBootstrapSchema = z.object({
+  me: MeSchema,
+  bots: z.array(BotSchema),
+  archivedBots: z.array(BotSchema),
+  thread: ThreadSnapshotSchema.nullable(),
+  routines: z.array(RoutineSchema),
+});
+export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 
 export const ExportManifestSchema = z.object({
   version: z.literal(1),

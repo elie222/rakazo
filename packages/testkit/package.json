@@ -20,6 +20,7 @@
     "@testcontainers/postgresql": "^11.5.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
   }

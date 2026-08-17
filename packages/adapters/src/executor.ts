@@ -24,6 +24,7 @@ import {
 } from "@rakazo/core";
 import {
   createThreadMessage,
+  findDefaultModelCredential,
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
@@ -278,9 +279,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
               select: { provider: true, displayName: true },
             }),
-            deps.prisma.userModelCredential.findFirst({
-              where: { userId: run.userId, workspaceId: run.workspaceId, isDefault: true },
-            }),
+            findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
         runAbortController = new AbortController();
