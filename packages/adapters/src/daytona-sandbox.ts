@@ -103,7 +103,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (request.providerRef && request.providerKind === "daytona") {
       try {
         const sandbox = await this.connect(request.providerRef);
-        await this.prepareWorkspace(sandbox);
         return this.ref(sandbox, request.botId, false);
       } catch (error) {
         this.forget(request.providerRef);
@@ -121,21 +120,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       { timeout: 120 },
     );
     this.boxes.set(sandbox.id, sandbox);
-    try {
-      await this.prepareWorkspace(sandbox);
-      return this.ref(sandbox, request.botId, true);
-    } catch (error) {
-      this.forget(sandbox.id);
-      try {
-        await sandbox.delete(120, true);
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          "Daytona workspace preparation and sandbox cleanup failed",
-        );
-      }
-      throw error;
-    }
+    return this.ref(sandbox, request.botId, true);
+  }
+
+  async prepare(computer: ComputerRef, _context: AdapterContext): Promise<void> {
+    await this.prepareWorkspace(await this.box(computer));
   }
 
   async *execute(
@@ -350,8 +339,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       batchBytes += file.content.byteLength;
     }
     await flush();
-    await configurePortableBrowserProfiles(sandbox, await this.workspaceRoot(sandbox));
-    this.prepared.add(sandbox.id);
     await this.openBrowser(sandbox).catch(() => undefined);
   }
 

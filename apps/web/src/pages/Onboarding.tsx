@@ -309,7 +309,14 @@ export function OnboardingPage() {
               >
                 Continue
               </button>
-              <button type="button" onClick={() => setStep("bot")} className="text-[#85858A]">
+              <button
+                type="button"
+                onClick={() => {
+                  cancelOAuthAttempt();
+                  setStep("bot");
+                }}
+                className="text-[#85858A]"
+              >
                 Skip for now
               </button>
             </div>

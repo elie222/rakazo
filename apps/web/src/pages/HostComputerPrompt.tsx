@@ -1,8 +1,9 @@
+import type { Me } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
 
-export function HostComputerPrompt() {
+export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
   const desktop = desktopBridge();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -12,13 +13,17 @@ export function HostComputerPrompt() {
 
   useEffect(() => {
     if (!desktop) return;
+    if (initialMe) {
+      if (initialMe.canChooseHostComputer && initialMe.computerHost == null) setOpen(true);
+      return;
+    }
     void rpc
       .me()
       .then((me) => {
         if (me.canChooseHostComputer && me.computerHost == null) setOpen(true);
       })
       .catch(() => undefined);
-  }, [desktop]);
+  }, [desktop, initialMe]);
 
   if (!open) return null;
 

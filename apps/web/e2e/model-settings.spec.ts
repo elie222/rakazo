@@ -64,6 +64,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.getByRole("button", { name: /Scripted/ }).click();
   await cancelled;
   expect(finishRequests).toBe(0);
-  await expect(page.getByLabel("Replace API key")).toBeEnabled();
+  await page.getByLabel("Replace API key").fill("fake-scripted-key-three");
+  await expect(page.getByRole("button", { name: "Replace API key" })).toBeEnabled();
   await expect(page.getByText("Waiting for sign-in…")).toBeHidden();
 });

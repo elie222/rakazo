@@ -87,6 +87,8 @@ export class DockerSandboxProvider implements SandboxProvider {
     };
   }
 
+  async prepare(_computer: ComputerRef, _context: AdapterContext): Promise<void> {}
+
   async *execute(
     computer: ComputerRef,
     request: CommandRequest,

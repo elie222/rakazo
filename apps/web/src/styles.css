@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@rakazo/ui-tokens/css";
+@import "@fontsource-variable/geist/wght.css";
 
 @source "../../packages/ui-web/src/**/*.{ts,tsx}";
 @source "./src/**/*.{ts,tsx}";
@@ -11,7 +12,7 @@ body,
   margin: 0;
   background: #050506;
   color: #dfdfe2;
-  font-family: Geist, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 .rk-scroll::-webkit-scrollbar {

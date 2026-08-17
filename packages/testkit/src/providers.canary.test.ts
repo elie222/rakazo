@@ -44,6 +44,7 @@ describeE2b("live E2B canary", () => {
       ctx,
     );
     try {
+      await sandbox.prepare(computer, ctx);
       let stdout = "";
       for await (const event of sandbox.execute(computer, { argv: ["echo", "e2b-ok"] }, ctx)) {
         if (event.type === "stdout") stdout += event.data;

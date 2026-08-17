@@ -39,6 +39,7 @@ import type {
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
+  /** Allocate or reconnect the computer, returning its reference before fallible setup. */
   provision(
     request: {
       botId: string;
@@ -48,6 +49,8 @@ export interface SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
+  /** Perform idempotent provider setup after the lifecycle has captured the reference. */
+  prepare(computer: ComputerRef, context: AdapterContext): Promise<void>;
   execute(
     computer: ComputerRef,
     request: CommandRequest,

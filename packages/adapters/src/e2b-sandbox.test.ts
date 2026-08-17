@@ -19,6 +19,44 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
   });
 
+  it("prepares a reused computer idempotently", async () => {
+    let profilesConfigured = false;
+    const command = vi.fn(async (value: string) => {
+      if (value.startsWith('test "$(readlink') && !profilesConfigured) {
+        throw new Error("profiles are not configured");
+      }
+      if (value.includes("ln -s")) profilesConfigured = true;
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "reused-e2b-box",
+      commands: { run: command },
+      launch: vi.fn(async () => undefined),
+      open: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    const computer = await provider.provision(
+      {
+        botId: "bot-1",
+        homePath: "/unused",
+        providerRef: "reused-e2b-box",
+        providerKind: "e2b",
+      },
+      context,
+    );
+
+    await provider.prepare(computer, context);
+    await provider.prepare(computer, context);
+
+    expect(command.mock.calls.filter(([value]) => String(value).includes("ln -s"))).toHaveLength(1);
+    expect(desktop.launch).toHaveBeenCalledTimes(1);
+  });
+
   it("controls the desktop and exposes a portable workspace", async () => {
     const files = new Map<string, Uint8Array>();
     const leftClick = vi.fn(async () => undefined);
@@ -107,6 +145,7 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(sdk.connect).not.toHaveBeenCalled();
+    await provider.prepare(computer, context);
     await provider.importWorkspace(
       computer,
       (async function* () {

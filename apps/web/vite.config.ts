@@ -113,10 +113,25 @@ export default defineConfig(({ mode }) => {
     ...process.env,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? rootEnv.BETTER_AUTH_SECRET,
   });
+  const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   return {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        name: "rakazo-performance-asset-delay",
+        configurePreviewServer(server) {
+          if (!Number.isFinite(performanceAssetDelayMs) || performanceAssetDelayMs <= 0) return;
+          server.middlewares.use((req, _res, next) => {
+            const pathname = req.url?.split("?", 1)[0] ?? "/";
+            if (["/api", "/rpc", "/novnc"].some((prefix) => pathname.startsWith(prefix))) {
+              next();
+              return;
+            }
+            setTimeout(next, performanceAssetDelayMs);
+          });
+        },
+      },
       {
         name: "rakazo-novnc-proxy",
         configureServer: (server) => attachNovncProxy(server, screenProxySecret),
