@@ -145,7 +145,12 @@ describe("PiOAuthLogins", () => {
       modelId: "gpt-5.4",
     });
     if (done.status === "connected") expect(done.credential.access).toBe("live-access");
-    logins.consume(started.loginId);
+    const persisted = await logins.finish(
+      started.loginId,
+      { userId: "u", workspaceId: "w" },
+      async (result) => result.credential.access,
+    );
+    expect(persisted).toEqual({ status: "connected", value: "live-access" });
     const gone = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
     expect(gone.status).toBe("error");
   });
@@ -171,18 +176,72 @@ describe("PiOAuthLogins", () => {
       provider: CHATGPT_OAUTH_PROVIDER,
     });
 
-    logins.cancel(started.loginId, { userId: "other", workspaceId: "workspace" });
+    await logins.cancel(started.loginId, { userId: "other", workspaceId: "workspace" });
     expect(
       (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
         .status,
     ).toBe("pending");
 
-    logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
+    await logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
     expect(aborted).toBe(true);
     expect(
       (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
         .status,
     ).toBe("error");
+  });
+
+  it("orders cancellation behind an in-flight persistence claim", async () => {
+    let finishLogin!: (credential: OAuthCredential) => void;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "COMMIT",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<Credential>((resolve) => {
+        finishLogin = (credential) => resolve(credential);
+      });
+    });
+    const started = await logins.begin({
+      userId: "owner",
+      workspaceId: "workspace",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    finishLogin(oauthCred());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    let persistenceStarted!: () => void;
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const finishing = logins.finish(
+      started.loginId,
+      { userId: "owner", workspaceId: "workspace" },
+      async () => {
+        persistenceStarted();
+        await persistence;
+        return "saved";
+      },
+    );
+    await startedPersistence;
+
+    let cancellationFinished = false;
+    const cancelling = logins
+      .cancel(started.loginId, { userId: "owner", workspaceId: "workspace" })
+      .then(() => {
+        cancellationFinished = true;
+      });
+    await Promise.resolve();
+    expect(cancellationFinished).toBe(false);
+
+    releasePersistence();
+    await expect(finishing).resolves.toEqual({ status: "connected", value: "saved" });
+    await cancelling;
+    expect(cancellationFinished).toBe(true);
   });
 
   it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {

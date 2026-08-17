@@ -207,29 +207,33 @@ export function createRouter(deps: RouterDeps) {
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
-        const result = await deps.oauthLogins.complete(input.loginId, context.actor);
+        const result = await deps.oauthLogins.finish(
+          input.loginId,
+          context.actor,
+          async (login) => {
+            const signal = context.signal
+              ? AbortSignal.any([context.signal, login.signal])
+              : login.signal;
+            throwIfAborted(signal);
+            return persistModelCredential(deps, context.actor, {
+              provider: login.provider,
+              plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+              label: login.label ?? "ChatGPT Plus/Pro",
+              modelId: login.modelId,
+              signal,
+            });
+          },
+        );
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
-        const signal = context.signal
-          ? AbortSignal.any([context.signal, result.signal])
-          : result.signal;
-        throwIfAborted(signal);
-        const credential = await persistModelCredential(deps, context.actor, {
-          provider: result.provider,
-          plaintext: serializeModelSecret({ kind: "oauth", credential: result.credential }),
-          label: result.label ?? "ChatGPT Plus/Pro",
-          modelId: result.modelId,
-          signal,
-        });
-        deps.oauthLogins.consume(input.loginId);
-        return credential;
+        return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {

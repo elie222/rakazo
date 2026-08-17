@@ -45,16 +45,23 @@ export type StoredModelSecret =
   | { kind: "api_key"; key: string }
   | { kind: "oauth"; credential: OAuthCredential };
 
+export type PiOAuthConnected = {
+  status: "connected";
+  credential: OAuthCredential;
+  provider: string;
+  modelId?: string;
+  label?: string;
+  signal: AbortSignal;
+};
+
 export type PiOAuthComplete =
   | { status: "pending" }
-  | {
-      status: "connected";
-      credential: OAuthCredential;
-      provider: string;
-      modelId?: string;
-      label?: string;
-      signal: AbortSignal;
-    }
+  | PiOAuthConnected
+  | { status: "error"; error: string };
+
+export type PiOAuthFinish<T> =
+  | { status: "pending" }
+  | { status: "connected"; value: T }
   | { status: "error"; error: string };
 
 export type PiOAuthBegin = {
@@ -81,6 +88,7 @@ type Session = {
   abort: AbortController;
   credential?: OAuthCredential;
   error?: string;
+  finishing?: Promise<void>;
 };
 
 function isOAuthCredential(value: Credential): value is OAuthCredential {
@@ -275,10 +283,7 @@ export class PiOAuthLogins {
     }
   }
 
-  async complete(
-    loginId: string,
-    actor: { userId: string; workspaceId: string },
-  ): Promise<PiOAuthComplete> {
+  complete(loginId: string, actor: { userId: string; workspaceId: string }): PiOAuthComplete {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
       return { status: "error", error: "Sign-in session not found. Start sign-in again." };
@@ -300,19 +305,53 @@ export class PiOAuthLogins {
     return { status: "pending" };
   }
 
-  consume(loginId: string): void {
-    const session = this.pending.get(loginId);
-    session?.abort.abort();
-    this.pending.delete(loginId);
-  }
-
-  cancel(loginId: string, actor: { userId: string; workspaceId: string }): void {
+  async finish<T>(
+    loginId: string,
+    actor: { userId: string; workspaceId: string },
+    persist: (result: PiOAuthConnected) => Promise<T>,
+  ): Promise<PiOAuthFinish<T>> {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
+      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
+    }
+    if (session.finishing) return { status: "pending" };
+    const result = this.complete(loginId, actor);
+    if (result.status !== "connected") return result;
+
+    // Claim the session before persistence. Cancellation may request an abort, but waits for
+    // this claim to settle so it can never return before a later credential commit.
+    const finishing = deferred<void>();
+    session.finishing = finishing.promise;
+    try {
+      const value = await persist(result);
+      if (this.pending.get(loginId) === session) this.pending.delete(loginId);
+      session.abort.abort();
+      return { status: "connected", value };
+    } finally {
+      if (this.pending.get(loginId) === session) session.finishing = undefined;
+      finishing.resolve(undefined);
+    }
+  }
+
+  async cancel(loginId: string, actor: { userId: string; workspaceId: string }): Promise<void> {
+    while (true) {
+      const session = this.pending.get(loginId);
+      if (
+        !session ||
+        session.userId !== actor.userId ||
+        session.workspaceId !== actor.workspaceId
+      ) {
+        return;
+      }
+      if (session.finishing) {
+        session.abort.abort(new Error("Sign-in cancelled."));
+        await session.finishing;
+        continue;
+      }
+      session.abort.abort(new Error("Sign-in cancelled."));
+      this.pending.delete(loginId);
       return;
     }
-    session.abort.abort(new Error("Sign-in cancelled."));
-    this.pending.delete(loginId);
   }
 
   abortAll(): void {
