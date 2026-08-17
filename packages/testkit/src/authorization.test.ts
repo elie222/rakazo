@@ -57,6 +57,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
+      ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["bots/list"],
       ["bots/listArchived"],
@@ -360,6 +361,33 @@ describeWithDatabase("API authorization and resource isolation", () => {
       modelId: "a/one",
     });
     expect(connectedA.isDefault).toBe(true);
+    const providerABeforeRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+
+    const rotatedA = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-a",
+      apiKey: "fake-provider-a-replacement-key",
+      label: "Provider A rotated",
+      modelId: "a/rotated",
+    });
+    const providerAAfterRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+    expect(rotatedA.id).toBe(connectedA.id);
+    expect(providerAAfterRotation.secretId).not.toBe(providerABeforeRotation.secretId);
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: providerABeforeRotation.secretId } }),
+    ).toBeNull();
+    expect(
+      await handles.prisma.userModelCredential.count({
+        where: {
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          provider: "provider-a",
+        },
+      }),
+    ).toBe(1);
 
     const connectedB = await rpc<ModelCredential>(app, cookie, "models/connect", {
       provider: "provider-b",
@@ -466,10 +494,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       defaultModel: "older/model",
     });
     const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
-    expect(listed.filter((row) => row.provider === "duplicate-provider").map((row) => row.id)).toEqual([
-      newer.id,
-      older.id,
-    ]);
+    expect(
+      listed.filter((row) => row.provider === "duplicate-provider").map((row) => row.id),
+    ).toEqual([newer.id, older.id]);
   });
 
   it("restricts deployment settings to the deployment owner", async () => {

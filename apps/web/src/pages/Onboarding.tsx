@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type ModelCatalogEntry, providerHint, waitForModelOAuth } from "../lib/model-auth";
+import {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
+  type ModelCatalogEntry,
+  providerHint,
+  waitForModelOAuth,
+} from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 
 const QUESTIONS = [
@@ -45,6 +51,20 @@ export function OnboardingPage() {
     userCode: string;
   } | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
+  const oauthAbortRef = useRef<AbortController | null>(null);
+  const oauthLoginIdRef = useRef<string | null>(null);
+
+  function cancelOAuthAttempt(resetState = true) {
+    const loginId = oauthLoginIdRef.current;
+    oauthLoginIdRef.current = null;
+    cancelModelOAuthAttempt(oauthAbortRef, () => {
+      if (resetState) {
+        setOauth(null);
+        setOauthPending(false);
+      }
+    });
+    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+  }
 
   useEffect(() => {
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
@@ -63,6 +83,7 @@ export function OnboardingPage() {
         setStep("model");
       })
       .catch(() => setStep("bot"));
+    return () => cancelOAuthAttempt(false);
   }, []);
 
   const providers = useMemo(() => {
@@ -118,25 +139,38 @@ export function OnboardingPage() {
   async function startDeviceSignIn() {
     setError(null);
     setOauthPending(true);
+    const controller = new AbortController();
+    oauthAbortRef.current = controller;
     try {
-      const started = await rpc.models.beginOAuth({
-        provider,
-        modelId,
-        label: selected?.providerName ?? provider,
-      });
+      const started = await rpc.models.beginOAuth(
+        {
+          provider,
+          modelId,
+          label: selected?.providerName ?? provider,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = started.loginId;
       setOauth({
         verificationUri: started.verificationUri,
         userCode: started.userCode,
       });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      await waitForModelOAuth(started.loginId);
+      await waitForModelOAuth(started.loginId, controller.signal);
+      if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = null;
       setOauth(null);
       setStep("bot");
     } catch (err) {
+      if (controller.signal.aborted) return;
+      const loginId = oauthLoginIdRef.current;
+      oauthLoginIdRef.current = null;
+      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      setOauthPending(false);
+      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
     }
   }
 
@@ -179,10 +213,10 @@ export function OnboardingPage() {
                   key={entry.provider}
                   type="button"
                   onClick={() => {
+                    cancelOAuthAttempt();
                     setProvider(entry.provider);
                     const first = catalog.find((item) => item.provider === entry.provider);
                     if (first) setModelId(first.id);
-                    setOauth(null);
                     setError(null);
                   }}
                   className={`flex w-full items-center justify-between border-b border-[#202023] px-3.5 py-2.5 text-left last:border-0 ${
@@ -200,7 +234,10 @@ export function OnboardingPage() {
               Model
               <select
                 value={selected?.id ?? modelId}
-                onChange={(e) => setModelId(e.target.value)}
+                onChange={(e) => {
+                  cancelOAuthAttempt();
+                  setModelId(e.target.value);
+                }}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               >
                 {modelsForProvider.map((entry) => (

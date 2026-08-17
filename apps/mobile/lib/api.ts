@@ -1,4 +1,4 @@
-import type { Bot, ComputerMode } from "@rakazo/contracts";
+import type { Bot, ComputerMode, Me, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -112,7 +112,11 @@ export async function deleteAccount(password: string) {
   await clearSessionToken();
 }
 
-export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
+export async function rpc<T>(
+  proc: string,
+  body: unknown = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
   const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
     method: "POST",
     headers: {
@@ -121,6 +125,7 @@ export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
       ...(await authHeaders()),
     },
     body: JSON.stringify({ json: body }),
+    signal: options.signal,
   });
   const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
   if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
@@ -142,34 +147,14 @@ export type MobileBot = Pick<
 > &
   Partial<Pick<Bot, "parentBotId">>;
 
-export type MobileMe = {
-  name: string;
-  email: string;
-  workspaceId?: string;
-  defaultProvider?: string | null;
-  defaultModel?: string | null;
-  needsModel?: boolean;
-};
+export type MobileMe = Pick<
+  Me,
+  "name" | "email" | "workspaceId" | "defaultProvider" | "defaultModel" | "needsModel"
+>;
 
-export type MobileModel = {
-  provider: string;
-  providerName?: string;
-  id: string;
-  label: string;
-  billing: string;
-  auth?: "api-key" | "oauth" | "both";
-  oauthLabel?: string;
-  subscription?: boolean;
-  signIn?: "device-code";
-};
+export type MobileModel = ModelCatalogEntry;
 
-export type MobileModelCredential = {
-  id: string;
-  provider: string;
-  label: string;
-  hasKey: boolean;
-  isDefault: boolean;
-};
+export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {
   id: string;

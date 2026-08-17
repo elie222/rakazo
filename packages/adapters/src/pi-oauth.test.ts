@@ -58,6 +58,26 @@ describe("PiOAuthLogins", () => {
     ).rejects.toThrow(/ChatGPT Plus\/Pro, GitHub Copilot, and SuperGrok/);
   });
 
+  it("does not start a login for an already-aborted request", async () => {
+    let started = false;
+    const logins = new PiOAuthLogins(async () => {
+      started = true;
+      return oauthCred();
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      logins.begin({
+        userId: "u",
+        workspaceId: "w",
+        provider: CHATGPT_OAUTH_PROVIDER,
+        signal: controller.signal,
+      }),
+    ).rejects.toBeDefined();
+    expect(started).toBe(false);
+  });
+
   it("returns a device code after selecting device_code login", async () => {
     const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
       const method = await interaction.prompt({
@@ -128,6 +148,41 @@ describe("PiOAuthLogins", () => {
     logins.consume(started.loginId);
     const gone = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
     expect(gone.status).toBe("error");
+  });
+
+  it("only lets the owning user and workspace cancel a login", async () => {
+    let aborted = false;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "device_code",
+        userCode: "CANCEL",
+        verificationUri: "https://auth.openai.com/codex/device",
+      });
+      return new Promise<never>((_, reject) => {
+        interaction.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        });
+      });
+    });
+    const started = await logins.begin({
+      userId: "owner",
+      workspaceId: "workspace",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+
+    logins.cancel(started.loginId, { userId: "other", workspaceId: "workspace" });
+    expect(
+      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
+        .status,
+    ).toBe("pending");
+
+    logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
+    expect(aborted).toBe(true);
+    expect(
+      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
+        .status,
+    ).toBe("error");
   });
 
   it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {

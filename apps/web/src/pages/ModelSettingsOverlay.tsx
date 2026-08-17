@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
   type ModelCatalogEntry,
   type ModelCredential,
   providerHint,
@@ -37,6 +39,19 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [notice, setNotice] = useState<string | null>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const oauthAbortRef = useRef<AbortController | null>(null);
+  const oauthLoginIdRef = useRef<string | null>(null);
+
+  function cancelOAuthAttempt(resetState = true) {
+    const loginId = oauthLoginIdRef.current;
+    oauthLoginIdRef.current = null;
+    cancelModelOAuthAttempt(oauthAbortRef, () => {
+      if (resetState) {
+        setOauth(null);
+        setOauthPending(false);
+      }
+    });
+    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+  }
 
   async function refresh() {
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
@@ -68,7 +83,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
         setError(err instanceof Error ? err.message : "Could not load model settings"),
       )
       .finally(() => setLoading(false));
-    return () => oauthAbortRef.current?.abort();
+    return () => cancelOAuthAttempt(false);
   }, []);
 
   const groups = useMemo(() => {
@@ -106,11 +121,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
+    cancelOAuthAttempt();
     setProvider(nextProvider);
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
-    setOauth(null);
     setError(null);
     setNotice(null);
   }
@@ -132,7 +147,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function connectKey() {
-    if (!selected || credential || !apiKey.trim()) return;
+    if (!selected || !apiKey.trim()) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -161,32 +176,39 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     try {
-      const started = await rpc.models.beginOAuth({
-        provider: selected.provider,
-        modelId: selected.id,
-        label: selected.providerName ?? selected.provider,
-      });
+      const started = await rpc.models.beginOAuth(
+        {
+          provider: selected.provider,
+          modelId: selected.id,
+          label: selected.providerName ?? selected.provider,
+        },
+        { signal: controller.signal },
+      );
       if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = started.loginId;
       setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
       await waitForModelOAuth(started.loginId, controller.signal);
       if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = null;
       setOauth(null);
       await refresh();
       if (controller.signal.aborted) return;
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
       if (controller.signal.aborted) return;
+      const loginId = oauthLoginIdRef.current;
+      oauthLoginIdRef.current = null;
+      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      if (oauthAbortRef.current === controller) oauthAbortRef.current = null;
-      if (!controller.signal.aborted) setOauthPending(false);
+      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
     }
   }
 
   function handleClose() {
-    oauthAbortRef.current?.abort();
+    cancelOAuthAttempt(false);
     onClose();
   }
 
@@ -280,6 +302,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     options={modelsForProvider}
                     value={selected.id}
                     onChange={(nextModelId) => {
+                      cancelOAuthAttempt();
                       setModelId(nextModelId);
                       setError(null);
                       setNotice(null);
@@ -336,10 +359,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : null}
 
-                {acceptsKey && !credential ? (
+                {acceptsKey ? (
                   <div className="mt-5">
                     <label className="block text-[13.5px] text-[#85858A]">
-                      {deviceSignIn ? "Or connect an API key" : "API key"}
+                      {credential
+                        ? "Replace API key"
+                        : deviceSignIn
+                          ? "Or connect an API key"
+                          : "API key"}
                       <input
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
@@ -357,7 +384,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       onClick={() => void connectKey()}
                       className="mt-3"
                     >
-                      {pending === "connect" ? "Connecting…" : "Connect API key"}
+                      {pending === "connect"
+                        ? "Saving…"
+                        : credential
+                          ? "Replace API key"
+                          : "Connect API key"}
                     </Button>
                   </div>
                 ) : null}

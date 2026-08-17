@@ -43,6 +43,17 @@ export default function Models() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const oauthAbortRef = useRef<AbortController | null>(null);
+  const oauthLoginIdRef = useRef<string | null>(null);
+
+  const cancelOAuth = useCallback(() => {
+    const loginId = oauthLoginIdRef.current;
+    oauthLoginIdRef.current = null;
+    cancelModelOAuthAttempt(oauthAbortRef, () => {
+      setOauth(null);
+      setOauthPending(false);
+    });
+    if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
+  }, []);
 
   const load = useCallback(async (preferred: ModelSelection = {}) => {
     setError(null);
@@ -79,12 +90,8 @@ export default function Models() {
           setError(err instanceof Error ? err.message : "Could not load model settings"),
         )
         .finally(() => setLoading(false));
-      return () =>
-        cancelModelOAuthAttempt(oauthAbortRef, () => {
-          setOauth(null);
-          setOauthPending(false);
-        });
-    }, [load]),
+      return cancelOAuth;
+    }, [cancelOAuth, load]),
   );
 
   const groups = useMemo(() => {
@@ -112,10 +119,10 @@ export default function Models() {
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
+    cancelOAuth();
     setProvider(nextProvider);
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     setApiKey("");
-    setOauth(null);
     setError(null);
     setNotice(null);
   }
@@ -137,7 +144,7 @@ export default function Models() {
   }
 
   async function connectKey() {
-    if (!selected || credential || !apiKey.trim()) return;
+    if (!selected || !apiKey.trim()) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -170,22 +177,31 @@ export default function Models() {
         loginId: string;
         verificationUri: string;
         userCode: string;
-      }>("models/beginOAuth", {
-        provider: selected.provider,
-        modelId: selected.id,
-        label: selected.providerName ?? selected.provider,
-      });
+      }>(
+        "models/beginOAuth",
+        {
+          provider: selected.provider,
+          modelId: selected.id,
+          label: selected.providerName ?? selected.provider,
+        },
+        { signal: controller.signal },
+      );
       if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = started.loginId;
       setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
       await Linking.openURL(started.verificationUri);
       await waitForModelOAuth(started.loginId, controller.signal);
       if (controller.signal.aborted) return;
+      oauthLoginIdRef.current = null;
       setOauth(null);
       await load({ provider, modelId });
       if (controller.signal.aborted) return;
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
       if (controller.signal.aborted) return;
+      const loginId = oauthLoginIdRef.current;
+      oauthLoginIdRef.current = null;
+      if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
@@ -254,6 +270,7 @@ export default function Models() {
                   accessibilityRole="radio"
                   accessibilityState={{ selected: entry.id === selected.id }}
                   onPress={() => {
+                    cancelOAuth();
                     setModelId(entry.id);
                     setError(null);
                     setNotice(null);
@@ -313,10 +330,14 @@ export default function Models() {
               )
             ) : null}
 
-            {acceptsKey && !credential ? (
+            {acceptsKey ? (
               <View style={styles.keySection}>
                 <Text style={styles.sectionTitle}>
-                  {deviceSignIn ? "Or connect an API key" : "API key"}
+                  {credential
+                    ? "Replace API key"
+                    : deviceSignIn
+                      ? "Or connect an API key"
+                      : "API key"}
                 </Text>
                 <TextInput
                   accessibilityLabel="API key"
@@ -342,7 +363,11 @@ export default function Models() {
                   ]}
                 >
                   <Text style={styles.primaryLabel}>
-                    {pending === "connect" ? "Connecting…" : "Connect API key"}
+                    {pending === "connect"
+                      ? "Saving…"
+                      : credential
+                        ? "Replace API key"
+                        : "Connect API key"}
                   </Text>
                 </Pressable>
               </View>

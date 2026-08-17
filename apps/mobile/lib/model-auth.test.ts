@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "./api";
-import {
-  cancelModelOAuthAttempt,
-  finishModelOAuthAttempt,
-  waitForModelOAuth,
-} from "./model-auth";
+import { cancelModelOAuthAttempt, finishModelOAuthAttempt, waitForModelOAuth } from "./model-auth";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 

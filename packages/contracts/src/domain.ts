@@ -189,6 +189,20 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
 });
+export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
+
+export const ModelCatalogEntrySchema = z.object({
+  provider: z.string(),
+  providerName: z.string().optional(),
+  id: z.string(),
+  label: z.string(),
+  billing: z.string(),
+  auth: z.enum(["api-key", "oauth", "both"]).optional(),
+  oauthLabel: z.string().optional(),
+  subscription: z.boolean().optional(),
+  signIn: z.enum(["device-code"]).optional(),
+});
+export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
 export const DeploymentSettingsSchema = z.object({
   ownerUserId: Id.nullable(),

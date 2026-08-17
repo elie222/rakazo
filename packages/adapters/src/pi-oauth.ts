@@ -177,15 +177,22 @@ export class PiOAuthLogins {
     provider: string;
     modelId?: string;
     label?: string;
+    signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
     if (!isDeviceCodeProvider(input.provider)) {
       throw new Error(
         "In-app subscription sign-in is only available for ChatGPT Plus/Pro, GitHub Copilot, and SuperGrok.",
       );
     }
+    if (input.signal?.aborted) {
+      throw input.signal.reason ?? new Error("Sign-in cancelled.");
+    }
     this.abortForUserProvider(input.userId, input.provider);
 
     const abort = new AbortController();
+    const abortFromRequest = () => abort.abort(input.signal?.reason);
+    if (input.signal?.aborted) abortFromRequest();
+    else input.signal?.addEventListener("abort", abortFromRequest, { once: true });
     const loginId = randomUUID();
     const session: Session = {
       id: loginId,
@@ -250,6 +257,8 @@ export class PiOAuthLogins {
           throw new Error("Subscription sign-in did not start. Try again.");
         }),
       ]);
+      input.signal?.removeEventListener("abort", abortFromRequest);
+      if (abort.signal.aborted) throw abort.signal.reason ?? new Error("Sign-in cancelled.");
       return {
         loginId,
         provider: input.provider,
@@ -258,6 +267,7 @@ export class PiOAuthLogins {
         expiresInSeconds: started.expiresInSeconds,
       };
     } catch (error) {
+      input.signal?.removeEventListener("abort", abortFromRequest);
       abort.abort();
       this.pending.delete(loginId);
       throw error;
@@ -291,6 +301,15 @@ export class PiOAuthLogins {
   consume(loginId: string): void {
     const session = this.pending.get(loginId);
     session?.abort.abort();
+    this.pending.delete(loginId);
+  }
+
+  cancel(loginId: string, actor: { userId: string; workspaceId: string }): void {
+    const session = this.pending.get(loginId);
+    if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
+      return;
+    }
+    session.abort.abort(new Error("Sign-in cancelled."));
     this.pending.delete(loginId);
   }
 
