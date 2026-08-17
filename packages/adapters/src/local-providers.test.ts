@@ -14,4 +14,15 @@ describe("Local MLX provider reasoning config", () => {
     expect(model.reasoning).toBe(true);
     expect(model.compat?.thinkingFormat).toBe("qwen-chat-template");
   });
+
+  it("sends the system prompt as role 'system', not the 'developer' role mlx-openai-server rejects", () => {
+    const models = withLocalProviders(createModels());
+    const provider = models.getProvider("local-mlx");
+    const [model] = provider?.getModels() ?? [];
+    if (!model || !hasApi(model, "openai-completions")) {
+      throw new Error("expected an openai-completions local-mlx model");
+    }
+
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+  });
 });

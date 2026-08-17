@@ -37,10 +37,16 @@ function localModel(
     provider,
     baseUrl,
     reasoning,
-    // mlx-openai-server's Qwen3.5 chat template reads chat_template_kwargs.enable_thinking;
-    // without this, it defaults to reasoning_effort "xhigh" on every turn, which can burn the
-    // whole maxTokens budget on <think> and never reach an answer.
-    ...(reasoning ? { compat: { thinkingFormat: "qwen-chat-template" as const } } : {}),
+    compat: {
+      // Neither Ollama's nor mlx-openai-server's OpenAI-compatible endpoint recognizes the
+      // newer "developer" role pi defaults to for the system prompt; mlx-openai-server rejects
+      // it outright with a 422. "system" is the role every such server actually understands.
+      supportsDeveloperRole: false,
+      // mlx-openai-server's Qwen3.5 chat template reads chat_template_kwargs.enable_thinking;
+      // without this, it defaults to reasoning_effort "xhigh" on every turn, which can burn the
+      // whole maxTokens budget on <think> and never reach an answer.
+      ...(reasoning ? { thinkingFormat: "qwen-chat-template" as const } : {}),
+    },
     input: ["text"],
     contextWindow,
     maxTokens: DEFAULT_MAX_TOKENS,
