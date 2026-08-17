@@ -71,6 +71,8 @@ export function ShellPage() {
     prompt: "",
     schedule: defaultCronPreset(),
   });
+  const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
+  const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [usage, setUsage] = useState<{
@@ -799,6 +801,7 @@ export function ShellPage() {
                         prompt: routine.prompt,
                         schedule: presetFromCron(routine.cron),
                       });
+                      setEditingRoutineId(routine.id);
                       setPanel("routine");
                     }}
                     className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
@@ -819,6 +822,7 @@ export function ShellPage() {
                       await refreshThread(active.id);
                     } else {
                       setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
+                      setEditingRoutineId(null);
                       setPanel("routine");
                     }
                   }}
@@ -830,6 +834,7 @@ export function ShellPage() {
                   type="button"
                   onClick={() => {
                     setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
+                    setEditingRoutineId(null);
                     setPanel("routine");
                   }}
                   className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
@@ -917,25 +922,49 @@ export function ShellPage() {
                     onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await rpc.routines.create({
-                      botId: active.id,
-                      name: routineDraft.name || "Routine",
-                      prompt: routineDraft.prompt || "Check in.",
-                      cron: cronFromPreset(routineDraft.schedule),
-                      timezone: "UTC",
-                      active: true,
-                      notify: true,
-                    });
-                    await refreshThread(active.id);
-                    setPanel("computer");
-                  }}
-                  className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
-                >
-                  Save
-                </button>
+                <div className="mt-5 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (editingRoutineId) {
+                        await rpc.routines.update({
+                          routineId: editingRoutineId,
+                          name: routineDraft.name || "Routine",
+                          prompt: routineDraft.prompt || "Check in.",
+                          cron: cronFromPreset(routineDraft.schedule),
+                          timezone: "UTC",
+                        });
+                      } else {
+                        await rpc.routines.create({
+                          botId: active.id,
+                          name: routineDraft.name || "Routine",
+                          prompt: routineDraft.prompt || "Check in.",
+                          cron: cronFromPreset(routineDraft.schedule),
+                          timezone: "UTC",
+                          active: true,
+                          notify: true,
+                        });
+                      }
+                      await refreshThread(active.id);
+                      setPanel("computer");
+                    }}
+                    className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
+                  >
+                    Save
+                  </button>
+                  {editingRoutineId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const routine = routines.find((r) => r.id === editingRoutineId);
+                        if (routine) setDeleteRoutineTarget(routine);
+                      }}
+                      className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364]"
+                    >
+                      Delete routine
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>
@@ -991,6 +1020,20 @@ export function ShellPage() {
             setDeleteTarget(null);
             setPanel(null);
             await refreshBots(true);
+          }}
+        />
+      ) : null}
+
+      {deleteRoutineTarget ? (
+        <DeleteRoutineDialog
+          routine={deleteRoutineTarget}
+          onCancel={() => setDeleteRoutineTarget(null)}
+          onConfirm={async () => {
+            await rpc.routines.remove({ routineId: deleteRoutineTarget.id });
+            setDeleteRoutineTarget(null);
+            setEditingRoutineId(null);
+            setPanel("computer");
+            await refreshThread(deleteRoutineTarget.botId);
           }}
         />
       ) : null}
@@ -1678,6 +1721,79 @@ function DeleteBotDialog({
               setError(null);
               void onConfirm(deleteMemories).catch((err: unknown) => {
                 setError(err instanceof Error ? err.message : "Could not delete bot");
+                setDeleting(false);
+              });
+            }}
+            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteRoutineDialog({
+  routine,
+  onCancel,
+  onConfirm,
+}: {
+  routine: Routine;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !deleting) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deleting, onCancel]);
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!deleting) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-routine-title"
+        aria-describedby="delete-routine-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          Delete {routine.name}?
+        </h2>
+        <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+          This cannot be undone.
+        </p>
+        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => {
+              setDeleting(true);
+              setError(null);
+              void onConfirm().catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not delete routine");
                 setDeleting(false);
               });
             }}
