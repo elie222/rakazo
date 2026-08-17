@@ -200,20 +200,17 @@ export function createRouter(deps: RouterDeps) {
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
+        throwIfAborted(context.signal);
         const result = await deps.oauthLogins.finish(
           input.loginId,
           context.actor,
           async (login) => {
-            const signal = context.signal
-              ? AbortSignal.any([context.signal, login.signal])
-              : login.signal;
-            throwIfAborted(signal);
             return persistModelCredential(deps, context.actor, {
               provider: login.provider,
               plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
               label: login.label ?? "ChatGPT Plus/Pro",
               modelId: login.modelId,
-              signal,
+              signal: login.signal,
             });
           },
         );
