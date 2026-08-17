@@ -25,6 +25,56 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
+type TestActor = { userId: string; workspaceId: string };
+
+function createControlledOAuthLogins() {
+  let startedCount = 0;
+  const resolvers = new Map<number, (credential: Credential) => void>();
+  const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+    const index = startedCount++;
+    interaction.notify({
+      type: "device_code",
+      userCode: `CODE-${index}`,
+      verificationUri: "https://auth.openai.com/codex/device",
+    });
+    return new Promise<Credential>((resolve, reject) => {
+      resolvers.set(index, resolve);
+      interaction.signal?.addEventListener(
+        "abort",
+        () => reject(new Error("aborted")),
+        { once: true },
+      );
+    });
+  });
+  return {
+    logins,
+    get startedCount() {
+      return startedCount;
+    },
+    resolve(index: number, credential: Credential = oauthCred()) {
+      const resolve = resolvers.get(index);
+      if (!resolve) throw new Error(`No OAuth login ${index} is waiting for a credential.`);
+      resolve(credential);
+    },
+  };
+}
+
+type ControlledOAuthLogins = ReturnType<typeof createControlledOAuthLogins>;
+
+async function beginControlledOAuth(
+  control: ControlledOAuthLogins,
+  actor: TestActor,
+  index = 0,
+) {
+  const started = await control.logins.begin({
+    ...actor,
+    provider: CHATGPT_OAUTH_PROVIDER,
+  });
+  control.resolve(index);
+  await flushMicrotasks();
+  return started;
+}
+
 describe("model secrets", () => {
   it("treats plaintext as an API key", () => {
     expect(parseModelSecret("sk-or-v1-abc")).toEqual({ kind: "api_key", key: "sk-or-v1-abc" });
@@ -392,6 +442,187 @@ describe("PiOAuthLogins", () => {
     expect(
       (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" })).status,
     ).toBe("connected");
+  });
+
+  it("waits for successful finalization before starting a replacement", async () => {
+    const actor = { userId: "owner", workspaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const original = await beginControlledOAuth(control, actor);
+
+    let releasePersistence!: () => void;
+    let persistenceStarted!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const finishing = control.logins.finish(original.loginId, actor, async () => {
+      persistenceStarted();
+      await persistence;
+      return "saved";
+    });
+    await startedPersistence;
+
+    const replacement = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    await flushMicrotasks();
+    expect(control.startedCount).toBe(1);
+
+    releasePersistence();
+    await expect(finishing).resolves.toEqual({ status: "connected", value: "saved" });
+    await expect(replacement).resolves.toMatchObject({ userCode: "CODE-1" });
+    expect(control.startedCount).toBe(2);
+    expect((await control.logins.complete(original.loginId, actor)).status).toBe("error");
+    control.logins.abortAll();
+  });
+
+  it("starts a replacement after failed finalization returns to ready", async () => {
+    const actor = { userId: "owner", workspaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const original = await beginControlledOAuth(control, actor);
+
+    let failPersistence!: (reason?: unknown) => void;
+    let persistenceStarted!: () => void;
+    const persistence = new Promise<void>((_, reject) => {
+      failPersistence = reject;
+    });
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const failure = new Error("persistence failed");
+    const finishing = control.logins.finish(original.loginId, actor, async () => {
+      persistenceStarted();
+      await persistence;
+      return "unreachable";
+    });
+    await startedPersistence;
+
+    const replacement = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    await flushMicrotasks();
+    expect(control.startedCount).toBe(1);
+
+    failPersistence(failure);
+    await expect(finishing).rejects.toBe(failure);
+    await expect(replacement).resolves.toMatchObject({ userCode: "CODE-1" });
+    expect(control.startedCount).toBe(2);
+    expect((await control.logins.complete(original.loginId, actor)).status).toBe("error");
+    control.logins.abortAll();
+  });
+
+  it("serializes concurrent replacements for one workspace scope", async () => {
+    const actor = { userId: "owner", workspaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const original = await beginControlledOAuth(control, actor);
+
+    let releasePersistence!: () => void;
+    let persistenceStarted!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const finishing = control.logins.finish(original.loginId, actor, async () => {
+      persistenceStarted();
+      await persistence;
+      return "saved";
+    });
+    await startedPersistence;
+
+    const replacementA = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    const replacementB = control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    await flushMicrotasks();
+    expect(control.startedCount).toBe(1);
+
+    releasePersistence();
+    await finishing;
+    const replacements = await Promise.allSettled([replacementA, replacementB]);
+    expect(control.startedCount).toBe(3);
+    const fulfilled = replacements.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    const active: typeof fulfilled = [];
+    for (const replacement of fulfilled) {
+      if ((await control.logins.complete(replacement.loginId, actor)).status === "pending") {
+        active.push(replacement);
+      }
+    }
+    expect(active).toHaveLength(1);
+    control.logins.abortAll();
+  });
+
+  it("does not start an aborted replacement after finalization wait", async () => {
+    const actor = { userId: "owner", workspaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const original = await beginControlledOAuth(control, actor);
+
+    let releasePersistence!: () => void;
+    let persistenceStarted!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const finishing = control.logins.finish(original.loginId, actor, async () => {
+      persistenceStarted();
+      await persistence;
+      return "saved";
+    });
+    await startedPersistence;
+
+    const request = new AbortController();
+    const replacement = control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      signal: request.signal,
+    });
+    await flushMicrotasks();
+    request.abort(new Error("replacement cancelled"));
+    releasePersistence();
+
+    await finishing;
+    await expect(replacement).rejects.toBeDefined();
+    expect(control.startedCount).toBe(1);
+    control.logins.abortAll();
+  });
+
+  it("keeps replacement scopes isolated by workspace", async () => {
+    const ownerWorkspace = { userId: "owner", workspaceId: "workspace-a" };
+    const otherWorkspace = { userId: "owner", workspaceId: "workspace-b" };
+    const control = createControlledOAuthLogins();
+    const original = await beginControlledOAuth(control, ownerWorkspace);
+
+    let releasePersistence!: () => void;
+    let persistenceStarted!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const startedPersistence = new Promise<void>((resolve) => {
+      persistenceStarted = resolve;
+    });
+    const finishing = control.logins.finish(original.loginId, ownerWorkspace, async () => {
+      persistenceStarted();
+      await persistence;
+      return "saved";
+    });
+    await startedPersistence;
+
+    const otherWorkspaceLogin = await control.logins.begin({
+      ...otherWorkspace,
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    expect(otherWorkspaceLogin.userCode).toBe("CODE-1");
+    expect(control.startedCount).toBe(2);
+    expect((await control.logins.complete(original.loginId, ownerWorkspace)).status).toBe("pending");
+
+    releasePersistence();
+    await expect(finishing).resolves.toMatchObject({ status: "connected", value: "saved" });
+    expect((await control.logins.complete(original.loginId, ownerWorkspace)).status).toBe("error");
+    expect((await control.logins.complete(otherWorkspaceLogin.loginId, otherWorkspace)).status).toBe(
+      "pending",
+    );
+    control.logins.abortAll();
   });
 
   it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {
