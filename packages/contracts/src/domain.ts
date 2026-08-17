@@ -215,6 +215,15 @@ export const MeSchema = z.object({
 });
 export type Me = z.infer<typeof MeSchema>;
 
+export const AppBootstrapSchema = z.object({
+  me: MeSchema,
+  bots: z.array(BotSchema),
+  archivedBots: z.array(BotSchema),
+  thread: ThreadSnapshotSchema.nullable(),
+  routines: z.array(RoutineSchema),
+});
+export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
+
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),

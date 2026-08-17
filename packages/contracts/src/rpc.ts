@@ -1,6 +1,7 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import {
+  AppBootstrapSchema,
   ArtifactSchema,
   BotSchema,
   CapabilityInstallSchema,
@@ -29,6 +30,7 @@ const botId = z.object({ botId: Id });
 export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
+  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc

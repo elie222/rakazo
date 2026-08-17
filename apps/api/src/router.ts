@@ -107,31 +107,22 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
-    me: authed.me.handler(async ({ context }): Promise<Me> => {
+    me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
-      const user = await deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
-      const cred = await deps.prisma.userModelCredential.findFirst({
-        where: { userId: actor.userId, isDefault: true },
-      });
-      const settings = await deps.prisma.deploymentSettings.findUnique({
-        where: { id: "default" },
-      });
-      const hasDeployment = Boolean(
-        settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
-      );
-      return {
-        userId: actor.userId,
-        email: user.email,
-        name: user.name,
-        workspaceId: actor.workspaceId,
-        isDeploymentOwner: actor.isDeploymentOwner,
-        needsModel: !cred && !hasDeployment,
-        defaultProvider:
-          cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
-        defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-        computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
-        canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
-      };
+      const [me, bots, archivedBots] = await Promise.all([
+        meDto(deps, actor),
+        repos.listBots(actor),
+        repos.listBots(actor, { archived: true }),
+      ]);
+      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
+      const [thread, routines] = active
+        ? await Promise.all([
+            snapshot(deps, actor, active.id),
+            listRoutinesDto(deps, actor, active.id),
+          ])
+        : [null, []];
+      return { me, bots, archivedBots, thread, routines };
     }),
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
@@ -980,10 +971,7 @@ export function createRouter(deps: RouterDeps) {
     routines: {
       list: authed.routines.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
-        const rows = await deps.prisma.routine.findMany({
-          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
-        });
-        return rows.map(mapRoutine);
+        return listRoutinesDto(deps, context.actor, input.botId);
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -1466,6 +1454,31 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
   };
 }
 
+async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
+  const [user, cred, settings] = await Promise.all([
+    deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
+    deps.prisma.userModelCredential.findFirst({
+      where: { userId: actor.userId, isDefault: true },
+    }),
+    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+  ]);
+  const hasDeployment = Boolean(
+    settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
+  );
+  return {
+    userId: actor.userId,
+    email: user.email,
+    name: user.name,
+    workspaceId: actor.workspaceId,
+    isDeploymentOwner: actor.isDeploymentOwner,
+    needsModel: !cred && !hasDeployment,
+    defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
+    defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
+    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
+    canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
+  };
+}
+
 async function computerStatus(
   deps: RouterDeps,
   actor: Actor,
@@ -1664,6 +1677,13 @@ function mapRoutine(row: {
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
+  const rows = await deps.prisma.routine.findMany({
+    where: { botId, workspaceId: actor.workspaceId },
+  });
+  return rows.map(mapRoutine);
 }
 
 function withViewOnly(url: string, viewOnly: boolean) {

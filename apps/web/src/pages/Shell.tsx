@@ -3,6 +3,7 @@ import type {
   Bot,
   ComputerMode,
   ComputerStatus,
+  Me,
   ProductEvent,
   Routine,
   ThreadMessage,
@@ -19,15 +20,22 @@ import {
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   type Dispatch,
+  lazy,
+  memo,
+  type RefObject,
   type SetStateAction,
+  Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { takeInitialBootstrap } from "../lib/bootstrap";
+import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
 import {
   isComputerStatusEvent,
@@ -36,11 +44,19 @@ import {
   reduceComputerStatus,
   reduceThreadSnapshot,
 } from "../lib/thread-events";
-import { BotContextMenu, type ContextMenuPosition } from "./BotContextMenu";
+import type { ContextMenuPosition } from "./BotContextMenu";
 import { HostComputerPrompt } from "./HostComputerPrompt";
-import { PluginsOverlay } from "./PluginsOverlay";
-import { RoutineSchedule } from "./RoutineSchedule";
 import { WindowChrome } from "./WindowChrome";
+
+const BotContextMenu = lazy(() =>
+  import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
+);
+const PluginsOverlay = lazy(() =>
+  import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
+);
+const RoutineSchedule = lazy(() =>
+  import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
+);
 
 type Panel = "computer" | "settings" | "routine" | "create" | null;
 
@@ -53,7 +69,6 @@ export function ShellPage() {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
-  const [draft, setDraft] = useState("");
   const [panel, setPanel] = useState<Panel>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -66,6 +81,8 @@ export function ShellPage() {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
+  const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -79,6 +96,7 @@ export function ShellPage() {
     runs: number;
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
+  const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const manuallyUnread = useRef(new Set<string>());
@@ -134,11 +152,14 @@ export function ShellPage() {
   );
 
   async function refreshBots(includeArchived = false) {
+    markOnce("rk:renderer:bots-request-start");
     const [list, archived] = await Promise.all([
       rpc.bots.list(),
       includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
     ]);
+    markOnce("rk:renderer:bots-response");
     setBots(list);
+    setInitialBotsLoaded(true);
     if (archived) setArchivedBots(archived);
     if (includeArchived && list.length === 0 && archived?.length === 0) {
       navigate("/onboarding", { replace: true });
@@ -154,14 +175,18 @@ export function ShellPage() {
     const stickToEnd =
       !scrollElement ||
       scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
-    const snap = await rpc.threads.get({ botId: id });
+    markOnce("rk:renderer:thread-request-start");
+    const [snap, routines] = await Promise.all([
+      rpc.threads.get({ botId: id }),
+      rpc.routines.list({ botId: id }),
+      refreshComputerScreen(id),
+    ]);
+    markOnce("rk:renderer:thread-response");
     setSnapshot((prev) =>
       mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
     );
     setComputer(snap.computer);
-    const routines = await rpc.routines.list({ botId: id });
     setRoutines(routines);
-    await refreshComputerScreen(id);
     if (stickToEnd) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
@@ -207,9 +232,52 @@ export function ShellPage() {
   }
 
   useEffect(() => {
-    void refreshBots(true);
-    const poll = window.setInterval(() => void refreshBots().catch(() => undefined), 4000);
-    return () => window.clearInterval(poll);
+    let cancelled = false;
+    void takeInitialBootstrap(botId)
+      .then((bootstrap) => {
+        if (cancelled) return;
+        setBootstrapMe(bootstrap.me);
+        setBots(bootstrap.bots);
+        setArchivedBots(bootstrap.archivedBots);
+        setInitialBotsLoaded(true);
+        if (bootstrap.thread) {
+          bootstrappedThread.current = bootstrap.thread;
+          setSnapshot(bootstrap.thread);
+          setComputer(bootstrap.thread.computer);
+          setRoutines(bootstrap.routines);
+          markOnce("rk:renderer:bots-response");
+          markOnce("rk:renderer:thread-response");
+        }
+        if (bootstrap.bots.length === 0 && bootstrap.archivedBots.length === 0) {
+          navigate("/onboarding", { replace: true });
+          return;
+        }
+        const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
+        if (selectedBotId && selectedBotId !== botId) {
+          navigate(`/app/${selectedBotId}`, { replace: true });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBootstrapMe(null);
+        void refreshBots(true);
+      });
+    let refreshTimer: number | undefined;
+    const refreshVisibleBots = () => {
+      if (document.visibilityState !== "visible") return;
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void refreshBots().catch(() => undefined), 50);
+    };
+    window.addEventListener("focus", refreshVisibleBots);
+    document.addEventListener("visibilitychange", refreshVisibleBots);
+    const poll = window.setInterval(refreshVisibleBots, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(refreshTimer);
+      window.clearInterval(poll);
+      window.removeEventListener("focus", refreshVisibleBots);
+      document.removeEventListener("visibilitychange", refreshVisibleBots);
+    };
   }, []);
 
   useEffect(() => {
@@ -235,7 +303,10 @@ export function ShellPage() {
     expandedHistoryThread.current = null;
     const abort = new AbortController();
     void (async () => {
-      const snap = await refreshThread(active.id).catch(() => null);
+      const primed = bootstrappedThread.current;
+      bootstrappedThread.current = null;
+      const snap =
+        primed?.botId === active.id ? primed : await refreshThread(active.id).catch(() => null);
       if (abort.signal.aborted) return;
       let cursor = snap?.cursor ?? -1;
       let retryMs = 250;
@@ -291,14 +362,52 @@ export function ShellPage() {
     [bots, query],
   );
   const answerableAskMessageId = latestAnswerableAskMessageId(snapshot);
+  const shellReady = initialBotsLoaded && Boolean(active && snapshot?.botId === active.id);
+  const refreshThreadRef = useRef(refreshThread);
+  refreshThreadRef.current = refreshThread;
+  const loadOlderMessagesRef = useRef(loadOlderMessages);
+  loadOlderMessagesRef.current = loadOlderMessages;
 
-  async function send() {
-    if (!active || !draft.trim()) return;
-    const text = draft;
-    setDraft("");
-    await rpc.threads.send({ botId: active.id, text });
-    await refreshThread(active.id);
-  }
+  useLayoutEffect(() => {
+    if (initialBotsLoaded) {
+      markOnce("rk:renderer:bots-committed");
+      markAfterPaint("rk:renderer:bots-painted");
+    }
+    if (active && snapshot?.botId === active.id) {
+      markOnce("rk:renderer:thread-committed");
+      markAfterPaint("rk:renderer:thread-painted");
+    }
+    if (shellReady) {
+      markOnce("rk:renderer:shell-ready");
+      markAfterPaint("rk:renderer:shell-painted");
+    }
+  }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
+
+  const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
+  const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
+  const answerMessage = useCallback(async (message: ThreadMessage, text: string) => {
+    const id = activeBotId.current;
+    if (!id) return;
+    await rpc.threads.answer({
+      botId: id,
+      runId: message.runId ?? "",
+      messageId: message.id,
+      answer: text,
+    });
+    await refreshThreadRef.current(id);
+  }, []);
+  const sendMessage = useCallback(async (text: string) => {
+    const id = activeBotId.current;
+    if (!id || !text.trim()) return;
+    await rpc.threads.send({ botId: id, text });
+    await refreshThreadRef.current(id);
+  }, []);
+  const stopRun = useCallback(async () => {
+    const id = activeBotId.current;
+    if (!id) return;
+    await rpc.threads.stop({ botId: id });
+    await refreshThreadRef.current(id);
+  }, []);
 
   async function createBot(input: {
     name: string;
@@ -406,8 +515,14 @@ export function ShellPage() {
     .toUpperCase();
 
   return (
-    <div className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]">
-      <HostComputerPrompt />
+    <div
+      data-testid="shell-root"
+      data-ready={shellReady}
+      className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
+    >
+      {bootstrapMe !== undefined ? (
+        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
+      ) : null}
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
@@ -583,6 +698,7 @@ export function ShellPage() {
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button
             type="button"
+            aria-label="Bot settings"
             onClick={() => setPanel("settings")}
             className="flex min-w-0 items-center gap-3"
           >
@@ -613,95 +729,32 @@ export function ShellPage() {
             </svg>
           </button>
         </div>
-        <div
-          ref={messageScroll}
-          className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
-        >
-          {snapshot?.olderCursor != null ? (
-            <button
-              type="button"
-              disabled={loadingOlder}
-              onClick={() => void loadOlderMessages()}
-              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-            >
-              {loadingOlder ? "Loading…" : "Load earlier messages"}
-            </button>
-          ) : null}
-          {(snapshot?.messages ?? []).map((message) => (
-            <MessageView
-              key={message.id}
-              message={message}
-              canAnswer={message.id === answerableAskMessageId}
-              onOpenBot={(id) => navigate(`/app/${id}`)}
-              onAnswer={async (text) => {
-                if (!active) return;
-                await rpc.threads.answer({
-                  botId: active.id,
-                  runId: message.runId ?? "",
-                  messageId: message.id,
-                  answer: text,
-                });
-                await refreshThread(active.id);
-              }}
-            />
-          ))}
-          {snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status) ? (
-            <div className="flex justify-start">
-              <div
-                className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
-                style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
-              >
-                working…
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <div className="px-6 pb-6 pt-3">
-          <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
-            <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]">
-              +
-            </span>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder={active ? `Message ${active.name}` : "Message…"}
-              className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none"
-            />
-            {snapshot?.run && isActive(snapshot.run.status) ? (
-              <button
-                type="button"
-                aria-label="Stop"
-                onClick={() =>
-                  active &&
-                  void rpc.threads.stop({ botId: active.id }).then(() => refreshThread(active.id))
-                }
-                className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-              >
-                ■
-              </button>
-            ) : (
-              <button
-                type="button"
-                aria-label="Send"
-                onClick={() => void send()}
-                className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-              >
-                ↑
-              </button>
-            )}
-          </div>
-        </div>
+        <Transcript
+          scrollRef={messageScroll}
+          messages={snapshot?.messages ?? []}
+          olderCursor={snapshot?.olderCursor ?? null}
+          loadingOlder={loadingOlder}
+          answerableAskMessageId={answerableAskMessageId}
+          running={Boolean(
+            snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
+          )}
+          onLoadOlder={loadOlder}
+          onOpenBot={openBot}
+          onAnswer={answerMessage}
+        />
+        <Composer
+          activeName={active?.name}
+          running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
+          onSend={sendMessage}
+          onStop={stopRun}
+        />
       </main>
 
       <aside
-        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-200 ease-out ${
-          panel && active ? "w-[384px] border-l border-[#141416]" : "w-0"
+        data-testid="side-panel"
+        data-panel={panel ?? "closed"}
+        className={`absolute inset-y-0 right-0 z-20 flex w-[384px] min-h-0 flex-col overflow-hidden border-l border-[#141416] bg-[#0A0A0B] shadow-[-18px_0_45px_rgba(0,0,0,.24)] transition-transform duration-150 ease-out ${
+          panel && active ? "translate-x-0" : "pointer-events-none translate-x-full"
         }`}
       >
         {panel && active ? (
@@ -712,10 +765,14 @@ export function ShellPage() {
                   {computer?.state ?? active.status}
                 </span>
                 <div className="flex gap-3.5">
-                  <button type="button" onClick={() => setPanel("settings")}>
+                  <button
+                    type="button"
+                    aria-label="Bot settings"
+                    onClick={() => setPanel("settings")}
+                  >
                     ⚙
                   </button>
-                  <button type="button" onClick={() => setPanel(null)}>
+                  <button type="button" aria-label="Close panel" onClick={() => setPanel(null)}>
                     ✕
                   </button>
                 </div>
@@ -912,10 +969,12 @@ export function ShellPage() {
                 </label>
                 <div className="mt-5 text-[14px] text-[#85858A]">
                   When to run
-                  <RoutineSchedule
-                    value={routineDraft.schedule}
-                    onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
-                  />
+                  <Suspense fallback={null}>
+                    <RoutineSchedule
+                      value={routineDraft.schedule}
+                      onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
+                    />
+                  </Suspense>
                 </div>
                 <button
                   type="button"
@@ -942,60 +1001,62 @@ export function ShellPage() {
         ) : null}
       </aside>
 
-      {contextBot && botMenu ? (
-        <BotContextMenu
-          bot={contextBot}
-          position={botMenu.position}
-          onClose={closeBotMenu}
-          onTogglePinned={() => {
-            setBotMenu(null);
-            void rpc.bots
-              .update({ botId: contextBot.id, pinned: !contextBot.pinned })
-              .then(() => refreshBots());
-          }}
-          onToggleUnread={() => {
-            const unread = !contextBot.unread;
-            setBotMenu(null);
-            const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
-            void request.catch(() => undefined);
-          }}
-          onEdit={() => {
-            navigate(`/app/${contextBot.id}`);
-            setPanel("settings");
-            setBotMenu(null);
-          }}
-          onDuplicate={() => {
-            setBotMenu(null);
-            void rpc.bots.duplicate({ botId: contextBot.id }).then(async (bot) => {
-              await refreshBots();
-              navigate(`/app/${bot.id}`);
-            });
-          }}
-          onArchive={() => {
-            setBotMenu(null);
-            void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
-          }}
-          onDelete={() => {
-            setDeleteTarget(contextBot);
-            setBotMenu(null);
-          }}
-        />
-      ) : null}
+      <Suspense fallback={null}>
+        {contextBot && botMenu ? (
+          <BotContextMenu
+            bot={contextBot}
+            position={botMenu.position}
+            onClose={closeBotMenu}
+            onTogglePinned={() => {
+              setBotMenu(null);
+              void rpc.bots
+                .update({ botId: contextBot.id, pinned: !contextBot.pinned })
+                .then(() => refreshBots());
+            }}
+            onToggleUnread={() => {
+              const unread = !contextBot.unread;
+              setBotMenu(null);
+              const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
+              void request.catch(() => undefined);
+            }}
+            onEdit={() => {
+              navigate(`/app/${contextBot.id}`);
+              setPanel("settings");
+              setBotMenu(null);
+            }}
+            onDuplicate={() => {
+              setBotMenu(null);
+              void rpc.bots.duplicate({ botId: contextBot.id }).then(async (bot) => {
+                await refreshBots();
+                navigate(`/app/${bot.id}`);
+              });
+            }}
+            onArchive={() => {
+              setBotMenu(null);
+              void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
+            }}
+            onDelete={() => {
+              setDeleteTarget(contextBot);
+              setBotMenu(null);
+            }}
+          />
+        ) : null}
 
-      {deleteTarget ? (
-        <DeleteBotDialog
-          bot={deleteTarget}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={async (deleteMemories) => {
-            await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });
-            setDeleteTarget(null);
-            setPanel(null);
-            await refreshBots(true);
-          }}
-        />
-      ) : null}
+        {deleteTarget ? (
+          <DeleteBotDialog
+            bot={deleteTarget}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={async (deleteMemories) => {
+              await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });
+              setDeleteTarget(null);
+              setPanel(null);
+              await refreshBots(true);
+            }}
+          />
+        ) : null}
 
-      {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
+        {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
+      </Suspense>
 
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
@@ -1079,6 +1140,127 @@ export function ShellPage() {
   );
 }
 
+const Transcript = memo(function Transcript({
+  scrollRef,
+  messages,
+  olderCursor,
+  loadingOlder,
+  answerableAskMessageId,
+  running,
+  onLoadOlder,
+  onOpenBot,
+  onAnswer,
+}: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  messages: ThreadMessage[];
+  olderCursor: number | null;
+  loadingOlder: boolean;
+  answerableAskMessageId: string | null;
+  running: boolean;
+  onLoadOlder: () => void | Promise<void>;
+  onOpenBot: (botId: string) => void;
+  onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
+}) {
+  return (
+    <div
+      ref={scrollRef}
+      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
+    >
+      {olderCursor != null ? (
+        <button
+          type="button"
+          disabled={loadingOlder}
+          onClick={() => void onLoadOlder()}
+          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+        >
+          {loadingOlder ? "Loading…" : "Load earlier messages"}
+        </button>
+      ) : null}
+      {messages.map((message) => (
+        <MessageView
+          key={message.id}
+          message={message}
+          canAnswer={message.id === answerableAskMessageId}
+          onOpenBot={onOpenBot}
+          onAnswer={onAnswer}
+        />
+      ))}
+      {running ? (
+        <div className="flex justify-start">
+          <div
+            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
+            style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
+          >
+            working…
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+const Composer = memo(function Composer({
+  activeName,
+  running,
+  onSend,
+  onStop,
+}: {
+  activeName?: string;
+  running: boolean;
+  onSend: (text: string) => Promise<void>;
+  onStop: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function send() {
+    if (!draft.trim()) return;
+    const text = draft;
+    setDraft("");
+    void onSend(text);
+  }
+
+  return (
+    <div className="px-6 pb-6 pt-3">
+      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
+        <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]">
+          +
+        </span>
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              send();
+            }
+          }}
+          placeholder={activeName ? `Message ${activeName}` : "Message…"}
+          className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none"
+        />
+        {running ? (
+          <button
+            type="button"
+            aria-label="Stop"
+            onClick={() => void onStop()}
+            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+          >
+            ■
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="Send"
+            onClick={send}
+            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+          >
+            ↑
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
+
 function applyThreadEvent(
   event: ProductEvent,
   setSnapshot: Dispatch<SetStateAction<ThreadSnapshot | null>>,
@@ -1110,7 +1292,7 @@ function latestAnswerableAskMessageId(snapshot: ThreadSnapshot | null): string |
   return null;
 }
 
-function MessageView({
+const MessageView = memo(function MessageView({
   canAnswer,
   message,
   onAnswer,
@@ -1118,7 +1300,7 @@ function MessageView({
 }: {
   canAnswer: boolean;
   message: ThreadMessage;
-  onAnswer: (text: string) => Promise<void>;
+  onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
 }) {
   return (
@@ -1251,7 +1433,14 @@ function MessageView({
           );
         }
         if (block.kind === "ask") {
-          return <AskCard key={i} block={block} canAnswer={canAnswer} onAnswer={onAnswer} />;
+          return (
+            <AskCard
+              key={i}
+              block={block}
+              canAnswer={canAnswer}
+              onAnswer={(text) => onAnswer(message, text)}
+            />
+          );
         }
         if (block.kind === "computer") {
           return (
@@ -1275,7 +1464,7 @@ function MessageView({
       })}
     </>
   );
-}
+});
 
 type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
@@ -1504,7 +1693,7 @@ function BotSettings({
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div>
+    <div data-testid="bot-settings">
       <div className="flex justify-center">
         <BotAvatar color={bot.color} size={64} />
       </div>

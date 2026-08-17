@@ -4,6 +4,15 @@
 @source "../../packages/ui-web/src/**/*.{ts,tsx}";
 @source "./src/**/*.{ts,tsx}";
 
+@font-face {
+  font-family: "Geist";
+  src: url("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2")
+    format("woff2-variations");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 html,
 body,
 #root {
@@ -11,7 +20,7 @@ body,
   margin: 0;
   background: #050506;
   color: #dfdfe2;
-  font-family: Geist, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
 }
 
 .rk-scroll::-webkit-scrollbar {
