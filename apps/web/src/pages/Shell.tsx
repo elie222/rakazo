@@ -362,6 +362,14 @@ export function ShellPage() {
     setComputerOpen(false);
   }, [active?.id]);
 
+  // The routine panel copies a routine's data into local draft state at click time
+  // rather than deriving it from `active`, so it goes stale across a bot switch —
+  // without this, Save on bot B could silently update bot A's routine.
+  useEffect(() => {
+    setEditingRoutineId(null);
+    setPanel((current) => (current === "routine" ? null : current));
+  }, [active?.id]);
+
   useEffect(() => {
     if (!computerOpen) return;
     function onKey(event: KeyboardEvent) {
