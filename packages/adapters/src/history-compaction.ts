@@ -5,21 +5,29 @@ import {
   supermemoryContainerTag,
 } from "./supermemory-client.js";
 
+/**
+ * Sentinel for "nothing compacted yet". Message `seq` is 0-based, so an exclusive lower bound of
+ * -1 is what includes a thread's very first message in the first compaction batch.
+ */
+const NOTHING_COMPACTED = -1;
+
 export function shouldEnqueueCompaction(
   nextMessageSeq: number,
   historyCompactedUpToSeq: number | null,
   windowSize: number,
   batchSize: number,
 ): boolean {
-  const compactedUpTo = historyCompactedUpToSeq ?? 0;
-  return nextMessageSeq - compactedUpTo >= windowSize + batchSize;
+  const compactedUpTo = historyCompactedUpToSeq ?? NOTHING_COMPACTED;
+  // Messages occupy seq 0..nextMessageSeq-1, and everything up to and including compactedUpTo is
+  // already compacted, so the uncompacted count is (nextMessageSeq - 1) - compactedUpTo.
+  return nextMessageSeq - compactedUpTo - 1 >= windowSize + batchSize;
 }
 
 export function nextCompactionBatchRange(
   historyCompactedUpToSeq: number | null,
   batchSize: number,
 ): { fromSeqExclusive: number; take: number } {
-  return { fromSeqExclusive: historyCompactedUpToSeq ?? 0, take: batchSize };
+  return { fromSeqExclusive: historyCompactedUpToSeq ?? NOTHING_COMPACTED, take: batchSize };
 }
 
 export const COMPACTION_BATCH_SIZE = 50;

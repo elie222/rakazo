@@ -20,14 +20,16 @@ describe("shouldEnqueueCompaction", () => {
   });
 
   it("accounts for messages already compacted", () => {
-    expect(shouldEnqueueCompaction(149, 50, 50, 50)).toBe(false);
-    expect(shouldEnqueueCompaction(150, 50, 50, 50)).toBe(true);
+    // A cursor of 50 means seq 0..50 are compacted, so seq 51..150 (100 messages, reached at
+    // nextMessageSeq 151) is the first point a full batch has aged out beyond the window.
+    expect(shouldEnqueueCompaction(150, 50, 50, 50)).toBe(false);
+    expect(shouldEnqueueCompaction(151, 50, 50, 50)).toBe(true);
   });
 });
 
 describe("nextCompactionBatchRange", () => {
-  it("starts from the beginning when nothing has been compacted", () => {
-    expect(nextCompactionBatchRange(null, 50)).toEqual({ fromSeqExclusive: 0, take: 50 });
+  it("starts before the first message when nothing has been compacted", () => {
+    expect(nextCompactionBatchRange(null, 50)).toEqual({ fromSeqExclusive: -1, take: 50 });
   });
 
   it("continues from the cursor when something has already been compacted", () => {
@@ -93,7 +95,9 @@ function compactionHarness(
       }),
     },
     message: {
-      findMany: vi.fn(async () => messages),
+      findMany: vi.fn(async (args: { where: { seq: { gt: number } }; take: number }) =>
+        messages.filter((message) => message.seq > args.where.seq.gt).slice(0, args.take),
+      ),
     },
     deploymentSettings: {
       findUnique: vi.fn(async () => options.settings ?? null),
