@@ -75,6 +75,8 @@ async function main() {
           "pnpm exec vitest run --no-file-parallelism",
           "packages/testkit/src/journeys.test.ts",
           "packages/testkit/src/authorization.test.ts",
+          "packages/testkit/src/attachments.test.ts",
+          "packages/testkit/src/search.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
           "packages/adapters/src/wakeup.postgres.test.ts",
           "packages/adapters/src/realtime.postgres.test.ts",
@@ -94,9 +96,16 @@ async function main() {
       return;
     }
 
-    const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const [{ ComposioEmulator }, { createApp }] = await Promise.all([
+      import("@rakazo/adapters"),
+      import("../../../../apps/api/src/app.ts"),
+    ]);
     const { serve } = await import("@hono/node-server");
-    const handles = await createApp({ databaseUrl, prisma: undefined });
+    const handles = await createApp({
+      databaseUrl,
+      prisma: undefined,
+      composio: new ComposioEmulator(),
+    });
     let activeRequests = 0;
     const requestWaiters = new Set<() => void>();
     const server = serve({

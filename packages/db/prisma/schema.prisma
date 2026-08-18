@@ -510,9 +510,27 @@ model Computer {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   bots                     Bot[]
+  executionLeases          ComputerExecutionLease[]
 
   @@index([workspaceId, scope])
   @@map("computers")
+}
+
+model ComputerExecutionLease {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  runId      String
+  fence      Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([computerId, botId])
+  @@index([runId])
+  @@index([computerId, expiresAt])
+  @@map("computer_execution_leases")
 }
 
 model Artifact {

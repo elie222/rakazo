@@ -30,7 +30,7 @@ export default function Computer() {
   const autoBooted = useRef<string | null>(null);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
-  const hasControl = computer?.controlHolder === "user";
+  const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
   const label = computerLabel(computer?.mode, name);
 
   useLayoutEffect(() => {
@@ -103,7 +103,7 @@ export default function Computer() {
 
   async function openComputer() {
     if (!botId) return;
-    const needsTakeover = computer?.controlHolder !== "user";
+    const needsTakeover = !(computer?.controlHolder === "user" && computer.controlBotId === botId);
     try {
       await bootComputer({
         takeControl: needsTakeover,
@@ -189,7 +189,7 @@ export default function Computer() {
           gap: 12,
         }}
       >
-        <Text style={{ color: "#85858A", flex: 1 }}>{controlLabel(computer, name)}</Text>
+        <Text style={{ color: "#85858A", flex: 1 }}>{controlLabel(computer, name, botId)}</Text>
         {hasControl ? (
           <Pressable
             onPress={() => void releaseComputer()}

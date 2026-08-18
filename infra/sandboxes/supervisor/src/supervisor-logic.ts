@@ -1,7 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
+import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
-import { type SandboxInput, xdotoolCommand } from "./computer-spec.js";
+import {
+  type SandboxInput,
+  screenPorts,
+  TEAM_SCREEN_LIMIT,
+  xdotoolCommand,
+} from "./computer-spec.js";
 
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
@@ -63,19 +69,134 @@ export function toSandboxInput(input: {
   };
 }
 
+export function nextScreenIndex(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  leaseId?: string,
+  limit = TEAM_SCREEN_LIMIT,
+): number {
+  const existing = assigned.get(screenId);
+  if (existing) {
+    if (existing.releasing) {
+      throw new Error("This Team Computer screen is still being released.");
+    }
+    if (leaseId) {
+      if (
+        existing.leaseId &&
+        existing.leaseId !== leaseId &&
+        !canTakeScreenLease(existing.leaseId, leaseId)
+      ) {
+        throw new Error("This Team Computer screen is owned by a newer execution.");
+      }
+      if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
+    }
+    return existing.index;
+  }
+  const used = new Set([...assigned.values()].map((slot) => slot.index));
+  for (let index = 0; index < limit; index += 1) {
+    if (!used.has(index)) {
+      assigned.set(screenId, { index, leaseId });
+      return index;
+    }
+  }
+  throw new Error(`This Team Computer cannot allocate another screen (limit ${limit}).`);
+}
+
+export function releaseAssignedScreen(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  leaseId?: string,
+): number | undefined {
+  const slot = assigned.get(screenId);
+  if (!slot || slot.releasing || (leaseId && !canReleaseScreenLease(slot.leaseId, leaseId))) {
+    return undefined;
+  }
+  slot.releasing = true;
+  return slot.index;
+}
+
+export function completeReleasedScreen(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  index: number,
+): void {
+  const slot = assigned.get(screenId);
+  if (slot?.releasing && slot.index === index) assigned.delete(screenId);
+}
+
+export interface ScreenAssignment {
+  index: number;
+  leaseId?: string;
+  releasing?: boolean;
+}
+
+export function clearComputerScreenRegistry(
+  registry: Map<string, Map<string, ScreenAssignment>>,
+  containerId: string,
+) {
+  registry.delete(containerId);
+}
+
+export function stopExtraScreenCommand(index: number) {
+  if (index <= 0) return "";
+  const layout = screenPorts(index);
+  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
+  const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;
+  const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
+  return [
+    `pkill -f 'Xvfb ${layout.display} -screen' || true`,
+    `pkill -f 'HOME=${fluxHome} DISPLAY=${layout.display} fluxbox' || true`,
+    `pkill -f -- '--user-data-dir=${profile}' || true`,
+    `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
+    `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true`,
+    `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber} ${tokenFile}`,
+  ].join("; ");
+}
+
+export function ensureScreenCommand(index: number) {
+  const layout = screenPorts(index);
+  if (index === 0) {
+    return `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && exit 0; sleep 0.1; done; exit 1`;
+  }
+  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
+  const log = `/tmp/rakazo/screen-${layout.displayNumber}`;
+  const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;
+  return [
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 && exit 0 || true`,
+    `mkdir -p /tmp/rakazo ${fluxHome}/.fluxbox /tmp/.X11-unix ${profile}`,
+    `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
+    `Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >${log}-xvfb.log 2>&1 &`,
+    `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
+    `cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init`,
+    `cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
+    `cp /etc/rakazo/fluxbox/menu ${fluxHome}/.fluxbox/menu 2>/dev/null || true`,
+    `HOME=${fluxHome} DISPLAY=${layout.display} fluxbox -rc ${fluxHome}/.fluxbox/init >${log}-fluxbox.log 2>&1 &`,
+    `if [ -d /home/rakazo/.browser-profiles/chromium ]; then cp -a /home/rakazo/.browser-profiles/chromium/. ${profile}/; rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket; fi`,
+    `DISPLAY=${layout.display} HOME=/home/rakazo rakazo-browser --user-data-dir=${profile} >${log}-browser.log 2>&1 &`,
+    `x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
+    `websockify --web=/usr/share/novnc 0.0.0.0:${layout.viewPort} 127.0.0.1:${layout.viewVncPort} >${log}-novnc.log 2>&1 &`,
+    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
+    "exit 1",
+  ].join("\n");
+}
+
 export function containerActionStep(
   action: z.infer<typeof computerActionSchema>,
+  display = ":1",
 ): { argv: string[] } | { waitMs: number } {
   if (action.kind === "wait") {
     return { waitMs: Math.min(Math.max(action.ms, 0), 5_000) };
   }
   let argv: string[];
   if (action.kind === "key" || action.kind === "pointer" || action.kind === "clipboard") {
-    argv = ["env", "DISPLAY=:1", ...xdotoolCommand(toSandboxInput(action))];
+    argv = ["env", `DISPLAY=${display}`, ...xdotoolCommand(toSandboxInput(action))];
   } else if (action.kind === "scroll") {
     argv = [
       "env",
-      "DISPLAY=:1",
+      `DISPLAY=${display}`,
       "xdotool",
       "click",
       "--repeat",
@@ -86,9 +207,9 @@ export function containerActionStep(
     const target = /^https?:\/\//i.test(action.path)
       ? action.path
       : workspaceTarget(normalizeWorkspaceRelative(action.path));
-    argv = ["env", "DISPLAY=:1", "xdg-open", target];
+    argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
   } else {
-    argv = ["env", "DISPLAY=:1", action.application, ...(action.uri ? [action.uri] : [])];
+    argv = ["env", `DISPLAY=${display}`, action.application, ...(action.uri ? [action.uri] : [])];
   }
   return { argv };
 }
@@ -123,11 +244,18 @@ export function sandboxCommandTimedOut(exitCode: number, completedWithExit124: b
   return exitCode === 124 && !completedWithExit124;
 }
 
-export function interactiveScreenCommand(interactive: boolean, controlToken?: string) {
-  const tokenFile = "/tmp/rakazo/control-token";
+export function interactiveScreenCommand(
+  interactive: boolean,
+  controlToken?: string,
+  layout = screenPorts(0),
+) {
+  const tokenFile =
+    layout.displayNumber === 1
+      ? "/tmp/rakazo/control-token"
+      : `/tmp/rakazo/control-token-${layout.displayNumber}`;
   const stopProcesses =
-    "pkill -f '^x11vnc .* -rfbport 5901' || true; " +
-    "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true; " +
+    `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true; ` +
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true; ` +
     `rm -f ${tokenFile}`;
   const stop = controlToken
     ? `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" != ${shellQuote(controlToken)} ] || { ${stopProcesses}; }`
@@ -135,13 +263,13 @@ export function interactiveScreenCommand(interactive: boolean, controlToken?: st
   if (!interactive) return stop;
   if (!controlToken) throw new Error("interactive screen requires a control token");
   return [
-    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && pgrep -f '^x11vnc .* -rfbport 5901' >/dev/null && pgrep -f '^/usr/bin/python3 .*websockify.*6081' >/dev/null && exit 0 || true`,
+    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && pgrep -f '^x11vnc .* -rfbport ${layout.controlVncPort}' >/dev/null && pgrep -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' >/dev/null && exit 0 || true`,
     stopProcesses,
     `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
-    "export DISPLAY=:1",
-    "(x11vnc -display :1 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5901 -xkb -ncache 0 >/tmp/rakazo/x11vnc-control.log 2>&1 &)",
-    "(websockify --web=/usr/share/novnc 0.0.0.0:6081 127.0.0.1:5901 >/tmp/rakazo/novnc-control.log 2>&1 &)",
-    "for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/6081) >/dev/null 2>&1 && exit 0; sleep 0.1; done",
+    `export DISPLAY=${layout.display}`,
+    `(x11vnc -display ${layout.display} -forever -shared -nopw -listen 127.0.0.1 -rfbport ${layout.controlVncPort} -xkb -ncache 0 >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &)`,
+    `(websockify --web=/usr/share/novnc 0.0.0.0:${layout.controlPort} 127.0.0.1:${layout.controlVncPort} >/tmp/rakazo/novnc-control-${layout.displayNumber}.log 2>&1 &)`,
+    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
     "exit 1",
   ].join("; ");
 }

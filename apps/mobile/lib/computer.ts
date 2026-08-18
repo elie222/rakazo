@@ -5,6 +5,7 @@ export const COMPUTER_HEARTBEAT_MS = 60_000;
 export type ComputerStatus = {
   state: string;
   controlHolder: string;
+  controlBotId: string | null;
   screenAvailable: boolean;
   mode: ComputerMode;
   busyBotName: string | null;
@@ -47,9 +48,11 @@ export function previewPlaceholder(
   return "Computer is stopped";
 }
 
-export function controlLabel(computer: ComputerStatus | null, name: string) {
+export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
   if (computer?.busyBotName) return `${computer.busyBotName} is using it`;
-  if (computer?.controlHolder === "user") return "You have control";
+  if (computer?.controlHolder === "user" && computer.controlBotId === botId) {
+    return "You have control";
+  }
   if (computer?.state === "suspended") return "Asleep";
   return computerLabel(computer?.mode, name);
 }

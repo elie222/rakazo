@@ -6,6 +6,7 @@ export const SITE_DESCRIPTION =
 export const GITHUB_URL = "https://github.com/elie222/rakazo";
 export const GITHUB_API_REPO = "https://api.github.com/repos/elie222/rakazo";
 export const DOCS_URL = "https://github.com/elie222/rakazo/blob/main/docs/self-host.md";
+export const SETUP_PROMPT_URL = "https://github.com/elie222/rakazo/blob/main/SETUP_PROMPT.md";
 export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
 export const WAITLIST_HREF = "mailto:hello@rakazo.com?subject=Rakazo%20Cloud%20waitlist";
 export const INBOX_ZERO_URL =

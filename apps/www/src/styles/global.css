@@ -394,6 +394,55 @@ button {
   margin-top: 34px;
 }
 
+.hero__agent-setup {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.setup-copy {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 14px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    opacity 150ms ease;
+}
+
+.setup-copy:hover {
+  color: var(--blue);
+}
+
+.setup-copy:focus-visible {
+  outline: 2px solid var(--blue-line);
+  outline-offset: 3px;
+}
+
+.setup-copy__prefix {
+  color: var(--muted-2);
+}
+
+.setup-copy__icon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .cta-actions {
   margin-top: 26px;
 }
@@ -1903,7 +1952,8 @@ button {
   }
 
   .button,
-  .button--small {
+  .button--small,
+  .setup-copy {
     width: 100%;
   }
 

@@ -45,18 +45,35 @@ describe("computer copy", () => {
         {
           state: "running",
           controlHolder: "user",
+          controlBotId: "bot-1",
           screenAvailable: true,
           mode: "team",
           busyBotName: null,
         },
         "Chief",
+        "bot-1",
       ),
     ).toBe("You have control");
     expect(
       controlLabel(
         {
+          state: "running",
+          controlHolder: "user",
+          controlBotId: "other-bot",
+          screenAvailable: true,
+          mode: "team",
+          busyBotName: null,
+        },
+        "Chief",
+        "bot-1",
+      ),
+    ).toBe("Team Computer");
+    expect(
+      controlLabel(
+        {
           state: "suspended",
           controlHolder: "none",
+          controlBotId: null,
           screenAvailable: false,
           mode: "team",
           busyBotName: null,

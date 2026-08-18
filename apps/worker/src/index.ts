@@ -17,6 +17,7 @@ import {
   InMemoryJobQueue,
   isComposioEnabled,
   LocalAgentHomeStore,
+  LocalArtifactStore,
   PiAgentRuntime,
   PostgresRealtimeFanout,
   ScriptedAgentRuntime,
@@ -51,6 +52,7 @@ async function main() {
   await connector.start();
   const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
   const home = new LocalAgentHomeStore(dataDir);
+  const artifacts = new LocalArtifactStore(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
@@ -60,6 +62,7 @@ async function main() {
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
     home,
+    artifacts,
     connector: stack.connector,
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
       Boolean,

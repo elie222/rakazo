@@ -1,8 +1,10 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachments.js";
 import {
   AppBootstrapSchema,
   ArtifactSchema,
+  ArtifactWithContentSchema,
   BotSchema,
   CapabilityInstallSchema,
   ComputerModeSchema,
@@ -25,6 +27,7 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
 
@@ -107,18 +110,42 @@ export const appContract = {
   threads: {
     get: oc.input(z.object({ botId: Id })).output(ThreadSnapshotSchema),
     messages: oc
-      .input(z.object({ botId: Id, before: z.number().int().nonnegative() }))
+      .input(
+        z.object({
+          botId: Id,
+          before: z.number().int().nonnegative().optional(),
+          around: z
+            .object({
+              messageId: Id.optional(),
+              seq: z.number().int().nonnegative().optional(),
+            })
+            .optional(),
+        }),
+      )
       .output(ThreadMessagePageSchema),
     subscribe: oc
       .input(z.object({ botId: Id, cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),
     send: oc
       .input(
-        z.object({
-          botId: Id,
-          text: z.string().min(1),
-          clientNonce: z.string().optional(),
-        }),
+        z
+          .object({
+            botId: Id,
+            text: z.string().optional(),
+            artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
+            clientNonce: z.string().optional(),
+          })
+          .superRefine((input, ctx) => {
+            const text = input.text?.trim() ?? "";
+            const artifactIds = input.artifactIds ?? [];
+            if (!text && artifactIds.length === 0) {
+              ctx.addIssue({
+                code: "custom",
+                message: "Provide text or at least one attachment",
+                path: ["text"],
+              });
+            }
+          }),
       )
       .output(z.object({ taskId: Id, runId: Id, seq: z.number().int() })),
     stop: oc.input(botId).output(z.object({ ok: z.literal(true) })),
@@ -214,6 +241,17 @@ export const appContract = {
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
+    create: oc
+      .input(
+        z.object({
+          botId: Id,
+          name: z.string().min(1).max(255),
+          mimeType: z.string().min(1),
+          contentBase64: z.string().min(1).max(ATTACHMENT_MAX_BASE64_LENGTH),
+        }),
+      )
+      .output(ArtifactSchema),
+    get: oc.input(z.object({ botId: Id, artifactId: Id })).output(ArtifactWithContentSchema),
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
@@ -232,6 +270,9 @@ export const appContract = {
     registerPush: oc
       .input(z.object({ token: z.string().min(8).max(512) }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  search: {
+    query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
   },
 };
 

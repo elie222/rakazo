@@ -79,6 +79,7 @@ export async function signup(
   testInfo?: TestInfo,
 ) {
   await page.goto("/sign-up");
+  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);

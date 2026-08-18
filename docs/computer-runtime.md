@@ -14,7 +14,9 @@ Pi runs in the Rakazo API/worker process. It is not installed in, or executed by
 
 ## Computer contract
 
-Each workspace gets one Team Computer by default, so bots share its browser sessions and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home. Team Computer runs are serialized with a fenced database lease.
+Each workspace gets one Team Computer by default, so bots share its browser sessions and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home. Team Computer runs use a fenced per-bot database lease, so two Team bots can work at the same time on distinct screens. One bot still runs only one computer-use task on its own screen. When a provider cannot spawn another display, that bot's graphical tools fail with `MULTI_SCREEN_UNAVAILABLE` instead of queueing behind a single computer lock.
+
+`SandboxProvider.describe().capabilities.multiScreen` tells clients whether the backend can allocate distinct Team screens. Fake and Docker providers spawn extra Xvfb stacks inside one machine. E2B and Daytona keep the vendor's primary desktop stream on index 0 and spawn extra Xvfb + x11vnc + preview ports for additional Team bots on the same sandbox. If required tools are missing or all eight screen slots are taken, graphical tools for that bot return `MULTI_SCREEN_UNAVAILABLE` while shell and file tools keep working.
 
 `SandboxProvider` is the provider boundary. A backend must implement:
 
@@ -30,6 +32,10 @@ Human input and agent input may coexist. “Take control” changes whether the 
 ## E2B backend
 
 The first cloud implementation uses `@e2b/desktop` directly. Rakazo provisions or reconnects the desktop, maintains its authenticated live-view URL, captures PNG observations, performs mouse/keyboard/scroll/app actions, executes shell commands, and accesses files through the E2B SDK.
+
+On Team Computers, bot index 0 uses the E2B desktop stream and SDK screenshot/input APIs. Additional Team bots get their own Xvfb display, view port (`6080 + 2i`), and interactive control port (`6081 + 2i`) spawned inside the same sandbox via shell commands. Takeover opens the signed control URL for that bot's screen, not the shared primary stream.
+
+## Daytona backend
 
 The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
 

@@ -61,6 +61,18 @@ describe("updatePlaywrightHistory", () => {
       ),
     ).toEqual([currentRun]);
   });
+
+  it("keeps screenshot-only pull request runs", () => {
+    const pullRequestRun = getRun({
+      branch: "external-contributor-branch",
+      event: "pull_request",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      reportUrl: undefined,
+    });
+
+    expect(updatePlaywrightHistory([], pullRequestRun)).toEqual([pullRequestRun]);
+  });
 });
 
 describe("renderPlaywrightDashboard", () => {
@@ -71,7 +83,7 @@ describe("renderPlaywrightDashboard", () => {
 
     expect(html).not.toContain("</script><script>alert(1)</script>");
     expect(html).toContain("\\u003c/script>\\u003cscript>alert(1)\\u003c/script>");
-    expect(html).toContain("latestReport.href = history[0].reportUrl");
+    expect(html).toContain("latestReport.href = latestWithReport.reportUrl");
     expect(html).toContain("latestScreenshots.href = history[0].screenshotsUrl");
   });
 });
@@ -97,6 +109,32 @@ describe("renderScreenshotGallery", () => {
     expect(html).toContain('src="images/001-shell.png"');
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("main &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("repeat(var(--gallery-columns, 1), minmax(0, 1fr))");
+    expect(html).toContain('data-columns="1" aria-label="One column" aria-pressed="true"');
+    expect(html).toContain('data-columns="4" aria-label="Four columns" aria-pressed="false"');
+    expect(html).toContain("initialColumns = localStorage.getItem(storageKey) || initialColumns");
+    expect(html).toContain(`@media (max-width: 900px) {
+      header { align-items: start; flex-direction: column; }
+      .toolbar { align-items: start; flex-direction: column; }
+      .view-options { display: none; }
+      .gallery { grid-template-columns: 1fr; }
+    }`);
+  });
+
+  it("links a pull request without exposing an untrusted HTML report", () => {
+    const html = renderScreenshotGallery({
+      createdAt: "2026-08-16T10:00:00.000Z",
+      dashboardUrl: "https://example.com/playwright/index.html",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      result: "success",
+      runUrl: "https://github.com/example/repository/actions/runs/200",
+      screenshots: [],
+      sha: "abcdef1234567890",
+    });
+
+    expect(html).toContain('href="https://github.com/example/repository/pull/59">PR #59</a>');
+    expect(html).not.toContain("Full report");
   });
 });
 

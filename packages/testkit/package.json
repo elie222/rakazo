@@ -11,16 +11,18 @@
     "test": "vitest run --root ../.. packages/testkit/src"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.1",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
-    "@hono/node-server": "^1.19.1",
-    "@testcontainers/postgresql": "^11.5.1"
+    "@testcontainers/postgresql": "^11.5.1",
+    "pngjs": "7.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@types/pngjs": "6.0.5",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
   }

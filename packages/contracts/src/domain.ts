@@ -126,6 +126,11 @@ export const ArtifactSchema = z.object({
   createdAt: z.string(),
 });
 
+export const ArtifactWithContentSchema = ArtifactSchema.extend({
+  contentBase64: z.string(),
+});
+export type ArtifactWithContent = z.infer<typeof ArtifactWithContentSchema>;
+
 export const UsageRecordSchema = z.object({
   id: Id,
   botId: Id.nullable(),
@@ -143,6 +148,7 @@ export const ComputerStatusSchema = z.object({
   kind: SandboxKind,
   state: z.enum(["stopped", "booting", "running", "suspended", "error"]),
   controlHolder: z.enum(["bot", "user", "none"]),
+  controlBotId: Id.nullable(),
   screenAvailable: z.boolean(),
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
