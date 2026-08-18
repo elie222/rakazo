@@ -1,5 +1,8 @@
 # Rakazo
 
+[![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
+
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
 Open-source Grok Bot alternative. [rakazo.com](https://rakazo.com)
@@ -9,6 +12,8 @@ Web, desktop, and mobile. Bring your own AI and sandbox. The product is still ea
 Each bot has its own thread, memory, routines, and history. Workspace bots share a Team Computer by default; a bot can use a Private computer instead. A bot can also spawn more bots — each a regular peer with its own thread — or run short-lived subagents inside the current turn.
 
 Looking for bots to install? Check out [botdirectory.ai](https://botdirectory.ai/).
+
+Have questions, ideas, or want to contribute? [Join the Rakazo community on Discord](https://discord.gg/RWwKa2Sn7h).
 
 ## Demo
 
