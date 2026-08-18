@@ -1,14 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  deletePushTokenIfMatch,
   ExpoPushProvider,
   expoPushErrorMessage,
-  isUnregisteredPushToken,
   loadPushToken,
-  pushTokenPath,
   savePushToken,
 } from "./expo-push.js";
 
@@ -51,11 +48,6 @@ describe("expo push tickets", () => {
         200,
       ),
     ).toBe("DeviceNotRegistered");
-    expect(
-      isUnregisteredPushToken({
-        data: { status: "error", details: { error: "DeviceNotRegistered" } },
-      }),
-    ).toBe(true);
   });
 });
 
@@ -136,29 +128,7 @@ describe("expo push", () => {
     ).rejects.toThrow("offline");
   });
 
-  it("forgets the current token when Expo says it is unregistered", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
-    dirs.push(dataDir);
-    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          data: { status: "error", details: { error: "DeviceNotRegistered" } },
-        }),
-      ),
-    );
-    const push = new ExpoPushProvider(dataDir);
-    await expect(
-      push.send(
-        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
-        notifyContext,
-      ),
-    ).rejects.toThrow("DeviceNotRegistered");
-    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
-  });
-
-  it("does not delete a replacement token when a stale send fails", async () => {
+  it("reports DeviceNotRegistered without deleting a stored or replacement token", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
     await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
@@ -178,27 +148,6 @@ describe("expo push", () => {
         notifyContext,
       ),
     ).rejects.toThrow("DeviceNotRegistered");
-    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
-  });
-
-  it("keeps a replacement when cleanup races with registration", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
-    dirs.push(dataDir);
-    await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
-    await Promise.all([
-      savePushToken(dataDir, "user-1", "ExponentPushToken[new]"),
-      deletePushTokenIfMatch(dataDir, "user-1", "ExponentPushToken[old]"),
-    ]);
-    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
-  });
-
-  it("recovers registration after an orphaned lock", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
-    dirs.push(dataDir);
-    const lockPath = `${pushTokenPath(dataDir, "user-1")}.lock`;
-    await mkdir(path.dirname(lockPath), { recursive: true });
-    await writeFile(lockPath, "999999999\n");
-    await savePushToken(dataDir, "user-1", "ExponentPushToken[new]");
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });
 });
