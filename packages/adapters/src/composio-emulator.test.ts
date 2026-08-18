@@ -13,7 +13,7 @@ describe("ComposioEmulator", () => {
   it("serves and searches a deterministic catalog", async () => {
     const emulator = new ComposioEmulator();
 
-    await expect(emulator.catalog(context.userId)).resolves.toHaveLength(4);
+    await expect(emulator.catalog(context.userId)).resolves.toHaveLength(5);
     await expect(emulator.catalog(context.userId, "git")).resolves.toEqual([
       expect.objectContaining({ slug: "GITHUB", name: "GitHub", connected: false }),
     ]);

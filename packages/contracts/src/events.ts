@@ -25,6 +25,7 @@ export const ProductEventType = z.enum([
   "routine.created",
   "routine.updated",
   "routine.fired",
+  "integration.gtasks_slack.mirrored",
   "effect.recorded",
   "agent.tool.called",
   "effect.reconciled",

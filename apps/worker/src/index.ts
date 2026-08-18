@@ -80,6 +80,7 @@ async function main() {
     jobs,
     events,
     workerId: process.pid.toString(),
+    composio: stack.composio,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

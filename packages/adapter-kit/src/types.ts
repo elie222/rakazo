@@ -298,6 +298,7 @@ export interface BackgroundJobPayloads {
   "routine.wakeup": { routineId: string; scheduledFor: string };
   "computer.sleep": { computerId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
+  "integration.gtasks_slack.mirror": { workspaceId: string; userId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

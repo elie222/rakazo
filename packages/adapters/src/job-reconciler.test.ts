@@ -32,6 +32,7 @@ function fakePrisma(
     run: { findMany: vi.fn(async () => runs) },
     routine: { findMany: vi.fn(async () => routines) },
     computer: { findMany: vi.fn(async () => controls) },
+    connection: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaClient;
 }
 
@@ -131,6 +132,7 @@ describe("createJobReconciler", () => {
       run: { findMany: vi.fn(async () => []) },
       routine: { findMany: vi.fn(async () => []) },
       computer: { findMany: computerFindMany },
+      connection: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });
@@ -193,6 +195,7 @@ describe("createJobReconciler", () => {
       run: { findMany: runFindMany },
       routine: { findMany: routineFindMany },
       computer: { findMany: vi.fn(async () => []) },
+      connection: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });

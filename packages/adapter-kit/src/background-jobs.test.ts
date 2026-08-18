@@ -8,6 +8,7 @@ function handlers(): BackgroundJobHandlers {
     "routine.wakeup": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
+    "integration.gtasks_slack.mirror": vi.fn(async () => undefined),
   };
 }
 

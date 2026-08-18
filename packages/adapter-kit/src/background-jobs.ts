@@ -17,6 +17,10 @@ const payloadSchemas = {
     computerId: z.string().min(1),
     leaseId: z.string().min(1),
   }),
+  "integration.gtasks_slack.mirror": z.object({
+    workspaceId: z.string().min(1),
+    userId: z.string().min(1),
+  }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -50,6 +54,18 @@ export function computerSleepJobKey(computerId: string): string {
 
 export function computerControlExpireJobKey(computerId: string): string {
   return `computer.control-expire:${computerId}`;
+}
+
+export function gtasksSlackMirrorJobKey(workspaceId: string, userId: string): string {
+  return `integration.gtasks_slack.mirror:${workspaceId}:${userId}`;
+}
+
+export function gtasksSlackMirrorJob(workspaceId: string, userId: string): BackgroundJob {
+  return {
+    name: "integration.gtasks_slack.mirror",
+    payload: { workspaceId, userId },
+    replaceKey: gtasksSlackMirrorJobKey(workspaceId, userId),
+  };
 }
 
 export function runContinueJob(runId: string): BackgroundJob {

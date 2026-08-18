@@ -5,9 +5,11 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { ComposioProvider } from "./composio-connector.js";
 import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
+import { syncGtasksSlackInbox } from "./gtasks-slack-mirror.js";
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -17,6 +19,7 @@ export function createBackgroundJobHandlers(deps: {
   jobs: JobPublisher;
   events: ThreadEvents;
   workerId: string;
+  composio?: ComposioProvider;
 }): BackgroundJobHandlers {
   return {
     "run.continue": async (payload) => {
@@ -32,6 +35,16 @@ export function createBackgroundJobHandlers(deps: {
       if (await expireComputerControl(deps, payload.computerId, payload.leaseId)) {
         scheduleComputerSleep(deps.jobs, payload.computerId);
       }
+    },
+    "integration.gtasks_slack.mirror": async (payload) => {
+      await syncGtasksSlackInbox(
+        {
+          prisma: deps.prisma,
+          composio: deps.composio,
+          events: deps.events,
+        },
+        payload,
+      );
     },
   };
 }

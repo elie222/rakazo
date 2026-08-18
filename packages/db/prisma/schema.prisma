@@ -101,6 +101,7 @@ model Organization {
   notificationPreferences NotificationPreference[]
   computers   Computer[]
   externalEffects ExternalEffect[]
+  integrationMirrors IntegrationMirror[]
 
   @@unique([slug])
   @@map("organization")
@@ -362,6 +363,22 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@map("external_effects")
+}
+
+model IntegrationMirror {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lane           String
+  externalId     String
+  fingerprint    String
+  slackMessageTs String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([workspaceId, lane, externalId])
+  @@index([workspaceId, lane])
+  @@map("integration_mirrors")
 }
 
 model Routine {

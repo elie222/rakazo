@@ -1,7 +1,8 @@
-import { type JobPublisher, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import { type JobPublisher, gtasksSlackMirrorJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import type { PoolClient } from "pg";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { listGtasksSlackMirrorTargets } from "./gtasks-slack-mirror.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_BATCH_SIZE = 100;
@@ -143,7 +144,7 @@ export function createJobReconciler(
             }
           : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
         : undefined;
-      const [runs, routines, controls] = await Promise.all([
+      const [runs, routines, controls, mirrorTargets] = await Promise.all([
         deps.prisma.run.findMany({
           where: {
             AND: [
@@ -203,6 +204,7 @@ export function createJobReconciler(
             controlLeaseExpiresAt: true,
           },
         }),
+        listGtasksSlackMirrorTargets(deps.prisma),
       ]);
 
       await Promise.all([
@@ -223,6 +225,9 @@ export function createJobReconciler(
                 ),
               ]
             : [],
+        ),
+        ...mirrorTargets.map((target) =>
+          deps.jobs.enqueue(gtasksSlackMirrorJob(target.workspaceId, target.userId)),
         ),
       ]);
 
