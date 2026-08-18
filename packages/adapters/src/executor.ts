@@ -305,6 +305,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
         for (const row of sync.create) {
+          const existing = await deps.prisma.connection.findFirst({
+            where: {
+              userId: run.userId,
+              workspaceId: run.workspaceId,
+              provider: row.provider,
+            },
+            select: { id: true, status: true },
+          });
+          if (existing) {
+            if (existing.status !== "connected") {
+              await deps.prisma.connection.update({
+                where: { id: existing.id },
+                data: { status: "connected" },
+              });
+            }
+            continue;
+          }
           await deps.prisma.connection.create({
             data: {
               workspaceId: run.workspaceId,
