@@ -10,3 +10,4 @@ export * from "./screen-lease.js";
 export * from "./search.js";
 export * from "./secrets-guard.js";
 export * from "./signup-policy.js";
+export * from "./speech-text.js";

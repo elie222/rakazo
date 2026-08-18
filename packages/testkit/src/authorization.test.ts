@@ -118,6 +118,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["search/query", { q: "anything" }],
+      ["voice/catalog"],
+      ["voice/status"],
+      ["voice/credentials"],
+      ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
+      ["voice/setVoice", { voiceId: "missing-voice" }],
+      ["voice/voices", {}],
+      ["voice/prepare", { text: "Nope" }],
     ]);
 
     const results = await Promise.all(
@@ -258,6 +265,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
+      ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),

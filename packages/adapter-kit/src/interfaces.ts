@@ -35,6 +35,12 @@ import type {
   ScreenSession,
   SecretRecord,
   SnapshotRef,
+  SpeechClip,
+  VoiceCapabilities,
+  VoiceInfo,
+  VoiceSynthesizeRequest,
+  VoiceTranscribeRequest,
+  VoiceVerifyResult,
 } from "./types.js";
 
 export interface SandboxProvider {
@@ -210,4 +216,12 @@ export interface NotificationProvider {
 export interface ExecutionRunner {
   describe(): AdapterDescriptor<{ cloud: boolean; selfHosted: boolean; desktop: boolean }>;
   dispatch(runId: string, target: "cloud" | "self-hosted" | "desktop"): Promise<void>;
+}
+
+export interface VoiceProvider {
+  describe(): AdapterDescriptor<VoiceCapabilities>;
+  verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
+  listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
+  synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
+  transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
 }

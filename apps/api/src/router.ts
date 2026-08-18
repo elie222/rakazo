@@ -19,6 +19,7 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
+  createVoiceProvider,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
@@ -58,8 +59,10 @@ import {
   createRepos,
   createThreadMessage,
   findDefaultModelCredential,
+  findDefaultVoiceCredential,
   IsolationError,
   newestModelCredentialOrder,
+  newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
   parseComputerMode,
@@ -76,6 +79,16 @@ import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  loadDefaultVoiceCredential,
+  loadVoiceCredential,
+  persistVoiceCredential,
+  prepareVoice,
+  toVoiceCredential,
+  toVoiceStatus,
+  voiceCatalog,
+  voiceContext,
+} from "./voice.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
@@ -314,6 +327,8 @@ export function createRouter(deps: RouterDeps) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             pinned: input.pinned,
+            voiceId: input.voiceId,
+            autoSpeak: input.autoSpeak,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1567,6 +1582,66 @@ export function createRouter(deps: RouterDeps) {
       query: authed.search.query.handler(async ({ context, input }) => ({
         hits: await queryWorkspaceSearch(deps.prisma, context.actor, input.q),
       })),
+    },
+    voice: {
+      catalog: authed.voice.catalog.handler(async () => [...voiceCatalog]),
+      status: authed.voice.status.handler(async ({ context }) => {
+        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
+        return toVoiceStatus(cred);
+      }),
+      credentials: authed.voice.credentials.handler(async ({ context }) => {
+        const rows = await deps.prisma.userVoiceCredential.findMany({
+          where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: newestVoiceCredentialOrder,
+        });
+        return rows.map(toVoiceCredential);
+      }),
+      connect: authed.voice.connect.handler(async ({ context, input }) =>
+        persistVoiceCredential(deps, context.actor, {
+          provider: input.provider,
+          plaintext: input.apiKey,
+          label: input.label,
+          voiceId: input.voiceId,
+          signal: context.signal,
+        }),
+      ),
+      setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
+        const cred = input.provider
+          ? await deps.prisma.userVoiceCredential.findFirst({
+              where: {
+                userId: context.actor.userId,
+                workspaceId: context.actor.workspaceId,
+                provider: input.provider,
+              },
+              orderBy: newestVoiceCredentialOrder,
+            })
+          : await findDefaultVoiceCredential(deps.prisma, context.actor);
+        if (!cred) {
+          throw new ORPCError("BAD_REQUEST", { message: "Connect a voice provider first." });
+        }
+        await deps.prisma.userVoiceCredential.update({
+          where: { id: cred.id },
+          data: { voiceId: input.voiceId },
+        });
+        return toVoiceStatus({ ...cred, voiceId: input.voiceId });
+      }),
+      voices: authed.voice.voices.handler(async ({ context, input }) => {
+        const loaded = await loadDefaultVoiceCredential(deps, context.actor);
+        if (!loaded) return [];
+        const providerId = input.provider ?? loaded.cred.provider;
+        const row =
+          providerId === loaded.cred.provider
+            ? loaded
+            : await loadVoiceCredential(deps, context.actor, providerId);
+        if (!row) return [];
+        return createVoiceProvider(row.cred.provider).listVoices(
+          row.apiKey,
+          voiceContext(context.actor, context.signal),
+        );
+      }),
+      prepare: authed.voice.prepare.handler(async ({ context, input }) =>
+        prepareVoice(deps, context.actor, input),
+      ),
     },
   });
 }

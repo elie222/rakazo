@@ -23,6 +23,7 @@ import {
   pickFromLibrary,
   takePhoto,
 } from "../lib/pick-attachments";
+import { playMpeg, speakUtterance } from "../lib/voice";
 
 type PendingAttachment = PickedAttachment & { botId: string };
 
@@ -373,6 +374,17 @@ export default function Thread() {
               onOpenBot={(id, botName) =>
                 router.push({ pathname: "/thread", params: { botId: id, name: botName } })
               }
+              onSpeak={
+                message.role === "bot"
+                  ? () =>
+                      void speakMessage(botId ?? "", message).catch((err) =>
+                        Alert.alert(
+                          "Could not speak",
+                          err instanceof Error ? err.message : "Try again.",
+                        ),
+                      )
+                  : undefined
+              }
             />
           </View>
         ))}
@@ -483,14 +495,29 @@ export default function Thread() {
   );
 }
 
+async function speakMessage(botId: string, message: MobileMessage) {
+  const text = blockText(message);
+  if (!text.trim()) return;
+  const prepared = await rpc<{ ready: boolean; utterances: string[] }>("voice/prepare", {
+    text,
+    botId,
+  });
+  if (!prepared.ready) throw new Error("Add a voice provider in Voice settings.");
+  for (const utterance of prepared.utterances) {
+    await playMpeg(await speakUtterance(utterance, { botId }));
+  }
+}
+
 function MessageBubble({
   botId,
   message,
   onOpenBot,
+  onSpeak,
 }: {
   botId: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
+  onSpeak?: () => void;
 }) {
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
@@ -675,9 +702,16 @@ function MessageBubble({
           {blockText(message)}
         </Text>
       ) : (
-        <ChatMarkdown streaming={message.id.startsWith("progress:")}>
-          {blockText(message)}
-        </ChatMarkdown>
+        <>
+          <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+            {blockText(message)}
+          </ChatMarkdown>
+          {onSpeak ? (
+            <Pressable onPress={onSpeak} hitSlop={8} style={{ marginTop: 8 }}>
+              <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
+            </Pressable>
+          ) : null}
+        </>
       )}
     </View>
   );

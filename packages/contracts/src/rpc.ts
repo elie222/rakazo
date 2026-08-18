@@ -24,6 +24,10 @@ import {
   ThreadSnapshotSchema,
   UpdateBotInput,
   UsageRecordSchema,
+  VoiceCatalogEntrySchema,
+  VoiceCredentialSchema,
+  VoiceInfoSchema,
+  VoiceStatusSchema,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
@@ -273,6 +277,36 @@ export const appContract = {
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
+  },
+  voice: {
+    catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
+    status: oc.output(VoiceStatusSchema),
+    credentials: oc.output(z.array(VoiceCredentialSchema)),
+    connect: oc
+      .input(
+        z.object({
+          provider: z.string(),
+          apiKey: z.string().min(8),
+          label: z.string().optional(),
+          voiceId: z.string().max(120).optional(),
+        }),
+      )
+      .output(VoiceCredentialSchema),
+    setVoice: oc
+      .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
+      .output(VoiceStatusSchema),
+    voices: oc
+      .input(z.object({ provider: z.string().optional() }))
+      .output(z.array(VoiceInfoSchema)),
+    prepare: oc
+      .input(
+        z.object({
+          text: z.string().max(20000),
+          voiceId: z.string().max(120).optional(),
+          botId: Id.optional(),
+        }),
+      )
+      .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
   },
 };
 

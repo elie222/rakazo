@@ -31,6 +31,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
   app: Hono;
@@ -226,6 +227,11 @@ export async function createApp(
     });
     if (matched) return c.newResponse(response.body, response);
     await next();
+  });
+  mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
+    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    if (!session?.user) return null;
+    return requireMembership(prisma, session.user.id).catch(() => null);
   });
   app.get("/health", (c) =>
     c.json({

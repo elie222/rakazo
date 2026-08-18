@@ -20,6 +20,7 @@ model User {
   members       Member[]
   invitations   Invitation[]
   modelCredentials UserModelCredential[]
+  voiceCredentials UserVoiceCredential[]
   secrets          Secret[]
 
   @@unique([email])
@@ -169,6 +170,23 @@ model UserModelCredential {
   @@map("user_model_credentials")
 }
 
+model UserVoiceCredential {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  provider    String
+  label       String
+  secretId    String
+  isDefault   Boolean  @default(false)
+  voiceId     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, workspaceId])
+  @@map("user_voice_credentials")
+}
+
 model Bot {
   id             String   @id @default(cuid())
   workspaceId    String
@@ -192,6 +210,8 @@ model Bot {
   computerId     String?
   computer       Computer? @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean @default(false)
+  voiceId        String?
+  autoSpeak      Boolean  @default(false)
   routines       Routine[]
   memoryDocuments MemoryDocument[]
   agentHome      AgentHome?

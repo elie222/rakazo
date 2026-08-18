@@ -19,6 +19,7 @@
       ],
       "expo-router",
       "expo-secure-store",
+      "expo-audio",
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
       [
