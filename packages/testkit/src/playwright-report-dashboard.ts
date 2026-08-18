@@ -252,9 +252,16 @@ export function renderScreenshotGallery(input: {
     body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #312e81 0, #09090b 36rem); }
     main { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 80px; }
     header { margin-bottom: 30px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; }
     .pill { padding: 8px 12px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 999px; color: #d4d4d8; background: rgba(9, 9, 11, 0.7); }
-    .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .view-options { display: inline-flex; flex: 0 0 auto; gap: 4px; padding: 4px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 10px; background: rgba(9, 9, 11, 0.7); }
+    .view-option { display: grid; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 7px; place-items: center; color: #a1a1aa; background: transparent; cursor: pointer; }
+    .view-option:hover { color: #fafafa; background: rgba(63, 63, 70, 0.72); }
+    .view-option[aria-pressed="true"] { color: #fafafa; background: #5b21b6; }
+    .view-option:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 2px; }
+    .view-option svg { width: 18px; height: 18px; }
+    .gallery { display: grid; grid-template-columns: repeat(var(--gallery-columns, 1), minmax(0, 1fr)); gap: 22px; }
     figure { margin: 0; overflow: hidden; border: 1px solid rgba(113, 113, 122, 0.42); border-radius: 18px; background: rgba(9, 9, 11, 0.84); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28); }
     figure > a { display: grid; min-height: 300px; place-items: center; padding: 12px; background: #18181b; }
     img { display: block; width: 100%; max-height: 820px; object-fit: contain; object-position: top; border-radius: 10px; }
@@ -267,7 +274,7 @@ export function renderScreenshotGallery(input: {
     .empty { padding: 80px 24px; border: 1px solid rgba(113, 113, 122, 0.38); border-radius: 18px; color: #a1a1aa; text-align: center; background: rgba(9, 9, 11, 0.78); }
     @media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }
-      .gallery { grid-template-columns: 1fr; }
+      .toolbar { align-items: start; flex-direction: column; }
     }
   </style>
 </head>
@@ -285,14 +292,64 @@ export function renderScreenshotGallery(input: {
         <a class="button" href="${escapeHtml(input.dashboardUrl)}">All runs</a>
       </div>
     </header>
-    <section class="meta">
-      <span class="pill">${escapeHtml(input.result)}</span>
-      <span class="pill">${escapeHtml(input.sha.slice(0, 7))}</span>
-      <span class="pill">${input.screenshots.length} screenshots</span>
-      <span class="pill">${escapeHtml(new Date(input.createdAt).toLocaleString("en-US", { timeZone: "UTC" }))} UTC</span>
-    </section>
+    <div class="toolbar">
+      <section class="meta">
+        <span class="pill">${escapeHtml(input.result)}</span>
+        <span class="pill">${escapeHtml(input.sha.slice(0, 7))}</span>
+        <span class="pill">${input.screenshots.length} screenshots</span>
+        <span class="pill">${escapeHtml(new Date(input.createdAt).toLocaleString("en-US", { timeZone: "UTC" }))} UTC</span>
+      </section>
+      ${
+        screenshots
+          ? `<div class="view-options" role="group" aria-label="Gallery columns">
+        <button class="view-option" type="button" data-columns="1" aria-label="One column" aria-pressed="true" title="One column">
+          <svg aria-hidden="true" viewBox="0 0 18 18"><rect x="3" y="2" width="12" height="14" rx="1.5" fill="currentColor" /></svg>
+        </button>
+        <button class="view-option" type="button" data-columns="2" aria-label="Two columns" aria-pressed="false" title="Two columns">
+          <svg aria-hidden="true" viewBox="0 0 18 18"><rect x="1" y="2" width="7" height="14" rx="1.5" fill="currentColor" /><rect x="10" y="2" width="7" height="14" rx="1.5" fill="currentColor" /></svg>
+        </button>
+        <button class="view-option" type="button" data-columns="3" aria-label="Three columns" aria-pressed="false" title="Three columns">
+          <svg aria-hidden="true" viewBox="0 0 18 18"><rect x="1" y="2" width="4" height="14" rx="1" fill="currentColor" /><rect x="7" y="2" width="4" height="14" rx="1" fill="currentColor" /><rect x="13" y="2" width="4" height="14" rx="1" fill="currentColor" /></svg>
+        </button>
+        <button class="view-option" type="button" data-columns="4" aria-label="Four columns" aria-pressed="false" title="Four columns">
+          <svg aria-hidden="true" viewBox="0 0 18 18"><rect x="1" y="2" width="3" height="14" rx="1" fill="currentColor" /><rect x="5.3" y="2" width="3" height="14" rx="1" fill="currentColor" /><rect x="9.7" y="2" width="3" height="14" rx="1" fill="currentColor" /><rect x="14" y="2" width="3" height="14" rx="1" fill="currentColor" /></svg>
+        </button>
+      </div>`
+          : ""
+      }
+    </div>
     ${screenshots ? `<section class="gallery">${screenshots}</section>` : '<div class="empty">No screenshots were produced by this run.</div>'}
   </main>
+  <script>
+    const gallery = document.querySelector(".gallery");
+    const viewOptions = Array.from(document.querySelectorAll(".view-option"));
+    const storageKey = "rakazo-playwright-gallery-columns";
+
+    function setGalleryColumns(value, persist = false) {
+      if (!gallery || !["1", "2", "3", "4"].includes(value)) return;
+
+      gallery.style.setProperty("--gallery-columns", value);
+      for (const option of viewOptions) {
+        option.setAttribute("aria-pressed", String(option.dataset.columns === value));
+      }
+
+      if (persist) {
+        try {
+          localStorage.setItem(storageKey, value);
+        } catch {}
+      }
+    }
+
+    let initialColumns = "1";
+    try {
+      initialColumns = localStorage.getItem(storageKey) || initialColumns;
+    } catch {}
+    setGalleryColumns(initialColumns);
+
+    for (const option of viewOptions) {
+      option.addEventListener("click", () => setGalleryColumns(option.dataset.columns, true));
+    }
+  </script>
 </body>
 </html>`;
 }
