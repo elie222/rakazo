@@ -2,11 +2,11 @@
 
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
-Open-source Grok Bot alternative, built with Cursor and Grok 4.6.
+Open-source Grok Bot alternative. [rakazo.com](https://rakazo.com)
 
 Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta).
 
-Each bot has one thread, one computer, memory, routines, and history. A bot can also spawn more bots — each a regular peer with its own thread and computer — or run short-lived subagents inside the current turn. This repository is the complete core product — it runs without a Rakazo-operated control plane.
+Each bot has its own thread, memory, routines, and history. Workspace bots share a Team Computer by default; a bot can use a Private computer instead. A bot can also spawn more bots — each a regular peer with its own thread — or run short-lived subagents inside the current turn.
 
 ## Demo
 
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Better Auth
 - Graphile Worker
 - Pi
-- Any sandbox provider (tested with Docker and E2B)
+- Any sandbox provider (tested with Docker, E2B, and Daytona)
 - Composio
 
 ## Requirements
@@ -74,16 +74,17 @@ Product defaults are Pi + Docker + Graphile. `pnpm test` pins the emulators (`AG
 
 ### Computer and app modes
 
-The app you open and the computer provider are separate choices. Web, Electron, and mobile are clients of the same API. Docker stays the default. In the Electron app the deployment owner is asked once whether bots should keep using Docker or run on this Mac as you.
+The app you open and the computer provider are separate choices. Web, Electron, and mobile are clients of the same API. Workspace bots share a Team Computer by default; Private computers are optional. Docker stays the default provider. In the Electron app the deployment owner is asked once whether bots should keep using Docker or run on this Mac as you.
 
 | `SANDBOX_PROVIDER` | Where agent commands run | Best fit | Isolation notes |
 | --- | --- | --- | --- |
 | `docker` (default) | A Docker computer on your machine. The Electron app can switch this to This Mac without changing the env var. | Quick local setup and trusted single-machine self-hosting | Workspace bots share the Team Computer by default; Private computers are optional. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
 | `e2b` | A remote E2B desktop through the E2B SDK | Public or multi-user deployments | Team and Private computers are isolated from the Rakazo application host. Requires `E2B_API_KEY`. Workspace and browser-profile data are checkpointed into Rakazo-owned `DATA_DIR`, so the provider machine is not the durable source of truth. This Mac is not available. |
+| `daytona` | A remote Daytona desktop through the Daytona SDK | Public or multi-user deployments | Team and Private computers are isolated from the Rakazo application host. Requires `DAYTONA_API_KEY`. Workspace and browser-profile data are checkpointed into Rakazo-owned `DATA_DIR`, so the provider machine is not the durable source of truth. This Mac is not available. |
 | `desktop` | Directly on the API/worker host. Working directories under the process user's home folder are allowed. | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. The Electron first-run "This Mac" choice uses this provider while leaving `SANDBOX_PROVIDER=docker`. |
 | `fake` | An in-process emulator | Tests only | Does not run a real computer. |
 
-Docker remains the recommended quick start for someone running Rakazo on their own machine. E2B is the safer boundary when untrusted users or public traffic share a deployment.
+Docker remains the recommended quick start for someone running Rakazo on their own machine. E2B or Daytona is the safer boundary when untrusted users or public traffic share a deployment.
 
 If this Postgres was created with `prisma db push` before checked-in migrations existed, mark the baseline once:
 
@@ -118,6 +119,7 @@ pnpm test              # unit, property, and in-process contract tests
 pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
 pnpm test:e2e          # Playwright against the emulated stack
 pnpm test:e2e -- --sandbox=e2b # the same deterministic suite against real E2B
+pnpm test:e2e -- --sandbox=daytona # the same suite against real Daytona
 pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
 pnpm test:canary       # live OpenRouter / E2B canaries
 # explicit real vision-model + real E2B desktop acceptance test:
@@ -129,8 +131,8 @@ GitHub Actions artifacts. Successful merges and the nightly verification publish
 history plus a scan-friendly screenshot gallery at
 <https://rakazogithubactions.fsn1.your-objectstorage.com/playwright/index.html>.
 
-The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`.
-That option requires `E2B_API_KEY`, keeps the deterministic scripted agent runtime, and destroys
+The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b` or `daytona`.
+Those options require `E2B_API_KEY` or `DAYTONA_API_KEY`, keep the deterministic scripted agent runtime, and destroy
 the provider machines after the run. The default and all automatic runs remain on `fake`.
 
 `pnpm test:topology`, `pnpm test:canary`, and `pnpm test:computer` are for running the product path on your machine. They are not part of pull-request CI. The computer acceptance test also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.
@@ -149,7 +151,7 @@ infra/compose sandboxes
 
 ## Self-host and Cloud
 
-See `docs/self-host.md`. Cloud and self-hosted editions share the same application and contracts. There is no separate Rakazo-hosted control plane in this repo yet — a public Cloud deploy is a VPS (or E2B) plus the marketing site, not a serverless push of the chat app.
+See `docs/self-host.md`. Cloud and self-hosted editions share the same application and contracts. A public Cloud deploy is a VPS (or E2B / Daytona) plus the marketing site.
 
 ---
 
