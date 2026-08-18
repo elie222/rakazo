@@ -25,8 +25,8 @@ if [[ "$publish_report" != "true" && "$publish_report" != "false" ]]; then
 fi
 
 if [[ "$publish_report" == "true" && ! -f "$report_dir/index.html" ]]; then
-  echo "::warning::Playwright did not produce an HTML report; keeping the existing public dashboard."
-  exit 0
+  echo "::warning::Playwright did not produce an HTML report; publishing the gallery and dashboard entry without it."
+  publish_report="false"
 fi
 
 if [[ ! "$S3_BUCKET" =~ ^[a-zA-Z0-9.-]+$ ]]; then
