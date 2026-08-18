@@ -58,6 +58,7 @@ import {
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { revokeConnection } from "./connection-revocation.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
@@ -1281,14 +1282,24 @@ export function createRouter(deps: RouterDeps) {
             existing.provider,
           );
           if (ready) {
-            await deps.prisma.connection.update({
-              where: { id: existing.id },
+            await deps.prisma.connection.updateMany({
+              where: {
+                id: existing.id,
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                status: "pending",
+              },
               data: { status: "connected" },
             });
           }
         } else {
-          await deps.prisma.connection.update({
-            where: { id: existing.id },
+          await deps.prisma.connection.updateMany({
+            where: {
+              id: existing.id,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              status: "pending",
+            },
             data: { status: "connected" },
           });
         }
@@ -1303,25 +1314,12 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
-        const row = await deps.prisma.connection.findFirst({
-          where: {
-            id: input.connectionId,
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-          },
-        });
-        if (row && deps.composio) {
-          await deps.composio.revoke(row.provider, {
-            operationId: "connections.revoke",
-            traceId: "connections.revoke",
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-            signal: new AbortController().signal,
-          });
-        }
-        await deps.prisma.connection.updateMany({
-          where: { id: input.connectionId, workspaceId: context.actor.workspaceId },
-          data: { status: "revoked" },
+        await revokeConnection(deps, input.connectionId, {
+          operationId: "connections.revoke",
+          traceId: "connections.revoke",
+          workspaceId: context.actor.workspaceId,
+          userId: context.actor.userId,
+          signal: new AbortController().signal,
         });
         return { ok: true as const };
       }),

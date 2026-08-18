@@ -572,6 +572,47 @@ describe("gtasks-slack mirror", () => {
     expect(port.updates).toHaveLength(0);
   });
 
+  it("stops Slack delivery when a connector is revoked during sync", async () => {
+    const store: MirrorStore = new Map();
+    let connectedProviders = [
+      GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
+      GTASKS_SLACK_ROUTING.composioProviders.slack,
+    ];
+    const prisma = createMockPrisma(store, [], {
+      connectedProviders: () => connectedProviders,
+    });
+    const reachedDelivery = deferred();
+    const releaseDelivery = deferred();
+    prisma.bot.findFirst.mockImplementationOnce(async () => {
+      reachedDelivery.resolve();
+      await releaseDelivery.promise;
+      return null;
+    });
+    const port = createMockPort([{ id: "task-disconnected", title: "Disconnected task" }]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+
+    const sync = syncGtasksSlackInbox({ prisma: prisma as never, composio, port }, ctx);
+    await reachedDelivery.promise;
+    connectedProviders = [GTASKS_SLACK_ROUTING.composioProviders.slack];
+    releaseDelivery.resolve();
+    const result = await sync;
+
+    expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
+    expect(port.posts).toHaveLength(0);
+    expect(port.updates).toHaveLength(0);
+  });
+
   it("holds workspace authorization while provider readiness and listing run", async () => {
     const store: MirrorStore = new Map();
     let member = true;
