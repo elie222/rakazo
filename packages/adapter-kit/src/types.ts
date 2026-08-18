@@ -241,6 +241,11 @@ export interface AgentRunRequest {
   prompt: string;
   instructions: string;
   history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  currentTurnImages?: Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }>;
   tools: ConnectorTool[];
   model: {
     provider: string;

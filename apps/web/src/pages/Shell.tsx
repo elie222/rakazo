@@ -6,14 +6,22 @@ import type {
   Me,
   ProductEvent,
   Routine,
+  SearchHit,
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  ATTACHMENT_ALLOWED_MIME_TYPES,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
+} from "@rakazo/contracts";
+import {
   abortableDelay,
+  attachmentsForBot,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
+  inferAttachmentMimeType,
   isActive,
   presetFromCron,
 } from "@rakazo/core";
@@ -32,9 +40,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { decodeArtifactBase64, openArtifact } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
+import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
 import {
@@ -47,6 +57,7 @@ import {
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { WindowChrome } from "./WindowChrome";
+import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
   import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
@@ -63,15 +74,32 @@ const RoutineSchedule = lazy(() =>
 
 type Panel = "computer" | "settings" | "routine" | "create" | null;
 
+type PendingAttachment = {
+  id: string;
+  botId: string;
+  file: File;
+  previewUrl?: string;
+};
+
+const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+
 export function ShellPage() {
   const { botId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const session = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
@@ -111,11 +139,22 @@ export function ShellPage() {
   const expandedHistoryThread = useRef<string | null>(null);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const pinnedAroundRef = useRef<{
+    botId: string;
+    messageId: string;
+    threadId: string;
+    messages: ThreadMessage[];
+    olderCursor: number | null;
+  } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const activePendingAttachments = useMemo(
+    () => attachmentsForBot(pendingAttachments, active?.id),
+    [active?.id, pendingAttachments],
+  );
   const activeRoutines = routinesBotId === active?.id ? routines : [];
   const routeBotId = useRef<string | undefined>(botId);
   routeBotId.current = botId;
@@ -192,6 +231,8 @@ export function ShellPage() {
       !scrollElement ||
       scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
+    const pin = pinnedAroundRef.current;
+    const keepPin = pin?.botId === id;
     const [snap, routines] = await Promise.all([
       rpc.threads.get({ botId: id }),
       rpc.routines.list({ botId: id }),
@@ -199,13 +240,21 @@ export function ShellPage() {
     ]);
     markOnce("rk:renderer:thread-response");
     if (activeBotId.current !== id) return snap;
-    setSnapshot((prev) =>
-      mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
-    );
+    setSnapshot((prev) => {
+      let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
+      if (keepPin && merged) {
+        merged = {
+          ...merged,
+          messages: pin.messages,
+          olderCursor: pin.olderCursor,
+        };
+      }
+      return merged;
+    });
     setComputer(snap.computer);
     setRoutines(routines);
     setRoutinesBotId(id);
-    if (stickToEnd) {
+    if (!keepPin && stickToEnd) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -230,6 +279,7 @@ export function ShellPage() {
 
   async function loadOlderMessages() {
     if (!active || snapshot?.olderCursor == null || loadingOlder) return;
+    pinnedAroundRef.current = null;
     const scrollElement = messageScroll.current;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
     setLoadingOlder(true);
@@ -317,6 +367,9 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
+    if (!searchParams.get("m")) {
+      pinnedAroundRef.current = null;
+    }
     screenRequest.current += 1;
     setScreenUrl(null);
     expandedHistoryThread.current = null;
@@ -374,12 +427,110 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, markBotReadIfVisible, searchParams]);
 
   const filtered = useMemo(
     () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
     [bots, query],
   );
+  const workspaceQuery = query.trim();
+  const showWorkspaceSearch = workspaceQuery.length > 0;
+
+  useEffect(() => {
+    if (!showWorkspaceSearch) {
+      setSearchHits([]);
+      setSearchLoading(false);
+      return;
+    }
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSearchLoading(true);
+      void rpc.search
+        .query({ q: workspaceQuery })
+        .then((result) => {
+          if (!abort.signal.aborted) setSearchHits(result.hits);
+        })
+        .catch(() => {
+          if (!abort.signal.aborted) setSearchHits([]);
+        })
+        .finally(() => {
+          if (!abort.signal.aborted) setSearchLoading(false);
+        });
+    }, 200);
+    return () => {
+      abort.abort();
+      window.clearTimeout(timer);
+    };
+  }, [showWorkspaceSearch, workspaceQuery]);
+
+  async function jumpToSearchHit(hit: SearchHit) {
+    setQuery("");
+    setSearchHits([]);
+    const params = new URLSearchParams();
+    if (hit.messageId) params.set("m", hit.messageId);
+    if (hit.routineId) params.set("routine", hit.routineId);
+    navigate({
+      pathname: `/app/${hit.botId}`,
+      search: params.toString() ? `?${params.toString()}` : undefined,
+    });
+  }
+
+  async function jumpToMessage(botId: string, messageId: string) {
+    const [snap, page] = await Promise.all([
+      rpc.threads.get({ botId }),
+      rpc.threads.messages({ botId, around: { messageId } }),
+    ]);
+    expandedHistoryThread.current = page.threadId;
+    pinnedAroundRef.current = {
+      botId,
+      messageId,
+      threadId: page.threadId,
+      messages: page.messages,
+      olderCursor: page.olderCursor,
+    };
+    setSnapshot({
+      ...snap,
+      messages: page.messages,
+      olderCursor: page.olderCursor,
+    });
+    setComputer(snap.computer);
+    setRoutines(await rpc.routines.list({ botId }));
+    setRoutinesBotId(botId);
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-message-id="${messageId}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
+  useEffect(() => {
+    if (!active) return;
+    const messageId = searchParams.get("m");
+    const routineId = searchParams.get("routine");
+    if (routineId && routinesBotId === active.id) {
+      const routine = routines.find((item) => item.id === routineId);
+      if (routine) {
+        setRoutineDraft({
+          name: routine.name,
+          prompt: routine.prompt,
+          schedule: presetFromCron(routine.cron),
+        });
+        setPanel("routine");
+      } else {
+        setPanel("computer");
+      }
+      const next = new URLSearchParams(searchParams);
+      next.delete("routine");
+      setSearchParams(next, { replace: true });
+    }
+    if (messageId) {
+      void jumpToMessage(active.id, messageId).finally(() => {
+        const next = new URLSearchParams(searchParams);
+        next.delete("m");
+        setSearchParams(next, { replace: true });
+      });
+    }
+  }, [active?.id, routines, routinesBotId, searchParams, setSearchParams]);
   const answerableAskMessageId = latestAnswerableAskMessageId(snapshot);
   const shellReady = initialBotsLoaded && Boolean(active && snapshot?.botId === active.id);
   const refreshThreadRef = useRef(refreshThread);
@@ -405,6 +556,7 @@ export function ShellPage() {
   useLayoutEffect(() => {
     if (!active || snapshot?.botId !== active.id) return;
     if (initiallyScrolledThread.current === snapshot.threadId) return;
+    if (pinnedAroundRef.current?.botId === active.id) return;
     const element = messageScroll.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
@@ -424,12 +576,88 @@ export function ShellPage() {
     });
     await refreshThreadRef.current(id);
   }, []);
-  const sendMessage = useCallback(async (text: string) => {
-    const id = activeBotId.current;
-    if (!id || !text.trim()) return;
-    await rpc.threads.send({ botId: id, text });
-    await refreshThreadRef.current(id);
+  const onAttachmentPick = useCallback(
+    async (files: FileList | null) => {
+      const id = activeBotId.current;
+      if (!id || !files?.length) return;
+      const existing = attachmentsForBot(pendingAttachments, id);
+      const next: PendingAttachment[] = [];
+      const skipped: string[] = [];
+      for (const file of Array.from(files)) {
+        if (existing.length + next.length >= ATTACHMENT_MAX_COUNT) {
+          skipped.push(`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
+          continue;
+        }
+        if (file.size > ATTACHMENT_MAX_BYTES) {
+          skipped.push(`${file.name} (over 10 MiB)`);
+          continue;
+        }
+        const mimeType = inferAttachmentMimeType(file.name, file.type);
+        if (!mimeType) {
+          skipped.push(file.name);
+          continue;
+        }
+        next.push({
+          id: `${file.name}-${file.size}-${file.lastModified}-${next.length}`,
+          botId: id,
+          file,
+          previewUrl: mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        });
+      }
+      if (next.length) setPendingAttachments((current) => [...current, ...next]);
+      setAttachmentNotice(skipped.length ? `Skipped ${skipped.join(", ")}` : null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    [pendingAttachments],
+  );
+  const removeAttachment = useCallback((attachment: PendingAttachment) => {
+    revokePendingAttachmentPreviews([attachment]);
+    setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
   }, []);
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const id = activeBotId.current;
+      if (!id || sending) return;
+      const attachments = attachmentsForBot(pendingAttachments, id);
+      const trimmed = text.trim();
+      if (!trimmed && attachments.length === 0) return;
+      setSending(true);
+      setSendError(null);
+      try {
+        const artifactIds: string[] = [];
+        for (const pending of attachments) {
+          const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
+          if (!mimeType) {
+            throw new Error(`Unsupported file type: ${pending.file.name}`);
+          }
+          const contentBase64 = await readFileAsBase64(pending.file);
+          const artifact = await rpc.artifacts.create({
+            botId: id,
+            name: pending.file.name,
+            mimeType,
+            contentBase64,
+          });
+          artifactIds.push(artifact.id);
+        }
+        await rpc.threads.send({
+          botId: id,
+          text: trimmed || undefined,
+          artifactIds: artifactIds.length ? artifactIds : undefined,
+        });
+        revokePendingAttachmentPreviews(attachments);
+        setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
+        if (activeBotId.current === id) setAttachmentNotice(null);
+        await refreshThreadRef.current(id);
+      } catch (error) {
+        if (activeBotId.current === id) {
+          setSendError(error instanceof Error ? error.message : "Failed to send message");
+        }
+      } finally {
+        setSending(false);
+      }
+    },
+    [pendingAttachments, sending],
+  );
   const stopRun = useCallback(async () => {
     const id = activeBotId.current;
     if (!id) return;
@@ -504,6 +732,16 @@ export function ShellPage() {
     setEditingRoutine(null);
     setDeleteRoutineTarget(null);
     setPanel((current) => (current === "routine" ? null : current));
+  }, [active?.id]);
+
+  useEffect(() => {
+    setPendingAttachments((current) => {
+      const stale = current.filter((attachment) => attachment.botId !== active?.id);
+      revokePendingAttachmentPreviews(stale);
+      return attachmentsForBot(current, active?.id);
+    });
+    setAttachmentNotice(null);
+    setSendError(null);
   }, [active?.id]);
 
   useEffect(() => {
@@ -582,52 +820,60 @@ export function ShellPage() {
           />
         </div>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
-          {filtered.map((bot) => (
-            <button
-              key={bot.id}
-              type="button"
-              onClick={() => navigate(`/app/${bot.id}`)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setBotMenu({ botId: bot.id, position: { x: event.clientX, y: event.clientY } });
-              }}
-              className="flex gap-3 rounded-xl px-2.5 py-[11px] text-left"
-              style={{
-                background: active?.id === bot.id ? "#161618" : "transparent",
-              }}
-            >
-              <BotAvatar color={bot.color} size={38} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span
-                    className={`text-[15px] text-[#ECECEE] ${
-                      bot.unread ? "font-semibold" : "font-medium"
+          {showWorkspaceSearch ? (
+            <WorkspaceSearchResults
+              hits={searchHits}
+              loading={searchLoading}
+              onSelect={(hit) => void jumpToSearchHit(hit)}
+            />
+          ) : (
+            filtered.map((bot) => (
+              <button
+                key={bot.id}
+                type="button"
+                onClick={() => navigate(`/app/${bot.id}`)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setBotMenu({ botId: bot.id, position: { x: event.clientX, y: event.clientY } });
+                }}
+                className="flex gap-3 rounded-xl px-2.5 py-[11px] text-left"
+                style={{
+                  background: active?.id === bot.id ? "#161618" : "transparent",
+                }}
+              >
+                <BotAvatar color={bot.color} size={38} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      className={`text-[15px] text-[#ECECEE] ${
+                        bot.unread ? "font-semibold" : "font-medium"
+                      }`}
+                    >
+                      {bot.name}
+                      {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
+                      {bot.status === "idle" ? "" : bot.status}
+                      {bot.unread ? (
+                        <span
+                          aria-hidden="true"
+                          className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                        />
+                      ) : null}
+                    </span>
+                  </div>
+                  <div
+                    className={`mt-0.5 truncate text-[13.5px] ${
+                      bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                     }`}
                   >
-                    {bot.name}
-                    {bot.unread ? <span className="sr-only"> (unread)</span> : null}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                    {bot.status === "idle" ? "" : bot.status}
-                    {bot.unread ? (
-                      <span
-                        aria-hidden="true"
-                        className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                      />
-                    ) : null}
-                  </span>
+                    {bot.preview || bot.title}
+                  </div>
                 </div>
-                <div
-                  className={`mt-0.5 truncate text-[13.5px] ${
-                    bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                  }`}
-                >
-                  {bot.preview || bot.title}
-                </div>
-              </div>
-            </button>
-          ))}
-          {archivedBots.length > 0 ? (
+              </button>
+            ))
+          )}
+          {archivedBots.length > 0 && !showWorkspaceSearch ? (
             <div className="mt-2 border-t border-[#202023] pt-2">
               <button
                 type="button"
@@ -779,6 +1025,7 @@ export function ShellPage() {
         </div>
         <Transcript
           scrollRef={messageScroll}
+          botId={active?.id ?? ""}
           messages={snapshot?.messages ?? []}
           olderCursor={snapshot?.olderCursor ?? null}
           loadingOlder={loadingOlder}
@@ -793,6 +1040,13 @@ export function ShellPage() {
         <Composer
           activeName={active?.name}
           running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
+          pendingAttachments={activePendingAttachments}
+          attachmentNotice={attachmentNotice}
+          sendError={sendError}
+          sending={sending}
+          fileInputRef={fileInputRef}
+          onAttachmentPick={onAttachmentPick}
+          onRemoveAttachment={removeAttachment}
           onSend={sendMessage}
           onStop={stopRun}
         />
@@ -1252,6 +1506,7 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  botId,
   messages,
   olderCursor,
   loadingOlder,
@@ -1262,6 +1517,7 @@ const Transcript = memo(function Transcript({
   onAnswer,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  botId: string;
   messages: ThreadMessage[];
   olderCursor: number | null;
   loadingOlder: boolean;
@@ -1288,13 +1544,15 @@ const Transcript = memo(function Transcript({
         </button>
       ) : null}
       {messages.map((message) => (
-        <MessageView
-          key={message.id}
-          message={message}
-          canAnswer={message.id === answerableAskMessageId}
-          onOpenBot={onOpenBot}
-          onAnswer={onAnswer}
-        />
+        <div key={message.id} data-message-id={message.id}>
+          <MessageView
+            botId={botId}
+            message={message}
+            canAnswer={message.id === answerableAskMessageId}
+            onOpenBot={onOpenBot}
+            onAnswer={onAnswer}
+          />
+        </div>
       ))}
       {running ? (
         <div className="flex justify-start">
@@ -1313,18 +1571,33 @@ const Transcript = memo(function Transcript({
 const Composer = memo(function Composer({
   activeName,
   running,
+  pendingAttachments,
+  attachmentNotice,
+  sendError,
+  sending,
+  fileInputRef,
+  onAttachmentPick,
+  onRemoveAttachment,
   onSend,
   onStop,
 }: {
   activeName?: string;
   running: boolean;
+  pendingAttachments: PendingAttachment[];
+  attachmentNotice: string | null;
+  sendError: string | null;
+  sending: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onAttachmentPick: (files: FileList | null) => void | Promise<void>;
+  onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string) => Promise<void>;
   onStop: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
+  const canSend = draft.trim().length > 0 || pendingAttachments.length > 0;
 
   function send() {
-    if (!draft.trim()) return;
+    if (!canSend || sending) return;
     const text = draft;
     setDraft("");
     void onSend(text);
@@ -1332,10 +1605,62 @@ const Composer = memo(function Composer({
 
   return (
     <div className="px-6 pb-6 pt-3">
+      {sendError ? (
+        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+          {sendError}
+        </div>
+      ) : null}
+      {attachmentNotice ? (
+        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+          {attachmentNotice}
+        </div>
+      ) : null}
+      {pendingAttachments.length ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {pendingAttachments.map((attachment) => (
+            <div
+              key={attachment.id}
+              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+            >
+              {attachment.previewUrl ? (
+                <img
+                  src={attachment.previewUrl}
+                  alt={attachment.file.name}
+                  className="h-8 w-8 rounded object-cover"
+                />
+              ) : (
+                <span>📎</span>
+              )}
+              <span className="max-w-[180px] truncate">{attachment.file.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${attachment.file.name}`}
+                onClick={() => onRemoveAttachment(attachment)}
+                className="text-[#85858A] hover:text-[#ECECEE]"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
-        <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ATTACHMENT_ACCEPT}
+          className="hidden"
+          onChange={(event) => void onAttachmentPick(event.target.files)}
+        />
+        <button
+          type="button"
+          aria-label="Attach file"
+          onClick={() => fileInputRef.current?.click()}
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]"
+        >
           +
-        </span>
+        </button>
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -1361,8 +1686,9 @@ const Composer = memo(function Composer({
           <button
             type="button"
             aria-label="Send"
+            disabled={sending || !canSend}
             onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
           >
             ↑
           </button>
@@ -1404,11 +1730,13 @@ function latestAnswerableAskMessageId(snapshot: ThreadSnapshot | null): string |
 }
 
 const MessageView = memo(function MessageView({
+  botId,
   canAnswer,
   message,
   onAnswer,
   onOpenBot,
 }: {
+  botId: string;
   canAnswer: boolean;
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -1507,6 +1835,37 @@ const MessageView = memo(function MessageView({
                   : block.title || "Opened its own thread. Tap to switch."}
               </div>
             </button>
+          );
+        }
+        if (block.kind === "image") {
+          return (
+            <div
+              key={i}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <ArtifactImage botId={botId} artifactId={block.artifactId} name={block.name} />
+            </div>
+          );
+        }
+        if (block.kind === "file") {
+          return (
+            <div
+              key={i}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  void openArtifact(botId, block.artifactId, block.name, block.mimeType)
+                }
+                className="rounded-[20px] border border-[#26262A] bg-[#17171A] px-4 py-3 text-left text-[14px] text-[#DFDFE2] hover:bg-[#1F1F22]"
+              >
+                <div className="font-medium">{block.name}</div>
+                <div className="mt-1 text-[#85858A]">
+                  {block.mimeType} · {formatBytes(block.size)}
+                </div>
+              </button>
+            </div>
           );
         }
         if (block.kind === "text" && message.role === "user") {
@@ -2083,4 +2442,111 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+}
+
+function ArtifactImage({
+  botId,
+  artifactId,
+  name,
+}: {
+  botId: string;
+  artifactId: string;
+  name: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = container.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "320px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setSrc(null);
+    void rpc.artifacts
+      .get({ botId, artifactId })
+      .then((artifact) => {
+        const bytes = decodeArtifactBase64(artifact.contentBase64);
+        objectUrl = URL.createObjectURL(
+          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
+        );
+        if (cancelled) URL.revokeObjectURL(objectUrl);
+        else setSrc(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [artifactId, botId, visible]);
+
+  return (
+    <div ref={container}>
+      {src ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="max-w-[240px] overflow-hidden rounded-[20px]"
+        >
+          <img src={src} alt={name} className="max-h-48 w-full object-cover" />
+        </button>
+      ) : (
+        <div className="rounded-[20px] border border-[#26262A] bg-[#17171A] px-4 py-3 text-[14px] text-[#85858A]">
+          {name}
+        </div>
+      )}
+      {open && src ? (
+        <button
+          type="button"
+          aria-label="Close image preview"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
+          onClick={() => setOpen(false)}
+        >
+          <img
+            src={src}
+            alt={name}
+            className="max-h-[85vh] max-w-[90vw] rounded-[12px] object-contain"
+          />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? (result.split(",")[1] ?? "") : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

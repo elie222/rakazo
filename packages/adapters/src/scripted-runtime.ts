@@ -233,6 +233,17 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("attach") && (lower.includes("thread") || lower.includes("into the thread"))) {
+    const said = /says?\s+(.+)$/i.exec(prompt)?.[1]?.replace(/[.]+$/, "") ?? prompt;
+    const content = `${said.trim()}\n`;
+    const filePath =
+      /(?:called|named|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ?? "notes/result.txt";
+    return [
+      { assistant: "writing that into my home and attaching it to the thread." },
+      { toolCalls: [{ name: "write_file", args: { path: filePath, content } }] },
+      { toolCalls: [{ name: "attach_file", args: { path: filePath } }], complete: true },
+    ];
+  }
   if (
     lower.includes("write") &&
     (lower.includes("file") || lower.includes("home") || lower.includes("note"))

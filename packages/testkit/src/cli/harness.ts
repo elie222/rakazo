@@ -19,8 +19,8 @@ const e2eGrep = grepArg?.slice("--grep=".length);
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "daytona"].includes(sandboxProvider)) {
-  throw new Error('Sandbox must be "fake", "e2b", or "daytona"');
+if (!["fake", "e2b", "daytona", "box"].includes(sandboxProvider)) {
+  throw new Error('Sandbox must be "fake", "e2b", "daytona", or "box"');
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
@@ -30,6 +30,9 @@ if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
 }
 if (sandboxProvider === "daytona" && !process.env.DAYTONA_API_KEY) {
   throw new Error("DAYTONA_API_KEY is required when --sandbox=daytona");
+}
+if (sandboxProvider === "box" && !process.env.BOX_API_KEY) {
+  throw new Error("BOX_API_KEY is required when --sandbox=box");
 }
 
 async function main() {
@@ -75,6 +78,8 @@ async function main() {
           "pnpm exec vitest run --no-file-parallelism",
           "packages/testkit/src/journeys.test.ts",
           "packages/testkit/src/authorization.test.ts",
+          "packages/testkit/src/attachments.test.ts",
+          "packages/testkit/src/search.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
           "packages/adapters/src/wakeup.postgres.test.ts",
           "packages/adapters/src/realtime.postgres.test.ts",
@@ -176,7 +181,7 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "daytona",
+                kind: computer.kind as "e2b" | "daytona" | "box",
                 providerRef: computer.providerRef!,
               },
               {
@@ -210,7 +215,7 @@ type AppHandles = Awaited<
 >;
 
 async function managedComputers(handles: AppHandles) {
-  if (sandboxProvider !== "e2b" && sandboxProvider !== "daytona") return [];
+  if (!["e2b", "daytona", "box"].includes(sandboxProvider)) return [];
   return handles.prisma.computer.findMany({
     where: { providerRef: { not: null } },
     select: { homeKey: true, kind: true, providerRef: true, userId: true, workspaceId: true },

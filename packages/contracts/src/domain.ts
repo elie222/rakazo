@@ -126,6 +126,11 @@ export const ArtifactSchema = z.object({
   createdAt: z.string(),
 });
 
+export const ArtifactWithContentSchema = ArtifactSchema.extend({
+  contentBase64: z.string(),
+});
+export type ArtifactWithContent = z.infer<typeof ArtifactWithContentSchema>;
+
 export const UsageRecordSchema = z.object({
   id: Id,
   botId: Id.nullable(),

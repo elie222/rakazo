@@ -17,7 +17,9 @@ export type PlaywrightRun = {
   createdAt: string;
   event: string;
   id: string;
-  reportUrl: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
+  reportUrl?: string;
   result: string;
   runNumber: number;
   runUrl: string;
@@ -136,13 +138,18 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
     const generatedAt = document.querySelector("#generated-at");
     const latestReport = document.querySelector("#latest-report");
     const latestScreenshots = document.querySelector("#latest-screenshots");
+    const latestWithReport = history.find((run) => run.reportUrl);
 
     if (history.length === 0) {
       empty.hidden = false;
       latestReport.hidden = true;
       latestScreenshots.hidden = true;
     } else {
-      latestReport.href = history[0].reportUrl;
+      if (latestWithReport) {
+        latestReport.href = latestWithReport.reportUrl;
+      } else {
+        latestReport.hidden = true;
+      }
       latestScreenshots.href = history[0].screenshotsUrl;
     }
 
@@ -184,7 +191,9 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       commit.className = "mono";
       commit.textContent = run.sha.slice(0, 7);
       const event = document.createElement("td");
-      event.textContent = run.event + " · " + run.branch;
+      event.textContent = run.pullRequestNumber
+        ? "PR #" + run.pullRequestNumber + " · " + run.branch
+        : run.event + " · " + run.branch;
       const screenshotCount = document.createElement("td");
       screenshotCount.textContent = String(run.screenshotCount);
       const published = document.createElement("td");
@@ -195,13 +204,23 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       const screenshots = document.createElement("a");
       screenshots.href = run.screenshotsUrl;
       screenshots.textContent = "Screenshots";
-      const report = document.createElement("a");
-      report.href = run.reportUrl;
-      report.textContent = "Report";
       const actions = document.createElement("a");
       actions.href = run.runUrl;
       actions.textContent = "Actions";
-      linkList.append(screenshots, report, actions);
+      linkList.append(screenshots);
+      if (run.reportUrl) {
+        const report = document.createElement("a");
+        report.href = run.reportUrl;
+        report.textContent = "Report";
+        linkList.append(report);
+      }
+      if (run.pullRequestUrl) {
+        const pullRequest = document.createElement("a");
+        pullRequest.href = run.pullRequestUrl;
+        pullRequest.textContent = "PR";
+        linkList.append(pullRequest);
+      }
+      linkList.append(actions);
       links.append(linkList);
 
       row.append(result, runNumber, commit, event, screenshotCount, published, links);
@@ -219,7 +238,9 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
 export function renderScreenshotGallery(input: {
   createdAt: string;
   dashboardUrl: string;
-  reportUrl: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
+  reportUrl?: string;
   result: string;
   runUrl: string;
   screenshots: PlaywrightScreenshot[];
@@ -289,7 +310,8 @@ export function renderScreenshotGallery(input: {
         <p class="subtitle">Scan every captured product state from this Playwright run.</p>
       </div>
       <div class="actions">
-        <a class="button" href="${escapeHtml(input.reportUrl)}">Full report</a>
+        ${input.reportUrl ? `<a class="button" href="${escapeHtml(input.reportUrl)}">Full report</a>` : ""}
+        ${input.pullRequestUrl ? `<a class="button" href="${escapeHtml(input.pullRequestUrl)}">PR #${input.pullRequestNumber}</a>` : ""}
         <a class="button" href="${escapeHtml(input.runUrl)}">GitHub Actions</a>
         <a class="button" href="${escapeHtml(input.dashboardUrl)}">All runs</a>
       </div>
@@ -367,7 +389,12 @@ function isPlaywrightRun(value: unknown): value is PlaywrightRun {
     typeof run.event === "string" &&
     typeof run.id === "string" &&
     /^\d+$/.test(run.id) &&
-    isHttpsUrl(run.reportUrl) &&
+    (run.reportUrl === undefined || isHttpsUrl(run.reportUrl)) &&
+    (run.pullRequestNumber === undefined ||
+      (Number.isInteger(run.pullRequestNumber) && run.pullRequestNumber > 0)) &&
+    (run.pullRequestUrl === undefined || isHttpsUrl(run.pullRequestUrl)) &&
+    ((run.pullRequestNumber === undefined && run.pullRequestUrl === undefined) ||
+      (run.pullRequestNumber !== undefined && run.pullRequestUrl !== undefined)) &&
     typeof run.result === "string" &&
     typeof run.runNumber === "number" &&
     isHttpsUrl(run.runUrl) &&

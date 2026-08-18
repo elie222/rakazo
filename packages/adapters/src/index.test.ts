@@ -86,6 +86,12 @@ describe("scripted runtime", () => {
     expect(types.at(-1)).toBe("done");
   });
 
+  it("attaches a workspace file into the thread", () => {
+    const script = inferScript("write notes/result.txt and attach it to the thread");
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "write_file"))).toBe(true);
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "attach_file"))).toBe(true);
+  });
+
   it("observes the screen when asked", () => {
     const script = inferScript("observe your screen and type writer-desk");
     expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "computer_observe"))).toBe(true);
@@ -125,6 +131,7 @@ describe("builtin tools", () => {
     expect(builtinAgentTools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "write_file",
+        "attach_file",
         "shell",
         "remember",
         "request_takeover",
