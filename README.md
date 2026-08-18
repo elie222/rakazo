@@ -8,6 +8,8 @@ Web, desktop, and mobile. Bring your own AI and sandbox. The product is still ea
 
 Each bot has its own thread, memory, routines, and history. Workspace bots share a Team Computer by default; a bot can use a Private computer instead. A bot can also spawn more bots — each a regular peer with its own thread — or run short-lived subagents inside the current turn.
 
+Looking for bots to install? Check out [botdirectory.ai](https://botdirectory.ai/).
+
 ## Demo
 
 https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
