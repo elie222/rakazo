@@ -1,6 +1,9 @@
 const DEFAULT_SUPERMEMORY_BASE_URL = "http://localhost:6767";
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
 
+/** How many recalled memories a search asks for, and the most that are ever injected into a run. */
+export const MAX_RECALLED_MEMORIES = 5;
+
 export interface SupermemoryResult {
   memory: string;
   similarity: number;
@@ -48,7 +51,11 @@ export async function searchSupermemory(
     const response = await fetch(`${config.baseUrl}/v4/search`, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: query, containerTags: [containerTag] }),
+      body: JSON.stringify({
+        q: query,
+        containerTags: [containerTag],
+        limit: MAX_RECALLED_MEMORIES,
+      }),
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
     });
     if (!response.ok) {

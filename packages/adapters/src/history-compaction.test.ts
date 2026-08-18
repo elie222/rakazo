@@ -1,10 +1,12 @@
-import type { AgentRuntime } from "@rakazo/adapter-kit";
+import type { AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
+import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   compactHistory,
   formatRecalledMemory,
   historyWindowSize,
+  MAX_TRANSCRIPT_CHARS,
   nextCompactionBatchRange,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
@@ -70,22 +72,33 @@ describe("formatRecalledMemory", () => {
   });
 });
 
+type HarnessMessage = {
+  seq: number;
+  role: string;
+  blocks: Array<{ kind: string; text: string }>;
+};
+
 function compactionHarness(
   options: {
     deploymentModelKey?: string;
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
+    messages?: HarnessMessage[];
+    nextMessageSeq?: number;
   } = {},
 ) {
+  const messages =
+    options.messages ??
+    Array.from({ length: 50 }, (_, i) => ({
+      seq: i,
+      role: i % 2 === 0 ? "user" : "bot",
+      blocks: [{ kind: "text", text: `message ${i}` }],
+    }));
   const thread = {
     id: "thread-1",
     botId: "bot-1",
+    nextMessageSeq: options.nextMessageSeq ?? messages.length,
     historyCompactedUpToSeq: null as number | null,
   };
-  const messages = Array.from({ length: 50 }, (_, i) => ({
-    seq: i,
-    role: i % 2 === 0 ? "user" : "bot",
-    blocks: [{ kind: "text", text: `message ${i}` }],
-  }));
   const prisma = {
     thread: {
       findUniqueOrThrow: vi.fn(async () => thread),
@@ -111,15 +124,18 @@ function compactionHarness(
   const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
     ok: true,
   }));
+  const jobs = { enqueue: vi.fn(async () => undefined) };
   return {
     thread,
     messages,
     prisma,
     runtime,
     saveSupermemoryMemory,
+    jobs,
     deps: {
       prisma: prisma as unknown as PrismaClient,
       runtime: runtime as unknown as AgentRuntime,
+      jobs: jobs as unknown as JobPublisher,
       deploymentModelKey: options.deploymentModelKey,
       saveSupermemoryMemory,
     },
@@ -172,13 +188,110 @@ describe("compactHistory", () => {
     });
   });
 
-  it("falls back to the scripted runtime only when nothing at all is configured", async () => {
+  it("uses PI_DEFAULT_MODEL as the platform default summarizer when it is configured", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    const previous = process.env.PI_DEFAULT_MODEL;
+    process.env.PI_DEFAULT_MODEL = "moonshotai/kimi-k2";
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      if (previous === undefined) delete process.env.PI_DEFAULT_MODEL;
+      else process.env.PI_DEFAULT_MODEL = previous;
+    }
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.model).toEqual({
+      provider: "openrouter",
+      id: "moonshotai/kimi-k2",
+      apiKey: "openrouter-key",
+    });
+  });
+
+  it("skips compaction entirely when nothing at all is configured, rather than summarizing with the scripted runtime", async () => {
     const harness = compactionHarness();
 
     await compactHistory(harness.deps, "thread-1");
 
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+  });
+
+  it("caps an oversized transcript at the budget, keeping the most recent content", async () => {
+    const filler = "x".repeat(2_000);
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: Array.from({ length: 50 }, (_, i) => ({
+        seq: i,
+        role: "user",
+        blocks: [{ kind: "text", text: `marker-${i} ${filler}` }],
+      })),
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
     const [request] = harness.runtime.run.mock.calls[0]!;
-    expect(request.model).toEqual({ provider: "scripted", id: "scripted", apiKey: undefined });
+    expect(request.prompt).toHaveLength(MAX_TRANSCRIPT_CHARS);
+    expect(request.prompt).toContain("marker-49");
+    expect(request.prompt).not.toContain("marker-0 ");
+  });
+
+  it("re-enqueues itself while a full batch of backlog still remains", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      nextMessageSeq: 150,
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1"));
+  });
+
+  it("does not re-enqueue itself once the backlog no longer warrants compaction", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.prisma.thread.update).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no uncompacted messages remain", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key", messages: [] });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not save or advance the cursor when the summarizer returns no text", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.runtime.run.mockImplementation(async function* () {
+      yield { type: "done" };
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+  });
+
+  it("propagates a summarizer failure so the job retries, and does not advance the cursor", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.runtime.run.mockImplementation(async function* () {
+      yield { type: "text", text: "partial" };
+      throw new Error("summarizer unavailable");
+    });
+
+    await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow(
+      "summarizer unavailable",
+    );
+
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
   });
 
   it("does not advance the cursor if saving to Supermemory fails", async () => {

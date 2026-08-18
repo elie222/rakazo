@@ -39,7 +39,12 @@ export function createBackgroundJobHandlers(deps: {
     },
     "history.compact": async (payload) => {
       await compactHistory(
-        { prisma: deps.prisma, runtime: deps.runtime, deploymentModelKey: deps.deploymentModelKey },
+        {
+          prisma: deps.prisma,
+          runtime: deps.runtime,
+          jobs: deps.jobs,
+          deploymentModelKey: deps.deploymentModelKey,
+        },
         payload.threadId,
       );
     },

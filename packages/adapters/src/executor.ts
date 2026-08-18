@@ -693,7 +693,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
-                recalledMemory || undefined,
+                recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
@@ -960,22 +960,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks: [{ kind: "text", text }],
           });
           if (!completed) return;
-          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
-            const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
-              where: { id: thread.id },
-              select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
-            });
-            if (
-              shouldEnqueueCompaction(
-                updatedThread.nextMessageSeq,
-                updatedThread.historyCompactedUpToSeq,
-                HISTORY_WINDOW_SIZE,
-                COMPACTION_BATCH_SIZE,
-              )
-            ) {
-              await deps.jobs.enqueue(historyCompactJob(thread.id));
-            }
-          }
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "completion",
@@ -984,6 +968,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               threadId: thread.id,
             });
+          }
+          // Last, and never fatal: the run is already finalized, so a failure here must not reach
+          // the catch block below, where a second finalizeRun would match no rows and silently
+          // skip the completion notification.
+          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+            try {
+              const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
+                where: { id: thread.id },
+                select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
+              });
+              if (
+                shouldEnqueueCompaction(
+                  updatedThread.nextMessageSeq,
+                  updatedThread.historyCompactedUpToSeq,
+                  HISTORY_WINDOW_SIZE,
+                  COMPACTION_BATCH_SIZE,
+                )
+              ) {
+                await deps.jobs.enqueue(historyCompactJob(thread.id));
+              }
+            } catch (error) {
+              console.error("history.compact enqueue failed", error);
+            }
           }
         } catch (error) {
           if (!terminalCheckpointComplete) {

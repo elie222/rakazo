@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isSupermemoryEnabled,
+  MAX_RECALLED_MEMORIES,
   saveSupermemoryMemory,
   searchSupermemory,
   supermemoryContainerTag,
@@ -56,9 +57,10 @@ describe("supermemory client", () => {
       const [url, init] = fetchMock.mock.calls[0]!;
       expect(url).toBe("http://localhost:6767/v4/search");
       expect(init.headers.Authorization).toBe("Bearer sm_test_key");
-      expect(JSON.parse(init.body)).toEqual({
+      expect(JSON.parse(init.body)).toStrictEqual({
         q: "spelling preference",
         containerTags: ["rakazo:bot-123"],
+        limit: MAX_RECALLED_MEMORIES,
       });
     });
 
