@@ -36,6 +36,8 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 
 ## Run locally (web)
 
+Want a coding agent to handle the setup? Copy the [`SETUP_PROMPT.md`](./SETUP_PROMPT.md) prompt into your agent.
+
 From the repo root:
 
 ```bash
