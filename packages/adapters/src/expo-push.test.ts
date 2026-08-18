@@ -147,4 +147,25 @@ describe("expo push", () => {
     );
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
   });
+
+  it("keeps a replacement token if the stale send is rejected", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        await savePushToken(dataDir, "user-1", "ExponentPushToken[new]");
+        return jsonResponse({
+          data: { status: "error", details: { error: "DeviceNotRegistered" } },
+        });
+      }),
+    );
+    const push = new ExpoPushProvider(dataDir);
+    await push.send(
+      { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+      notifyContext,
+    );
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
+  });
 });

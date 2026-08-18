@@ -98,7 +98,8 @@ export class ExpoPushProvider implements NotificationProvider {
     }
     const body = await response.json().catch(() => undefined);
     if (shouldForgetPushToken(body)) {
-      await deletePushToken(this.dataDir, context.userId);
+      const current = await loadPushToken(this.dataDir, context.userId);
+      if (current === token) await deletePushToken(this.dataDir, context.userId);
       return;
     }
     const failure = expoPushErrorMessage(body, response.status);
