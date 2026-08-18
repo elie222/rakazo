@@ -86,6 +86,15 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
+
+  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  await gmailRow.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11a-plugin-connected");
+
+  await gmailRow.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11b-plugin-revoked");
   await page.getByRole("button", { name: "Close plugins" }).click();
 
   await page.getByText("Chief").first().click();
