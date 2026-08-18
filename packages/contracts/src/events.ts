@@ -77,6 +77,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("meta"), text: z.string() }),
   z.object({ kind: z.literal("progress"), text: z.string() }),
   z.object({
+    kind: z.literal("steps"),
+    steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
+  }),
+  z.object({
     kind: z.literal("subagent"),
     agentId: z.string(),
     name: z.string(),

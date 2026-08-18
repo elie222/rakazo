@@ -227,6 +227,158 @@ describe("thread event reduction", () => {
     ).toBe(waiting);
   });
 
+  it("accumulates tool-call steps and collapses repeats into a count", () => {
+    const initial = snapshot([]);
+
+    const first = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "agent.tool.called",
+        seq: 4,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const second = reduceThreadSnapshot(
+      first,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+    const third = reduceThreadSnapshot(
+      second,
+      event({
+        type: "agent.tool.called",
+        seq: 6,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+
+    expect(third?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Slack find channels", count: 1 },
+              { label: "Slack fetch conversation history", count: 2 },
+            ],
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("merges narration and tool calls into one live message in chronological order", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Found it, now sanding", streaming: true },
+      }),
+    );
+
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Slack " },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+          { kind: "progress", text: "Found it, now sanding" },
+        ],
+      }),
+    ]);
+  });
+
+  it("holds back a partial trailing word across a tool call instead of splitting it", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check what I have loca", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "shell" },
+      }),
+    );
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "lly and try the GitHub API.", streaming: true },
+      }),
+    );
+
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check what I have " },
+          { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+          { kind: "progress", text: "locally and try the GitHub API." },
+        ],
+      }),
+    ]);
+  });
+
+  it("clears the step trail once the durable answer arrives", () => {
+    const initial = snapshot([
+      message("steps:run-1", [
+        { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+      ]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "final", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["final"]);
+  });
+
   it("replaces an ask message when its durable prompt state changes", () => {
     const initial = snapshot([
       message("ask-1", [{ kind: "ask", text: "Which city?", status: "pending" }]),
