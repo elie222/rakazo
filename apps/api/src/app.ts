@@ -86,6 +86,8 @@ export async function createApp(
     daytonaApiKey: env.daytonaApiKey,
     daytonaApiUrl: env.daytonaApiUrl,
     daytonaTarget: env.daytonaTarget,
+    boxApiKey: env.boxApiKey,
+    boxApiUrl: env.boxApiUrl,
     dataDir: env.dataDir,
     prisma,
   });

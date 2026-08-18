@@ -129,8 +129,9 @@ pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
 pnpm test:e2e          # Playwright against the emulated stack
 pnpm test:e2e -- --sandbox=e2b # the same deterministic suite against real E2B
 pnpm test:e2e -- --sandbox=daytona # the same suite against real Daytona
+pnpm test:e2e -- --sandbox=box # the same suite against real Box
 pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
-pnpm test:canary       # live OpenRouter / E2B canaries
+pnpm test:canary       # live OpenRouter / E2B / Box canaries
 # explicit real vision-model + real E2B desktop acceptance test:
 COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
@@ -140,8 +141,8 @@ GitHub Actions artifacts. Successful merges and the nightly verification publish
 history plus a scan-friendly screenshot gallery at
 <https://rakazogithubactions.fsn1.your-objectstorage.com/playwright/index.html>.
 
-The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b` or `daytona`.
-Those options require `E2B_API_KEY` or `DAYTONA_API_KEY`, keep the deterministic scripted agent runtime, and destroy
+The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`, `daytona`, or `box`.
+Those options require `E2B_API_KEY`, `DAYTONA_API_KEY`, or `BOX_API_KEY`, keep the deterministic scripted agent runtime, and destroy
 the provider machines after the run. The default and all automatic runs remain on `fake`.
 
 `pnpm test:topology`, `pnpm test:canary`, and `pnpm test:computer` are for running the product path on your machine. They are not part of pull-request CI. The computer acceptance test also requires `E2B_API_KEY` and `OPENROUTER_API_KEY` (the command reads the root `.env`) and uses a temporary Postgres container. It proves an actual model can observe and click a real browser, then use the sandbox terminal and files.

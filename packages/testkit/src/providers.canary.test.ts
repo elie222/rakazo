@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { E2BSandboxProvider, PiAgentRuntime } from "@rakazo/adapters";
+import { BoxSandboxProvider, E2BSandboxProvider, PiAgentRuntime } from "@rakazo/adapters";
 import { afterAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -15,17 +15,19 @@ function loadEnvFile() {
     if (eq < 1) continue;
     const key = trimmed.slice(0, eq);
     const value = trimmed.slice(eq + 1).replace(/^["']|["']$/g, "");
-    if (!process.env[key]) process.env[key] = value;
+    if (!(key in process.env)) process.env[key] = value;
   }
 }
 
 loadEnvFile();
 
 const liveE2b = Boolean(process.env.VERIFY_PROVIDERS && process.env.E2B_API_KEY);
+const liveBox = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOX_API_KEY);
 const livePi = Boolean(process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY);
 const livePiApp = Boolean(livePi && process.env.DATABASE_URL);
 
 const describeE2b = liveE2b ? describe : describe.skip;
+const describeBox = liveBox ? describe : describe.skip;
 const describePi = livePi ? describe : describe.skip;
 const describePiApp = livePiApp ? describe : describe.skip;
 
@@ -55,6 +57,52 @@ describeE2b("live E2B canary", () => {
       await sandbox.destroy(computer, ctx);
     }
   }, 120_000);
+});
+
+describeBox("live Box canary", () => {
+  it("provisions a desktop, observes it, preserves a file across stop/resume, and destroys it", async () => {
+    const sandbox = new BoxSandboxProvider({
+      apiKey: process.env.BOX_API_KEY!,
+      apiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
+    });
+    const ctx = {
+      operationId: "box-canary",
+      traceId: "box-canary",
+      workspaceId: "box-canary",
+      userId: "box-canary",
+      signal: new AbortController().signal,
+    };
+    const request = { botId: "box-canary", homePath: "/home/user/rakazo-home" };
+    let computer = await sandbox.provision(request, ctx);
+    try {
+      await sandbox.prepare(computer, ctx);
+      let stdout = "";
+      for await (const event of sandbox.execute(computer, { argv: ["echo", "box-ok"] }, ctx)) {
+        if (event.type === "stdout") stdout += event.data;
+        if (event.type === "exit") expect(event.code).toBe(0);
+      }
+      expect(stdout).toContain("box-ok");
+      await sandbox.writeFile(
+        computer,
+        { path: "canary.txt", content: new TextEncoder().encode("preserved") },
+        ctx,
+      );
+      expect((await sandbox.observe(computer, ctx)).image.byteLength).toBeGreaterThan(0);
+
+      await sandbox.stop(computer, ctx);
+      computer = await sandbox.provision(
+        { ...request, providerRef: computer.providerRef, providerKind: computer.kind },
+        ctx,
+      );
+      expect(computer.fresh).toBe(false);
+      await sandbox.prepare(computer, ctx);
+      expect(new TextDecoder().decode(await sandbox.readFile(computer, "canary.txt", ctx))).toBe(
+        "preserved",
+      );
+    } finally {
+      await sandbox.destroy(computer, ctx);
+    }
+  }, 240_000);
 });
 
 describePi("live OpenRouter / Pi canary", () => {

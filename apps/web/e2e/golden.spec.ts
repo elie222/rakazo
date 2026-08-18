@@ -52,7 +52,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await composer.fill("install the gsc cli and sign in");
   await page.keyboard.press("Enter");
   await expect(page.getByText(/sign in to continue|protected input/i).first()).toBeVisible({
-    timeout: 30_000,
+    timeout: realSandboxTimeout(90_000, 30_000),
   });
   await expect
     .poll(() => threadRunStatus(page), {
@@ -73,10 +73,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover");
   await page.getByRole("button", { name: "Release" }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
-  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
+    timeout: realSandboxTimeout(90_000, 30_000),
+  });
 
   await page.getByText("+ New routine").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
@@ -228,4 +231,27 @@ async function threadRunStatus(page: Page) {
     botId: activeBotId(page),
   });
   return result.run?.status ?? "idle";
+}
+
+async function waitForBoxFramebuffer(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        for (const frame of page.frames()) {
+          if (frame === page.mainFrame()) continue;
+          const canvas = frame.locator("canvas").first();
+          if ((await canvas.count()) === 0) continue;
+          const ready = await canvas
+            .evaluate((element) => {
+              const framebuffer = element as HTMLCanvasElement;
+              return framebuffer.width > 0 && framebuffer.height > 0;
+            })
+            .catch(() => false);
+          if (ready) return true;
+        }
+        return false;
+      },
+      { timeout: 60_000, message: "the Box noVNC framebuffer must be ready" },
+    )
+    .toBe(true);
 }
