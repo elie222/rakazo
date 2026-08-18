@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   asConnectorTools,
+  ComposioConnector,
   collectLogIds,
   collectPages,
-  ComposioConnector,
   executeSessionKey,
   filterCatalog,
   isComposioEnabled,
@@ -123,7 +123,7 @@ describe("Composio during pnpm test", () => {
     );
     const controller = new AbortController();
     const events = connector.execute(
-      { tool: "GOOGLETASKS_LIST_TASKS", args: {} },
+      { tool: "GOOGLETASKS_LIST_TASKS", args: {}, executionId: "test-execution" },
       {
         operationId: "test",
         traceId: "test",

@@ -8,11 +8,11 @@ import {
   CONNECTION_OPERATION_TRANSACTION_OPTIONS,
   connectionOperationSignal,
 } from "./connection-authorization-lock.js";
-import { GTASKS_SLACK_LANE, GTASKS_SLACK_ROUTING } from "./gtasks-slack-config.js";
 import {
   createComposioGtasksSlackPort,
   type GtasksSlackPort,
 } from "./gtasks-slack-composio-port.js";
+import { GTASKS_SLACK_LANE, GTASKS_SLACK_ROUTING } from "./gtasks-slack-config.js";
 
 export type GtaskInboxItem = {
   id: string;
@@ -48,11 +48,28 @@ export function gtaskMirrorFingerprint(item: GtaskMirrorContent): string {
     .slice(0, 32);
 }
 
+export function gtaskSlackClientMessageId(workspaceId: string, externalId: string): string {
+  const digest = createHash("sha256")
+    .update(`${workspaceId}:${GTASKS_SLACK_LANE}:${externalId}`)
+    .digest("hex")
+    .slice(0, 32);
+  const variant = ((Number.parseInt(digest[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20)}`;
+}
+
+function escapeSlackText(value: string, maxLength: number): string {
+  return value
+    .slice(0, maxLength)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export function formatGtaskSlackMirror(item: GtaskMirrorContent): string {
-  const lines = [`*Google Tasks Inbox:* ${item.title}`];
-  if (item.due) lines.push(`Due: ${item.due}`);
-  if (item.notes) lines.push(item.notes.slice(0, 500));
-  lines.push(`_(source: googletasks:${item.id})_`);
+  const lines = [`*Google Tasks Inbox:* ${escapeSlackText(item.title, 200)}`];
+  if (item.due) lines.push(`Due: ${escapeSlackText(item.due, 64)}`);
+  if (item.notes) lines.push(escapeSlackText(item.notes, 400));
+  lines.push(`_(source: googletasks:${escapeSlackText(item.id, 100)})_`);
   return lines.join("\n");
 }
 
@@ -180,7 +197,12 @@ async function mirrorOneTask(
       }
 
       const signal = connectionOperationSignal(budget);
-      const { messageTs } = await deps.port.postSlackMessage(ctx, text, signal);
+      const { messageTs } = await deps.port.postSlackMessage(
+        ctx,
+        text,
+        gtaskSlackClientMessageId(ctx.workspaceId, task.id),
+        signal,
+      );
       await tx.integrationMirror.create({
         data: {
           workspaceId: ctx.workspaceId,

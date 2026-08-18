@@ -37,6 +37,26 @@ function fakePrisma(
 }
 
 describe("createJobReconciler", () => {
+  it("enqueues one stable mirror job only for scopes with both connected providers", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue([
+      { workspaceId: "workspace-ready", userId: "user-ready", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-ready", userId: "user-ready", provider: "SLACK" },
+      { workspaceId: "workspace-incomplete", userId: "user-incomplete", provider: "SLACK" },
+    ] as never);
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs });
+
+    await reconciler.reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "integration.gtasks_slack.mirror",
+      payload: { workspaceId: "workspace-ready", userId: "user-ready" },
+      replaceKey: "integration.gtasks_slack.mirror:workspace-ready:user-ready",
+    });
+  });
+
   it("restores queued runs and near-due routines with stable replacement keys", async () => {
     const scheduledFor = new Date(Date.now() + 30_000);
     const controlExpiresAt = new Date(Date.now() + 15_000);

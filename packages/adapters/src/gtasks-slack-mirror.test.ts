@@ -1,14 +1,15 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
-import type { GtasksSlackPort } from "./gtasks-slack-composio-port.js";
 import { ComposioEmulator } from "./composio-emulator.js";
+import type { GtasksSlackPort } from "./gtasks-slack-composio-port.js";
 import { GTASKS_SLACK_LANE, GTASKS_SLACK_ROUTING } from "./gtasks-slack-config.js";
 import {
   connectionsReadyForGtasksSlack,
   formatGtaskSlackMirror,
-  gtaskMirrorFingerprint,
-  syncGtasksSlackInbox,
   type GtaskInboxItem,
+  gtaskMirrorFingerprint,
+  gtaskSlackClientMessageId,
+  syncGtasksSlackInbox,
 } from "./gtasks-slack-mirror.js";
 
 type MirrorStore = Map<
@@ -194,11 +195,12 @@ function deferred() {
 type MockInboxItem = Omit<GtaskInboxItem, "updated"> & { updated?: string };
 
 function createMockPort(tasks: MockInboxItem[]): GtasksSlackPort & {
-  posts: Array<{ text: string; messageTs: string }>;
+  posts: Array<{ text: string; messageTs: string; clientMessageId: string }>;
   updates: Array<{ messageTs: string; text: string }>;
 } {
-  const posts: Array<{ text: string; messageTs: string }> = [];
+  const posts: Array<{ text: string; messageTs: string; clientMessageId: string }> = [];
   const updates: Array<{ messageTs: string; text: string }> = [];
+  const delivered = new Map<string, string>();
   let counter = 0;
   return {
     posts,
@@ -206,10 +208,13 @@ function createMockPort(tasks: MockInboxItem[]): GtasksSlackPort & {
     async listInboxTasks() {
       return tasks.map((task) => ({ updated: "2026-08-18T10:00:00Z", ...task }));
     },
-    async postSlackMessage(_ctx, text) {
+    async postSlackMessage(_ctx, text, clientMessageId) {
+      const existing = delivered.get(clientMessageId);
+      if (existing) return { messageTs: existing };
       counter += 1;
       const messageTs = `ts-${counter}`;
-      posts.push({ text, messageTs });
+      delivered.set(clientMessageId, messageTs);
+      posts.push({ text, messageTs, clientMessageId });
       return { messageTs };
     },
     async updateSlackMessage(_ctx, messageTs, text) {
@@ -253,6 +258,22 @@ describe("gtasks-slack mirror", () => {
     expect(port.posts).toHaveLength(1);
     expect(port.posts[0]?.text).toContain("Buy milk");
     expect(port.posts[0]?.text).toContain("googletasks:task-1");
+    expect(port.posts[0]?.clientMessageId).toBe(
+      gtaskSlackClientMessageId(ctx.workspaceId, "task-1"),
+    );
+  });
+
+  it("renders untrusted task text without activating Slack control sequences", () => {
+    const text = formatGtaskSlackMirror({
+      id: "task-unsafe>",
+      title: "Notify <!channel> & review",
+      notes: "Open <https://malicious.example|this link>",
+    });
+
+    expect(text).toContain("Notify &lt;!channel&gt; &amp; review");
+    expect(text).toContain("&lt;https://malicious.example|this link&gt;");
+    expect(text).not.toContain("<!channel>");
+    expect(text).not.toContain("<https://");
   });
 
   it("emits mirror provenance only to the connection owner's bot", async () => {
@@ -375,7 +396,7 @@ describe("gtasks-slack mirror", () => {
     );
   });
 
-  it("handles retry and concurrent create races without duplicate posts", async () => {
+  it("serializes concurrent creates without duplicate posts", async () => {
     const store: MirrorStore = new Map();
     const port = createMockPort([{ id: "task-4", title: "Race task" }]);
     const prisma = createMockPrisma(store);
@@ -393,15 +414,48 @@ describe("gtasks-slack mirror", () => {
     }
     const deps = { prisma: prisma as never, composio, port };
 
-    store.set(mirrorKey(ctx.workspaceId, "task-4"), {
-      fingerprint: gtaskMirrorFingerprint({ id: "task-4", title: "Race task" }),
-      sourceUpdatedAt: null,
-      slackMessageTs: "ts-existing",
-    });
+    const [first, second] = await Promise.all([
+      syncGtasksSlackInbox(deps, ctx),
+      syncGtasksSlackInbox(deps, ctx),
+    ]);
 
-    const result = await syncGtasksSlackInbox(deps, ctx);
-    expect(result).toEqual({ status: "ok", created: 0, updated: 0, unchanged: 1 });
-    expect(port.posts).toHaveLength(0);
+    expect([first, second]).toEqual(
+      expect.arrayContaining([
+        { status: "ok", created: 1, updated: 0, unchanged: 0 },
+        { status: "ok", created: 0, updated: 0, unchanged: 1 },
+      ]),
+    );
+    expect(port.posts).toHaveLength(1);
+  });
+
+  it("retries an ambiguous ledger failure with the same Slack idempotency key", async () => {
+    const store: MirrorStore = new Map();
+    const port = createMockPort([{ id: "task-retry", title: "Retry task" }]);
+    const prisma = createMockPrisma(store);
+    prisma.integrationMirror.create.mockRejectedValueOnce(new Error("ledger unavailable"));
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+    const deps = { prisma: prisma as never, composio, port };
+
+    const failed = await syncGtasksSlackInbox(deps, ctx);
+    const retried = await syncGtasksSlackInbox(deps, ctx);
+
+    expect(failed).toEqual({ status: "error", message: "ledger unavailable" });
+    expect(retried).toEqual({ status: "ok", created: 1, updated: 0, unchanged: 0 });
+    expect(port.posts).toHaveLength(1);
+    expect(port.posts[0]?.clientMessageId).toBe(
+      gtaskSlackClientMessageId(ctx.workspaceId, "task-retry"),
+    );
   });
 
   it("does not let an older concurrent delivery overwrite a newer revision", async () => {

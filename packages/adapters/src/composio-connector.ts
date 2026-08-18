@@ -1,4 +1,4 @@
-import { Composio } from "@composio/core";
+import { Composio, type ComposioRequestOptions } from "@composio/core";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -13,7 +13,19 @@ import {
 } from "./composio-catalog-cache.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
-type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
+type BaseComposioSession = Awaited<ReturnType<Composio["create"]>>;
+type ComposioSession = BaseComposioSession & {
+  execute(
+    toolSlug: string,
+    arguments_?: Record<string, unknown>,
+    options?: Parameters<BaseComposioSession["execute"]>[2],
+    requestOptions?: ComposioRequestOptions,
+  ): ReturnType<BaseComposioSession["execute"]>;
+  toolkits(
+    options?: Parameters<BaseComposioSession["toolkits"]>[0],
+    requestOptions?: ComposioRequestOptions,
+  ): ReturnType<BaseComposioSession["toolkits"]>;
+};
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
   return Boolean(apiKey) && !process.env.VITEST;
@@ -134,20 +146,20 @@ export class ComposioConnector implements ComposioProvider {
     const existing = this.catalogSessions.get(userId);
     if (existing) {
       try {
-        return await composio.sessions.use(existing, undefined, { signal });
+        return (await composio.sessions.use(existing, undefined, { signal })) as ComposioSession;
       } catch {
         signal?.throwIfAborted();
         this.catalogSessions.delete(userId);
       }
     }
-    const session = await composio.create(
+    const session = (await composio.create(
       userId,
       {
         manageConnections: false,
         sandbox: { enable: false },
       },
       { signal },
-    );
+    )) as ComposioSession;
     this.catalogSessions.set(userId, session.sessionId);
     return session;
   }
@@ -163,13 +175,15 @@ export class ComposioConnector implements ComposioProvider {
     const existing = this.executeSessions.get(userId);
     if (existing?.key === key) {
       try {
-        return await composio.sessions.use(existing.sessionId, undefined, { signal });
+        return (await composio.sessions.use(existing.sessionId, undefined, {
+          signal,
+        })) as ComposioSession;
       } catch {
         signal?.throwIfAborted();
         this.executeSessions.delete(userId);
       }
     }
-    const session = await composio.create(
+    const session = (await composio.create(
       userId,
       {
         manageConnections: false,
@@ -178,7 +192,7 @@ export class ComposioConnector implements ComposioProvider {
         sessionPreset: "direct_tools",
       },
       { signal },
-    );
+    )) as ComposioSession;
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
   }

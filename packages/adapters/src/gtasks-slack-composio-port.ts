@@ -8,6 +8,7 @@ export interface GtasksSlackPort {
   postSlackMessage(
     ctx: GtasksSlackMirrorContext,
     text: string,
+    clientMessageId: string,
     signal: AbortSignal,
   ): Promise<{ messageTs: string }>;
   updateSlackMessage(
@@ -114,8 +115,7 @@ async function resolveInboxListId(
       return String(record.id ?? record.tasklist_id ?? "");
     }
   }
-  const first = asRecord(asArray(data)[0]);
-  return first ? String(first.id ?? first.tasklist_id ?? "") : undefined;
+  return undefined;
 }
 
 export function createComposioGtasksSlackPort(composio: ComposioProvider): GtasksSlackPort {
@@ -139,7 +139,7 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
         .filter((item): item is GtaskInboxItem => Boolean(item));
     },
 
-    async postSlackMessage(ctx, text, signal) {
+    async postSlackMessage(ctx, text, clientMessageId, signal) {
       const data = asRecord(
         await executeComposio(
           composio,
@@ -148,6 +148,10 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
           {
             channel: GTASKS_SLACK_ROUTING.slackChannelId,
             text,
+            client_msg_id: clientMessageId,
+            link_names: false,
+            unfurl_links: false,
+            unfurl_media: false,
           },
           signal,
         ),
@@ -166,6 +170,7 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
           channel: GTASKS_SLACK_ROUTING.slackChannelId,
           ts: messageTs,
           text,
+          link_names: false,
         },
         signal,
       );

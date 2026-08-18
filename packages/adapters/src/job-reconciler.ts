@@ -1,4 +1,9 @@
-import { type JobPublisher, gtasksSlackMirrorJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import {
+  gtasksSlackMirrorJob,
+  type JobPublisher,
+  routineWakeupJob,
+  runContinueJob,
+} from "@rakazo/adapter-kit";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import type { PoolClient } from "pg";
 import { scheduleComputerControlExpiry } from "./computer-control.js";

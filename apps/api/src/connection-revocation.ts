@@ -2,8 +2,8 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   acquireExclusiveConnectionAuthorizationLock,
   beginConnectionOperation,
-  type ComposioProvider,
   CONNECTION_OPERATION_TRANSACTION_OPTIONS,
+  type ComposioProvider,
   connectionOperationSignal,
 } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";

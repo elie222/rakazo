@@ -13,8 +13,8 @@ export const GTASKS_SLACK_ROUTING = {
   composioTools: {
     listTaskLists: "GOOGLETASKS_LIST_TASK_LISTS",
     listTasks: "GOOGLETASKS_LIST_TASKS",
-    postMessage: "SLACK_SENDS_A_MESSAGE_TO_A_CHANNEL",
-    updateMessage: "SLACK_UPDATES_A_MESSAGE",
+    postMessage: "SLACK_CHAT_POST_MESSAGE",
+    updateMessage: "SLACK_UPDATES_A_SLACK_MESSAGE",
   },
   /** Default Google Tasks list title treated as the Inbox lane source. */
   inboxListTitle: "My Tasks",
