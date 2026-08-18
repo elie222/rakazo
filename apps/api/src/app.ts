@@ -154,6 +154,8 @@ export async function createApp(
     jobs,
     events,
     workerId: "api",
+    runtime,
+    deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
