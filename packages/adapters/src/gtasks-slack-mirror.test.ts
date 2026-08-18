@@ -25,7 +25,7 @@ type MockBot = {
 
 type MockPrismaOptions = {
   member?: boolean | (() => boolean);
-  connectedProviders?: string[];
+  connectedProviders?: string[] | (() => string[]);
 };
 
 function mirrorKey(workspaceId: string, externalId: string) {
@@ -117,21 +117,35 @@ function createMockPrisma(
     }),
   };
   const connection = {
-    findMany: vi.fn(async () =>
-      (
-        options.connectedProviders ?? [
+    findMany: vi.fn(async () => {
+      const configured =
+        typeof options.connectedProviders === "function"
+          ? options.connectedProviders()
+          : options.connectedProviders;
+      return (
+        configured ?? [
           GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
           GTASKS_SLACK_ROUTING.composioProviders.slack,
         ]
-      ).map((provider) => ({ provider })),
-    ),
+      ).map((provider) => ({ provider }));
+    }),
   };
   let transactionTail = Promise.resolve();
   const transactionClient = {
     integrationMirror,
     member,
     connection,
-    $queryRaw: vi.fn(async () => []),
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes('FROM "member"')) {
+        const active = typeof options.member === "function" ? options.member() : options.member;
+        return active === false ? [] : [{ id: "member-1" }];
+      }
+      if (query.includes('FROM "connections"')) {
+        return connection.findMany();
+      }
+      return [];
+    }),
   };
 
   return {
@@ -174,7 +188,9 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createMockPort(tasks: GtaskInboxItem[]): GtasksSlackPort & {
+type MockInboxItem = Omit<GtaskInboxItem, "updated"> & { updated?: string };
+
+function createMockPort(tasks: MockInboxItem[]): GtasksSlackPort & {
   posts: Array<{ text: string; messageTs: string }>;
   updates: Array<{ messageTs: string; text: string }>;
 } {
@@ -185,7 +201,7 @@ function createMockPort(tasks: GtaskInboxItem[]): GtasksSlackPort & {
     posts,
     updates,
     async listInboxTasks() {
-      return tasks;
+      return tasks.map((task) => ({ updated: "2026-08-18T10:00:00Z", ...task }));
     },
     async postSlackMessage(_ctx, text) {
       counter += 1;
@@ -287,7 +303,11 @@ describe("gtasks-slack mirror", () => {
 
   it("does not duplicate Slack posts on unchanged replay", async () => {
     const store: MirrorStore = new Map();
-    const task: GtaskInboxItem = { id: "task-2", title: "Draft doc" };
+    const task: GtaskInboxItem = {
+      id: "task-2",
+      title: "Draft doc",
+      updated: "2026-08-18T10:00:00Z",
+    };
     const port = createMockPort([task]);
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
@@ -313,7 +333,9 @@ describe("gtasks-slack mirror", () => {
 
   it("updates Slack when inbox content materially changes", async () => {
     const store: MirrorStore = new Map();
-    let tasks: GtaskInboxItem[] = [{ id: "task-3", title: "Call Sam" }];
+    let tasks: GtaskInboxItem[] = [
+      { id: "task-3", title: "Call Sam", updated: "2026-08-18T10:00:00Z" },
+    ];
     const port = createMockPort(tasks);
     port.listInboxTasks = vi.fn(async () => tasks);
     const composio = new ComposioEmulator();
@@ -331,7 +353,14 @@ describe("gtasks-slack mirror", () => {
     const deps = { prisma: createMockPrisma(store) as never, composio, port };
 
     await syncGtasksSlackInbox(deps, ctx);
-    tasks = [{ id: "task-3", title: "Call Sam tomorrow", notes: "after lunch" }];
+    tasks = [
+      {
+        id: "task-3",
+        title: "Call Sam tomorrow",
+        notes: "after lunch",
+        updated: "2026-08-18T11:00:00Z",
+      },
+    ];
     const result = await syncGtasksSlackInbox(deps, ctx);
 
     expect(result).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
@@ -475,7 +504,7 @@ describe("gtasks-slack mirror", () => {
       { prisma: prisma as never, composio, port: freshPort },
       ctx,
     );
-    await vi.waitFor(() => expect(prisma.$transaction).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(prisma.$transaction).toHaveBeenCalledTimes(3));
     expect(freshPort.updates).toHaveLength(0);
     releaseStaleUpdate.resolve();
     const [staleResult, freshResult] = await Promise.all([staleSync, freshSync]);
@@ -515,7 +544,13 @@ describe("gtasks-slack mirror", () => {
     const port = createMockPort([{ id: "task-revoked-late", title: "Revoked late" }]);
     port.listInboxTasks = vi.fn(async () => {
       member = false;
-      return [{ id: "task-revoked-late", title: "Revoked late" }];
+      return [
+        {
+          id: "task-revoked-late",
+          title: "Revoked late",
+          updated: "2026-08-18T10:00:00Z",
+        },
+      ];
     });
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
@@ -536,6 +571,83 @@ describe("gtasks-slack mirror", () => {
     expect(port.posts).toHaveLength(0);
     expect(port.updates).toHaveLength(0);
   });
+
+  it("holds workspace authorization while provider readiness and listing run", async () => {
+    const store: MirrorStore = new Map();
+    let member = true;
+    const prisma = createMockPrisma(store, [], { member: () => member });
+    const readinessStarted = deferred();
+    const releaseReadiness = deferred();
+    const connectionReady = vi.fn(async () => {
+      readinessStarted.resolve();
+      await releaseReadiness.promise;
+      return true;
+    });
+    let memberDuringList: boolean | undefined;
+    const port = createMockPort([{ id: "task-revocation-race", title: "Revocation race" }]);
+    port.listInboxTasks = vi.fn(async () => {
+      memberDuringList = member;
+      return [
+        {
+          id: "task-revocation-race",
+          title: "Revocation race",
+          updated: "2026-08-18T10:00:00Z",
+        },
+      ];
+    });
+
+    const sync = syncGtasksSlackInbox(
+      { prisma: prisma as never, composio: { connectionReady } as never, port },
+      ctx,
+    );
+    await readinessStarted.promise;
+    const revoke = prisma.$transaction(async () => {
+      member = false;
+    });
+    releaseReadiness.resolve();
+    const result = await sync;
+    await revoke;
+
+    expect(memberDuringList).toBe(true);
+    expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
+    expect(port.posts).toHaveLength(0);
+    expect(port.updates).toHaveLength(0);
+  });
+
+  it.each([undefined, "not-a-date"])(
+    "fails closed when the task revision is %s",
+    async (updated) => {
+      const store: MirrorStore = new Map();
+      const port: GtasksSlackPort = {
+        listInboxTasks: vi.fn(async () => [
+          { id: "task-invalid-revision", title: "Invalid revision", updated } as never,
+        ]),
+        postSlackMessage: vi.fn(),
+        updateSlackMessage: vi.fn(),
+      };
+      const composio = new ComposioEmulator();
+      for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+        await composio.begin(
+          { provider, redirectUrl: "http://example.test" },
+          {
+            ...ctx,
+            operationId: "test",
+            traceId: "test",
+            signal: AbortSignal.timeout(1000),
+          },
+        );
+      }
+
+      const result = await syncGtasksSlackInbox(
+        { prisma: createMockPrisma(store) as never, composio, port },
+        ctx,
+      );
+
+      expect(result.status).toBe("error");
+      expect(port.postSlackMessage).not.toHaveBeenCalled();
+      expect(port.updateSlackMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it("skips when either connector is unavailable", async () => {
     const store: MirrorStore = new Map();

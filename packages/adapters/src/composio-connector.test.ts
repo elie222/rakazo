@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   asConnectorTools,
   collectLogIds,
   collectPages,
+  ComposioConnector,
   executeSessionKey,
   filterCatalog,
   isComposioEnabled,
@@ -92,5 +93,56 @@ describe("Composio during pnpm test", () => {
   it("does not construct a live Platform client under Vitest", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
+  });
+
+  it("forwards execution cancellation to the Composio session", async () => {
+    const execute = vi.fn(
+      async (
+        _tool: string,
+        _args: Record<string, unknown>,
+        _options: undefined,
+        requestOptions: { signal?: AbortSignal },
+      ) =>
+        new Promise((_, reject) => {
+          const signal = requestOptions.signal;
+          if (signal?.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const create = vi.fn(
+      async (_userId: string, _config: unknown, _requestOptions: { signal?: AbortSignal }) => ({
+        sessionId: "session-1",
+        execute,
+      }),
+    );
+    const connector = new ComposioConnector(
+      () => ({ create, sessions: { use: vi.fn() } }) as never,
+    );
+    const controller = new AbortController();
+    const events = connector.execute(
+      { tool: "GOOGLETASKS_LIST_TASKS", args: {} },
+      {
+        operationId: "test",
+        traceId: "test",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        connectedProviders: ["GOOGLETASKS"],
+        signal: controller.signal,
+      },
+    );
+    const next = events[Symbol.asyncIterator]().next();
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+
+    controller.abort(new Error("cancelled"));
+
+    await expect(next).resolves.toEqual({
+      done: false,
+      value: { type: "error", message: "cancelled" },
+    });
+    expect(create.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+    expect(execute.mock.calls[0]?.[3]?.signal).toBe(controller.signal);
   });
 });

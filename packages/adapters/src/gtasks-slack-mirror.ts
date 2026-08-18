@@ -13,7 +13,7 @@ export type GtaskInboxItem = {
   title: string;
   notes?: string;
   due?: string;
-  updated?: string;
+  updated: string;
 };
 
 export type GtasksSlackMirrorContext = {
@@ -26,7 +26,10 @@ export type GtasksSlackSyncResult =
   | { status: "skipped"; reason: "connector_unavailable" }
   | { status: "error"; message: string };
 
-export function gtaskMirrorFingerprint(item: GtaskInboxItem): string {
+type GtaskMirrorContent = Pick<GtaskInboxItem, "id" | "title"> &
+  Partial<Pick<GtaskInboxItem, "notes" | "due">>;
+
+export function gtaskMirrorFingerprint(item: GtaskMirrorContent): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
@@ -39,7 +42,7 @@ export function gtaskMirrorFingerprint(item: GtaskInboxItem): string {
     .slice(0, 32);
 }
 
-export function formatGtaskSlackMirror(item: GtaskInboxItem): string {
+export function formatGtaskSlackMirror(item: GtaskMirrorContent): string {
   const lines = [`*Google Tasks Inbox:* ${item.title}`];
   if (item.due) lines.push(`Due: ${item.due}`);
   if (item.notes) lines.push(item.notes.slice(0, 500));
@@ -50,49 +53,69 @@ export function formatGtaskSlackMirror(item: GtaskInboxItem): string {
 export async function connectionsReadyForGtasksSlack(
   composio: ComposioProvider | undefined,
   userId: string,
+  signal?: AbortSignal,
 ): Promise<{ googleTasks: boolean; slack: boolean }> {
   if (!composio) return { googleTasks: false, slack: false };
   const [googleTasks, slack] = await Promise.all([
-    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.googleTasks),
-    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.slack),
+    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.googleTasks, signal),
+    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.slack, signal),
   ]);
   return { googleTasks, slack };
 }
 
 type MirrorAction = "created" | "updated" | "unchanged" | "scope_unavailable";
 
-async function gtasksSlackScopeReady(
-  prisma: PrismaClient | Prisma.TransactionClient,
+async function lockGtasksSlackScope(
+  tx: Prisma.TransactionClient,
   ctx: GtasksSlackMirrorContext,
 ): Promise<boolean> {
   const providers = [
     GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
     GTASKS_SLACK_ROUTING.composioProviders.slack,
   ];
-  const [member, connections] = await Promise.all([
-    prisma.member.findFirst({
-      where: { organizationId: ctx.workspaceId, userId: ctx.userId },
-      select: { id: true },
-    }),
-    prisma.connection.findMany({
-      where: {
-        workspaceId: ctx.workspaceId,
-        userId: ctx.userId,
-        status: "connected",
-        provider: { in: providers },
-      },
-      select: { provider: true },
-    }),
-  ]);
-  if (!member) return false;
+  const members = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "member"
+    WHERE "organizationId" = ${ctx.workspaceId} AND "userId" = ${ctx.userId}
+    FOR SHARE
+  `;
+  if (members.length === 0) return false;
+  const connections = await tx.$queryRaw<Array<{ provider: string }>>`
+    SELECT "provider"
+    FROM "connections"
+    WHERE "workspaceId" = ${ctx.workspaceId}
+      AND "userId" = ${ctx.userId}
+      AND "status" = 'connected'
+      AND "provider" IN (${providers[0]}, ${providers[1]})
+    FOR SHARE
+  `;
   const connected = new Set(connections.map((connection) => connection.provider));
   return providers.every((provider) => connected.has(provider));
 }
 
-function parseSourceUpdatedAt(updated: string | undefined): Date | null {
-  if (!updated) return null;
-  const timestamp = Date.parse(updated);
-  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+function parseSourceUpdatedAt(updated: unknown): Date {
+  const validFormat =
+    typeof updated === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(updated);
+  const timestamp = typeof updated === "string" ? Date.parse(updated) : Number.NaN;
+  if (!validFormat || !Number.isFinite(timestamp)) {
+    throw new Error("Google Tasks item is missing a valid updated revision");
+  }
+  return new Date(timestamp);
+}
+
+async function withGtasksSlackScopeLease<T>(
+  prisma: PrismaClient,
+  ctx: GtasksSlackMirrorContext,
+  operation: () => Promise<T>,
+): Promise<T | undefined> {
+  return prisma.$transaction(
+    async (tx) => {
+      if (!(await lockGtasksSlackScope(tx, ctx))) return undefined;
+      return operation();
+    },
+    { maxWait: 70_000, timeout: 70_000 },
+  );
 }
 
 async function mirrorOneTask(
@@ -114,7 +137,7 @@ async function mirrorOneTask(
         const lockKey = `${ctx.workspaceId}:${GTASKS_SLACK_LANE}:${task.id}`;
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
 
-        if (!(await gtasksSlackScopeReady(tx, ctx))) return "scope_unavailable" as const;
+        if (!(await lockGtasksSlackScope(tx, ctx))) return "scope_unavailable" as const;
 
         const existing = await tx.integrationMirror.findUnique({
           where: {
@@ -127,10 +150,7 @@ async function mirrorOneTask(
         });
 
         if (existing?.fingerprint === fingerprint) {
-          if (
-            sourceUpdatedAt &&
-            (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt)
-          ) {
+          if (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt) {
             await tx.integrationMirror.update({
               where: { id: existing.id },
               data: { sourceUpdatedAt },
@@ -139,16 +159,18 @@ async function mirrorOneTask(
           return "unchanged" as const;
         }
 
-        if (
-          existing?.sourceUpdatedAt &&
-          (!sourceUpdatedAt || sourceUpdatedAt <= existing.sourceUpdatedAt)
-        ) {
+        if (existing?.sourceUpdatedAt && sourceUpdatedAt <= existing.sourceUpdatedAt) {
           return "unchanged" as const;
         }
 
         const text = formatGtaskSlackMirror(task);
         if (existing?.slackMessageTs) {
-          await deps.port.updateSlackMessage(ctx, existing.slackMessageTs, text);
+          await deps.port.updateSlackMessage(
+            ctx,
+            existing.slackMessageTs,
+            text,
+            AbortSignal.timeout(60_000),
+          );
           await tx.integrationMirror.update({
             where: { id: existing.id },
             data: { fingerprint, sourceUpdatedAt },
@@ -156,7 +178,11 @@ async function mirrorOneTask(
           return "updated" as const;
         }
 
-        const { messageTs } = await deps.port.postSlackMessage(ctx, text);
+        const { messageTs } = await deps.port.postSlackMessage(
+          ctx,
+          text,
+          AbortSignal.timeout(60_000),
+        );
         await tx.integrationMirror.create({
           data: {
             workspaceId: ctx.workspaceId,
@@ -233,22 +259,22 @@ export async function syncGtasksSlackInbox(
   },
   ctx: GtasksSlackMirrorContext,
 ): Promise<GtasksSlackSyncResult> {
-  if (!(await gtasksSlackScopeReady(deps.prisma, ctx))) {
-    return { status: "skipped", reason: "connector_unavailable" };
-  }
-
-  const ready = await connectionsReadyForGtasksSlack(deps.composio, ctx.userId);
-  if (!ready.googleTasks || !ready.slack) {
-    return { status: "skipped", reason: "connector_unavailable" };
-  }
-
   const port = deps.port ?? createComposioGtasksSlackPort(deps.composio!);
-  let tasks: GtaskInboxItem[];
+  let listed: { available: boolean; tasks: GtaskInboxItem[] } | undefined;
   try {
-    tasks = await port.listInboxTasks(ctx);
+    const signal = AbortSignal.timeout(60_000);
+    listed = await withGtasksSlackScopeLease(deps.prisma, ctx, async () => {
+      const ready = await connectionsReadyForGtasksSlack(deps.composio, ctx.userId, signal);
+      if (!ready.googleTasks || !ready.slack) return { available: false, tasks: [] };
+      return { available: true, tasks: await port.listInboxTasks(ctx, signal) };
+    });
   } catch (error) {
     return { status: "error", message: sanitizeComposioError(error) };
   }
+  if (!listed?.available) {
+    return { status: "skipped", reason: "connector_unavailable" };
+  }
+  const { tasks } = listed;
 
   const eventTarget = await resolveEventTarget(deps.prisma, ctx);
   const mirrorDeps = {

@@ -74,7 +74,7 @@ export interface ComposioCatalogItem {
 export interface ComposioProvider extends ConnectorProvider {
   catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]>;
   warmDirectory(): Promise<void>;
-  connectionReady(userId: string, slug: string): Promise<boolean>;
+  connectionReady(userId: string, slug: string, signal?: AbortSignal): Promise<boolean>;
   begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
@@ -118,6 +118,8 @@ export class ComposioConnector implements ComposioProvider {
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
+  constructor(private readonly clientFactory: () => Composio = () => new Composio()) {}
+
   describe() {
     return {
       id: "composio",
@@ -127,42 +129,54 @@ export class ComposioConnector implements ComposioProvider {
     };
   }
 
-  async sessionFor(userId: string): Promise<ComposioSession> {
+  async sessionFor(userId: string, signal?: AbortSignal): Promise<ComposioSession> {
     const composio = this.sdk();
     const existing = this.catalogSessions.get(userId);
     if (existing) {
       try {
-        return await composio.sessions.use(existing);
+        return await composio.sessions.use(existing, undefined, { signal });
       } catch {
         this.catalogSessions.delete(userId);
       }
     }
-    const session = await composio.create(userId, {
-      manageConnections: false,
-      sandbox: { enable: false },
-    });
+    const session = await composio.create(
+      userId,
+      {
+        manageConnections: false,
+        sandbox: { enable: false },
+      },
+      { signal },
+    );
     this.catalogSessions.set(userId, session.sessionId);
     return session;
   }
 
-  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
+  async sessionForExecute(
+    userId: string,
+    toolkits: string[],
+    signal?: AbortSignal,
+  ): Promise<ComposioSession> {
     const key = executeSessionKey(toolkits);
-    if (!key) return this.sessionFor(userId);
+    if (!key) return this.sessionFor(userId, signal);
     const composio = this.sdk();
     const existing = this.executeSessions.get(userId);
     if (existing?.key === key) {
       try {
-        return await composio.sessions.use(existing.sessionId);
+        return await composio.sessions.use(existing.sessionId, undefined, { signal });
       } catch {
         this.executeSessions.delete(userId);
       }
     }
-    const session = await composio.create(userId, {
-      manageConnections: false,
-      sandbox: { enable: false },
-      toolkits: key.split(","),
-      sessionPreset: "direct_tools",
-    });
+    const session = await composio.create(
+      userId,
+      {
+        manageConnections: false,
+        sandbox: { enable: false },
+        toolkits: key.split(","),
+        sessionPreset: "direct_tools",
+      },
+      { signal },
+    );
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
   }
@@ -215,8 +229,11 @@ export class ComposioConnector implements ComposioProvider {
       const session = await this.sessionForExecute(
         context.userId,
         context.connectedProviders ?? [],
+        context.signal,
       );
-      const result = await session.execute(call.tool, call.args ?? {});
+      const result = await session.execute(call.tool, call.args ?? {}, undefined, {
+        signal: context.signal,
+      });
       if (result.error) {
         yield { type: "error", message: sanitizeComposioError(result.error) };
         return;
@@ -258,9 +275,9 @@ export class ComposioConnector implements ComposioProvider {
     }
   }
 
-  async connectionReady(userId: string, slug: string): Promise<boolean> {
-    const session = await this.sessionFor(userId);
-    const page = await session.toolkits({ search: slug, limit: 50 });
+  async connectionReady(userId: string, slug: string, signal?: AbortSignal): Promise<boolean> {
+    const session = await this.sessionFor(userId, signal);
+    const page = await session.toolkits({ search: slug, limit: 50 }, { signal });
     const match = page.items.find((item) => item.slug === slug);
     if (!match) return false;
     return Boolean(match.connection?.isActive) || Boolean(match.isNoAuth);
@@ -285,7 +302,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private sdk(): Composio {
-    this.client ??= new Composio();
+    this.client ??= this.clientFactory();
     return this.client;
   }
 }

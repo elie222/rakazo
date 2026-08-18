@@ -4,22 +4,27 @@ import { GTASKS_SLACK_ROUTING } from "./gtasks-slack-config.js";
 import type { GtaskInboxItem, GtasksSlackMirrorContext } from "./gtasks-slack-mirror.js";
 
 export interface GtasksSlackPort {
-  listInboxTasks(ctx: GtasksSlackMirrorContext): Promise<GtaskInboxItem[]>;
-  postSlackMessage(ctx: GtasksSlackMirrorContext, text: string): Promise<{ messageTs: string }>;
+  listInboxTasks(ctx: GtasksSlackMirrorContext, signal: AbortSignal): Promise<GtaskInboxItem[]>;
+  postSlackMessage(
+    ctx: GtasksSlackMirrorContext,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<{ messageTs: string }>;
   updateSlackMessage(
     ctx: GtasksSlackMirrorContext,
     messageTs: string,
     text: string,
+    signal: AbortSignal,
   ): Promise<void>;
 }
 
-function adapterContext(ctx: GtasksSlackMirrorContext): AdapterContext {
+function adapterContext(ctx: GtasksSlackMirrorContext, signal: AbortSignal): AdapterContext {
   return {
     operationId: "integration.gtasks_slack.mirror",
     traceId: "integration.gtasks_slack.mirror",
     workspaceId: ctx.workspaceId,
     userId: ctx.userId,
-    signal: AbortSignal.timeout(60_000),
+    signal,
     connectedProviders: [
       GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
       GTASKS_SLACK_ROUTING.composioProviders.slack,
@@ -32,10 +37,11 @@ async function executeComposio(
   ctx: GtasksSlackMirrorContext,
   tool: string,
   args: Record<string, unknown>,
+  signal: AbortSignal,
 ): Promise<unknown> {
   const events = composio.execute(
     { tool, args, executionId: `gtasks-slack:${tool}:${ctx.workspaceId}:${Date.now()}` },
-    adapterContext(ctx),
+    adapterContext(ctx, signal),
   );
   let data: unknown;
   for await (const event of events) {
@@ -70,22 +76,36 @@ function mapInboxTask(raw: unknown): GtaskInboxItem | undefined {
   const id = String(record.id ?? record.task_id ?? record.taskId ?? "");
   const title = String(record.title ?? record.name ?? "");
   if (!id || !title) return undefined;
+  const updated = typeof record.updated === "string" ? record.updated : "";
+  const updatedAt = Date.parse(updated);
+  if (!isGoogleTasksRevision(updated) || !Number.isFinite(updatedAt)) {
+    throw new Error("Google Tasks item is missing a valid updated revision");
+  }
   return {
     id,
     title,
     notes: record.notes ? String(record.notes) : record.notes === "" ? "" : undefined,
     due: record.due ? String(record.due) : record.due_date ? String(record.due_date) : undefined,
-    updated: record.updated ? String(record.updated) : undefined,
+    updated: new Date(updatedAt).toISOString(),
   };
+}
+
+function isGoogleTasksRevision(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value);
 }
 
 async function resolveInboxListId(
   composio: ComposioProvider,
   ctx: GtasksSlackMirrorContext,
+  signal: AbortSignal,
 ): Promise<string | undefined> {
-  const data = await executeComposio(composio, ctx, GTASKS_SLACK_ROUTING.composioTools.listTaskLists, {
-    max_results: 50,
-  });
+  const data = await executeComposio(
+    composio,
+    ctx,
+    GTASKS_SLACK_ROUTING.composioTools.listTaskLists,
+    { max_results: 50 },
+    signal,
+  );
   for (const item of asArray(data)) {
     const record = asRecord(item);
     if (!record) continue;
@@ -100,37 +120,55 @@ async function resolveInboxListId(
 
 export function createComposioGtasksSlackPort(composio: ComposioProvider): GtasksSlackPort {
   return {
-    async listInboxTasks(ctx) {
-      const tasklistId = await resolveInboxListId(composio, ctx);
+    async listInboxTasks(ctx, signal) {
+      const tasklistId = await resolveInboxListId(composio, ctx, signal);
       if (!tasklistId) return [];
-      const data = await executeComposio(composio, ctx, GTASKS_SLACK_ROUTING.composioTools.listTasks, {
-        tasklist_id: tasklistId,
-        show_completed: false,
-        show_hidden: false,
-      });
+      const data = await executeComposio(
+        composio,
+        ctx,
+        GTASKS_SLACK_ROUTING.composioTools.listTasks,
+        {
+          tasklist_id: tasklistId,
+          show_completed: false,
+          show_hidden: false,
+        },
+        signal,
+      );
       return asArray(data)
         .map((item) => mapInboxTask(item))
         .filter((item): item is GtaskInboxItem => Boolean(item));
     },
 
-    async postSlackMessage(ctx, text) {
+    async postSlackMessage(ctx, text, signal) {
       const data = asRecord(
-        await executeComposio(composio, ctx, GTASKS_SLACK_ROUTING.composioTools.postMessage, {
-          channel: GTASKS_SLACK_ROUTING.slackChannelId,
-          text,
-        }),
+        await executeComposio(
+          composio,
+          ctx,
+          GTASKS_SLACK_ROUTING.composioTools.postMessage,
+          {
+            channel: GTASKS_SLACK_ROUTING.slackChannelId,
+            text,
+          },
+          signal,
+        ),
       );
       const messageTs = String(data?.ts ?? data?.message_ts ?? data?.messageTs ?? "");
       if (!messageTs) throw new Error("Slack mirror post did not return a message timestamp");
       return { messageTs };
     },
 
-    async updateSlackMessage(ctx, messageTs, text) {
-      await executeComposio(composio, ctx, GTASKS_SLACK_ROUTING.composioTools.updateMessage, {
-        channel: GTASKS_SLACK_ROUTING.slackChannelId,
-        ts: messageTs,
-        text,
-      });
+    async updateSlackMessage(ctx, messageTs, text, signal) {
+      await executeComposio(
+        composio,
+        ctx,
+        GTASKS_SLACK_ROUTING.composioTools.updateMessage,
+        {
+          channel: GTASKS_SLACK_ROUTING.slackChannelId,
+          ts: messageTs,
+          text,
+        },
+        signal,
+      );
     },
   };
 }
