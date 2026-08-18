@@ -386,6 +386,9 @@ importers:
 
   packages/adapters:
     dependencies:
+      '@asciidev/box-sdk':
+        specifier: ^0.0.28
+        version: 0.0.28
       '@composio/core':
         specifier: 0.16.0
         version: 0.16.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)
@@ -661,6 +664,9 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@asciidev/box-sdk@0.0.28':
+    resolution: {integrity: sha512-IaDFZ5dP3XrbbI87rH2Exhrp9JCUGiCwzdTY8HKBiq7TOyzgx1mX5OrPJuy1VV0wR1pLDX+9esnqekhkR0+OJA==}
 
   '@astrojs/check@0.9.10':
     resolution: {integrity: sha512-zgx/UQMozdjOa3bOxjgeCFdtpE3c9rRX6xHwa+2QXvy8z8Akifu2AtubHyv/zzC2znO8dl8fFWL4K+Ba9kS8HQ==}
@@ -8619,6 +8625,8 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 4.4.3
+
+  '@asciidev/box-sdk@0.0.28': {}
 
   '@astrojs/check@0.9.10(prettier@3.9.6)(typescript@5.9.3)':
     dependencies:

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       run_live_providers:
-        description: Run secret-gated OpenRouter and E2B canaries
+        description: Run secret-gated OpenRouter, E2B, and Box canaries
         required: false
         type: boolean
         default: false
@@ -48,6 +48,7 @@ jobs:
     timeout-minutes: 30
     env:
       E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+      BOX_API_KEY: ${{ secrets.BOX_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       RUN_LIVE_PROVIDERS: ${{ github.event_name == 'schedule' || inputs.run_live_providers }}
     steps:
@@ -55,7 +56,7 @@ jobs:
         id: gate
         shell: bash
         run: |
-          if [[ "$RUN_LIVE_PROVIDERS" == "true" && ( -n "$E2B_API_KEY" || -n "$OPENROUTER_API_KEY" ) ]]; then
+          if [[ "$RUN_LIVE_PROVIDERS" == "true" && ( -n "$E2B_API_KEY" || -n "$BOX_API_KEY" || -n "$OPENROUTER_API_KEY" ) ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "No requested live canary has a configured key; skipping safely."

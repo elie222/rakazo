@@ -42,6 +42,20 @@ describe("loadEnv", () => {
     });
   });
 
+  it("loads provider-specific Box configuration", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "box",
+      BOX_API_KEY: "test-box-key",
+      BOX_API_URL: "https://box.test/api/v1",
+    });
+    expect(env).toMatchObject({
+      sandboxProvider: "box",
+      boxApiKey: "test-box-key",
+      boxApiUrl: "https://box.test/api/v1",
+    });
+  });
+
   it("throws when production omits secrets", () => {
     expect(() =>
       loadEnv({
