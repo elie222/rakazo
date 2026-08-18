@@ -37,7 +37,7 @@ export function createBackgroundJobHandlers(deps: {
       }
     },
     "integration.gtasks_slack.mirror": async (payload) => {
-      await syncGtasksSlackInbox(
+      const result = await syncGtasksSlackInbox(
         {
           prisma: deps.prisma,
           composio: deps.composio,
@@ -45,6 +45,7 @@ export function createBackgroundJobHandlers(deps: {
         },
         payload,
       );
+      if (result.status === "error") throw new Error(result.message);
     },
   };
 }
