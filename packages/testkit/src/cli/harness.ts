@@ -1,7 +1,6 @@
 import { execSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { runProcess } from "./process.js";
@@ -95,7 +94,10 @@ async function main() {
       return;
     }
 
-    const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const [{ ComposioEmulator }, { createApp }] = await Promise.all([
+      import("@rakazo/adapters"),
+      import("../../../../apps/api/src/app.ts"),
+    ]);
     const { serve } = await import("@hono/node-server");
     const handles = await createApp({
       databaseUrl,
