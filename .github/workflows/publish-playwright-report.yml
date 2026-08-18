@@ -37,13 +37,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Download Playwright artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          path: .
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
       - name: Read Playwright job result
         id: playwright
         env:
@@ -55,10 +48,43 @@ jobs:
             --jq '[.jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
           case "$result" in
             success|failure) ;;
-            timed_out) result="failure" ;;
+            timed_out) ;;
             *) echo "Unexpected Playwright job conclusion: $result" >&2; exit 1 ;;
           esac
+          echo "job_result=$result" >> "$GITHUB_OUTPUT"
+          if [[ "$result" == "timed_out" ]]; then result="failure"; fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
+      - name: Check for Playwright artifact
+        id: artifact
+        env:
+          ARTIFACT_NAME: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLAYWRIGHT_JOB_RESULT: ${{ steps.playwright.outputs.job_result }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          artifacts="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT_NAME}")"
+          count="$(jq --arg name "$ARTIFACT_NAME" \
+            '[.artifacts[] | select(.name == $name and .expired == false)] | length' \
+            <<<"$artifacts")"
+          if [[ "$count" == "1" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$count" == "0" && "$PLAYWRIGHT_JOB_RESULT" == "timed_out" ]]; then
+            echo "::warning::The timed-out Playwright job ended before it uploaded an artifact. Publishing an empty gallery."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Expected exactly one unexpired Playwright artifact; found $count." >&2
+            exit 1
+          fi
+      - name: Download Playwright artifacts
+        if: steps.artifact.outputs.exists == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: .
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
       - name: Publish trusted Playwright screenshot gallery
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
