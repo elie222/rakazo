@@ -1,6 +1,8 @@
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import path from "node:path";
+import tls from "node:tls";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
@@ -30,13 +32,15 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
       ...safeProxyHeaders(req.headers),
       host: `${target.hostname}:${target.port}`,
     };
-    const upstream = http.request(
+    const transport = target.protocol === "https:" ? https : http;
+    const upstream = transport.request(
       {
         hostname: target.hostname,
         port: target.port,
         path: target.path,
         method: req.method,
         headers,
+        ...(target.protocol === "https:" ? { servername: target.hostname } : {}),
       },
       (incoming) => {
         res.writeHead(incoming.statusCode ?? 502, {
@@ -60,7 +64,11 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
       socket.destroy();
       return;
     }
-    const upstream = net.connect(target.port, target.hostname, () => {
+    const upstream =
+      target.protocol === "https:"
+        ? tls.connect({ port: target.port, host: target.hostname, servername: target.hostname })
+        : net.connect(target.port, target.hostname);
+    upstream.once(target.protocol === "https:" ? "secureConnect" : "connect", () => {
       const headerLines = [
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
         `Host: ${target.hostname}:${target.port}`,
