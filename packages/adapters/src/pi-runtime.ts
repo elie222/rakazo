@@ -28,6 +28,14 @@ function getCatalogModels() {
   return _catalogModels;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
+// A model with reasoning configured (currently only local-mlx) reliably repeats a failed tool
+// call verbatim when run with thinking off — confirmed live and reproduced against the model
+// directly. Enabling reasoning fixes it: the model narrates its diagnosis and adapts instead of
+// retrying blind. Cloud models keep "off" per Rakazo's existing global default.
+const LOCAL_REASONING_THINKING_LEVEL = "medium";
+function thinkingLevelFor(model: { reasoning?: boolean }) {
+  return model.reasoning ? LOCAL_REASONING_THINKING_LEVEL : "off";
+}
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
 const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -100,7 +108,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
-            thinkingLevel: "off",
+            thinkingLevel: thinkingLevelFor(model),
             tools,
             messages: history,
           },
@@ -428,7 +436,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         .filter(Boolean)
         .join(" "),
       model: host.model,
-      thinkingLevel: "off",
+      thinkingLevel: thinkingLevelFor(host.model),
       tools: toAgentTools(childDefs, nestedHost),
       messages: [],
     },
