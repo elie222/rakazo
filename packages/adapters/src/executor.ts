@@ -16,16 +16,24 @@ import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/ada
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
+  appendTextSegment,
+  appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
   containsSecret,
   createStreamingRedactor,
+  humanizeToolName,
   inferAttachmentMimeType,
   isTerminal,
   nextCronDate,
   nextFence,
   redactSecrets,
   sandboxCommandTimeoutMs,
+  splitFlushableText,
+  type ToolCallStreak,
+  type ToolNameStreak,
+  trackToolCallStreak,
+  trackToolNameStreak,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import {
@@ -102,6 +110,11 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
+// Same tool, same arguments, this many times in a row means the agent is stuck, not paginating.
+const MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = 6;
+// Backstop for a stuck agent that varies its arguments each call (so the exact-match cap above
+// never trips) but keeps hammering the same tool without ever narrating progress in between.
+const MAX_CONSECUTIVE_SAME_TOOL_CALLS = 20;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -474,8 +487,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
 
         let assembled = "";
+        let currentTextSegment = "";
+        let messageSegments: MessageBlock[] = [];
         let pendingProgress = "";
         let lastProgressAt = 0;
+        let hasStreamedText = false;
+        let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
+        let toolNameStreak: ToolNameStreak = { name: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
@@ -896,6 +914,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
             if (event.type === "text") {
               assembled += event.text;
+              currentTextSegment += event.text;
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
               if (!scripted && pendingProgress && now - lastProgressAt >= 250) {
@@ -906,8 +925,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   botId: bot.id,
                   type: "thread.progress",
                   runId,
-                  payload: { delta: pendingProgress, streaming: true },
+                  // The first flush replaces the "working…" placeholder outright — a delta
+                  // here would otherwise get appended straight onto it with no separator.
+                  payload: hasStreamedText
+                    ? { delta: pendingProgress, streaming: true }
+                    : { text: pendingProgress, streaming: true },
                 });
+                hasStreamedText = true;
                 pendingProgress = "";
               }
             } else if (event.type === "progress") {
@@ -1006,6 +1030,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
+              const { flush, carry } = splitFlushableText(currentTextSegment);
+              messageSegments = appendTextSegment(messageSegments, flush);
+              currentTextSegment = carry;
+              messageSegments = appendToolCallSegment(messageSegments, event.name);
+              toolCallStreak = trackToolCallStreak(toolCallStreak, event.name, event.args);
+              toolNameStreak = trackToolNameStreak(toolNameStreak, event.name);
+              const stuckOnExactRepeat =
+                toolCallStreak.count >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS;
+              const stuckOnSameTool = toolNameStreak.count >= MAX_CONSECUTIVE_SAME_TOOL_CALLS;
+              if (stuckOnExactRepeat || stuckOnSameTool) {
+                if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+                if (messageSegments.length > 0) {
+                  await publishMessage(deps, run, "bot", redactBlocks(messageSegments, runSecrets));
+                }
+                await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+                terminalCheckpointComplete = true;
+                const stuckCount = stuckOnExactRepeat ? toolCallStreak.count : toolNameStreak.count;
+                const stuckDetail = stuckOnExactRepeat ? " with the same input" : "";
+                const stuckText = `I got stuck calling ${humanizeToolName(event.name)}${stuckDetail} ${stuckCount} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
+                await deps.events.finalizeRun({
+                  workspaceId: run.workspaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  runId,
+                  taskId: run.taskId,
+                  attemptId: attempt.id,
+                  leaseOwner: workerId,
+                  leaseFence: fence,
+                  outcome: "completed",
+                  blocks: [{ kind: "text", text: stuckText }],
+                });
+                runAbortController?.abort();
+                return;
+              }
               if (scripted) await applyTool(event.name, event.args, event.executionId);
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);
@@ -1100,6 +1158,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
+          messageSegments = appendTextSegment(messageSegments, currentTextSegment);
+          currentTextSegment = "";
+          if (!assembled) {
+            messageSegments = appendTextSegment(messageSegments, "done.");
+          }
+          const blocks = redactBlocks(messageSegments, runSecrets);
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
@@ -1111,7 +1175,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseOwner: workerId,
             leaseFence: fence,
             outcome: "completed",
-            blocks: [{ kind: "text", text }],
+            blocks,
           });
           if (!completed) return;
           if (bot.notifyOnFinish) {
@@ -1305,6 +1369,14 @@ async function requeueComputerRun(
 
 async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
   await deps.prisma.event.deleteMany({ where: { runId, type: "thread.progress" } });
+}
+
+function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
+  return blocks.map((block) =>
+    block.kind === "text"
+      ? { kind: "text" as const, text: redactSecrets(block.text, secrets) }
+      : block,
+  );
 }
 
 async function publishMessage(

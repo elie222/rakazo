@@ -1,17 +1,28 @@
 import type {
   ComputerStatus,
+  MessageBlock,
   ProductEvent,
   ThreadMessage,
   ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  appendTextSegment,
+  appendToolCallSegment,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
+  splitFlushableText,
   subagentBlockFromPayload,
 } from "@rakazo/core";
+
+function liveStreamTextSoFar(blocks: readonly MessageBlock[]): string {
+  return blocks
+    .filter((block) => block.kind === "text" || block.kind === "progress")
+    .map((block) => (block.kind === "text" || block.kind === "progress" ? block.text : ""))
+    .join("");
+}
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
@@ -41,6 +52,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
     event.type === "run.waiting_input"
@@ -65,21 +77,55 @@ export function reduceThreadSnapshot(
     };
   }
   if (event.type === "thread.progress") {
-    const progressId = progressMessageId(event);
-    const previous = prev.messages.find((message) => message.id === progressId);
-    const previousText = previous?.blocks[0]?.kind === "progress" ? previous.blocks[0].text : "";
-    const text = progressMessageText(event.payload, previousText);
+    const liveId = progressMessageId(event);
+    const previous = prev.messages.find((message) => message.id === liveId);
+    const priorBlocks = previous?.blocks ?? [];
+    const flushedBlocks =
+      priorBlocks.at(-1)?.kind === "progress" ? priorBlocks.slice(0, -1) : priorBlocks;
+    // Deltas are relative to the whole stream so far, not just the unflushed tail — reconstruct
+    // the full text, then take only what's beyond what earlier segments already captured.
+    const flushedLength = liveStreamTextSoFar(flushedBlocks).length;
+    const fullText = progressMessageText(event.payload, liveStreamTextSoFar(priorBlocks));
+    const tailText = fullText.slice(flushedLength);
+    const blocks = tailText
+      ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
+      : flushedBlocks;
     const streaming: ThreadMessage = {
-      id: progressId,
+      id: liveId,
       threadId: event.threadId,
       seq: event.seq,
       role: "bot",
-      blocks: [{ kind: "progress", text }],
+      blocks,
       runId: event.runId,
       createdAt: event.createdAt,
     };
     const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
     return { ...prev, cursor: event.seq, messages: [...without, streaming] };
+  }
+  if (event.type === "agent.tool.called") {
+    const liveId = progressMessageId(event);
+    const previous = prev.messages.find((message) => message.id === liveId);
+    const priorBlocks = previous?.blocks ?? [];
+    const tail = priorBlocks.at(-1);
+    // Hold back a partial trailing word rather than splitting it across the tool call — it
+    // rejoins as the start of whatever text streams next.
+    const { flush, carry } =
+      tail?.kind === "progress" ? splitFlushableText(tail.text) : { flush: "", carry: "" };
+    const flushedBlocks =
+      tail?.kind === "progress" ? appendTextSegment(priorBlocks.slice(0, -1), flush) : priorBlocks;
+    const withTool = appendToolCallSegment(flushedBlocks, String(event.payload.name ?? ""));
+    const blocks = carry ? [...withTool, { kind: "progress" as const, text: carry }] : withTool;
+    const next: ThreadMessage = {
+      id: liveId,
+      threadId: event.threadId,
+      seq: event.seq,
+      role: "bot",
+      blocks,
+      runId: event.runId,
+      createdAt: event.createdAt,
+    };
+    const without = prev.messages.filter((message) => message.id !== liveId);
+    return { ...prev, cursor: event.seq, messages: [...without, next] };
   }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(event.payload);
@@ -93,10 +139,15 @@ export function reduceThreadSnapshot(
       createdAt: event.createdAt,
     };
     const without = prev.messages.filter(
-      (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+      (message) =>
+        message.id !== next.id &&
+        !message.id.startsWith("progress:") &&
+        !message.id.startsWith("steps:"),
     );
-    const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
-    return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
+    const kept = prev.messages.filter(
+      (message) => message.id.startsWith("progress:") || message.id.startsWith("steps:"),
+    );
+    return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
@@ -117,6 +168,7 @@ export function reduceThreadSnapshot(
       (message) =>
         message.id !== next.id &&
         !message.id.startsWith("progress:") &&
+        !message.id.startsWith("steps:") &&
         !replacedSubagent(message, replacedSubagentIds),
     );
     return { ...prev, cursor: event.seq, messages: [...without, next] };
