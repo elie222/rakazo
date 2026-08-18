@@ -1,10 +1,13 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
   NotificationMessage,
   NotificationProvider,
 } from "@rakazo/adapter-kit";
+
+const PUSH_TOKEN_LOCK_MS = 3_000;
+const PUSH_TOKEN_STALE_LOCK_MS = 5_000;
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
@@ -20,8 +23,22 @@ export async function loadPushToken(dataDir: string, userId: string): Promise<st
 }
 
 export async function savePushToken(dataDir: string, userId: string, token: string): Promise<void> {
-  await mkdir(path.dirname(pushTokenPath(dataDir, userId)), { recursive: true });
-  await writeFile(pushTokenPath(dataDir, userId), token.trim(), "utf8");
+  await withPushTokenLock(dataDir, userId, async () => {
+    await writeFile(pushTokenPath(dataDir, userId), token.trim(), "utf8");
+  });
+}
+
+export async function deletePushTokenIfMatch(
+  dataDir: string,
+  userId: string,
+  token: string,
+): Promise<void> {
+  const expected = token.trim();
+  await withPushTokenLock(dataDir, userId, async () => {
+    const current = await loadPushToken(dataDir, userId);
+    if (current !== expected) return;
+    await unlink(pushTokenPath(dataDir, userId)).catch(() => undefined);
+  });
 }
 
 export type ExpoPushTicket = {
@@ -57,6 +74,10 @@ export function expoPushErrorMessage(body: unknown, status: number): string | un
   return undefined;
 }
 
+export function isUnregisteredPushToken(body: unknown): boolean {
+  return expoPushTickets(body).some((ticket) => ticket.details?.error === "DeviceNotRegistered");
+}
+
 export class ExpoPushProvider implements NotificationProvider {
   constructor(private readonly dataDir: string) {}
 
@@ -89,9 +110,47 @@ export class ExpoPushProvider implements NotificationProvider {
       throw error;
     }
     const body = await response.json().catch(() => undefined);
+    if (isUnregisteredPushToken(body)) {
+      await deletePushTokenIfMatch(this.dataDir, context.userId, token);
+    }
     const failure = expoPushErrorMessage(body, response.status);
     if (!failure) return;
     console.error(failure);
     throw new Error(failure);
+  }
+}
+
+async function withPushTokenLock(dataDir: string, userId: string, work: () => Promise<void>) {
+  const lockPath = `${pushTokenPath(dataDir, userId)}.lock`;
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  const deadline = Date.now() + PUSH_TOKEN_LOCK_MS;
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await work();
+        return;
+      } finally {
+        await handle.close();
+        await unlink(lockPath).catch(() => undefined);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const stale = await lockAgeMs(lockPath);
+      if (stale != null && stale > PUSH_TOKEN_STALE_LOCK_MS) {
+        await unlink(lockPath).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error("push token lock timeout");
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  }
+}
+
+async function lockAgeMs(lockPath: string): Promise<number | undefined> {
+  try {
+    return Date.now() - (await stat(lockPath)).mtimeMs;
+  } catch {
+    return undefined;
   }
 }

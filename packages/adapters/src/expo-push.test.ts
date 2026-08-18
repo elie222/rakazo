@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deletePushTokenIfMatch,
   ExpoPushProvider,
   expoPushErrorMessage,
+  isUnregisteredPushToken,
   loadPushToken,
   savePushToken,
 } from "./expo-push.js";
@@ -48,6 +50,11 @@ describe("expo push tickets", () => {
         200,
       ),
     ).toBe("DeviceNotRegistered");
+    expect(
+      isUnregisteredPushToken({
+        data: { status: "error", details: { error: "DeviceNotRegistered" } },
+      }),
+    ).toBe(true);
   });
 });
 
@@ -128,7 +135,7 @@ describe("expo push", () => {
     ).rejects.toThrow("offline");
   });
 
-  it("reports an unregistered device without deleting a stored token", async () => {
+  it("forgets the current token when Expo says it is unregistered", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
     await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
@@ -147,7 +154,7 @@ describe("expo push", () => {
         notifyContext,
       ),
     ).rejects.toThrow("DeviceNotRegistered");
-    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[test]");
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
   });
 
   it("does not delete a replacement token when a stale send fails", async () => {
@@ -170,6 +177,17 @@ describe("expo push", () => {
         notifyContext,
       ),
     ).rejects.toThrow("DeviceNotRegistered");
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
+  });
+
+  it("keeps a replacement when cleanup races with registration", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
+    await Promise.all([
+      savePushToken(dataDir, "user-1", "ExponentPushToken[new]"),
+      deletePushTokenIfMatch(dataDir, "user-1", "ExponentPushToken[old]"),
+    ]);
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });
 });
