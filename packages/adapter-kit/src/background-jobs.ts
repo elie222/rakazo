@@ -17,6 +17,7 @@ const payloadSchemas = {
     computerId: z.string().min(1),
     leaseId: z.string().min(1),
   }),
+  "history.compact": z.object({ threadId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -88,5 +89,17 @@ export function computerControlExpireJob(
     payload: { computerId, leaseId },
     availableAt,
     replaceKey: computerControlExpireJobKey(computerId),
+  };
+}
+
+export function historyCompactJobKey(threadId: string): string {
+  return `history.compact:${threadId}`;
+}
+
+export function historyCompactJob(threadId: string): BackgroundJob {
+  return {
+    name: "history.compact",
+    payload: { threadId },
+    replaceKey: historyCompactJobKey(threadId),
   };
 }

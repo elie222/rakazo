@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { dispatchBackgroundJob, parseBackgroundJob } from "./background-jobs.js";
+import {
+  dispatchBackgroundJob,
+  historyCompactJob,
+  historyCompactJobKey,
+  parseBackgroundJob,
+} from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
 function handlers(): BackgroundJobHandlers {
@@ -8,6 +13,7 @@ function handlers(): BackgroundJobHandlers {
     "routine.wakeup": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
+    "history.compact": vi.fn(async () => undefined),
   };
 }
 
@@ -51,5 +57,19 @@ describe("background job contracts", () => {
       computerId: "computer-1",
       leaseId: "lease-1",
     });
+  });
+});
+
+describe("historyCompactJob", () => {
+  it("builds a job with a replace key scoped to the thread", () => {
+    expect(historyCompactJob("thread-1")).toEqual({
+      name: "history.compact",
+      payload: { threadId: "thread-1" },
+      replaceKey: historyCompactJobKey("thread-1"),
+    });
+  });
+
+  it("keys different threads differently", () => {
+    expect(historyCompactJobKey("thread-1")).not.toBe(historyCompactJobKey("thread-2"));
   });
 });

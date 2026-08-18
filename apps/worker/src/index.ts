@@ -80,6 +80,8 @@ async function main() {
     jobs,
     events,
     workerId: process.pid.toString(),
+    runtime,
+    deploymentModelKey: process.env.OPENROUTER_API_KEY,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({
