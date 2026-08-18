@@ -43,6 +43,20 @@ jobs:
           path: .
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
+      - name: Read Playwright job result
+        id: playwright
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          result="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
+          case "$result" in
+            success|failure) ;;
+            *) echo "Unexpected Playwright job conclusion: $result" >&2; exit 1 ;;
+          esac
+          echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Publish trusted Playwright screenshot gallery
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
@@ -52,7 +66,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PLAYWRIGHT_RESULT: ${{ github.event.workflow_run.conclusion }}
+          PLAYWRIGHT_RESULT: ${{ steps.playwright.outputs.result }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           PLAYWRIGHT_RUN_ID: ${{ github.event.workflow_run.id }}
           PLAYWRIGHT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}

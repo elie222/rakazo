@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { copyFile, mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type PlaywrightScreenshot,
@@ -7,12 +7,10 @@ import {
   renderScreenshotGallery,
   updatePlaywrightHistory,
 } from "../playwright-report-dashboard.js";
+import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
 
 const [historyPath, dashboardPath, testResultsPath, galleryPath] = process.argv.slice(2);
 const MAX_SCREENSHOT_COUNT = 100;
-const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
-const MAX_SCREENSHOT_DIMENSION = 10_000;
-const MAX_SCREENSHOT_PIXELS = 50_000_000;
 const MAX_ARTIFACT_ENTRIES = 2_000;
 const MAX_ARTIFACT_DEPTH = 12;
 
@@ -89,52 +87,24 @@ async function collectScreenshots(
   const imagePath = path.join(outputPath, "images");
   await mkdir(imagePath, { recursive: true });
 
-  return Promise.all(
-    files.map(async (file, index) => {
-      await validatePngScreenshot(file);
-      const source = path.relative(resultsPath, file);
-      const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
-      await copyFile(file, path.join(imagePath, fileName));
-      return {
-        fileName: `images/${fileName}`,
-        source,
-        title: titleFromFileName(path.basename(file)),
-      };
-    }),
-  );
-}
-
-async function validatePngScreenshot(filePath: string): Promise<void> {
-  const info = await stat(filePath);
-  if (!info.isFile() || info.size <= 0 || info.size > MAX_SCREENSHOT_BYTES) {
-    throw new Error(`Invalid screenshot size for ${filePath}`);
+  const screenshots: PlaywrightScreenshot[] = [];
+  for (const [index, file] of files.entries()) {
+    const info = await stat(file);
+    if (!info.isFile() || info.size <= 0 || info.size > MAX_PNG_SCREENSHOT_BYTES) {
+      throw new Error(`Invalid screenshot size for ${file}`);
+    }
+    const screenshot = await readFile(file);
+    validatePngScreenshot(screenshot, file);
+    const source = path.relative(resultsPath, file);
+    const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
+    await copyFile(file, path.join(imagePath, fileName));
+    screenshots.push({
+      fileName: `images/${fileName}`,
+      source,
+      title: titleFromFileName(path.basename(file)),
+    });
   }
-
-  const header = Buffer.alloc(24);
-  const handle = await open(filePath, "r");
-  try {
-    const { bytesRead } = await handle.read(header, 0, header.length, 0);
-    if (bytesRead !== header.length) throw new Error(`Truncated PNG screenshot: ${filePath}`);
-  } finally {
-    await handle.close();
-  }
-
-  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  if (!header.subarray(0, 8).equals(pngSignature) || header.toString("ascii", 12, 16) !== "IHDR") {
-    throw new Error(`Screenshot is not a PNG image: ${filePath}`);
-  }
-
-  const width = header.readUInt32BE(16);
-  const height = header.readUInt32BE(20);
-  if (
-    width === 0 ||
-    height === 0 ||
-    width > MAX_SCREENSHOT_DIMENSION ||
-    height > MAX_SCREENSHOT_DIMENSION ||
-    width * height > MAX_SCREENSHOT_PIXELS
-  ) {
-    throw new Error(`Invalid PNG dimensions for ${filePath}: ${width}x${height}`);
-  }
+  return screenshots;
 }
 
 async function findPngFiles(
