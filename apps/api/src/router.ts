@@ -635,6 +635,7 @@ export function createRouter(deps: RouterDeps) {
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        const controlLeaseId = bot.computer.controlLeaseId;
         const now = new Date();
         const claimed = await deps.prisma.computer.updateMany({
           where: {
@@ -697,7 +698,9 @@ export function createRouter(deps: RouterDeps) {
             .catch(() => undefined);
           throw error;
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
+        await deps.jobs.cancel(
+          computerControlExpireJobKey(bot.computer.id, controlLeaseId ?? undefined),
+        );
         return computerStatus(deps, context.actor, input.botId);
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
@@ -830,54 +833,40 @@ export function createRouter(deps: RouterDeps) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        const controlBotId = bot.computer.controlBotId ?? bot.id;
-        const storedControlBot =
-          controlBotId === bot.id
-            ? bot
-            : await deps.prisma.bot.findFirst({
-                where: {
-                  id: controlBotId,
-                  workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
-                },
-                include: { thread: true },
-              });
-        const controlBot = storedControlBot ?? bot;
-        const controlChanged =
-          bot.computer?.controlHolder !== "bot" ||
-          bot.computer.controlLeaseId !== null ||
-          bot.computer.controlLeaseExpiresAt !== null;
-        const shouldRevokeUserControl =
-          bot.computer?.controlHolder === "user" || Boolean(bot.computer?.controlLeaseId);
-        if (bot.computer?.providerRef && shouldRevokeUserControl) {
+        const controlBotId = bot.computer.controlBotId;
+        const controlLeaseId = bot.computer.controlLeaseId;
+        if (
+          !hasActiveComputerControl(bot.computer) ||
+          bot.computer.controlHolder !== "user" ||
+          !controlBotId ||
+          !controlLeaseId ||
+          controlBotId !== bot.id
+        ) {
+          return { ok: true as const };
+        }
+        if (bot.computer.providerRef) {
           await deps.sandbox.setScreenControl?.(
             toComputerRef(bot.computer),
             false,
-            computerContext(context.actor, bot.id, "screen.release"),
-            bot.computer.controlLeaseId ?? undefined,
+            computerContext(context.actor, controlBotId, "screen.release"),
+            controlLeaseId,
           );
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
-        await deps.prisma.computer.update({
-          where: { id: bot.computer.id },
-          data: {
-            controlHolder: "bot",
-            controlLeaseId: null,
-            controlLeaseExpiresAt: null,
-            controlBotId: null,
-          },
+
+        const released = await deps.events.finalizeComputerControlRelease({
+          workspaceId: context.actor.workspaceId,
+          computerId: bot.computer.id,
+          botId: controlBotId,
+          leaseId: controlLeaseId,
+          holder: "bot",
+          reason: "released",
         });
-        if (controlBot.thread && controlChanged) {
-          await deps.events.append({
-            workspaceId: context.actor.workspaceId,
-            threadId: controlBot.thread.id,
-            botId: controlBot.id,
-            type: "computer.takeover.released",
-            payload: { holder: "bot", reason: "released" },
-          });
-        }
+        if (!released) return { ok: true as const };
+        // The lease-specific key makes this cancellation safe after a replacement takeover.
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
+
         const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBot.id, status: "waiting_takeover" },
+          where: { botId: controlBotId, status: "waiting_takeover" },
           orderBy: { createdAt: "desc" },
         });
         if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
