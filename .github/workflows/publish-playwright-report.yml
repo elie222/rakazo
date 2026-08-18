@@ -54,6 +54,7 @@ jobs:
             --jq '[.jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
           case "$result" in
             success|failure) ;;
+            timed_out) result="failure" ;;
             *) echo "Unexpected Playwright job conclusion: $result" >&2; exit 1 ;;
           esac
           echo "result=$result" >> "$GITHUB_OUTPUT"
