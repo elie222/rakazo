@@ -19,7 +19,7 @@ export function createBackgroundJobHandlers(deps: {
   jobs: JobPublisher;
   events: ThreadEvents;
   workerId: string;
-  composio?: ComposioProvider;
+  composio: ComposioProvider | undefined;
 }): BackgroundJobHandlers {
   return {
     "run.continue": async (payload) => {

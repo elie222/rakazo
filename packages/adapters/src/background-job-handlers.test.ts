@@ -20,6 +20,7 @@ describe("background job handlers", () => {
       jobs: {} as never,
       events: {} as never,
       workerId: "worker-1",
+      composio: undefined,
     });
 
     await expect(

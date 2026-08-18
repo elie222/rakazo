@@ -164,6 +164,7 @@ export async function createApp(
     jobs,
     events,
     workerId: "api",
+    composio: stack.composio,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
