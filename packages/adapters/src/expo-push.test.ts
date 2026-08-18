@@ -7,7 +7,6 @@ import {
   expoPushErrorMessage,
   loadPushToken,
   savePushToken,
-  shouldForgetPushToken,
 } from "./expo-push.js";
 
 const dirs: string[] = [];
@@ -44,10 +43,11 @@ describe("expo push tickets", () => {
     );
     expect(expoPushErrorMessage(undefined, 502)).toBe("expo push failed (502)");
     expect(
-      shouldForgetPushToken({
-        data: { status: "error", details: { error: "DeviceNotRegistered" } },
-      }),
-    ).toBe(true);
+      expoPushErrorMessage(
+        { data: { status: "error", details: { error: "DeviceNotRegistered" } } },
+        200,
+      ),
+    ).toBe("DeviceNotRegistered");
   });
 });
 
@@ -128,7 +128,7 @@ describe("expo push", () => {
     ).rejects.toThrow("offline");
   });
 
-  it("forgets a token Expo says is no longer registered", async () => {
+  it("reports an unregistered device without deleting a stored token", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
     await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
@@ -141,14 +141,16 @@ describe("expo push", () => {
       ),
     );
     const push = new ExpoPushProvider(dataDir);
-    await push.send(
-      { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
-      notifyContext,
-    );
-    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
+    await expect(
+      push.send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).rejects.toThrow("DeviceNotRegistered");
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[test]");
   });
 
-  it("keeps a replacement token if the stale send is rejected", async () => {
+  it("does not delete a replacement token when a stale send fails", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
     await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
@@ -162,10 +164,12 @@ describe("expo push", () => {
       }),
     );
     const push = new ExpoPushProvider(dataDir);
-    await push.send(
-      { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
-      notifyContext,
-    );
+    await expect(
+      push.send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).rejects.toThrow("DeviceNotRegistered");
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });
 });
