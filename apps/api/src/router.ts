@@ -1306,7 +1306,23 @@ export function createRouter(deps: RouterDeps) {
       catalog: authed.connections.catalog.handler(async ({ context, input }) => {
         if (!deps.composio) return [];
         try {
-          return await deps.composio.catalog(context.actor.userId, input.query);
+          const items = await deps.composio.catalog(context.actor.userId, input.query);
+          const nowConnected = items.filter((item) => item.connected).map((item) => item.slug);
+          if (nowConnected.length > 0) {
+            // A connection can finish on Composio's side after our own completion check gave
+            // up (see PluginsOverlay's polling timeout) — reconcile stale "pending" rows here
+            // so callers like the run executor, which trust our local status, stay in sync.
+            await deps.prisma.connection.updateMany({
+              where: {
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                status: "pending",
+                provider: { in: nowConnected },
+              },
+              data: { status: "connected" },
+            });
+          }
+          return items;
         } catch {
           return [];
         }
