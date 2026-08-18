@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -197,9 +197,7 @@ describe("expo push", () => {
     dirs.push(dataDir);
     const lockPath = `${pushTokenPath(dataDir, "user-1")}.lock`;
     await mkdir(path.dirname(lockPath), { recursive: true });
-    await writeFile(lockPath, "");
-    const past = new Date(Date.now() - 10_000);
-    await utimes(lockPath, past, past);
+    await writeFile(lockPath, "999999999\n");
     await savePushToken(dataDir, "user-1", "ExponentPushToken[new]");
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });

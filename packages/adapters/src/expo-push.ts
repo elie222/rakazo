@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -7,7 +7,6 @@ import type {
 } from "@rakazo/adapter-kit";
 
 const PUSH_TOKEN_LOCK_MS = 3_000;
-const PUSH_TOKEN_STALE_LOCK_MS = 1_000;
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
@@ -128,6 +127,7 @@ async function withPushTokenLock(dataDir: string, userId: string, work: () => Pr
     try {
       const handle = await open(lockPath, "wx");
       try {
+        await handle.write(Buffer.from(`${process.pid}\n`));
         await work();
         return;
       } finally {
@@ -136,8 +136,7 @@ async function withPushTokenLock(dataDir: string, userId: string, work: () => Pr
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const stale = await lockAgeMs(lockPath);
-      if (stale != null && stale > PUSH_TOKEN_STALE_LOCK_MS) {
+      if (await canReclaimLock(lockPath)) {
         await unlink(lockPath).catch(() => undefined);
         continue;
       }
@@ -147,10 +146,21 @@ async function withPushTokenLock(dataDir: string, userId: string, work: () => Pr
   }
 }
 
-async function lockAgeMs(lockPath: string): Promise<number | undefined> {
+function pidIsAlive(pid: number): boolean {
   try {
-    return Date.now() - (await stat(lockPath)).mtimeMs;
+    process.kill(pid, 0);
+    return true;
   } catch {
-    return undefined;
+    return false;
+  }
+}
+
+async function canReclaimLock(lockPath: string): Promise<boolean> {
+  try {
+    const pid = Number((await readFile(lockPath, "utf8")).trim());
+    if (!Number.isInteger(pid) || pid <= 0) return true;
+    return !pidIsAlive(pid);
+  } catch {
+    return true;
   }
 }
