@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { ComposioProvider } from "./composio-connector.js";
 import { sanitizeComposioError } from "./composio-connector.js";
+import {
+  acquireSharedConnectionAuthorizationLocks,
+  beginConnectionOperation,
+  CONNECTION_OPERATION_TRANSACTION_OPTIONS,
+  connectionOperationSignal,
+} from "./connection-authorization-lock.js";
 import { GTASKS_SLACK_LANE, GTASKS_SLACK_ROUTING } from "./gtasks-slack-config.js";
 import {
   createComposioGtasksSlackPort,
@@ -73,6 +79,7 @@ async function lockGtasksSlackScope(
     GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
     GTASKS_SLACK_ROUTING.composioProviders.slack,
   ];
+  await acquireSharedConnectionAuthorizationLocks(tx, ctx.userId, providers);
   const members = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT "id"
     FROM "member"
@@ -107,15 +114,13 @@ function parseSourceUpdatedAt(updated: unknown): Date {
 async function withGtasksSlackScopeLease<T>(
   prisma: PrismaClient,
   ctx: GtasksSlackMirrorContext,
-  operation: () => Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
 ): Promise<T | undefined> {
-  return prisma.$transaction(
-    async (tx) => {
-      if (!(await lockGtasksSlackScope(tx, ctx))) return undefined;
-      return operation();
-    },
-    { maxWait: 70_000, timeout: 70_000 },
-  );
+  return prisma.$transaction(async (tx) => {
+    const budget = await beginConnectionOperation(tx);
+    if (!(await lockGtasksSlackScope(tx, ctx))) return undefined;
+    return operation(connectionOperationSignal(budget));
+  }, CONNECTION_OPERATION_TRANSACTION_OPTIONS);
 }
 
 async function mirrorOneTask(
@@ -132,71 +137,62 @@ async function mirrorOneTask(
   const fingerprint = gtaskMirrorFingerprint(task);
   const sourceUpdatedAt = parseSourceUpdatedAt(task.updated);
   const mirror = () =>
-    deps.prisma.$transaction(
-      async (tx) => {
-        const lockKey = `${ctx.workspaceId}:${GTASKS_SLACK_LANE}:${task.id}`;
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    deps.prisma.$transaction(async (tx) => {
+      const budget = await beginConnectionOperation(tx);
+      const lockKey = `${ctx.workspaceId}:${GTASKS_SLACK_LANE}:${task.id}`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
 
-        if (!(await lockGtasksSlackScope(tx, ctx))) return "scope_unavailable" as const;
+      if (!(await lockGtasksSlackScope(tx, ctx))) return "scope_unavailable" as const;
 
-        const existing = await tx.integrationMirror.findUnique({
-          where: {
-            workspaceId_lane_externalId: {
-              workspaceId: ctx.workspaceId,
-              lane: GTASKS_SLACK_LANE,
-              externalId: task.id,
-            },
-          },
-        });
-
-        if (existing?.fingerprint === fingerprint) {
-          if (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt) {
-            await tx.integrationMirror.update({
-              where: { id: existing.id },
-              data: { sourceUpdatedAt },
-            });
-          }
-          return "unchanged" as const;
-        }
-
-        if (existing?.sourceUpdatedAt && sourceUpdatedAt <= existing.sourceUpdatedAt) {
-          return "unchanged" as const;
-        }
-
-        const text = formatGtaskSlackMirror(task);
-        if (existing?.slackMessageTs) {
-          await deps.port.updateSlackMessage(
-            ctx,
-            existing.slackMessageTs,
-            text,
-            AbortSignal.timeout(60_000),
-          );
-          await tx.integrationMirror.update({
-            where: { id: existing.id },
-            data: { fingerprint, sourceUpdatedAt },
-          });
-          return "updated" as const;
-        }
-
-        const { messageTs } = await deps.port.postSlackMessage(
-          ctx,
-          text,
-          AbortSignal.timeout(60_000),
-        );
-        await tx.integrationMirror.create({
-          data: {
+      const existing = await tx.integrationMirror.findUnique({
+        where: {
+          workspaceId_lane_externalId: {
             workspaceId: ctx.workspaceId,
             lane: GTASKS_SLACK_LANE,
             externalId: task.id,
-            fingerprint,
-            sourceUpdatedAt,
-            slackMessageTs: messageTs,
           },
+        },
+      });
+
+      if (existing?.fingerprint === fingerprint) {
+        if (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt) {
+          await tx.integrationMirror.update({
+            where: { id: existing.id },
+            data: { sourceUpdatedAt },
+          });
+        }
+        return "unchanged" as const;
+      }
+
+      if (existing?.sourceUpdatedAt && sourceUpdatedAt <= existing.sourceUpdatedAt) {
+        return "unchanged" as const;
+      }
+
+      const text = formatGtaskSlackMirror(task);
+      if (existing?.slackMessageTs) {
+        const signal = connectionOperationSignal(budget);
+        await deps.port.updateSlackMessage(ctx, existing.slackMessageTs, text, signal);
+        await tx.integrationMirror.update({
+          where: { id: existing.id },
+          data: { fingerprint, sourceUpdatedAt },
         });
-        return "created" as const;
-      },
-      { maxWait: 70_000, timeout: 70_000 },
-    );
+        return "updated" as const;
+      }
+
+      const signal = connectionOperationSignal(budget);
+      const { messageTs } = await deps.port.postSlackMessage(ctx, text, signal);
+      await tx.integrationMirror.create({
+        data: {
+          workspaceId: ctx.workspaceId,
+          lane: GTASKS_SLACK_LANE,
+          externalId: task.id,
+          fingerprint,
+          sourceUpdatedAt,
+          slackMessageTs: messageTs,
+        },
+      });
+      return "created" as const;
+    }, CONNECTION_OPERATION_TRANSACTION_OPTIONS);
 
   let action: MirrorAction;
   try {
@@ -262,8 +258,7 @@ export async function syncGtasksSlackInbox(
   const port = deps.port ?? createComposioGtasksSlackPort(deps.composio!);
   let listed: { available: boolean; tasks: GtaskInboxItem[] } | undefined;
   try {
-    const signal = AbortSignal.timeout(60_000);
-    listed = await withGtasksSlackScopeLease(deps.prisma, ctx, async () => {
+    listed = await withGtasksSlackScopeLease(deps.prisma, ctx, async (signal) => {
       const ready = await connectionsReadyForGtasksSlack(deps.composio, ctx.userId, signal);
       if (!ready.googleTasks || !ready.slack) return { available: false, tasks: [] };
       return { available: true, tasks: await port.listInboxTasks(ctx, signal) };

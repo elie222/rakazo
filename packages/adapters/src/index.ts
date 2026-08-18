@@ -11,6 +11,7 @@ export * from "./computer-lifecycle.js";
 export * from "./computer-support.js";
 export * from "./computer-tools.js";
 export * from "./computer-workspace.js";
+export * from "./connection-authorization-lock.js";
 export * from "./daytona-emulator.js";
 export * from "./daytona-sandbox.js";
 export * from "./desktop-sandbox.js";

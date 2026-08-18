@@ -12,9 +12,13 @@ import {
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
+  acquireExclusiveConnectionAuthorizationLock,
   acquireComputerExecutionLease,
   archiveBot,
+  beginConnectionOperation,
   type ComposioProvider,
+  CONNECTION_OPERATION_TRANSACTION_OPTIONS,
+  connectionOperationSignal,
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
@@ -1276,34 +1280,41 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         if (!existing) throw new IsolationError();
-        if (deps.composio) {
-          const ready = await deps.composio.connectionReady(
+        const row = await deps.prisma.$transaction(async (tx) => {
+          const budget = await beginConnectionOperation(tx);
+          await acquireExclusiveConnectionAuthorizationLock(
+            tx,
             context.actor.userId,
             existing.provider,
           );
-          if (ready) {
-            await deps.prisma.connection.updateMany({
-              where: {
-                id: existing.id,
-                workspaceId: context.actor.workspaceId,
-                userId: context.actor.userId,
-                status: "pending",
-              },
-              data: { status: "connected" },
-            });
-          }
-        } else {
-          await deps.prisma.connection.updateMany({
+          const locked = await tx.connection.findFirst({
             where: {
               id: existing.id,
               workspaceId: context.actor.workspaceId,
               userId: context.actor.userId,
-              status: "pending",
             },
-            data: { status: "connected" },
           });
-        }
-        const row = await deps.prisma.connection.findFirstOrThrow({ where: { id: existing.id } });
+          if (!locked) throw new IsolationError();
+          if (deps.composio) {
+            const ready = await deps.composio.connectionReady(
+              context.actor.userId,
+              locked.provider,
+              connectionOperationSignal(budget),
+            );
+            if (ready) {
+              await tx.connection.update({
+                where: { id: locked.id },
+                data: { status: "connected" },
+              });
+            }
+          } else {
+            await tx.connection.update({
+              where: { id: locked.id },
+              data: { status: "connected" },
+            });
+          }
+          return tx.connection.findFirstOrThrow({ where: { id: locked.id } });
+        }, CONNECTION_OPERATION_TRANSACTION_OPTIONS);
         return {
           id: row.id,
           provider: row.provider,

@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 import type { GtasksSlackPort } from "./gtasks-slack-composio-port.js";
 import { ComposioEmulator } from "./composio-emulator.js";
@@ -26,6 +27,7 @@ type MockBot = {
 type MockPrismaOptions = {
   member?: boolean | (() => boolean);
   connectedProviders?: string[] | (() => string[]);
+  onQuery?: (query: string) => void;
 };
 
 function mirrorKey(workspaceId: string, externalId: string) {
@@ -137,6 +139,7 @@ function createMockPrisma(
     connection,
     $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
       const query = strings.join("?");
+      options.onQuery?.(query);
       if (query.includes('FROM "member"')) {
         const active = typeof options.member === "function" ? options.member() : options.member;
         return active === false ? [] : [{ id: "member-1" }];
@@ -516,6 +519,40 @@ describe("gtasks-slack mirror", () => {
       fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Version two" }),
       sourceUpdatedAt: new Date("2026-08-18T11:00:00Z"),
     });
+  });
+
+  it("does not start Slack delivery after lock wait exhausts its deadline", async () => {
+    let now = 1_000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const store: MirrorStore = new Map();
+      const prisma = createMockPrisma(store, [], {
+        onQuery(query) {
+          if (query.includes("pg_advisory_xact_lock(hashtextextended")) now += 66_000;
+        },
+      });
+      const port = createMockPort([{ id: "task-expired", title: "Expired delivery" }]);
+      const composio = new ComposioEmulator();
+      for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+        await composio.begin(
+          { provider, redirectUrl: "http://example.test" },
+          {
+            ...ctx,
+            operationId: "test",
+            traceId: "test",
+            signal: AbortSignal.timeout(1000),
+          },
+        );
+      }
+
+      const result = await syncGtasksSlackInbox({ prisma: prisma as never, composio, port }, ctx);
+
+      expect(result.status).toBe("error");
+      expect(port.posts).toHaveLength(0);
+      expect(port.updates).toHaveLength(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("skips provider calls after workspace membership is removed", async () => {

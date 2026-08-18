@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+import { GTASKS_SLACK_ROUTING, type GtasksSlackPort, syncGtasksSlackInbox } from "@rakazo/adapters";
 import { describe, expect, it, vi } from "vitest";
 import { revokeConnection } from "./connection-revocation.js";
 
@@ -9,29 +11,136 @@ const context = {
   signal: new AbortController().signal,
 };
 
+type ConnectionRow = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  provider: string;
+  status: string;
+};
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function createPrisma(
+  rows: ConnectionRow[],
+  options: {
+    onExclusiveLock?: () => void | Promise<void>;
+    findBot?: () => Promise<unknown>;
+  } = {},
+) {
+  const connection = {
+    updateMany: vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { userId?: string; provider?: string };
+        data: { status: string };
+      }) => {
+        let count = 0;
+        for (const row of rows) {
+          if (where.userId !== undefined && row.userId !== where.userId) continue;
+          if (where.provider !== undefined && row.provider !== where.provider) continue;
+          row.status = data.status;
+          count += 1;
+        }
+        return { count };
+      },
+    ),
+  };
+  const transactionClient = {
+    connection,
+    integrationMirror: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (query.includes("set_config('lock_timeout'")) return [];
+      if (query.includes("pg_advisory_xact_lock(hashtextextended")) {
+        await options.onExclusiveLock?.();
+        return [];
+      }
+      if (query.includes("pg_advisory_xact_lock_shared")) return [];
+      if (query.includes('FROM "member"')) return [{ id: "member-1" }];
+      if (query.includes('SELECT "id", "provider"') && query.includes('WHERE "id"')) {
+        const [id, workspaceId, userId] = values;
+        return rows
+          .filter(
+            (row) => row.id === id && row.workspaceId === workspaceId && row.userId === userId,
+          )
+          .map(({ id: rowId, provider }) => ({ id: rowId, provider }));
+      }
+      if (query.includes('SELECT "id"') && query.includes('WHERE "userId"')) {
+        const [userId, provider] = values;
+        return rows
+          .filter((row) => row.userId === userId && row.provider === provider)
+          .map(({ id }) => ({ id }));
+      }
+      if (query.includes('SELECT "provider"') && query.includes('FROM "connections"')) {
+        const [workspaceId, userId, googleTasks, slack] = values;
+        return rows
+          .filter(
+            (row) =>
+              row.workspaceId === workspaceId &&
+              row.userId === userId &&
+              row.status === "connected" &&
+              (row.provider === googleTasks || row.provider === slack),
+          )
+          .map(({ provider }) => ({ provider }));
+      }
+      return [];
+    }),
+  };
+  let transactionTail = Promise.resolve();
+  return {
+    rows,
+    connection,
+    $transaction: vi.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => {
+      const previous = transactionTail;
+      let release = () => {};
+      transactionTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await callback(transactionClient);
+      } finally {
+        release();
+      }
+    }),
+    bot: {
+      findFirst: vi.fn(options.findBot ?? (async () => null)),
+    },
+  };
+}
+
+function connectedRows(): ConnectionRow[] {
+  return [
+    {
+      id: "connection-1",
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      provider: "GOOGLETASKS",
+      status: "connected",
+    },
+  ];
+}
+
 describe("connection revocation", () => {
   it("revokes the provider before committing local authorization", async () => {
-    let status = "connected";
+    const rows = connectedRows();
+    const prisma = createPrisma(rows);
     const revoke = vi.fn(async () => {
-      expect(status).toBe("connected");
+      expect(rows[0]?.status).toBe("connected");
     });
-    const tx = {
-      $queryRaw: vi.fn(async () => [
-        {
-          id: "connection-1",
-          provider: "GOOGLETASKS",
-        },
-      ]),
-      connection: {
-        updateMany: vi.fn(async () => {
-          status = "revoked";
-          return { count: 1 };
-        }),
-      },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
-    };
 
     await revokeConnection(
       { prisma: prisma as never, composio: { revoke } },
@@ -39,37 +148,20 @@ describe("connection revocation", () => {
       context,
     );
 
-    expect(status).toBe("revoked");
+    expect(rows[0]?.status).toBe("revoked");
     expect(revoke).toHaveBeenCalledOnce();
-    expect(tx.connection.updateMany).toHaveBeenCalledWith({
+    expect(prisma.connection.updateMany).toHaveBeenCalledWith({
       where: {
-        id: "connection-1",
-        workspaceId: context.workspaceId,
         userId: context.userId,
+        provider: "GOOGLETASKS",
       },
       data: { status: "revoked" },
     });
   });
 
   it("keeps local authorization retryable when provider revocation fails", async () => {
-    let status = "connected";
-    const tx = {
-      $queryRaw: vi.fn(async () => [
-        {
-          id: "connection-1",
-          provider: "GOOGLETASKS",
-        },
-      ]),
-      connection: {
-        updateMany: vi.fn(async () => {
-          status = "revoked";
-          return { count: 1 };
-        }),
-      },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
-    };
+    const rows = connectedRows();
+    const prisma = createPrisma(rows);
 
     await expect(
       revokeConnection(
@@ -81,48 +173,133 @@ describe("connection revocation", () => {
         context,
       ),
     ).rejects.toThrow("offline");
-    expect(status).toBe("connected");
-    expect(tx.connection.updateMany).not.toHaveBeenCalled();
+    expect(rows[0]?.status).toBe("connected");
+    expect(prisma.connection.updateMany).not.toHaveBeenCalled();
   });
 
   it("waits for an active mirror connection lease", async () => {
-    let releaseMirror = () => {};
-    const mirrorReleased = new Promise<void>((resolve) => {
-      releaseMirror = resolve;
-    });
-    let lockRequested = () => {};
-    const lockRequest = new Promise<void>((resolve) => {
-      lockRequested = resolve;
-    });
+    const mirrorReleased = deferred();
+    const lockRequest = deferred();
     const revoke = vi.fn(async () => {});
-    const tx = {
-      $queryRaw: vi.fn(async () => {
-        lockRequested();
-        await mirrorReleased;
-        return [{ id: "connection-1", provider: "GOOGLETASKS" }];
-      }),
-      connection: {
-        updateMany: vi.fn(async () => ({ count: 1 })),
+    const prisma = createPrisma(connectedRows(), {
+      async onExclusiveLock() {
+        lockRequest.resolve();
+        await mirrorReleased.promise;
       },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<void>) => callback(tx)),
-    };
+    });
 
     const revocation = revokeConnection(
       { prisma: prisma as never, composio: { revoke } },
       "connection-1",
       context,
     );
-    await lockRequest;
+    await lockRequest.promise;
 
     expect(revoke).not.toHaveBeenCalled();
-    expect(tx.connection.updateMany).not.toHaveBeenCalled();
+    expect(prisma.connection.updateMany).not.toHaveBeenCalled();
 
-    releaseMirror();
+    mirrorReleased.resolve();
     await revocation;
 
     expect(revoke).toHaveBeenCalledOnce();
-    expect(tx.connection.updateMany).toHaveBeenCalledOnce();
+    expect(prisma.connection.updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("does not start provider revocation after lock wait exhausts its deadline", async () => {
+    let now = 1_000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const revoke = vi.fn(async () => {});
+      const prisma = createPrisma(connectedRows(), {
+        onExclusiveLock() {
+          now += 66_000;
+        },
+      });
+
+      await expect(
+        revokeConnection(
+          { prisma: prisma as never, composio: { revoke } },
+          "connection-1",
+          context,
+        ),
+      ).rejects.toThrow("deadline exhausted");
+      expect(revoke).not.toHaveBeenCalled();
+      expect(prisma.connection.updateMany).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("prevents cached delivery after revocation in another workspace", async () => {
+    const googleTasks = GTASKS_SLACK_ROUTING.composioProviders.googleTasks;
+    const slack = GTASKS_SLACK_ROUTING.composioProviders.slack;
+    const workspaceB = "workspace-2";
+    const rows: ConnectionRow[] = [
+      ...connectedRows(),
+      {
+        id: "slack-1",
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+        provider: slack,
+        status: "connected",
+      },
+      {
+        id: "google-2",
+        workspaceId: workspaceB,
+        userId: context.userId,
+        provider: googleTasks,
+        status: "connected",
+      },
+      {
+        id: "slack-2",
+        workspaceId: workspaceB,
+        userId: context.userId,
+        provider: slack,
+        status: "connected",
+      },
+    ];
+    const reachedDelivery = deferred();
+    const releaseDelivery = deferred();
+    const prisma = createPrisma(rows, {
+      async findBot() {
+        reachedDelivery.resolve();
+        await releaseDelivery.promise;
+        return null;
+      },
+    });
+    const posts: string[] = [];
+    const port: GtasksSlackPort = {
+      listInboxTasks: vi.fn(async () => [
+        {
+          id: "task-cached",
+          title: "Cached task",
+          updated: "2026-08-18T10:00:00Z",
+        },
+      ]),
+      postSlackMessage: vi.fn(async (_ctx, text) => {
+        posts.push(text);
+        return { messageTs: "ts-1" };
+      }),
+      updateSlackMessage: vi.fn(),
+    };
+    const composio = {
+      connectionReady: vi.fn(async () => true),
+      revoke: vi.fn(async () => {}),
+    };
+
+    const sync = syncGtasksSlackInbox(
+      { prisma: prisma as never, composio: composio as never, port },
+      { workspaceId: workspaceB, userId: context.userId },
+    );
+    await reachedDelivery.promise;
+
+    await revokeConnection({ prisma: prisma as never, composio }, "connection-1", context);
+    releaseDelivery.resolve();
+    const result = await sync;
+
+    expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
+    expect(posts).toHaveLength(0);
+    expect(rows.find((row) => row.id === "google-2")?.status).toBe("revoked");
+    expect(rows.find((row) => row.id === "slack-2")?.status).toBe("connected");
   });
 });

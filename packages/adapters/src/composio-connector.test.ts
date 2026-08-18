@@ -145,4 +145,57 @@ describe("Composio during pnpm test", () => {
     expect(create.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
     expect(execute.mock.calls[0]?.[3]?.signal).toBe(controller.signal);
   });
+
+  it("forwards revocation cancellation through lookup and deletion", async () => {
+    const toolkits = vi.fn(async (_query: unknown, requestOptions: { signal?: AbortSignal }) => ({
+      items: [
+        {
+          slug: "GOOGLETASKS",
+          connection: { connectedAccount: { id: "account-1" } },
+        },
+      ],
+      signal: requestOptions.signal,
+    }));
+    const create = vi.fn(
+      async (_userId: string, _config: unknown, _requestOptions: { signal?: AbortSignal }) => ({
+        sessionId: "session-1",
+        toolkits,
+      }),
+    );
+    const remove = vi.fn(
+      async (_accountId: string, requestOptions: { signal?: AbortSignal }) =>
+        new Promise((_, reject) => {
+          const signal = requestOptions.signal;
+          if (signal?.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const connector = new ComposioConnector(
+      () =>
+        ({
+          create,
+          sessions: { use: vi.fn() },
+          connectedAccounts: { delete: remove },
+        }) as never,
+    );
+    const controller = new AbortController();
+    const revocation = connector.revoke("GOOGLETASKS", {
+      operationId: "test",
+      traceId: "test",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledOnce());
+
+    controller.abort(new Error("cancelled"));
+
+    await expect(revocation).rejects.toThrow("cancelled");
+    expect(create.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+    expect(toolkits.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    expect(remove.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
 });

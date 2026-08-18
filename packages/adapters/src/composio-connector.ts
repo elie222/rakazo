@@ -136,6 +136,7 @@ export class ComposioConnector implements ComposioProvider {
       try {
         return await composio.sessions.use(existing, undefined, { signal });
       } catch {
+        signal?.throwIfAborted();
         this.catalogSessions.delete(userId);
       }
     }
@@ -164,6 +165,7 @@ export class ComposioConnector implements ComposioProvider {
       try {
         return await composio.sessions.use(existing.sessionId, undefined, { signal });
       } catch {
+        signal?.throwIfAborted();
         this.executeSessions.delete(userId);
       }
     }
@@ -291,13 +293,19 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
-    if (accountId) await this.sdk().connectedAccounts.delete(accountId);
+    const accountId = await this.connectedAccountId(context.userId, connectionRef, context.signal);
+    if (accountId) {
+      await this.sdk().connectedAccounts.delete(accountId, { signal: context.signal });
+    }
   }
 
-  async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
-    const session = await this.sessionFor(userId);
-    const toolkits = await session.toolkits({ isConnected: true });
+  async connectedAccountId(
+    userId: string,
+    slug: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const session = await this.sessionFor(userId, signal);
+    const toolkits = await session.toolkits({ isConnected: true }, { signal });
     return toolkits.items.find((item) => item.slug === slug)?.connection?.connectedAccount?.id;
   }
 
