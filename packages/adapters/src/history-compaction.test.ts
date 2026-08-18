@@ -3,6 +3,7 @@ import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
   compactHistory,
+  formatRecalledMemory,
   historyWindowSize,
   nextCompactionBatchRange,
   shouldEnqueueCompaction,
@@ -41,6 +42,29 @@ describe("historyWindowSize", () => {
 
   it("uses the legacy 200-message window when Supermemory is not configured", () => {
     expect(historyWindowSize(false)).toBe(200);
+  });
+});
+
+describe("formatRecalledMemory", () => {
+  it("formats results into a durable-memory-style block", () => {
+    const block = formatRecalledMemory([
+      { memory: "User prefers conventional commits." },
+      { memory: "The VoC project's active repos are voc-backend, voc-brain, voc-frontend." },
+    ]);
+    expect(block).toContain("<recalled_memory>");
+    expect(block).toContain("User prefers conventional commits.");
+    expect(block).toContain("</recalled_memory>");
+  });
+
+  it("caps injected results at 5", () => {
+    const results = Array.from({ length: 8 }, (_, i) => ({ memory: `fact ${i}` }));
+    const block = formatRecalledMemory(results);
+    expect(block).toContain("fact 4");
+    expect(block).not.toContain("fact 5");
+  });
+
+  it("returns an empty string for no results", () => {
+    expect(formatRecalledMemory([])).toBe("");
   });
 });
 

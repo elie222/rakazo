@@ -50,7 +50,7 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
-import { historyWindowSize } from "./history-compaction.js";
+import { formatRecalledMemory, historyWindowSize } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -60,7 +60,7 @@ import {
   serializeModelSecret,
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
-import { isSupermemoryEnabled } from "./supermemory-client.js";
+import { isSupermemoryEnabled, searchSupermemory, supermemoryContainerTag } from "./supermemory-client.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
@@ -314,6 +314,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           content: blocksToText(m.blocks as MessageBlock[]),
         }));
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
+        const supermemoryEnabled = isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY);
+        let recalledMemory = "";
+        if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
+          const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
+          if (recalled.ok) recalledMemory = formatRecalledMemory(recalled.results);
+        }
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -677,6 +683,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
+                recalledMemory || undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
