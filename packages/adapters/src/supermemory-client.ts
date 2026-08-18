@@ -25,7 +25,10 @@ export function isSupermemoryEnabled(apiKey: string | undefined): boolean {
 function supermemoryConfig(): { baseUrl: string; apiKey: string } | undefined {
   const apiKey = process.env.SUPERMEMORY_API_KEY;
   if (!apiKey) return undefined;
-  const baseUrl = (process.env.SUPERMEMORY_API_URL ?? DEFAULT_SUPERMEMORY_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (process.env.SUPERMEMORY_API_URL ?? DEFAULT_SUPERMEMORY_BASE_URL).replace(
+    /\/+$/,
+    "",
+  );
   return { baseUrl, apiKey };
 }
 

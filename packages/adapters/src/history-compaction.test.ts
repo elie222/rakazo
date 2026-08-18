@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
 import {
   compactHistory,
   formatRecalledMemory,
@@ -68,7 +68,12 @@ describe("formatRecalledMemory", () => {
   });
 });
 
-function compactionHarness(options: { deploymentModelKey?: string; settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null } = {}) {
+function compactionHarness(
+  options: {
+    deploymentModelKey?: string;
+    settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
+  } = {},
+) {
   const thread = {
     id: "thread-1",
     botId: "bot-1",
@@ -99,9 +104,9 @@ function compactionHarness(options: { deploymentModelKey?: string; settings?: { 
       yield { type: "done", text: "Summary of 50 messages." };
     }),
   };
-  const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(
-    async () => ({ ok: true }),
-  );
+  const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
+    ok: true,
+  }));
   return {
     thread,
     messages,
@@ -147,7 +152,10 @@ describe("compactHistory", () => {
 
   it("falls back to the deployment's configured default model when no cloud credential is available (covers a keyless local-mlx/Ollama default)", async () => {
     const harness = compactionHarness({
-      settings: { defaultModelProvider: "local-mlx", defaultModelId: "mlx-community/Qwen3.8-27B-4bit" },
+      settings: {
+        defaultModelProvider: "local-mlx",
+        defaultModelId: "mlx-community/Qwen3.8-27B-4bit",
+      },
     });
 
     await compactHistory(harness.deps, "thread-1");

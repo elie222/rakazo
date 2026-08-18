@@ -66,8 +66,12 @@ import {
   serializeModelSecret,
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
-import { isSupermemoryEnabled, searchSupermemory, supermemoryContainerTag } from "./supermemory-client.js";
 import type { EncryptedSecretStore } from "./secrets.js";
+import {
+  isSupermemoryEnabled,
+  searchSupermemory,
+  supermemoryContainerTag,
+} from "./supermemory-client.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
 const READ_ONLY_AGENT_TOOLS = new Set([
