@@ -10,7 +10,7 @@ import type {
   NotificationProvider,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -50,7 +50,13 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
-import { formatRecalledMemory, historyWindowSize } from "./history-compaction.js";
+import {
+  COMPACTION_BATCH_SIZE,
+  formatRecalledMemory,
+  HISTORY_WINDOW_SIZE,
+  historyWindowSize,
+  shouldEnqueueCompaction,
+} from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -950,6 +956,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks: [{ kind: "text", text }],
           });
           if (!completed) return;
+          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+            const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
+              where: { id: thread.id },
+              select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
+            });
+            if (
+              shouldEnqueueCompaction(
+                updatedThread.nextMessageSeq,
+                updatedThread.historyCompactedUpToSeq,
+                HISTORY_WINDOW_SIZE,
+                COMPACTION_BATCH_SIZE,
+              )
+            ) {
+              await deps.jobs.enqueue(historyCompactJob(thread.id));
+            }
+          }
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "completion",
