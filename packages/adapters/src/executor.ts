@@ -58,6 +58,7 @@ import {
   secretValuesToRedact,
   serializeModelSecret,
 } from "./pi-oauth.js";
+import { buildAgentHistoryWindow, MAX_AGENT_HISTORY_MESSAGES } from "./history-window.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
@@ -70,7 +71,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-const MAX_AGENT_HISTORY_MESSAGES = 200;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -305,13 +305,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const history = [...messages].reverse().map((m) => ({
-          role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-            | "user"
-            | "assistant"
-            | "system",
-          content: blocksToText(m.blocks as MessageBlock[]),
-        }));
+        const history = buildAgentHistoryWindow(
+          messages as Array<{ role: string; blocks: MessageBlock[] }>,
+        );
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
         const resolved = await resolveModelKey(
           deps,
@@ -1287,13 +1283,4 @@ async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Pr
     release();
     if (modelCredentialLocks.get(key) === current) modelCredentialLocks.delete(key);
   }
-}
-
-function blocksToText(blocks: MessageBlock[]): string {
-  return blocks
-    .map((block) => {
-      if ("text" in block && block.text) return block.text;
-      return JSON.stringify(block);
-    })
-    .join("\n");
 }
