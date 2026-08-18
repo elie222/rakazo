@@ -62,6 +62,15 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .toBe("waiting_takeover");
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await page.getByTitle("Agent computer").click();
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel).toHaveCSS("width", "384px");
+  const [mainBox, panelBox] = await Promise.all([
+    page.locator("main").boundingBox(),
+    sidePanel.boundingBox(),
+  ]);
+  expect(mainBox).not.toBeNull();
+  expect(panelBox).not.toBeNull();
+  expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await captureScreenshot(page, testInfo, "09-computer-takeover");

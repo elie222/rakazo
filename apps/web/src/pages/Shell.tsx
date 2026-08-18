@@ -799,8 +799,8 @@ export function ShellPage() {
       <aside
         data-testid="side-panel"
         data-panel={panel ?? "closed"}
-        className={`absolute inset-y-0 right-0 z-20 flex w-[384px] min-h-0 flex-col overflow-hidden border-l border-[#141416] bg-[#0A0A0B] shadow-[-18px_0_45px_rgba(0,0,0,.24)] transition-transform duration-150 ease-out ${
-          panel && active ? "translate-x-0" : "pointer-events-none translate-x-full"
+        className={`relative z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-150 ease-out ${
+          panel && active ? "w-[384px] border-l border-[#141416]" : "pointer-events-none w-0"
         }`}
       >
         {panel && active ? (
