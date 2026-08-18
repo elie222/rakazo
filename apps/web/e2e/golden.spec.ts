@@ -102,9 +102,17 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
-  await expect(page.getByRole("button", { name: "Archive bot" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete bot" })).toBeVisible();
-  await page.getByRole("button", { name: "Delete bot" }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("button", { name: "Archive bot" })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Delete bot" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close panel" }).click();
+
+  await page.locator("aside").first().getByRole("button", { name: /Chief/ }).first().click({
+    button: "right",
+  });
+  const botMenu = page.getByRole("menu", { name: "Actions for Chief" });
+  await expect(botMenu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
+  await botMenu.getByRole("menuitem", { name: "Delete" }).click();
   await expect(page.getByRole("radio", { name: /Keep memories/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /Delete memories too/ })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
