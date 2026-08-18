@@ -26,6 +26,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
     command:
       - bash
@@ -47,6 +49,7 @@ services:
       SANDBOX_PROVIDER: e2b
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      GIT_SHA: ${GIT_SHA:-}
     expose:
       - "3100"
     volumes:

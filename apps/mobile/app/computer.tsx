@@ -2,7 +2,11 @@ import type { ComputerMode } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  initialWindowMetrics,
+  SafeAreaProvider,
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { currentApiBase, rpc } from "../lib/api";
@@ -13,6 +17,8 @@ import {
   controlLabel,
   embeddableScreenUrl,
   previewPlaceholder,
+  readScreenUrl,
+  SCREEN_URL_OPEN_ATTEMPTS,
 } from "../lib/computer";
 
 export default function Computer() {
@@ -37,12 +43,24 @@ export default function Computer() {
     navigation.setOptions({ title: label });
   }, [label, navigation]);
 
-  async function refresh() {
+  async function refreshScreen(attempts: number) {
+    if (!botId) return;
+    try {
+      setScreenUrl(
+        await readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
+          attempts,
+        }),
+      );
+    } catch {
+      // Keep the last known URL. Cold boots often fail this RPC once, then succeed.
+    }
+  }
+
+  async function refresh(options?: { screenAttempts?: number }) {
     if (!botId) return;
     const status = await rpc<ComputerStatus>("computer/status", { botId });
     setComputer(status);
-    const screen = await rpc<{ url: string | null }>("computer/screenUrl", { botId });
-    setScreenUrl(screen.url);
+    await refreshScreen(options?.screenAttempts ?? 1);
     setReady(true);
     return status;
   }
@@ -71,7 +89,7 @@ export default function Computer() {
     try {
       if (needsBoot) await rpc("computer/boot", { botId });
       if (takeControl) await rpc("computer/takeover", { botId });
-      await refresh();
+      await refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open computer");
@@ -230,143 +248,159 @@ export default function Computer() {
           if (!booting) setComputerOpen(false);
         }}
       >
-        {booting ? (
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(4,4,5,0.96)",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 22,
-              padding: 24,
-            }}
-          >
-            <Text
-              style={{ color: "#F1F1F2", fontSize: 19, fontWeight: "500", textAlign: "center" }}
-            >
-              Booting {label}
-            </Text>
-            <View
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+          {booting ? (
+            <SafeAreaView
+              edges={["top", "left", "right"]}
               style={{
-                height: 5,
-                width: "70%",
-                maxWidth: 420,
-                overflow: "hidden",
-                borderRadius: 999,
-                backgroundColor: "#232327",
+                flex: 1,
+                backgroundColor: "rgba(4,4,5,0.96)",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 22,
+                padding: 24,
               }}
             >
+              <Text
+                style={{ color: "#F1F1F2", fontSize: 19, fontWeight: "500", textAlign: "center" }}
+              >
+                Booting {label}
+              </Text>
               <View
                 style={{
-                  height: "100%",
-                  width: "66%",
+                  height: 5,
+                  width: "70%",
+                  maxWidth: 420,
+                  overflow: "hidden",
                   borderRadius: 999,
-                  backgroundColor: "#F1F1EF",
+                  backgroundColor: "#232327",
                 }}
-              />
-            </View>
-          </View>
-        ) : (
-          <View style={{ flex: 1, backgroundColor: "#050506" }}>
-            <SafeAreaView
-              edges={["top"]}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                borderBottomWidth: 1,
-                borderBottomColor: "#171719",
-                paddingHorizontal: 18,
-                paddingVertical: 14,
-              }}
-            >
-              <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                <Text
-                  numberOfLines={1}
-                  style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "500" }}
-                >
-                  {label}
-                </Text>
-                {hasControl ? (
-                  <View
-                    style={{
-                      alignSelf: "flex-start",
-                      borderRadius: 999,
-                      backgroundColor: "rgba(48,162,75,0.14)",
-                      paddingHorizontal: 11,
-                      paddingVertical: 4,
-                    }}
-                  >
-                    <Text style={{ color: "#4ECB71", fontSize: 13 }}>You have control</Text>
-                  </View>
-                ) : null}
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                {hasControl ? (
-                  <Pressable
-                    onPress={() => void releaseComputer()}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: "#26262A",
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ color: "#ECECEE" }}>Release</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={() =>
-                      void bootComputer({ takeControl: true, overlay: false }).catch(
-                        () => undefined,
-                      )
-                    }
-                    style={{
-                      borderWidth: 1,
-                      borderColor: "#26262A",
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ color: "#ECECEE" }}>Take control</Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  accessibilityLabel="Close computer"
-                  onPress={() => setComputerOpen(false)}
-                >
-                  <Text style={{ color: "#85858A", fontSize: 16 }}>✕</Text>
-                </Pressable>
+              >
+                <View
+                  style={{
+                    height: "100%",
+                    width: "66%",
+                    borderRadius: 999,
+                    backgroundColor: "#F1F1EF",
+                  }}
+                />
               </View>
             </SafeAreaView>
-            <View style={{ flex: 1, backgroundColor: "#0E0E10" }}>
-              {computer?.state === "running" && embeddedScreenUrl ? (
-                <ScreenWebView
-                  url={embeddedScreenUrl}
-                  interactive={hasControl}
-                  onError={() =>
-                    setScreenError(
-                      "Could not load the desktop. This device cannot reach the screen URL.",
-                    )
-                  }
-                />
-              ) : (
-                <View
-                  style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}
-                >
-                  <Text style={{ color: "#6C6C70", textAlign: "center" }}>
-                    {computer?.state === "suspended"
-                      ? "Computer is asleep"
-                      : computerLabel(computer?.mode, name)}
+          ) : (
+            <View style={{ flex: 1, backgroundColor: "#050506" }}>
+              <SafeAreaView
+                edges={["top", "left", "right"]}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: "#171719",
+                  paddingHorizontal: 18,
+                  paddingVertical: 14,
+                }}
+              >
+                <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "500" }}
+                  >
+                    {label}
                   </Text>
+                  {hasControl ? (
+                    <View
+                      style={{
+                        alignSelf: "flex-start",
+                        borderRadius: 999,
+                        backgroundColor: "rgba(48,162,75,0.14)",
+                        paddingHorizontal: 11,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <Text style={{ color: "#4ECB71", fontSize: 13 }}>You have control</Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  {hasControl ? (
+                    <Pressable
+                      onPress={() => void releaseComputer()}
+                      hitSlop={8}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: "#26262A",
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        minHeight: 44,
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ color: "#ECECEE" }}>Release</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={() =>
+                        void bootComputer({ takeControl: true, overlay: false }).catch(
+                          () => undefined,
+                        )
+                      }
+                      hitSlop={8}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: "#26262A",
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        minHeight: 44,
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ color: "#ECECEE" }}>Take control</Text>
+                    </Pressable>
+                  )}
+                  <Pressable
+                    accessibilityLabel="Close computer"
+                    hitSlop={8}
+                    onPress={() => setComputerOpen(false)}
+                    style={{
+                      minWidth: 44,
+                      minHeight: 44,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: "#85858A", fontSize: 16 }}>✕</Text>
+                  </Pressable>
+                </View>
+              </SafeAreaView>
+              <View style={{ flex: 1, backgroundColor: "#0E0E10" }}>
+                {computer?.state === "running" && embeddedScreenUrl ? (
+                  <ScreenWebView
+                    url={embeddedScreenUrl}
+                    interactive={hasControl}
+                    onError={() =>
+                      setScreenError(
+                        "Could not load the desktop. This device cannot reach the screen URL.",
+                      )
+                    }
+                  />
+                ) : (
+                  <View
+                    style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}
+                  >
+                    <Text style={{ color: "#6C6C70", textAlign: "center" }}>
+                      {computer?.state === "suspended"
+                        ? "Computer is asleep"
+                        : computerLabel(computer?.mode, name)}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
-        )}
+          )}
+        </SafeAreaProvider>
       </Modal>
     </View>
   );

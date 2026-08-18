@@ -59,7 +59,7 @@ Setup:
 
 Verification:
 
-- Request `http://127.0.0.1:3100/health`. Require `ok: true`, `runtime: "pi"`, `sandbox: "docker"`, `jobs: "graphile"`, and `realtime: "postgres"`. Expect `composio: true` only when its key was configured.
+- Request `http://127.0.0.1:3100/health`. Require `ok: true`, `runtime: "pi"`, `sandbox: "docker"`, `jobs: "graphile"`, and `realtime: "postgres"`. Expect `composio: true` only when its key was configured. `revision` is `null` unless `GIT_SHA` is set.
 - Open `http://127.0.0.1:5173` in a browser. If browser automation is available, use it for non-sensitive steps; otherwise give me the exact UI steps.
 - Create a local test account with clearly fake data, complete first-run onboarding, and create a test bot. Do not use personal data.
 - If a model is connected, send a harmless test message and confirm the bot replies. If model setup was deferred, explicitly report that the stack is healthy but a first message will fail until a provider is configured; do not call the setup fully usable without that caveat.
