@@ -4,30 +4,36 @@ import type { PrismaClient } from "@rakazo/db";
 
 export async function revokeConnection(
   deps: {
-    prisma: Pick<PrismaClient, "connection">;
+    prisma: Pick<PrismaClient, "$transaction">;
     composio?: Pick<ComposioProvider, "revoke">;
   },
   connectionId: string,
   context: AdapterContext,
 ): Promise<void> {
-  const row = await deps.prisma.connection.findFirst({
-    where: {
-      id: connectionId,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
-    },
-  });
-  if (!row) return;
+  await deps.prisma.$transaction(
+    async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ id: string; provider: string }>>`
+        SELECT "id", "provider"
+        FROM "connections"
+        WHERE "id" = ${connectionId}
+          AND "workspaceId" = ${context.workspaceId}
+          AND "userId" = ${context.userId}
+        FOR UPDATE
+      `;
+      const row = rows[0];
+      if (!row) return;
 
-  const revoked = await deps.prisma.connection.updateMany({
-    where: {
-      id: row.id,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
-    },
-    data: { status: "revoked" },
-  });
-  if (revoked.count === 0 || !deps.composio) return;
+      if (deps.composio) await deps.composio.revoke(row.provider, context);
 
-  await deps.composio.revoke(row.provider, context);
+      await tx.connection.updateMany({
+        where: {
+          id: row.id,
+          workspaceId: context.workspaceId,
+          userId: context.userId,
+        },
+        data: { status: "revoked" },
+      });
+    },
+    { maxWait: 70_000, timeout: 70_000 },
+  );
 }
