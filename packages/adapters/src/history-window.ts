@@ -16,6 +16,7 @@ export interface AgentHistoryWindowOptions {
   maxBytes?: number;
   maxMessageBytes?: number;
   minMessages?: number;
+  currentPrompt?: string;
 }
 
 export function buildAgentHistoryWindow(
@@ -26,24 +27,22 @@ export function buildAgentHistoryWindow(
   const maxBytes = options.maxBytes ?? MAX_AGENT_HISTORY_BYTES;
   const maxMessageBytes = options.maxMessageBytes ?? MAX_AGENT_HISTORY_MESSAGE_BYTES;
   const minMessages = options.minMessages ?? MIN_AGENT_HISTORY_MESSAGES;
+  const currentPrompt = options.currentPrompt;
 
   const window: AgentHistoryEntry[] = [];
   let bytes = 0;
-  for (const message of messages.slice(1)) {
+  messages.forEach((message, index) => {
     let content = blocksToText(message.blocks);
-    if (byteLength(content) > maxMessageBytes) {
+    const currentTurn = index === 0 && content === currentPrompt;
+    if (!currentTurn && byteLength(content) > maxMessageBytes) {
       content =
         truncateUtf8(content, Math.max(0, maxMessageBytes - byteLength(TRUNCATION_SUFFIX))) +
         TRUNCATION_SUFFIX;
     }
     const size = byteLength(content);
-    if (window.length >= minMessages && bytes + size > maxBytes) break;
+    if (window.length > 0 && window.length >= minMessages && bytes + size > maxBytes) return;
     window.unshift({ role: roleOf(message.role), content });
-    bytes += size;
-  }
-  window.push({
-    role: roleOf(messages[0]!.role),
-    content: blocksToText(messages[0]!.blocks),
+    if (!currentTurn) bytes += size;
   });
   return window;
 }

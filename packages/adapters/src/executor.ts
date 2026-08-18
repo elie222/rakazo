@@ -307,6 +307,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
         const history = buildAgentHistoryWindow(
           messages as Array<{ role: string; blocks: MessageBlock[] }>,
+          { currentPrompt: task.prompt },
         );
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
         const resolved = await resolveModelKey(

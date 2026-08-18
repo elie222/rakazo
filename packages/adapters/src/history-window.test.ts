@@ -27,18 +27,38 @@ describe("agent history window", () => {
       { maxBytes: 5, minMessages: 0 },
     );
 
-    expect(result.map((entry) => entry.content)).toEqual(["n3", "n4", "n5"]);
+    expect(result.map((entry) => entry.content)).toEqual(["n4", "n5"]);
   });
 
-  it("always keeps the newest message in full even when it exceeds the budget", () => {
+  it("keeps the newest message in full when it matches the current prompt", () => {
     const huge = "x".repeat(10_000);
     const result = buildAgentHistoryWindow(
       [message("user", huge), message("bot", "n0")],
-      { maxBytes: 100, minMessages: 0 },
+      { maxBytes: 100, minMessages: 0, currentPrompt: huge },
     );
 
     expect(result).toHaveLength(2);
     expect(result[1]).toEqual({ role: "user", content: huge });
+  });
+
+  it("truncates the newest message when it differs from the current prompt", () => {
+    const result = buildAgentHistoryWindow(
+      [message("bot", "x".repeat(10_000)), message("bot", "n0")],
+      { maxBytes: 100_000, minMessages: 0, currentPrompt: "different prompt" },
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[1]!.content.endsWith("\n\n(truncated)")).toBe(true);
+    expect(Buffer.byteLength(result[1]!.content, "utf8")).toBeLessThanOrEqual(4_096);
+  });
+
+  it("always keeps the newest message even when the budget is exhausted", () => {
+    const result = buildAgentHistoryWindow(
+      [message("user", "n5"), message("bot", "n4"), message("user", "n3")],
+      { maxBytes: 2, minMessages: 0 },
+    );
+
+    expect(result.map((entry) => entry.content)).toEqual(["n5"]);
   });
 
   it("truncates oversized messages to a headline with a marker", () => {
@@ -67,10 +87,9 @@ describe("agent history window", () => {
   it("keeps at least the minimum message floor even over budget", () => {
     const result = buildAgentHistoryWindow(
       [message("user", "n5"), message("bot", "n4"), message("user", "n3"), message("bot", "n2"), message("user", "n1"), message("bot", "n0")],
-      { maxBytes: 5, minMessages: 3 },
+      { maxBytes: 5, minMessages: 4 },
     );
 
-    expect(result.length).toBeGreaterThanOrEqual(4);
     expect(result.map((entry) => entry.content)).toEqual(["n2", "n3", "n4", "n5"]);
   });
 
