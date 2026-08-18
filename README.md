@@ -136,9 +136,11 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
 Pull requests retain the Playwright HTML report, screenshots, traces, and videos as short-lived
-GitHub Actions artifacts. Successful merges and the nightly verification publish a persistent run
-history plus a scan-friendly screenshot gallery at
+GitHub Actions artifacts. A trusted follow-up workflow also publishes validated PNG screenshots
+from every pull request—without publishing contributor-controlled HTML or exposing repository
+credentials—to the persistent, scan-friendly dashboard at
 <https://rakazogithubactions.fsn1.your-objectstorage.com/playwright/index.html>.
+Successful merges and nightly verification add their full Playwright reports to the same history.
 
 The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b` or `daytona`.
 Those options require `E2B_API_KEY` or `DAYTONA_API_KEY`, keep the deterministic scripted agent runtime, and destroy
