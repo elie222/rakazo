@@ -23,6 +23,12 @@ export function nextCompactionBatchRange(
 }
 
 export const COMPACTION_BATCH_SIZE = 50;
+export const HISTORY_WINDOW_SIZE = 50;
+export const LEGACY_HISTORY_WINDOW_SIZE = 200;
+
+export function historyWindowSize(supermemoryEnabled: boolean): number {
+  return supermemoryEnabled ? HISTORY_WINDOW_SIZE : LEGACY_HISTORY_WINDOW_SIZE;
+}
 
 export interface CompactHistoryDeps {
   prisma: PrismaClient;

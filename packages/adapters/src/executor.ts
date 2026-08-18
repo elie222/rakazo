@@ -50,6 +50,7 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import { historyWindowSize } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -59,6 +60,7 @@ import {
   serializeModelSecret,
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
+import { isSupermemoryEnabled } from "./supermemory-client.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
@@ -70,7 +72,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-const MAX_AGENT_HISTORY_MESSAGES = 200;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -271,7 +272,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             deps.prisma.message.findMany({
               where: { threadId: run.threadId },
               orderBy: { seq: "desc" },
-              take: MAX_AGENT_HISTORY_MESSAGES,
+              take: historyWindowSize(isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)),
               select: { role: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),

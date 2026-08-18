@@ -3,6 +3,7 @@ import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
   compactHistory,
+  historyWindowSize,
   nextCompactionBatchRange,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
@@ -30,6 +31,16 @@ describe("nextCompactionBatchRange", () => {
 
   it("continues from the cursor when something has already been compacted", () => {
     expect(nextCompactionBatchRange(50, 50)).toEqual({ fromSeqExclusive: 50, take: 50 });
+  });
+});
+
+describe("historyWindowSize", () => {
+  it("uses the smaller Supermemory window when enabled", () => {
+    expect(historyWindowSize(true)).toBe(50);
+  });
+
+  it("uses the legacy 200-message window when Supermemory is not configured", () => {
+    expect(historyWindowSize(false)).toBe(200);
   });
 });
 
