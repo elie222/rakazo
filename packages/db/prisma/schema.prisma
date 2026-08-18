@@ -372,6 +372,7 @@ model IntegrationMirror {
   lane           String
   externalId     String
   fingerprint    String
+  sourceUpdatedAt DateTime?
   slackMessageTs String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

@@ -4,6 +4,7 @@ CREATE TABLE "integration_mirrors" (
     "lane" TEXT NOT NULL,
     "externalId" TEXT NOT NULL,
     "fingerprint" TEXT NOT NULL,
+    "sourceUpdatedAt" TIMESTAMP(3),
     "slackMessageTs" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,

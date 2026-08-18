@@ -10,7 +10,10 @@ import {
   type GtaskInboxItem,
 } from "./gtasks-slack-mirror.js";
 
-type MirrorStore = Map<string, { fingerprint: string; slackMessageTs: string }>;
+type MirrorStore = Map<
+  string,
+  { fingerprint: string; sourceUpdatedAt: Date | null; slackMessageTs: string }
+>;
 
 type MockBot = {
   id: string;
@@ -20,18 +23,33 @@ type MockBot = {
   updatedAt: Date;
 };
 
+type MockPrismaOptions = {
+  member?: boolean | (() => boolean);
+  connectedProviders?: string[];
+};
+
 function mirrorKey(workspaceId: string, externalId: string) {
   return `${workspaceId}:${GTASKS_SLACK_LANE}:${externalId}`;
 }
 
-function createMockPrisma(store: MirrorStore, bots: MockBot[] = []) {
-  return {
-    integrationMirror: {
-      findUnique: vi.fn(async ({ where }: { where: { workspaceId_lane_externalId: {
-        workspaceId: string;
-        lane: string;
-        externalId: string;
-      } } }) => {
+function createMockPrisma(
+  store: MirrorStore,
+  bots: MockBot[] = [],
+  options: MockPrismaOptions = {},
+) {
+  const integrationMirror = {
+    findUnique: vi.fn(
+      async ({
+        where,
+      }: {
+        where: {
+          workspaceId_lane_externalId: {
+            workspaceId: string;
+            lane: string;
+            externalId: string;
+          };
+        };
+      }) => {
         const key = mirrorKey(
           where.workspaceId_lane_externalId.workspaceId,
           where.workspaceId_lane_externalId.externalId,
@@ -44,61 +62,116 @@ function createMockPrisma(store: MirrorStore, bots: MockBot[] = []) {
           lane: GTASKS_SLACK_LANE,
           externalId: where.workspaceId_lane_externalId.externalId,
           fingerprint: row.fingerprint,
+          sourceUpdatedAt: row.sourceUpdatedAt,
           slackMessageTs: row.slackMessageTs,
         };
-      }),
-      create: vi.fn(
-        async ({
-          data,
-        }: {
-          data: {
-            workspaceId: string;
-            lane: string;
-            externalId: string;
-            fingerprint: string;
-            slackMessageTs: string;
-          };
-        }) => {
-          const key = mirrorKey(data.workspaceId, data.externalId);
-          if (store.has(key)) {
-            const error = new Error("unique") as Error & { code?: string };
-            error.code = "P2002";
-            throw error;
-          }
-          store.set(key, { fingerprint: data.fingerprint, slackMessageTs: data.slackMessageTs });
-          return { id: key, ...data };
-        },
-      ),
-      update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: { fingerprint: string };
-        }) => {
-          const row = [...store.entries()].find(([id]) => id === where.id);
-          if (!row) throw new Error("missing");
-          store.set(row[0], { ...row[1], fingerprint: data.fingerprint });
-          return { id: where.id, fingerprint: data.fingerprint };
-        },
-      ),
-    },
+      },
+    ),
+    create: vi.fn(
+      async ({
+        data,
+      }: {
+        data: {
+          workspaceId: string;
+          lane: string;
+          externalId: string;
+          fingerprint: string;
+          sourceUpdatedAt: Date | null;
+          slackMessageTs: string;
+        };
+      }) => {
+        const key = mirrorKey(data.workspaceId, data.externalId);
+        if (store.has(key)) {
+          const error = new Error("unique") as Error & { code?: string };
+          error.code = "P2002";
+          throw error;
+        }
+        store.set(key, {
+          fingerprint: data.fingerprint,
+          sourceUpdatedAt: data.sourceUpdatedAt,
+          slackMessageTs: data.slackMessageTs,
+        });
+        return { id: key, ...data };
+      },
+    ),
+    update: vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { fingerprint?: string; sourceUpdatedAt?: Date | null };
+      }) => {
+        const row = [...store.entries()].find(([id]) => id === where.id);
+        if (!row) throw new Error("missing");
+        const updated = { ...row[1], ...data };
+        store.set(row[0], updated);
+        return { id: where.id, ...updated };
+      },
+    ),
+  };
+  const member = {
+    findFirst: vi.fn(async () => {
+      const active = typeof options.member === "function" ? options.member() : options.member;
+      return active === false ? null : { id: "member-1" };
+    }),
+  };
+  const connection = {
+    findMany: vi.fn(async () =>
+      (
+        options.connectedProviders ?? [
+          GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
+          GTASKS_SLACK_ROUTING.composioProviders.slack,
+        ]
+      ).map((provider) => ({ provider })),
+    ),
+  };
+  let transactionTail = Promise.resolve();
+  const transactionClient = {
+    integrationMirror,
+    member,
+    connection,
+    $queryRaw: vi.fn(async () => []),
+  };
+
+  return {
+    integrationMirror,
+    member,
+    connection,
+    $transaction: vi.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) => {
+      const previous = transactionTail;
+      let release = () => {};
+      transactionTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await callback(transactionClient);
+      } finally {
+        release();
+      }
+    }),
     bot: {
-      findFirst: vi.fn(
-        async ({ where }: { where: { workspaceId: string; userId?: string } }) => {
-          const bot = bots
-            .filter(
-              (candidate) =>
-                candidate.workspaceId === where.workspaceId &&
-                (where.userId === undefined || candidate.userId === where.userId),
-            )
-            .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())[0];
-          return bot ? { id: bot.id, thread: { id: bot.threadId } } : null;
-        },
-      ),
+      findFirst: vi.fn(async ({ where }: { where: { workspaceId: string; userId?: string } }) => {
+        const bot = bots
+          .filter(
+            (candidate) =>
+              candidate.workspaceId === where.workspaceId &&
+              (where.userId === undefined || candidate.userId === where.userId),
+          )
+          .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())[0];
+        return bot ? { id: bot.id, thread: { id: bot.threadId } } : null;
+      }),
     },
   };
+}
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 function createMockPort(tasks: GtaskInboxItem[]): GtasksSlackPort & {
@@ -133,18 +206,24 @@ describe("gtasks-slack mirror", () => {
     const store: MirrorStore = new Map();
     const port = createMockPort([{ id: "task-1", title: "Buy milk", due: "2026-08-20" }]);
     const composio = new ComposioEmulator();
-    await composio.begin({ provider: "GOOGLETASKS", redirectUrl: "http://example.test" }, {
-      ...ctx,
-      operationId: "test",
-      traceId: "test",
-      signal: AbortSignal.timeout(1000),
-    });
-    await composio.begin({ provider: "SLACK", redirectUrl: "http://example.test" }, {
-      ...ctx,
-      operationId: "test",
-      traceId: "test",
-      signal: AbortSignal.timeout(1000),
-    });
+    await composio.begin(
+      { provider: "GOOGLETASKS", redirectUrl: "http://example.test" },
+      {
+        ...ctx,
+        operationId: "test",
+        traceId: "test",
+        signal: AbortSignal.timeout(1000),
+      },
+    );
+    await composio.begin(
+      { provider: "SLACK", redirectUrl: "http://example.test" },
+      {
+        ...ctx,
+        operationId: "test",
+        traceId: "test",
+        signal: AbortSignal.timeout(1000),
+      },
+    );
 
     const result = await syncGtasksSlackInbox(
       { prisma: createMockPrisma(store) as never, composio, port },
@@ -178,12 +257,15 @@ describe("gtasks-slack mirror", () => {
     const port = createMockPort([{ id: "task-owned", title: "Private task" }]);
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
-      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
-        ...ctx,
-        operationId: "test",
-        traceId: "test",
-        signal: AbortSignal.timeout(1000),
-      });
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
     }
     const append = vi.fn(async () => ({}));
 
@@ -209,12 +291,15 @@ describe("gtasks-slack mirror", () => {
     const port = createMockPort([task]);
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
-      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
-        ...ctx,
-        operationId: "test",
-        traceId: "test",
-        signal: AbortSignal.timeout(1000),
-      });
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
     }
     const deps = { prisma: createMockPrisma(store) as never, composio, port };
 
@@ -233,12 +318,15 @@ describe("gtasks-slack mirror", () => {
     port.listInboxTasks = vi.fn(async () => tasks);
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
-      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
-        ...ctx,
-        operationId: "test",
-        traceId: "test",
-        signal: AbortSignal.timeout(1000),
-      });
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
     }
     const deps = { prisma: createMockPrisma(store) as never, composio, port };
 
@@ -261,23 +349,192 @@ describe("gtasks-slack mirror", () => {
     const prisma = createMockPrisma(store);
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
-      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
-        ...ctx,
-        operationId: "test",
-        traceId: "test",
-        signal: AbortSignal.timeout(1000),
-      });
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
     }
     const deps = { prisma: prisma as never, composio, port };
 
     store.set(mirrorKey(ctx.workspaceId, "task-4"), {
       fingerprint: gtaskMirrorFingerprint({ id: "task-4", title: "Race task" }),
+      sourceUpdatedAt: null,
       slackMessageTs: "ts-existing",
     });
 
     const result = await syncGtasksSlackInbox(deps, ctx);
     expect(result).toEqual({ status: "ok", created: 0, updated: 0, unchanged: 1 });
     expect(port.posts).toHaveLength(0);
+  });
+
+  it("does not let an older concurrent delivery overwrite a newer revision", async () => {
+    const store: MirrorStore = new Map();
+    const taskId = "task-concurrent";
+    store.set(mirrorKey(ctx.workspaceId, taskId), {
+      fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Initial" }),
+      sourceUpdatedAt: new Date("2026-08-18T09:00:00Z"),
+      slackMessageTs: "ts-existing",
+    });
+    const prisma = createMockPrisma(store);
+    const staleAtTarget = deferred();
+    const releaseStale = deferred();
+    prisma.bot.findFirst
+      .mockImplementationOnce(async () => {
+        staleAtTarget.resolve();
+        await releaseStale.promise;
+        return null;
+      })
+      .mockResolvedValueOnce(null);
+    const stalePort = createMockPort([
+      { id: taskId, title: "Version one", updated: "2026-08-18T10:00:00Z" },
+    ]);
+    const freshPort = createMockPort([
+      { id: taskId, title: "Version two", updated: "2026-08-18T11:00:00Z" },
+    ]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+
+    const staleSync = syncGtasksSlackInbox(
+      { prisma: prisma as never, composio, port: stalePort },
+      ctx,
+    );
+    await staleAtTarget.promise;
+    const freshResult = await syncGtasksSlackInbox(
+      { prisma: prisma as never, composio, port: freshPort },
+      ctx,
+    );
+    releaseStale.resolve();
+    const staleResult = await staleSync;
+
+    expect(freshResult).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
+    expect(staleResult).toEqual({ status: "ok", created: 0, updated: 0, unchanged: 1 });
+    expect(freshPort.updates[0]?.text).toContain("Version two");
+    expect(stalePort.updates).toHaveLength(0);
+    expect(store.get(mirrorKey(ctx.workspaceId, taskId))).toMatchObject({
+      fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Version two" }),
+      sourceUpdatedAt: new Date("2026-08-18T11:00:00Z"),
+    });
+  });
+
+  it("serializes concurrent revisions at the Slack delivery boundary", async () => {
+    const store: MirrorStore = new Map();
+    const taskId = "task-serialized";
+    store.set(mirrorKey(ctx.workspaceId, taskId), {
+      fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Initial" }),
+      sourceUpdatedAt: new Date("2026-08-18T09:00:00Z"),
+      slackMessageTs: "ts-existing",
+    });
+    const prisma = createMockPrisma(store);
+    const staleUpdateStarted = deferred();
+    const releaseStaleUpdate = deferred();
+    const stalePort = createMockPort([
+      { id: taskId, title: "Version one", updated: "2026-08-18T10:00:00Z" },
+    ]);
+    stalePort.updateSlackMessage = vi.fn(async (_ctx, messageTs, text) => {
+      staleUpdateStarted.resolve();
+      await releaseStaleUpdate.promise;
+      stalePort.updates.push({ messageTs, text });
+    });
+    const freshPort = createMockPort([
+      { id: taskId, title: "Version two", updated: "2026-08-18T11:00:00Z" },
+    ]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+
+    const staleSync = syncGtasksSlackInbox(
+      { prisma: prisma as never, composio, port: stalePort },
+      ctx,
+    );
+    await staleUpdateStarted.promise;
+    const freshSync = syncGtasksSlackInbox(
+      { prisma: prisma as never, composio, port: freshPort },
+      ctx,
+    );
+    await vi.waitFor(() => expect(prisma.$transaction).toHaveBeenCalledTimes(2));
+    expect(freshPort.updates).toHaveLength(0);
+    releaseStaleUpdate.resolve();
+    const [staleResult, freshResult] = await Promise.all([staleSync, freshSync]);
+
+    expect(staleResult).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
+    expect(freshResult).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
+    expect(freshPort.updates[0]?.text).toContain("Version two");
+    expect(store.get(mirrorKey(ctx.workspaceId, taskId))).toMatchObject({
+      fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Version two" }),
+      sourceUpdatedAt: new Date("2026-08-18T11:00:00Z"),
+    });
+  });
+
+  it("skips provider calls after workspace membership is removed", async () => {
+    const store: MirrorStore = new Map();
+    const prisma = createMockPrisma(store, [], { member: false });
+    const port = createMockPort([{ id: "task-revoked", title: "Revoked task" }]);
+    const listInboxTasks = vi.spyOn(port, "listInboxTasks");
+    const connectionReady = vi.fn();
+
+    const result = await syncGtasksSlackInbox(
+      { prisma: prisma as never, composio: { connectionReady } as never, port },
+      ctx,
+    );
+
+    expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
+    expect(connectionReady).not.toHaveBeenCalled();
+    expect(listInboxTasks).not.toHaveBeenCalled();
+    expect(port.posts).toHaveLength(0);
+    expect(port.updates).toHaveLength(0);
+  });
+
+  it("stops Slack delivery when membership is removed after task listing", async () => {
+    const store: MirrorStore = new Map();
+    let member = true;
+    const prisma = createMockPrisma(store, [], { member: () => member });
+    const port = createMockPort([{ id: "task-revoked-late", title: "Revoked late" }]);
+    port.listInboxTasks = vi.fn(async () => {
+      member = false;
+      return [{ id: "task-revoked-late", title: "Revoked late" }];
+    });
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+
+    const result = await syncGtasksSlackInbox({ prisma: prisma as never, composio, port }, ctx);
+
+    expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
+    expect(port.posts).toHaveLength(0);
+    expect(port.updates).toHaveLength(0);
   });
 
   it("skips when either connector is unavailable", async () => {
@@ -309,12 +566,15 @@ describe("gtasks-slack mirror", () => {
     };
     const composio = new ComposioEmulator();
     for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
-      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
-        ...ctx,
-        operationId: "test",
-        traceId: "test",
-        signal: AbortSignal.timeout(1000),
-      });
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
     }
 
     const result = await syncGtasksSlackInbox(
