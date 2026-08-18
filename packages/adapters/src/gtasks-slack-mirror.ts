@@ -159,10 +159,10 @@ async function emitMirroredEvent(
 
 async function resolveEventTarget(
   prisma: PrismaClient,
-  workspaceId: string,
+  ctx: GtasksSlackMirrorContext,
 ): Promise<{ botId: string; threadId: string } | undefined> {
   const bot = await prisma.bot.findFirst({
-    where: { workspaceId, archivedAt: null },
+    where: { workspaceId: ctx.workspaceId, userId: ctx.userId, archivedAt: null },
     orderBy: { updatedAt: "desc" },
     select: { id: true, thread: { select: { id: true } } },
   });
@@ -192,7 +192,7 @@ export async function syncGtasksSlackInbox(
     return { status: "error", message: sanitizeComposioError(error) };
   }
 
-  const eventTarget = await resolveEventTarget(deps.prisma, ctx.workspaceId);
+  const eventTarget = await resolveEventTarget(deps.prisma, ctx);
   const mirrorDeps = {
     prisma: deps.prisma,
     port,

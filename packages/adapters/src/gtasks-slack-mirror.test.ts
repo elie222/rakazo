@@ -12,11 +12,19 @@ import {
 
 type MirrorStore = Map<string, { fingerprint: string; slackMessageTs: string }>;
 
+type MockBot = {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  threadId: string;
+  updatedAt: Date;
+};
+
 function mirrorKey(workspaceId: string, externalId: string) {
   return `${workspaceId}:${GTASKS_SLACK_LANE}:${externalId}`;
 }
 
-function createMockPrisma(store: MirrorStore) {
+function createMockPrisma(store: MirrorStore, bots: MockBot[] = []) {
   return {
     integrationMirror: {
       findUnique: vi.fn(async ({ where }: { where: { workspaceId_lane_externalId: {
@@ -77,7 +85,18 @@ function createMockPrisma(store: MirrorStore) {
       ),
     },
     bot: {
-      findFirst: vi.fn(async () => ({ id: "bot-1", threadId: "thread-1" })),
+      findFirst: vi.fn(
+        async ({ where }: { where: { workspaceId: string; userId?: string } }) => {
+          const bot = bots
+            .filter(
+              (candidate) =>
+                candidate.workspaceId === where.workspaceId &&
+                (where.userId === undefined || candidate.userId === where.userId),
+            )
+            .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())[0];
+          return bot ? { id: bot.id, thread: { id: bot.threadId } } : null;
+        },
+      ),
     },
   };
 }
@@ -136,6 +155,52 @@ describe("gtasks-slack mirror", () => {
     expect(port.posts).toHaveLength(1);
     expect(port.posts[0]?.text).toContain("Buy milk");
     expect(port.posts[0]?.text).toContain("googletasks:task-1");
+  });
+
+  it("emits mirror provenance only to the connection owner's bot", async () => {
+    const store: MirrorStore = new Map();
+    const prisma = createMockPrisma(store, [
+      {
+        id: "bot-owner",
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        threadId: "thread-owner",
+        updatedAt: new Date("2026-08-17T00:00:00Z"),
+      },
+      {
+        id: "bot-other",
+        workspaceId: ctx.workspaceId,
+        userId: "user-2",
+        threadId: "thread-other",
+        updatedAt: new Date("2026-08-18T00:00:00Z"),
+      },
+    ]);
+    const port = createMockPort([{ id: "task-owned", title: "Private task" }]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin({ provider, redirectUrl: "http://example.test" }, {
+        ...ctx,
+        operationId: "test",
+        traceId: "test",
+        signal: AbortSignal.timeout(1000),
+      });
+    }
+    const append = vi.fn(async () => ({}));
+
+    await syncGtasksSlackInbox(
+      { prisma: prisma as never, composio, port, events: { append } as never },
+      ctx,
+    );
+
+    expect(append).toHaveBeenCalledOnce();
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: ctx.workspaceId,
+        botId: "bot-owner",
+        threadId: "thread-owner",
+        payload: expect.objectContaining({ externalId: "task-owned" }),
+      }),
+    );
   });
 
   it("does not duplicate Slack posts on unchanged replay", async () => {
