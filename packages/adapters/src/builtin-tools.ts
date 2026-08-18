@@ -151,6 +151,26 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "recall_memory",
+    description:
+      "Search cross-session semantic memory (Supermemory) for facts, preferences, or context saved in earlier conversations. Different from remember/MEMORY.md: this is searchable, not just this turn's notes. Check it before assuming or re-asking the user something they may have already told you. If nothing relevant turns up, say so rather than guessing.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "save_memory",
+    description:
+      "Save a durable fact, preference, or decision to cross-session semantic memory (Supermemory), recallable later via recall_memory. Use for things worth remembering across future conversations, not this turn's scratch notes. Never save secrets, credentials, or API keys.",
+    inputSchema: {
+      type: "object",
+      properties: { content: { type: "string" } },
+      required: ["content"],
+    },
+  },
+  {
     name: "run_subagent",
     description:
       "Run a short-lived helper inside this turn only. It is not a bot: no list entry, no thread, no computer of its own, and it disappears when this turn ends. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",

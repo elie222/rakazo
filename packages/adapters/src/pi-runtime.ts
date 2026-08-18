@@ -286,6 +286,12 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "remember") {
         return { content: String(raw.content ?? ""), path: String(raw.path ?? "MEMORY.md") };
       }
+      if (tool.name === "recall_memory") {
+        return { query: String(raw.query ?? "") };
+      }
+      if (tool.name === "save_memory") {
+        return { content: String(raw.content ?? "") };
+      }
       if (tool.name === "request_takeover") {
         return { reason: String(raw.reason ?? "I need you on the screen.") };
       }
@@ -527,6 +533,12 @@ function parametersFor(tool: ConnectorTool) {
   }
   if (tool.name === "remember") {
     return Type.Object({ content: Type.String(), path: Type.String() });
+  }
+  if (tool.name === "recall_memory") {
+    return Type.Object({ query: Type.String() });
+  }
+  if (tool.name === "save_memory") {
+    return Type.Object({ content: Type.String() });
   }
   if (tool.name === "shell") {
     return Type.Object({

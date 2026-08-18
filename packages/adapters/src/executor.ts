@@ -86,6 +86,7 @@ import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import {
   isSupermemoryEnabled,
+  saveSupermemoryMemory,
   searchSupermemory,
   supermemoryContainerTag,
 } from "./supermemory-client.js";
@@ -103,6 +104,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "read_file",
   "request_takeover",
   "run_subagent",
+  "recall_memory",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const GRAPHICAL_AGENT_TOOLS = new Set([
@@ -728,6 +730,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true });
+          }
+          if (name === "recall_memory") {
+            return searchSupermemory(String(args.query ?? ""), supermemoryContainerTag(bot.id));
+          }
+          if (name === "save_memory") {
+            return finish(
+              await saveSupermemoryMemory(
+                String(args.content ?? ""),
+                supermemoryContainerTag(bot.id),
+              ),
+            );
           }
           if (name === "request_takeover") return { ok: true };
           if (name === "run_subagent") {
