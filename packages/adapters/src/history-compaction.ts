@@ -36,8 +36,14 @@ export const COMPACTION_BATCH_SIZE = 50;
 export const HISTORY_WINDOW_SIZE = 50;
 export const LEGACY_HISTORY_WINDOW_SIZE = 200;
 
-export function historyWindowSize(supermemoryEnabled: boolean): number {
-  return supermemoryEnabled ? HISTORY_WINDOW_SIZE : LEGACY_HISTORY_WINDOW_SIZE;
+export function historyWindowSize(options: {
+  supermemoryEnabled: boolean;
+  compacted: boolean;
+  recallSucceeded: boolean;
+}): number {
+  return options.supermemoryEnabled && options.compacted && options.recallSucceeded
+    ? HISTORY_WINDOW_SIZE
+    : LEGACY_HISTORY_WINDOW_SIZE;
 }
 
 export function formatRecalledMemory(results: Array<{ memory: string }>): string {
@@ -142,8 +148,8 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     {
       operationId: `compact:${threadId}`,
       traceId: `compact:${threadId}`,
-      workspaceId: "",
-      userId: "",
+      workspaceId: thread.workspaceId,
+      userId: thread.userId,
       signal: AbortSignal.timeout(SUMMARIZE_TIMEOUT_MS),
     },
   )) {
@@ -156,9 +162,15 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   if (!result.ok) throw new Error(`Failed to save compacted memory: ${result.error}`);
 
   const lastSeq = batch[batch.length - 1]!.seq;
-  const advanced = await deps.prisma.thread.update({
-    where: { id: threadId },
+  const advanced = await deps.prisma.thread.updateMany({
+    where: { id: threadId, historyCompactedUpToSeq: thread.historyCompactedUpToSeq },
     data: { historyCompactedUpToSeq: lastSeq },
+  });
+  if (advanced.count === 0) return;
+
+  const latest = await deps.prisma.thread.findUniqueOrThrow({
+    where: { id: threadId },
+    select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
   });
 
   // Drain a pre-existing backlog at queue speed rather than one batch per completed run, which
@@ -166,8 +178,8 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // otherwise leave most of that history in neither the verbatim window nor Supermemory.
   if (
     shouldEnqueueCompaction(
-      advanced.nextMessageSeq,
-      advanced.historyCompactedUpToSeq,
+      latest.nextMessageSeq,
+      latest.historyCompactedUpToSeq,
       HISTORY_WINDOW_SIZE,
       COMPACTION_BATCH_SIZE,
     )

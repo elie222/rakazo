@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isSupermemoryEnabled,
+  MAX_MEMORY_CONTENT_CHARS,
   MAX_RECALLED_MEMORIES,
   saveSupermemoryMemory,
   searchSupermemory,
@@ -59,7 +60,8 @@ describe("supermemory client", () => {
       expect(init.headers.Authorization).toBe("Bearer sm_test_key");
       expect(JSON.parse(init.body)).toStrictEqual({
         q: "spelling preference",
-        containerTags: ["rakazo:bot-123"],
+        containerTag: "rakazo:bot-123",
+        searchMode: "memories",
         limit: MAX_RECALLED_MEMORIES,
       });
     });
@@ -74,6 +76,54 @@ describe("supermemory client", () => {
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
       const result = await searchSupermemory("anything", "rakazo:bot-123");
       expect(result).toEqual({ ok: false, error: expect.stringContaining("unreachable") });
+    });
+
+    it("treats document chunks as memory text when the search result has no memory field", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ results: [{ chunk: "Older decision: use Postgres." }] }), {
+            status: 200,
+          }),
+        ),
+      );
+
+      const result = await searchSupermemory("database", "rakazo:bot-123");
+
+      expect(result).toEqual({
+        ok: true,
+        results: [{ memory: "Older decision: use Postgres.", similarity: 0 }],
+      });
+    });
+
+    it("drops malformed search hits instead of injecting empty memories", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(
+              JSON.stringify({ results: [{}, { memory: "  " }, "nope", { memory: "kept" }] }),
+              { status: 200 },
+            ),
+          ),
+      );
+
+      const result = await searchSupermemory("anything", "rakazo:bot-123");
+
+      expect(result).toEqual({ ok: true, results: [{ memory: "kept", similarity: 0 }] });
+    });
+
+    it("defaults to the hosted Supermemory API when SUPERMEMORY_API_URL is unset", async () => {
+      delete process.env.SUPERMEMORY_API_URL;
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await searchSupermemory("anything", "rakazo:bot-123");
+
+      expect(fetchMock.mock.calls[0]![0]).toBe("https://api.supermemory.ai/v4/search");
     });
   });
 
@@ -99,6 +149,19 @@ describe("supermemory client", () => {
       });
     });
 
+    it("caps oversized content at the API limit", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await saveSupermemoryMemory(
+        `prefix ${"x".repeat(MAX_MEMORY_CONTENT_CHARS)}`,
+        "rakazo:bot-123",
+      );
+
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+      expect(body.memories[0].content).toHaveLength(MAX_MEMORY_CONTENT_CHARS);
+    });
+
     it("reports a non-OK response instead of throwing", async () => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
       const result = await saveSupermemoryMemory("fact", "rakazo:bot-123");
@@ -114,6 +177,10 @@ describe("supermemory client", () => {
 
     it("is true when an API key is set", () => {
       expect(isSupermemoryEnabled("sm_test_key")).toBe(true);
+    });
+
+    it("is false for whitespace-only keys", () => {
+      expect(isSupermemoryEnabled("   ")).toBe(false);
     });
   });
 });

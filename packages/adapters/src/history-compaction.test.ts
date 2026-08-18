@@ -40,12 +40,28 @@ describe("nextCompactionBatchRange", () => {
 });
 
 describe("historyWindowSize", () => {
-  it("uses the smaller Supermemory window when enabled", () => {
-    expect(historyWindowSize(true)).toBe(50);
+  it("uses the smaller window only after compaction and a successful recall", () => {
+    expect(
+      historyWindowSize({ supermemoryEnabled: true, compacted: true, recallSucceeded: true }),
+    ).toBe(50);
+  });
+
+  it("keeps the legacy window until a thread has actually been compacted", () => {
+    expect(
+      historyWindowSize({ supermemoryEnabled: true, compacted: false, recallSucceeded: false }),
+    ).toBe(200);
+  });
+
+  it("keeps the legacy window when recall fails so compacted facts are not dropped", () => {
+    expect(
+      historyWindowSize({ supermemoryEnabled: true, compacted: true, recallSucceeded: false }),
+    ).toBe(200);
   });
 
   it("uses the legacy 200-message window when Supermemory is not configured", () => {
-    expect(historyWindowSize(false)).toBe(200);
+    expect(
+      historyWindowSize({ supermemoryEnabled: false, compacted: true, recallSucceeded: true }),
+    ).toBe(200);
   });
 });
 
@@ -96,16 +112,26 @@ function compactionHarness(
   const thread = {
     id: "thread-1",
     botId: "bot-1",
+    workspaceId: "workspace-1",
+    userId: "user-1",
     nextMessageSeq: options.nextMessageSeq ?? messages.length,
     historyCompactedUpToSeq: null as number | null,
   };
   const prisma = {
     thread: {
       findUniqueOrThrow: vi.fn(async () => thread),
-      update: vi.fn(async (args) => {
-        thread.historyCompactedUpToSeq = args.data.historyCompactedUpToSeq;
-        return thread;
-      }),
+      updateMany: vi.fn(
+        async (args: {
+          where: { historyCompactedUpToSeq: number | null };
+          data: { historyCompactedUpToSeq: number };
+        }) => {
+          if (thread.historyCompactedUpToSeq !== args.where.historyCompactedUpToSeq) {
+            return { count: 0 };
+          }
+          thread.historyCompactedUpToSeq = args.data.historyCompactedUpToSeq;
+          return { count: 1 };
+        },
+      ),
     },
     message: {
       findMany: vi.fn(async (args: { where: { seq: { gt: number } }; take: number }) =>
@@ -164,8 +190,12 @@ describe("compactHistory", () => {
       "rakazo:bot-1",
     );
 
-    expect(harness.prisma.thread.update).toHaveBeenCalledWith({
-      where: { id: "thread-1" },
+    const [, context] = harness.runtime.run.mock.calls[0]!;
+    expect(context.workspaceId).toBe("workspace-1");
+    expect(context.userId).toBe("user-1");
+
+    expect(harness.prisma.thread.updateMany).toHaveBeenCalledWith({
+      where: { id: "thread-1", historyCompactedUpToSeq: null },
       data: { historyCompactedUpToSeq: 49 },
     });
   });
@@ -214,7 +244,7 @@ describe("compactHistory", () => {
 
     expect(harness.runtime.run).not.toHaveBeenCalled();
     expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
-    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
   it("caps an oversized transcript at the budget, keeping the most recent content", async () => {
@@ -252,7 +282,7 @@ describe("compactHistory", () => {
 
     await compactHistory(harness.deps, "thread-1");
 
-    expect(harness.prisma.thread.update).toHaveBeenCalledOnce();
+    expect(harness.prisma.thread.updateMany).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
@@ -263,7 +293,7 @@ describe("compactHistory", () => {
 
     expect(harness.runtime.run).not.toHaveBeenCalled();
     expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
-    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
@@ -276,7 +306,7 @@ describe("compactHistory", () => {
     await compactHistory(harness.deps, "thread-1");
 
     expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
-    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
   it("propagates a summarizer failure so the job retries, and does not advance the cursor", async () => {
@@ -291,7 +321,7 @@ describe("compactHistory", () => {
     );
 
     expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
-    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
   it("does not advance the cursor if saving to Supermemory fails", async () => {
@@ -300,6 +330,18 @@ describe("compactHistory", () => {
 
     await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow();
 
-    expect(harness.prisma.thread.update).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not advance or re-enqueue if another worker already moved the cursor", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      nextMessageSeq: 150,
+    });
+    harness.prisma.thread.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 });

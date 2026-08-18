@@ -1,8 +1,11 @@
-const DEFAULT_SUPERMEMORY_BASE_URL = "http://localhost:6767";
+const DEFAULT_SUPERMEMORY_BASE_URL = "https://api.supermemory.ai";
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
 
 /** How many recalled memories a search asks for, and the most that are ever injected into a run. */
 export const MAX_RECALLED_MEMORIES = 5;
+
+/** Supermemory rejects memory content longer than this. */
+export const MAX_MEMORY_CONTENT_CHARS = 10_000;
 
 export interface SupermemoryResult {
   memory: string;
@@ -22,11 +25,11 @@ export function supermemoryContainerTag(botId: string): string {
 }
 
 export function isSupermemoryEnabled(apiKey: string | undefined): boolean {
-  return Boolean(apiKey);
+  return Boolean(apiKey?.trim());
 }
 
 function supermemoryConfig(): { baseUrl: string; apiKey: string } | undefined {
-  const apiKey = process.env.SUPERMEMORY_API_KEY;
+  const apiKey = process.env.SUPERMEMORY_API_KEY?.trim();
   if (!apiKey) return undefined;
   const baseUrl = (process.env.SUPERMEMORY_API_URL ?? DEFAULT_SUPERMEMORY_BASE_URL).replace(
     /\/+$/,
@@ -37,6 +40,32 @@ function supermemoryConfig(): { baseUrl: string; apiKey: string } | undefined {
 
 function unreachableError(error: unknown): string {
   return `Supermemory is unreachable: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+function parseSearchResults(data: unknown): SupermemoryResult[] {
+  if (!data || typeof data !== "object") return [];
+  const results = (data as { results?: unknown }).results;
+  if (!Array.isArray(results)) return [];
+  const parsed: SupermemoryResult[] = [];
+  for (const item of results) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as {
+      memory?: unknown;
+      chunk?: unknown;
+      similarity?: unknown;
+      updatedAt?: unknown;
+    };
+    const text =
+      typeof row.memory === "string" ? row.memory : typeof row.chunk === "string" ? row.chunk : "";
+    const memory = text.trim();
+    if (!memory) continue;
+    parsed.push({
+      memory,
+      similarity: typeof row.similarity === "number" ? row.similarity : 0,
+      ...(typeof row.updatedAt === "string" ? { updatedAt: row.updatedAt } : {}),
+    });
+  }
+  return parsed;
 }
 
 export async function searchSupermemory(
@@ -53,7 +82,8 @@ export async function searchSupermemory(
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         q: query,
-        containerTags: [containerTag],
+        containerTag,
+        searchMode: "memories",
         limit: MAX_RECALLED_MEMORIES,
       }),
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
@@ -61,8 +91,7 @@ export async function searchSupermemory(
     if (!response.ok) {
       return { ok: false, error: `Supermemory search failed: ${response.status}` };
     }
-    const data = (await response.json()) as { results?: SupermemoryResult[] };
-    return { ok: true, results: data.results ?? [] };
+    return { ok: true, results: parseSearchResults(await response.json()) };
   } catch (error) {
     return { ok: false, error: unreachableError(error) };
   }
@@ -76,11 +105,15 @@ export async function saveSupermemoryMemory(
   if (!config) {
     return { ok: false, error: "Supermemory is not configured (SUPERMEMORY_API_KEY is unset)." };
   }
+  const memory = content.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
+  if (!memory) {
+    return { ok: false, error: "Supermemory save skipped: memory content is empty." };
+  }
   try {
     const response = await fetch(`${config.baseUrl}/v4/memories`, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ containerTag, memories: [{ content, isStatic: false }] }),
+      body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
     });
     if (!response.ok) {

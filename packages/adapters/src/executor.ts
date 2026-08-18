@@ -62,6 +62,7 @@ import {
   COMPACTION_BATCH_SIZE,
   formatRecalledMemory,
   HISTORY_WINDOW_SIZE,
+  historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
@@ -332,7 +333,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const history = [...messages].reverse().map((m) => ({
+        let history = [...messages].reverse().map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
             | "assistant"
@@ -352,10 +353,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
         const supermemoryEnabled = isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY);
         let recalledMemory = "";
+        let recallSucceeded = false;
         if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
           const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
-          if (recalled.ok) recalledMemory = formatRecalledMemory(recalled.results);
+          if (recalled.ok) {
+            recallSucceeded = true;
+            recalledMemory = formatRecalledMemory(recalled.results);
+          } else {
+            console.error("supermemory recall failed", recalled.error);
+          }
         }
+        history = history.slice(
+          -historyWindowSize({
+            supermemoryEnabled,
+            compacted: thread.historyCompactedUpToSeq != null,
+            recallSucceeded,
+          }),
+        );
         const resolved = await resolveModelKey(
           deps,
           run.userId,
