@@ -101,6 +101,8 @@ describe("renderScreenshotGallery", () => {
     expect(html).toContain('data-columns="1" aria-label="One column" aria-pressed="true"');
     expect(html).toContain('data-columns="4" aria-label="Four columns" aria-pressed="false"');
     expect(html).toContain("initialColumns = localStorage.getItem(storageKey) || initialColumns");
+    expect(html).toContain("@media (max-width: 900px)");
+    expect(html).toContain(".gallery { grid-template-columns: 1fr; }");
   });
 });
 

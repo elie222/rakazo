@@ -275,6 +275,7 @@ export function renderScreenshotGallery(input: {
     @media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }
       .toolbar { align-items: start; flex-direction: column; }
+      .gallery { grid-template-columns: 1fr; }
     }
   </style>
 </head>
