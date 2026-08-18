@@ -31,7 +31,11 @@ import {
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
-import { collectLogIds } from "./composio-connector.js";
+import {
+  collectLogIds,
+  mergeConnectedPlugins,
+  planLiveConnectionSync,
+} from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
@@ -92,6 +96,7 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
+  listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
 }
 
 export async function deferFutureRoutine(
@@ -261,7 +266,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, connectedPlugins, credential, settings] =
+        const [bot, thread, messages, task, storedConnections, credential, settings] =
           await Promise.all([
             deps.prisma.bot.findUniqueOrThrow({
               where: { id: run.botId },
@@ -276,14 +281,44 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
             deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
-              select: { provider: true, displayName: true },
+              where: { userId: run.userId, workspaceId: run.workspaceId },
+              select: { id: true, provider: true, displayName: true, status: true },
             }),
             findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        let liveSlugs: string[] = [];
+        if (deps.listConnectedPluginSlugs) {
+          try {
+            liveSlugs = await deps.listConnectedPluginSlugs(run.userId);
+          } catch {
+            liveSlugs = [];
+          }
+        }
+        const sync = planLiveConnectionSync(storedConnections, liveSlugs);
+        if (sync.connectIds.length > 0) {
+          await deps.prisma.connection.updateMany({
+            where: { id: { in: sync.connectIds }, userId: run.userId, workspaceId: run.workspaceId },
+            data: { status: "connected" },
+          });
+        }
+        for (const row of sync.create) {
+          await deps.prisma.connection.create({
+            data: {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              provider: row.provider,
+              displayName: row.displayName,
+              status: "connected",
+            },
+          });
+        }
+        const connectedPlugins = mergeConnectedPlugins(
+          storedConnections.filter((row: { status: string }) => row.status === "connected"),
+          liveSlugs,
+        );
         const context = {
           operationId: runId,
           traceId: runId,

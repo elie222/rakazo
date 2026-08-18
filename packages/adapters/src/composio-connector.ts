@@ -99,6 +99,46 @@ export function executeSessionKey(toolkits: string[]): string {
   return [...new Set(toolkits.map((slug) => slug.trim()).filter(Boolean))].sort().join(",");
 }
 
+export type PluginConnectionRow = {
+  id: string;
+  provider: string;
+  status: string;
+  displayName: string;
+};
+
+export function mergeConnectedPlugins(
+  dbRows: { provider: string; displayName: string }[],
+  liveSlugs: string[],
+): { provider: string; displayName: string }[] {
+  const byProvider = new Map<string, { provider: string; displayName: string }>();
+  for (const row of dbRows) byProvider.set(row.provider, row);
+  for (const slug of liveSlugs) {
+    if (!slug || byProvider.has(slug)) continue;
+    byProvider.set(slug, { provider: slug, displayName: slug });
+  }
+  return [...byProvider.values()];
+}
+
+export function planLiveConnectionSync(
+  rows: PluginConnectionRow[],
+  liveSlugs: string[],
+): { connectIds: string[]; create: { provider: string; displayName: string }[] } {
+  const connectIds: string[] = [];
+  const create: { provider: string; displayName: string }[] = [];
+  for (const slug of liveSlugs) {
+    if (!slug) continue;
+    const matches = rows.filter((row) => row.provider === slug);
+    if (matches.some((row) => row.status === "connected")) continue;
+    const pending = matches.find((row) => row.status === "pending" || row.status === "error");
+    if (pending) {
+      connectIds.push(pending.id);
+      continue;
+    }
+    create.push({ provider: slug, displayName: slug });
+  }
+  return { connectIds, create };
+}
+
 export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvider {
   private client: Composio | undefined;
   private readonly catalogSessions = new Map<string, string>();
@@ -156,7 +196,7 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   async catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]> {
     const [directory, connected] = await Promise.all([
       this.directory(),
-      this.connectedSlugs(userId),
+      this.listConnectedSlugs(userId),
     ]);
     return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
   }
@@ -178,6 +218,10 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
     }));
+  }
+
+  async listConnectedSlugs(userId: string): Promise<string[]> {
+    return this.connectedSlugs(userId);
   }
 
   private async connectedSlugs(userId: string): Promise<string[]> {

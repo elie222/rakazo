@@ -7,6 +7,8 @@ import {
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
+  mergeConnectedPlugins,
+  planLiveConnectionSync,
   sanitizeComposioError,
 } from "./composio-connector.js";
 
@@ -77,6 +79,32 @@ describe("composio tool mapping", () => {
   it("keys execute sessions by sorted unique toolkits", () => {
     expect(executeSessionKey(["hackernews", "gmail", "hackernews"])).toBe("gmail,hackernews");
     expect(executeSessionKey([])).toBe("");
+  });
+
+  it("merges live Composio slugs onto pending DB plugin rows", () => {
+    const merged = mergeConnectedPlugins(
+      [{ provider: "github", displayName: "GitHub" }],
+      ["gmail", "github"],
+    );
+    expect(merged).toEqual([
+      { provider: "github", displayName: "GitHub" },
+      { provider: "gmail", displayName: "gmail" },
+    ]);
+  });
+
+  it("plans DB sync when Composio is connected but Rakazo is still pending", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail", "slack"],
+      ),
+    ).toEqual({
+      connectIds: ["row-gmail"],
+      create: [{ provider: "slack", displayName: "slack" }],
+    });
   });
 
   it("filters the catalog by name or slug", () => {
