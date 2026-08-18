@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { JobPublisher, RealtimeFanout, SandboxProvider } from "@rakazo/adapter-kit";
 import {
-  type ComposioConnector,
+  type ComposioProvider,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -37,22 +37,32 @@ export interface AppHandles {
   jobs: JobPublisher;
   sandbox: SandboxProvider;
   connector: DestinationEmulator;
-  composio?: ComposioConnector;
+  composio?: ComposioProvider;
   executor: ReturnType<typeof createRunExecutor>;
   stop: () => Promise<void>;
 }
 
 export async function createApp(
-  overrides: Partial<AppEnv> & { prisma?: PrismaClient; realtime?: RealtimeFanout } = {},
+  overrides: Partial<AppEnv> & {
+    prisma?: PrismaClient;
+    realtime?: RealtimeFanout;
+    composio?: ComposioProvider;
+  } = {},
 ): Promise<AppHandles> {
-  const env = { ...loadEnv(process.env), ...overrides };
-  const created = overrides.prisma
-    ? { prisma: overrides.prisma, pool: undefined }
+  const {
+    prisma: prismaOverride,
+    realtime: realtimeOverride,
+    composio: composioOverride,
+    ...envOverrides
+  } = overrides;
+  const env = { ...loadEnv(process.env), ...envOverrides };
+  const created = prismaOverride
+    ? { prisma: prismaOverride, pool: undefined }
     : createDb(env.databaseUrl);
   const { prisma } = created;
   created.pool?.on("error", () => undefined);
   const realtime =
-    overrides.realtime ??
+    realtimeOverride ??
     (created.pool
       ? new PostgresRealtimeFanout({
           connectionString: env.realtimeDatabaseUrl,
@@ -83,7 +93,7 @@ export async function createApp(
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
-  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
+  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride);
   const connector = stack.destination;
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);

@@ -80,6 +80,11 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await page.getByText("Plugins").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
+  await expect(page.getByText("4 apps", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
+  await expect(page.getByText("Slack", { exact: true })).toBeVisible();
+  await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
   await page.getByRole("button", { name: "Close plugins" }).click();
 

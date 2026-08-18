@@ -4,6 +4,7 @@ export * from "./builtin-tools.js";
 export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";
 export * from "./composio-connector.js";
+export * from "./composio-emulator.js";
 export * from "./computer-control.js";
 export * from "./computer-idle.js";
 export * from "./computer-lifecycle.js";
