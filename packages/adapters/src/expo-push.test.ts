@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import {
   expoPushErrorMessage,
   isUnregisteredPushToken,
   loadPushToken,
+  pushTokenPath,
   savePushToken,
 } from "./expo-push.js";
 
@@ -188,6 +189,18 @@ describe("expo push", () => {
       savePushToken(dataDir, "user-1", "ExponentPushToken[new]"),
       deletePushTokenIfMatch(dataDir, "user-1", "ExponentPushToken[old]"),
     ]);
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
+  });
+
+  it("recovers registration after an orphaned lock", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    const lockPath = `${pushTokenPath(dataDir, "user-1")}.lock`;
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "");
+    const past = new Date(Date.now() - 10_000);
+    await utimes(lockPath, past, past);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[new]");
     await expect(loadPushToken(dataDir, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });
 });

@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 
 const PUSH_TOKEN_LOCK_MS = 3_000;
-const PUSH_TOKEN_STALE_LOCK_MS = 5_000;
+const PUSH_TOKEN_STALE_LOCK_MS = 1_000;
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
