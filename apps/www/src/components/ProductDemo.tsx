@@ -330,6 +330,8 @@ export function ProductDemo() {
   const [bots, setBots] = useState<LiveBot[]>(cloneBots);
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("computer");
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
@@ -380,6 +382,37 @@ export function ProductDemo() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 860px)");
+    const sync = () => setCompact(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Phone widths show one screen at a time, so the bot list starts hidden
+  // behind the hamburger and the side panel stays closed until asked for.
+  useEffect(() => {
+    if (compact) {
+      setPanelOpen(false);
+    } else {
+      setMenuOpen(false);
+    }
+  }, [compact]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!takeover && !booting) {
@@ -537,6 +570,7 @@ export function ProductDemo() {
     setBots((current) => [bot, ...current]);
     setActiveId(bot.id);
     setDraft("");
+    setMenuOpen(false);
     openSettings();
   }
 
@@ -613,6 +647,7 @@ export function ProductDemo() {
 
   function selectBot(id: string) {
     setActiveId(id);
+    setMenuOpen(false);
     if (panelMode === "routine") {
       setPanelMode("computer");
       setRoutineDraft(null);
@@ -644,21 +679,36 @@ export function ProductDemo() {
   return (
     <div className="product-demo">
       <div className={`product-demo__frame${panelOpen ? "" : " is-collapsed"}`}>
-        <aside className="product-demo__sidebar">
+        <aside
+          id="product-demo-bots"
+          className={`product-demo__sidebar${menuOpen ? " is-open" : ""}`}
+          aria-hidden={compact && !menuOpen}
+        >
           <div className="product-demo__chrome">
             <div className="product-demo__traffic" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <button
-              type="button"
-              className="product-demo__new"
-              aria-label="New bot"
-              onClick={startNewBot}
-            >
-              +
-            </button>
+            <span className="product-demo__drawer-title">Bots</span>
+            <div className="product-demo__chrome-actions">
+              <button
+                type="button"
+                className="product-demo__new"
+                aria-label="New bot"
+                onClick={startNewBot}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="product-demo__sidebar-close"
+                aria-label="Hide bots"
+                onClick={() => setMenuOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
           </div>
           <label className="product-demo__search">
             <span aria-hidden="true">⌕</span>
@@ -697,12 +747,43 @@ export function ProductDemo() {
           </div>
         </aside>
 
+        {menuOpen ? (
+          <button
+            type="button"
+            className="product-demo__scrim"
+            aria-label="Hide bots"
+            onClick={() => setMenuOpen(false)}
+          />
+        ) : null}
+
         <main className="product-demo__main">
           <div className="product-demo__topbar">
-            <button type="button" className="product-demo__name-btn" onClick={openSettings}>
-              <LandingBotAvatar color={active.color} size={28} />
-              <span className="product-demo__active-name">{active.name}</span>
-            </button>
+            <div className="product-demo__topbar-left">
+              <button
+                type="button"
+                className="product-demo__menu-btn"
+                aria-label="Show bots"
+                aria-expanded={menuOpen}
+                aria-controls="product-demo-bots"
+                onClick={() => setMenuOpen(true)}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </button>
+              <button type="button" className="product-demo__name-btn" onClick={openSettings}>
+                <LandingBotAvatar color={active.color} size={28} />
+                <span className="product-demo__active-name">{active.name}</span>
+              </button>
+            </div>
             <button
               type="button"
               className="product-demo__panel-toggle"
