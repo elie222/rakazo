@@ -136,17 +136,32 @@ fi
 
 skip_stable_baseline_update="false"
 if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
-  if aws s3 cp \
-    "$stable_baseline_uri" \
-    "$existing_stable_baseline_path" \
-    --endpoint-url "$S3_ENDPOINT" \
-    2>"$baseline_error_path"; then
+  stable_baseline_missing="false"
+  stable_baseline_downloaded="false"
+  for attempt in 1 2 3; do
+    if aws s3 cp \
+      "$stable_baseline_uri" \
+      "$existing_stable_baseline_path" \
+      --endpoint-url "$S3_ENDPOINT" \
+      2>"$baseline_error_path"; then
+      stable_baseline_downloaded="true"
+      break
+    fi
+    if grep -Eq "404|NoSuchKey|Not Found" "$baseline_error_path"; then
+      stable_baseline_missing="true"
+      break
+    fi
+    if (( attempt < 3 )); then
+      sleep 2
+    fi
+  done
+  if [[ "$stable_baseline_downloaded" == "true" ]]; then
     export PLAYWRIGHT_EXISTING_STABLE_BASELINE_PATH="$existing_stable_baseline_path"
     echo "Downloaded the published main screenshot baseline for recency checks."
-  elif grep -Eq "404|NoSuchKey|Not Found" "$baseline_error_path"; then
+  elif [[ "$stable_baseline_missing" == "true" ]]; then
     echo "No published main screenshot baseline yet."
   else
-    echo "::warning::Could not read the published main screenshot baseline; leaving it unchanged."
+    echo "::warning::Could not read the published main screenshot baseline after 3 attempts; leaving it unchanged."
     cat "$baseline_error_path"
     skip_stable_baseline_update="true"
   fi
