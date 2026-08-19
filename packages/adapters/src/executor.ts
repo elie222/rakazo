@@ -37,7 +37,13 @@ import {
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
-import { collectLogIds } from "./composio-connector.js";
+import {
+  collectLogIds,
+  mergeConnectedPlugins,
+  needsLivePluginSync,
+  type PluginConnectionRow,
+  planLiveConnectionSync,
+} from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
@@ -118,6 +124,7 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
+  listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
 }
 
 export async function deferFutureRoutine(
@@ -128,6 +135,47 @@ export async function deferFutureRoutine(
   if (scheduledAt.getTime() <= Date.now() + 1_000) return false;
   await jobs.enqueue(routineWakeupJob(routineId, scheduledAt));
   return true;
+}
+
+async function loadLivePluginSlugs(
+  listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
+  userId: string,
+): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
+  if (!listConnectedPluginSlugs) return { ok: false };
+  try {
+    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function persistLivePluginConnections(
+  prisma: PrismaClient,
+  owner: { userId: string; workspaceId: string },
+  rows: PluginConnectionRow[],
+  liveSlugs: string[],
+): Promise<void> {
+  const sync = planLiveConnectionSync(rows, liveSlugs);
+  if (sync.connectIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.connectIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "connected" },
+    });
+  }
+  if (sync.revokeIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.revokeIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "revoked" },
+    });
+  }
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -288,7 +336,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, connectedPlugins, credential, settings] =
+        const [bot, thread, messages, task, storedConnections, credential, settings] =
           await Promise.all([
             deps.prisma.bot.findUniqueOrThrow({
               where: { id: run.botId },
@@ -303,14 +351,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
             deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
-              select: { provider: true, displayName: true },
+              where: { userId: run.userId, workspaceId: run.workspaceId },
+              select: { id: true, provider: true, displayName: true, status: true },
             }),
             findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        let liveSlugs: string[] = [];
+        if (needsLivePluginSync(storedConnections)) {
+          const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          if (listing.ok) {
+            liveSlugs = listing.slugs;
+            await persistLivePluginConnections(
+              deps.prisma,
+              run,
+              storedConnections,
+              listing.slugs,
+            ).catch(() => undefined);
+          }
+        }
+        const connectedPlugins = mergeConnectedPlugins(storedConnections, liveSlugs);
         const context = {
           operationId: runId,
           traceId: runId,

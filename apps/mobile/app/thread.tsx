@@ -37,6 +37,7 @@ export default function Thread() {
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
+  const historyEpoch = useRef(0);
   const pinnedAroundRef = useRef<{
     botId: string;
     messageId: string;
@@ -72,11 +73,42 @@ export default function Thread() {
     router.replace("/");
   }
 
+  function clearConversation() {
+    if (!botId) return;
+    setError(null);
+    void rpc("threads/clear", { botId })
+      .then(() => {
+        expandedHistoryThread.current = null;
+        pinnedAroundRef.current = null;
+        historyEpoch.current += 1;
+        setSnap((current) =>
+          current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+        );
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Could not clear conversation"),
+      );
+  }
+
   function showBotActions() {
     if (!botId) return;
     const bot = { id: botId, name: name || "Bot" };
     Alert.alert(bot.name, "Archive keeps everything and can be undone. Delete is permanent.", [
       { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear conversation",
+        style: "destructive",
+        onPress: () => {
+          Alert.alert(
+            "Clear conversation?",
+            "This removes every message and stops current work. The bot, computer, memory, and routines are kept.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Clear", style: "destructive", onPress: clearConversation },
+            ],
+          );
+        },
+      },
       {
         text: "Archive",
         onPress: () =>
@@ -95,7 +127,11 @@ export default function Thread() {
 
   async function refresh() {
     if (!botId) return;
+    const epoch = historyEpoch.current;
     const next = await rpc<MobileSnapshot>("threads/get", { botId });
+    // The epoch check drops a response that raced a conversation clear, which would otherwise
+    // re-apply the deleted messages and cursor over the emptied snapshot.
+    if (epoch !== historyEpoch.current) return next;
     const pin = pinnedAroundRef.current;
     setSnap((prev) => {
       let merged = mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId);
@@ -112,6 +148,7 @@ export default function Thread() {
   }
 
   async function applyMessageJump(targetBotId: string, targetMessageId: string) {
+    const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
       rpc<MobileSnapshot>("threads/get", { botId: targetBotId }),
       rpc<MobileMessagePage>("threads/messages", {
@@ -119,6 +156,9 @@ export default function Thread() {
         around: { messageId: targetMessageId },
       }),
     ]);
+    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
+    // the fetched page would pin deleted messages that every later refresh keeps restoring.
+    if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       botId: targetBotId,
@@ -141,11 +181,16 @@ export default function Thread() {
     jumpScrollTarget.current = null;
     loadingOlderContent.current = true;
     setLoadingOlder(true);
+    const epoch = historyEpoch.current;
     try {
       const page = await rpc<MobileMessagePage>("threads/messages", {
         botId,
         before: snap.olderCursor,
       });
+      if (epoch !== historyEpoch.current) {
+        loadingOlderContent.current = false;
+        return;
+      }
       expandedHistoryThread.current = page.threadId;
       setSnap((prev) => prependMobileMessagePage(prev, page));
     } catch (err) {
@@ -182,6 +227,7 @@ export default function Thread() {
       jumpScrollTarget.current = null;
     }
     expandedHistoryThread.current = null;
+    historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       const next = await refresh().catch((err: Error) => {
@@ -204,8 +250,14 @@ export default function Thread() {
                 event.type === "thread.message.created" ||
                 event.type === "thread.message.updated" ||
                 event.type === "thread.subagent" ||
+                event.type === "thread.cleared" ||
                 event.type === "run.waiting_input"
               ) {
+                if (event.type === "thread.cleared") {
+                  expandedHistoryThread.current = null;
+                  pinnedAroundRef.current = null;
+                  historyEpoch.current += 1;
+                }
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {

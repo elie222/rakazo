@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-@source "../../../../packages/ui-web/src/bot-avatar.tsx";
 @source "../../../../packages/ui-web/src/button.tsx";
 
 @font-face {
@@ -155,31 +154,10 @@ button {
 }
 
 .brand-lockup__mark {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: linear-gradient(to bottom, var(--blue-top), var(--blue-bottom));
-  box-shadow: 0 2px 10px rgba(75, 131, 253, 0.35);
-}
-
-.brand-lockup__mark::before,
-.brand-lockup__mark::after {
-  content: "";
-  position: absolute;
-  top: 11px;
-  width: 4px;
-  height: 6px;
-  border-radius: 2px;
-  background: #fff;
-}
-
-.brand-lockup__mark::before {
-  left: 7px;
-}
-
-.brand-lockup__mark::after {
-  left: 15px;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  object-fit: contain;
 }
 
 .brand-lockup__word {

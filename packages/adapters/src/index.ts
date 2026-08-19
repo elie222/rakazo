@@ -35,4 +35,5 @@ export * from "./realtime.js";
 export * from "./sandbox-factory.js";
 export * from "./scripted-runtime.js";
 export * from "./secrets.js";
+export * from "./supermemory-client.js";
 export * from "./wakeup.js";

@@ -81,9 +81,10 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
     setPending(item.slug);
     try {
       const rows = await rpc.connections.list();
-      const row = rows.find(
-        (entry) => entry.provider === item.slug && entry.status === "connected",
-      );
+      const row =
+        rows.find((entry) => entry.provider === item.slug && entry.status === "connected") ??
+        rows.find((entry) => entry.provider === item.slug && entry.status === "pending") ??
+        rows.find((entry) => entry.provider === item.slug && entry.status === "error");
       if (!row) {
         setError(`No connection record found for ${item.name}.`);
         return;

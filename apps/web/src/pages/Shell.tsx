@@ -49,6 +49,7 @@ import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
 import {
   isComputerStatusEvent,
+  isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
@@ -112,6 +113,7 @@ export function ShellPage() {
     position: ContextMenuPosition;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
+  const [clearTarget, setClearTarget] = useState<Bot | null>(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
@@ -137,6 +139,7 @@ export function ShellPage() {
   const routineRunPending = useRef(false);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
+  const historyEpoch = useRef(0);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
@@ -233,13 +236,16 @@ export function ShellPage() {
     markOnce("rk:renderer:thread-request-start");
     const pin = pinnedAroundRef.current;
     const keepPin = pin?.botId === id;
+    const epoch = historyEpoch.current;
     const [snap, routines] = await Promise.all([
       rpc.threads.get({ botId: id }),
       rpc.routines.list({ botId: id }),
       refreshComputerScreen(id),
     ]);
     markOnce("rk:renderer:thread-response");
-    if (activeBotId.current !== id) return snap;
+    // The epoch check drops a response that raced a conversation clear, which would otherwise
+    // re-apply the deleted messages and cursor over the emptied snapshot.
+    if (activeBotId.current !== id || epoch !== historyEpoch.current) return snap;
     setSnapshot((prev) => {
       let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
       if (keepPin && merged) {
@@ -282,12 +288,14 @@ export function ShellPage() {
     pinnedAroundRef.current = null;
     const scrollElement = messageScroll.current;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
+    const epoch = historyEpoch.current;
     setLoadingOlder(true);
     try {
       const page = await rpc.threads.messages({
         botId: active.id,
         before: snapshot.olderCursor,
       });
+      if (epoch !== historyEpoch.current) return;
       expandedHistoryThread.current = page.threadId;
       setSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
@@ -373,6 +381,7 @@ export function ShellPage() {
     screenRequest.current += 1;
     setScreenUrl(null);
     expandedHistoryThread.current = null;
+    historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       const primed = bootstrappedThread.current;
@@ -393,12 +402,18 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, setSnapshot, setComputer);
+            if (event.type === "thread.cleared") {
+              expandedHistoryThread.current = null;
+              pinnedAroundRef.current = null;
+              historyEpoch.current += 1;
+            }
             if (event.type === "bot.archived") {
               void refreshBots(true).catch(() => undefined);
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
-              event.type === "run.completed"
+              event.type === "run.completed" ||
+              event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
             }
@@ -476,10 +491,14 @@ export function ShellPage() {
   }
 
   async function jumpToMessage(botId: string, messageId: string) {
+    const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
       rpc.threads.get({ botId }),
       rpc.threads.messages({ botId, around: { messageId } }),
     ]);
+    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
+    // the fetched page would pin deleted messages that every later refresh keeps restoring.
+    if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       botId,
@@ -1215,6 +1234,7 @@ export function ShellPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
+                onClear={() => setClearTarget(active)}
               />
             ) : null}
             {panel === "routine" ? (
@@ -1370,6 +1390,10 @@ export function ShellPage() {
                 navigate(`/app/${bot.id}`);
               });
             }}
+            onClear={() => {
+              setClearTarget(contextBot);
+              setBotMenu(null);
+            }}
             onArchive={() => {
               setBotMenu(null);
               void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
@@ -1390,6 +1414,26 @@ export function ShellPage() {
               setDeleteTarget(null);
               setPanel(null);
               await refreshBots(true);
+            }}
+          />
+        ) : null}
+
+        {clearTarget ? (
+          <ClearConversationDialog
+            bot={clearTarget}
+            onCancel={() => setClearTarget(null)}
+            onConfirm={async () => {
+              await rpc.threads.clear({ botId: clearTarget.id });
+              if (active?.id === clearTarget.id) {
+                expandedHistoryThread.current = null;
+                pinnedAroundRef.current = null;
+                historyEpoch.current += 1;
+                setSnapshot((current) =>
+                  current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+                );
+              }
+              setClearTarget(null);
+              await refreshBots();
             }}
           />
         ) : null}
@@ -1703,13 +1747,7 @@ function applyThreadEvent(
   setSnapshot: Dispatch<SetStateAction<ThreadSnapshot | null>>,
   setComputer: Dispatch<SetStateAction<ComputerStatus | null>>,
 ) {
-  if (
-    event.type === "thread.progress" ||
-    event.type === "thread.subagent" ||
-    event.type === "thread.message.created" ||
-    event.type === "thread.message.updated" ||
-    event.type === "run.waiting_input"
-  ) {
+  if (isThreadSnapshotEvent(event)) {
     setSnapshot((prev) => reduceThreadSnapshot(prev, event));
   }
   if (isComputerStatusEvent(event)) {
@@ -2139,6 +2177,7 @@ function BotSettings({
   bot,
   onSave,
   onExport,
+  onClear,
 }: {
   bot: Bot;
   onSave: (patch: {
@@ -2149,6 +2188,7 @@ function BotSettings({
     computerMode: ComputerMode;
   }) => Promise<void>;
   onExport: () => Promise<void>;
+  onClear: () => void;
 }) {
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
@@ -2217,6 +2257,86 @@ function BotSettings({
         >
           Export
         </button>
+        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+          Clear conversation
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ClearConversationDialog({
+  bot,
+  onCancel,
+  onConfirm,
+}: {
+  bot: Bot;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [clearing, setClearing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !clearing) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clearing, onCancel]);
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!clearing) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="clear-conversation-title"
+        aria-describedby="clear-conversation-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          Clear {bot.name}’s conversation?
+        </h2>
+        <p
+          id="clear-conversation-description"
+          className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
+        >
+          This permanently removes every message and stops current work. The bot, computer, memory,
+          and routines are kept.
+        </p>
+        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={onCancel}
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={clearing}
+            onClick={() => {
+              setClearing(true);
+              setError(null);
+              void onConfirm().catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not clear conversation");
+                setClearing(false);
+              });
+            }}
+            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+          >
+            {clearing ? "Clearing…" : "Clear"}
+          </button>
+        </div>
       </div>
     </div>
   );

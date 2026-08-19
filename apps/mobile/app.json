@@ -27,7 +27,16 @@
           "icon": "./assets/notification-icon.png",
           "color": "#2965EC"
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
+          "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
+          "microphonePermission": false
+        }
+      ],
+      "./plugins/with-worklets-headers"
     ],
     "ios": {
       "bundleIdentifier": "com.rakazo.app",

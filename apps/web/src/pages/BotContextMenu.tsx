@@ -11,6 +11,7 @@ export function BotContextMenu({
   onToggleUnread,
   onEdit,
   onDuplicate,
+  onClear,
   onArchive,
   onDelete,
 }: {
@@ -21,6 +22,7 @@ export function BotContextMenu({
   onToggleUnread: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  onClear: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }) {
@@ -36,7 +38,7 @@ export function BotContextMenu({
   }, [onClose]);
 
   const menuWidth = 264;
-  const menuHeight = 296;
+  const menuHeight = 340;
   const margin = 8;
   const left = Math.min(position.x, window.innerWidth - menuWidth - margin);
   const top = Math.min(position.y, window.innerHeight - menuHeight - margin);
@@ -74,6 +76,7 @@ export function BotContextMenu({
         <MenuItem icon={<EditIcon />} label="Edit Profile" onSelect={onEdit} />
         <MenuItem icon={<DuplicateIcon />} label="Duplicate" onSelect={onDuplicate} />
         <div className="my-1 border-t border-[#343438]" />
+        <MenuItem icon={<ClearIcon />} label="Clear conversation" onSelect={onClear} />
         <MenuItem icon={<ArchiveIcon />} label="Archive" onSelect={onArchive} />
         <MenuItem icon={<TrashIcon />} label="Delete" tone="danger" onSelect={onDelete} />
       </div>
@@ -169,6 +172,15 @@ function ArchiveIcon() {
   return (
     <svg {...iconProps}>
       <path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6" />
+    </svg>
+  );
+}
+
+function ClearIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M4 7h16M4 12h10M4 17h7" />
+      <path d="m18 14 2 2-2 2m2-2h-5" />
     </svg>
   );
 }

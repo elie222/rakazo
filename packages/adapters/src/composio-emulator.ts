@@ -46,6 +46,10 @@ export class ComposioEmulator implements ComposioProvider {
 
   async warmDirectory(): Promise<void> {}
 
+  async listConnectedSlugs(userId: string): Promise<string[]> {
+    return [...(this.connectedByUser.get(userId) ?? [])];
+  }
+
   async discoverTools(_context: AdapterContext): Promise<ConnectorTool[]> {
     return [];
   }

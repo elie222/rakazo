@@ -149,6 +149,7 @@ export const appContract = {
       )
       .output(z.object({ taskId: Id, runId: Id, seq: z.number().int() })),
     stop: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    clear: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(z.object({ botId: Id, text: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
