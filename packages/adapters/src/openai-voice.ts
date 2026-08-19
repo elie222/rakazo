@@ -9,7 +9,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { readVoiceJson, requireOk, voiceHttpError } from "./voice-http.js";
+import { readVoiceJson, requireOk, voiceDeadline, voiceHttpError } from "./voice-http.js";
 
 const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
@@ -43,7 +43,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     try {
       const res = await fetch(`${API}/models`, {
         headers: { authorization: `Bearer ${apiKey}` },
-        signal: context.signal ?? AbortSignal.timeout(20_000),
+        signal: voiceDeadline(context.signal, 20_000),
       });
       if (res.ok) return { ok: true };
       return {
@@ -80,7 +80,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         input: request.text,
         response_format: "mp3",
       }),
-      signal: request.signal ?? context.signal ?? AbortSignal.timeout(60_000),
+      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     await requireOk(res, "OpenAI", "speaking");
     return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType: "audio/mpeg" };
@@ -101,7 +101,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { authorization: `Bearer ${request.apiKey}` },
       body: form,
-      signal: request.signal ?? context.signal ?? AbortSignal.timeout(60_000),
+      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res);
     if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));

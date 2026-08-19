@@ -156,6 +156,8 @@ export function CallView({
       }
     }
     if (snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status)) {
+      const phrases: string[] = [];
+      let lastKey = "";
       for (const message of messages) {
         for (const block of message.blocks) {
           if (block.kind !== "progress" && block.kind !== "subagent") continue;
@@ -167,8 +169,12 @@ export function CallView({
               : (narrateTool(block.text.split(/\s+/)[0] ?? "") ?? speakableProgress(block.text));
           if (!phrase) continue;
           narrated.current.add(key);
-          void speaker.speak(phrase, { botId, messageId: `narrate:${key}` });
+          phrases.push(phrase);
+          lastKey = key;
         }
+      }
+      if (phrases.length) {
+        void speaker.speak(phrases.join(". "), { botId, messageId: `narrate:${lastKey}` });
       }
     }
   }, [snapshot, botId]);

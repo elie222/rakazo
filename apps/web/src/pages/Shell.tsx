@@ -120,6 +120,7 @@ export function ShellPage() {
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [dictating, setDictating] = useState(false);
+  const [dictationError, setDictationError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [botMenu, setBotMenu] = useState<{
     botId: string;
@@ -164,6 +165,7 @@ export function ShellPage() {
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
   const autoSpoken = useRef<string | null>(null);
+  const autoSpokenBotId = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
   const activePendingAttachments = useMemo(
@@ -374,6 +376,8 @@ export function ShellPage() {
     });
     const unsubDictation = dictation.subscribe((state) => {
       setDictating(state.status === "listening" || state.status === "transcribing");
+      if (state.error) setDictationError(state.error);
+      else if (state.status === "listening") setDictationError(null);
     });
     return () => {
       unsubSpeech();
@@ -382,17 +386,28 @@ export function ShellPage() {
   }, []);
 
   useEffect(() => {
-    if (callOpen || !active?.autoSpeak) return;
-    if (snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status)) return;
-    const lastBot = [...(snapshot?.messages ?? [])]
-      .reverse()
-      .find((message) => message.role === "bot");
+    if (!active || !snapshot || snapshot.botId !== active.id) return;
+    const lastBot = [...snapshot.messages].reverse().find((message) => message.role === "bot");
+    if (autoSpokenBotId.current !== active.id) {
+      autoSpokenBotId.current = active.id;
+      autoSpoken.current = lastBot?.id ?? null;
+      return;
+    }
+    if (callOpen || !active.autoSpeak) return;
+    if (snapshot.run && ["running", "queued", "leased"].includes(snapshot.run.status)) return;
     if (!lastBot || lastBot.id === autoSpoken.current) return;
     const text = speechFromBlocks(lastBot.blocks);
     if (!text) return;
     autoSpoken.current = lastBot.id;
     void speaker.speak(text, { botId: active.id, messageId: lastBot.id });
-  }, [snapshot?.messages, snapshot?.run?.status, active?.autoSpeak, active?.id, callOpen]);
+  }, [
+    snapshot?.messages,
+    snapshot?.run?.status,
+    snapshot?.botId,
+    active?.autoSpeak,
+    active?.id,
+    callOpen,
+  ]);
 
   useEffect(() => {
     if (!active) return;
@@ -1145,6 +1160,7 @@ export function ShellPage() {
           pendingAttachments={activePendingAttachments}
           attachmentNotice={attachmentNotice}
           sendError={sendError}
+          dictationError={dictationError}
           sending={sending}
           fileInputRef={fileInputRef}
           onAttachmentPick={onAttachmentPick}
@@ -1718,6 +1734,7 @@ const Composer = memo(function Composer({
   pendingAttachments,
   attachmentNotice,
   sendError,
+  dictationError,
   sending,
   fileInputRef,
   onAttachmentPick,
@@ -1734,6 +1751,7 @@ const Composer = memo(function Composer({
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
   sendError: string | null;
+  dictationError: string | null;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | null) => void | Promise<void>;
@@ -1757,9 +1775,9 @@ const Composer = memo(function Composer({
 
   return (
     <div className="px-6 pb-6 pt-3">
-      {sendError ? (
+      {sendError || dictationError ? (
         <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
-          {sendError}
+          {sendError ?? dictationError}
         </div>
       ) : null}
       {attachmentNotice ? (

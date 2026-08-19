@@ -99,6 +99,10 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     try {
       const { speaker } = await import("../lib/tts.js");
       await speaker.speak("Hi, this is how I'll sound when I read replies out loud.");
+      if (speaker.state.error) {
+        setError(speaker.state.error);
+        return;
+      }
       setNotice("If you heard that, voice is ready.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not play a test clip");

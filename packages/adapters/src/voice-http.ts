@@ -1,3 +1,8 @@
+/** Client disconnect plus a hard deadline — `context.signal` is always set. */
+export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
+  return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
+}
+
 export async function readVoiceJson(res: Response): Promise<unknown> {
   try {
     return await res.json();

@@ -9,7 +9,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { readVoiceJson, requireOk, voiceHttpError } from "./voice-http.js";
+import { readVoiceJson, requireOk, voiceDeadline, voiceHttpError } from "./voice-http.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
@@ -30,7 +30,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     try {
       const res = await fetch(`${API}/voices`, {
         headers: { "xi-api-key": apiKey },
-        signal: context.signal ?? AbortSignal.timeout(20_000),
+        signal: voiceDeadline(context.signal, 20_000),
       });
       if (res.ok) return { ok: true };
       return {
@@ -53,7 +53,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
     const res = await fetch(`${API}/voices`, {
       headers: { "xi-api-key": apiKey },
-      signal: context.signal ?? AbortSignal.timeout(20_000),
+      signal: voiceDeadline(context.signal, 20_000),
     });
     const body = await readVoiceJson(res);
     if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "listing voices", body));
@@ -81,7 +81,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           accept: "audio/mpeg",
         },
         body: JSON.stringify({ text: request.text, model_id: MODEL }),
-        signal: request.signal ?? context.signal ?? AbortSignal.timeout(60_000),
+        signal: voiceDeadline(request.signal ?? context.signal, 60_000),
       },
     );
     await requireOk(res, "ElevenLabs", "speaking");
@@ -103,7 +103,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       method: "POST",
       headers: { "xi-api-key": request.apiKey },
       body: form,
-      signal: request.signal ?? context.signal ?? AbortSignal.timeout(60_000),
+      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res);
     if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "transcribing", body));
