@@ -11,6 +11,7 @@
     "test": "vitest run --root ../.. packages/adapters/src"
   },
   "dependencies": {
+    "@asciidev/box-sdk": "^0.0.28",
     "@composio/core": "0.16.0",
     "@daytona/sdk": "^0.204.1",
     "@e2b/desktop": "^2.3.1",

@@ -20,11 +20,14 @@ export interface AppEnv {
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
   daytonaTarget: string | undefined;
+  boxApiKey: string | undefined;
+  boxApiUrl: string | undefined;
   composioApiKey: string | undefined;
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
   port: number;
+  gitSha: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -49,11 +52,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,
+    boxApiKey: source.BOX_API_KEY,
+    boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
     composioApiKey: source.COMPOSIO_API_KEY,
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
     defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     port: Number(source.API_PORT ?? 3100),
+    gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
   };
 }
 
@@ -61,4 +67,9 @@ function required(source: NodeJS.ProcessEnv, key: string): string {
   const value = source[key];
   if (!value) throw new Error(`Missing ${key}`);
   return value;
+}
+
+function optional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }

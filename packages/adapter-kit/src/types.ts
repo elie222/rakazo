@@ -7,6 +7,8 @@ export interface AdapterContext {
   userId: string;
   botId?: string;
   runId?: string;
+  /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
+  screenLeaseId?: string;
   signal: AbortSignal;
   connectedProviders?: string[];
 }
@@ -149,6 +151,8 @@ export interface SandboxCapabilities {
   snapshots: boolean;
   takeover: boolean;
   persistentHome: boolean;
+  /** Distinct graphical screens for concurrent Team bots on one computer. */
+  multiScreen?: boolean;
 }
 
 export interface ConnectorTool {
@@ -237,6 +241,11 @@ export interface AgentRunRequest {
   prompt: string;
   instructions: string;
   history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  currentTurnImages?: Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }>;
   tools: ConnectorTool[];
   model: {
     provider: string;
@@ -298,6 +307,7 @@ export interface BackgroundJobPayloads {
   "routine.wakeup": { routineId: string; scheduledFor: string };
   "computer.sleep": { computerId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
+  "history.compact": { threadId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

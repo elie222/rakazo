@@ -1,6 +1,7 @@
 import type {
   AdapterContext,
   AgentHomeStore,
+  ArtifactStore,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -115,6 +116,7 @@ describe("spawned bot archival", () => {
           run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           bot: { update: vi.fn().mockResolvedValue({}) },
         }),
@@ -148,8 +150,10 @@ describe("destroyBot", () => {
     const deleteBot = vi.fn().mockResolvedValue({});
     const executeRaw = vi.fn().mockResolvedValue(1);
     const releaseComputers = vi.fn().mockResolvedValue({ count: 1 });
+    const removeArtifact = vi.fn().mockResolvedValue(undefined);
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: releaseComputers },
         $executeRaw: executeRaw,
         botDeletion: { create: createDeletion },
@@ -166,6 +170,7 @@ describe("destroyBot", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: { findMany: vi.fn().mockResolvedValue([{ storageKey: "stored-artifact" }]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
 
@@ -175,6 +180,7 @@ describe("destroyBot", () => {
         sandbox: {} as SandboxProvider,
         home: {} as AgentHomeStore,
         jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        artifacts: { remove: removeArtifact } as unknown as ArtifactStore,
       },
       { id: "bot-1", workspaceId: "workspace-1", name: "Researcher", archivedAt: null },
       context,
@@ -207,6 +213,7 @@ describe("destroyBot", () => {
       },
     });
     expect(deleteBot).toHaveBeenCalledWith({ where: { id: "bot-1" } });
+    expect(removeArtifact).toHaveBeenCalledWith("stored-artifact", context);
   });
 
   it("surfaces transaction failures instead of reporting deletion success", async () => {
@@ -221,6 +228,7 @@ describe("destroyBot", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
     } as unknown as PrismaClient;
 
@@ -250,6 +258,7 @@ describe("archiveBot", () => {
         run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         routine: { updateMany: disableRoutines },
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         bot: { update: updateBot },
       }),
@@ -299,6 +308,7 @@ describe("archiveBot", () => {
         run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         bot: { update: vi.fn().mockResolvedValue({}) },
       }),
@@ -362,6 +372,7 @@ describe("archiveBot", () => {
         run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         bot: { update: vi.fn().mockResolvedValue({}) },
       }),

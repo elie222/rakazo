@@ -222,20 +222,21 @@ model BotDeletion {
 }
 
 model Thread {
-  id          String   @id @default(cuid())
-  workspaceId String
-  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  botId       String   @unique
-  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId      String
-  createdAt   DateTime @default(now())
-  nextEventSeq   Int   @default(0)
-  nextMessageSeq Int   @default(0)
-  unread      Boolean  @default(false)
-  messages    Message[]
-  events      Event[]
-  tasks       Task[]
-  runs        Run[]
+  id                      String       @id @default(cuid())
+  workspaceId             String
+  workspace               Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId                   String       @unique
+  bot                     Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId                  String
+  createdAt               DateTime     @default(now())
+  nextEventSeq            Int          @default(0)
+  nextMessageSeq          Int          @default(0)
+  historyCompactedUpToSeq Int?
+  unread                  Boolean      @default(false)
+  messages                Message[]
+  events                  Event[]
+  tasks                   Task[]
+  runs                    Run[]
 
   @@index([workspaceId])
   @@map("threads")
@@ -509,9 +510,27 @@ model Computer {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   bots                     Bot[]
+  executionLeases          ComputerExecutionLease[]
 
   @@index([workspaceId, scope])
   @@map("computers")
+}
+
+model ComputerExecutionLease {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  runId      String
+  fence      Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([computerId, botId])
+  @@index([runId])
+  @@index([computerId, expiresAt])
+  @@map("computer_execution_leases")
 }
 
 model Artifact {

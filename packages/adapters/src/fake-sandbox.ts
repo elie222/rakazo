@@ -12,6 +12,8 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
@@ -23,7 +25,8 @@ export interface FakeBox {
   ref: ComputerRef;
   files: Map<string, { content: Uint8Array; executable: boolean }>;
   running: boolean;
-  screen: string;
+  screens: Map<string, string>;
+  screenLeases: Map<string, string>;
 }
 
 export class FakeSandboxProvider implements SandboxProvider {
@@ -40,6 +43,7 @@ export class FakeSandboxProvider implements SandboxProvider {
         snapshots: true,
         takeover: true,
         persistentHome: true,
+        multiScreen: true,
       },
     };
   }
@@ -65,7 +69,8 @@ export class FakeSandboxProvider implements SandboxProvider {
       ref,
       files: new Map(),
       running: true,
-      screen: "ready",
+      screens: new Map([["default", "ready"]]),
+      screenLeases: new Map(),
     });
     return ref;
   }
@@ -99,10 +104,12 @@ export class FakeSandboxProvider implements SandboxProvider {
   async connectScreen(
     computer: ComputerRef,
     _request: ScreenRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<ScreenSession> {
+    const key = screenSessionKey(context);
+    this.screenSlot(this.requiredBox(computer), key, context.screenLeaseId);
     return {
-      url: `fake://screen/${computer.id}`,
+      url: `fake://screen/${computer.id}/${key}`,
       mimeType: "text/plain",
       close: async () => undefined,
     };
@@ -112,23 +119,32 @@ export class FakeSandboxProvider implements SandboxProvider {
     computer: ComputerRef,
     input: ComputerInput,
     _lease: ControlLeaseRef,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<void> {
     const box = this.boxes.get(computer.id);
-    if (box) applyPlaceholderAction(box, input);
+    if (box) {
+      applyPlaceholderAction(
+        this.screenSlot(box, screenSessionKey(context), context.screenLeaseId),
+        input,
+      );
+    }
   }
 
-  async observe(computer: ComputerRef, _context: AdapterContext) {
-    return placeholderObservation(this.requiredBox(computer).screen);
+  async observe(computer: ComputerRef, context: AdapterContext) {
+    const key = screenSessionKey(context);
+    return placeholderObservation(
+      this.screenSlot(this.requiredBox(computer), key, context.screenLeaseId).screen,
+    );
   }
 
-  async act(computer: ComputerRef, request: ComputerActionRequest, _context: AdapterContext) {
+  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     const box = this.requiredBox(computer);
+    const slot = this.screenSlot(box, screenSessionKey(context), context.screenLeaseId);
     const actions = boundedComputerActions(request.actions);
-    for (const action of actions) applyPlaceholderAction(box, action);
+    for (const action of actions) applyPlaceholderAction(slot, action);
     return {
       completed: actions.length,
-      ...(request.observe === false ? {} : { observation: await this.observe(computer, _context) }),
+      ...(request.observe === false ? {} : { observation: await this.observe(computer, context) }),
     };
   }
 
@@ -211,6 +227,16 @@ export class FakeSandboxProvider implements SandboxProvider {
     return { id: `snap-${computer.id}`, createdAt: new Date().toISOString() };
   }
 
+  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    const box = this.boxes.get(computer.id);
+    if (!box) return;
+    const key = screenSessionKey(context);
+    const leaseId = box.screenLeases.get(key);
+    if (context.screenLeaseId && !canReleaseScreenLease(leaseId, context.screenLeaseId)) return;
+    box.screens.delete(key);
+    box.screenLeases.delete(key);
+  }
+
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     if (box) box.running = false;
@@ -224,5 +250,22 @@ export class FakeSandboxProvider implements SandboxProvider {
     const box = this.boxes.get(computer.id);
     if (!box) throw new Error("computer not found");
     return box;
+  }
+
+  private screenSlot(box: FakeBox, key: string, leaseId?: string): { screen: string } {
+    if (!box.screens.has(key)) box.screens.set(key, `ready:${key}`);
+    const current = box.screenLeases.get(key);
+    if (leaseId && current && leaseId !== current && !canTakeScreenLease(current, leaseId)) {
+      throw new ComputerScreenUnavailableError();
+    }
+    if (leaseId && canTakeScreenLease(current, leaseId)) box.screenLeases.set(key, leaseId);
+    return {
+      get screen() {
+        return box.screens.get(key) ?? `ready:${key}`;
+      },
+      set screen(value: string) {
+        box.screens.set(key, value);
+      },
+    };
   }
 }

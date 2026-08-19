@@ -1,7 +1,6 @@
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
-  ConnectionAuthProvider,
   ConnectorCall,
   ConnectorEvent,
   ConnectorProvider,
@@ -70,6 +69,22 @@ export interface ComposioCatalogItem {
   logo: string | null;
   connected: boolean;
   noAuth: boolean;
+}
+
+export interface ComposioProvider extends ConnectorProvider {
+  catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]>;
+  warmDirectory(): Promise<void>;
+  listConnectedSlugs(userId: string): Promise<string[]>;
+  connectionReady(userId: string, slug: string): Promise<boolean>;
+  begin(
+    request: { provider: string; redirectUrl: string },
+    context: AdapterContext,
+  ): Promise<{ authorizationUrl: string | null; state: string }>;
+  complete(
+    request: { state: string; code?: string },
+    context: AdapterContext,
+  ): Promise<{ connectionRef: string }>;
+  revoke(connectionRef: string, context: AdapterContext): Promise<void>;
 }
 
 export function filterCatalog(items: ComposioCatalogItem[], query: string): ComposioCatalogItem[] {
@@ -157,7 +172,7 @@ export function planLiveConnectionSync(
   return { connectIds, create };
 }
 
-export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvider {
+export class ComposioConnector implements ComposioProvider {
   private client: Composio | undefined;
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
@@ -337,7 +352,7 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
 export class CompositeConnector implements ConnectorProvider {
   constructor(
     readonly destination: DestinationEmulator,
-    readonly composio?: ComposioConnector,
+    readonly composio?: ComposioProvider,
   ) {}
 
   describe() {
@@ -365,9 +380,12 @@ export class CompositeConnector implements ConnectorProvider {
   }
 }
 
-export function createConnectorStack(composioEnabled: boolean) {
+export function createConnectorStack(
+  composioEnabled: boolean,
+  composioOverride?: ComposioProvider,
+) {
   const destination = new DestinationEmulator();
-  const composio = composioEnabled ? new ComposioConnector() : undefined;
+  const composio = composioOverride ?? (composioEnabled ? new ComposioConnector() : undefined);
   return {
     destination,
     composio,

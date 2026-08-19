@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, describe, expect, it } from "vitest";
+import { BoxSandboxEmulator } from "./box-emulator.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
@@ -33,24 +34,29 @@ describe("sandbox conformance", () => {
     const fake = new FakeSandboxProvider();
     const managed = new ManagedSandboxEmulator();
     const daytona = new DaytonaSandboxEmulator();
+    const box = new BoxSandboxEmulator();
     const desktop = new DesktopSandboxProvider();
     const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
     const b = await provisionPrepared(managed, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
     const c = await provisionPrepared(daytona, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
-    const d = await provisionPrepared(desktop, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
+    const d = await provisionPrepared(box, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
+    const e = await provisionPrepared(desktop, { botId: "bot-e", homePath: "/tmp/e" }, ctx);
     const outA = await drain(fake, a);
     const outB = await drain(managed, b);
     const outC = await drain(daytona, c);
-    const outD = await drain(desktop, d);
+    const outD = await drain(box, d);
+    const outE = await drain(desktop, e);
     expect(outA).toContain("graphical-ok");
     expect(outB).toContain("graphical-ok");
     expect(outC).toContain("graphical-ok");
     expect(outD).toContain("graphical-ok");
-    expect(new Set([a.id, b.id, c.id, d.id]).size).toBe(4);
+    expect(outE).toContain("graphical-ok");
+    expect(new Set([a.id, b.id, c.id, d.id, e.id]).size).toBe(5);
     await fake.destroy(a, ctx);
     await managed.destroy(b, ctx);
     await daytona.destroy(c, ctx);
-    await desktop.destroy(d, ctx);
+    await box.destroy(d, ctx);
+    await desktop.destroy(e, ctx);
   });
 
   it("offers the same observation, action, and workspace contract across providers", async () => {
@@ -58,6 +64,7 @@ describe("sandbox conformance", () => {
       new FakeSandboxProvider(),
       new ManagedSandboxEmulator(),
       new DaytonaSandboxEmulator(),
+      new BoxSandboxEmulator(),
       new DesktopSandboxProvider(),
     ];
     for (const [index, provider] of providers.entries()) {

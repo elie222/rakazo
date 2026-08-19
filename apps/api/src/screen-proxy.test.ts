@@ -22,4 +22,19 @@ describe("screen proxy capability", () => {
     const url = "https://sandbox.example/embed.html?token=provider-token";
     expect(addScreenProxyCapability(url, "secret", "https://app.example", 100)).toBe(url);
   });
+
+  it("keeps external desktop secrets behind an encrypted, policy-bound capability", () => {
+    const result = new URL(
+      addScreenProxyCapability(
+        "https://box.example/vnc.html?token=provider-token&view_only=true",
+        "secret",
+        "https://app.example",
+        100,
+        { proxyExternal: true },
+      ),
+    );
+    expect(result.origin).toBe("https://app.example");
+    expect(result.pathname).toMatch(/^\/novnc\/remote\/view\/3600100\.[\w-]+\/vnc\.html$/);
+    expect(result.toString()).not.toContain("provider-token");
+  });
 });

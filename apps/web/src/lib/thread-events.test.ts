@@ -276,6 +276,7 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     kind: "fake",
     state: "booting",
     controlHolder: "none",
+    controlBotId: null,
     screenAvailable: false,
     homeRevision: null,
     busyBotName: null,

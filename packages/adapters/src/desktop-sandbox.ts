@@ -47,6 +47,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
         snapshots: true,
         takeover: false,
         persistentHome: true,
+        multiScreen: false,
       },
     };
   }
