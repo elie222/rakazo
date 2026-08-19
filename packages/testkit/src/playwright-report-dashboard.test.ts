@@ -178,7 +178,7 @@ describe("shouldPublishStableMainBaseline", () => {
     ).toBe(false);
   });
 
-  it("replaces a legacy or older baseline when this run is the latest successful main", () => {
+  it("preserves an identity-less baseline but replaces an older identified baseline", () => {
     const current = getRun({ id: "300", runNumber: 12 });
     const previous = getRun({ id: "200", runNumber: 9 });
     const history = updatePlaywrightHistory([previous], current);
@@ -189,7 +189,14 @@ describe("shouldPublishStableMainBaseline", () => {
         existingBaseline: createScreenshotManifest([{ ...screenshot, comparison: "unavailable" }]),
         history,
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: null,
+        history,
+      }),
+    ).toBe(false);
     expect(
       shouldPublishStableMainBaseline({
         candidate: current,

@@ -132,6 +132,12 @@ export function shouldPublishStableMainBaseline(input: {
   }
 
   const existingIdentity = screenshotBaselineIdentity(input.existingBaseline);
+  // An existing manifest without a trustworthy run identity may be newer than
+  // the candidate. Preserve it rather than allowing a delayed run to replace
+  // unknown data; an absent baseline is represented by undefined.
+  if (input.existingBaseline !== undefined && existingIdentity === undefined) {
+    return false;
+  }
   return (
     existingIdentity === undefined || compareRunRecency(input.candidate, existingIdentity) <= 0
   );

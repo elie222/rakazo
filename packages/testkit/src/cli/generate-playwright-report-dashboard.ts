@@ -240,7 +240,7 @@ async function readOptionalJson(filePath: string | undefined): Promise<unknown> 
     if (isNodeError(error) && error.code === "ENOENT") return undefined;
     if (error instanceof SyntaxError) {
       console.warn("Ignoring an invalid Playwright baseline manifest.");
-      return undefined;
+      return null;
     }
     throw error;
   }
