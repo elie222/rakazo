@@ -64,16 +64,41 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
   const player = createAudioPlayer({ uri: file.uri });
   try {
     await new Promise<void>((resolve, reject) => {
-      const sub = player.addListener("playbackStatusUpdate", (status) => {
-        if (!status.didJustFinish) return;
+      let settled = false;
+      let timer = setTimeout(() => finish(new Error("Could not play that clip.")), 15_000);
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         sub.remove();
-        resolve();
+        if (error) reject(error);
+        else resolve();
+      };
+      const sub = player.addListener("playbackStatusUpdate", (status) => {
+        if (status.error) {
+          finish(new Error(status.error));
+          return;
+        }
+        if (status.playbackState === "failed") {
+          finish(new Error("Could not play that clip."));
+          return;
+        }
+        if (status.didJustFinish) {
+          finish();
+          return;
+        }
+        if (status.playing && status.duration > 0) {
+          clearTimeout(timer);
+          timer = setTimeout(
+            () => finish(new Error("Could not play that clip.")),
+            Math.min(120_000, Math.ceil(status.duration * 1000) + 8_000),
+          );
+        }
       });
       try {
         player.play();
       } catch (error) {
-        sub.remove();
-        reject(error instanceof Error ? error : new Error("Could not play that clip."));
+        finish(error instanceof Error ? error : new Error("Could not play that clip."));
       }
     });
   } finally {

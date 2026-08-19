@@ -56,8 +56,8 @@ export function CallView({
 
   async function listen() {
     if (closing.current) return;
-    speaker.stop();
     setCallPhase("listening");
+    speaker.stop();
     setHeard("");
     try {
       await dictation.listen({
@@ -97,11 +97,14 @@ export function CallView({
   }
 
   useEffect(() => {
+    closing.current = false;
+    spokenMessage.current = null;
+    narrated.current.clear();
     const unsubSpeech = speaker.subscribe((state) => {
       if (state.status === "speaking") {
         setCallPhase("speaking");
         setCaption(state.caption ?? "");
-      } else if (state.status === "idle" && phaseRef.current === "speaking") {
+      } else if (state.status === "idle" && phaseRef.current !== "listening") {
         setCaption("");
         void listen();
       }
@@ -152,6 +155,13 @@ export function CallView({
           botId,
           messageId: lastBot.id,
         });
+        return;
+      }
+      const runActive =
+        snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status);
+      if (!runActive) {
+        spokenMessage.current = lastBot.id;
+        void listen();
         return;
       }
     }

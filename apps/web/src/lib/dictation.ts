@@ -21,6 +21,10 @@ interface SpeechRecognitionLike {
 }
 
 const IDLE: DictationSnapshot = { status: "idle", transcript: "" };
+const ENDPOINT_TICK_MS = 80;
+const SILENCE_RMS = 0.035;
+const ENDPOINT_UNSUPPORTED =
+  "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.";
 
 export function webSpeechAvailable(): boolean {
   return Boolean(speechRecognitionCtor());
@@ -35,6 +39,13 @@ function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
   return host.SpeechRecognition ?? host.webkitSpeechRecognition;
 }
 
+function audioContextCtor(): (new () => AudioContext) | undefined {
+  if (typeof AudioContext === "function") return AudioContext;
+  if (typeof window === "undefined") return undefined;
+  const host = window as Window & { webkitAudioContext?: typeof AudioContext };
+  return host.webkitAudioContext;
+}
+
 export class Dictation {
   private snapshot: DictationSnapshot = IDLE;
   private watchers = new Set<(s: DictationSnapshot) => void>();
@@ -44,6 +55,8 @@ export class Dictation {
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private transcribeAbort: AbortController | null = null;
+  private audioContext: AudioContext | null = null;
+  private vadTimer: ReturnType<typeof setInterval> | undefined;
   private onFinal: ((text: string) => void) | null = null;
 
   subscribe(fn: (s: DictationSnapshot) => void): () => void {
@@ -67,6 +80,7 @@ export class Dictation {
     this.token += 1;
     this.transcribeAbort?.abort();
     this.transcribeAbort = null;
+    this.stopVad();
     clearTimeout(this.silenceTimer);
     this.silenceTimer = undefined;
     const rec = this.recognition;
@@ -111,7 +125,7 @@ export class Dictation {
       return;
     }
     if (opts.transcribe) {
-      await this.listenRecorder(mine);
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850);
       return;
     }
     this.set({
@@ -161,7 +175,7 @@ export class Dictation {
     rec.start();
   }
 
-  private async listenRecorder(mine: number) {
+  private async listenRecorder(mine: number, mode: DictationMode, endpointMs: number) {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -177,18 +191,79 @@ export class Dictation {
       for (const track of stream.getTracks()) track.stop();
       return;
     }
+    if (mode === "endpoint" && !this.armSilence(stream, mine, endpointMs)) {
+      for (const track of stream.getTracks()) track.stop();
+      this.set({ ...IDLE, error: ENDPOINT_UNSUPPORTED });
+      return;
+    }
     const media = new MediaRecorder(stream);
     this.media = media;
     this.chunks = [];
     media.ondataavailable = (event) => {
+      if (this.token !== mine) return;
       if (event.data.size) this.chunks.push(event.data);
     };
     media.onstop = () => {
+      this.stopVad();
       for (const track of stream.getTracks()) track.stop();
       if (this.token !== mine) return;
       void this.transcribeChunks(mine);
     };
-    media.start();
+    media.start(mode === "endpoint" ? 250 : undefined);
+  }
+
+  private armSilence(stream: MediaStream, mine: number, endpointMs: number): boolean {
+    const Ctor = audioContextCtor();
+    if (!Ctor) return false;
+    try {
+      const ctx = new Ctor();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      this.audioContext = ctx;
+      if (ctx.state === "suspended") void ctx.resume();
+      const data = new Uint8Array(analyser.fftSize);
+      let heardSpeech = false;
+      let silentFor = 0;
+      this.vadTimer = setInterval(() => {
+        const media = this.media;
+        if (this.token !== mine || !media || media.state === "inactive") return;
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const sample of data) {
+          const n = (sample - 128) / 128;
+          sum += n * n;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        if (rms > SILENCE_RMS) {
+          heardSpeech = true;
+          silentFor = 0;
+          return;
+        }
+        if (!heardSpeech) return;
+        silentFor += ENDPOINT_TICK_MS;
+        if (silentFor < endpointMs) return;
+        this.stopVad();
+        try {
+          media.stop();
+        } catch {
+          // already stopped
+        }
+      }, ENDPOINT_TICK_MS);
+      return true;
+    } catch {
+      this.stopVad();
+      return false;
+    }
+  }
+
+  private stopVad() {
+    clearInterval(this.vadTimer);
+    this.vadTimer = undefined;
+    const ctx = this.audioContext;
+    this.audioContext = null;
+    if (ctx) void ctx.close().catch(() => undefined);
   }
 
   private async transcribeChunks(mine: number) {
