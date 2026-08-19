@@ -167,8 +167,20 @@ export class Dictation {
     };
     rec.onend = () => {
       if (this.token !== mine) return;
-      if (mode === "hold" && this.snapshot.status === "listening") {
+      if (this.snapshot.status !== "listening") return;
+      if (mode === "hold") {
         this.finish(this.snapshot.transcript, mine);
+        return;
+      }
+      const text = this.snapshot.transcript.trim();
+      if (text) {
+        this.finish(text, mine);
+        return;
+      }
+      try {
+        rec.start();
+      } catch {
+        this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
       }
     };
     this.recognition = rec;
@@ -204,9 +216,9 @@ export class Dictation {
       if (event.data.size) this.chunks.push(event.data);
     };
     media.onstop = () => {
-      this.stopVad();
       for (const track of stream.getTracks()) track.stop();
       if (this.token !== mine) return;
+      this.stopVad();
       void this.transcribeChunks(mine);
     };
     media.start(mode === "endpoint" ? 250 : undefined);

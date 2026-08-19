@@ -28,7 +28,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     setStatus(nextStatus);
     setProvider(selected);
     const cred = nextCredentials.find((entry) => entry.provider === selected);
-    const activeVoice = cred?.voiceId || nextStatus.voiceId;
+    const activeVoice = cred?.voiceId ?? "";
     setVoiceId(activeVoice);
     if (cred) {
       const listed = await rpc.voice.voices({ provider: selected });

@@ -393,7 +393,10 @@ export function ShellPage() {
       autoSpoken.current = lastBot?.id ?? null;
       return;
     }
-    if (callOpen || !active.autoSpeak) return;
+    if (callOpen || !active.autoSpeak) {
+      autoSpoken.current = lastBot?.id ?? null;
+      return;
+    }
     if (snapshot.run && ["running", "queued", "leased"].includes(snapshot.run.status)) return;
     if (!lastBot || lastBot.id === autoSpoken.current) return;
     const text = speechFromBlocks(lastBot.blocks);

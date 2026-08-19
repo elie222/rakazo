@@ -9,7 +9,13 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { readVoiceJson, requireOk, voiceDeadline, voiceHttpError } from "./voice-http.js";
+import {
+  readVoiceJson,
+  requireOk,
+  speechUploadName,
+  voiceDeadline,
+  voiceHttpError,
+} from "./voice-http.js";
 
 const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
@@ -95,7 +101,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
-      "speech.webm",
+      speechUploadName(request.mimeType),
     );
     const res = await fetch(`${API}/audio/transcriptions`, {
       method: "POST",

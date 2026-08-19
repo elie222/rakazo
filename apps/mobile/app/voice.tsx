@@ -58,7 +58,7 @@ export default function VoiceSettings() {
     setStatus(nextStatus);
     setProvider(selected);
     const cred = nextCredentials.find((entry) => entry.provider === selected);
-    setVoiceId(cred?.voiceId || nextStatus.voiceId);
+    setVoiceId(cred?.voiceId ?? "");
     if (cred) {
       setVoices(await rpc<VoiceInfo[]>("voice/voices", { provider: selected }));
     } else {

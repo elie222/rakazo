@@ -124,6 +124,21 @@ describe("OpenAIVoiceProvider", () => {
     expect(clip.mimeType).toBe("audio/mpeg");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/audio/speech");
   });
+
+  it("names Firefox ogg recordings from the mime type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ text: "hello" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await new OpenAIVoiceProvider().transcribe!(
+      { audio: new Uint8Array([1]), mimeType: "audio/ogg;codecs=opus", apiKey: "sk-test" },
+      ctx,
+    );
+    const form = fetchMock.mock.calls[0]?.[1]?.body as FormData;
+    const file = form.get("file") as File;
+    expect(file.name).toBe("speech.ogg");
+  });
 });
 
 describe("CartesiaVoiceProvider", () => {

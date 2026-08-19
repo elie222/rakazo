@@ -3,6 +3,16 @@ export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
+export function speechUploadName(mimeType?: string): string {
+  const mime = (mimeType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (mime.includes("webm")) return "speech.webm";
+  if (mime.includes("ogg") || mime.includes("opus")) return "speech.ogg";
+  if (mime.includes("wav")) return "speech.wav";
+  if (mime.includes("mpeg") || mime.includes("mp3")) return "speech.mp3";
+  if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) return "speech.m4a";
+  return "speech.webm";
+}
+
 export async function readVoiceJson(res: Response): Promise<unknown> {
   try {
     return await res.json();

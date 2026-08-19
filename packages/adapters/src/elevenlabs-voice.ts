@@ -9,7 +9,13 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { readVoiceJson, requireOk, voiceDeadline, voiceHttpError } from "./voice-http.js";
+import {
+  readVoiceJson,
+  requireOk,
+  speechUploadName,
+  voiceDeadline,
+  voiceHttpError,
+} from "./voice-http.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";
@@ -97,7 +103,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
-      "speech.webm",
+      speechUploadName(request.mimeType),
     );
     const res = await fetch(`${API}/speech-to-text`, {
       method: "POST",
