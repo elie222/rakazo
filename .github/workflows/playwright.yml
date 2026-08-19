@@ -54,12 +54,6 @@ jobs:
   playwright:
     name: Web E2E
     runs-on: ubuntu-latest
-    # Keep browser binaries and Linux dependencies out of every ephemeral
-    # runner setup. The image version matches pnpm-lock.yaml's Playwright
-    # version; pin the digest so external PRs use an immutable environment.
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
-      options: --user 1001
     timeout-minutes: 20
     concurrency:
       group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
@@ -72,6 +66,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        timeout-minutes: 5
+        # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
+        # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
+        run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Validate E2B credentials
         if: inputs.sandbox_provider == 'e2b'
         env:
@@ -103,7 +106,7 @@ jobs:
           mkdir -p test-report/e2e
           printf '%s\n' "$PLAYWRIGHT_RESULT" > test-report/e2e/outcome.txt
       - name: Upload Playwright artifacts
-        if: always() && (inputs.upload_artifacts || inputs.publish_report)
+        if: always() && inputs.upload_artifacts
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
@@ -113,34 +116,8 @@ jobs:
             test-report/e2e
           retention-days: 7
           if-no-files-found: warn
-
-  # Publishing uses the trusted GitHub-hosted environment because the
-  # publisher needs aws/jq and S3 credentials. It consumes only the test
-  # artifacts, never contributor source code.
-  publish:
-    name: Publish Playwright visual report
-    if: always() && inputs.publish_report
-    needs: playwright
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Download Playwright artifacts
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: playwright-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .
       - name: Publish Playwright visual report
+        if: always() && inputs.publish_report
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
@@ -149,7 +126,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PLAYWRIGHT_RESULT: ${{ needs.playwright.result == 'success' && 'success' || 'failure' }}
+          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.run_attempt }}
           PLAYWRIGHT_RUN_ID: ${{ github.run_id }}
           PLAYWRIGHT_RUN_NUMBER: ${{ github.run_number }}
