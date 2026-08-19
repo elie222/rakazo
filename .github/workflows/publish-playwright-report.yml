@@ -55,6 +55,25 @@ jobs:
           echo "job_result=$result" >> "$GITHUB_OUTPUT"
           if [[ "$result" == "timed_out" ]]; then result="failure"; fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
+      - name: Resolve pull request
+        if: github.event.workflow_run.event == 'pull_request'
+        id: pull_request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          pulls="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${HEAD_OWNER}:${HEAD_BRANCH}&per_page=100")"
+          number="$(jq -r --arg sha "$HEAD_SHA" \
+            '[.[] | select(.head.sha == $sha)] | if length == 1 then .[0].number else empty end' \
+            <<<"$pulls")"
+          if [[ -z "$number" ]]; then
+            echo "::warning::Could not resolve a pull request for ${HEAD_OWNER}:${HEAD_BRANCH} at ${HEAD_SHA}."
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
       - name: Check for Playwright artifact
         id: artifact
         env:
@@ -103,16 +122,16 @@ jobs:
           PLAYWRIGHT_SHA: ${{ github.event.workflow_run.head_sha }}
           PLAYWRIGHT_EVENT: ${{ github.event.workflow_run.event }}
           PLAYWRIGHT_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          PLAYWRIGHT_PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
+          PLAYWRIGHT_PR_NUMBER: ${{ steps.pull_request.outputs.number }}
           PLAYWRIGHT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
           PLAYWRIGHT_PUBLISH_REPORT: ${{ github.event.workflow_run.event == 'push' }}
         run: bash scripts/publish-playwright-report.sh
       - name: Link screenshot gallery from pull request
-        if: github.event.workflow_run.event == 'pull_request'
+        if: github.event.workflow_run.event == 'pull_request' && steps.pull_request.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
           RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
