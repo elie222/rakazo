@@ -5,7 +5,11 @@ import {
   type ProductEvent,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
-import { assertRunCanWriteHistory, createThreadMessageInTransaction } from "./messages.js";
+import {
+  assertRunCanWriteHistory,
+  createThreadMessageInTransaction,
+  RunHistoryWriteError,
+} from "./messages.js";
 
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
@@ -108,13 +112,14 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.thread.update({
+    const thread = await tx.thread.update({
       where: {
         id: input.threadId,
         workspaceId: input.workspaceId,
         botId: input.botId,
       },
       data: { unread: false },
+      select: { nextMessageSeq: true },
     });
     const activeRuns = await tx.run.findMany({
       where: {
@@ -147,8 +152,26 @@ export async function clearThread(
         data: { status: "cancelled" },
       });
     }
+    await tx.computerExecutionLease.deleteMany({ where: { botId: input.botId } });
+    await tx.computer.updateMany({
+      where: { executionBotId: input.botId },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
     await tx.message.deleteMany({ where: { threadId: input.threadId } });
     await tx.event.deleteMany({ where: { threadId: input.threadId } });
+    if (thread.nextMessageSeq > 0) {
+      // nextMessageSeq is not reset, so mark every deleted message as already compacted.
+      // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset
+      // to null, immediately re-fire on the fresh conversation).
+      await tx.thread.update({
+        where: { id: input.threadId },
+        data: { historyCompactedUpToSeq: thread.nextMessageSeq - 1 },
+      });
+    }
     await tx.bot.update({
       where: { id: input.botId, workspaceId: input.workspaceId },
       data: { updatedAt: now },
@@ -170,6 +193,9 @@ export async function answerRunInput(
   realtime?: RealtimeFanout,
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
+    // concurrent clear cannot deadlock against this transaction.
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     const message = await tx.message.findFirst({
       where: {
         id: input.messageId,
@@ -231,6 +257,9 @@ export async function pauseRunForInput(
   realtime?: RealtimeFanout,
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
+    // concurrent clear cannot deadlock against this transaction.
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -353,9 +382,7 @@ export async function finalizeRun(
     try {
       await assertRunCanWriteHistory(tx, input.runId);
     } catch (error) {
-      if (error instanceof Error && error.message === "Cancelled run cannot write thread history") {
-        return null;
-      }
+      if (error instanceof RunHistoryWriteError) return null;
       throw error;
     }
     const now = new Date();

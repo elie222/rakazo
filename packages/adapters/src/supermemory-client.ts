@@ -97,6 +97,32 @@ export async function searchSupermemory(
   }
 }
 
+/** Deletes every memory in a container, e.g. after the conversation they summarize is cleared. */
+export async function deleteSupermemoryContainer(
+  containerTag: string,
+): Promise<SupermemorySaveResponse> {
+  const config = supermemoryConfig();
+  if (!config) {
+    return { ok: false, error: "Supermemory is not configured (SUPERMEMORY_API_KEY is unset)." };
+  }
+  try {
+    const response = await fetch(
+      `${config.baseUrl}/v3/container-tags/${encodeURIComponent(containerTag)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${config.apiKey}` },
+        signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) {
+      return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: unreachableError(error) };
+  }
+}
+
 export async function saveSupermemoryMemory(
   content: string,
   containerTag: string,

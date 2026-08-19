@@ -20,11 +20,13 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
+  deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
   hasActiveComputerControl,
+  isSupermemoryEnabled,
   listPiCatalog,
   type PiOAuthLogins,
   provisionComputer,
@@ -37,6 +39,7 @@ import {
   screenLeaseIdForRun,
   scriptedCatalogEntry,
   serializeModelSecret,
+  supermemoryContainerTag,
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
@@ -566,6 +569,14 @@ export function createRouter(deps: RouterDeps) {
         await Promise.all(
           cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
         );
+        if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+          // Best effort: the conversation rows are already deleted, so failing the clear here
+          // would help nothing — a failed purge only leaves stale summaries recallable.
+          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id));
+          if (!purged.ok) {
+            console.error("supermemory purge after thread clear failed", purged.error);
+          }
+        }
         return { ok: true as const };
       }),
       followUp: authed.threads.followUp.handler(async ({ context, input }) => {

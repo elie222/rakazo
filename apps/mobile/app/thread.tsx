@@ -79,6 +79,7 @@ export default function Thread() {
     void rpc("threads/clear", { botId })
       .then(() => {
         expandedHistoryThread.current = null;
+        pinnedAroundRef.current = null;
         historyEpoch.current += 1;
         setSnap((current) =>
           current ? { ...current, messages: [], olderCursor: null, run: null } : current,
@@ -126,7 +127,11 @@ export default function Thread() {
 
   async function refresh() {
     if (!botId) return;
+    const epoch = historyEpoch.current;
     const next = await rpc<MobileSnapshot>("threads/get", { botId });
+    // The epoch check drops a response that raced a conversation clear, which would otherwise
+    // re-apply the deleted messages and cursor over the emptied snapshot.
+    if (epoch !== historyEpoch.current) return next;
     const pin = pinnedAroundRef.current;
     setSnap((prev) => {
       let merged = mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId);
@@ -246,6 +251,7 @@ export default function Thread() {
               ) {
                 if (event.type === "thread.cleared") {
                   expandedHistoryThread.current = null;
+                  pinnedAroundRef.current = null;
                   historyEpoch.current += 1;
                 }
                 setSnap((prev) => applyMobileThreadEvent(prev, event));

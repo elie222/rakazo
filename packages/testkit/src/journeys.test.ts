@@ -6,7 +6,7 @@ import {
   FakeSandboxProvider,
   ManagedSandboxEmulator,
 } from "@rakazo/adapters";
-import { appendEvent, createThreadMessage } from "@rakazo/db";
+import { appendEvent, createThreadMessage, RunHistoryWriteError } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -254,6 +254,10 @@ describeJourneys("required product journeys", () => {
     expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
       { type: "thread.cleared" },
     ]);
+    // The deleted messages all count as compacted, so compaction cannot summarize them and
+    // recall cannot treat the fresh conversation as having uncompacted history.
+    const clearedThread = await prisma.thread.findUniqueOrThrow({ where: { id: thread.id } });
+    expect(clearedThread.historyCompactedUpToSeq).toBe(clearedThread.nextMessageSeq - 1);
     expect(await prisma.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
       status: "cancelled",
     });
@@ -287,7 +291,7 @@ describeJourneys("required product journeys", () => {
         runId: run.id,
         payload: { text: "stale output after clear" },
       }),
-    ).rejects.toThrow("Cancelled run cannot write thread history");
+    ).rejects.toThrow(RunHistoryWriteError);
     await expect(
       createThreadMessage(prisma, {
         threadId: thread.id,
@@ -295,28 +299,20 @@ describeJourneys("required product journeys", () => {
         blocks: [{ kind: "text", text: "stale output after clear" }],
         runId: run.id,
       }),
-    ).rejects.toThrow("Cancelled run cannot write thread history");
+    ).rejects.toThrow(RunHistoryWriteError);
     expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
     expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
       { type: "thread.cleared" },
     ]);
 
-    await prisma.run.update({ where: { id: run.id }, data: { status: "completed" } });
-    await expect(
-      appendEvent(prisma, {
-        workspaceId: thread.workspaceId,
-        threadId: thread.id,
-        botId: bot.id,
-        type: "thread.message.created",
-        runId: run.id,
-        payload: {
-          messageId: "stale-final",
-          role: "bot",
-          blocks: [{ kind: "text", text: "done" }],
-        },
-      }),
-    ).rejects.toThrow("Cancelled run cannot write thread history");
-    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    const after = await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/after-clear.txt that says hello-after-clear",
+    );
+    expect(after.messages.length).toBeGreaterThan(0);
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBeGreaterThan(0);
   });
 
   it("2b: two Team bots send at once on distinct screens", async () => {

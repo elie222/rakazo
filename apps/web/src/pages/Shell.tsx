@@ -236,13 +236,16 @@ export function ShellPage() {
     markOnce("rk:renderer:thread-request-start");
     const pin = pinnedAroundRef.current;
     const keepPin = pin?.botId === id;
+    const epoch = historyEpoch.current;
     const [snap, routines] = await Promise.all([
       rpc.threads.get({ botId: id }),
       rpc.routines.list({ botId: id }),
       refreshComputerScreen(id),
     ]);
     markOnce("rk:renderer:thread-response");
-    if (activeBotId.current !== id) return snap;
+    // The epoch check drops a response that raced a conversation clear, which would otherwise
+    // re-apply the deleted messages and cursor over the emptied snapshot.
+    if (activeBotId.current !== id || epoch !== historyEpoch.current) return snap;
     setSnapshot((prev) => {
       let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
       if (keepPin && merged) {
@@ -401,6 +404,7 @@ export function ShellPage() {
             applyThreadEvent(event, setSnapshot, setComputer);
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
+              pinnedAroundRef.current = null;
               historyEpoch.current += 1;
             }
             if (event.type === "bot.archived") {
@@ -1418,6 +1422,7 @@ export function ShellPage() {
               await rpc.threads.clear({ botId: clearTarget.id });
               if (active?.id === clearTarget.id) {
                 expandedHistoryThread.current = null;
+                pinnedAroundRef.current = null;
                 historyEpoch.current += 1;
                 setSnapshot((current) =>
                   current ? { ...current, messages: [], olderCursor: null, run: null } : current,

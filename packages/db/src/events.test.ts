@@ -4,10 +4,12 @@ import type { PrismaClient } from "./client.js";
 import {
   answerRunInput,
   appendEvent,
+  clearThread,
   finalizeComputerControlRelease,
   followThreadEvents,
   pauseRunForInput,
 } from "./events.js";
+import { RunHistoryWriteError } from "./messages.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -177,6 +179,7 @@ describe("pauseRunForInput", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({
@@ -243,6 +246,7 @@ describe("answerRunInput", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
@@ -309,6 +313,7 @@ describe("answerRunInput", () => {
 
   it("rejects an already answered prompt without queuing the run", async () => {
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
@@ -335,6 +340,69 @@ describe("answerRunInput", () => {
   });
 });
 
+describe("clearThread", () => {
+  it("releases the computer execution lease without dropping the computer", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 42 })
+          .mockResolvedValue({ nextEventSeq: 1 }),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        updateMany: vi.fn(),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      computerExecutionLease: { deleteMany: vi.fn() },
+      computer: { updateMany: vi.fn() },
+      message: { deleteMany: vi.fn() },
+      event: {
+        deleteMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({
+          ...event(0),
+          type: "thread.cleared",
+        }),
+      },
+      bot: { update: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      clearThread(
+        prisma,
+        { workspaceId: "workspace-1", threadId: "thread-1", botId: "bot-1" },
+        fanout,
+      ),
+    ).resolves.toMatchObject({
+      event: { type: "thread.cleared" },
+      cancelledRunIds: ["run-1"],
+    });
+    expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+      where: { botId: "bot-1" },
+    });
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { executionBotId: "bot-1" },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
+    // Every deleted message counts as compacted, so compaction cannot summarize cleared history.
+    expect(tx.thread.update).toHaveBeenCalledWith({
+      where: { id: "thread-1" },
+      data: { historyCompactedUpToSeq: 41 },
+    });
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 0 }));
+  });
+});
+
 describe("appendEvent", () => {
   it("does not persist output from a cancelled run after history was cleared", async () => {
     const fanout = new TestFanout();
@@ -342,7 +410,7 @@ describe("appendEvent", () => {
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
-      event: { create: vi.fn(), findFirst: vi.fn() },
+      event: { create: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -361,27 +429,23 @@ describe("appendEvent", () => {
         },
         fanout,
       ),
-    ).rejects.toThrow("Cancelled run cannot write thread history");
+    ).rejects.toThrow(RunHistoryWriteError);
     expect(tx.event.create).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("does not persist a completed run's output after the thread was cleared", async () => {
+  it("lets a new active run write after the thread was cleared", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
+    const created = {
+      ...event(8),
+      type: "thread.progress",
+      runId: "run-2",
+    };
     const tx = {
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
-      run: {
-        findUnique: vi.fn().mockResolvedValue({
-          status: "completed",
-          createdAt: new Date("2026-08-16T12:00:00.000Z"),
-          threadId: "thread-1",
-        }),
-      },
-      event: {
-        create: vi.fn(),
-        findFirst: vi.fn().mockResolvedValue({ id: "cleared-1" }),
-      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 9 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
+      event: { create: vi.fn().mockResolvedValue(created) },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -394,14 +458,14 @@ describe("appendEvent", () => {
           workspaceId: "workspace-1",
           threadId: "thread-1",
           botId: "bot-1",
-          type: "thread.message.created",
-          runId: "run-1",
-          payload: { messageId: "stale", role: "bot", blocks: [] },
+          type: "thread.progress",
+          runId: "run-2",
+          payload: { text: "fresh" },
         },
         fanout,
       ),
-    ).rejects.toThrow("Cancelled run cannot write thread history");
-    expect(tx.event.create).not.toHaveBeenCalled();
-    expect(publish).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ type: "thread.progress", runId: "run-2" });
+    expect(tx.event.create).toHaveBeenCalled();
+    expect(publish).toHaveBeenCalled();
   });
 });
