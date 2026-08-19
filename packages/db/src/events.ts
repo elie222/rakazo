@@ -31,6 +31,7 @@ export interface ThreadEvents {
   finalizeComputerControlRelease(input: FinalizeComputerControlReleaseInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<boolean>;
   pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
+  sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
 
@@ -88,6 +89,27 @@ export interface AnswerRunInput {
   answer: string;
 }
 
+export interface SendUserMessageInput {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+  userId: string;
+  blocks: MessageBlock[];
+  prompt: string;
+  trigger: "user" | "follow_up";
+  clientNonce?: string;
+  /** Skip task/run creation when the bot already has active work (follow-up behavior). */
+  onlyIfIdle?: boolean;
+  linkMessageToRun?: boolean;
+}
+
+export interface SendUserMessageResult {
+  messageId: string;
+  seq: number;
+  taskId: string | null;
+  runId: string | null;
+}
+
 export function createThreadEvents(
   prisma: PrismaClient,
   realtime?: RealtimeFanout,
@@ -101,6 +123,7 @@ export function createThreadEvents(
       finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime),
     pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
+    sendUserMessage: (input) => sendUserMessage(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
@@ -185,6 +208,76 @@ export async function clearThread(
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
   return { event: mapProductEvent(committed.event), cancelledRunIds: committed.cancelledRunIds };
+}
+
+export async function sendUserMessage(
+  prisma: PrismaClient,
+  input: SendUserMessageInput,
+  realtime?: RealtimeFanout,
+): Promise<SendUserMessageResult> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Message first: its thread-row lock serializes the whole send against clearThread, so a
+    // concurrent clear either sees the committed run and cancels it, or strictly precedes this
+    // transaction. Created in separate transactions, the run could land inside the clear's
+    // window and later repopulate the cleared conversation, and a clear could strand the
+    // message without its event.
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "user",
+      blocks: input.blocks,
+    });
+    const busy = input.onlyIfIdle
+      ? await tx.run.findFirst({
+          where: { botId: input.botId, status: { in: ["running", "queued", "leased"] } },
+          select: { id: true },
+        })
+      : null;
+    let task = null;
+    let run = null;
+    if (!busy) {
+      task = await tx.task.create({
+        data: {
+          workspaceId: input.workspaceId,
+          botId: input.botId,
+          threadId: input.threadId,
+          userId: input.userId,
+          prompt: input.prompt,
+          status: "queued",
+        },
+      });
+      run = await tx.run.create({
+        data: {
+          workspaceId: input.workspaceId,
+          botId: input.botId,
+          threadId: input.threadId,
+          taskId: task.id,
+          userId: input.userId,
+          status: "queued",
+          trigger: input.trigger,
+          clientNonce: input.clientNonce,
+        },
+      });
+      if (input.linkMessageToRun) {
+        await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+      }
+    }
+    const event = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      runId: run?.id,
+      payload: { messageId: message.id, role: "user", blocks: input.blocks },
+    });
+    return { message, task, run, event };
+  });
+  await notifyRealtime(realtime, input.threadId, committed.event.seq);
+  return {
+    messageId: committed.message.id,
+    seq: committed.message.seq,
+    taskId: committed.task?.id ?? null,
+    runId: committed.run?.id ?? null,
+  };
 }
 
 export async function answerRunInput(

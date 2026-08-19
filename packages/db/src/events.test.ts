@@ -8,6 +8,7 @@ import {
   finalizeComputerControlRelease,
   followThreadEvents,
   pauseRunForInput,
+  sendUserMessage,
 } from "./events.js";
 import { RunHistoryWriteError } from "./messages.js";
 
@@ -337,6 +338,120 @@ describe("answerRunInput", () => {
       }),
     ).resolves.toBe(false);
     expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendUserMessage", () => {
+  it("creates the message, run, and event in one transaction and publishes once", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+      run: {
+        create: vi.fn().mockResolvedValue({ id: "run-1" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+          runId: "run-1",
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          userId: "user-1",
+          blocks: [{ kind: "text", text: "hello" }],
+          prompt: "hello",
+          trigger: "user",
+          clientNonce: "nonce-1",
+          linkMessageToRun: true,
+        },
+        fanout,
+      ),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: "task-1", runId: "run-1" });
+
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "user", clientNonce: "nonce-1" }),
+      }),
+    );
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: { runId: "run-1" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "thread.message.created", runId: "run-1" }),
+      }),
+    );
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 8 }));
+  });
+
+  it("skips run creation when the bot is already busy and onlyIfIdle is set", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      task: { create: vi.fn() },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "run-0" }),
+        create: vi.fn(),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "hello" }],
+        prompt: "hello",
+        trigger: "follow_up",
+        onlyIfIdle: true,
+      }),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: null });
+
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
   });
 });
 
