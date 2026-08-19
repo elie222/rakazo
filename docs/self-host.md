@@ -14,7 +14,7 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
 5. Open the web origin (`http://127.0.0.1:5173` by default). The first registered user becomes the deployment owner.
 
-Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns lifecycle.
+Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
 
 Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
