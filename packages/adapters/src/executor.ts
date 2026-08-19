@@ -34,6 +34,7 @@ import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
+  needsLivePluginSync,
   type PluginConnectionRow,
   planLiveConnectionSync,
 } from "./composio-connector.js";
@@ -351,11 +352,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
-        const liveSlugs = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+        let liveSlugs: string[] = [];
+        if (needsLivePluginSync(storedConnections)) {
+          liveSlugs = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          await persistLivePluginConnections(deps.prisma, run, storedConnections, liveSlugs).catch(
+            () => undefined,
+          );
+        }
         const connectedPlugins = mergeConnectedPlugins(storedConnections, liveSlugs);
-        await persistLivePluginConnections(deps.prisma, run, storedConnections, liveSlugs).catch(
-          () => undefined,
-        );
         const context = {
           operationId: runId,
           traceId: runId,

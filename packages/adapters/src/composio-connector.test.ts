@@ -8,6 +8,7 @@ import {
   isComposioEnabled,
   isNoAuthToolkitError,
   mergeConnectedPlugins,
+  needsLivePluginSync,
   planLiveConnectionSync,
   sanitizeComposioError,
 } from "./composio-connector.js";
@@ -95,6 +96,12 @@ describe("composio tool mapping", () => {
       { provider: "gmail", displayName: "Gmail" },
       { provider: "notion", displayName: "notion" },
     ]);
+  });
+
+  it("only fetches live Composio slugs when a Rakazo row is still pending or errored", () => {
+    expect(needsLivePluginSync([{ status: "connected" }, { status: "revoked" }])).toBe(false);
+    expect(needsLivePluginSync([{ status: "pending" }])).toBe(true);
+    expect(needsLivePluginSync([{ status: "error" }])).toBe(true);
   });
 
   it("keeps DB-connected plugins when live Composio listing is empty", () => {
