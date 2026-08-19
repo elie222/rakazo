@@ -47,7 +47,7 @@ Do not turn an explanation, documentation lookup, or narrow bug fix into onboard
 - For a question, fetch current documentation when needed and give the concrete answer. Do not mutate a project or force a tool call.
 - For setup or integration, inspect the existing environment, preserve its architecture and identity model, make the smallest useful change, and verify it with one safe real tool call when credentials and user authorization are available.
 - For an operational request, connect only the apps the task needs and execute the requested workflow.
-- For debugging, get the Composio log or request ID, identify the failing boundary, fix that boundary, and retry when the user authorized execution.
+- For debugging, get the Composio log or request ID, identify the failing boundary, fix that boundary, and retry when the user has authorized execution.
 
 ## Stable rules
 
