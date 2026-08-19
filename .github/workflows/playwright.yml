@@ -67,7 +67,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium
-        run: pnpm --filter @rakazo/web exec playwright install --with-deps chromium
+        timeout-minutes: 5
+        run: |
+          # GitHub-hosted Ubuntu already has Chromium's shared libraries. Skip
+          # --with-deps so a stalled azure.archive.ubuntu.com apt mirror cannot
+          # consume the whole job timeout before tests start.
+          pnpm --filter @rakazo/web exec playwright install chromium
       - name: Validate E2B credentials
         if: inputs.sandbox_provider == 'e2b'
         env:
