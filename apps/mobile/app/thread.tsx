@@ -148,6 +148,7 @@ export default function Thread() {
   }
 
   async function applyMessageJump(targetBotId: string, targetMessageId: string) {
+    const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
       rpc<MobileSnapshot>("threads/get", { botId: targetBotId }),
       rpc<MobileMessagePage>("threads/messages", {
@@ -155,6 +156,9 @@ export default function Thread() {
         around: { messageId: targetMessageId },
       }),
     ]);
+    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
+    // the fetched page would pin deleted messages that every later refresh keeps restoring.
+    if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       botId: targetBotId,

@@ -491,10 +491,14 @@ export function ShellPage() {
   }
 
   async function jumpToMessage(botId: string, messageId: string) {
+    const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
       rpc.threads.get({ botId }),
       rpc.threads.messages({ botId, around: { messageId } }),
     ]);
+    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
+    // the fetched page would pin deleted messages that every later refresh keeps restoring.
+    if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       botId,
