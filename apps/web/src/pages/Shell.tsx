@@ -78,6 +78,7 @@ export function ShellPage() {
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
+  const historyEpoch = useRef(0);
   const messageScroll = useRef<HTMLDivElement>(null);
   const manuallyUnread = useRef(new Set<string>());
   const computerVisible = useRef(false);
@@ -183,12 +184,14 @@ export function ShellPage() {
     if (!active || snapshot?.olderCursor == null || loadingOlder) return;
     const scrollElement = messageScroll.current;
     const previousHeight = scrollElement?.scrollHeight ?? 0;
+    const epoch = historyEpoch.current;
     setLoadingOlder(true);
     try {
       const page = await rpc.threads.messages({
         botId: active.id,
         before: snapshot.olderCursor,
       });
+      if (epoch !== historyEpoch.current) return;
       expandedHistoryThread.current = page.threadId;
       setSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
@@ -227,6 +230,7 @@ export function ShellPage() {
     screenRequest.current += 1;
     setScreenUrl(null);
     expandedHistoryThread.current = null;
+    historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       const snap = await refreshThread(active.id).catch(() => null);
@@ -246,6 +250,7 @@ export function ShellPage() {
             applyThreadEvent(event, setSnapshot, setComputer);
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
+              historyEpoch.current += 1;
             }
             if (
               event.type === "bot.spawned" ||
@@ -933,6 +938,7 @@ export function ShellPage() {
             await rpc.threads.clear({ botId: clearTarget.id });
             if (active?.id === clearTarget.id) {
               expandedHistoryThread.current = null;
+              historyEpoch.current += 1;
               setSnapshot((current) =>
                 current ? { ...current, messages: [], olderCursor: null, run: null } : current,
               );

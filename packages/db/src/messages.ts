@@ -45,9 +45,20 @@ export async function assertRunCanWriteHistory(
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true },
+    select: { status: true, createdAt: true, threadId: true },
   });
-  if (run?.status === "cancelled") {
+  if (!run || run.status === "cancelled") {
+    throw new Error("Cancelled run cannot write thread history");
+  }
+  const cleared = await tx.event.findFirst({
+    where: {
+      threadId: run.threadId,
+      type: "thread.cleared",
+      createdAt: { gte: run.createdAt },
+    },
+    select: { id: true },
+  });
+  if (cleared) {
     throw new Error("Cancelled run cannot write thread history");
   }
 }

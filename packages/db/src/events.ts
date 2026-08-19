@@ -196,6 +196,15 @@ export async function finalizeRun(
   realtime?: RealtimeFanout,
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    try {
+      await assertRunCanWriteHistory(tx, input.runId);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Cancelled run cannot write thread history") {
+        return null;
+      }
+      throw error;
+    }
     const now = new Date();
     const terminal = await tx.run.updateMany({
       where: {

@@ -253,6 +253,23 @@ describeJourneys("required product journeys", () => {
     expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
       { type: "thread.cleared" },
     ]);
+
+    await prisma.run.update({ where: { id: run.id }, data: { status: "completed" } });
+    await expect(
+      appendEvent(prisma, {
+        workspaceId: thread.workspaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        type: "thread.message.created",
+        runId: run.id,
+        payload: {
+          messageId: "stale-final",
+          role: "bot",
+          blocks: [{ kind: "text", text: "done" }],
+        },
+      }),
+    ).rejects.toThrow("Cancelled run cannot write thread history");
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {

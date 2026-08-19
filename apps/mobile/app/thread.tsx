@@ -23,6 +23,7 @@ export default function Thread() {
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
+  const historyEpoch = useRef(0);
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export default function Thread() {
                     void rpc("threads/clear", { botId })
                       .then(() => {
                         expandedHistoryThread.current = null;
+                        historyEpoch.current += 1;
                         setSnap((current) =>
                           current
                             ? { ...current, messages: [], olderCursor: null, run: null }
@@ -88,11 +90,16 @@ export default function Thread() {
     if (!botId || snap?.olderCursor == null || loadingOlder) return;
     loadingOlderContent.current = true;
     setLoadingOlder(true);
+    const epoch = historyEpoch.current;
     try {
       const page = await rpc<MobileMessagePage>("threads/messages", {
         botId,
         before: snap.olderCursor,
       });
+      if (epoch !== historyEpoch.current) {
+        loadingOlderContent.current = false;
+        return;
+      }
       expandedHistoryThread.current = page.threadId;
       setSnap((prev) => prependMobileMessagePage(prev, page));
     } catch (err) {
@@ -125,6 +132,7 @@ export default function Thread() {
   useEffect(() => {
     if (!botId) return;
     expandedHistoryThread.current = null;
+    historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       const next = await refresh().catch((err: Error) => {
@@ -148,6 +156,10 @@ export default function Thread() {
                 event.type === "thread.subagent" ||
                 event.type === "thread.cleared"
               ) {
+                if (event.type === "thread.cleared") {
+                  expandedHistoryThread.current = null;
+                  historyEpoch.current += 1;
+                }
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {

@@ -27,6 +27,16 @@ describe("thread event reduction", () => {
     expect(next?.olderCursor).toBeNull();
   });
 
+  it("ignores a stale older page after the conversation was cleared", () => {
+    const cleared = snapshot([], null);
+    const next = prependThreadMessagePage(cleared, {
+      threadId: "thread-1",
+      messages: [message("old-1", [], 0), message("old-2", [], 1)],
+      olderCursor: null,
+    });
+    expect(next).toBe(cleared);
+  });
+
   it("merges a refreshed recent page with loaded history and drops stale live messages", () => {
     const previous = snapshot(
       [

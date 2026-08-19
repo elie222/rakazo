@@ -145,7 +145,7 @@ describe("appendEvent", () => {
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
-      event: { create: vi.fn() },
+      event: { create: vi.fn(), findFirst: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -161,6 +161,45 @@ describe("appendEvent", () => {
           type: "thread.progress",
           runId: "run-1",
           payload: { text: "stale" },
+        },
+        fanout,
+      ),
+    ).rejects.toThrow("Cancelled run cannot write thread history");
+    expect(tx.event.create).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a completed run's output after the thread was cleared", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({
+          status: "completed",
+          createdAt: new Date("2026-08-16T12:00:00.000Z"),
+          threadId: "thread-1",
+        }),
+      },
+      event: {
+        create: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue({ id: "cleared-1" }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      appendEvent(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          type: "thread.message.created",
+          runId: "run-1",
+          payload: { messageId: "stale", role: "bot", blocks: [] },
         },
         fanout,
       ),
