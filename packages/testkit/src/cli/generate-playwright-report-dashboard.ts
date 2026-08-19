@@ -8,6 +8,7 @@ import {
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
+  shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
 } from "../playwright-report-dashboard.js";
 import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
@@ -40,12 +41,15 @@ const sha = getRequiredEnvironmentVariable("PLAYWRIGHT_SHA");
 const pullRequestNumber = getOptionalNumber("PLAYWRIGHT_PR_NUMBER");
 const pullRequestUrl = getOptionalHttpsEnvironmentVariable("PLAYWRIGHT_PR_URL");
 const existingHistory = await readHistory(historyPath);
-const history = updatePlaywrightHistory(existingHistory, {
+const runIdentity = {
   attempt: getRequiredNumber("PLAYWRIGHT_RUN_ATTEMPT"),
+  id: getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_ID"),
+};
+const history = updatePlaywrightHistory(existingHistory, {
+  ...runIdentity,
   branch: getRequiredEnvironmentVariable("PLAYWRIGHT_BRANCH"),
   createdAt,
   event: getRequiredEnvironmentVariable("PLAYWRIGHT_EVENT"),
-  id: getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_ID"),
   pullRequestNumber,
   pullRequestUrl,
   reportUrl,
@@ -64,7 +68,15 @@ await writeFile(historyPath, `${JSON.stringify(history, null, 2)}\n`);
 await writeFile(dashboardPath, renderPlaywrightDashboard(history));
 await writeFile(
   path.join(galleryPath, "manifest.json"),
-  `${JSON.stringify(createScreenshotManifest(screenshots), null, 2)}\n`,
+  `${JSON.stringify(createScreenshotManifest(screenshots, runIdentity), null, 2)}\n`,
+);
+await writeFile(
+  path.join(galleryPath, "publish-stable-baseline"),
+  `${shouldPublishStableMainBaseline({
+    candidate: runIdentity,
+    existingBaseline: await readOptionalJson(process.env.PLAYWRIGHT_EXISTING_STABLE_BASELINE_PATH),
+    history,
+  })}\n`,
 );
 await writeFile(
   path.join(galleryPath, "index.html"),

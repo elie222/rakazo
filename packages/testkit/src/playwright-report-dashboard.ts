@@ -39,6 +39,8 @@ export type PlaywrightScreenshot = {
 };
 
 export type PlaywrightScreenshotManifest = {
+  attempt?: number;
+  id?: string;
   screenshots: PlaywrightScreenshotMetadata[];
   version: 1;
 };
@@ -47,8 +49,10 @@ export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "compariso
 
 export function createScreenshotManifest(
   screenshots: PlaywrightScreenshot[],
+  run?: { attempt: number; id: string },
 ): PlaywrightScreenshotManifest {
   return {
+    ...(run === undefined ? {} : { attempt: run.attempt, id: run.id }),
     screenshots: screenshots.map(({ captureType, hash, source, testId, title }) => ({
       captureType,
       hash,
@@ -110,7 +114,40 @@ export function updatePlaywrightHistory(
     .slice(0, MAX_HISTORY_LENGTH);
 }
 
-function compareRunRecency(left: PlaywrightRun, right: PlaywrightRun): number {
+export function shouldPublishStableMainBaseline(input: {
+  candidate: { attempt: number; id: string };
+  existingBaseline: unknown;
+  history: unknown;
+}): boolean {
+  const history = Array.isArray(input.history) ? input.history.filter(isPlaywrightRun) : [];
+  const latestMain = history.find(
+    (run) => run.event === "push" && run.branch === "main" && run.result === "success",
+  );
+  if (
+    latestMain === undefined ||
+    latestMain.id !== input.candidate.id ||
+    latestMain.attempt !== input.candidate.attempt
+  ) {
+    return false;
+  }
+
+  const existingIdentity = screenshotBaselineIdentity(input.existingBaseline);
+  return (
+    existingIdentity === undefined || compareRunRecency(input.candidate, existingIdentity) <= 0
+  );
+}
+
+function screenshotBaselineIdentity(value: unknown): { attempt: number; id: string } | undefined {
+  if (!isScreenshotManifest(value)) return undefined;
+  if (typeof value.id !== "string" || !/^\d+$/.test(value.id)) return undefined;
+  if (typeof value.attempt !== "number") return undefined;
+  return { attempt: value.attempt, id: value.id };
+}
+
+function compareRunRecency(
+  left: { attempt: number; id: string },
+  right: { attempt: number; id: string },
+): number {
   const leftId = BigInt(left.id);
   const rightId = BigInt(right.id);
   if (leftId !== rightId) return leftId > rightId ? -1 : 1;

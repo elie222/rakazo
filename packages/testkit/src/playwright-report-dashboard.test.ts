@@ -6,6 +6,7 @@ import {
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
+  shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
 } from "./playwright-report-dashboard.js";
 
@@ -44,6 +45,19 @@ describe("compareScreenshotsWithBaseline", () => {
     ).toEqual({
       baselineAvailable: false,
       screenshots: [{ ...screenshot, comparison: "unavailable" }],
+    });
+  });
+
+  it("ignores run identity when comparing screenshot hashes", () => {
+    const screenshot = getScreenshot();
+    const baseline = createScreenshotManifest([{ ...screenshot, comparison: "unavailable" }], {
+      attempt: 1,
+      id: "100",
+    });
+
+    expect(compareScreenshotsWithBaseline([screenshot], baseline)).toEqual({
+      baselineAvailable: true,
+      screenshots: [{ ...screenshot, comparison: "unchanged" }],
     });
   });
 });
@@ -114,6 +128,78 @@ describe("updatePlaywrightHistory", () => {
     });
 
     expect(updatePlaywrightHistory([], pullRequestRun)).toEqual([pullRequestRun]);
+  });
+});
+
+describe("shouldPublishStableMainBaseline", () => {
+  const screenshot = getScreenshot();
+
+  it("publishes when this successful main run is the newest and no baseline exists", () => {
+    const current = getRun({ id: "300", runNumber: 12 });
+    const pullRequest = getRun({
+      event: "pull_request",
+      id: "250",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      reportUrl: undefined,
+    });
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: undefined,
+        history: updatePlaywrightHistory([pullRequest], current),
+      }),
+    ).toBe(true);
+  });
+
+  it("does not let an older or rerun main replace a newer published baseline", () => {
+    const newest = getRun({ attempt: 2, id: "300", runNumber: 12 });
+    const delayed = getRun({ id: "250", runNumber: 10 });
+    const history = updatePlaywrightHistory([newest], delayed);
+    const newerBaseline = createScreenshotManifest(
+      [{ ...screenshot, comparison: "unavailable" }],
+      newest,
+    );
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: delayed,
+        existingBaseline: newerBaseline,
+        history,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: delayed,
+        existingBaseline: newerBaseline,
+        history: [delayed],
+      }),
+    ).toBe(false);
+  });
+
+  it("replaces a legacy or older baseline when this run is the latest successful main", () => {
+    const current = getRun({ id: "300", runNumber: 12 });
+    const previous = getRun({ id: "200", runNumber: 9 });
+    const history = updatePlaywrightHistory([previous], current);
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: createScreenshotManifest([{ ...screenshot, comparison: "unavailable" }]),
+        history,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: createScreenshotManifest(
+          [{ ...screenshot, comparison: "unavailable" }],
+          previous,
+        ),
+        history,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -51,6 +51,7 @@ gallery_dir="$dashboard_dir/screenshots"
 history_error_path="$dashboard_dir/history-download-error.log"
 baseline_manifest_path="$dashboard_dir/main-baseline-manifest.json"
 baseline_error_path="$dashboard_dir/baseline-download-error.log"
+existing_stable_baseline_path="$dashboard_dir/existing-main-baseline-manifest.json"
 run_key="${PLAYWRIGHT_RUN_ID}-${PLAYWRIGHT_RUN_ATTEMPT}"
 bucket_uri="s3://${S3_BUCKET}/playwright"
 stable_baseline_uri="$bucket_uri/baselines/main/manifest.json"
@@ -133,6 +134,24 @@ if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
   fi
 fi
 
+skip_stable_baseline_update="false"
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
+  if aws s3 cp \
+    "$stable_baseline_uri" \
+    "$existing_stable_baseline_path" \
+    --endpoint-url "$S3_ENDPOINT" \
+    2>"$baseline_error_path"; then
+    export PLAYWRIGHT_EXISTING_STABLE_BASELINE_PATH="$existing_stable_baseline_path"
+    echo "Downloaded the published main screenshot baseline for recency checks."
+  elif grep -Eq "404|NoSuchKey|Not Found" "$baseline_error_path"; then
+    echo "No published main screenshot baseline yet."
+  else
+    echo "::warning::Could not read the published main screenshot baseline; leaving it unchanged."
+    cat "$baseline_error_path"
+    skip_stable_baseline_update="true"
+  fi
+fi
+
 PLAYWRIGHT_REPORT_URL="$report_url" \
 PLAYWRIGHT_SCREENSHOTS_URL="$screenshots_url" \
 PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
@@ -171,13 +190,17 @@ aws s3 cp \
   --endpoint-url "$S3_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "public,max-age=31536000,immutable"
-if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
-  aws s3 cp \
-    "$gallery_dir/manifest.json" \
-    "$stable_baseline_uri" \
-    --endpoint-url "$S3_ENDPOINT" \
-    --content-type "application/json" \
-    --cache-control "no-store"
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" && "$skip_stable_baseline_update" != "true" ]]; then
+  if grep -qx true "$gallery_dir/publish-stable-baseline"; then
+    aws s3 cp \
+      "$gallery_dir/manifest.json" \
+      "$stable_baseline_uri" \
+      --endpoint-url "$S3_ENDPOINT" \
+      --content-type "application/json" \
+      --cache-control "no-store"
+  else
+    echo "Skipping stable baseline update because a newer successful main run is already published."
+  fi
 fi
 aws s3 cp \
   "$history_path" \
