@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Teal Rakazo bot avatar</title>
+  <circle cx="32" cy="32" r="30" fill="#1A1A1D" />
+  <path fill="#35C7D9" d="M8 58c0-9 5-14 8-20 4-8 1-16 5-23 4-7 13-9 20-5 8 4 10 11 9 19-1 7 6 11 8 19 2 7-2 12-7 14H17c-6-1-9-2-9-4Z" />
+  <rect x="22" y="26" width="5" height="10" rx="2.5" fill="#07152B" />
+  <rect x="32" y="26" width="5" height="10" rx="2.5" fill="#07152B" />
+</svg>
