@@ -230,6 +230,29 @@ describeJourneys("required product journeys", () => {
     expect(await rpc(app, cookie, "routines/list", { botId: bot.id })).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: routine.id })]),
     );
+
+    await expect(
+      appendEvent(prisma, {
+        workspaceId: thread.workspaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        type: "thread.progress",
+        runId: run.id,
+        payload: { text: "stale output after clear" },
+      }),
+    ).rejects.toThrow("Cancelled run cannot write thread history");
+    await expect(
+      createThreadMessage(prisma, {
+        threadId: thread.id,
+        role: "bot",
+        blocks: [{ kind: "text", text: "stale output after clear" }],
+        runId: run.id,
+      }),
+    ).rejects.toThrow("Cancelled run cannot write thread history");
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
+      { type: "thread.cleared" },
+    ]);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {

@@ -29,6 +29,7 @@ import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
 import {
   isComputerStatusEvent,
+  isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
@@ -243,10 +244,14 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, setSnapshot, setComputer);
+            if (event.type === "thread.cleared") {
+              expandedHistoryThread.current = null;
+            }
             if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
-              event.type === "run.completed"
+              event.type === "run.completed" ||
+              event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
             }
@@ -1025,11 +1030,7 @@ function applyThreadEvent(
   setSnapshot: Dispatch<SetStateAction<ThreadSnapshot | null>>,
   setComputer: Dispatch<SetStateAction<ComputerStatus | null>>,
 ) {
-  if (
-    event.type === "thread.progress" ||
-    event.type === "thread.subagent" ||
-    event.type === "thread.message.created"
-  ) {
+  if (isThreadSnapshotEvent(event)) {
     setSnapshot((prev) => reduceThreadSnapshot(prev, event));
   }
   if (isComputerStatusEvent(event)) {

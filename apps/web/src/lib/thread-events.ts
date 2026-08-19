@@ -36,6 +36,15 @@ export function prependThreadMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
+export function isThreadSnapshotEvent(event: ProductEvent): boolean {
+  return (
+    event.type === "thread.cleared" ||
+    event.type === "thread.progress" ||
+    event.type === "thread.subagent" ||
+    event.type === "thread.message.created"
+  );
+}
+
 export function reduceThreadSnapshot(
   prev: ThreadSnapshot | null,
   event: ProductEvent,

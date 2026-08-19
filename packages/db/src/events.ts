@@ -1,7 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { MessageBlock, ProductEvent } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
-import { createThreadMessageInTransaction } from "./messages.js";
+import { assertRunCanWriteHistory, createThreadMessageInTransaction } from "./messages.js";
 
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
@@ -284,6 +284,7 @@ async function appendEventInTransaction(tx: Prisma.TransactionClient, input: App
     data: { nextEventSeq: { increment: 1 } },
     select: { nextEventSeq: true },
   });
+  await assertRunCanWriteHistory(tx, input.runId);
   return tx.event.create({
     data: {
       workspaceId: input.workspaceId,

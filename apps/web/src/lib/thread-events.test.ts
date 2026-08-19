@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
@@ -177,6 +178,13 @@ describe("thread event reduction", () => {
     );
 
     expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
+  });
+
+  it("routes live clear events through the snapshot reducer", () => {
+    expect(
+      isThreadSnapshotEvent(event({ type: "thread.cleared", seq: 12, runId: undefined })),
+    ).toBe(true);
+    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(false);
   });
 });
 

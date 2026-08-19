@@ -1,7 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { finalizeComputerControlRelease, followThreadEvents } from "./events.js";
+import { appendEvent, finalizeComputerControlRelease, followThreadEvents } from "./events.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -135,5 +135,37 @@ describe("finalizeComputerControlRelease", () => {
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
+  });
+});
+
+describe("appendEvent", () => {
+  it("does not persist output from a cancelled run after history was cleared", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
+      event: { create: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      appendEvent(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          type: "thread.progress",
+          runId: "run-1",
+          payload: { text: "stale" },
+        },
+        fanout,
+      ),
+    ).rejects.toThrow("Cancelled run cannot write thread history");
+    expect(tx.event.create).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,7 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
+  await assertRunCanWriteHistory(tx, input.runId);
   return tx.message.create({
     data: {
       threadId: input.threadId,
@@ -35,4 +36,18 @@ export async function createThreadMessageInTransaction(
       runId: input.runId,
     },
   });
+}
+
+export async function assertRunCanWriteHistory(
+  tx: Prisma.TransactionClient,
+  runId?: string,
+): Promise<void> {
+  if (!runId) return;
+  const run = await tx.run.findUnique({
+    where: { id: runId },
+    select: { status: true },
+  });
+  if (run?.status === "cancelled") {
+    throw new Error("Cancelled run cannot write thread history");
+  }
 }
