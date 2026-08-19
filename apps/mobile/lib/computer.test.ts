@@ -1,8 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { controlLabel, embeddableScreenUrl, previewPlaceholder } from "./computer.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  controlLabel,
+  embeddableScreenUrl,
+  previewPlaceholder,
+  readScreenUrl,
+} from "./computer.js";
 
 describe("embeddableScreenUrl", () => {
   it("leaves a public stream URL alone", () => {
@@ -84,6 +89,55 @@ describe("computer copy", () => {
   });
 });
 
+describe("readScreenUrl", () => {
+  it("returns the first URL without retrying", async () => {
+    const request = vi.fn().mockResolvedValue({ url: "https://screen.example/embed" });
+    await expect(readScreenUrl(request)).resolves.toBe("https://screen.example/embed");
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("retries thrown RPC failures until a URL arrives", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("rpc computer/screenUrl failed"))
+      .mockResolvedValue({ url: "https://screen.example/embed" });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await expect(readScreenUrl(request, { attempts: 3, delayMs: 25, sleep })).resolves.toBe(
+      "https://screen.example/embed",
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(25);
+  });
+
+  it("retries empty URLs until the screen is ready", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ url: null })
+      .mockResolvedValueOnce({ url: "https://screen.example/embed" });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await expect(readScreenUrl(request, { attempts: 3, sleep })).resolves.toBe(
+      "https://screen.example/embed",
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("rethrows the last RPC failure after the retry budget", async () => {
+    const error = new Error("rpc computer/screenUrl failed");
+    const request = vi.fn().mockRejectedValue(error);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await expect(readScreenUrl(request, { attempts: 3, sleep })).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns null when every attempt succeeds without a URL", async () => {
+    const request = vi.fn().mockResolvedValue({ url: null });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await expect(readScreenUrl(request, { attempts: 2, sleep })).resolves.toBeNull();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("mobile computer screen", () => {
   it("boots, takes over, heartbeats, and releases like web", () => {
     const src = readFileSync(
@@ -98,5 +152,8 @@ describe("mobile computer screen", () => {
     expect(src).toContain("Release");
     expect(src).toContain("Close computer");
     expect(src).toContain("currentApiBase()");
+    expect(src).toContain("SafeAreaProvider");
+    expect(src).toContain("readScreenUrl");
+    expect(src).toContain("SCREEN_URL_OPEN_ATTEMPTS");
   });
 });

@@ -289,6 +289,9 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev) return prev;
+  if (event.type === "thread.cleared") {
+    return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
+  }
   if (event.type === "run.waiting_input") {
     if (!prev.run || prev.run.status === "waiting_input") return prev;
     return { ...prev, run: { ...prev.run, status: "waiting_input" } };

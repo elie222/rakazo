@@ -1,0 +1,48 @@
+---
+interface Props {
+  color: string;
+  name: string;
+}
+
+const { name } = Astro.props;
+
+const sources: Record<string, string> = {
+  "Sales Outbound": "/brand/job-bots/sales-outbound.webp",
+  "Inbox Manager": "/brand/job-bots/inbox-manager.webp",
+  "Talent Scout": "/brand/job-bots/talent-scout.webp",
+  "Expense Manager": "/brand/job-bots/expense-manager.webp",
+  "Bug Triage": "/brand/job-bots/bug-triage.webp",
+  "Account Manager": "/brand/job-bots/account-manager.webp",
+  "Paid Media": "/brand/job-bots/paid-media.webp",
+  "Chief of Staff": "/brand/job-bots/chief-of-staff.webp",
+};
+
+const src = sources[name];
+
+if (!src) {
+  throw new Error(`Missing landing avatar asset for roster bot: ${name}`);
+}
+---
+
+<span class="roster-bot-avatar" role="img" aria-label={`${name} bot avatar`}>
+  <img {src} alt="" width="384" height="384" decoding="async" aria-hidden="true" />
+</span>
+
+<style>
+  .roster-bot-avatar {
+    display: block;
+    width: 88px;
+    height: 88px;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #fff;
+  }
+
+  .roster-bot-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+</style>

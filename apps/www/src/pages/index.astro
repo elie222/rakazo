@@ -1,9 +1,9 @@
 ---
-import { BotAvatar } from "@rakazo/ui-web";
 import Button from "../components/Button.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { ProductDemo } from "../components/ProductDemo";
+import RosterBotAvatar from "../components/RosterBotAvatar.astro";
 import { DEMO_ROSTER } from "../demo";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
@@ -125,7 +125,7 @@ const structuredData = {
         <div class="card-grid-4">
           {DEMO_ROSTER.map((bot) => (
             <article class="roster-card">
-              <BotAvatar color={bot.color} size={30} />
+              <RosterBotAvatar color={bot.color} name={bot.name} />
               <h3>{bot.name}</h3>
               <p>{bot.desc}</p>
             </article>

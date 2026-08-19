@@ -110,14 +110,18 @@ SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
+GIT_SHA=
 ```
 
-4. Start the stack and verify its public health endpoint:
+4. Start the stack and verify its public health endpoint. Set `GIT_SHA` to the commit you are
+   deploying so `GET /health` can prove which revision is live:
 
 ```bash
-docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --build
+GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --build
 curl --fail https://app.example.com/health
 ```
+
+The JSON includes `"revision"` matching that commit (or `null` if `GIT_SHA` was omitted).
 
 The root `.env` is excluded from both Git and the Docker build context. The database, application data,
 and Caddy certificates live in named Docker volumes.
@@ -136,7 +140,7 @@ substitute for an encrypted off-host backup or provider snapshot.
 
 ## Upgrade
 
-Pull the new source, run `pnpm --filter @rakazo/db migrate`, then restart API and worker. Product contracts stay compatible across cloud and self-hosted.
+Pull the new source, rebuild with `GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --filter @rakazo/db migrate` if you are not using the production Compose file, then restart API and worker. Product contracts stay compatible across cloud and self-hosted. `GET /health` should then report that commit as `"revision"`.
 
 ## What “Rakazo Cloud” still needs
 

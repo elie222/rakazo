@@ -127,6 +127,37 @@ describe("projectMessages", () => {
     expect(durable).toHaveLength(1);
     expect(durable[0]?.blocks[0]).toMatchObject({ status: "completed", result: "ok" });
   });
+
+  it("drops prior history when a later clear event is replayed", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.message.created",
+        payload: { messageId: "m1", role: "user", blocks: [{ kind: "text", text: "old" }] },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "draft" },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        seq: 2,
+        type: "thread.cleared",
+        payload: {},
+        createdAt: "2026-01-01T00:00:02.000Z",
+      },
+    ]);
+    expect(messages).toEqual([]);
+  });
 });
 
 describe("createStreamingRedactor", () => {

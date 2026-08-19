@@ -74,6 +74,7 @@ export interface ComposioCatalogItem {
 export interface ComposioProvider extends ConnectorProvider {
   catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]>;
   warmDirectory(): Promise<void>;
+  listConnectedSlugs(userId: string): Promise<string[]>;
   connectionReady(userId: string, slug: string): Promise<boolean>;
   begin(
     request: { provider: string; redirectUrl: string },
@@ -111,6 +112,65 @@ export async function collectPages<T>(
 
 export function executeSessionKey(toolkits: string[]): string {
   return [...new Set(toolkits.map((slug) => slug.trim()).filter(Boolean))].sort().join(",");
+}
+
+export type PluginConnectionRow = {
+  id: string;
+  provider: string;
+  status: string;
+  displayName: string;
+};
+
+export function needsLivePluginSync(rows: { status: string }[]): boolean {
+  return rows.some((row) => row.status === "pending" || row.status === "error");
+}
+
+export function mergeConnectedPlugins(
+  rows: { provider: string; displayName: string; status?: string }[],
+  liveSlugs: string[],
+): { provider: string; displayName: string }[] {
+  const live = new Set(liveSlugs.filter(Boolean));
+  const byProvider = new Map<string, { provider: string; displayName: string }>();
+  for (const row of rows) {
+    if (!row.provider) continue;
+    const include =
+      row.status === "connected" || row.status === undefined || live.has(row.provider);
+    if (!include) continue;
+    const current = byProvider.get(row.provider);
+    if (!current || current.displayName === row.provider) {
+      byProvider.set(row.provider, { provider: row.provider, displayName: row.displayName });
+    }
+  }
+  return [...byProvider.values()];
+}
+
+export function planLiveConnectionSync(
+  rows: PluginConnectionRow[],
+  liveSlugs: string[],
+): { connectIds: string[]; revokeIds: string[] } {
+  const live = new Set(liveSlugs.filter(Boolean));
+  const connectIds: string[] = [];
+  const connectedProviders = new Set(
+    rows.filter((row) => row.status === "connected").map((row) => row.provider),
+  );
+  for (const slug of live) {
+    if (connectedProviders.has(slug)) continue;
+    const matches = rows.filter((row) => row.provider === slug);
+    const reusable =
+      matches.find((row) => row.status === "pending" || row.status === "error") ??
+      matches.find((row) => row.status === "revoked") ??
+      matches[0];
+    if (!reusable) continue;
+    connectIds.push(reusable.id);
+    connectedProviders.add(slug);
+  }
+  const connectIdSet = new Set(connectIds);
+  const revokeIds = rows
+    .filter(
+      (row) => (row.status === "pending" || row.status === "error") && !connectIdSet.has(row.id),
+    )
+    .map((row) => row.id);
+  return { connectIds, revokeIds };
 }
 
 export class ComposioConnector implements ComposioProvider {
@@ -170,7 +230,7 @@ export class ComposioConnector implements ComposioProvider {
   async catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]> {
     const [directory, connected] = await Promise.all([
       this.directory(),
-      this.connectedSlugs(userId),
+      this.listConnectedSlugs(userId),
     ]);
     return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
   }
@@ -194,7 +254,7 @@ export class ComposioConnector implements ComposioProvider {
     }));
   }
 
-  private async connectedSlugs(userId: string): Promise<string[]> {
+  async listConnectedSlugs(userId: string): Promise<string[]> {
     const session = await this.sessionFor(userId);
     const connected = await collectPages((cursor) =>
       session.toolkits({ isConnected: true, limit: 50, cursor }),

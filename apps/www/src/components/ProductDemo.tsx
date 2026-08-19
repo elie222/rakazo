@@ -1,4 +1,4 @@
-import { BotAvatar, Button } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_BOTS,
@@ -7,6 +7,7 @@ import {
   type DemoRoutine,
   type DemoScreen,
 } from "../demo";
+import { LandingBotAvatar } from "./LandingBotAvatar";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -678,7 +679,7 @@ export function ProductDemo() {
                   className={`product-demo__bot-row${isActive ? " is-active" : ""}`}
                   onClick={() => selectBot(bot.id)}
                 >
-                  <BotAvatar color={bot.color} size={34} />
+                  <LandingBotAvatar color={bot.color} size={38} />
                   <span className="product-demo__bot-copy">
                     <span className="product-demo__bot-meta">
                       <span className="product-demo__bot-name">{bot.name}</span>
@@ -699,7 +700,7 @@ export function ProductDemo() {
         <main className="product-demo__main">
           <div className="product-demo__topbar">
             <button type="button" className="product-demo__name-btn" onClick={openSettings}>
-              <BotAvatar color={active.color} size={24} />
+              <LandingBotAvatar color={active.color} size={28} />
               <span className="product-demo__active-name">{active.name}</span>
             </button>
             <button
@@ -854,7 +855,7 @@ export function ProductDemo() {
             {panelMode === "settings" ? (
               <div className="product-demo__settings">
                 <div className="product-demo__settings-avatar">
-                  <BotAvatar color={active.color} size={64} />
+                  <LandingBotAvatar color={active.color} size={72} />
                 </div>
                 <label className="product-demo__field">
                   Name
@@ -1097,7 +1098,7 @@ export function ProductDemo() {
               <div className="product-demo__takeover">
                 <div className="product-demo__takeover-bar">
                   <div className="product-demo__takeover-who">
-                    <BotAvatar color={active.color} size={28} />
+                    <LandingBotAvatar color={active.color} size={32} />
                     <span>{active.name}’s computer</span>
                     <span className="product-demo__takeover-pill">You have control</span>
                   </div>

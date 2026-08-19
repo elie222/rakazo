@@ -242,20 +242,21 @@ model BotDeletion {
 }
 
 model Thread {
-  id          String   @id @default(cuid())
-  workspaceId String
-  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  botId       String   @unique
-  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId      String
-  createdAt   DateTime @default(now())
-  nextEventSeq   Int   @default(0)
-  nextMessageSeq Int   @default(0)
-  unread      Boolean  @default(false)
-  messages    Message[]
-  events      Event[]
-  tasks       Task[]
-  runs        Run[]
+  id                      String       @id @default(cuid())
+  workspaceId             String
+  workspace               Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId                   String       @unique
+  bot                     Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId                  String
+  createdAt               DateTime     @default(now())
+  nextEventSeq            Int          @default(0)
+  nextMessageSeq          Int          @default(0)
+  historyCompactedUpToSeq Int?
+  unread                  Boolean      @default(false)
+  messages                Message[]
+  events                  Event[]
+  tasks                   Task[]
+  runs                    Run[]
 
   @@index([workspaceId])
   @@map("threads")

@@ -86,4 +86,10 @@ describe("loadEnv", () => {
     expect(env.authSecret).toBe("prod-auth-secret-with-enough-length");
     expect(env.encryptionKey).toBe("prod-encryption-key-with-enough-length");
   });
+
+  it("exposes a deployed git revision when GIT_SHA is set", () => {
+    expect(loadEnv(base).gitSha).toBeUndefined();
+    expect(loadEnv({ ...base, GIT_SHA: "  3c6e209  " }).gitSha).toBe("3c6e209");
+    expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
+  });
 });

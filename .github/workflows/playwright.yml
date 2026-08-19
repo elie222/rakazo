@@ -66,8 +66,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        run: pnpm --filter @rakazo/web exec playwright install --with-deps chromium
+        timeout-minutes: 5
+        # Skip --with-deps: GitHub ubuntu-latest already has Chromium's OS libraries,
+        # and apt-get against azure.archive.ubuntu.com can stall until the job timeout.
+        run: pnpm --filter @rakazo/web exec playwright install chromium
       - name: Validate E2B credentials
         if: inputs.sandbox_provider == 'e2b'
         env:

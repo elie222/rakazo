@@ -66,6 +66,7 @@ async function main() {
     home,
     artifacts,
     connector: stack.connector,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
       Boolean,
     ),
@@ -85,6 +86,8 @@ async function main() {
     jobs,
     events,
     workerId: process.pid.toString(),
+    runtime,
+    deploymentModelKey: process.env.OPENROUTER_API_KEY,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

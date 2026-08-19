@@ -153,6 +153,7 @@ export async function createApp(
     home,
     artifacts,
     connector: stack.connector,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
@@ -170,6 +171,8 @@ export async function createApp(
     jobs,
     events,
     workerId: "api",
+    runtime,
+    deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -243,6 +246,7 @@ export async function createApp(
       composio: Boolean(stack.composio),
       jobs: jobKind,
       realtime: realtime.describe().id,
+      revision: env.gitSha ?? null,
     }),
   );
 
