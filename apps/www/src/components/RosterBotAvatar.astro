@@ -17,7 +17,11 @@ const sources: Record<string, string> = {
   "Chief of Staff": "/brand/job-bots/chief-of-staff.webp",
 };
 
-const src = sources[name] ?? sources["Chief of Staff"];
+const src = sources[name];
+
+if (!src) {
+  throw new Error(`Missing landing avatar asset for roster bot: ${name}`);
+}
 ---
 
 <span class="roster-bot-avatar" role="img" aria-label={`${name} bot avatar`}>
