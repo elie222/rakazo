@@ -83,13 +83,27 @@ describe("composio tool mapping", () => {
 
   it("merges live Composio slugs onto pending DB plugin rows", () => {
     const merged = mergeConnectedPlugins(
-      [{ provider: "github", displayName: "GitHub" }],
-      ["gmail", "github"],
+      [
+        { provider: "github", displayName: "GitHub", status: "connected" },
+        { provider: "gmail", displayName: "Gmail", status: "pending" },
+        { provider: "linear", displayName: "Linear", status: "revoked" },
+      ],
+      ["gmail", "github", "notion"],
     );
     expect(merged).toEqual([
       { provider: "github", displayName: "GitHub" },
-      { provider: "gmail", displayName: "gmail" },
+      { provider: "gmail", displayName: "Gmail" },
+      { provider: "notion", displayName: "notion" },
     ]);
+  });
+
+  it("keeps DB-connected plugins when live Composio listing is empty", () => {
+    expect(
+      mergeConnectedPlugins(
+        [{ provider: "github", displayName: "GitHub", status: "connected" }],
+        [],
+      ),
+    ).toEqual([{ provider: "github", displayName: "GitHub" }]);
   });
 
   it("plans DB sync when Composio is connected but Rakazo is still pending", () => {
@@ -104,6 +118,22 @@ describe("composio tool mapping", () => {
     ).toEqual({
       connectIds: ["row-gmail"],
       create: [{ provider: "slack", displayName: "slack" }],
+    });
+  });
+
+  it("reconnects existing error or revoked rows instead of inserting duplicates", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-err", provider: "gmail", status: "error", displayName: "Gmail" },
+          { id: "row-old", provider: "slack", status: "revoked", displayName: "Slack" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail", "slack", "github", "slack"],
+      ),
+    ).toEqual({
+      connectIds: ["row-err", "row-old"],
+      create: [],
     });
   });
 

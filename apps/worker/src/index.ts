@@ -61,9 +61,7 @@ async function main() {
     memory: new MarkdownMemoryStore(prisma),
     home,
     connector: stack.connector,
-    listConnectedPluginSlugs: stack.composio
-      ? (userId: string) => stack.composio!.listConnectedSlugs(userId)
-      : undefined,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
       Boolean,
     ),

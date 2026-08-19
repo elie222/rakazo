@@ -34,6 +34,7 @@ import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
+  type PluginConnectionRow,
   planLiveConnectionSync,
 } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -107,6 +108,67 @@ export async function deferFutureRoutine(
   if (scheduledAt.getTime() <= Date.now() + 1_000) return false;
   await jobs.enqueue(routineWakeupJob(routineId, scheduledAt));
   return true;
+}
+
+async function loadLivePluginSlugs(
+  listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
+  userId: string,
+): Promise<string[]> {
+  if (!listConnectedPluginSlugs) return [];
+  try {
+    return await listConnectedPluginSlugs(userId);
+  } catch {
+    return [];
+  }
+}
+
+async function persistLivePluginConnections(
+  prisma: PrismaClient,
+  owner: { userId: string; workspaceId: string },
+  rows: PluginConnectionRow[],
+  liveSlugs: string[],
+): Promise<void> {
+  const sync = planLiveConnectionSync(rows, liveSlugs);
+  if (sync.connectIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.connectIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "connected" },
+    });
+  }
+  for (const row of sync.create) {
+    try {
+      const existing = await prisma.connection.findFirst({
+        where: {
+          userId: owner.userId,
+          workspaceId: owner.workspaceId,
+          provider: row.provider,
+        },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        if (existing.status !== "connected") {
+          await prisma.connection.update({
+            where: { id: existing.id },
+            data: { status: "connected" },
+          });
+        }
+        continue;
+      }
+      await prisma.connection.create({
+        data: {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          provider: row.provider,
+          displayName: row.displayName,
+          status: "connected",
+        },
+      });
+    } catch {}
+  }
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -289,52 +351,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
-        let liveSlugs: string[] = [];
-        if (deps.listConnectedPluginSlugs) {
-          try {
-            liveSlugs = await deps.listConnectedPluginSlugs(run.userId);
-          } catch {
-            liveSlugs = [];
-          }
-        }
-        const sync = planLiveConnectionSync(storedConnections, liveSlugs);
-        if (sync.connectIds.length > 0) {
-          await deps.prisma.connection.updateMany({
-            where: { id: { in: sync.connectIds }, userId: run.userId, workspaceId: run.workspaceId },
-            data: { status: "connected" },
-          });
-        }
-        for (const row of sync.create) {
-          const existing = await deps.prisma.connection.findFirst({
-            where: {
-              userId: run.userId,
-              workspaceId: run.workspaceId,
-              provider: row.provider,
-            },
-            select: { id: true, status: true },
-          });
-          if (existing) {
-            if (existing.status !== "connected") {
-              await deps.prisma.connection.update({
-                where: { id: existing.id },
-                data: { status: "connected" },
-              });
-            }
-            continue;
-          }
-          await deps.prisma.connection.create({
-            data: {
-              workspaceId: run.workspaceId,
-              userId: run.userId,
-              provider: row.provider,
-              displayName: row.displayName,
-              status: "connected",
-            },
-          });
-        }
-        const connectedPlugins = mergeConnectedPlugins(
-          storedConnections.filter((row: { status: string }) => row.status === "connected"),
-          liveSlugs,
+        const liveSlugs = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+        const connectedPlugins = mergeConnectedPlugins(storedConnections, liveSlugs);
+        await persistLivePluginConnections(deps.prisma, run, storedConnections, liveSlugs).catch(
+          () => undefined,
         );
         const context = {
           operationId: runId,

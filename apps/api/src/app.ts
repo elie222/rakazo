@@ -137,9 +137,7 @@ export async function createApp(
     memory,
     home,
     connector: stack.connector,
-    listConnectedPluginSlugs: stack.composio
-      ? (userId: string) => stack.composio!.listConnectedSlugs(userId)
-      : undefined,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,

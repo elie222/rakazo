@@ -107,14 +107,23 @@ export type PluginConnectionRow = {
 };
 
 export function mergeConnectedPlugins(
-  dbRows: { provider: string; displayName: string }[],
+  rows: { provider: string; displayName: string; status?: string }[],
   liveSlugs: string[],
 ): { provider: string; displayName: string }[] {
+  const live = new Set(liveSlugs.filter(Boolean));
   const byProvider = new Map<string, { provider: string; displayName: string }>();
-  for (const row of dbRows) byProvider.set(row.provider, row);
-  for (const slug of liveSlugs) {
-    if (!slug || byProvider.has(slug)) continue;
-    byProvider.set(slug, { provider: slug, displayName: slug });
+  for (const row of rows) {
+    if (!row.provider) continue;
+    const include =
+      row.status === "connected" || row.status === undefined || live.has(row.provider);
+    if (!include) continue;
+    const current = byProvider.get(row.provider);
+    if (!current || current.displayName === row.provider) {
+      byProvider.set(row.provider, { provider: row.provider, displayName: row.displayName });
+    }
+  }
+  for (const slug of live) {
+    if (!byProvider.has(slug)) byProvider.set(slug, { provider: slug, displayName: slug });
   }
   return [...byProvider.values()];
 }
@@ -125,13 +134,18 @@ export function planLiveConnectionSync(
 ): { connectIds: string[]; create: { provider: string; displayName: string }[] } {
   const connectIds: string[] = [];
   const create: { provider: string; displayName: string }[] = [];
+  const seen = new Set<string>();
   for (const slug of liveSlugs) {
-    if (!slug) continue;
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
     const matches = rows.filter((row) => row.provider === slug);
     if (matches.some((row) => row.status === "connected")) continue;
-    const pending = matches.find((row) => row.status === "pending" || row.status === "error");
-    if (pending) {
-      connectIds.push(pending.id);
+    const reusable =
+      matches.find((row) => row.status === "pending" || row.status === "error") ??
+      matches.find((row) => row.status === "revoked") ??
+      matches[0];
+    if (reusable) {
+      connectIds.push(reusable.id);
       continue;
     }
     create.push({ provider: slug, displayName: slug });
@@ -221,10 +235,6 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   }
 
   async listConnectedSlugs(userId: string): Promise<string[]> {
-    return this.connectedSlugs(userId);
-  }
-
-  private async connectedSlugs(userId: string): Promise<string[]> {
     const session = await this.sessionFor(userId);
     const connected = await collectPages((cursor) =>
       session.toolkits({ isConnected: true, limit: 50, cursor }),
