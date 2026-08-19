@@ -128,8 +128,8 @@ if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
       echo "::warning::No Playwright history is available for a screenshot baseline."
     fi
   else
+    echo "::warning::Could not download the latest successful main screenshot baseline; comparison labels will be unavailable."
     cat "$baseline_error_path"
-    exit 1
   fi
 fi
 
