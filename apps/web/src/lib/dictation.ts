@@ -43,6 +43,7 @@ export class Dictation {
   private chunks: Blob[] = [];
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  private transcribeAbort: AbortController | null = null;
   private onFinal: ((text: string) => void) | null = null;
 
   subscribe(fn: (s: DictationSnapshot) => void): () => void {
@@ -64,6 +65,8 @@ export class Dictation {
 
   stop(reason: "submit" | "cancel" | "replace" = "cancel") {
     this.token += 1;
+    this.transcribeAbort?.abort();
+    this.transcribeAbort = null;
     clearTimeout(this.silenceTimer);
     this.silenceTimer = undefined;
     const rec = this.recognition;
@@ -137,7 +140,7 @@ export class Dictation {
       this.silenceTimer = setTimeout(() => {
         if (this.token !== mine) return;
         const text = this.snapshot.transcript.trim();
-        this.finish(text);
+        this.finish(text, mine);
       }, endpointMs);
     };
     rec.onerror = (event) => {
@@ -151,7 +154,7 @@ export class Dictation {
     rec.onend = () => {
       if (this.token !== mine) return;
       if (mode === "hold" && this.snapshot.status === "listening") {
-        this.finish(this.snapshot.transcript);
+        this.finish(this.snapshot.transcript, mine);
       }
     };
     this.recognition = rec;
@@ -159,7 +162,21 @@ export class Dictation {
   }
 
   private async listenRecorder(mine: number) {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      if (this.token !== mine) return;
+      this.set({
+        ...IDLE,
+        error: error instanceof Error ? error.message : "Microphone failed",
+      });
+      return;
+    }
+    if (this.token !== mine) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
     const media = new MediaRecorder(stream);
     this.media = media;
     this.chunks = [];
@@ -169,12 +186,13 @@ export class Dictation {
     media.onstop = () => {
       for (const track of stream.getTracks()) track.stop();
       if (this.token !== mine) return;
-      void this.transcribeChunks();
+      void this.transcribeChunks(mine);
     };
     media.start();
   }
 
-  private async transcribeChunks() {
+  private async transcribeChunks(mine: number) {
+    if (this.token !== mine) return;
     const blob = new Blob(this.chunks, { type: this.chunks[0]?.type || "audio/webm" });
     this.chunks = [];
     if (!blob.size) {
@@ -182,19 +200,34 @@ export class Dictation {
       return;
     }
     this.set({ status: "transcribing", transcript: this.snapshot.transcript });
-    const audioBase64 = await blobToBase64(blob);
-    const res = await fetch("/api/voice/transcribe", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ audioBase64, mimeType: blob.type }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-    if (!res.ok) {
-      this.set({ ...IDLE, error: body.error ?? "Could not transcribe that recording." });
-      return;
+    const abort = new AbortController();
+    this.transcribeAbort = abort;
+    try {
+      const audioBase64 = await blobToBase64(blob);
+      if (this.token !== mine) return;
+      const res = await fetch("/api/voice/transcribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ audioBase64, mimeType: blob.type }),
+        signal: abort.signal,
+      });
+      if (this.token !== mine) return;
+      const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (this.token !== mine) return;
+      if (!res.ok) {
+        this.set({ ...IDLE, error: body.error ?? "Could not transcribe that recording." });
+        return;
+      }
+      this.finish(body.text ?? "", mine);
+    } catch (error) {
+      if (this.token !== mine) return;
+      if (error instanceof Error && error.name === "AbortError") return;
+      this.set({
+        ...IDLE,
+        error: error instanceof Error ? error.message : "Could not transcribe that recording.",
+      });
     }
-    this.finish(body.text ?? "");
   }
 
   submitHold() {
@@ -202,10 +235,11 @@ export class Dictation {
       this.media.stop();
       return;
     }
-    this.finish(this.snapshot.transcript);
+    this.finish(this.snapshot.transcript, this.token);
   }
 
-  private finish(text: string) {
+  private finish(text: string, mine: number) {
+    if (this.token !== mine) return;
     const trimmed = text.trim();
     const onFinal = this.onFinal;
     this.stop("submit");
