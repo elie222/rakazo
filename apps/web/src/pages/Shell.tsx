@@ -29,6 +29,7 @@ import {
   speechFromBlocks,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
+import { ArrowUp, Mic, Phone, Plus, Square } from "lucide-react";
 import {
   type Dispatch,
   lazy,
@@ -1118,16 +1119,7 @@ export function ShellPage() {
                 className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
                 style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#A8A8AD"
-                  strokeWidth="1.6"
-                >
-                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.35 1.9.66 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.31 1.85.53 2.81.66A2 2 0 0 1 22 16.92z" />
-                </svg>
+                <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
               </button>
             ) : null}
             <button
@@ -1874,9 +1866,9 @@ const Composer = memo(function Composer({
           type="button"
           aria-label="Attach file"
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0]"
         >
-          +
+          <Plus size={17} strokeWidth={1.8} />
         </button>
         <button
           type="button"
@@ -1894,14 +1886,14 @@ const Composer = memo(function Composer({
             onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
           }}
           onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border text-[15px] ${
+          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
             dictating
               ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
               : "border-[#26262A] text-[#9A9AA0]"
           }`}
           title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
         >
-          ⌇
+          <Mic size={16} strokeWidth={1.8} />
         </button>
         <input
           value={draft}
@@ -1922,7 +1914,7 @@ const Composer = memo(function Composer({
             onClick={() => void onStop()}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
           >
-            ■
+            <Square size={12} strokeWidth={0} fill="currentColor" />
           </button>
         ) : (
           <button
@@ -1932,7 +1924,7 @@ const Composer = memo(function Composer({
             onClick={send}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
           >
-            ↑
+            <ArrowUp size={18} strokeWidth={2} />
           </button>
         )}
       </div>
