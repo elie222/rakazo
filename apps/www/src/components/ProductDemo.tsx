@@ -342,6 +342,8 @@ export function ProductDemo() {
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<number[]>([]);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const widePanelRef = useRef(true);
   const booting = bootPct > 0;
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
@@ -391,13 +393,17 @@ export function ProductDemo() {
     return () => query.removeEventListener("change", sync);
   }, []);
 
-  // Phone widths show one screen at a time, so the bot list starts hidden
-  // behind the hamburger and the side panel stays closed until asked for.
+  // Phone widths show one screen at a time, so the bot list starts hidden behind
+  // the hamburger and the side panel stays closed until asked for. Growing the
+  // window back restores however the panel was left at wide widths: this effect
+  // only runs when `compact` flips, so it closes over that render's panelOpen.
   useEffect(() => {
     if (compact) {
+      widePanelRef.current = panelOpen;
       setPanelOpen(false);
     } else {
       setMenuOpen(false);
+      setPanelOpen(widePanelRef.current);
     }
   }, [compact]);
 
@@ -407,7 +413,7 @@ export function ProductDemo() {
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setMenuOpen(false);
+        closeMenu();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -438,6 +444,16 @@ export function ProductDemo() {
       callback();
     }, delayMs);
     timersRef.current.push(timer);
+  }
+
+  function closeMenu() {
+    if (!menuOpen) {
+      return;
+    }
+    setMenuOpen(false);
+    // The drawer is hidden from the focus order once closed, so hand focus back
+    // to the control that opened it.
+    menuButtonRef.current?.focus();
   }
 
   function openComputer() {
@@ -570,7 +586,7 @@ export function ProductDemo() {
     setBots((current) => [bot, ...current]);
     setActiveId(bot.id);
     setDraft("");
-    setMenuOpen(false);
+    closeMenu();
     openSettings();
   }
 
@@ -647,7 +663,7 @@ export function ProductDemo() {
 
   function selectBot(id: string) {
     setActiveId(id);
-    setMenuOpen(false);
+    closeMenu();
     if (panelMode === "routine") {
       setPanelMode("computer");
       setRoutineDraft(null);
@@ -704,7 +720,7 @@ export function ProductDemo() {
                 type="button"
                 className="product-demo__sidebar-close"
                 aria-label="Hide bots"
-                onClick={() => setMenuOpen(false)}
+                onClick={closeMenu}
               >
                 ✕
               </button>
@@ -752,7 +768,7 @@ export function ProductDemo() {
             type="button"
             className="product-demo__scrim"
             aria-label="Hide bots"
-            onClick={() => setMenuOpen(false)}
+            onClick={closeMenu}
           />
         ) : null}
 
@@ -761,6 +777,7 @@ export function ProductDemo() {
             <div className="product-demo__topbar-left">
               <button
                 type="button"
+                ref={menuButtonRef}
                 className="product-demo__menu-btn"
                 aria-label="Show bots"
                 aria-expanded={menuOpen}
