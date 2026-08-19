@@ -60,7 +60,7 @@ import {
 } from "@rakazo/core";
 import {
   createRepos,
-  createThreadMessage,
+  createThreadMessageInTransaction,
   findDefaultModelCredential,
   IsolationError,
   newestModelCredentialOrder,
@@ -464,47 +464,58 @@ export function createRouter(deps: RouterDeps) {
         );
         const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
         const prompt = buildSendPrompt(input.text, artifacts);
-        const message = await createThreadMessage(deps.prisma, {
-          threadId: bot.thread.id,
-          role: "user",
-          blocks,
-        });
+        const threadId = bot.thread.id;
+        // One transaction, message first: its thread-row lock serializes this send against
+        // clearThread, so a concurrent clear either sees the committed run and cancels it or
+        // strictly precedes the whole send. Created separately, the run could land inside the
+        // clear's window and repopulate the cleared conversation.
+        const { message, task, run } = await deps.prisma.$transaction(
+          async (tx: Prisma.TransactionClient) => {
+            const message = await createThreadMessageInTransaction(tx, {
+              threadId,
+              role: "user",
+              blocks,
+            });
+            const task = await tx.task.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId,
+                userId: context.actor.userId,
+                prompt,
+                status: "queued",
+              },
+            });
+            const run = await tx.run.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId,
+                taskId: task.id,
+                userId: context.actor.userId,
+                status: "queued",
+                trigger: "user",
+                clientNonce: input.clientNonce,
+              },
+            });
+            await tx.message.update({
+              where: { id: message.id },
+              data: { runId: run.id },
+            });
+            return { message, task, run };
+          },
+        );
         await deps.events.append({
           workspaceId: context.actor.workspaceId,
-          threadId: bot.thread.id,
+          threadId,
           botId: bot.id,
           type: "thread.message.created",
+          runId: run.id,
           payload: {
             messageId: message.id,
             role: "user",
             blocks,
           },
-        });
-        const task = await deps.prisma.task.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            userId: context.actor.userId,
-            prompt,
-            status: "queued",
-          },
-        });
-        const run = await deps.prisma.run.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            taskId: task.id,
-            userId: context.actor.userId,
-            status: "queued",
-            trigger: "user",
-            clientNonce: input.clientNonce,
-          },
-        });
-        await deps.prisma.message.update({
-          where: { id: message.id },
-          data: { runId: run.id },
         });
         await deps.prisma.run.updateMany({
           where: {
@@ -582,48 +593,57 @@ export function createRouter(deps: RouterDeps) {
       followUp: authed.threads.followUp.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        const message = await createThreadMessage(deps.prisma, {
-          threadId: bot.thread.id,
-          role: "user",
-          blocks: [{ kind: "text", text: input.text }],
-        });
+        const threadId = bot.thread.id;
+        // One transaction, message first — see threads/send for why this must be atomic with
+        // respect to clearThread.
+        const { message, run } = await deps.prisma.$transaction(
+          async (tx: Prisma.TransactionClient) => {
+            const message = await createThreadMessageInTransaction(tx, {
+              threadId,
+              role: "user",
+              blocks: [{ kind: "text", text: input.text }],
+            });
+            const active = await tx.run.findFirst({
+              where: { botId: bot.id, status: { in: ["running", "queued", "leased"] } },
+            });
+            if (active) return { message, run: null };
+            const task = await tx.task.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId,
+                userId: context.actor.userId,
+                prompt: input.text,
+                status: "queued",
+              },
+            });
+            const run = await tx.run.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId,
+                taskId: task.id,
+                userId: context.actor.userId,
+                status: "queued",
+                trigger: "follow_up",
+              },
+            });
+            return { message, run };
+          },
+        );
         await deps.events.append({
           workspaceId: context.actor.workspaceId,
-          threadId: bot.thread.id,
+          threadId,
           botId: bot.id,
           type: "thread.message.created",
+          runId: run?.id,
           payload: {
             messageId: message.id,
             role: "user",
             blocks: [{ kind: "text", text: input.text }],
           },
         });
-        const active = await deps.prisma.run.findFirst({
-          where: { botId: bot.id, status: { in: ["running", "queued", "leased"] } },
-        });
-        if (active) return { ok: true as const };
-        const task = await deps.prisma.task.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            userId: context.actor.userId,
-            prompt: input.text,
-            status: "queued",
-          },
-        });
-        const run = await deps.prisma.run.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            taskId: task.id,
-            userId: context.actor.userId,
-            status: "queued",
-            trigger: "follow_up",
-          },
-        });
-        await deps.jobs.enqueue(runContinueJob(run.id));
+        if (run) await deps.jobs.enqueue(runContinueJob(run.id));
         return { ok: true as const };
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
