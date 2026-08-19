@@ -1,5 +1,35 @@
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
+export const TEAM_SCREEN_LIMIT = 8;
 const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+
+export function screenPorts(index: number) {
+  if (index < 0 || index >= TEAM_SCREEN_LIMIT) {
+    throw new Error(
+      `screen index ${index} exceeds the Team Computer limit of ${TEAM_SCREEN_LIMIT}`,
+    );
+  }
+  return {
+    display: `:${index + 1}`,
+    displayNumber: index + 1,
+    viewPort: String(6080 + index * 2),
+    controlPort: String(6081 + index * 2),
+    viewVncPort: 5900 + index * 2,
+    controlVncPort: 5901 + index * 2,
+  };
+}
+
+export function computerPortBindings() {
+  const ExposedPorts: Record<string, object> = {};
+  const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
+  for (let index = 0; index < TEAM_SCREEN_LIMIT; index += 1) {
+    const ports = screenPorts(index);
+    ExposedPorts[`${ports.viewPort}/tcp`] = {};
+    ExposedPorts[`${ports.controlPort}/tcp`] = {};
+    PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
+    PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
+  }
+  return { ExposedPorts, PortBindings };
+}
 
 export interface ComputerCreateInput {
   name: string;
@@ -24,6 +54,7 @@ export type SandboxInput =
   | { kind: "clipboard"; text: string };
 
 export function containerCreateOptions(input: ComputerCreateInput) {
+  const ports = computerPortBindings();
   return {
     Image: input.image,
     name: input.name,
@@ -40,13 +71,10 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "rakazo.botId": input.botId,
       "rakazo.workspaceId": input.workspaceId,
     },
-    ExposedPorts: { "6080/tcp": {}, "6081/tcp": {} },
+    ExposedPorts: ports.ExposedPorts,
     HostConfig: {
       Binds: [`${input.homePath}:/home/rakazo`],
-      PortBindings: {
-        "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-        "6081/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-      },
+      PortBindings: ports.PortBindings,
       ShmSize: 256 * 1024 * 1024,
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,

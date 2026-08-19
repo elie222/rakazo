@@ -39,6 +39,7 @@ import type {
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
+  /** Allocate or reconnect the computer, returning its reference before fallible setup. */
   provision(
     request: {
       botId: string;
@@ -48,6 +49,8 @@ export interface SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
+  /** Perform idempotent provider setup after the lifecycle has captured the reference. */
+  prepare(computer: ComputerRef, context: AdapterContext): Promise<void>;
   execute(
     computer: ComputerRef,
     request: CommandRequest,
@@ -96,6 +99,8 @@ export interface SandboxProvider {
   ): Promise<void>;
   snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef>;
   keepAlive?(computer: ComputerRef): Promise<void>;
+  /** Drop a single-screen graphical claim for this bot so another Team bot can use the display. */
+  releaseScreen?(computer: ComputerRef, context: AdapterContext): Promise<void>;
   stop(computer: ComputerRef, context: AdapterContext): Promise<void>;
   destroy(computer: ComputerRef, context: AdapterContext): Promise<void>;
 }

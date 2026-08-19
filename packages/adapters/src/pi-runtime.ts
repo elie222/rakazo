@@ -134,7 +134,12 @@ export class PiAgentRuntime implements AgentRuntime {
         });
 
         queue.push({ type: "progress", text: "working…" });
-        await agent.prompt(request.prompt);
+        const images = request.currentTurnImages?.map((image) => ({
+          type: "image" as const,
+          data: Buffer.from(image.data).toString("base64"),
+          mimeType: image.mimeType,
+        }));
+        await agent.prompt(request.prompt, images?.length ? images : undefined);
         await agent.waitForIdle();
         signal.removeEventListener("abort", onAbort);
 
@@ -325,7 +330,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           prompt: raw.prompt ? String(raw.prompt) : "",
         };
       }
-      if (tool.name === "delete_bot") {
+      if (tool.name === "archive_bot" || tool.name === "delete_bot") {
         return {
           confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
           bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
@@ -544,7 +549,7 @@ function parametersFor(tool: ConnectorTool) {
       prompt: Type.Optional(Type.String()),
     });
   }
-  if (tool.name === "delete_bot") {
+  if (tool.name === "archive_bot" || tool.name === "delete_bot") {
     return Type.Object({
       confirm_name: Type.String(),
       bot_id: Type.Optional(Type.String()),

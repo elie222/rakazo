@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
 import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
   type AgentHomeStore,
-  type ComputerRef,
+  type ArtifactStore,
   computerControlExpireJobKey,
   type JobPublisher,
   type MemoryStore,
@@ -15,23 +14,31 @@ import {
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
-  type ComposioConnector,
+  acquireComputerExecutionLease,
+  archiveBot,
+  type ComposioProvider,
+  ComputerBusyError,
+  type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
   destroyBot,
+  displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
   hasActiveComputerControl,
   listPiCatalog,
   type PiOAuthLogins,
-  resolveAgentHomePath,
-  restoreComputerWorkspace,
+  provisionComputer,
+  releaseComputerExecutionLease,
+  resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
+  screenLeaseIdForRun,
   scriptedCatalogEntry,
   serializeModelSecret,
   takeoverLeaseMs,
+  toComputerRef,
   touchRunningComputer,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -42,16 +49,33 @@ import {
   type Me,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, nextCronDate, projectMessages } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  AttachmentValidationError,
+  nextCronDate,
+  projectMessages,
+} from "@rakazo/core";
 import {
   createRepos,
   createThreadMessage,
+  findDefaultModelCredential,
   IsolationError,
-  type Prisma,
+  newestModelCredentialOrder,
+  Prisma,
   type PrismaClient,
+  parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import {
+  buildSendPrompt,
+  buildUserMessageBlocks,
+  createOwnedArtifact,
+  getOwnedArtifact,
+  resolveSendAttachments,
+} from "./artifacts.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
+import { queryWorkspaceSearch } from "./search.js";
+import { withSerializableRetry } from "./serializable-retry.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
@@ -69,19 +93,6 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
   };
 }
 
-function computerRef(
-  botId: string,
-  computer: { providerRef: string | null; kind: string },
-): ComputerRef {
-  if (!computer.providerRef) throw new Error("computer provider reference is missing");
-  return {
-    id: computer.providerRef,
-    botId,
-    kind: computer.kind as ComputerRef["kind"],
-    providerRef: computer.providerRef,
-  };
-}
-
 export interface RouterDeps {
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -92,7 +103,8 @@ export interface RouterDeps {
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
   oauthLogins: PiOAuthLogins;
-  composio?: ComposioConnector;
+  composio?: ComposioProvider;
+  artifacts: ArtifactStore;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -110,36 +122,27 @@ export function createRouter(deps: RouterDeps) {
 
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
-    return next({ context: { actor: context.actor } });
+    return next({ context: { ...context, actor: context.actor } });
   });
 
   return os.router({
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
-    me: authed.me.handler(async ({ context }): Promise<Me> => {
+    me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
-      const user = await deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
-      const cred = await deps.prisma.userModelCredential.findFirst({
-        where: { userId: actor.userId, isDefault: true },
-      });
-      const settings = await deps.prisma.deploymentSettings.findUnique({
-        where: { id: "default" },
-      });
-      const hasDeployment = Boolean(
-        settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
-      );
-      return {
-        userId: actor.userId,
-        email: user.email,
-        name: user.name,
-        workspaceId: actor.workspaceId,
-        isDeploymentOwner: actor.isDeploymentOwner,
-        needsModel: !cred && !hasDeployment,
-        defaultProvider:
-          cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
-        defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-        computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
-        canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
-      };
+      const [me, bots, archivedBots] = await Promise.all([
+        meDto(deps, actor),
+        repos.listBots(actor),
+        repos.listBots(actor, { archived: true }),
+      ]);
+      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
+      const [thread, routines] = active
+        ? await Promise.all([
+            snapshot(deps, actor, active.id),
+            listRoutinesDto(deps, actor, active.id),
+          ])
+        : [null, []];
+      return { me, bots, archivedBots, thread, routines };
     }),
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
@@ -177,6 +180,7 @@ export function createRouter(deps: RouterDeps) {
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: newestModelCredentialOrder,
         });
         return rows.map((row) => ({
           id: row.id,
@@ -192,6 +196,7 @@ export function createRouter(deps: RouterDeps) {
           plaintext: input.apiKey,
           label: input.label,
           modelId: input.modelId,
+          signal: context.signal,
         });
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
@@ -201,6 +206,7 @@ export function createRouter(deps: RouterDeps) {
           provider: input.provider,
           modelId: input.modelId,
           label: input.label,
+          signal: context.signal,
         });
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
@@ -208,26 +214,75 @@ export function createRouter(deps: RouterDeps) {
           userId: context.actor.userId,
           workspaceId: context.actor.workspaceId,
         });
-        if (result.status !== "connected") return result;
-        const credential = await persistModelCredential(deps, context.actor, {
-          provider: result.provider,
-          plaintext: serializeModelSecret({ kind: "oauth", credential: result.credential }),
-          label: result.label ?? "ChatGPT Plus/Pro",
-          modelId: result.modelId,
-        });
-        deps.oauthLogins.consume(input.loginId);
-        return { status: "connected" as const, credential };
+        return result.status === "connected" ? { status: "ready" as const } : result;
+      }),
+      finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
+        throwIfAborted(context.signal);
+        const result = await deps.oauthLogins.finish(
+          input.loginId,
+          context.actor,
+          async (login) => {
+            return persistModelCredential(deps, context.actor, {
+              provider: login.provider,
+              plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+              label: login.label ?? "ChatGPT Plus/Pro",
+              modelId: login.modelId,
+              signal: login.signal,
+            });
+          },
+        );
+        if (result.status === "pending") {
+          throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
+        }
+        if (result.status === "error") {
+          throw new ORPCError("NOT_FOUND", { message: result.error });
+        }
+        return result.value;
+      }),
+      cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
+        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
-        await deps.prisma.userModelCredential.updateMany({
-          where: { userId: context.actor.userId, provider: input.provider },
-          data: { defaultModel: input.modelId, isDefault: true },
-        });
+        await withSerializableRetry(() =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              const credential = await tx.userModelCredential.findFirst({
+                where: {
+                  userId: context.actor.userId,
+                  workspaceId: context.actor.workspaceId,
+                  provider: input.provider,
+                },
+                orderBy: newestModelCredentialOrder,
+              });
+              if (!credential) {
+                throw new ORPCError("NOT_FOUND", {
+                  message: `No model credential is connected for ${input.provider} in this workspace.`,
+                });
+              }
+              await tx.userModelCredential.updateMany({
+                where: {
+                  userId: context.actor.userId,
+                  workspaceId: context.actor.workspaceId,
+                },
+                data: { isDefault: false },
+              });
+              await tx.userModelCredential.update({
+                where: { id: credential.id },
+                data: { defaultModel: input.modelId, isDefault: true },
+              });
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          ),
+        );
         return { ok: true as const };
       }),
     },
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
+      listArchived: authed.bots.listArchived.handler(async ({ context }) =>
+        repos.listBots(context.actor, { archived: true }),
+      ),
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
@@ -245,6 +300,7 @@ export function createRouter(deps: RouterDeps) {
           instructions: source.instructions,
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
+          computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
         });
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
@@ -266,16 +322,94 @@ export function createRouter(deps: RouterDeps) {
         if (!bot) throw new IsolationError();
         return bot;
       }),
-      remove: authed.bots.remove.handler(async ({ context, input }) => {
+      setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
+        if (currentMode === input.mode) {
+          return repos.setBotComputer(context.actor, bot.id, input.mode);
+        }
+        const claimed = await deps.prisma.bot.updateMany({
+          where: { id: bot.id, computerSwitching: false },
+          data: { computerSwitching: true },
+        });
+        if (claimed.count !== 1) throw new ORPCError("CONFLICT");
+        try {
+          const active = await deps.prisma.run.findFirst({
+            where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+            select: { id: true },
+          });
+          if (active) {
+            throw new ORPCError("BAD_REQUEST", { message: "Stop the bot first" });
+          }
+          if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
+            throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
+          }
+          if (bot.computer.scope === "dedicated" && bot.computer.providerRef) {
+            const ctx = computerContext(context.actor, bot.id, "computer.switch");
+            const ref = toComputerRef(bot.computer);
+            if (bot.computer.state === "running") {
+              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
+              await deps.sandbox.stop(ref, ctx);
+            }
+            await deps.prisma.computerExecutionLease.deleteMany({
+              where: { computerId: bot.computer.id, botId: bot.id },
+            });
+            await deps.prisma.computer.update({
+              where: { id: bot.computer.id },
+              data: {
+                state: "stopped",
+                controlHolder: "none",
+                controlLeaseId: null,
+                controlLeaseExpiresAt: null,
+                controlBotId: null,
+                executionRunId: null,
+                executionBotId: null,
+                executionLeaseExpiresAt: null,
+              },
+            });
+          }
+          return await repos.setBotComputer(context.actor, bot.id, input.mode);
+        } finally {
+          await deps.prisma.bot.updateMany({
+            where: { id: bot.id },
+            data: { computerSwitching: false },
+          });
+        }
+      }),
+      archive: authed.bots.archive.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        await archiveBot(
+          {
+            prisma: deps.prisma,
+            sandbox: deps.sandbox,
+            home: deps.home,
+            jobs: deps.jobs,
+            dataDir: deps.dataDir,
+          },
+          bot,
+          computerContext(context.actor, bot.id, "archive"),
+        );
+        return { ok: true as const };
+      }),
+      restore: authed.bots.restore.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        if (!bot.archivedAt) return { ok: true as const };
+        await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+        return { ok: true as const };
+      }),
+      remove: authed.bots.remove.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
         await destroyBot(
           {
             prisma: deps.prisma,
             sandbox: deps.sandbox,
             home: deps.home,
+            jobs: deps.jobs,
+            artifacts: deps.artifacts,
             dataDir: deps.dataDir,
           },
-          bot.id,
+          bot,
           {
             operationId: "destroy",
             traceId: "destroy",
@@ -283,6 +417,7 @@ export function createRouter(deps: RouterDeps) {
             userId: context.actor.userId,
             signal: new AbortController().signal,
           },
+          { deleteMemories: input.deleteMemories },
         );
         return { ok: true as const };
       }),
@@ -294,7 +429,13 @@ export function createRouter(deps: RouterDeps) {
       messages: authed.threads.messages.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        return loadMessagePage(deps.prisma, bot.thread.id, input.before, THREAD_MESSAGE_PAGE_SIZE);
+        return loadMessagePage(
+          deps.prisma,
+          bot.thread.id,
+          input.before,
+          THREAD_MESSAGE_PAGE_SIZE,
+          input.around,
+        );
       }),
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -312,10 +453,18 @@ export function createRouter(deps: RouterDeps) {
           });
           if (dup) return { taskId: dup.taskId, runId: dup.id, seq: 0 };
         }
+        const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
+          deps,
+          context.actor,
+          bot.id,
+          input.artifactIds,
+        );
+        const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
+        const prompt = buildSendPrompt(input.text, artifacts);
         const message = await createThreadMessage(deps.prisma, {
           threadId: bot.thread.id,
           role: "user",
-          blocks: [{ kind: "text", text: input.text }],
+          blocks,
         });
         await deps.events.append({
           workspaceId: context.actor.workspaceId,
@@ -325,7 +474,7 @@ export function createRouter(deps: RouterDeps) {
           payload: {
             messageId: message.id,
             role: "user",
-            blocks: [{ kind: "text", text: input.text }],
+            blocks,
           },
         });
         const task = await deps.prisma.task.create({
@@ -334,7 +483,7 @@ export function createRouter(deps: RouterDeps) {
             botId: bot.id,
             threadId: bot.thread.id,
             userId: context.actor.userId,
-            prompt: input.text,
+            prompt,
             status: "queued",
           },
         });
@@ -349,6 +498,10 @@ export function createRouter(deps: RouterDeps) {
             trigger: "user",
             clientNonce: input.clientNonce,
           },
+        });
+        await deps.prisma.message.update({
+          where: { id: message.id },
+          data: { runId: run.id },
         });
         await deps.prisma.run.updateMany({
           where: {
@@ -377,6 +530,23 @@ export function createRouter(deps: RouterDeps) {
           },
           data: { status: "cancelled", completedAt: new Date() },
         });
+        await deps.prisma.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
+        await deps.prisma.computer.updateMany({
+          where: { executionBotId: bot.id },
+          data: {
+            executionRunId: null,
+            executionBotId: null,
+            executionLeaseExpiresAt: null,
+          },
+        });
+        if (bot.computer?.providerRef) {
+          await deps.sandbox
+            .releaseScreen?.(
+              toComputerRef(bot.computer),
+              computerContext(context.actor, bot.id, "stop"),
+            )
+            .catch(() => undefined);
+        }
         await deps.prisma.event.deleteMany({
           where: {
             type: "thread.progress",
@@ -446,15 +616,21 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
-        await repos.getBot(context.actor, input.botId);
-        await deps.prisma.run.update({
-          where: { id: input.runId, workspaceId: context.actor.workspaceId },
-          data: { status: "queued" },
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.thread) throw new IsolationError();
+        const answered = await deps.events.answerRunInput({
+          workspaceId: context.actor.workspaceId,
+          threadId: bot.thread.id,
+          botId: bot.id,
+          runId: input.runId,
+          messageId: input.messageId,
+          answer: input.answer,
         });
-        await deps.prisma.task.updateMany({
-          where: { runs: { some: { id: input.runId } } },
-          data: { prompt: input.answer },
-        });
+        if (!answered) {
+          throw new ORPCError("CONFLICT", {
+            message: "This prompt is no longer awaiting an answer",
+          });
+        }
         await deps.jobs.enqueue(runContinueJob(input.runId));
         return { ok: true as const };
       }),
@@ -473,62 +649,103 @@ export function createRouter(deps: RouterDeps) {
       ),
       boot: authed.computer.boot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        if (bot.computer.state === "running" && bot.computer.providerRef) {
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          return computerStatus(deps, context.actor, input.botId);
+        }
         const ctx = computerContext(context.actor, bot.id, "boot");
-        const homePath = resolveAgentHomePath(deps.home, bot.id, process.env.DATA_DIR ?? "./data");
-        await mkdir(homePath, { recursive: true });
-        await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "booting" } });
-        let provisioned: ComputerRef | undefined;
+        const manualRunId = `boot:${randomUUID()}`;
+        let lease: ComputerExecutionLease | null;
         try {
-          const ref = await deps.sandbox.provision(
-            {
-              botId: bot.id,
-              homePath,
-              providerRef: bot.computer?.providerRef ?? undefined,
-              providerKind: bot.computer?.kind as ComputerRef["kind"] | undefined,
-            },
-            ctx,
-          );
-          provisioned = ref;
-          const replacement =
-            ref.fresh === true ||
-            !bot.computer?.providerRef ||
-            bot.computer.providerRef !== ref.providerRef ||
-            bot.computer.kind !== ref.kind;
-          if (replacement) {
-            await restoreComputerWorkspace(deps.home, deps.sandbox, bot.id, ref, ctx);
-          }
-          await deps.prisma.computer.update({
-            where: { botId: bot.id },
-            data: { state: "running", providerRef: ref.providerRef, kind: ref.kind },
+          lease = await acquireComputerExecutionLease(deps.prisma, {
+            computerId: bot.computer.id,
+            runId: manualRunId,
+            botId: bot.id,
           });
-          scheduleComputerSleep(deps.jobs, bot.id);
         } catch (error) {
-          if (provisioned?.fresh) {
-            await deps.sandbox.destroy(provisioned, ctx).catch(() => undefined);
+          if (error instanceof ComputerBusyError) {
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
           }
-          await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "error" } });
           throw error;
+        }
+        try {
+          await provisionComputer(deps, bot.computer.id, {
+            ...ctx,
+            screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+          });
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+        } finally {
+          await releaseComputerExecutionLease(deps.prisma, lease);
         }
         return computerStatus(deps, context.actor, input.botId);
       }),
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        if (bot.computer?.providerRef) {
-          const ctx = computerContext(context.actor, bot.id, "stop");
-          const ref = computerRef(bot.id, bot.computer);
-          await checkpointAndRecordComputerWorkspace(deps, bot.id, ref, ctx);
-          await deps.sandbox.stop(ref, ctx);
-        }
-        await deps.prisma.computer.update({
-          where: { botId: bot.id },
-          data: {
-            state: "stopped",
-            controlHolder: "none",
-            controlLeaseId: null,
-            controlLeaseExpiresAt: null,
+        if (!bot.computer) throw new IsolationError();
+        const now = new Date();
+        const claimed = await deps.prisma.computer.updateMany({
+          where: {
+            id: bot.computer.id,
+            state: { not: "suspending" },
+            executionLeases: {
+              none: { botId: { not: bot.id }, expiresAt: { gt: now } },
+            },
           },
+          data: { state: "suspending" },
         });
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.id));
+        if (claimed.count !== 1) {
+          throw new ORPCError("CONFLICT", {
+            message: "Other Team bots are still using this computer",
+          });
+        }
+        const otherRun = await deps.prisma.run.findFirst({
+          where: {
+            botId: { not: bot.id },
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+            bot: { computerId: bot.computer.id },
+          },
+          select: { id: true },
+        });
+        if (otherRun) {
+          await deps.prisma.computer.updateMany({
+            where: { id: bot.computer.id, state: "suspending" },
+            data: { state: bot.computer.state },
+          });
+          throw new ORPCError("CONFLICT", {
+            message: "Other Team bots are still using this computer",
+          });
+        }
+        await deps.prisma.computerExecutionLease.deleteMany({
+          where: { computerId: bot.computer.id, botId: bot.id },
+        });
+        try {
+          if (bot.computer.providerRef) {
+            const ctx = computerContext(context.actor, bot.id, "stop");
+            const ref = toComputerRef(bot.computer);
+            await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
+            await deps.sandbox.stop(ref, ctx);
+          }
+          await deps.prisma.computer.update({
+            where: { id: bot.computer.id },
+            data: {
+              state: "stopped",
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+            },
+          });
+        } catch (error) {
+          await deps.prisma.computer
+            .updateMany({
+              where: { id: bot.computer.id, state: "suspending" },
+              data: { state: "error" },
+            })
+            .catch(() => undefined);
+          throw error;
+        }
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
         return computerStatus(deps, context.actor, input.botId);
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
@@ -536,10 +753,10 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
-        if (hasActiveComputerControl(bot.computer)) {
+        if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
           await scheduleComputerControlExpiry(
             deps.jobs,
-            bot.id,
+            bot.computer.id,
             bot.computer.controlLeaseId!,
             bot.computer.controlLeaseExpiresAt!,
           );
@@ -548,16 +765,63 @@ export function createRouter(deps: RouterDeps) {
             expiresAt: bot.computer.controlLeaseExpiresAt!.toISOString(),
           };
         }
-        if (bot.computer.controlLeaseId) {
-          await expireComputerControl(deps, bot.id, bot.computer.controlLeaseId);
+        if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
+          const previousBotId = bot.computer.controlBotId!;
+          await deps.sandbox.setScreenControl?.(
+            toComputerRef(bot.computer),
+            false,
+            computerContext(context.actor, previousBotId, "screen.release"),
+            bot.computer.controlLeaseId ?? undefined,
+          );
+          await deps.prisma.computer.updateMany({
+            where: { id: bot.computer.id, controlLeaseId: bot.computer.controlLeaseId },
+            data: {
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+            },
+          });
           bot = await repos.getBot(context.actor, input.botId);
+          if (!bot.computer) throw new IsolationError();
+        }
+        if (bot.computer.controlLeaseId) {
+          await expireComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId);
+          bot = await repos.getBot(context.actor, input.botId);
+        }
+        if (!bot.computer) throw new IsolationError();
+
+        const executionLease = await deps.prisma.computerExecutionLease.findUnique({
+          where: { computerId_botId: { computerId: bot.computer.id, botId: bot.id } },
+        });
+        const executionLeaseActive = Boolean(
+          executionLease && executionLease.expiresAt.getTime() > Date.now(),
+        );
+        const executionRun = executionLease
+          ? await deps.prisma.run.findUnique({
+              where: { id: executionLease.runId },
+              select: { botId: true, status: true },
+            })
+          : null;
+        const executionRunActive = Boolean(
+          executionRun && ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status),
+        );
+        const waitingForTakeover =
+          executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+        if (executionLease && !waitingForTakeover && (executionLeaseActive || executionRunActive)) {
+          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+        }
+        if (executionLease && !executionLeaseActive && !executionRunActive) {
+          await deps.prisma.computerExecutionLease.deleteMany({
+            where: { id: executionLease.id },
+          });
         }
 
         const leaseId = randomUUID();
         const expiresAt = new Date(Date.now() + takeoverLeaseMs());
         const granted = await deps.prisma.computer.updateMany({
           where: {
-            botId: bot.id,
+            id: bot.computer.id,
             controlHolder: { not: "user" },
             controlLeaseId: null,
           },
@@ -565,17 +829,18 @@ export function createRouter(deps: RouterDeps) {
             controlHolder: "user",
             controlLeaseId: leaseId,
             controlLeaseExpiresAt: expiresAt,
+            controlBotId: bot.id,
             state: "running",
           },
         });
         if (granted.count !== 1) {
           const current = await deps.prisma.computer.findUniqueOrThrow({
-            where: { botId: bot.id },
+            where: { id: bot.computer.id },
           });
           if (!hasActiveComputerControl(current)) throw new ORPCError("CONFLICT");
           await scheduleComputerControlExpiry(
             deps.jobs,
-            bot.id,
+            current.id,
             current.controlLeaseId!,
             current.controlLeaseExpiresAt!,
           );
@@ -585,14 +850,15 @@ export function createRouter(deps: RouterDeps) {
           };
         }
         try {
-          await scheduleComputerControlExpiry(deps.jobs, bot.id, leaseId, expiresAt);
+          await scheduleComputerControlExpiry(deps.jobs, bot.computer.id, leaseId, expiresAt);
         } catch (error) {
           await deps.prisma.computer.updateMany({
-            where: { botId: bot.id, controlLeaseId: leaseId },
+            where: { id: bot.computer.id, controlLeaseId: leaseId },
             data: {
               controlHolder: "none",
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
+              controlBotId: null,
             },
           });
           throw error;
@@ -606,11 +872,25 @@ export function createRouter(deps: RouterDeps) {
             payload: { leaseId },
           });
         }
-        scheduleComputerSleep(deps.jobs, bot.id);
+        scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const controlBotId = bot.computer.controlBotId ?? bot.id;
+        const storedControlBot =
+          controlBotId === bot.id
+            ? bot
+            : await deps.prisma.bot.findFirst({
+                where: {
+                  id: controlBotId,
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                },
+                include: { thread: true },
+              });
+        const controlBot = storedControlBot ?? bot;
         const controlChanged =
           bot.computer?.controlHolder !== "bot" ||
           bot.computer.controlLeaseId !== null ||
@@ -619,43 +899,44 @@ export function createRouter(deps: RouterDeps) {
           bot.computer?.controlHolder === "user" || Boolean(bot.computer?.controlLeaseId);
         if (bot.computer?.providerRef && shouldRevokeUserControl) {
           await deps.sandbox.setScreenControl?.(
-            computerRef(bot.id, bot.computer),
+            toComputerRef(bot.computer),
             false,
             computerContext(context.actor, bot.id, "screen.release"),
             bot.computer.controlLeaseId ?? undefined,
           );
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.id));
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
         await deps.prisma.computer.update({
-          where: { botId: bot.id },
+          where: { id: bot.computer.id },
           data: {
             controlHolder: "bot",
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
+            controlBotId: null,
           },
         });
-        if (bot.thread && controlChanged) {
+        if (controlBot.thread && controlChanged) {
           await deps.events.append({
             workspaceId: context.actor.workspaceId,
-            threadId: bot.thread.id,
-            botId: bot.id,
+            threadId: controlBot.thread.id,
+            botId: controlBot.id,
             type: "computer.takeover.released",
             payload: { holder: "bot", reason: "released" },
           });
         }
         const waiting = await deps.prisma.run.findFirst({
-          where: { botId: bot.id, status: "waiting_takeover" },
+          where: { botId: controlBot.id, status: "waiting_takeover" },
           orderBy: { createdAt: "desc" },
         });
         if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
-        scheduleComputerSleep(deps.jobs, bot.id);
+        scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         const computer = bot.computer;
-        if (!computer || !hasActiveComputerControl(computer)) {
-          await expireStaleComputerControl(deps, bot.id, computer);
+        if (!computer || !hasActiveComputerControl(computer) || computer.controlBotId !== bot.id) {
+          await expireStaleComputerControl(deps, computer);
           throw new ORPCError("FORBIDDEN");
         }
         if (!computer.providerRef) return { ok: true as const };
@@ -673,51 +954,61 @@ export function createRouter(deps: RouterDeps) {
                     (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click",
                 };
         await deps.sandbox.sendInput(
-          computerRef(bot.id, computer),
+          toComputerRef(computer),
           mapped,
           { leaseId: computer.controlLeaseId ?? "lease", holder: "user", fence: 0 },
           computerContext(context.actor, bot.id, "input"),
         );
         await deps.prisma.computer.updateMany({
-          where: { botId: bot.id, state: "running" },
+          where: { id: computer.id, state: "running" },
           data: { updatedAt: new Date() },
         });
-        scheduleComputerSleep(deps.jobs, bot.id);
+        scheduleComputerSleep(deps.jobs, computer.id);
         return { ok: true as const };
       }),
       files: authed.computer.files.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const computer = bot.computer;
+        const computerMode = parseComputerMode(computer.scope);
         const ctx = computerContext(context.actor, bot.id, "files");
-        if (bot.computer?.state === "running" && bot.computer.providerRef) {
+        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        let entries: Awaited<ReturnType<SandboxProvider["listFiles"]>>;
+        if (computer.state === "running" && computer.providerRef) {
           await deps.prisma.computer.updateMany({
-            where: { botId: bot.id, state: "running" },
+            where: { id: computer.id, state: "running" },
             data: { updatedAt: new Date() },
           });
-          scheduleComputerSleep(deps.jobs, bot.id);
-          return deps.sandbox.listFiles(computerRef(bot.id, bot.computer), input.path, ctx);
+          scheduleComputerSleep(deps.jobs, computer.id);
+          entries = await deps.sandbox.listFiles(toComputerRef(computer), storedPath, ctx);
+        } else {
+          entries = await deps.home.list(computer.homeKey, storedPath, ctx);
         }
-        return deps.home.list(input.botId, input.path, ctx);
+        return entries.map((entry) => ({
+          ...entry,
+          path: displayBotWorkspacePath(computerMode, bot.id, input.path, entry.path),
+        }));
       }),
       readFile: authed.computer.readFile.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        const computerMode = parseComputerMode(bot.computer.scope);
         const ctx = computerContext(context.actor, bot.id, "read");
+        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
         let content: string;
-        if (bot.computer?.state === "running" && bot.computer.providerRef) {
+        if (bot.computer.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
-            where: { botId: bot.id, state: "running" },
+            where: { id: bot.computer.id, state: "running" },
             data: { updatedAt: new Date() },
           });
-          scheduleComputerSleep(deps.jobs, bot.id);
-          const bytes = await deps.sandbox.readFile(
-            computerRef(bot.id, bot.computer),
-            input.path,
-            ctx,
-            { maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES },
-          );
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          const bytes = await deps.sandbox.readFile(toComputerRef(bot.computer), storedPath, ctx, {
+            maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
+          });
           content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
         } else {
           try {
-            content = await deps.home.readFile(input.botId, input.path, ctx, {
+            content = await deps.home.readFile(bot.computer.homeKey, storedPath, ctx, {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             });
           } catch (error) {
@@ -731,7 +1022,7 @@ export function createRouter(deps: RouterDeps) {
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
-        if (await expireStaleComputerControl(deps, bot.id, bot.computer)) {
+        if (await expireStaleComputerControl(deps, bot.computer)) {
           bot = await repos.getBot(context.actor, input.botId);
         }
         if (
@@ -741,32 +1032,52 @@ export function createRouter(deps: RouterDeps) {
           return { url: null };
         }
         const session = await deps.sandbox.connectScreen(
-          computerRef(bot.id, bot.computer),
+          toComputerRef(bot.computer),
           {
             view: "stream",
-            interactive: hasActiveComputerControl(bot.computer),
-            controlToken: bot.computer.controlLeaseId ?? undefined,
+            interactive:
+              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+            controlToken:
+              bot.computer.controlBotId === bot.id
+                ? (bot.computer.controlLeaseId ?? undefined)
+                : undefined,
           },
-          computerContext(context.actor, bot.id, "screen"),
+          await computerScreenContext(
+            deps.prisma,
+            context.actor,
+            bot.computer.id,
+            bot.id,
+            "screen",
+          ),
         );
         if (!session.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.id);
-        const viewUrl = withViewOnly(session.url, !hasActiveComputerControl(bot.computer));
+        scheduleComputerSleep(deps.jobs, bot.computer.id);
+        const viewUrl = withViewOnly(
+          session.url,
+          !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
+        );
         return {
-          url: addScreenProxyCapability(viewUrl, deps.env.screenProxySecret, deps.env.webOrigin),
+          url: addScreenProxyCapability(
+            viewUrl,
+            deps.env.screenProxySecret,
+            deps.env.webOrigin,
+            undefined,
+            { proxyExternal: bot.computer.kind === "box" },
+          ),
         };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer?.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
-            where: { botId: bot.id, state: "running" },
+            where: { id: bot.computer.id, state: "running" },
             data: { updatedAt: new Date() },
           });
           await touchRunningComputer(
             { sandbox: deps.sandbox, jobs: deps.jobs },
             {
-              botId: bot.id,
+              id: bot.computer.id,
+              homeKey: bot.computer.homeKey,
               providerRef: bot.computer.providerRef,
               kind: bot.computer.kind,
             },
@@ -843,10 +1154,7 @@ export function createRouter(deps: RouterDeps) {
     routines: {
       list: authed.routines.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
-        const rows = await deps.prisma.routine.findMany({
-          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
-        });
-        return rows.map(mapRoutine);
+        return listRoutinesDto(deps, context.actor, input.botId);
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -1165,6 +1473,26 @@ export function createRouter(deps: RouterDeps) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
+      create: authed.artifacts.create.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        try {
+          return await createOwnedArtifact(deps, context.actor, input);
+        } catch (error) {
+          if (error instanceof AttachmentValidationError) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
+      }),
+      get: authed.artifacts.get.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        try {
+          return await getOwnedArtifact(deps, context.actor, input);
+        } catch (error) {
+          if (error instanceof IsolationError) throw error;
+          throw error;
+        }
+      }),
     },
     usage: {
       list: authed.usage.list.handler(async ({ context }) => {
@@ -1200,7 +1528,8 @@ export function createRouter(deps: RouterDeps) {
     export: {
       bot: authed.export.bot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.thread) throw new IsolationError();
+        if (!bot.thread || !bot.computer) throw new IsolationError();
+        const homeKey = bot.computer.homeKey;
         const exportContext = {
           operationId: "export",
           traceId: "export",
@@ -1217,7 +1546,7 @@ export function createRouter(deps: RouterDeps) {
           }),
           (async () => {
             const exported: Array<{ path: string; content: string }> = [];
-            for await (const file of deps.home.exportHome(input.botId, exportContext)) {
+            for await (const file of deps.home.exportHome(homeKey, exportContext)) {
               exported.push({
                 path: file.path,
                 content: new TextDecoder().decode(file.content),
@@ -1254,13 +1583,18 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
     },
+    search: {
+      query: authed.search.query.handler(async ({ context, input }) => ({
+        hits: await queryWorkspaceSearch(deps.prisma, context.actor, input.q),
+      })),
+    },
   });
 }
 
 async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<ThreadSnapshot> {
   const bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (!bot.thread) throw new IsolationError();
-  const [messagePage, run, last, home] = await Promise.all([
+  const [messagePage, run, last] = await Promise.all([
     loadMessagePage(deps.prisma, bot.thread.id, undefined, THREAD_MESSAGE_PAGE_SIZE),
     deps.prisma.run.findFirst({
       where: {
@@ -1274,7 +1608,6 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
       orderBy: { seq: "desc" },
       select: { seq: true },
     }),
-    deps.prisma.agentHome.findUnique({ where: { botId }, select: { revision: true } }),
   ]);
   const liveEvents = run
     ? await deps.prisma.event.findMany({
@@ -1319,7 +1652,30 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
           completedAt: run.completedAt?.toISOString() ?? null,
         }
       : null,
-    computer: toComputerStatus(botId, bot.computer, home?.revision ?? null),
+    computer: toComputerStatus(botId, bot.computer),
+  };
+}
+
+async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
+  const [user, cred, settings] = await Promise.all([
+    deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
+    findDefaultModelCredential(deps.prisma, actor),
+    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+  ]);
+  const hasDeployment = Boolean(
+    settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
+  );
+  return {
+    userId: actor.userId,
+    email: user.email,
+    name: user.name,
+    workspaceId: actor.workspaceId,
+    isDeploymentOwner: actor.isDeploymentOwner,
+    needsModel: !cred && !hasDeployment,
+    defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
+    defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
+    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
+    canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
 }
 
@@ -1330,39 +1686,72 @@ async function computerStatus(
 ): Promise<ComputerStatus> {
   const repos = createRepos(deps.prisma);
   let bot = await repos.getBot(actor, botId);
-  if (await expireStaleComputerControl(deps, bot.id, bot.computer)) {
+  if (await expireStaleComputerControl(deps, bot.computer)) {
     bot = await repos.getBot(actor, botId);
   }
-  const home = await deps.prisma.agentHome.findUnique({
-    where: { botId },
-    select: { revision: true },
-  });
-  return toComputerStatus(botId, bot.computer, home?.revision ?? null);
+  return toComputerStatus(botId, bot.computer);
 }
 
 async function expireStaleComputerControl(
   deps: RouterDeps,
-  botId: string,
-  computer: Parameters<typeof hasActiveComputerControl>[0],
+  computer:
+    | (NonNullable<Parameters<typeof hasActiveComputerControl>[0]> & { id: string })
+    | null
+    | undefined,
 ): Promise<boolean> {
   const leaseId = computer?.controlLeaseId;
   if (!leaseId || hasActiveComputerControl(computer)) return false;
-  await expireComputerControl(deps, botId, leaseId).catch(() => undefined);
+  await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
   return true;
+}
+
+async function computerScreenContext(
+  prisma: PrismaClient,
+  actor: Actor,
+  computerId: string,
+  botId: string,
+  operationId: string,
+): Promise<AdapterContext> {
+  const context = computerContext(actor, botId, operationId);
+  const lease = await prisma.computerExecutionLease.findUnique({
+    where: { computerId_botId: { computerId, botId } },
+    select: { runId: true, fence: true, expiresAt: true },
+  });
+  if (!lease || lease.expiresAt.getTime() <= Date.now()) return context;
+  return { ...context, screenLeaseId: screenLeaseIdForRun(lease, lease.runId) };
 }
 
 function toComputerStatus(
   botId: string,
-  computer: { kind: string; state: string; controlHolder: string } | null,
-  homeRevision: string | null,
+  computer: {
+    kind: string;
+    state: string;
+    scope: string;
+    controlHolder: string;
+    controlBotId?: string | null;
+    homeRevision: string;
+  } | null,
 ): ComputerStatus {
+  const state =
+    computer?.state === "suspending"
+      ? "running"
+      : computer?.state === "stopped" ||
+          computer?.state === "booting" ||
+          computer?.state === "running" ||
+          computer?.state === "suspended" ||
+          computer?.state === "error"
+        ? computer.state
+        : "stopped";
   return {
     botId,
+    mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind: (computer?.kind ?? "fake") as ComputerStatus["kind"],
-    state: (computer?.state ?? "stopped") as ComputerStatus["state"],
+    state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
-    screenAvailable: computer?.state === "running" || computer?.state === "booting",
-    homeRevision,
+    controlBotId: computer?.controlBotId ?? null,
+    screenAvailable: state === "running" || state === "booting",
+    homeRevision: computer?.homeRevision ?? null,
+    busyBotName: null,
   };
 }
 
@@ -1395,39 +1784,89 @@ function computerHostFor(
 async function persistModelCredential(
   deps: RouterDeps,
   actor: Actor,
-  input: { provider: string; plaintext: string; label?: string; modelId?: string },
+  input: {
+    provider: string;
+    plaintext: string;
+    label?: string;
+    modelId?: string;
+    signal?: AbortSignal;
+  },
 ) {
+  throwIfAborted(input.signal);
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",
     workspaceId: actor.workspaceId,
     userId: actor.userId,
-    signal: new AbortController().signal,
+    signal: input.signal ?? new AbortController().signal,
   });
-  const secret = await deps.prisma.secret.create({
-    data: {
-      id: stored.id,
-      userId: actor.userId,
-      workspaceId: actor.workspaceId,
-      kind: "model",
-      ciphertext: stored.ciphertext,
-    },
-  });
-  await deps.prisma.userModelCredential.updateMany({
-    where: { userId: actor.userId },
-    data: { isDefault: false },
-  });
-  const cred = await deps.prisma.userModelCredential.create({
-    data: {
-      userId: actor.userId,
-      workspaceId: actor.workspaceId,
-      provider: input.provider,
-      label: input.label ?? input.provider,
-      secretId: secret.id,
-      isDefault: true,
-      defaultModel: input.modelId ?? deps.env.defaultModel,
-    },
-  });
+  throwIfAborted(input.signal);
+  const cred = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        throwIfAborted(input.signal);
+        const existing = await tx.userModelCredential.findFirst({
+          where: {
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+            provider: input.provider,
+          },
+          orderBy: newestModelCredentialOrder,
+        });
+        throwIfAborted(input.signal);
+        const secret = await tx.secret.create({
+          data: {
+            id: stored.id,
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+            kind: "model",
+            ciphertext: stored.ciphertext,
+          },
+        });
+        throwIfAborted(input.signal);
+        await tx.userModelCredential.updateMany({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId },
+          data: { isDefault: false },
+        });
+        throwIfAborted(input.signal);
+        if (!existing) {
+          const created = await tx.userModelCredential.create({
+            data: {
+              userId: actor.userId,
+              workspaceId: actor.workspaceId,
+              provider: input.provider,
+              label: input.label ?? input.provider,
+              secretId: secret.id,
+              isDefault: true,
+              defaultModel: input.modelId ?? deps.env.defaultModel,
+            },
+          });
+          throwIfAborted(input.signal);
+          return created;
+        }
+        const updated = await tx.userModelCredential.update({
+          where: { id: existing.id },
+          data: {
+            label: input.label ?? input.provider,
+            secretId: secret.id,
+            isDefault: true,
+            defaultModel: input.modelId ?? deps.env.defaultModel,
+          },
+        });
+        throwIfAborted(input.signal);
+        const sharedSecret = await tx.userModelCredential.count({
+          where: { id: { not: existing.id }, secretId: existing.secretId },
+        });
+        throwIfAborted(input.signal);
+        if (sharedSecret === 0) {
+          await tx.secret.deleteMany({ where: { id: existing.secretId } });
+          throwIfAborted(input.signal);
+        }
+        return updated;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
   return {
     id: cred.id,
     provider: cred.provider,
@@ -1435,6 +1874,10 @@ async function persistModelCredential(
     hasKey: true,
     isDefault: true,
   };
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw signal.reason ?? new Error("Request cancelled");
 }
 
 function mapRoutine(row: {
@@ -1463,6 +1906,13 @@ function mapRoutine(row: {
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
+  const rows = await deps.prisma.routine.findMany({
+    where: { botId, workspaceId: actor.workspaceId },
+  });
+  return rows.map(mapRoutine);
 }
 
 function withViewOnly(url: string, viewOnly: boolean) {

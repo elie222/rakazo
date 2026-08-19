@@ -12,11 +12,12 @@ const payloadSchemas = {
     routineId: z.string().min(1),
     scheduledFor: z.string().datetime({ offset: true }),
   }),
-  "computer.sleep": z.object({ botId: z.string().min(1) }),
+  "computer.sleep": z.object({ computerId: z.string().min(1) }),
   "computer.control-expire": z.object({
-    botId: z.string().min(1),
+    computerId: z.string().min(1),
     leaseId: z.string().min(1),
   }),
+  "history.compact": z.object({ threadId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -44,12 +45,12 @@ export function routineJobKey(routineId: string): string {
   return `routine:${routineId}`;
 }
 
-export function computerSleepJobKey(botId: string): string {
-  return `computer.sleep:${botId}`;
+export function computerSleepJobKey(computerId: string): string {
+  return `computer.sleep:${computerId}`;
 }
 
-export function computerControlExpireJobKey(botId: string): string {
-  return `computer.control-expire:${botId}`;
+export function computerControlExpireJobKey(computerId: string): string {
+  return `computer.control-expire:${computerId}`;
 }
 
 export function runContinueJob(runId: string): BackgroundJob {
@@ -69,24 +70,36 @@ export function routineWakeupJob(routineId: string, scheduledFor: Date): Backgro
   };
 }
 
-export function computerSleepJob(botId: string, availableAt: Date): BackgroundJob {
+export function computerSleepJob(computerId: string, availableAt: Date): BackgroundJob {
   return {
     name: "computer.sleep",
-    payload: { botId },
+    payload: { computerId },
     availableAt,
-    replaceKey: computerSleepJobKey(botId),
+    replaceKey: computerSleepJobKey(computerId),
   };
 }
 
 export function computerControlExpireJob(
-  botId: string,
+  computerId: string,
   leaseId: string,
   availableAt: Date,
 ): BackgroundJob {
   return {
     name: "computer.control-expire",
-    payload: { botId, leaseId },
+    payload: { computerId, leaseId },
     availableAt,
-    replaceKey: computerControlExpireJobKey(botId),
+    replaceKey: computerControlExpireJobKey(computerId),
+  };
+}
+
+export function historyCompactJobKey(threadId: string): string {
+  return `history.compact:${threadId}`;
+}
+
+export function historyCompactJob(threadId: string): BackgroundJob {
+  return {
+    name: "history.compact",
+    payload: { threadId },
+    replaceKey: historyCompactJobKey(threadId),
   };
 }

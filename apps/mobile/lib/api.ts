@@ -1,3 +1,4 @@
+import type { Bot, ComputerMode, Me, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -111,7 +112,11 @@ export async function deleteAccount(password: string) {
   await clearSessionToken();
 }
 
-export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
+export async function rpc<T>(
+  proc: string,
+  body: unknown = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
   const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
     method: "POST",
     headers: {
@@ -120,28 +125,36 @@ export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
       ...(await authHeaders()),
     },
     body: JSON.stringify({ json: body }),
+    signal: options.signal,
   });
   const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
   if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
   return parsed.json as T;
 }
 
-export type MobileBot = {
-  id: string;
-  name: string;
-  preview: string;
-  title: string;
-  color: string;
-  pinned: boolean;
-  unread: boolean;
-  updatedAt: string;
-  parentBotId?: string | null;
-};
+export type MobileBot = Pick<
+  Bot,
+  | "id"
+  | "name"
+  | "preview"
+  | "title"
+  | "color"
+  | "pinned"
+  | "archivedAt"
+  | "unread"
+  | "updatedAt"
+  | "computerMode"
+> &
+  Partial<Pick<Bot, "parentBotId">>;
 
-export type MobileMe = {
-  name: string;
-  email: string;
-};
+export type MobileMe = Pick<
+  Me,
+  "name" | "email" | "workspaceId" | "defaultProvider" | "defaultModel" | "needsModel"
+>;
+
+export type MobileModel = ModelCatalogEntry;
+
+export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {
   id: string;
@@ -157,9 +170,13 @@ export type MobileMessage = {
     status?: string;
     progress?: string;
     result?: string;
+    answer?: string;
     botId?: string;
     title?: string;
     agentId?: string;
+    artifactId?: string;
+    mimeType?: string;
+    size?: number;
   }>;
 };
 
@@ -170,7 +187,13 @@ export type MobileSnapshot = {
   messages: MobileMessage[];
   olderCursor: number | null;
   run: { status: string } | null;
-  computer: { state: string; controlHolder: string; screenAvailable: boolean };
+  computer: {
+    state: string;
+    controlHolder: string;
+    screenAvailable: boolean;
+    mode: ComputerMode;
+    busyBotName: string | null;
+  };
 };
 
 export type MobileMessagePage = ThreadHistory<MobileMessage>;
@@ -197,7 +220,11 @@ export function blockText(message: MobileMessage) {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
       }
       if (block.kind === "child_bot") {
-        return `${block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+        return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+      }
+      if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
+      if (block.kind === "file") {
+        return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;
       }
       return block.text ?? block.state ?? "";
     })
@@ -265,6 +292,10 @@ export function applyMobileThreadEvent(
   if (event.type === "thread.cleared") {
     return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
   }
+  if (event.type === "run.waiting_input") {
+    if (!prev.run || prev.run.status === "waiting_input") return prev;
+    return { ...prev, run: { ...prev.run, status: "waiting_input" } };
+  }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);
     const previous = prev.messages.find((message) => message.id === progressId);
@@ -311,7 +342,7 @@ export function applyMobileThreadEvent(
       ],
     };
   }
-  if (event.type === "thread.message.created") {
+  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const next: MobileMessage = {
       id: String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`),
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",

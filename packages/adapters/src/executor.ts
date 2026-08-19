@@ -1,8 +1,9 @@
-import { mkdir } from "node:fs/promises";
 import type {
+  AdapterContext,
   AgentHomeStore,
   AgentModelOAuthCredential,
   AgentRuntime,
+  ArtifactStore,
   ComputerRef,
   ConnectorProvider,
   JobPublisher,
@@ -11,29 +12,61 @@ import type {
   NotificationProvider,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   assertTransition,
+  blocksToAgentHistoryText,
   containsSecret,
   createStreamingRedactor,
+  inferAttachmentMimeType,
   isTerminal,
   nextCronDate,
   nextFence,
   redactSecrets,
+  sandboxCommandTimeoutMs,
+  userTurnBlocksForRun,
 } from "@rakazo/core";
-import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@rakazo/db";
-import { builtinAgentTools } from "./builtin-tools.js";
-import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
-import { collectLogIds } from "./composio-connector.js";
-import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
-import { scheduleComputerSleep } from "./computer-idle.js";
-import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import {
-  checkpointAndRecordComputerWorkspace,
-  restoreComputerWorkspace,
-} from "./computer-workspace.js";
-import { resolveAgentHomePath } from "./home.js";
+  createThreadMessage,
+  findDefaultModelCredential,
+  type PrismaClient,
+  parseComputerMode,
+  type ThreadEvents,
+} from "@rakazo/db";
+import { builtinAgentTools } from "./builtin-tools.js";
+import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { collectLogIds } from "./composio-connector.js";
+import { scheduleComputerSleep } from "./computer-idle.js";
+import {
+  acquireComputerExecutionLease,
+  ComputerBusyError,
+  type ComputerExecutionLease,
+  holdComputerExecutionLeaseForTakeover,
+  provisionComputer,
+  releaseComputerExecutionLease,
+  renewComputerExecutionLease,
+  screenLeaseIdForRun,
+} from "./computer-lifecycle.js";
+import { withComputerScreenAvailability } from "./computer-screens.js";
+import {
+  displayBotWorkspacePath,
+  resolveBotWorkspaceCwd,
+  resolveBotWorkspacePath,
+  teamBotWorkspaceDirectory,
+} from "./computer-support.js";
+import { observationToolResult, parseComputerActions } from "./computer-tools.js";
+import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import {
+  COMPACTION_BATCH_SIZE,
+  formatRecalledMemory,
+  HISTORY_WINDOW_SIZE,
+  historyWindowSize,
+  LEGACY_HISTORY_WINDOW_SIZE,
+  shouldEnqueueCompaction,
+} from "./history-compaction.js";
+import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -43,6 +76,16 @@ import {
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
+import {
+  isSupermemoryEnabled,
+  searchSupermemory,
+  supermemoryContainerTag,
+} from "./supermemory-client.js";
+import {
+  attachWorkspaceFileToThread,
+  currentTurnFilesInstruction,
+  materializeCurrentTurnFiles,
+} from "./thread-artifacts.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
 const READ_ONLY_AGENT_TOOLS = new Set([
@@ -53,7 +96,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-const MAX_AGENT_HISTORY_MESSAGES = 200;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -68,6 +110,7 @@ export interface ExecutorDeps {
   sandbox: SandboxProvider;
   memory: MemoryStore;
   home: AgentHomeStore;
+  artifacts?: ArtifactStore;
   connector?: ConnectorProvider;
   secrets: string[];
   secretStore?: EncryptedSecretStore;
@@ -189,18 +232,57 @@ export function createRunExecutor(deps: ExecutorDeps) {
         data: { status: "running", startedAt: current.startedAt ?? new Date() },
       });
       if (started.count !== 1) return;
-      const attempt = await deps.prisma.attempt.create({
-        data: { runId, fence, status: "running" },
+      const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
+        where: { id: run.botId },
+        select: { computerId: true, computerSwitching: true },
       });
+      if (!leaseTarget.computerId) throw new Error("Bot has no computer");
+      if (leaseTarget.computerSwitching) {
+        await requeueComputerRun(deps, runId, workerId, fence);
+        return;
+      }
+      let computerLease: ComputerExecutionLease | null = null;
+      try {
+        computerLease = await acquireComputerExecutionLease(deps.prisma, {
+          computerId: leaseTarget.computerId,
+          runId,
+          botId: run.botId,
+          resumeHeldLease: resumeFromTakeover,
+        });
+      } catch (error) {
+        if (!(error instanceof ComputerBusyError)) throw error;
+        await requeueComputerRun(deps, runId, workerId, fence);
+        return;
+      }
+      const attempt = await deps.prisma.attempt
+        .create({
+          data: { runId, fence, status: "running" },
+        })
+        .catch(async (error) => {
+          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+          throw error;
+        });
 
       let leaseValid = true;
       let lastLeaseCheckAt = 0;
+      let retainComputerLease = false;
+      let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      let runAbortController: AbortController | null = null;
       const heartbeat = setInterval(() => {
-        void renewRunLease(deps, runId, workerId, fence)
-          .then((renewed) => {
-            if (!renewed) leaseValid = false;
+        void Promise.all([
+          renewRunLease(deps, runId, workerId, fence),
+          renewComputerExecutionLease(deps.prisma, computerLease),
+        ])
+          .then(([runRenewed, computerRenewed]) => {
+            if (!runRenewed || !computerRenewed) {
+              leaseValid = false;
+              runAbortController?.abort();
+            }
           })
-          .catch(() => undefined);
+          .catch(() => {
+            leaseValid = false;
+            runAbortController?.abort();
+          });
       }, 60_000);
       heartbeat.unref?.();
 
@@ -208,24 +290,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
       try {
         const [bot, thread, messages, task, connectedPlugins, credential, settings] =
           await Promise.all([
-            deps.prisma.bot.findUniqueOrThrow({ where: { id: run.botId } }),
+            deps.prisma.bot.findUniqueOrThrow({
+              where: { id: run.botId },
+              include: { computer: true },
+            }),
             deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
             deps.prisma.message.findMany({
               where: { threadId: run.threadId },
               orderBy: { seq: "desc" },
-              take: MAX_AGENT_HISTORY_MESSAGES,
-              select: { role: true, blocks: true },
+              take: LEGACY_HISTORY_WINDOW_SIZE,
+              select: { role: true, runId: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
             deps.prisma.connection.findMany({
               where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
               select: { provider: true, displayName: true },
             }),
-            deps.prisma.userModelCredential.findFirst({
-              where: { userId: run.userId, workspaceId: run.workspaceId, isDefault: true },
-            }),
+            findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
+        runAbortController = new AbortController();
+        if (!leaseValid) runAbortController.abort();
         const context = {
           operationId: runId,
           traceId: runId,
@@ -233,7 +318,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          signal: new AbortController().signal,
+          screenLeaseId: screenLeaseIdForRun(computerLease, runId, fence),
+          signal: runAbortController.signal,
           connectedProviders: connectedPlugins.map((row) => row.provider),
         };
 
@@ -247,13 +333,43 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const history = [...messages].reverse().map((m) => ({
+        let history = [...messages].reverse().map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
             | "assistant"
             | "system",
-          content: blocksToText(m.blocks as MessageBlock[]),
+          content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
         }));
+        const turnBlocks = userTurnBlocksForRun(
+          run.trigger,
+          runId,
+          messages.map((message) => ({
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          })),
+        );
+        const currentTurnImages = await loadCurrentTurnImages(deps, turnBlocks, context);
+        const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
+        const supermemoryEnabled = isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY);
+        let recalledMemory = "";
+        let recallSucceeded = false;
+        if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
+          const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
+          if (recalled.ok) {
+            recallSucceeded = true;
+            recalledMemory = formatRecalledMemory(recalled.results);
+          } else {
+            console.error("supermemory recall failed", recalled.error);
+          }
+        }
+        history = history.slice(
+          -historyWindowSize({
+            supermemoryEnabled,
+            compacted: thread.historyCompactedUpToSeq != null,
+            recallSucceeded,
+          }),
+        );
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -262,7 +378,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
-        const computer = await ensureComputer(deps, bot.id, context);
+        if (!bot.computer) throw new Error("Bot has no computer");
+        const storedComputer = bot.computer;
+        const computerMode = parseComputerMode(storedComputer.scope);
+        const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+        screenRelease = { computer, context };
+        scheduleComputerSleep(deps.jobs, storedComputer.id);
+        const currentTurnFiles = deps.artifacts
+          ? await materializeCurrentTurnFiles(
+              { prisma: deps.prisma, artifacts: deps.artifacts, sandbox: deps.sandbox },
+              turnBlocks,
+              { context, computer, computerMode },
+            )
+          : [];
+        const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
         const builtins = graphical
@@ -275,8 +404,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
         ];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Another user may interact with the same desktop while you run, so re-observe when it may have changed."
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+        const workspaceInstruction =
+          computerMode === "team"
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
+            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
 
         let assembled = "";
         let pendingProgress = "";
@@ -309,45 +442,59 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            if (name !== "spawn_bot" && name !== "archive_bot" && name !== "delete_bot") {
+              throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            }
           }
           const finish = async (result: unknown) => {
             if (applied) await completeEffect(deps, applied.effect.id, result);
             return result;
           };
           if (name === "computer_observe") {
-            return formatObservation(await deps.sandbox.observe(computer, context));
+            return computerScreenToolResult(async () =>
+              formatObservation(await deps.sandbox.observe(computer, context)),
+            );
           }
           if (name === "computer_act") {
-            const result = await deps.sandbox.act(
-              computer,
-              {
-                actions: parseComputerActions(args.actions),
-                observe: args.observe !== false,
-                settleMs: Number(args.settle_ms ?? 350),
-              },
-              context,
-            );
-            return finish(
-              result.observation
+            return computerScreenToolResult(async () => {
+              const result = await deps.sandbox.act(
+                computer,
+                {
+                  actions: parseComputerActions(args.actions),
+                  observe: args.observe !== false,
+                  settleMs: Number(args.settle_ms ?? 350),
+                },
+                context,
+              );
+              return result.observation
                 ? formatObservation(
                     result.observation,
                     `completed ${result.completed} computer action${result.completed === 1 ? "" : "s"}`,
                   )
-                : { ok: true, completed: result.completed },
-            );
+                : { ok: true, completed: result.completed };
+            }, finish);
           }
           if (name === "list_files") {
+            const requestedPath = String(args.path ?? "");
+            const entries = await deps.sandbox.listFiles(
+              computer,
+              resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
+              context,
+            );
             return {
-              path: String(args.path ?? ""),
-              entries: await deps.sandbox.listFiles(computer, String(args.path ?? ""), context),
+              path: requestedPath,
+              entries: entries.map((entry) => ({
+                ...entry,
+                path: displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+              })),
             };
           }
           if (name === "read_file") {
             const filePath = String(args.path ?? "");
+            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(computer, filePath, context, {
+              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
                 maxBytes: MAX_MODEL_FILE_BYTES,
               });
             } catch (error) {
@@ -383,14 +530,61 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const content = String(args.content ?? "");
             await deps.sandbox.writeFile(
               computer,
-              { path: filePath, content: new TextEncoder().encode(content) },
+              {
+                path: resolveBotWorkspacePath(computerMode, bot.id, filePath),
+                content: new TextEncoder().encode(content),
+              },
               context,
             );
             return finish({ ok: true, path: filePath });
           }
+          if (name === "attach_file") {
+            const filePath = String(args.path ?? "");
+            if (!deps.artifacts) {
+              return finish({ error: "artifact storage unavailable", path: filePath });
+            }
+            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
+            let bytes: Uint8Array;
+            try {
+              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
+                maxBytes: ATTACHMENT_MAX_BYTES,
+              });
+            } catch {
+              return finish({ error: "file not found or unreadable", path: filePath });
+            }
+            const mimeType = inferAttachmentMimeType(filePath);
+            if (!mimeType) {
+              return finish({ error: "unsupported attachment type", path: filePath });
+            }
+            try {
+              const attached = await attachWorkspaceFileToThread(
+                { prisma: deps.prisma, artifacts: deps.artifacts },
+                {
+                  workspaceId: run.workspaceId,
+                  userId: run.userId,
+                  botId: bot.id,
+                  runId: run.id,
+                  filePath,
+                  bytes,
+                  operationId: executionId,
+                },
+              );
+              await publishMessage(deps, run, "bot", [attached.block]);
+              return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
+            } catch (error) {
+              return finish({
+                error: error instanceof Error ? error.message : "could not attach file",
+                path: filePath,
+              });
+            }
+          }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
-            const cwd = args.cwd ? String(args.cwd) : undefined;
+            const cwd = resolveBotWorkspaceCwd(
+              computerMode,
+              bot.id,
+              args.cwd ? String(args.cwd) : undefined,
+            );
             const result = await runSandboxCommand(
               deps.sandbox,
               computer,
@@ -401,43 +595,51 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(result);
           }
           if (name === "open_path") {
-            const result = await deps.sandbox.act(
-              computer,
-              {
-                actions: [{ kind: "open", path: String(args.path ?? "") }],
-                observe: true,
-                settleMs: 600,
-              },
-              context,
-            );
-            return finish(
-              result.observation
-                ? formatObservation(result.observation, `opened ${String(args.path ?? "")}`)
-                : { ok: true },
-            );
+            const requestedPath = String(args.path ?? "");
+            return computerScreenToolResult(async () => {
+              const result = await deps.sandbox.act(
+                computer,
+                {
+                  actions: [
+                    {
+                      kind: "open",
+                      path: /^https?:\/\//i.test(requestedPath)
+                        ? requestedPath
+                        : resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
+                    },
+                  ],
+                  observe: true,
+                  settleMs: 600,
+                },
+                context,
+              );
+              return result.observation
+                ? formatObservation(result.observation, `opened ${requestedPath}`)
+                : { ok: true };
+            }, finish);
           }
           if (name === "launch_app") {
             const application = String(args.application ?? "");
-            const result = await deps.sandbox.act(
-              computer,
-              {
-                actions: [
-                  {
-                    kind: "launch",
-                    application,
-                    uri: args.uri ? String(args.uri) : undefined,
-                  },
-                ],
-                observe: true,
-                settleMs: 600,
-              },
-              context,
-            );
-            return finish(
-              result.observation
+            return computerScreenToolResult(async () => {
+              const result = await deps.sandbox.act(
+                computer,
+                {
+                  actions: [
+                    {
+                      kind: "launch",
+                      application,
+                      uri: args.uri ? String(args.uri) : undefined,
+                    },
+                  ],
+                  observe: true,
+                  settleMs: 600,
+                },
+                context,
+              );
+              return result.observation
                 ? formatObservation(result.observation, `launched ${application}`)
-                : { ok: true },
-            );
+                : { ok: true };
+            }, finish);
           }
           if (name === "remember") {
             await deps.memory.commit(
@@ -469,33 +671,39 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
               },
               runId,
+              spawnKey: executionId,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
             });
             if ("error" in spawned) return finish(spawned);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "child_bot",
-                botId: spawned.botId,
-                name: spawned.name,
-                title: spawned.title,
-                status: "created",
-              },
-            ]);
-            await deps.events.append({
-              workspaceId: run.workspaceId,
-              threadId: thread.id,
-              botId: bot.id,
-              runId: run.id,
-              type: "bot.spawned",
-              payload: { childBotId: spawned.botId, name: spawned.name },
-            });
-            return finish(spawned);
+            await finish(spawned);
+            try {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "child_bot",
+                  botId: spawned.botId,
+                  name: spawned.name,
+                  title: spawned.title,
+                  status: "created",
+                },
+              ]);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.spawned",
+                payload: { childBotId: spawned.botId, name: spawned.name },
+              });
+            } catch (error) {
+              console.error("spawned bot notification", error);
+            }
+            return spawned;
           }
-          if (name === "delete_bot") {
-            const removed = await deleteSpawnedBot(
+          if (name === "archive_bot" || name === "delete_bot") {
+            const archived = await archiveSpawnedBot(
               deps,
               {
                 spawnedByBotId: bot.id,
@@ -510,24 +718,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               context,
             );
-            if ("error" in removed) return finish(removed);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "child_bot",
-                botId: removed.botId,
-                name: removed.name,
-                status: "deleted",
-              },
-            ]);
-            await deps.events.append({
-              workspaceId: run.workspaceId,
-              threadId: thread.id,
-              botId: bot.id,
-              runId: run.id,
-              type: "bot.deleted",
-              payload: { childBotId: removed.botId, name: removed.name },
-            });
-            return finish(removed);
+            if ("error" in archived) return finish(archived);
+            await finish(archived);
+            try {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "child_bot",
+                  botId: archived.botId,
+                  name: archived.name,
+                  status: "archived",
+                },
+              ]);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.archived",
+                payload: { childBotId: archived.botId, name: archived.name },
+              });
+            } catch (error) {
+              console.error("archived bot notification", error);
+            }
+            return archived;
           }
           if (deps.connector) {
             let result: unknown = { error: `unknown tool ${name}` };
@@ -567,18 +780,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               threadId: thread.id,
               runId,
-              prompt: task.prompt,
+              prompt: [task.prompt, attachedFilesPrompt].filter(Boolean).join("\n\n"),
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
+                recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
+                workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
-                "delete_bot permanently destroys a bot this bot created, and only that bot. Only delete when the user asked or that bot is finished and unused. confirm_name must exactly match its name.",
+                "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
-              ].join("\n\n"),
+              ]
+                .filter((instruction): instruction is string => Boolean(instruction))
+                .join("\n\n"),
               history,
+              currentTurnImages,
               tools,
               model: {
                 provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
@@ -644,20 +863,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
               const safeDetail = event.detail
                 ? redactSecrets(event.detail, runSecrets)
                 : event.detail;
-              await publishMessage(deps, run, "bot", [
-                { kind: "ask", text: safeText, detail: safeDetail },
-              ]);
-              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
-              const paused = await deps.prisma.run.updateMany({
-                where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-                data: { status: "waiting_input", leaseOwner: null, leaseExpiresAt: null },
+              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              const paused = await deps.events.pauseRunForInput({
+                workspaceId: run.workspaceId,
+                threadId: run.threadId,
+                botId: run.botId,
+                runId,
+                attemptId: attempt.id,
+                leaseOwner: workerId,
+                leaseFence: fence,
+                blocks: [{ kind: "ask", text: safeText, detail: safeDetail, status: "pending" }],
               });
-              if (paused.count !== 1) return;
-              await deps.prisma.attempt.update({
-                where: { id: attempt.id },
-                data: { status: "waiting_input", finishedAt: new Date() },
-              });
-              await clearRunProgress(deps, runId);
+              if (!paused) return;
               await notifyRun(deps, run, {
                 kind: "help",
                 title: `${bot.name} needs an answer`,
@@ -686,20 +903,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 payload: { reason: safeReason },
               });
               await deps.prisma.computer.updateMany({
-                where: { botId: bot.id },
+                where: { id: storedComputer.id },
                 data: {
                   state: "running",
                   controlHolder: "none",
                   controlLeaseId: null,
                   controlLeaseExpiresAt: null,
+                  controlBotId: null,
                 },
               });
-              await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
+                throw new Error("Computer lease expired before takeover");
+              }
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
                 data: { status: "waiting_takeover", leaseOwner: null, leaseExpiresAt: null },
               });
               if (paused.count !== 1) return;
+              retainComputerLease = true;
               await deps.prisma.attempt.update({
                 where: { id: attempt.id },
                 data: { status: "waiting_takeover", finishedAt: new Date() },
@@ -779,7 +1001,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             for (const file of turn.files ?? []) {
               await deps.sandbox.writeFile(
                 computer,
-                { path: file.path, content: new TextEncoder().encode(file.content) },
+                {
+                  path: resolveBotWorkspacePath(computerMode, bot.id, file.path),
+                  content: new TextEncoder().encode(file.content),
+                },
                 context,
               );
             }
@@ -806,7 +1031,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context);
+          await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
           terminalCheckpointComplete = true;
 
           const text = redactSecrets(assembled || "done.", runSecrets);
@@ -836,11 +1061,37 @@ export function createRunExecutor(deps: ExecutorDeps) {
               threadId: thread.id,
             });
           }
+          // Last, and never fatal: the run is already finalized, so a failure here must not reach
+          // the catch block below, where a second finalizeRun would match no rows and silently
+          // skip the completion notification.
+          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+            try {
+              const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
+                where: { id: thread.id },
+                select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
+              });
+              if (
+                shouldEnqueueCompaction(
+                  updatedThread.nextMessageSeq,
+                  updatedThread.historyCompactedUpToSeq,
+                  HISTORY_WINDOW_SIZE,
+                  COMPACTION_BATCH_SIZE,
+                )
+              ) {
+                await deps.jobs.enqueue(historyCompactJob(thread.id));
+              }
+            } catch (error) {
+              console.error("history.compact enqueue failed", error);
+            }
+          }
         } catch (error) {
           if (!terminalCheckpointComplete) {
-            await checkpointAndRecordComputerWorkspace(deps, bot.id, computer, context).catch(
-              () => undefined,
-            );
+            await checkpointAndRecordComputerWorkspace(
+              deps,
+              storedComputer,
+              computer,
+              context,
+            ).catch(() => undefined);
           }
           const message = redactSecrets(
             error instanceof Error ? error.message : String(error),
@@ -870,18 +1121,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
       } catch (setupError) {
-        console.error(
-          "run setup failed",
-          redactSecrets(
-            setupError instanceof Error ? setupError.message : String(setupError),
-            runSecrets,
-          ),
-        );
+        const computerBusy = setupError instanceof ComputerBusyError;
+        if (!computerBusy) {
+          console.error(
+            "run setup failed",
+            redactSecrets(
+              setupError instanceof Error ? setupError.message : String(setupError),
+              runSecrets,
+            ),
+          );
+        }
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: {
             status: "queued",
-            error: "Run setup failed; retrying",
+            error: computerBusy ? null : "Run setup failed; retrying",
             leaseOwner: null,
             leaseExpiresAt: null,
           },
@@ -895,10 +1149,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
               finishedAt: new Date(),
             },
           });
+          if (computerBusy) {
+            await deps.jobs.enqueue({
+              ...runContinueJob(runId),
+              availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+            });
+            return;
+          }
           throw new Error("Run setup failed; retrying");
         }
       } finally {
         clearInterval(heartbeat);
+        if (!retainComputerLease) {
+          if (screenRelease) {
+            await deps.sandbox
+              .releaseScreen?.(screenRelease.computer, screenRelease.context)
+              .catch(() => undefined);
+          }
+          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+        }
         await deps.prisma.attempt
           .updateMany({
             where: { id: attempt.id, status: "running" },
@@ -908,6 +1177,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
   };
+}
+
+async function computerScreenToolResult(
+  work: () => Promise<unknown>,
+  finish?: (result: unknown) => Promise<unknown>,
+) {
+  const result = await withComputerScreenAvailability(work);
+  return finish ? finish(result) : result;
 }
 
 async function notifyRun(
@@ -925,7 +1202,9 @@ async function notifyRun(
       botId: run.botId,
       signal: new AbortController().signal,
     })
-    .catch(() => undefined);
+    .catch((error) => {
+      console.error("run notification", error);
+    });
 }
 
 async function renewRunLease(
@@ -939,6 +1218,27 @@ async function renewRunLease(
     data: { leaseExpiresAt: new Date(Date.now() + 5 * 60_000) },
   });
   return renewed.count === 1;
+}
+
+function computerRetryDelay(fence: number): number {
+  return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+async function requeueComputerRun(
+  deps: ExecutorDeps,
+  runId: string,
+  workerId: string,
+  fence: number,
+): Promise<void> {
+  const released = await deps.prisma.run.updateMany({
+    where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+    data: { status: "queued", error: null, leaseOwner: null, leaseExpiresAt: null },
+  });
+  if (released.count !== 1) return;
+  await deps.jobs.enqueue({
+    ...runContinueJob(runId),
+    availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+  });
 }
 
 async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
@@ -1016,76 +1316,6 @@ async function completeEffect(deps: ExecutorDeps, effectId: string, result: unkn
   });
 }
 
-async function ensureComputer(
-  deps: ExecutorDeps,
-  botId: string,
-  context: {
-    operationId: string;
-    traceId: string;
-    workspaceId: string;
-    userId: string;
-    botId?: string;
-    runId?: string;
-    signal: AbortSignal;
-  },
-): Promise<ComputerRef> {
-  const homePath = resolveAgentHomePath(deps.home, botId, deps.dataDir ?? "./data");
-  await mkdir(homePath, { recursive: true });
-  let existing = await deps.prisma.computer.findUnique({ where: { botId } });
-  if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
-    await expireComputerControl(deps, botId, existing.controlLeaseId);
-    existing = await deps.prisma.computer.findUnique({ where: { botId } });
-    if (existing?.controlLeaseId && !hasActiveComputerControl(existing)) {
-      throw new Error("computer control revocation is still in progress");
-    }
-  }
-  await deps.prisma.computer.updateMany({
-    where: { botId },
-    data: { state: "booting" },
-  });
-  let provisioned: ComputerRef | undefined;
-  try {
-    const ref = await deps.sandbox.provision(
-      {
-        botId,
-        homePath,
-        providerRef: existing?.providerRef ?? undefined,
-        providerKind: existing?.kind as ComputerRef["kind"] | undefined,
-      },
-      context,
-    );
-    provisioned = ref;
-    const replacement =
-      ref.fresh === true ||
-      !existing?.providerRef ||
-      existing.providerRef !== ref.providerRef ||
-      existing.kind !== ref.kind;
-    if (replacement) await restoreComputerWorkspace(deps.home, deps.sandbox, botId, ref, context);
-    const activeControl = hasActiveComputerControl(existing);
-    await deps.prisma.computer.updateMany({
-      where: { botId },
-      data: {
-        state: "running",
-        providerRef: ref.providerRef,
-        kind: ref.kind,
-        controlHolder: activeControl ? "user" : "bot",
-        ...(!activeControl ? { controlLeaseId: null, controlLeaseExpiresAt: null } : {}),
-      },
-    });
-    scheduleComputerSleep(deps.jobs, botId);
-    return ref;
-  } catch (error) {
-    if (provisioned?.fresh) {
-      await deps.sandbox.destroy(provisioned, context).catch(() => undefined);
-    }
-    await deps.prisma.computer.updateMany({
-      where: { botId },
-      data: { state: "error" },
-    });
-    throw error;
-  }
-}
-
 async function runSandboxCommand(
   sandbox: SandboxProvider,
   computer: ComputerRef,
@@ -1104,7 +1334,11 @@ async function runSandboxCommand(
   let stdout = "";
   let stderr = "";
   let code = 0;
-  for await (const event of sandbox.execute(computer, { argv, cwd }, context)) {
+  for await (const event of sandbox.execute(
+    computer,
+    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
+    context,
+  )) {
     if (event.type === "stdout") stdout += event.data;
     if (event.type === "stderr") stderr += event.data;
     if (event.type === "exit") code = event.code;
@@ -1203,11 +1437,46 @@ async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Pr
   }
 }
 
-function blocksToText(blocks: MessageBlock[]): string {
-  return blocks
-    .map((block) => {
-      if ("text" in block && block.text) return block.text;
-      return JSON.stringify(block);
-    })
-    .join("\n");
+async function loadCurrentTurnImages(
+  deps: ExecutorDeps,
+  blocks: MessageBlock[] | undefined,
+  context: {
+    operationId: string;
+    traceId: string;
+    workspaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+) {
+  if (!deps.artifacts || !blocks?.length) return undefined;
+  const imageBlocks = blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "image" }> => block.kind === "image",
+  );
+  if (!imageBlocks.length) return undefined;
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: imageBlocks.map((block) => block.artifactId) },
+      workspaceId: context.workspaceId,
+      botId: context.botId,
+    },
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const images: NonNullable<import("@rakazo/adapter-kit").AgentRunRequest["currentTurnImages"]> =
+    [];
+
+  for (const block of imageBlocks) {
+    const row = byId.get(block.artifactId);
+    if (!row || !isAttachmentImageMimeType(block.mimeType)) continue;
+    const bytes = await deps.artifacts.get(row.storageKey, context);
+    images.push({
+      name: block.name,
+      mimeType: block.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      data: bytes,
+    });
+  }
+
+  return images.length ? images : undefined;
 }

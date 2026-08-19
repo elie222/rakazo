@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 let cachedCatalog: ConnectionCatalogItem[] = [];
+type CatalogView = "all" | "connected";
 
 function markConnected(items: ConnectionCatalogItem[], slug: string, connected: boolean) {
   return items.map((entry) => (entry.slug === slug ? { ...entry, connected } : entry));
@@ -11,6 +12,7 @@ function markConnected(items: ConnectionCatalogItem[], slug: string, connected: 
 
 export function PluginsOverlay({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<CatalogView>("all");
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>(cachedCatalog);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,12 +35,13 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return catalog;
-    return catalog.filter(
+    const scoped = view === "connected" ? catalog.filter((item) => item.connected) : catalog;
+    if (!needle) return scoped;
+    return scoped.filter(
       (item) =>
         item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle),
     );
-  }, [catalog, query]);
+  }, [catalog, query, view]);
 
   function setItemConnected(slug: string, connected: boolean) {
     cachedCatalog = markConnected(cachedCatalog, slug, connected);
@@ -100,9 +103,7 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between px-8 pt-7">
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Plugins</div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {loading ? "Loading catalog…" : `${catalog.length} apps`}
-            </p>
+            {loading ? <p className="mt-1 text-[13.5px] text-[#7A7A80]">Loading catalog…</p> : null}
           </div>
           <button
             type="button"
@@ -121,10 +122,38 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
             className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
           />
         </div>
-        <div className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+        <div role="tablist" aria-label="Plugin views" className="flex gap-1 px-8 pt-4">
+          {(["all", "connected"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              aria-selected={view === option}
+              aria-controls="plugin-list"
+              onClick={() => setView(option)}
+              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                view === option
+                  ? "bg-[#2C2C30] text-[#F1F1F2]"
+                  : "text-[#7A7A80] hover:text-[#C8C8CC]"
+              }`}
+            >
+              {option === "all" ? "All" : "Connected"}
+            </button>
+          ))}
+        </div>
+        <div
+          id="plugin-list"
+          role="tabpanel"
+          className="rk-scroll flex-1 overflow-y-auto px-8 py-6"
+        >
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {!loading && catalog.length === 0 ? (
             <p className="text-[#6C6C70]">Composio is not configured on this deployment.</p>
+          ) : null}
+          {!loading && catalog.length > 0 && view === "connected" && visible.length === 0 ? (
+            <p className="text-[#6C6C70]">
+              {query.trim() ? "No connected apps match your search." : "No connected apps yet."}
+            </p>
           ) : null}
           {visible.map((item) => (
             <div key={item.slug} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">

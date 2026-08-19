@@ -5,6 +5,7 @@ import {
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { toComputerRef } from "./computer-support.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
 
@@ -34,11 +35,11 @@ export function hasActiveComputerControl(
 
 export function scheduleComputerControlExpiry(
   jobs: JobPublisher,
-  botId: string,
+  computerId: string,
   leaseId: string,
   expiresAt: Date,
 ): Promise<void> {
-  return jobs.enqueue(computerControlExpireJob(botId, leaseId, expiresAt));
+  return jobs.enqueue(computerControlExpireJob(computerId, leaseId, expiresAt));
 }
 
 export async function expireComputerControl(
@@ -48,22 +49,29 @@ export async function expireComputerControl(
     jobs: JobPublisher;
     events: ThreadEvents;
   },
-  botId: string,
+  computerId: string,
   leaseId: string,
   now = new Date(),
 ): Promise<boolean> {
-  const computer = await deps.prisma.computer.findUnique({ where: { botId } });
+  const computer = await deps.prisma.computer.findUnique({ where: { id: computerId } });
   if (!computer || computer.controlLeaseId !== leaseId) return false;
+  const botId = computer.controlBotId;
+  if (!botId) return false;
 
   if (computer.controlLeaseExpiresAt && computer.controlLeaseExpiresAt.getTime() > now.getTime()) {
-    await scheduleComputerControlExpiry(deps.jobs, botId, leaseId, computer.controlLeaseExpiresAt);
+    await scheduleComputerControlExpiry(
+      deps.jobs,
+      computer.id,
+      leaseId,
+      computer.controlLeaseExpiresAt,
+    );
     return false;
   }
 
   // Deny API input before touching the provider. Retaining the lease ID makes a
   // failed provider revocation recoverable by the job retry or reconciler.
   const claimed = await deps.prisma.computer.updateMany({
-    where: { botId, controlLeaseId: leaseId },
+    where: { id: computer.id, controlLeaseId: leaseId },
     data: { controlHolder: "none" },
   });
   if (claimed.count !== 1) return false;
@@ -77,21 +85,12 @@ export async function expireComputerControl(
       botId,
       signal: new AbortController().signal,
     };
-    await deps.sandbox.setScreenControl?.(
-      {
-        id: computer.providerRef,
-        botId,
-        kind: computer.kind as "docker" | "e2b" | "desktop" | "fake",
-        providerRef: computer.providerRef,
-      },
-      false,
-      context,
-      leaseId,
-    );
+    await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
   }
 
   return deps.events.finalizeComputerControlRelease({
     workspaceId: computer.workspaceId,
+    computerId: computer.id,
     botId,
     leaseId,
     holder: "none",

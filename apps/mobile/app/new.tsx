@@ -1,6 +1,8 @@
+import type { ComputerMode } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
 
 export default function NewBot() {
@@ -8,6 +10,7 @@ export default function NewBot() {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -34,6 +37,7 @@ export default function NewBot() {
         description,
         instructions: description,
         notifyOnFinish: true,
+        computerMode,
       });
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
     } catch (err) {
@@ -110,6 +114,7 @@ export default function NewBot() {
             textAlignVertical: "top",
           }}
         />
+        <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         {error ? <Text style={{ color: "#E65707", marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void create()}

@@ -250,6 +250,19 @@ describe("mobile thread event reduction", () => {
     expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
   });
 
+  it("applies the durable waiting-input run transition", () => {
+    const initial: MobileSnapshot = { ...snapshot(), run: { status: "running" } };
+    const waiting = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      runId: "run-1",
+    });
+
+    expect(waiting?.run?.status).toBe("waiting_input");
+    expect(applyMobileThreadEvent(waiting, { type: "run.waiting_input", runId: "run-1" })).toBe(
+      waiting,
+    );
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
@@ -275,7 +288,13 @@ function snapshot(
     messages,
     olderCursor,
     run: null,
-    computer: { state: "running", controlHolder: "bot", screenAvailable: true },
+    computer: {
+      state: "running",
+      controlHolder: "bot",
+      screenAvailable: true,
+      mode: "team",
+      busyBotName: null,
+    },
   };
 }
 

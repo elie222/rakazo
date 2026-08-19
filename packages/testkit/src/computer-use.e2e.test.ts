@@ -69,11 +69,15 @@ describeLive("real model and E2B computer journey", () => {
       notifyOnFinish: false,
     });
     await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
-    const stored = await handles.prisma.computer.findUniqueOrThrow({ where: { botId: bot.id } });
+    const storedBot = await handles.prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    const stored = storedBot.computer!;
     computer = {
       id: stored.providerRef!,
       providerRef: stored.providerRef!,
-      botId: bot.id,
+      botId: stored.homeKey,
       kind: "e2b",
     };
     await installVisualFixture(handles.sandbox, computer);
@@ -138,14 +142,16 @@ describeLive("real model and E2B computer journey", () => {
     const originalRef = computer.providerRef;
     await handles.sandbox.destroy(computer, testContext(bot.id));
     await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
-    const replacement = await handles.prisma.computer.findUniqueOrThrow({
-      where: { botId: bot.id },
+    const replacementBot = await handles.prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
     });
+    const replacement = replacementBot.computer!;
     expect(replacement.providerRef).not.toBe(originalRef);
     computer = {
       id: replacement.providerRef!,
       providerRef: replacement.providerRef!,
-      botId: bot.id,
+      botId: replacement.homeKey,
       kind: "e2b",
     };
     const restored = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {

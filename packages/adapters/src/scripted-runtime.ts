@@ -149,6 +149,29 @@ export function inferScript(
     ];
   }
   if (
+    lower.includes("observe your screen") ||
+    lower.includes("look at your screen") ||
+    lower.includes("use your screen")
+  ) {
+    const typed = /type\s+([A-Za-z0-9._-]+)/i.exec(prompt)?.[1] ?? "ready";
+    return [
+      {
+        assistant: "using my screen now.",
+        toolCalls: [
+          { name: "computer_observe", args: {} },
+          {
+            name: "computer_act",
+            args: {
+              actions: [{ kind: "type", text: typed }],
+              observe: true,
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  if (
     lower.includes("delete the bot named") ||
     lower.includes("delete the child bot") ||
     lower.includes("delete child")
@@ -156,8 +179,8 @@ export function inferScript(
     const name = namedBot(prompt) ?? "Scout";
     return [
       {
-        assistant: "removing that bot permanently.",
-        toolCalls: [{ name: "delete_bot", args: { confirm_name: name } }],
+        assistant: "archiving that bot.",
+        toolCalls: [{ name: "archive_bot", args: { confirm_name: name } }],
         complete: true,
       },
     ];
@@ -210,17 +233,29 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("attach") && (lower.includes("thread") || lower.includes("into the thread"))) {
+    const said = /says?\s+(.+)$/i.exec(prompt)?.[1]?.replace(/[.]+$/, "") ?? prompt;
+    const content = `${said.trim()}\n`;
+    const filePath =
+      /(?:called|named|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ?? "notes/result.txt";
+    return [
+      { assistant: "writing that into my home and attaching it to the thread." },
+      { toolCalls: [{ name: "write_file", args: { path: filePath, content } }] },
+      { toolCalls: [{ name: "attach_file", args: { path: filePath } }], complete: true },
+    ];
+  }
   if (
     lower.includes("write") &&
     (lower.includes("file") || lower.includes("home") || lower.includes("note"))
   ) {
     const said = /says?\s+(.+)$/i.exec(prompt)?.[1]?.replace(/[.]+$/, "") ?? prompt;
     const content = `${said.trim()}\n`;
+    const filePath =
+      /(?:called|named)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ?? "notes/result.txt";
     return [
       { assistant: "writing that into my home now." },
       {
-        toolCalls: [{ name: "write_file", args: { path: "notes/result.txt", content } }],
-        files: [{ path: "notes/result.txt", content }],
+        toolCalls: [{ name: "write_file", args: { path: filePath, content } }],
         complete: true,
       },
     ];

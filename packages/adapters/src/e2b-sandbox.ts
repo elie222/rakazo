@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { Sandbox } from "@e2b/desktop";
+import { setTimeout as delay } from "node:timers/promises";
+import { Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
@@ -16,7 +17,9 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { sandboxIdleMs } from "./computer-idle.js";
+import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
@@ -25,6 +28,28 @@ import {
   shellQuote,
   workspacePath,
 } from "./computer-support.js";
+import {
+  PORTABLE_BROWSER_STOP_COMMAND,
+  PORTABLE_TRANSFER_BATCH_BYTES,
+  shouldSkipPortableWorkspaceFile,
+} from "./computer-workspace.js";
+import {
+  allocateExtraDisplayCommand,
+  ensureExtraDisplayCommand,
+  extraDisplayActionCommand,
+  extraDisplayControlStartCommand,
+  extraDisplayControlStopCommand,
+  extraDisplayInputCommand,
+  extraDisplayLayout,
+  observeExtraDisplayCommand,
+  parseAllocatedExtraDisplay,
+  parseExtraDisplayObservation,
+  parseExtraDisplayViewPassword,
+  parseReleasedExtraDisplay,
+  primaryStreamCleanupCommand,
+  releaseExtraDisplayCommand,
+  screenControlKey,
+} from "./extra-displays.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
@@ -73,6 +98,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
   private readonly lastTouchedAt = new Map<string, number>();
   private readonly streamReady = new Set<string>();
+  private readonly streamStarts = new Map<string, Promise<void>>();
   private readonly controlStreams = new Map<string, { password: string; controlToken: string }>();
 
   constructor(
@@ -91,6 +117,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         snapshots: true,
         takeover: true,
         persistentHome: true,
+        multiScreen: true,
       },
     };
   }
@@ -116,16 +143,35 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async startStream(desktop: Sandbox) {
+    if (this.boxes.get(desktop.sandboxId) !== desktop) {
+      throw new Error("screen stream stopped during computer teardown");
+    }
     if (this.streamReady.has(desktop.sandboxId)) return;
-    await desktop.commands
-      .run("pkill -x x11vnc || true; pkill -f '[n]ovnc_proxy|[w]ebsockify.*6080' || true")
-      .catch(() => undefined);
+    const pending = this.streamStarts.get(desktop.sandboxId);
+    if (pending) return pending;
+    let start!: Promise<void>;
+    start = this.initializeStream(desktop).finally(() => {
+      if (this.streamStarts.get(desktop.sandboxId) === start) {
+        this.streamStarts.delete(desktop.sandboxId);
+      }
+    });
+    this.streamStarts.set(desktop.sandboxId, start);
+    return start;
+  }
+
+  private async initializeStream(desktop: Sandbox) {
+    await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
     await desktop.stream.start({ requireAuth: true });
     try {
       await desktop.commands.run("x11vnc -R viewonly");
     } catch (error) {
       await desktop.stream.stop().catch(() => undefined);
       throw error;
+    }
+    const current = this.boxes.get(desktop.sandboxId);
+    if (current !== desktop) {
+      if (!current) await desktop.stream.stop().catch(() => undefined);
+      throw new Error("screen stream stopped during computer teardown");
     }
     this.streamReady.add(desktop.sandboxId);
   }
@@ -145,7 +191,6 @@ export class E2BSandboxProvider implements SandboxProvider {
           apiKey: this.apiKey,
           timeoutMs: sandboxIdleMs(),
         });
-        if (await configurePortableBrowserProfiles(desktop)) await openDesktopBrowser(desktop);
         this.boxes.set(desktop.sandboxId, desktop);
         this.lastTouchedAt.set(desktop.sandboxId, Date.now());
         return {
@@ -161,7 +206,6 @@ export class E2BSandboxProvider implements SandboxProvider {
       }
     }
     const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
-    await desktop.files.makeDir(E2B_WORKSPACE).catch(() => undefined);
     this.boxes.set(desktop.sandboxId, desktop);
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
     return {
@@ -173,34 +217,101 @@ export class E2BSandboxProvider implements SandboxProvider {
     };
   }
 
+  async prepare(computer: ComputerRef, _context: AdapterContext): Promise<void> {
+    const desktop = await this.box(computer);
+    if (computer.fresh) await desktop.files.makeDir(E2B_WORKSPACE);
+    const profilesChanged = await configurePortableBrowserProfiles(desktop);
+    if (!computer.fresh && profilesChanged) await openDesktopBrowser(desktop);
+  }
+
   async *execute(
     computer: ComputerRef,
     request: CommandRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     const desktop = await this.box(computer);
     const cmd = request.argv.map(shellQuote).join(" ");
-    const result = await desktop.commands.run(cmd, {
-      cwd: e2bCwd(request.cwd),
-      envs: request.env,
-      signal: _context.signal,
-    });
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
-    if (result.stderr) yield { type: "stderr", data: result.stderr };
-    yield { type: "exit", code: result.exitCode ?? 0 };
+    const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
+    try {
+      const result = await desktop.commands.run(cmd, {
+        cwd: e2bCwd(request.cwd),
+        envs: request.env,
+        signal: context.signal,
+        timeoutMs,
+      });
+      if (result.stdout) yield { type: "stdout", data: result.stdout };
+      if (result.stderr) yield { type: "stderr", data: result.stderr };
+      yield { type: "exit", code: result.exitCode ?? 0 };
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        yield {
+          type: "stderr",
+          data: `command timed out after ${timeoutMs} ms\n`,
+        };
+        yield { type: "exit", code: 124 };
+        return;
+      }
+      throw error;
+    }
   }
 
   async connectScreen(
     computer: ComputerRef,
     request: ScreenRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<ScreenSession> {
     const desktop = await this.box(computer);
-    await this.startStream(desktop);
+    const screenKey = screenSessionKey(context);
+    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
+    if (layout.isPrimary) {
+      await this.startStream(desktop);
+      if (request.interactive) {
+        if (!request.controlToken) throw new Error("interactive screen requires a control token");
+        const password = await this.startControlStream(desktop, request.controlToken, screenKey);
+        const url = new URL(`https://${desktop.getHost(layout.controlPort)}/vnc.html`);
+        url.searchParams.set("autoconnect", "true");
+        url.searchParams.set("resize", "scale");
+        url.searchParams.set("password", password);
+        return {
+          url: url.toString(),
+          mimeType: "text/html",
+          close: async () => undefined,
+        };
+      }
+      let authKey: string | undefined;
+      try {
+        authKey = desktop.stream.getAuthKey();
+      } catch {
+        authKey = undefined;
+      }
+      const url =
+        typeof desktop.stream.getUrl === "function"
+          ? desktop.stream.getUrl({
+              autoConnect: true,
+              viewOnly: true,
+              resize: "scale",
+              ...(authKey ? { authKey } : {}),
+            })
+          : null;
+      return {
+        url,
+        mimeType: "text/html",
+        close: async () => {
+          await desktop.stream.stop().catch(() => undefined);
+          this.streamReady.delete(desktop.sandboxId);
+        },
+      };
+    }
+    const viewPassword = await this.ensureExtraDisplay(desktop, layout, context);
     if (request.interactive) {
       if (!request.controlToken) throw new Error("interactive screen requires a control token");
-      const password = await this.startControlStream(desktop, request.controlToken);
-      const url = new URL(`https://${desktop.getHost(6081)}/vnc.html`);
+      const password = await this.startControlStream(
+        desktop,
+        request.controlToken,
+        screenKey,
+        layout,
+      );
+      const url = new URL(`https://${desktop.getHost(layout.controlPort)}/vnc.html`);
       url.searchParams.set("autoconnect", "true");
       url.searchParams.set("resize", "scale");
       url.searchParams.set("password", password);
@@ -210,43 +321,42 @@ export class E2BSandboxProvider implements SandboxProvider {
         close: async () => undefined,
       };
     }
-    let authKey: string | undefined;
-    try {
-      authKey = desktop.stream.getAuthKey();
-    } catch {
-      authKey = undefined;
-    }
-    const url =
-      typeof desktop.stream.getUrl === "function"
-        ? desktop.stream.getUrl({
-            autoConnect: true,
-            viewOnly: true,
-            resize: "scale",
-            ...(authKey ? { authKey } : {}),
-          })
-        : null;
+    const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
+    url.searchParams.set("autoconnect", "true");
+    url.searchParams.set("resize", "scale");
+    url.searchParams.set("view_only", "true");
+    url.searchParams.set("password", viewPassword);
     return {
-      url,
+      url: url.toString(),
       mimeType: "text/html",
-      close: async () => {
-        await desktop.stream.stop().catch(() => undefined);
-        this.streamReady.delete(desktop.sandboxId);
-      },
+      close: async () => undefined,
     };
   }
 
   async setScreenControl(
     computer: ComputerRef,
     interactive: boolean,
-    _context: AdapterContext,
+    context: AdapterContext,
     controlToken?: string,
   ): Promise<void> {
     const desktop = await this.box(computer);
+    const screenKey = screenSessionKey(context);
+    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
+    if (layout.isPrimary) {
+      if (interactive) {
+        if (!controlToken) throw new Error("interactive screen requires a control token");
+        await this.startControlStream(desktop, controlToken, screenKey);
+      } else {
+        await this.stopControlStream(desktop, controlToken, screenKey);
+      }
+      return;
+    }
+    await this.ensureExtraDisplay(desktop, layout, context);
     if (interactive) {
       if (!controlToken) throw new Error("interactive screen requires a control token");
-      await this.startControlStream(desktop, controlToken);
+      await this.startControlStream(desktop, controlToken, screenKey, layout);
     } else {
-      await this.stopControlStream(desktop, controlToken);
+      await this.stopControlStream(desktop, controlToken, screenKey, layout);
     }
   }
 
@@ -254,33 +364,73 @@ export class E2BSandboxProvider implements SandboxProvider {
     computer: ComputerRef,
     input: ComputerInput,
     _lease: ControlLeaseRef,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<void> {
     const desktop = await this.box(computer);
-    await applyE2BAction(desktop, input);
+    const layout = await this.resolveLayout(
+      desktop,
+      screenSessionKey(context),
+      context.screenLeaseId,
+    );
+    if (layout.isPrimary) {
+      await applyE2BAction(desktop, input);
+      return;
+    }
+    await this.ensureExtraDisplay(desktop, layout, context);
+    const result = await desktop.commands.run(extraDisplayInputCommand(layout, input), {
+      signal: context.signal,
+    });
+    if (result.exitCode !== 0) throw new Error(result.stderr || "extra display input failed");
   }
 
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const desktop = await this.box(computer);
-    return observeE2BDesktop(desktop, context);
+    const layout = await this.resolveLayout(
+      desktop,
+      screenSessionKey(context),
+      context.screenLeaseId,
+    );
+    if (layout.isPrimary) return observeE2BDesktop(desktop, context);
+    await this.ensureExtraDisplay(desktop, layout, context);
+    const result = await desktop.commands.run(observeExtraDisplayCommand(layout), {
+      signal: context.signal,
+    });
+    if (result.exitCode !== 0) throw new Error(result.stderr || "extra display observation failed");
+    const parsed = parseExtraDisplayObservation(result.stdout);
+    return computerObservation(parsed.image, {
+      mimeType: "image/png",
+      width: 1280,
+      height: 800,
+      cursor: parsed.cursor,
+    });
   }
 
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     const desktop = await this.box(computer);
+    const layout = await this.resolveLayout(
+      desktop,
+      screenSessionKey(context),
+      context.screenLeaseId,
+    );
     const actions = boundedComputerActions(request.actions);
     let completed = 0;
+    if (!layout.isPrimary) await this.ensureExtraDisplay(desktop, layout, context);
     for (const action of actions) {
       if (context.signal.aborted)
         throw context.signal.reason ?? new Error("computer action aborted");
-      await applyE2BAction(desktop, action);
+      if (layout.isPrimary) await applyE2BAction(desktop, action);
+      else {
+        const result = await desktop.commands.run(extraDisplayActionCommand(layout, action), {
+          signal: context.signal,
+        });
+        if (result.exitCode !== 0) throw new Error(result.stderr || "extra display action failed");
+      }
       completed += 1;
     }
     if (request.settleMs) await desktop.wait(clampRounded(request.settleMs, 0, 5_000));
     return {
       completed,
-      ...(request.observe === false
-        ? {}
-        : { observation: await observeE2BDesktop(desktop, context) }),
+      ...(request.observe === false ? {} : { observation: await this.observe(computer, context) }),
     };
   }
 
@@ -316,7 +466,9 @@ export class E2BSandboxProvider implements SandboxProvider {
     const desktop = await this.box(computer);
     const target = workspacePath(E2B_WORKSPACE, filePath);
     if (options?.maxBytes !== undefined) {
-      const info = await desktop.files.getInfo(target, { signal: context.signal });
+      const info = await desktop.files.getInfo(target, {
+        signal: context.signal,
+      });
       if (info.size > options.maxBytes) {
         throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
       }
@@ -353,7 +505,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     const desktop = await this.box(computer);
-    await desktop.files.makeDir(E2B_WORKSPACE, { signal: context.signal });
     await stopDesktopBrowsers(desktop);
     let batch: PortableFile[] = [];
     let batchBytes = 0;
@@ -364,14 +515,16 @@ export class E2BSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
-      if (batch.length >= 32 || batchBytes + file.content.byteLength > 8 * 1024 * 1024) {
+      if (
+        batch.length >= 32 ||
+        batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
+      ) {
         await flush();
       }
       batch.push(file);
       batchBytes += file.content.byteLength;
     }
     await flush();
-    await configurePortableBrowserProfiles(desktop);
     await openDesktopBrowser(desktop);
   }
 
@@ -386,13 +539,28 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
   }
 
+  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    const id = computer.providerRef || computer.id;
+    const screenKey = screenSessionKey(context);
+    const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
+    if (!desktop) return;
+    const released = await desktop.commands
+      .run(releaseExtraDisplayCommand(screenKey, context.screenLeaseId))
+      .catch(() => undefined);
+    const index = released ? parseReleasedExtraDisplay(released.stdout) : undefined;
+    if (index === undefined) return;
+    const controlKey = screenControlKey(id, screenKey);
+    this.controlStreams.delete(controlKey);
+    if (index === 0) return;
+    // Non-primary teardown runs inside the registry lock before the slot is reusable.
+  }
+
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
+    const pending = this.streamStarts.get(id);
     const desktop = this.boxes.get(id);
-    this.boxes.delete(id);
-    this.lastTouchedAt.delete(id);
-    this.streamReady.delete(id);
-    this.controlStreams.delete(id);
+    this.forget(id);
+    await settleForTeardown(pending);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
       return;
@@ -401,44 +569,109 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    const desktop = await this.box(computer).catch(() => undefined);
-    await desktop?.kill();
     const id = computer.providerRef || computer.id;
+    const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
+    const pending = this.streamStarts.get(id);
+    this.forget(id);
+    await settleForTeardown(pending);
+    await desktop?.kill();
+  }
+
+  private forget(id: string): void {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
     this.streamReady.delete(id);
-    this.controlStreams.delete(id);
+    this.streamStarts.delete(id);
+    for (const key of [...this.controlStreams.keys()]) {
+      if (key.startsWith(`${id}:`)) this.controlStreams.delete(key);
+    }
   }
 
-  private async startControlStream(desktop: Sandbox, controlToken: string): Promise<string> {
-    const existing = this.controlStreams.get(desktop.sandboxId);
+  private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
+    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId));
+    if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
+    const index = parseAllocatedExtraDisplay(allocation.stdout);
+    return extraDisplayLayout(index, desktop.display ?? ":0");
+  }
+
+  private async ensureExtraDisplay(
+    desktop: Sandbox,
+    layout: ReturnType<typeof extraDisplayLayout>,
+    context: AdapterContext,
+  ): Promise<string> {
+    if (layout.isPrimary) throw new Error("primary display does not use an extra view password");
+    const result = await desktop.commands.run(
+      ensureExtraDisplayCommand(
+        layout,
+        {
+          homeDir: "/home/user",
+          browserProfilesDir: E2B_BROWSER_PROFILES,
+        },
+        randomBytes(9).toString("base64url"),
+      ),
+      { signal: context.signal },
+    );
+    if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
+    return parseExtraDisplayViewPassword(result.stdout);
+  }
+
+  private async startControlStream(
+    desktop: Sandbox,
+    controlToken: string,
+    screenKey: string,
+    layout = extraDisplayLayout(0, desktop.display ?? ":0"),
+  ): Promise<string> {
+    const controlKey = screenControlKey(desktop.sandboxId, screenKey);
+    const existing = this.controlStreams.get(controlKey);
     if (existing?.controlToken === controlToken) return existing.password;
     const password = randomBytes(6).toString("base64url");
-    const passwordFile = "/tmp/rakazo-control.vncpass";
-    const tokenFile = "/tmp/rakazo-control.token";
-    const command = [
-      controlStreamStopCommand(),
-      `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
-      `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
-      `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport 5901 -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
-      "cd /opt/noVNC/utils",
-      "(nohup ./novnc_proxy --vnc localhost:5901 --listen 6081 --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)",
-      "for i in $(seq 1 50); do netstat -tuln | grep -q ':6081 ' && exit 0; sleep 0.1; done",
-      "exit 1",
-    ].join(" && ");
-    const result = await desktop.commands.run(command);
-    if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
-    this.controlStreams.set(desktop.sandboxId, { password, controlToken });
+    if (layout.isPrimary) {
+      const passwordFile = "/tmp/rakazo-control.vncpass";
+      const tokenFile = "/tmp/rakazo-control.token";
+      const command = [
+        controlStreamStopCommand(),
+        `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
+        `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
+        `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${layout.controlVncPort} -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
+        "cd /opt/noVNC/utils",
+        `(nohup ./novnc_proxy --vnc localhost:${layout.controlVncPort} --listen ${layout.controlPort} --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)`,
+        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${layout.controlPort} ' && exit 0; sleep 0.1; done`,
+        "exit 1",
+      ].join(" && ");
+      const result = await desktop.commands.run(command);
+      if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
+    } else {
+      const result = await desktop.commands.run(
+        extraDisplayControlStartCommand(layout, controlToken, password),
+      );
+      if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
+    }
+    this.controlStreams.set(controlKey, { password, controlToken });
     return password;
   }
 
-  private async stopControlStream(desktop: Sandbox, controlToken?: string): Promise<void> {
-    await desktop.commands.run(controlStreamStopCommand(controlToken));
-    const existing = this.controlStreams.get(desktop.sandboxId);
+  private async stopControlStream(
+    desktop: Sandbox,
+    controlToken: string | undefined,
+    screenKey: string,
+    layout = extraDisplayLayout(0, desktop.display ?? ":0"),
+  ): Promise<void> {
+    const controlKey = screenControlKey(desktop.sandboxId, screenKey);
+    if (layout.isPrimary) {
+      await desktop.commands.run(controlStreamStopCommand(controlToken));
+    } else {
+      await desktop.commands.run(extraDisplayControlStopCommand(layout, controlToken));
+    }
+    const existing = this.controlStreams.get(controlKey);
     if (!controlToken || existing?.controlToken === controlToken) {
-      this.controlStreams.delete(desktop.sandboxId);
+      this.controlStreams.delete(controlKey);
     }
   }
+}
+
+async function settleForTeardown(pending: Promise<void> | undefined): Promise<void> {
+  if (!pending) return;
+  await Promise.race([pending.catch(() => undefined), delay(5_000, undefined, { ref: false })]);
 }
 
 function controlStreamStopCommand(controlToken?: string) {
@@ -530,9 +763,7 @@ async function configurePortableBrowserProfiles(desktop: Sandbox): Promise<boole
 }
 
 async function stopDesktopBrowsers(desktop: Sandbox): Promise<void> {
-  await desktop.commands
-    .run("pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true")
-    .catch(() => undefined);
+  await desktop.commands.run(PORTABLE_BROWSER_STOP_COMMAND).catch(() => undefined);
 }
 
 async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise<void> {
@@ -614,35 +845,6 @@ async function* walkE2BWorkspace(
     }
   }
   for (const relative of directories) yield* walkE2BWorkspace(desktop, relative, context);
-}
-
-export function shouldSkipPortableWorkspaceFile(relative: string) {
-  if (!relative.startsWith(".browser-profiles/")) return false;
-  const segments = relative.split("/");
-  const name = segments.at(-1) ?? "";
-  return (
-    segments.some((segment) =>
-      [
-        "Cache",
-        "Code Cache",
-        "GPUCache",
-        "GrShaderCache",
-        "ShaderCache",
-        "DawnGraphiteCache",
-        "DawnWebGPUCache",
-        "Crashpad",
-      ].includes(segment),
-    ) ||
-    [
-      "BrowserMetrics",
-      "DevToolsActivePort",
-      "SingletonCookie",
-      "SingletonLock",
-      "SingletonSocket",
-      ".parentlock",
-      "lock",
-    ].includes(name)
-  );
 }
 
 function e2bCwd(cwd: string | undefined): string {

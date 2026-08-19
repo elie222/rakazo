@@ -1,9 +1,13 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachments.js";
 import {
+  AppBootstrapSchema,
   ArtifactSchema,
+  ArtifactWithContentSchema,
   BotSchema,
   CapabilityInstallSchema,
+  ComputerModeSchema,
   ComputerStatusSchema,
   ConnectionCatalogItemSchema,
   ConnectionSchema,
@@ -13,6 +17,7 @@ import {
   ExportManifestSchema,
   MemoryDocumentSchema,
   MeSchema,
+  ModelCatalogEntrySchema,
   ModelCredentialSchema,
   RoutineSchema,
   ThreadMessagePageSchema,
@@ -22,12 +27,14 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
 
 export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
+  bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -41,21 +48,7 @@ export const appContract = {
       .output(DeploymentSettingsSchema),
   },
   models: {
-    list: oc.output(
-      z.array(
-        z.object({
-          provider: z.string(),
-          providerName: z.string().optional(),
-          id: z.string(),
-          label: z.string(),
-          billing: z.string(),
-          auth: z.enum(["api-key", "oauth", "both"]).optional(),
-          oauthLabel: z.string().optional(),
-          subscription: z.boolean().optional(),
-          signIn: z.enum(["device-code"]).optional(),
-        }),
-      ),
-    ),
+    list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     connect: oc
       .input(
@@ -88,37 +81,71 @@ export const appContract = {
       .output(
         z.discriminatedUnion("status", [
           z.object({ status: z.literal("pending") }),
-          z.object({ status: z.literal("connected"), credential: ModelCredentialSchema }),
+          z.object({ status: z.literal("ready") }),
           z.object({ status: z.literal("error"), error: z.string() }),
         ]),
       ),
+    finishOAuth: oc.input(z.object({ loginId: z.string() })).output(ModelCredentialSchema),
+    cancelOAuth: oc
+      .input(z.object({ loginId: z.string() }))
+      .output(z.object({ ok: z.literal(true) })),
     setDefault: oc
       .input(z.object({ provider: z.string(), modelId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
+    listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
     duplicate: oc.input(botId).output(BotSchema),
     update: oc.input(UpdateBotInput).output(BotSchema),
-    remove: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    setComputer: oc.input(z.object({ botId: Id, mode: ComputerModeSchema })).output(BotSchema),
+    archive: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    remove: oc
+      .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   threads: {
     get: oc.input(z.object({ botId: Id })).output(ThreadSnapshotSchema),
     messages: oc
-      .input(z.object({ botId: Id, before: z.number().int().nonnegative() }))
+      .input(
+        z.object({
+          botId: Id,
+          before: z.number().int().nonnegative().optional(),
+          around: z
+            .object({
+              messageId: Id.optional(),
+              seq: z.number().int().nonnegative().optional(),
+            })
+            .optional(),
+        }),
+      )
       .output(ThreadMessagePageSchema),
     subscribe: oc
       .input(z.object({ botId: Id, cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),
     send: oc
       .input(
-        z.object({
-          botId: Id,
-          text: z.string().min(1),
-          clientNonce: z.string().optional(),
-        }),
+        z
+          .object({
+            botId: Id,
+            text: z.string().optional(),
+            artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
+            clientNonce: z.string().optional(),
+          })
+          .superRefine((input, ctx) => {
+            const text = input.text?.trim() ?? "";
+            const artifactIds = input.artifactIds ?? [];
+            if (!text && artifactIds.length === 0) {
+              ctx.addIssue({
+                code: "custom",
+                message: "Provide text or at least one attachment",
+                path: ["text"],
+              });
+            }
+          }),
       )
       .output(z.object({ taskId: Id, runId: Id, seq: z.number().int() })),
     stop: oc.input(botId).output(z.object({ ok: z.literal(true) })),
@@ -127,7 +154,7 @@ export const appContract = {
       .input(z.object({ botId: Id, text: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
     answer: oc
-      .input(z.object({ botId: Id, runId: Id, answer: z.string().min(1) }))
+      .input(z.object({ botId: Id, runId: Id, messageId: Id, answer: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
     markRead: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     markUnread: oc.input(botId).output(z.object({ ok: z.literal(true) })),
@@ -215,6 +242,17 @@ export const appContract = {
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
+    create: oc
+      .input(
+        z.object({
+          botId: Id,
+          name: z.string().min(1).max(255),
+          mimeType: z.string().min(1),
+          contentBase64: z.string().min(1).max(ATTACHMENT_MAX_BASE64_LENGTH),
+        }),
+      )
+      .output(ArtifactSchema),
+    get: oc.input(z.object({ botId: Id, artifactId: Id })).output(ArtifactWithContentSchema),
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
@@ -233,6 +271,9 @@ export const appContract = {
     registerPush: oc
       .input(z.object({ token: z.string().min(8).max(512) }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  search: {
+    query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
   },
 };
 

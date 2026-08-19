@@ -57,12 +57,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
+      ["models/finishOAuth", { loginId: "missing-login" }],
+      ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["bots/list"],
+      ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/update", { botId: "missing-bot", name: "Nope" }],
+      ["bots/archive", { botId: "missing-bot" }],
+      ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
       ["threads/get", { botId: "missing-bot" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
@@ -71,7 +76,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/stop", { botId: "missing-bot" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
-      ["threads/answer", { botId: "missing-bot", runId: "missing-run", answer: "Nope" }],
+      [
+        "threads/answer",
+        {
+          botId: "missing-bot",
+          runId: "missing-run",
+          messageId: "missing-message",
+          answer: "Nope",
+        },
+      ],
       ["threads/markRead", { botId: "missing-bot" }],
       ["threads/markUnread", { botId: "missing-bot" }],
       ["computer/status", { botId: "missing-bot" }],
@@ -105,6 +118,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
+      ["search/query", { q: "anything" }],
     ]);
 
     const results = await Promise.all(
@@ -160,7 +174,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         content: "owner-only-memory",
       },
     });
-    await handles.prisma.artifact.create({
+    const ownerArtifact = await handles.prisma.artifact.create({
       data: {
         workspaceId: ownerActor.workspaceId,
         userId: ownerActor.userId,
@@ -201,14 +215,25 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/get", { botId: ownerBot.id }],
       ["bots/duplicate", { botId: ownerBot.id }],
       ["bots/update", { botId: ownerBot.id, name: "Stolen Bot" }],
+      ["bots/archive", { botId: ownerBot.id }],
+      ["bots/restore", { botId: ownerBot.id }],
       ["threads/get", { botId: ownerBot.id }],
       ["threads/messages", { botId: ownerBot.id, before: 1 }],
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
+      ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
       ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
-      ["threads/answer", { botId: ownerBot.id, runId: ownerRun.id, answer: "intruder answer" }],
+      [
+        "threads/answer",
+        {
+          botId: ownerBot.id,
+          runId: ownerRun.id,
+          messageId: "missing-message",
+          answer: "intruder answer",
+        },
+      ],
       ["threads/markRead", { botId: ownerBot.id }],
       ["threads/markUnread", { botId: ownerBot.id }],
       ["computer/status", { botId: ownerBot.id }],
@@ -224,6 +249,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
       ["artifacts/list", { botId: ownerBot.id }],
+      [
+        "artifacts/create",
+        {
+          botId: ownerBot.id,
+          name: "intruder.txt",
+          mimeType: "text/plain",
+          contentBase64: Buffer.from("nope").toString("base64"),
+        },
+      ],
+      ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
     ];
     await Promise.all(
@@ -234,6 +269,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await expectDenied(app, intruder, "threads/answer", {
       botId: intruderBot.id,
       runId: ownerRun.id,
+      messageId: "missing-message",
       answer: "mixed-resource attack",
     });
 
@@ -258,6 +294,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, intruder, "connections/list")).not.toContainEqual(
       expect.objectContaining({ id: ownerConnection.connectionId }),
     );
+    expect(
+      await rpc<{ hits: unknown[] }>(app, intruder, "search/query", { q: ownerBot.name }),
+    ).toEqual({ hits: [] });
 
     // These endpoints are deliberately idempotent for unknown IDs. Success must not mutate
     // a row in a different workspace or disclose whether it exists.
@@ -286,8 +325,196 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
-    await expectDenied(app, intruder, "bots/remove", { botId: ownerBot.id });
+    await expectDenied(app, intruder, "bots/remove", {
+      botId: ownerBot.id,
+      deleteMemories: true,
+    });
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
+  });
+
+  it("isolates model defaults by workspace and switches them atomically", async () => {
+    const cookie = await signup(app, `model-defaults-${stamp}@rakazo.test`, "Model Defaults");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const otherWorkspaceId = `other-model-workspace-${stamp}`;
+    const otherSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: otherWorkspaceId,
+        kind: "model",
+        ciphertext: "encrypted-other-workspace-key",
+      },
+    });
+    const otherCredential = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: otherWorkspaceId,
+        provider: "other-provider",
+        label: "Other workspace",
+        secretId: otherSecret.id,
+        isDefault: true,
+        defaultModel: "other/model",
+      },
+    });
+
+    const beforeConnect = await rpc<Me>(app, cookie, "me");
+    expect(beforeConnect.workspaceId).toBe(actor.workspaceId);
+    expect(beforeConnect.defaultProvider).not.toBe("other-provider");
+    expect(beforeConnect.defaultModel).not.toBe("other/model");
+    const expectWorkspaceModelDefault = async (provider: string, defaultModel: string) => {
+      const rows = await handles.prisma.userModelCredential.findMany({
+        where: { userId: actor.userId, workspaceId: actor.workspaceId },
+      });
+      expect(rows.filter((row) => row.isDefault)).toHaveLength(1);
+      expect(rows.find((row) => row.provider === provider)).toMatchObject({
+        isDefault: true,
+        defaultModel,
+      });
+      expect(rows.filter((row) => row.isDefault)[0]?.provider).toBe(provider);
+    };
+
+    const connectedA = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-a",
+      apiKey: "fake-provider-a-key",
+      label: "Provider A",
+      modelId: "a/one",
+    });
+    expect(connectedA.isDefault).toBe(true);
+    const providerABeforeRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+
+    const rotatedA = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-a",
+      apiKey: "fake-provider-a-replacement-key",
+      label: "Provider A rotated",
+      modelId: "a/rotated",
+    });
+    const providerAAfterRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connectedA.id },
+    });
+    expect(rotatedA.id).toBe(connectedA.id);
+    expect(providerAAfterRotation.secretId).not.toBe(providerABeforeRotation.secretId);
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: providerABeforeRotation.secretId } }),
+    ).toBeNull();
+    expect(
+      await handles.prisma.userModelCredential.count({
+        where: {
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          provider: "provider-a",
+        },
+      }),
+    ).toBe(1);
+
+    const connectedB = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "provider-b",
+      apiKey: "fake-provider-b-key",
+      label: "Provider B",
+      modelId: "b/one",
+    });
+    expect(connectedB.isDefault).toBe(true);
+    expect(
+      await handles.prisma.userModelCredential.count({
+        where: { userId: actor.userId, workspaceId: actor.workspaceId, isDefault: true },
+      }),
+    ).toBe(1);
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-a", modelId: "a/two" });
+    await expectWorkspaceModelDefault("provider-a", "a/two");
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-b", modelId: "b/two" });
+    await expectWorkspaceModelDefault("provider-b", "b/two");
+
+    await rpc(app, cookie, "models/setDefault", { provider: "provider-a", modelId: "a/three" });
+    await expectWorkspaceModelDefault("provider-a", "a/three");
+
+    const otherAfter = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: otherCredential.id },
+    });
+    expect(otherAfter).toMatchObject({ isDefault: true, defaultModel: "other/model" });
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(JSON.stringify(listed)).not.toContain("fake-provider-a-key");
+    expect(JSON.stringify(listed)).not.toContain("fake-provider-b-key");
+
+    const missing = await raw(app, cookie, "models/setDefault", {
+      provider: "missing-provider",
+      modelId: "missing/model",
+    });
+    expect(missing.status).toBeGreaterThanOrEqual(400);
+    expect(await missing.text()).toMatch(/credential/i);
+  });
+
+  it("chooses the newest duplicate provider credential when selecting a default", async () => {
+    const cookie = await signup(app, `model-duplicates-${stamp}@rakazo.test`, "Model Duplicates");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const olderSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        kind: "model",
+        ciphertext: "encrypted-older-key",
+      },
+    });
+    const newerSecret = await handles.prisma.secret.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        kind: "model",
+        ciphertext: "encrypted-newer-key",
+      },
+    });
+    const older = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+        label: "Older",
+        secretId: olderSecret.id,
+        isDefault: true,
+        defaultModel: "older/model",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    });
+    const newer = await handles.prisma.userModelCredential.create({
+      data: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+        label: "Newer",
+        secretId: newerSecret.id,
+        defaultModel: "newer/model",
+        createdAt: new Date("2026-02-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-02-02T00:00:00.000Z"),
+      },
+    });
+
+    await rpc(app, cookie, "models/setDefault", {
+      provider: "duplicate-provider",
+      modelId: "newer/selected",
+    });
+
+    const rows = await handles.prisma.userModelCredential.findMany({
+      where: {
+        userId: actor.userId,
+        workspaceId: actor.workspaceId,
+        provider: "duplicate-provider",
+      },
+    });
+    expect(rows.filter((row) => row.isDefault).map((row) => row.id)).toEqual([newer.id]);
+    expect(rows.find((row) => row.id === newer.id)).toMatchObject({
+      isDefault: true,
+      defaultModel: "newer/selected",
+    });
+    expect(rows.find((row) => row.id === older.id)).toMatchObject({
+      isDefault: false,
+      defaultModel: "older/model",
+    });
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(
+      listed.filter((row) => row.provider === "duplicate-provider").map((row) => row.id),
+    ).toEqual([newer.id, older.id]);
   });
 
   it("restricts deployment settings to the deployment owner", async () => {
@@ -396,6 +623,19 @@ async function expectDenied(app: App, cookie: string, procedure: string, body: u
 interface Actor {
   userId: string;
   workspaceId: string;
+}
+
+interface Me extends Actor {
+  defaultProvider: string | null;
+  defaultModel: string | null;
+}
+
+interface ModelCredential {
+  id: string;
+  provider: string;
+  label: string;
+  hasKey: boolean;
+  isDefault: boolean;
 }
 
 interface Bot {

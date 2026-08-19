@@ -203,9 +203,9 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   }
 }
 
-export function resolveAgentHomePath(home: AgentHomeStore, botId: string, dataDir = "./data") {
-  if (home instanceof LocalAgentHomeStore) return home.pathFor(botId);
-  return path.resolve(dataDir, "homes", botId);
+export function resolveAgentHomePath(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
+  if (home instanceof LocalAgentHomeStore) return home.pathFor(homeKey);
+  return path.resolve(dataDir, "homes", homeKey);
 }
 
 function safeJoin(root: string, rel: string) {

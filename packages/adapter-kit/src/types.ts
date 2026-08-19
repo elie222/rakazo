@@ -7,6 +7,8 @@ export interface AdapterContext {
   userId: string;
   botId?: string;
   runId?: string;
+  /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
+  screenLeaseId?: string;
   signal: AbortSignal;
   connectedProviders?: string[];
 }
@@ -51,6 +53,8 @@ export interface CommandRequest {
   cwd?: string;
   env?: Record<string, string>;
   pty?: boolean;
+  /** Maximum wall-clock runtime before the command and its descendants are terminated. */
+  timeoutMs?: number;
 }
 
 export type ProcessEvent =
@@ -147,6 +151,8 @@ export interface SandboxCapabilities {
   snapshots: boolean;
   takeover: boolean;
   persistentHome: boolean;
+  /** Distinct graphical screens for concurrent Team bots on one computer. */
+  multiScreen?: boolean;
 }
 
 export interface ConnectorTool {
@@ -180,7 +186,13 @@ export interface MemoryReadRequest {
 }
 
 export interface MemorySnapshot {
-  documents: Array<{ id: string; path: string; content: string; revision: number }>;
+  documents: Array<{
+    id: string;
+    path: string;
+    content: string;
+    revision: number;
+    updatedAt?: string;
+  }>;
 }
 
 export interface MemorySearchRequest {
@@ -229,6 +241,11 @@ export interface AgentRunRequest {
   prompt: string;
   instructions: string;
   history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  currentTurnImages?: Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }>;
   tools: ConnectorTool[];
   model: {
     provider: string;
@@ -288,8 +305,9 @@ export interface AgentRuntimeCapabilities {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
-  "computer.sleep": { botId: string };
-  "computer.control-expire": { botId: string; leaseId: string };
+  "computer.sleep": { computerId: string };
+  "computer.control-expire": { computerId: string; leaseId: string };
+  "history.compact": { threadId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

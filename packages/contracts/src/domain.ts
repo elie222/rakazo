@@ -2,6 +2,9 @@ import * as z from "zod";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 
+export const ComputerModeSchema = z.enum(["team", "dedicated"]);
+export type ComputerMode = z.infer<typeof ComputerModeSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -12,11 +15,13 @@ export const BotSchema = z.object({
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
+  archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
   threadId: Id,
   preview: z.string(),
   status: z.string(),
+  computerMode: ComputerModeSchema,
   updatedAt: z.string(),
   createdAt: z.string(),
 });
@@ -29,6 +34,7 @@ export const CreateBotInput = z.object({
   instructions: z.string().max(20000).default(""),
   notifyOnFinish: z.boolean().default(true),
   color: z.string().optional(),
+  computerMode: ComputerModeSchema.default("team"),
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
@@ -120,6 +126,11 @@ export const ArtifactSchema = z.object({
   createdAt: z.string(),
 });
 
+export const ArtifactWithContentSchema = ArtifactSchema.extend({
+  contentBase64: z.string(),
+});
+export type ArtifactWithContent = z.infer<typeof ArtifactWithContentSchema>;
+
 export const UsageRecordSchema = z.object({
   id: Id,
   botId: Id.nullable(),
@@ -133,11 +144,14 @@ export const UsageRecordSchema = z.object({
 
 export const ComputerStatusSchema = z.object({
   botId: Id,
+  mode: ComputerModeSchema,
   kind: SandboxKind,
   state: z.enum(["stopped", "booting", "running", "suspended", "error"]),
   controlHolder: z.enum(["bot", "user", "none"]),
+  controlBotId: Id.nullable(),
   screenAvailable: z.boolean(),
   homeRevision: z.string().nullable(),
+  busyBotName: z.string().nullable(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
@@ -181,6 +195,20 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
 });
+export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
+
+export const ModelCatalogEntrySchema = z.object({
+  provider: z.string(),
+  providerName: z.string().optional(),
+  id: z.string(),
+  label: z.string(),
+  billing: z.string(),
+  auth: z.enum(["api-key", "oauth", "both"]).optional(),
+  oauthLabel: z.string().optional(),
+  subscription: z.boolean().optional(),
+  signIn: z.enum(["device-code"]).optional(),
+});
+export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
 export const DeploymentSettingsSchema = z.object({
   ownerUserId: Id.nullable(),
@@ -206,6 +234,15 @@ export const MeSchema = z.object({
   canChooseHostComputer: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
+
+export const AppBootstrapSchema = z.object({
+  me: MeSchema,
+  bots: z.array(BotSchema),
+  archivedBots: z.array(BotSchema),
+  thread: ThreadSnapshotSchema.nullable(),
+  routines: z.array(RoutineSchema),
+});
+export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 
 export const ExportManifestSchema = z.object({
   version: z.literal(1),

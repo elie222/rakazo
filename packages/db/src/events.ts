@@ -1,5 +1,9 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import type { MessageBlock, ProductEvent } from "@rakazo/contracts";
+import {
+  type MessageBlock,
+  MessageBlock as MessageBlockSchema,
+  type ProductEvent,
+} from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
 import { assertRunCanWriteHistory, createThreadMessageInTransaction } from "./messages.js";
 
@@ -17,10 +21,12 @@ export interface AppendEventInput {
 }
 
 export interface ThreadEvents {
+  answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
   finalizeComputerControlRelease(input: FinalizeComputerControlReleaseInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<boolean>;
+  pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
 
@@ -37,6 +43,7 @@ export interface ClearThreadResult {
 
 export interface FinalizeComputerControlReleaseInput {
   workspaceId: string;
+  computerId: string;
   botId: string;
   leaseId: string;
   holder: "bot" | "none";
@@ -57,17 +64,39 @@ interface FinalizeRunBase {
 export type FinalizeRunInput = FinalizeRunBase &
   ({ outcome: "completed"; blocks: MessageBlock[] } | { outcome: "failed"; error: string });
 
+export interface PauseRunForInput {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+  runId: string;
+  attemptId: string;
+  leaseOwner: string;
+  leaseFence: number;
+  blocks: MessageBlock[];
+}
+
+export interface AnswerRunInput {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+  runId: string;
+  messageId: string;
+  answer: string;
+}
+
 export function createThreadEvents(
   prisma: PrismaClient,
   realtime?: RealtimeFanout,
   options: { catchUpMs?: number } = {},
 ): ThreadEvents {
   return {
+    answerRunInput: (input) => answerRunInput(prisma, input, realtime),
     append: (input) => appendEvent(prisma, input, realtime),
     clearThread: (input) => clearThread(prisma, input, realtime),
     finalizeComputerControlRelease: (input) =>
       finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime),
+    pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
@@ -135,6 +164,129 @@ export async function clearThread(
   return { event: mapProductEvent(committed.event), cancelledRunIds: committed.cancelledRunIds };
 }
 
+export async function answerRunInput(
+  prisma: PrismaClient,
+  input: AnswerRunInput,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const message = await tx.message.findFirst({
+      where: {
+        id: input.messageId,
+        threadId: input.threadId,
+        runId: input.runId,
+        role: "bot",
+      },
+    });
+    const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
+    if (!message || !parsed.success) return null;
+    const pendingAsk = parsed.data.find(
+      (block) => block.kind === "ask" && block.status !== "answered",
+    );
+    if (!pendingAsk) return null;
+
+    const queued = await tx.run.updateMany({
+      where: {
+        id: input.runId,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        status: "waiting_input",
+      },
+      data: { status: "queued" },
+    });
+    if (queued.count !== 1) return null;
+
+    const task = await tx.task.updateMany({
+      where: { runs: { some: { id: input.runId } } },
+      data: { prompt: input.answer },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to answer");
+
+    const blocks = parsed.data.map((block) =>
+      block === pendingAsk
+        ? { ...block, status: "answered" as const, answer: input.answer }
+        : block,
+    );
+    await tx.message.update({ where: { id: message.id }, data: { blocks } });
+    const updated = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.updated",
+      runId: input.runId,
+      payload: { messageId: message.id, role: "bot", blocks },
+    });
+    return { threadId: updated.threadId, seq: updated.seq };
+  });
+
+  if (!committed) return false;
+  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return true;
+}
+
+export async function pauseRunForInput(
+  prisma: PrismaClient,
+  input: PauseRunForInput,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const paused = await tx.run.updateMany({
+      where: {
+        id: input.runId,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        status: "running",
+        leaseOwner: input.leaseOwner,
+        leaseFence: input.leaseFence,
+      },
+      data: { status: "waiting_input", leaseOwner: null, leaseExpiresAt: null },
+    });
+    if (paused.count !== 1) return null;
+
+    const attempt = await tx.attempt.updateMany({
+      where: {
+        id: input.attemptId,
+        runId: input.runId,
+        fence: input.leaseFence,
+        status: "running",
+      },
+      data: { status: "waiting_input", finishedAt: new Date() },
+    });
+    if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
+
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "bot",
+      blocks: input.blocks,
+      runId: input.runId,
+    });
+    await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      runId: input.runId,
+      payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+    });
+    const waitingEvent = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "run.waiting_input",
+      runId: input.runId,
+      payload: {},
+    });
+    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+  });
+
+  if (!committed) return false;
+  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return true;
+}
+
 export async function finalizeComputerControlRelease(
   prisma: PrismaClient,
   input: FinalizeComputerControlReleaseInput,
@@ -142,11 +294,12 @@ export async function finalizeComputerControlRelease(
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
-      where: { botId: input.botId, controlLeaseId: input.leaseId },
+      where: { id: input.computerId, controlLeaseId: input.leaseId },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
+        controlBotId: null,
       },
     });
     if (cleared.count !== 1) return null;

@@ -22,7 +22,7 @@ function fakePrisma(
   routines: Array<{ id: string; nextRunAt: Date | null }> = [],
   controls: Array<{
     id: string;
-    botId: string;
+    controlBotId: string | null;
     controlLeaseId: string | null;
     controlLeaseExpiresAt: Date | null;
     updatedAt: Date;
@@ -45,7 +45,7 @@ describe("createJobReconciler", () => {
       [
         {
           id: "computer-1",
-          botId: "bot-1",
+          controlBotId: "bot-1",
           controlLeaseId: "lease-1",
           controlLeaseExpiresAt: controlExpiresAt,
           updatedAt: new Date(),
@@ -70,9 +70,9 @@ describe("createJobReconciler", () => {
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "computer.control-expire",
-      payload: { botId: "bot-1", leaseId: "lease-1" },
+      payload: { computerId: "computer-1", leaseId: "lease-1" },
       availableAt: controlExpiresAt,
-      replaceKey: "computer.control-expire:bot-1",
+      replaceKey: "computer.control-expire:computer-1",
     });
     expect(vi.mocked(prisma.computer.findMany)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -98,19 +98,19 @@ describe("createJobReconciler", () => {
     const controls = [
       {
         id: "computer-1",
-        botId: "bot-1",
+        controlBotId: "bot-1",
         controlLeaseId: "lease-1",
         controlLeaseExpiresAt: firstExpiry,
       },
       {
         id: "computer-2",
-        botId: "bot-2",
+        controlBotId: "bot-2",
         controlLeaseId: "lease-2",
         controlLeaseExpiresAt: secondExpiry,
       },
       {
         id: "computer-3",
-        botId: "bot-3",
+        controlBotId: "bot-3",
         controlLeaseId: "lease-3",
         controlLeaseExpiresAt: null,
       },
@@ -122,7 +122,7 @@ describe("createJobReconciler", () => {
       .mockResolvedValueOnce([
         {
           id: "computer-0",
-          botId: "bot-0",
+          controlBotId: "bot-0",
           controlLeaseId: "lease-0",
           controlLeaseExpiresAt: firstExpiry,
         },
@@ -163,7 +163,9 @@ describe("createJobReconciler", () => {
     expect(secondDeadline).toEqual(firstDeadline);
     expect(computerFindMany.mock.calls[2]?.[0].where.AND).toHaveLength(2);
     expect(enqueue).toHaveBeenLastCalledWith(
-      expect.objectContaining({ payload: { botId: "bot-0", leaseId: "lease-0" } }),
+      expect.objectContaining({
+        payload: { computerId: "computer-0", leaseId: "lease-0" },
+      }),
     );
   });
 

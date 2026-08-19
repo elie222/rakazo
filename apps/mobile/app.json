@@ -38,6 +38,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
+        "NSCameraUsageDescription": "Rakazo uses the camera so you can attach photos to a bot message.",
+        "NSPhotoLibraryUsageDescription": "Rakazo uses your photo library so you can attach images to a bot message.",
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true

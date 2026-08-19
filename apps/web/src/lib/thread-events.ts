@@ -41,7 +41,9 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
-    event.type === "thread.message.created"
+    event.type === "thread.message.created" ||
+    event.type === "thread.message.updated" ||
+    event.type === "run.waiting_input"
   );
 }
 
@@ -52,6 +54,15 @@ export function reduceThreadSnapshot(
   if (!prev) return prev;
   if (event.type === "thread.cleared") {
     return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
+  }
+  if (event.type === "run.waiting_input") {
+    const run = prev.run;
+    if (!run || run.id !== event.runId || run.status === "waiting_input") return prev;
+    return {
+      ...prev,
+      cursor: event.seq,
+      run: { ...run, status: "waiting_input" },
+    };
   }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);
@@ -87,7 +98,7 @@ export function reduceThreadSnapshot(
     const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
     return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
   }
-  if (event.type === "thread.message.created") {
+  if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
     const next: ThreadMessage = {

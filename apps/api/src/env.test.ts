@@ -26,6 +26,36 @@ describe("loadEnv", () => {
     expect(env.wakeupDriver).toBe("memory");
   });
 
+  it("loads provider-specific Daytona configuration", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "daytona",
+      DAYTONA_API_KEY: "test-daytona-key",
+      DAYTONA_API_URL: "https://daytona.test/api",
+      DAYTONA_TARGET: "test-target",
+    });
+    expect(env).toMatchObject({
+      sandboxProvider: "daytona",
+      daytonaApiKey: "test-daytona-key",
+      daytonaApiUrl: "https://daytona.test/api",
+      daytonaTarget: "test-target",
+    });
+  });
+
+  it("loads provider-specific Box configuration", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "box",
+      BOX_API_KEY: "test-box-key",
+      BOX_API_URL: "https://box.test/api/v1",
+    });
+    expect(env).toMatchObject({
+      sandboxProvider: "box",
+      boxApiKey: "test-box-key",
+      boxApiUrl: "https://box.test/api/v1",
+    });
+  });
+
   it("throws when production omits secrets", () => {
     expect(() =>
       loadEnv({
@@ -55,5 +85,11 @@ describe("loadEnv", () => {
     });
     expect(env.authSecret).toBe("prod-auth-secret-with-enough-length");
     expect(env.encryptionKey).toBe("prod-encryption-key-with-enough-length");
+  });
+
+  it("exposes a deployed git revision when GIT_SHA is set", () => {
+    expect(loadEnv(base).gitSha).toBeUndefined();
+    expect(loadEnv({ ...base, GIT_SHA: "  3c6e209  " }).gitSha).toBe("3c6e209");
+    expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 });

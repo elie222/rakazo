@@ -33,5 +33,5 @@ COPY fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY fluxbox.menu /etc/rakazo/fluxbox/menu
 COPY embed.html /usr/share/novnc/embed.html
 RUN chmod +x /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-browser
-EXPOSE 6080 6081
+EXPOSE 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 6093 6094 6095
 CMD ["/usr/local/bin/rakazo-computer"]
