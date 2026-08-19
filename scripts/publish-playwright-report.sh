@@ -53,6 +53,7 @@ baseline_manifest_path="$dashboard_dir/main-baseline-manifest.json"
 baseline_error_path="$dashboard_dir/baseline-download-error.log"
 run_key="${PLAYWRIGHT_RUN_ID}-${PLAYWRIGHT_RUN_ATTEMPT}"
 bucket_uri="s3://${S3_BUCKET}/playwright"
+stable_baseline_uri="$bucket_uri/baselines/main/manifest.json"
 public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
 report_url="$public_base_url/runs/$run_key/report/index.html"
 screenshots_url="$public_base_url/runs/$run_key/screenshots/index.html"
@@ -89,32 +90,47 @@ else
   exit 1
 fi
 
-if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" && -f "$history_path" ]]; then
-  baseline_run_key="$(jq -r '
-    [.[] | select(
-      .event == "push" and
-      .branch == "main" and
-      .result == "success" and
-      (.id | type == "string") and
-      (.attempt | type == "number")
-    )][0] |
-    if . then .id + "-" + (.attempt | tostring) else empty end
-  ' "$history_path")"
-  if [[ -n "$baseline_run_key" ]]; then
-    if aws s3 cp \
-      "$bucket_uri/runs/$baseline_run_key/screenshots/manifest.json" \
-      "$baseline_manifest_path" \
-      --endpoint-url "$S3_ENDPOINT" \
-      2>"$baseline_error_path"; then
-      echo "Downloaded the latest successful main screenshot baseline."
+if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
+  # Prefer the dedicated latest-main baseline so comparison still works after
+  # that successful run ages out of the 100-entry dashboard history.
+  if aws s3 cp \
+    "$stable_baseline_uri" \
+    "$baseline_manifest_path" \
+    --endpoint-url "$S3_ENDPOINT" \
+    2>"$baseline_error_path"; then
+    echo "Downloaded the latest successful main screenshot baseline."
+  elif grep -Eq "404|NoSuchKey|Not Found" "$baseline_error_path"; then
+    if [[ -f "$history_path" ]]; then
+      baseline_run_key="$(jq -r '
+        [.[] | select(
+          .event == "push" and
+          .branch == "main" and
+          .result == "success" and
+          (.id | type == "string") and
+          (.attempt | type == "number")
+        )][0] |
+        if . then .id + "-" + (.attempt | tostring) else empty end
+      ' "$history_path")"
+      if [[ -n "$baseline_run_key" ]]; then
+        if aws s3 cp \
+          "$bucket_uri/runs/$baseline_run_key/screenshots/manifest.json" \
+          "$baseline_manifest_path" \
+          --endpoint-url "$S3_ENDPOINT" \
+          2>"$baseline_error_path"; then
+          echo "Downloaded the latest successful main screenshot baseline from run history."
+        else
+          echo "::warning::The latest successful main run has no usable screenshot manifest; comparison labels will be unavailable."
+        fi
+      else
+        echo "::warning::No successful main run is available as a screenshot baseline."
+      fi
     else
-      echo "::warning::The latest successful main run has no usable screenshot manifest; comparison labels will be unavailable."
+      echo "::warning::No Playwright history is available for a screenshot baseline."
     fi
   else
-    echo "::warning::No successful main run is available as a screenshot baseline."
+    cat "$baseline_error_path"
+    exit 1
   fi
-elif [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
-  echo "::warning::No Playwright history is available for a screenshot baseline."
 fi
 
 PLAYWRIGHT_REPORT_URL="$report_url" \
@@ -155,6 +171,14 @@ aws s3 cp \
   --endpoint-url "$S3_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "public,max-age=31536000,immutable"
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
+  aws s3 cp \
+    "$gallery_dir/manifest.json" \
+    "$stable_baseline_uri" \
+    --endpoint-url "$S3_ENDPOINT" \
+    --content-type "application/json" \
+    --cache-control "no-store"
+fi
 aws s3 cp \
   "$history_path" \
   "$bucket_uri/history.json" \
