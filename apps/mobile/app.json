@@ -35,7 +35,8 @@
           "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "./plugins/with-worklets-headers"
     ],
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
