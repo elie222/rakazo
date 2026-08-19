@@ -134,7 +134,6 @@ if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
   fi
 fi
 
-skip_stable_baseline_update="false"
 if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
   stable_baseline_missing="false"
   stable_baseline_downloaded="false"
@@ -161,9 +160,12 @@ if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYW
   elif [[ "$stable_baseline_missing" == "true" ]]; then
     echo "No published main screenshot baseline yet."
   else
-    echo "::warning::Could not read the published main screenshot baseline after 3 attempts; leaving it unchanged."
+    # History was downloaded successfully and is the publication-order source
+    # of truth. Treat an unreadable baseline as absent so the newest successful
+    # main run can establish it; an older run is still rejected by the history
+    # recency check emitted by the generator.
+    echo "::warning::Could not read the published main screenshot baseline after 3 attempts; treating it as absent."
     cat "$baseline_error_path"
-    skip_stable_baseline_update="true"
   fi
 fi
 
@@ -205,7 +207,7 @@ aws s3 cp \
   --endpoint-url "$S3_ENDPOINT" \
   --content-type "application/json" \
   --cache-control "public,max-age=31536000,immutable"
-if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" && "$skip_stable_baseline_update" != "true" ]]; then
+if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" == "push" && "$PLAYWRIGHT_BRANCH" == "main" && "$PLAYWRIGHT_RESULT" == "success" ]]; then
   if grep -qx true "$gallery_dir/publish-stable-baseline"; then
     aws s3 cp \
       "$gallery_dir/manifest.json" \
