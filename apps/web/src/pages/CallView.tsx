@@ -175,7 +175,10 @@ export function CallView({
 
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-[rgba(4,4,5,.82)] px-5">
-      <div className="w-full max-w-[420px] rounded-[24px] border border-[#2A2A2F] bg-[#141416] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]">
+      <div
+        data-testid="call-view"
+        className="w-full max-w-[420px] rounded-[24px] border border-[#2A2A2F] bg-[#141416] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]"
+      >
         <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">Call</div>
         <div className="mt-2 text-[22px] font-medium text-[#F1F1F2]">{botName}</div>
         <div className="mt-5 text-[15px] text-[#C9C9CE]">

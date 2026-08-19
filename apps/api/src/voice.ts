@@ -4,10 +4,11 @@ import {
   createVoiceProvider,
   type EncryptedSecretStore,
   isVoiceProviderId,
+  listVoiceCatalog,
   MAX_SPEAK_CHARS,
   MAX_TRANSCRIBE_BYTES,
   NoVoiceConfigured,
-  VOICE_CATALOG as voiceCatalog,
+  voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
@@ -26,7 +27,7 @@ export interface VoiceDeps {
   secrets: EncryptedSecretStore;
 }
 
-export { voiceCatalog };
+export { listVoiceCatalog };
 
 const SPEAK_TIMEOUT_MS = 60_000;
 
@@ -41,7 +42,7 @@ export function voiceContext(actor: Actor, signal?: AbortSignal): AdapterContext
 }
 
 export function catalogEntry(provider: string) {
-  return voiceCatalog.find((entry) => entry.id === provider);
+  return voiceCatalogEntry(provider);
 }
 
 export function toVoiceStatus(cred: { provider: string; voiceId: string } | null): VoiceStatus {

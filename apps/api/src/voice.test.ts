@@ -1,5 +1,6 @@
+import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { toVoiceStatus } from "./voice.js";
+import { mountVoiceHttpRoutes, toVoiceStatus, type VoiceDeps } from "./voice.js";
 
 describe("toVoiceStatus", () => {
   it("treats a saved key without a voice as configured but not ready", () => {
@@ -25,5 +26,24 @@ describe("toVoiceStatus", () => {
       provider: null,
       voiceId: "",
     });
+  });
+});
+
+describe("voice HTTP routes", () => {
+  it("rejects unauthenticated speak and transcribe", async () => {
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, {} as VoiceDeps, async () => null);
+    const speak = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "hello" }),
+    });
+    const transcribe = await app.request("/api/voice/transcribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audioBase64: "AAAA", mimeType: "audio/webm" }),
+    });
+    expect(speak.status).toBe(401);
+    expect(transcribe.status).toBe(401);
   });
 });
