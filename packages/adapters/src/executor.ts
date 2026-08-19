@@ -140,12 +140,12 @@ export async function deferFutureRoutine(
 async function loadLivePluginSlugs(
   listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
   userId: string,
-): Promise<string[]> {
-  if (!listConnectedPluginSlugs) return [];
+): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
+  if (!listConnectedPluginSlugs) return { ok: false };
   try {
-    return await listConnectedPluginSlugs(userId);
+    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
   } catch {
-    return [];
+    return { ok: false };
   }
 }
 
@@ -166,35 +166,15 @@ async function persistLivePluginConnections(
       data: { status: "connected" },
     });
   }
-  for (const row of sync.create) {
-    try {
-      const existing = await prisma.connection.findFirst({
-        where: {
-          userId: owner.userId,
-          workspaceId: owner.workspaceId,
-          provider: row.provider,
-        },
-        select: { id: true, status: true },
-      });
-      if (existing) {
-        if (existing.status !== "connected") {
-          await prisma.connection.update({
-            where: { id: existing.id },
-            data: { status: "connected" },
-          });
-        }
-        continue;
-      }
-      await prisma.connection.create({
-        data: {
-          workspaceId: owner.workspaceId,
-          userId: owner.userId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: "connected",
-        },
-      });
-    } catch {}
+  if (sync.revokeIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.revokeIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "revoked" },
+    });
   }
 }
 
@@ -381,10 +361,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (!leaseValid) runAbortController.abort();
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(storedConnections)) {
-          liveSlugs = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
-          await persistLivePluginConnections(deps.prisma, run, storedConnections, liveSlugs).catch(
-            () => undefined,
-          );
+          const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          if (listing.ok) {
+            liveSlugs = listing.slugs;
+            await persistLivePluginConnections(
+              deps.prisma,
+              run,
+              storedConnections,
+              listing.slugs,
+            ).catch(() => undefined);
+          }
         }
         const connectedPlugins = mergeConnectedPlugins(storedConnections, liveSlugs);
         const context = {

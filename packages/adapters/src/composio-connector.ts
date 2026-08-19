@@ -141,35 +141,36 @@ export function mergeConnectedPlugins(
       byProvider.set(row.provider, { provider: row.provider, displayName: row.displayName });
     }
   }
-  for (const slug of live) {
-    if (!byProvider.has(slug)) byProvider.set(slug, { provider: slug, displayName: slug });
-  }
   return [...byProvider.values()];
 }
 
 export function planLiveConnectionSync(
   rows: PluginConnectionRow[],
   liveSlugs: string[],
-): { connectIds: string[]; create: { provider: string; displayName: string }[] } {
+): { connectIds: string[]; revokeIds: string[] } {
+  const live = new Set(liveSlugs.filter(Boolean));
   const connectIds: string[] = [];
-  const create: { provider: string; displayName: string }[] = [];
-  const seen = new Set<string>();
-  for (const slug of liveSlugs) {
-    if (!slug || seen.has(slug)) continue;
-    seen.add(slug);
+  const connectedProviders = new Set(
+    rows.filter((row) => row.status === "connected").map((row) => row.provider),
+  );
+  for (const slug of live) {
+    if (connectedProviders.has(slug)) continue;
     const matches = rows.filter((row) => row.provider === slug);
-    if (matches.some((row) => row.status === "connected")) continue;
     const reusable =
       matches.find((row) => row.status === "pending" || row.status === "error") ??
       matches.find((row) => row.status === "revoked") ??
       matches[0];
-    if (reusable) {
-      connectIds.push(reusable.id);
-      continue;
-    }
-    create.push({ provider: slug, displayName: slug });
+    if (!reusable) continue;
+    connectIds.push(reusable.id);
+    connectedProviders.add(slug);
   }
-  return { connectIds, create };
+  const connectIdSet = new Set(connectIds);
+  const revokeIds = rows
+    .filter(
+      (row) => (row.status === "pending" || row.status === "error") && !connectIdSet.has(row.id),
+    )
+    .map((row) => row.id);
+  return { connectIds, revokeIds };
 }
 
 export class ComposioConnector implements ComposioProvider {

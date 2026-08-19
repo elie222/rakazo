@@ -94,7 +94,6 @@ describe("composio tool mapping", () => {
     expect(merged).toEqual([
       { provider: "github", displayName: "GitHub" },
       { provider: "gmail", displayName: "Gmail" },
-      { provider: "notion", displayName: "notion" },
     ]);
   });
 
@@ -124,8 +123,17 @@ describe("composio tool mapping", () => {
       ),
     ).toEqual({
       connectIds: ["row-gmail"],
-      create: [{ provider: "slack", displayName: "slack" }],
+      revokeIds: [],
     });
+  });
+
+  it("does not create connection rows for live slugs that have no workspace row", () => {
+    expect(
+      planLiveConnectionSync(
+        [{ id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" }],
+        ["github", "slack"],
+      ),
+    ).toEqual({ connectIds: [], revokeIds: [] });
   });
 
   it("reconnects existing error or revoked rows instead of inserting duplicates", () => {
@@ -140,7 +148,24 @@ describe("composio tool mapping", () => {
       ),
     ).toEqual({
       connectIds: ["row-err", "row-old"],
-      create: [],
+      revokeIds: [],
+    });
+  });
+
+  it("revokes abandoned pending or error rows after a successful live listing", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-dup", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-err", provider: "slack", status: "error", displayName: "Slack" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail"],
+      ),
+    ).toEqual({
+      connectIds: ["row-gmail"],
+      revokeIds: ["row-dup", "row-err"],
     });
   });
 
