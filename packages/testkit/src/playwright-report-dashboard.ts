@@ -29,10 +29,70 @@ export type PlaywrightRun = {
 };
 
 export type PlaywrightScreenshot = {
+  captureType: "checkpoint" | "failure";
+  comparison: "changed" | "new" | "unavailable" | "unchanged";
   fileName: string;
+  hash: string;
   source: string;
+  testId: string;
   title: string;
 };
+
+export type PlaywrightScreenshotManifest = {
+  screenshots: PlaywrightScreenshotMetadata[];
+  version: 1;
+};
+
+export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "comparison" | "fileName">;
+
+export function createScreenshotManifest(
+  screenshots: PlaywrightScreenshot[],
+): PlaywrightScreenshotManifest {
+  return {
+    screenshots: screenshots.map(({ captureType, hash, source, testId, title }) => ({
+      captureType,
+      hash,
+      source,
+      testId,
+      title,
+    })),
+    version: 1,
+  };
+}
+
+export function compareScreenshotsWithBaseline(
+  screenshots: Array<Omit<PlaywrightScreenshot, "comparison">>,
+  baseline: unknown,
+): { baselineAvailable: boolean; screenshots: PlaywrightScreenshot[] } {
+  if (!isScreenshotManifest(baseline)) {
+    return {
+      baselineAvailable: false,
+      screenshots: screenshots.map((screenshot) => ({
+        ...screenshot,
+        comparison: "unavailable",
+      })),
+    };
+  }
+
+  const baselineHashes = new Map(
+    baseline.screenshots.map((screenshot) => [screenshot.source, screenshot.hash]),
+  );
+  return {
+    baselineAvailable: true,
+    screenshots: screenshots.map((screenshot) => {
+      const baselineHash = baselineHashes.get(screenshot.source);
+      return {
+        ...screenshot,
+        comparison:
+          baselineHash === undefined
+            ? "new"
+            : baselineHash === screenshot.hash
+              ? "unchanged"
+              : "changed",
+      };
+    }),
+  };
+}
 
 export function updatePlaywrightHistory(
   existingHistory: unknown,
@@ -236,6 +296,7 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
 }
 
 export function renderScreenshotGallery(input: {
+  baselineAvailable: boolean;
   createdAt: string;
   dashboardUrl: string;
   pullRequestNumber?: number;
@@ -244,21 +305,53 @@ export function renderScreenshotGallery(input: {
   result: string;
   runUrl: string;
   screenshots: PlaywrightScreenshot[];
+  screenshotsUrl: string;
   sha: string;
 }): string {
+  const galleryBaseUrl = new URL(".", input.screenshotsUrl);
+  const counts = {
+    changed: input.screenshots.filter((screenshot) => screenshot.comparison === "changed").length,
+    failed: input.screenshots.filter((screenshot) => screenshot.captureType === "failure").length,
+    new: input.screenshots.filter((screenshot) => screenshot.comparison === "new").length,
+  };
+  const reviewCount = input.screenshots.filter(
+    (screenshot) =>
+      screenshot.captureType === "failure" ||
+      screenshot.comparison === "changed" ||
+      screenshot.comparison === "new",
+  ).length;
   const screenshots = input.screenshots
-    .map(
-      (screenshot, index) => `
-        <figure>
-          <a href="${escapeHtml(screenshot.fileName)}" target="_blank" rel="noreferrer">
-            <img src="${escapeHtml(screenshot.fileName)}" alt="${escapeHtml(screenshot.title)}" loading="lazy" />
+    .map((screenshot, index) => {
+      const imageUrl = new URL(screenshot.fileName, galleryBaseUrl).toString();
+      const badges = [
+        screenshot.captureType === "failure"
+          ? '<span class="badge failure">FAILED</span>'
+          : '<span class="badge checkpoint">CHECKPOINT</span>',
+        screenshot.comparison === "new"
+          ? '<span class="badge new">NEW</span>'
+          : screenshot.comparison === "changed"
+            ? '<span class="badge changed">CHANGED</span>'
+            : screenshot.comparison === "unchanged"
+              ? '<span class="badge unchanged">UNCHANGED</span>'
+              : '<span class="badge unavailable">NO BASELINE</span>',
+      ].join("");
+      return `
+        <figure data-capture="${screenshot.captureType}" data-comparison="${screenshot.comparison}">
+          <a href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer">
+            <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(screenshot.title)}" loading="lazy" />
           </a>
           <figcaption>
             <span class="number">${String(index + 1).padStart(2, "0")}</span>
-            <span><strong>${escapeHtml(screenshot.title)}</strong><small>${escapeHtml(screenshot.source)}</small></span>
+            <span class="caption-copy">
+              <span class="badges">${badges}</span>
+              <strong>${escapeHtml(screenshot.title)}</strong>
+              <small>${screenshot.captureType === "failure" ? "Automatic failure capture" : "Intentional test checkpoint"} · ${escapeHtml(screenshot.testId)}</small>
+              <small title="${escapeHtml(screenshot.source)}">${escapeHtml(screenshot.source)}</small>
+              <small>SHA-256 ${escapeHtml(screenshot.hash.slice(0, 12))}</small>
+            </span>
           </figcaption>
-        </figure>`,
-    )
+        </figure>`;
+    })
     .join("");
 
   return `<!doctype html>
@@ -274,6 +367,11 @@ export function renderScreenshotGallery(input: {
     main { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 80px; }
     header { margin-bottom: 30px; }
     .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: -10px 0 24px; }
+    .filter { padding: 8px 12px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 999px; color: #d4d4d8; background: rgba(9, 9, 11, 0.7); cursor: pointer; }
+    .filter:hover { border-color: #a78bfa; }
+    .filter[aria-pressed="true"] { border-color: #8b5cf6; color: #fff; background: #4c1d95; }
+    .filter:disabled { opacity: 0.45; cursor: not-allowed; }
     .meta { display: flex; flex-wrap: wrap; gap: 10px; }
     .pill { padding: 8px 12px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 999px; color: #d4d4d8; background: rgba(9, 9, 11, 0.7); }
     .view-options { display: inline-flex; flex: 0 0 auto; gap: 4px; padding: 4px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 10px; background: rgba(9, 9, 11, 0.7); }
@@ -287,12 +385,20 @@ export function renderScreenshotGallery(input: {
     figure > a { display: grid; min-height: 300px; place-items: center; padding: 12px; background: #18181b; }
     img { display: block; width: 100%; max-height: 820px; object-fit: contain; object-position: top; border-radius: 10px; }
     figcaption { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-top: 1px solid rgba(63, 63, 70, 0.72); }
-    figcaption span:last-child { min-width: 0; }
+    .caption-copy { min-width: 0; }
     figcaption strong, figcaption small { display: block; }
     figcaption strong { text-transform: capitalize; }
     figcaption small { margin-top: 4px; overflow: hidden; color: #71717a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .badge { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; }
+    .badge.failure { color: #fecdd3; background: #881337; }
+    .badge.checkpoint { color: #ddd6fe; background: #4c1d95; }
+    .badge.new { color: #bbf7d0; background: #14532d; }
+    .badge.changed { color: #fde68a; background: #713f12; }
+    .badge.unchanged, .badge.unavailable { color: #d4d4d8; background: #3f3f46; }
     .number { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #ddd6fe; background: #2e1065; font-size: 0.78rem; font-weight: 700; }
     .empty { padding: 80px 24px; border: 1px solid rgba(113, 113, 122, 0.38); border-radius: 18px; color: #a1a1aa; text-align: center; background: rgba(9, 9, 11, 0.78); }
+    .filter-empty { margin-top: 20px; }
     @media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }
       .toolbar { align-items: start; flex-direction: column; }
@@ -306,8 +412,8 @@ export function renderScreenshotGallery(input: {
     <header>
       <div>
         <p class="eyebrow">Rakazo · visual review</p>
-        <h1>Run screenshots</h1>
-        <p class="subtitle">Scan every captured product state from this Playwright run.</p>
+        <h1>${input.pullRequestNumber ? `PR #${input.pullRequestNumber} screenshots` : "Run screenshots"}</h1>
+        <p class="subtitle">Review intentional checkpoints separately from automatic failure captures.</p>
       </div>
       <div class="actions">
         ${input.reportUrl ? `<a class="button" href="${escapeHtml(input.reportUrl)}">Full report</a>` : ""}
@@ -321,6 +427,7 @@ export function renderScreenshotGallery(input: {
         <span class="pill">${escapeHtml(input.result)}</span>
         <span class="pill">${escapeHtml(input.sha.slice(0, 7))}</span>
         <span class="pill">${input.screenshots.length} screenshots</span>
+        <span class="pill">${input.baselineAvailable ? "Compared with latest successful main run" : "No comparable main baseline"}</span>
         <span class="pill">${escapeHtml(new Date(input.createdAt).toLocaleString("en-US", { timeZone: "UTC" }))} UTC</span>
       </section>
       ${
@@ -342,10 +449,25 @@ export function renderScreenshotGallery(input: {
           : ""
       }
     </div>
+    ${
+      screenshots
+        ? `<nav class="filters" aria-label="Screenshot filters">
+      <button class="filter" type="button" data-filter="all" aria-pressed="${String(!input.baselineAvailable)}">All (${input.screenshots.length})</button>
+      <button class="filter" type="button" data-filter="review" aria-pressed="${String(input.baselineAvailable)}">Review changes (${reviewCount})</button>
+      <button class="filter" type="button" data-filter="new" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>New (${counts.new})</button>
+      <button class="filter" type="button" data-filter="changed" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>Changed (${counts.changed})</button>
+      <button class="filter" type="button" data-filter="failed" aria-pressed="false">Failed (${counts.failed})</button>
+    </nav>`
+        : ""
+    }
     ${screenshots ? `<section class="gallery">${screenshots}</section>` : '<div class="empty">No screenshots were produced by this run.</div>'}
+    ${screenshots ? '<div class="empty filter-empty" hidden>No screenshots match this filter.</div>' : ""}
   </main>
   <script>
     const gallery = document.querySelector(".gallery");
+    const figures = Array.from(document.querySelectorAll("figure"));
+    const filters = Array.from(document.querySelectorAll(".filter"));
+    const filterEmpty = document.querySelector(".filter-empty");
     const viewOptions = Array.from(document.querySelectorAll(".view-option"));
     const storageKey = "rakazo-playwright-gallery-columns";
 
@@ -372,6 +494,27 @@ export function renderScreenshotGallery(input: {
 
     for (const option of viewOptions) {
       option.addEventListener("click", () => setGalleryColumns(option.dataset.columns, true));
+    }
+
+    function setFilter(filter) {
+      let visible = 0;
+      for (const figure of figures) {
+        const show = filter === "all" ||
+          (filter === "review" && (figure.dataset.capture === "failure" || ["new", "changed"].includes(figure.dataset.comparison))) ||
+          (filter === "failed" && figure.dataset.capture === "failure") ||
+          filter === figure.dataset.capture || filter === figure.dataset.comparison;
+        figure.hidden = !show;
+        if (show) visible += 1;
+      }
+      for (const button of filters) {
+        button.setAttribute("aria-pressed", String(button.dataset.filter === filter));
+      }
+      if (filterEmpty) filterEmpty.hidden = visible !== 0;
+    }
+
+    setFilter(${JSON.stringify(input.baselineAvailable ? "review" : "all")});
+    for (const filter of filters) {
+      filter.addEventListener("click", () => setFilter(filter.dataset.filter));
     }
   </script>
 </body>
@@ -401,6 +544,27 @@ function isPlaywrightRun(value: unknown): value is PlaywrightRun {
     typeof run.screenshotCount === "number" &&
     isHttpsUrl(run.screenshotsUrl) &&
     typeof run.sha === "string"
+  );
+}
+
+function isScreenshotManifest(value: unknown): value is PlaywrightScreenshotManifest {
+  if (!value || typeof value !== "object") return false;
+  const manifest = value as Partial<PlaywrightScreenshotManifest>;
+  return (
+    manifest.version === 1 &&
+    Array.isArray(manifest.screenshots) &&
+    manifest.screenshots.every((screenshot) => {
+      if (!screenshot || typeof screenshot !== "object") return false;
+      const candidate = screenshot as Partial<PlaywrightScreenshotMetadata>;
+      return (
+        (candidate.captureType === "checkpoint" || candidate.captureType === "failure") &&
+        typeof candidate.hash === "string" &&
+        /^[a-f0-9]{64}$/.test(candidate.hash) &&
+        typeof candidate.source === "string" &&
+        typeof candidate.testId === "string" &&
+        typeof candidate.title === "string"
+      );
+    })
   );
 }
 
