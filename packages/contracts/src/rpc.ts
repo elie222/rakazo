@@ -288,7 +288,6 @@ export const appContract = {
         z.object({
           provider: z.string(),
           apiKey: z.string().min(8),
-          label: z.string().optional(),
           voiceId: z.string().max(120).optional(),
         }),
       )

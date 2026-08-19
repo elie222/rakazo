@@ -176,14 +176,13 @@ model UserVoiceCredential {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspaceId String
   provider    String
-  label       String
   secretId    String
   isDefault   Boolean  @default(false)
   voiceId     String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([userId, workspaceId])
+  @@unique([userId, workspaceId, provider])
   @@map("user_voice_credentials")
 }
 

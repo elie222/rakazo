@@ -22,7 +22,6 @@ type VoiceCatalogEntry = {
 type VoiceCredential = {
   id: string;
   provider: string;
-  label: string;
   voiceId: string;
 };
 type VoiceStatus = {
@@ -89,7 +88,6 @@ export default function VoiceSettings() {
         provider: selected.id,
         apiKey: apiKey.trim(),
         voiceId: voiceId || undefined,
-        label: selected.name,
       });
       setApiKey("");
       await load(selected.id);

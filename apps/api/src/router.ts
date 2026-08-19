@@ -63,6 +63,7 @@ import {
   createRepos,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
+  findVoiceCredential,
   IsolationError,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -1573,29 +1574,32 @@ export function createRouter(deps: RouterDeps) {
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
-          label: input.label,
           voiceId: input.voiceId,
           signal: context.signal,
         }),
       ),
       setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
         const cred = input.provider
-          ? await deps.prisma.userVoiceCredential.findFirst({
-              where: {
-                userId: context.actor.userId,
-                workspaceId: context.actor.workspaceId,
-                provider: input.provider,
-              },
-              orderBy: newestVoiceCredentialOrder,
-            })
+          ? await findVoiceCredential(deps.prisma, context.actor, input.provider)
           : await findDefaultVoiceCredential(deps.prisma, context.actor);
         if (!cred) {
           throw new ORPCError("BAD_REQUEST", { message: "Connect a voice provider first." });
         }
-        await deps.prisma.userVoiceCredential.update({
-          where: { id: cred.id },
-          data: { voiceId: input.voiceId },
-        });
+        // Picking a voice also makes its provider the one speak/transcribe use.
+        await deps.prisma.$transaction([
+          deps.prisma.userVoiceCredential.updateMany({
+            where: {
+              userId: context.actor.userId,
+              workspaceId: context.actor.workspaceId,
+              id: { not: cred.id },
+            },
+            data: { isDefault: false },
+          }),
+          deps.prisma.userVoiceCredential.update({
+            where: { id: cred.id },
+            data: { voiceId: input.voiceId, isDefault: true },
+          }),
+        ]);
         return toVoiceStatus({ ...cred, voiceId: input.voiceId });
       }),
       voices: authed.voice.voices.handler(async ({ context, input }) => {

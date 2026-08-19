@@ -232,7 +232,6 @@ export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
 export const VoiceCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
-  label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   voiceId: z.string(),
