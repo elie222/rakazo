@@ -17,7 +17,7 @@ The mirror never posts to Daily notes, `#projects`, or `#gates`.
 ## How it runs
 
 1. The worker reconciliation loop enqueues a stable `integration.gtasks_slack.mirror` job for each workspace/user scope whose local connection rows show **both** `GOOGLETASKS` and `SLACK` in `connected` status. The job rechecks workspace membership, connection status, and Composio readiness before listing tasks, then rechecks authorization before each Slack write.
-2. The job resolves the task list titled exactly `My Tasks`, lists active non-hidden tasks through Composio, compares a content fingerprint, and posts or updates one Slack message per external task id. It does not fall back to another task list. Task text is length-bounded and escaped, while Slack mention expansion and link/media unfurls are disabled.
+2. The job resolves the task list titled exactly `My Tasks`, paginates active non-hidden tasks through Composio, compares a content fingerprint, and posts or updates one Slack message per external task id. It does not fall back to another task list. Task text is length-bounded and escaped, while Slack mention expansion and link/media unfurls are disabled.
 3. `integration_mirrors` stores provenance (`externalId`, fingerprint, `slackMessageTs`) without secret payloads.
 4. Product events of type `integration.gtasks_slack.mirrored` are appended on the connection owner’s most recently updated bot thread when one exists.
 

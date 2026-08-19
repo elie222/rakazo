@@ -71,6 +71,12 @@ function asArray(value: unknown): unknown[] {
   return [];
 }
 
+function nextPageToken(data: unknown): string | undefined {
+  const record = asRecord(data);
+  const token = record?.nextPageToken ?? record?.next_page_token ?? record?.pageToken;
+  return typeof token === "string" && token.length > 0 ? token : undefined;
+}
+
 function mapInboxTask(raw: unknown): GtaskInboxItem | undefined {
   const record = asRecord(raw);
   if (!record) return undefined;
@@ -123,20 +129,30 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
     async listInboxTasks(ctx, signal) {
       const tasklistId = await resolveInboxListId(composio, ctx, signal);
       if (!tasklistId) return [];
-      const data = await executeComposio(
-        composio,
-        ctx,
-        GTASKS_SLACK_ROUTING.composioTools.listTasks,
-        {
+      const tasks: GtaskInboxItem[] = [];
+      let pageToken: string | undefined;
+      do {
+        const args: Record<string, unknown> = {
           tasklist_id: tasklistId,
           show_completed: false,
           show_hidden: false,
-        },
-        signal,
-      );
-      return asArray(data)
-        .map((item) => mapInboxTask(item))
-        .filter((item): item is GtaskInboxItem => Boolean(item));
+          max_results: 100,
+        };
+        if (pageToken) args.page_token = pageToken;
+        const data = await executeComposio(
+          composio,
+          ctx,
+          GTASKS_SLACK_ROUTING.composioTools.listTasks,
+          args,
+          signal,
+        );
+        for (const item of asArray(data)) {
+          const mapped = mapInboxTask(item);
+          if (mapped) tasks.push(mapped);
+        }
+        pageToken = nextPageToken(data);
+      } while (pageToken);
+      return tasks;
     },
 
     async postSlackMessage(ctx, text, clientMessageId, signal) {

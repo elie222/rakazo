@@ -57,6 +57,27 @@ describe("createJobReconciler", () => {
     });
   });
 
+  it("enqueues one mirror job per user when multiple workspaces share the same connectors", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue([
+      { workspaceId: "workspace-b", userId: "user-shared", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-b", userId: "user-shared", provider: "SLACK" },
+      { workspaceId: "workspace-a", userId: "user-shared", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-a", userId: "user-shared", provider: "SLACK" },
+    ] as never);
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs });
+
+    await reconciler.reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "integration.gtasks_slack.mirror",
+      payload: { workspaceId: "workspace-a", userId: "user-shared" },
+      replaceKey: "integration.gtasks_slack.mirror:workspace-a:user-shared",
+    });
+  });
+
   it("restores queued runs and near-due routines with stable replacement keys", async () => {
     const scheduledFor = new Date(Date.now() + 30_000);
     const controlExpiresAt = new Date(Date.now() + 15_000);

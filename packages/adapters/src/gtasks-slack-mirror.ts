@@ -337,28 +337,36 @@ export async function listGtasksSlackMirrorTargets(
     select: { workspaceId: true, userId: true, provider: true },
   });
 
-  const byScope = new Map<
+  const byWorkspaceUser = new Map<
     string,
     { workspaceId: string; userId: string; providers: Set<string> }
   >();
   for (const row of rows) {
     const key = `${row.workspaceId}:${row.userId}`;
-    const entry = byScope.get(key) ?? {
+    const entry = byWorkspaceUser.get(key) ?? {
       workspaceId: row.workspaceId,
       userId: row.userId,
       providers: new Set<string>(),
     };
     entry.providers.add(row.provider);
-    byScope.set(key, entry);
+    byWorkspaceUser.set(key, entry);
   }
 
-  return [...byScope.values()]
-    .filter(
-      (entry) =>
-        entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
-        entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
-    )
-    .map(({ workspaceId, userId }) => ({ workspaceId, userId }));
+  const readyScopes = [...byWorkspaceUser.values()].filter(
+    (entry) =>
+      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
+      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
+  );
+
+  const byUser = new Map<string, { workspaceId: string; userId: string }>();
+  for (const scope of readyScopes) {
+    const existing = byUser.get(scope.userId);
+    if (!existing || scope.workspaceId < existing.workspaceId) {
+      byUser.set(scope.userId, { workspaceId: scope.workspaceId, userId: scope.userId });
+    }
+  }
+
+  return [...byUser.values()];
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
