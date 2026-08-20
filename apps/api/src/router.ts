@@ -2011,6 +2011,19 @@ async function persistModelCredential(
 }
 
 const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+// "Local" mode means a Supermemory instance self-hosted on this same machine — never an
+// arbitrary network address. Without this, the base URL is a straightforward SSRF: any
+// workspace member could point the server at an internal service or cloud metadata endpoint
+// and use the probe's ok/rejected/unreachable result as a network-reconnaissance oracle.
+function isLoopbackBaseUrl(url: string): boolean {
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
 
 export async function persistSupermemoryConfig(
   deps: RouterDeps,
@@ -2026,6 +2039,12 @@ export async function persistSupermemoryConfig(
     throw new ORPCError("BAD_REQUEST", { message: "baseUrl is required for local mode" });
   }
   const baseUrl = input.mode === "cloud" ? SUPERMEMORY_CLOUD_BASE_URL : input.baseUrl!;
+  if (input.mode === "local" && !isLoopbackBaseUrl(baseUrl)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message:
+        "Local mode only accepts a loopback address (localhost or 127.0.0.1) — point it at a Supermemory instance running on this machine.",
+    });
+  }
   const probe = await probeSupermemory({ baseUrl, apiKey: input.apiKey });
   if (!probe.ok) {
     throw new ORPCError("BAD_REQUEST", { message: probe.error });

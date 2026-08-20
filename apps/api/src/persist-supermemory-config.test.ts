@@ -43,6 +43,23 @@ describe("persistSupermemoryConfig", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
+  it("rejects a non-loopback baseUrl in local mode without probing or touching the database", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+    await expect(
+      persistSupermemoryConfig(deps as never, actor, {
+        mode: "local",
+        apiKey: "sm_test_key_12345",
+        baseUrl: "http://169.254.169.254/latest/meta-data/",
+        defaultMemoryScope: "isolated",
+      }),
+    ).rejects.toThrow(/loopback/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("probes before persisting, and rejects (without writing) when the probe fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
     const { deps, upsert } = makeDeps();
