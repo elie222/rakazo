@@ -1,10 +1,15 @@
 import type { AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import {
+  effectiveMemoryScope,
+  findWorkspaceMemoryConfig,
+  type PrismaClient,
+  supermemoryContainerTagFor,
+} from "@rakazo/db";
+import type { EncryptedSecretStore } from "./secrets.js";
 import {
   saveSupermemoryMemory as defaultSaveSupermemoryMemory,
   MAX_RECALLED_MEMORIES,
-  supermemoryContainerTag,
 } from "./supermemory-client.js";
 
 /**
@@ -72,12 +77,34 @@ export interface CompactHistoryDeps {
   prisma: PrismaClient;
   runtime: AgentRuntime;
   jobs: JobPublisher;
+  secretStore: EncryptedSecretStore;
   deploymentModelKey?: string;
   saveSupermemoryMemory?: typeof defaultSaveSupermemoryMemory;
 }
 
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
+  const memoryConfig = await findWorkspaceMemoryConfig(deps.prisma, thread.workspaceId);
+  if (!memoryConfig) {
+    console.log(`history.compact skipped for thread ${threadId}: Supermemory is not connected`);
+    return;
+  }
+  const [secret, bot] = await Promise.all([
+    deps.prisma.secret.findUniqueOrThrow({ where: { id: memoryConfig.secretId } }),
+    deps.prisma.bot.findUniqueOrThrow({
+      where: { id: thread.botId },
+      select: { memoryScope: true },
+    }),
+  ]);
+  const supermemory = {
+    baseUrl: memoryConfig.baseUrl,
+    apiKey: deps.secretStore.load(secret.ciphertext),
+  };
+  const containerTag = supermemoryContainerTagFor(
+    effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope),
+    thread.botId,
+    thread.workspaceId,
+  );
   const { fromSeqExclusive, take } = nextCompactionBatchRange(
     thread.historyCompactedUpToSeq,
     COMPACTION_BATCH_SIZE,
@@ -158,7 +185,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   if (!summary) return;
 
   const save = deps.saveSupermemoryMemory ?? defaultSaveSupermemoryMemory;
-  const result = await save(summary, supermemoryContainerTag(thread.botId));
+  const result = await save(summary, containerTag, supermemory);
   if (!result.ok) throw new Error(`Failed to save compacted memory: ${result.error}`);
 
   const lastSeq = batch[batch.length - 1]!.seq;

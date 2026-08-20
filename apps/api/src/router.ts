@@ -28,7 +28,6 @@ import {
   type EncryptedSecretStore,
   expireComputerControl,
   hasActiveComputerControl,
-  isSupermemoryEnabled,
   listPiCatalog,
   type PiOAuthLogins,
   probeSupermemory,
@@ -64,6 +63,7 @@ import {
 } from "@rakazo/core";
 import {
   createRepos,
+  effectiveMemoryScope,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
@@ -571,10 +571,27 @@ export function createRouter(deps: RouterDeps) {
         await Promise.all(
           cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
         );
-        if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+        const memoryConfig = await findWorkspaceMemoryConfig(
+          deps.prisma,
+          context.actor.workspaceId,
+        );
+        // Only purge for isolated scope: a shared-scope bot's memories live in the
+        // whole-workspace container alongside other bots', so deleting it here would destroy
+        // memories that don't belong to this bot. There's no way to remove just one bot's
+        // contribution from a shared container, so leave it alone.
+        if (
+          memoryConfig &&
+          effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope) === "isolated"
+        ) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
-          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id));
+          const secret = await deps.prisma.secret.findUniqueOrThrow({
+            where: { id: memoryConfig.secretId },
+          });
+          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id), {
+            baseUrl: memoryConfig.baseUrl,
+            apiKey: deps.secrets.load(secret.ciphertext),
+          });
           if (!purged.ok) {
             console.error("supermemory purge after thread clear failed", purged.error);
           }
