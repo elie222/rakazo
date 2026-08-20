@@ -86,11 +86,7 @@ import {
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
-import {
-  saveSupermemoryMemory,
-  searchSupermemory,
-  supermemoryContainerTag,
-} from "./supermemory-client.js";
+import { saveSupermemoryMemory, searchSupermemory } from "./supermemory-client.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
@@ -442,7 +438,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (supermemory && thread.historyCompactedUpToSeq != null) {
           const recalled = await searchSupermemory(
             task.prompt,
-            supermemoryContainerTag(bot.id),
+            supermemory.containerTag,
             supermemory,
           );
           if (recalled.ok) {

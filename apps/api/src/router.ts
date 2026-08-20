@@ -61,6 +61,7 @@ import {
 } from "@rakazo/core";
 import {
   createRepos,
+  effectiveMemoryScope,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
@@ -562,7 +563,14 @@ export function createRouter(deps: RouterDeps) {
           deps.prisma,
           context.actor.workspaceId,
         );
-        if (memoryConfig) {
+        // Only purge for isolated scope: a shared-scope bot's memories live in the
+        // whole-workspace container alongside other bots', so deleting it here would destroy
+        // memories that don't belong to this bot. There's no way to remove just one bot's
+        // contribution from a shared container, so leave it alone.
+        if (
+          memoryConfig &&
+          effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope) === "isolated"
+        ) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
           const secret = await deps.prisma.secret.findUniqueOrThrow({

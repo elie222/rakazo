@@ -101,7 +101,8 @@ function compactionHarness(
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
     messages?: HarnessMessage[];
     nextMessageSeq?: number;
-    memoryConfig?: { baseUrl?: string; secretId?: string } | null;
+    memoryConfig?: { baseUrl?: string; secretId?: string; defaultMemoryScope?: string } | null;
+    botMemoryScope?: string | null;
   } = {},
 ) {
   const messages =
@@ -154,6 +155,9 @@ function compactionHarness(
     },
     workspaceMemoryConfig: {
       findUnique: vi.fn(async () => memoryConfig),
+    },
+    bot: {
+      findUniqueOrThrow: vi.fn(async () => ({ memoryScope: options.botMemoryScope ?? null })),
     },
     secret: {
       findUniqueOrThrow: vi.fn(async () => ({ ciphertext: "encrypted-key" })),
@@ -219,6 +223,36 @@ describe("compactHistory", () => {
       where: { id: "thread-1", historyCompactedUpToSeq: null },
       data: { historyCompactedUpToSeq: 49 },
     });
+  });
+
+  it("saves a shared-scope bot's summary to the workspace container, not its own", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      botMemoryScope: "shared",
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:workspace:workspace-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
+    );
+  });
+
+  it("falls back to the workspace default scope when the bot has no override", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: { defaultMemoryScope: "shared" },
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:workspace:workspace-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
+    );
   });
 
   it("falls back to the deployment's configured default model when no cloud credential is available (covers a keyless local-mlx/Ollama default)", async () => {
