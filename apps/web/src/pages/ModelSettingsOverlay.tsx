@@ -374,7 +374,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         onChange={(event) => setApiKey(event.target.value)}
                         placeholder="sk-…"
                         type="password"
-                        autoComplete="off"
+                        autoComplete="new-password"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                       />
                     </label>
