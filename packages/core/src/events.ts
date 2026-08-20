@@ -19,6 +19,9 @@ export function projectMessages(
   let fullStreamText = "";
   let flushedUpTo = 0;
   let liveBlocks: MessageBlock[] = [];
+  // Tool calls that landed mid-sentence wait here until the narration catches up to a sentence
+  // boundary, so the step chips never render in the middle of a clause.
+  let pendingToolNames: string[] = [];
   let liveMeta: {
     id: string;
     threadId: string;
@@ -32,7 +35,19 @@ export function projectMessages(
     fullStreamText = "";
     flushedUpTo = 0;
     liveBlocks = [];
+    pendingToolNames = [];
     liveMeta = null;
+  };
+  const tryFlushPendingTools = () => {
+    if (pendingToolNames.length === 0) return;
+    const tailText = fullStreamText.slice(flushedUpTo);
+    if (!endsSentence(tailText)) return;
+    liveBlocks = appendTextSegment(liveBlocks, tailText);
+    flushedUpTo = fullStreamText.length;
+    for (const name of pendingToolNames) {
+      liveBlocks = appendToolCallSegment(liveBlocks, name);
+    }
+    pendingToolNames = [];
   };
   for (const event of events) {
     const payload = asRecord(event.payload);
@@ -61,6 +76,7 @@ export function projectMessages(
     }
     if (event.type === "thread.progress") {
       fullStreamText = progressMessageText(payload, fullStreamText);
+      tryFlushPendingTools();
       liveMeta = {
         id: progressMessageId(event),
         threadId: event.threadId,
@@ -71,10 +87,8 @@ export function projectMessages(
       continue;
     }
     if (event.type === "agent.tool.called") {
-      const { flush } = splitFlushableText(fullStreamText.slice(flushedUpTo));
-      liveBlocks = appendTextSegment(liveBlocks, flush);
-      flushedUpTo += flush.length;
-      liveBlocks = appendToolCallSegment(liveBlocks, String(payload.name ?? ""));
+      pendingToolNames.push(String(payload.name ?? ""));
+      tryFlushPendingTools();
       liveMeta = {
         id: progressMessageId(event),
         threadId: event.threadId,
@@ -166,10 +180,11 @@ export function trackToolNameStreak(streak: ToolNameStreak, name: string): ToolN
   return name === streak.name ? { name, count: streak.count + 1 } : { name, count: 1 };
 }
 
-export function splitFlushableText(text: string): { flush: string; carry: string } {
-  const match = /^([\s\S]*\s)([^\s]*)$/.exec(text);
-  if (!match) return { flush: "", carry: text };
-  return { flush: match[1] ?? "", carry: match[2] ?? "" };
+const SENTENCE_END_RE = /[.!?]["'”’)\]]*\s*$/;
+
+/** True once `text` ends at a sentence boundary (or is empty) — safe to flush without cutting a clause. */
+export function endsSentence(text: string): boolean {
+  return text.trim() === "" || SENTENCE_END_RE.test(text);
 }
 
 export function appendTextSegment(segments: readonly MessageBlock[], text: string): MessageBlock[] {

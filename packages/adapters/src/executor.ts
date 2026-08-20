@@ -22,6 +22,7 @@ import {
   blocksToAgentHistoryText,
   containsSecret,
   createStreamingRedactor,
+  endsSentence,
   humanizeToolName,
   inferAttachmentMimeType,
   isTerminal,
@@ -29,7 +30,6 @@ import {
   nextFence,
   redactSecrets,
   sandboxCommandTimeoutMs,
-  splitFlushableText,
   type ToolCallStreak,
   type ToolNameStreak,
   trackToolCallStreak,
@@ -489,6 +489,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let assembled = "";
         let currentTextSegment = "";
         let messageSegments: MessageBlock[] = [];
+        // Tool calls that land mid-sentence wait here until the narration catches up to a
+        // sentence boundary, so the step chips never render in the middle of a clause.
+        let pendingToolNames: string[] = [];
+        const flushPendingTools = () => {
+          if (currentTextSegment) {
+            messageSegments = appendTextSegment(messageSegments, currentTextSegment);
+            currentTextSegment = "";
+          }
+          for (const name of pendingToolNames) {
+            messageSegments = appendToolCallSegment(messageSegments, name);
+          }
+          pendingToolNames = [];
+        };
+        const tryFlushPendingTools = () => {
+          if (pendingToolNames.length > 0 && endsSentence(currentTextSegment)) flushPendingTools();
+        };
         let pendingProgress = "";
         let lastProgressAt = 0;
         let hasStreamedText = false;
@@ -915,6 +931,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (event.type === "text") {
               assembled += event.text;
               currentTextSegment += event.text;
+              tryFlushPendingTools();
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
               if (!scripted && pendingProgress && now - lastProgressAt >= 250) {
@@ -1030,16 +1047,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
-              const { flush, carry } = splitFlushableText(currentTextSegment);
-              messageSegments = appendTextSegment(messageSegments, flush);
-              currentTextSegment = carry;
-              messageSegments = appendToolCallSegment(messageSegments, event.name);
+              pendingToolNames.push(event.name);
+              tryFlushPendingTools();
               toolCallStreak = trackToolCallStreak(toolCallStreak, event.name, event.args);
               toolNameStreak = trackToolNameStreak(toolNameStreak, event.name);
               const stuckOnExactRepeat =
                 toolCallStreak.count >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS;
               const stuckOnSameTool = toolNameStreak.count >= MAX_CONSECUTIVE_SAME_TOOL_CALLS;
               if (stuckOnExactRepeat || stuckOnSameTool) {
+                flushPendingTools();
                 if (!(await renewRunLease(deps, runId, workerId, fence))) return;
                 if (messageSegments.length > 0) {
                   await publishMessage(deps, run, "bot", redactBlocks(messageSegments, runSecrets));
@@ -1158,8 +1174,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
-          messageSegments = appendTextSegment(messageSegments, currentTextSegment);
-          currentTextSegment = "";
+          flushPendingTools();
           if (!assembled) {
             messageSegments = appendTextSegment(messageSegments, "done.");
           }

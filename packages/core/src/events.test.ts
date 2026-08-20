@@ -4,9 +4,9 @@ import {
   appendToolCallSegment,
   appendToolStep,
   createStreamingRedactor,
+  endsSentence,
   humanizeToolName,
   projectMessages,
-  splitFlushableText,
   trackToolCallStreak,
   trackToolNameStreak,
 } from "./events.js";
@@ -209,7 +209,7 @@ describe("projectMessages", () => {
     });
   });
 
-  it("merges narration and tool calls into one live message in chronological order", () => {
+  it("holds a tool call that lands mid-sentence until the sentence completes", () => {
     const messages = projectMessages([
       {
         id: "e1",
@@ -235,19 +235,20 @@ describe("projectMessages", () => {
         seq: 2,
         type: "thread.progress",
         runId: "r1",
-        payload: { delta: "Found it, now sanding", streaming: true },
+        payload: { delta: "for a broad search.", streaming: true },
         createdAt: "2026-01-01T00:00:02.000Z",
       },
     ]);
     expect(messages).toHaveLength(1);
+    // The sentence only finishes once "for a broad search." streams in, so the completed
+    // sentence and the held-back tool call appear together, in that order.
     expect(messages[0]?.blocks).toEqual([
-      { kind: "text", text: "Let me check Slack " },
+      { kind: "text", text: "Let me check Slack for a broad search." },
       { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
-      { kind: "progress", text: "Found it, now sanding" },
     ]);
   });
 
-  it("holds back a partial trailing word across a tool call instead of splitting it", () => {
+  it("keeps a tool call hidden while narration keeps streaming with no sentence end", () => {
     const messages = projectMessages([
       {
         id: "e1",
@@ -255,7 +256,7 @@ describe("projectMessages", () => {
         seq: 0,
         type: "thread.progress",
         runId: "r1",
-        payload: { text: "Let me check what I have loca", streaming: true },
+        payload: { text: "Let me check what I have ", streaming: true },
         createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
@@ -273,15 +274,15 @@ describe("projectMessages", () => {
         seq: 2,
         type: "thread.progress",
         runId: "r1",
-        payload: { delta: "lly and try the GitHub API.", streaming: true },
+        payload: { delta: "locally and try the GitHub API", streaming: true },
         createdAt: "2026-01-01T00:00:02.000Z",
       },
     ]);
     expect(messages).toHaveLength(1);
+    // No sentence terminator has streamed in yet, so the "Shell" call stays hidden and
+    // everything so far renders as one continuous progress tail.
     expect(messages[0]?.blocks).toEqual([
-      { kind: "text", text: "Let me check what I have " },
-      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
-      { kind: "progress", text: "locally and try the GitHub API." },
+      { kind: "progress", text: "Let me check what I have locally and try the GitHub API" },
     ]);
   });
 
@@ -402,27 +403,24 @@ describe("trackToolNameStreak", () => {
   });
 });
 
-describe("splitFlushableText", () => {
-  it("flushes everything up to and including the last whitespace", () => {
-    expect(splitFlushableText("Let me check what I have loca")).toEqual({
-      flush: "Let me check what I have ",
-      carry: "loca",
-    });
+describe("endsSentence", () => {
+  it("is false mid-clause, with no terminal punctuation", () => {
+    expect(endsSentence("Let me check what I have loca")).toBe(false);
   });
 
-  it("holds back the whole string when there is no whitespace at all", () => {
-    expect(splitFlushableText("loca")).toEqual({ flush: "", carry: "loca" });
+  it("is false when the text trails off on whitespace with no punctuation", () => {
+    expect(endsSentence("Let me check Slack ")).toBe(false);
   });
 
-  it("flushes everything and carries nothing when the text ends on whitespace", () => {
-    expect(splitFlushableText("Let me check. ")).toEqual({
-      flush: "Let me check. ",
-      carry: "",
-    });
+  it("is true once the text ends on a sentence terminator", () => {
+    expect(endsSentence("Let me check. ")).toBe(true);
+    expect(endsSentence("Is that right?")).toBe(true);
+    expect(endsSentence('She said "stop!"')).toBe(true);
   });
 
-  it("flushes everything and carries nothing for an empty string", () => {
-    expect(splitFlushableText("")).toEqual({ flush: "", carry: "" });
+  it("is true for an empty or whitespace-only string — nothing to protect", () => {
+    expect(endsSentence("")).toBe(true);
+    expect(endsSentence("   ")).toBe(true);
   });
 });
 
