@@ -480,7 +480,7 @@ export default function Thread() {
                   )
                 }
               >
-                <Text style={{ color: "#85858A" }}>✕</Text>
+                <NativeSymbol ios="xmark" android="close" size={14} color="#85858A" />
               </Pressable>
             </View>
           ))}

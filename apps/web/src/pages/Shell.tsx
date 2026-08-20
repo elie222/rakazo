@@ -29,7 +29,7 @@ import {
   speechFromBlocks,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import { ArrowUp, Mic, Phone, Plus, Square } from "lucide-react";
+import { ArrowUp, Mic, Phone, Plus, Square, Volume2, X } from "lucide-react";
 import {
   type Dispatch,
   lazy,
@@ -1047,7 +1047,7 @@ export function ShellPage() {
                 }}
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
-                <span className="text-[#9A9AA0]">♫</span>
+                <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
                 <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Voice</span>
               </button>
               <button
@@ -1217,7 +1217,7 @@ export function ShellPage() {
                     ⚙
                   </button>
                   <button type="button" aria-label="Close panel" onClick={() => setPanel(null)}>
-                    ✕
+                    <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
               </div>
@@ -1372,7 +1372,7 @@ export function ShellPage() {
                   </button>
                   <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
                   <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
-                    ✕
+                    <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
                 <label className="text-[14px] text-[#85858A]">
@@ -1656,7 +1656,7 @@ export function ShellPage() {
                 aria-label="Close computer"
                 onClick={() => setComputerOpen(false)}
               >
-                ✕
+                <X size={16} strokeWidth={1.8} />
               </button>
             </div>
           </div>
@@ -1847,7 +1847,7 @@ const Composer = memo(function Composer({
                 onClick={() => onRemoveAttachment(attachment)}
                 className="text-[#85858A] hover:text-[#ECECEE]"
               >
-                ✕
+                <X size={13} strokeWidth={2} />
               </button>
             </div>
           ))}
@@ -2335,7 +2335,7 @@ function CreateBotForm({
       <div className="mb-4 flex items-center justify-between">
         <span className="text-[13.5px] text-[#85858A]">New bot</span>
         <button type="button" onClick={onCancel}>
-          ✕
+          <X size={16} strokeWidth={1.8} />
         </button>
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">

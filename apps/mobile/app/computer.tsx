@@ -9,6 +9,7 @@ import {
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import {
   COMPUTER_HEARTBEAT_MS,
@@ -371,7 +372,7 @@ export default function Computer() {
                       justifyContent: "center",
                     }}
                   >
-                    <Text style={{ color: "#85858A", fontSize: 16 }}>✕</Text>
+                    <NativeSymbol ios="xmark" android="close" size={16} color="#85858A" />
                   </Pressable>
                 </View>
               </SafeAreaView>
