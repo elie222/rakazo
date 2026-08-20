@@ -56,15 +56,15 @@ export function computerControlExpireJobKey(computerId: string): string {
   return `computer.control-expire:${computerId}`;
 }
 
-export function gtasksSlackMirrorJobKey(workspaceId: string, userId: string): string {
-  return `integration.gtasks_slack.mirror:${workspaceId}:${userId}`;
+export function gtasksSlackMirrorJobKey(userId: string): string {
+  return `integration.gtasks_slack.mirror:${userId}`;
 }
 
 export function gtasksSlackMirrorJob(workspaceId: string, userId: string): BackgroundJob {
   return {
     name: "integration.gtasks_slack.mirror",
     payload: { workspaceId, userId },
-    replaceKey: gtasksSlackMirrorJobKey(workspaceId, userId),
+    replaceKey: gtasksSlackMirrorJobKey(userId),
   };
 }
 

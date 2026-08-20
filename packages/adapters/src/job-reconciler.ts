@@ -1,5 +1,6 @@
 import {
   gtasksSlackMirrorJob,
+  gtasksSlackMirrorJobKey,
   type JobPublisher,
   routineWakeupJob,
   runContinueJob,
@@ -211,6 +212,16 @@ export function createJobReconciler(
         }),
         listGtasksSlackMirrorTargets(deps.prisma),
       ]);
+      const activeMirrorKeys = new Set(
+        (
+          await Promise.all(
+            mirrorTargets.map(async (target) => {
+              const key = gtasksSlackMirrorJobKey(target.userId);
+              return (await deps.jobs.isActive(key)) ? key : undefined;
+            }),
+          )
+        ).filter((key): key is string => Boolean(key)),
+      );
 
       await Promise.all([
         ...runs.map((run) => deps.jobs.enqueue(runContinueJob(run.id))),
@@ -231,9 +242,11 @@ export function createJobReconciler(
               ]
             : [],
         ),
-        ...mirrorTargets.map((target) =>
-          deps.jobs.enqueue(gtasksSlackMirrorJob(target.workspaceId, target.userId)),
-        ),
+        ...mirrorTargets
+          .filter((target) => !activeMirrorKeys.has(gtasksSlackMirrorJobKey(target.userId)))
+          .map((target) =>
+            deps.jobs.enqueue(gtasksSlackMirrorJob(target.workspaceId, target.userId)),
+          ),
       ]);
 
       const lastRun = runs.at(-1);

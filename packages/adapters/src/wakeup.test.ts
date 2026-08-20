@@ -65,4 +65,32 @@ describe("InMemoryJobQueue", () => {
     expect(target["computer.sleep"]).toHaveBeenCalledTimes(1);
     await queue.close();
   });
+
+  it("reports a keyed handler as active until it settles", async () => {
+    const queue = new InMemoryJobQueue();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = vi.fn();
+    const target = handlers();
+    target["integration.gtasks_slack.mirror"] = vi.fn(async () => {
+      entered();
+      await released;
+    });
+    const key = "integration.gtasks_slack.mirror:user-1";
+    await queue.start(target);
+
+    await queue.enqueue({
+      name: "integration.gtasks_slack.mirror",
+      payload: { workspaceId: "workspace-1", userId: "user-1" },
+      replaceKey: key,
+    });
+    await vi.waitFor(() => expect(entered).toHaveBeenCalledOnce());
+    await expect(queue.isActive(key)).resolves.toBe(true);
+
+    release();
+    await vi.waitFor(async () => expect(await queue.isActive(key)).toBe(false));
+    await queue.close();
+  });
 });

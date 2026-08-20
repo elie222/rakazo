@@ -150,6 +150,7 @@ export interface ModelProvider {
 
 export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
+  isActive(key: string): Promise<boolean>;
   cancel(key: string): Promise<void>;
   close(): Promise<void>;
 }

@@ -30,6 +30,39 @@ async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void>
 }
 
 describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
+  it("reports a keyed mirror job as active only while its handler runs", async () => {
+    const publisher = new GraphileJobPublisher(databaseUrl!);
+    const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
+    const entered = deferred();
+    const release = deferred();
+    const key = `contract:active-mirror:${Date.now()}`;
+    const target = handlers({
+      "integration.gtasks_slack.mirror": async () => {
+        entered.resolve();
+        await release.promise;
+      },
+    });
+
+    try {
+      await host.start(target);
+      await publisher.enqueue({
+        name: "integration.gtasks_slack.mirror",
+        payload: { workspaceId: "workspace-1", userId: "user-1" },
+        replaceKey: key,
+      });
+      await entered.promise;
+      await expect(publisher.isActive(key)).resolves.toBe(true);
+
+      release.resolve();
+      await vi.waitFor(async () => expect(await publisher.isActive(key)).toBe(false));
+    } finally {
+      release.resolve();
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
   it("waits for an active handler during graceful shutdown", async () => {
     const publisher = new GraphileJobPublisher(databaseUrl!);
     const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });

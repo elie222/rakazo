@@ -21,6 +21,23 @@ export class GraphileJobPublisher implements JobPublisher {
     });
   }
 
+  async isActive(key: string): Promise<boolean> {
+    const utils = await this.getUtils();
+    return utils.withPgClient(async (client) => {
+      const result = await client.query<{ active: boolean }>(
+        `select exists(
+          select 1
+          from graphile_worker.jobs
+          where key = $1
+            and locked_at is not null
+            and locked_at >= now() - interval '4 hours'
+        ) as active`,
+        [key],
+      );
+      return result.rows[0]?.active === true;
+    });
+  }
+
   async cancel(key: string): Promise<void> {
     const utils = await this.getUtils();
     await utils.withPgClient(async (client) => {
@@ -81,6 +98,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly activeKeys = new Set<string>();
   private closed = false;
 
   async enqueue(job: BackgroundJob): Promise<void> {
@@ -94,12 +112,19 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       }
       const handlers = this.handlers;
       if (!handlers) return;
-      void dispatchBackgroundJob(handlers, job.name, job.payload).catch((error) =>
-        console.error(job.name, error),
-      );
+      if (job.replaceKey) this.activeKeys.add(job.replaceKey);
+      void dispatchBackgroundJob(handlers, job.name, job.payload)
+        .catch((error) => console.error(job.name, error))
+        .finally(() => {
+          if (job.replaceKey) this.activeKeys.delete(job.replaceKey);
+        });
     }, delay);
     this.timers.add(timer);
     if (job.replaceKey) this.keyed.set(job.replaceKey, timer);
+  }
+
+  async isActive(key: string): Promise<boolean> {
+    return this.activeKeys.has(key);
   }
 
   async cancel(key: string): Promise<void> {

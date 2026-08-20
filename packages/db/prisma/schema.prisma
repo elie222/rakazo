@@ -18,6 +18,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   members       Member[]
+  integrationMirrors IntegrationMirror[]
   invitations   Invitation[]
   modelCredentials UserModelCredential[]
   secrets          Secret[]
@@ -369,6 +370,8 @@ model IntegrationMirror {
   id             String       @id @default(cuid())
   workspaceId    String
   workspace      Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lane           String
   externalId     String
   fingerprint    String
@@ -377,8 +380,9 @@ model IntegrationMirror {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  @@unique([workspaceId, lane, externalId])
+  @@unique([userId, lane, externalId])
   @@index([workspaceId, lane])
+  @@index([userId, lane])
   @@map("integration_mirrors")
 }
 

@@ -9,12 +9,14 @@ import {
 
 function publisher() {
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
+  const isActive = vi.fn(async (_key: string) => false);
   const jobs: JobPublisher = {
     enqueue,
+    isActive,
     cancel: async () => undefined,
     close: async () => undefined,
   };
-  return { jobs, enqueue };
+  return { jobs, enqueue, isActive };
 }
 
 function fakePrisma(
@@ -33,6 +35,12 @@ function fakePrisma(
     routine: { findMany: vi.fn(async () => routines) },
     computer: { findMany: vi.fn(async () => controls) },
     connection: { findMany: vi.fn(async () => []) },
+    member: {
+      findMany: vi.fn(
+        async ({ where }: { where: { OR?: Array<{ organizationId: string; userId: string }> } }) =>
+          where.OR ?? [],
+      ),
+    },
   } as unknown as PrismaClient;
 }
 
@@ -53,7 +61,7 @@ describe("createJobReconciler", () => {
     expect(enqueue).toHaveBeenCalledWith({
       name: "integration.gtasks_slack.mirror",
       payload: { workspaceId: "workspace-ready", userId: "user-ready" },
-      replaceKey: "integration.gtasks_slack.mirror:workspace-ready:user-ready",
+      replaceKey: "integration.gtasks_slack.mirror:user-ready",
     });
   });
 
@@ -74,8 +82,48 @@ describe("createJobReconciler", () => {
     expect(enqueue).toHaveBeenCalledWith({
       name: "integration.gtasks_slack.mirror",
       payload: { workspaceId: "workspace-a", userId: "user-shared" },
-      replaceKey: "integration.gtasks_slack.mirror:workspace-a:user-shared",
+      replaceKey: "integration.gtasks_slack.mirror:user-shared",
     });
+  });
+
+  it("selects a workspace only after confirming the user is still a member", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue([
+      { workspaceId: "workspace-a", userId: "user-shared", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-a", userId: "user-shared", provider: "SLACK" },
+      { workspaceId: "workspace-b", userId: "user-shared", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-b", userId: "user-shared", provider: "SLACK" },
+    ] as never);
+    vi.mocked(prisma.member.findMany).mockResolvedValue([
+      { organizationId: "workspace-b", userId: "user-shared" },
+    ] as never);
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs });
+
+    await reconciler.reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "integration.gtasks_slack.mirror",
+      payload: { workspaceId: "workspace-b", userId: "user-shared" },
+      replaceKey: "integration.gtasks_slack.mirror:user-shared",
+    });
+  });
+
+  it("does not enqueue a mirror while the user's stable job key is active", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue([
+      { workspaceId: "workspace-ready", userId: "user-ready", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-ready", userId: "user-ready", provider: "SLACK" },
+    ] as never);
+    const { jobs, enqueue, isActive } = publisher();
+    isActive.mockResolvedValue(true);
+    const reconciler = createJobReconciler({ prisma, jobs });
+
+    await reconciler.reconcileOnce();
+
+    expect(isActive).toHaveBeenCalledWith("integration.gtasks_slack.mirror:user-ready");
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("restores queued runs and near-due routines with stable replacement keys", async () => {

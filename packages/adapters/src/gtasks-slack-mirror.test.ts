@@ -14,7 +14,13 @@ import {
 
 type MirrorStore = Map<
   string,
-  { fingerprint: string; sourceUpdatedAt: Date | null; slackMessageTs: string }
+  {
+    workspaceId: string;
+    userId: string;
+    fingerprint: string;
+    sourceUpdatedAt: Date | null;
+    slackMessageTs: string;
+  }
 >;
 
 type MockBot = {
@@ -31,8 +37,8 @@ type MockPrismaOptions = {
   onQuery?: (query: string) => void;
 };
 
-function mirrorKey(workspaceId: string, externalId: string) {
-  return `${workspaceId}:${GTASKS_SLACK_LANE}:${externalId}`;
+function mirrorKey(userId: string, externalId: string) {
+  return `${userId}:${GTASKS_SLACK_LANE}:${externalId}`;
 }
 
 function createMockPrisma(
@@ -46,24 +52,25 @@ function createMockPrisma(
         where,
       }: {
         where: {
-          workspaceId_lane_externalId: {
-            workspaceId: string;
+          userId_lane_externalId: {
+            userId: string;
             lane: string;
             externalId: string;
           };
         };
       }) => {
         const key = mirrorKey(
-          where.workspaceId_lane_externalId.workspaceId,
-          where.workspaceId_lane_externalId.externalId,
+          where.userId_lane_externalId.userId,
+          where.userId_lane_externalId.externalId,
         );
         const row = store.get(key);
         if (!row) return null;
         return {
           id: key,
-          workspaceId: where.workspaceId_lane_externalId.workspaceId,
+          workspaceId: row.workspaceId,
+          userId: row.userId,
           lane: GTASKS_SLACK_LANE,
-          externalId: where.workspaceId_lane_externalId.externalId,
+          externalId: where.userId_lane_externalId.externalId,
           fingerprint: row.fingerprint,
           sourceUpdatedAt: row.sourceUpdatedAt,
           slackMessageTs: row.slackMessageTs,
@@ -76,6 +83,7 @@ function createMockPrisma(
       }: {
         data: {
           workspaceId: string;
+          userId: string;
           lane: string;
           externalId: string;
           fingerprint: string;
@@ -83,13 +91,15 @@ function createMockPrisma(
           slackMessageTs: string;
         };
       }) => {
-        const key = mirrorKey(data.workspaceId, data.externalId);
+        const key = mirrorKey(data.userId, data.externalId);
         if (store.has(key)) {
           const error = new Error("unique") as Error & { code?: string };
           error.code = "P2002";
           throw error;
         }
         store.set(key, {
+          workspaceId: data.workspaceId,
+          userId: data.userId,
           fingerprint: data.fingerprint,
           sourceUpdatedAt: data.sourceUpdatedAt,
           slackMessageTs: data.slackMessageTs,
@@ -103,7 +113,11 @@ function createMockPrisma(
         data,
       }: {
         where: { id: string };
-        data: { fingerprint?: string; sourceUpdatedAt?: Date | null };
+        data: {
+          workspaceId?: string;
+          fingerprint?: string;
+          sourceUpdatedAt?: Date | null;
+        };
       }) => {
         const row = [...store.entries()].find(([id]) => id === where.id);
         if (!row) throw new Error("missing");
@@ -258,9 +272,7 @@ describe("gtasks-slack mirror", () => {
     expect(port.posts).toHaveLength(1);
     expect(port.posts[0]?.text).toContain("Buy milk");
     expect(port.posts[0]?.text).toContain("googletasks:task-1");
-    expect(port.posts[0]?.clientMessageId).toBe(
-      gtaskSlackClientMessageId(ctx.workspaceId, "task-1"),
-    );
+    expect(port.posts[0]?.clientMessageId).toBe(gtaskSlackClientMessageId(ctx.userId, "task-1"));
   });
 
   it("renders untrusted task text without activating Slack control sequences", () => {
@@ -353,6 +365,48 @@ describe("gtasks-slack mirror", () => {
     expect(second).toEqual({ status: "ok", created: 0, updated: 0, unchanged: 1 });
     expect(port.posts).toHaveLength(1);
     expect(port.updates).toHaveLength(0);
+  });
+
+  it("keeps task delivery identity stable when the selected workspace changes", async () => {
+    const store: MirrorStore = new Map();
+    const task: GtaskInboxItem = {
+      id: "task-workspace-change",
+      title: "Keep one delivery",
+      updated: "2026-08-18T10:00:00Z",
+    };
+    const port = createMockPort([task]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+    const deps = { prisma: createMockPrisma(store) as never, composio, port };
+
+    await syncGtasksSlackInbox(deps, ctx);
+    const changedWorkspace = await syncGtasksSlackInbox(deps, {
+      workspaceId: "ws-2",
+      userId: ctx.userId,
+    });
+
+    expect(changedWorkspace).toEqual({
+      status: "ok",
+      created: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+    expect(port.posts).toHaveLength(1);
+    expect(port.updates).toHaveLength(0);
+    expect(store.get(mirrorKey(ctx.userId, task.id))).toMatchObject({
+      workspaceId: "ws-2",
+      userId: ctx.userId,
+    });
   });
 
   it("updates Slack when inbox content materially changes", async () => {
@@ -454,14 +508,16 @@ describe("gtasks-slack mirror", () => {
     expect(retried).toEqual({ status: "ok", created: 1, updated: 0, unchanged: 0 });
     expect(port.posts).toHaveLength(1);
     expect(port.posts[0]?.clientMessageId).toBe(
-      gtaskSlackClientMessageId(ctx.workspaceId, "task-retry"),
+      gtaskSlackClientMessageId(ctx.userId, "task-retry"),
     );
   });
 
   it("does not let an older concurrent delivery overwrite a newer revision", async () => {
     const store: MirrorStore = new Map();
     const taskId = "task-concurrent";
-    store.set(mirrorKey(ctx.workspaceId, taskId), {
+    store.set(mirrorKey(ctx.userId, taskId), {
+      workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
       fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Initial" }),
       sourceUpdatedAt: new Date("2026-08-18T09:00:00Z"),
       slackMessageTs: "ts-existing",
@@ -511,7 +567,7 @@ describe("gtasks-slack mirror", () => {
     expect(staleResult).toEqual({ status: "ok", created: 0, updated: 0, unchanged: 1 });
     expect(freshPort.updates[0]?.text).toContain("Version two");
     expect(stalePort.updates).toHaveLength(0);
-    expect(store.get(mirrorKey(ctx.workspaceId, taskId))).toMatchObject({
+    expect(store.get(mirrorKey(ctx.userId, taskId))).toMatchObject({
       fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Version two" }),
       sourceUpdatedAt: new Date("2026-08-18T11:00:00Z"),
     });
@@ -520,7 +576,9 @@ describe("gtasks-slack mirror", () => {
   it("serializes concurrent revisions at the Slack delivery boundary", async () => {
     const store: MirrorStore = new Map();
     const taskId = "task-serialized";
-    store.set(mirrorKey(ctx.workspaceId, taskId), {
+    store.set(mirrorKey(ctx.userId, taskId), {
+      workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
       fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Initial" }),
       sourceUpdatedAt: new Date("2026-08-18T09:00:00Z"),
       slackMessageTs: "ts-existing",
@@ -569,7 +627,7 @@ describe("gtasks-slack mirror", () => {
     expect(staleResult).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
     expect(freshResult).toEqual({ status: "ok", created: 0, updated: 1, unchanged: 0 });
     expect(freshPort.updates[0]?.text).toContain("Version two");
-    expect(store.get(mirrorKey(ctx.workspaceId, taskId))).toMatchObject({
+    expect(store.get(mirrorKey(ctx.userId, taskId))).toMatchObject({
       fingerprint: gtaskMirrorFingerprint({ id: taskId, title: "Version two" }),
       sourceUpdatedAt: new Date("2026-08-18T11:00:00Z"),
     });

@@ -8,6 +8,7 @@ describe("routine scheduling", () => {
     const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
     const jobs: JobPublisher = {
       enqueue,
+      isActive: async () => false,
       cancel: async () => undefined,
       close: async () => undefined,
     };

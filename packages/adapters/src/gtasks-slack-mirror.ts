@@ -48,9 +48,9 @@ export function gtaskMirrorFingerprint(item: GtaskMirrorContent): string {
     .slice(0, 32);
 }
 
-export function gtaskSlackClientMessageId(workspaceId: string, externalId: string): string {
+export function gtaskSlackClientMessageId(userId: string, externalId: string): string {
   const digest = createHash("sha256")
-    .update(`${workspaceId}:${GTASKS_SLACK_LANE}:${externalId}`)
+    .update(`${userId}:${GTASKS_SLACK_LANE}:${externalId}`)
     .digest("hex")
     .slice(0, 32);
   const variant = ((Number.parseInt(digest[16]!, 16) & 0x3) | 0x8).toString(16);
@@ -156,15 +156,15 @@ async function mirrorOneTask(
   const mirror = () =>
     deps.prisma.$transaction(async (tx) => {
       const budget = await beginConnectionOperation(tx);
-      const lockKey = `${ctx.workspaceId}:${GTASKS_SLACK_LANE}:${task.id}`;
+      const lockKey = `${ctx.userId}:${GTASKS_SLACK_LANE}:${task.id}`;
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
 
       if (!(await lockGtasksSlackScope(tx, ctx))) return "scope_unavailable" as const;
 
       const existing = await tx.integrationMirror.findUnique({
         where: {
-          workspaceId_lane_externalId: {
-            workspaceId: ctx.workspaceId,
+          userId_lane_externalId: {
+            userId: ctx.userId,
             lane: GTASKS_SLACK_LANE,
             externalId: task.id,
           },
@@ -172,16 +172,31 @@ async function mirrorOneTask(
       });
 
       if (existing?.fingerprint === fingerprint) {
-        if (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt) {
+        if (
+          existing.workspaceId !== ctx.workspaceId ||
+          !existing.sourceUpdatedAt ||
+          sourceUpdatedAt > existing.sourceUpdatedAt
+        ) {
           await tx.integrationMirror.update({
             where: { id: existing.id },
-            data: { sourceUpdatedAt },
+            data: {
+              workspaceId: ctx.workspaceId,
+              ...(!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt
+                ? { sourceUpdatedAt }
+                : {}),
+            },
           });
         }
         return "unchanged" as const;
       }
 
       if (existing?.sourceUpdatedAt && sourceUpdatedAt <= existing.sourceUpdatedAt) {
+        if (existing.workspaceId !== ctx.workspaceId) {
+          await tx.integrationMirror.update({
+            where: { id: existing.id },
+            data: { workspaceId: ctx.workspaceId },
+          });
+        }
         return "unchanged" as const;
       }
 
@@ -191,7 +206,7 @@ async function mirrorOneTask(
         await deps.port.updateSlackMessage(ctx, existing.slackMessageTs, text, signal);
         await tx.integrationMirror.update({
           where: { id: existing.id },
-          data: { fingerprint, sourceUpdatedAt },
+          data: { workspaceId: ctx.workspaceId, fingerprint, sourceUpdatedAt },
         });
         return "updated" as const;
       }
@@ -200,12 +215,13 @@ async function mirrorOneTask(
       const { messageTs } = await deps.port.postSlackMessage(
         ctx,
         text,
-        gtaskSlackClientMessageId(ctx.workspaceId, task.id),
+        gtaskSlackClientMessageId(ctx.userId, task.id),
         signal,
       );
       await tx.integrationMirror.create({
         data: {
           workspaceId: ctx.workspaceId,
+          userId: ctx.userId,
           lane: GTASKS_SLACK_LANE,
           externalId: task.id,
           fingerprint,
@@ -357,9 +373,24 @@ export async function listGtasksSlackMirrorTargets(
       entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
       entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
   );
+  if (readyScopes.length === 0) return [];
+
+  const memberships = await prisma.member.findMany({
+    where: {
+      OR: readyScopes.map((scope) => ({
+        organizationId: scope.workspaceId,
+        userId: scope.userId,
+      })),
+    },
+    select: { organizationId: true, userId: true },
+  });
+  const memberScopes = new Set(
+    memberships.map((membership) => `${membership.organizationId}:${membership.userId}`),
+  );
 
   const byUser = new Map<string, { workspaceId: string; userId: string }>();
   for (const scope of readyScopes) {
+    if (!memberScopes.has(`${scope.workspaceId}:${scope.userId}`)) continue;
     const existing = byUser.get(scope.userId);
     if (!existing || scope.workspaceId < existing.workspaceId) {
       byUser.set(scope.userId, { workspaceId: scope.workspaceId, userId: scope.userId });

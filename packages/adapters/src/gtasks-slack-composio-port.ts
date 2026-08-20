@@ -106,21 +106,27 @@ async function resolveInboxListId(
   ctx: GtasksSlackMirrorContext,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  const data = await executeComposio(
-    composio,
-    ctx,
-    GTASKS_SLACK_ROUTING.composioTools.listTaskLists,
-    { max_results: 50 },
-    signal,
-  );
-  for (const item of asArray(data)) {
-    const record = asRecord(item);
-    if (!record) continue;
-    const title = String(record.title ?? record.name ?? "");
-    if (title === GTASKS_SLACK_ROUTING.inboxListTitle) {
-      return String(record.id ?? record.tasklist_id ?? "");
+  let pageToken: string | undefined;
+  do {
+    const args: Record<string, unknown> = { max_results: 50 };
+    if (pageToken) args.page_token = pageToken;
+    const data = await executeComposio(
+      composio,
+      ctx,
+      GTASKS_SLACK_ROUTING.composioTools.listTaskLists,
+      args,
+      signal,
+    );
+    for (const item of asArray(data)) {
+      const record = asRecord(item);
+      if (!record) continue;
+      const title = String(record.title ?? record.name ?? "");
+      if (title === GTASKS_SLACK_ROUTING.inboxListTitle) {
+        return String(record.id ?? record.tasklist_id ?? "");
+      }
     }
-  }
+    pageToken = nextPageToken(data);
+  } while (pageToken);
   return undefined;
 }
 
