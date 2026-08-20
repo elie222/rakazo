@@ -227,6 +227,215 @@ describe("thread event reduction", () => {
     ).toBe(waiting);
   });
 
+  it("accumulates tool-call steps and collapses repeats into a count", () => {
+    const initial = snapshot([]);
+
+    const first = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "agent.tool.called",
+        seq: 4,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const second = reduceThreadSnapshot(
+      first,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+    const third = reduceThreadSnapshot(
+      second,
+      event({
+        type: "agent.tool.called",
+        seq: 6,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+
+    expect(third?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Slack find channels", count: 1 },
+              { label: "Slack fetch conversation history", count: 2 },
+            ],
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("holds a tool call that lands mid-sentence until the sentence completes", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+
+    // Still mid-sentence — the tool call stays hidden, folded into the streaming text instead.
+    expect(afterTool?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Let me check Slack " }],
+      }),
+    ]);
+
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "for a broad search.", streaming: true },
+      }),
+    );
+
+    // The sentence just finished — the completed sentence and the held-back tool call appear
+    // together, in that order.
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Slack for a broad search." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
+  it("survives a React StrictMode replay of the same event without double-counting", () => {
+    // StrictMode invokes a setState updater twice per event in development to catch impure
+    // updaters — reduceThreadSnapshot(prev, event) must return the same result both times
+    // rather than mutating its pending-tool-call bookkeeping a second time.
+    const initial = snapshot([]);
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check ", streaming: true },
+      }),
+    );
+    const toolEvent = event({
+      type: "agent.tool.called",
+      seq: 5,
+      runId: "run-1",
+      payload: { name: "SLACK_FIND_CHANNELS" },
+    });
+
+    // The tool call lands mid-sentence, so it's held back rather than flushed immediately —
+    // exactly the state a naive module-level mutation would double-push on replay.
+    const first = reduceThreadSnapshot(afterNarration, toolEvent);
+    const replay = reduceThreadSnapshot(afterNarration, toolEvent);
+    expect(replay).toEqual(first);
+
+    const sentenceEnd = reduceThreadSnapshot(
+      first,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Done.", streaming: true },
+      }),
+    );
+
+    // A single tool call, not two — StrictMode's replay must not have pushed it twice.
+    expect(sentenceEnd?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Done." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
+  it("keeps deferring a tool call across several sentence-less deltas", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Found it, now sanding", streaming: true },
+      }),
+    );
+
+    // No sentence terminator has streamed in yet, so the tool call is still hidden and
+    // everything so far renders as one continuous progress block.
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Let me check Slack Found it, now sanding" }],
+      }),
+    ]);
+  });
+
+  it("clears the step trail once the durable answer arrives", () => {
+    const initial = snapshot([
+      message("steps:run-1", [
+        { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+      ]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "final", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["final"]);
+  });
+
   it("replaces an ask message when its durable prompt state changes", () => {
     const initial = snapshot([
       message("ask-1", [{ kind: "ask", text: "Which city?", status: "pending" }]),
