@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { createProvider, type ApiKeyAuth, type Model, type MutableModels, type Provider } from "@earendil-works/pi-ai";
+import {
+  type ApiKeyAuth,
+  createProvider,
+  type Model,
+  type MutableModels,
+  type Provider,
+} from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 const OLLAMA_PROVIDER_ID = "ollama";
@@ -87,7 +93,10 @@ function ollamaProvider(): Provider<"openai-completions"> {
 }
 
 function localMlxProvider(): Provider<"openai-completions"> {
-  const baseUrl = (process.env.LOCAL_MLX_BASE_URL ?? LOCAL_MLX_DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (process.env.LOCAL_MLX_BASE_URL ?? LOCAL_MLX_DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    "",
+  );
   const modelId = process.env.LOCAL_MLX_MODEL_ID ?? LOCAL_MLX_DEFAULT_MODEL_ID;
   return createProvider({
     id: LOCAL_MLX_PROVIDER_ID,
