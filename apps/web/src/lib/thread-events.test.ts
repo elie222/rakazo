@@ -278,14 +278,22 @@ describe("computer event reduction", () => {
       computer({ state: "suspended", controlHolder: "bot" }),
       event({ type: "computer.takeover.granted", payload: {} }),
     );
-    expect(granted).toMatchObject({ state: "suspended", controlHolder: "user" });
+    expect(granted).toMatchObject({
+      state: "suspended",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     expect(
       reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
     ).toBe(granted);
   });
 
   it("applies the authoritative holder when a takeover is released or expires", () => {
-    const initial = computer({ state: "running", controlHolder: "user" });
+    const initial = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     const expired = reduceComputerStatus(
       initial,
       event({
@@ -300,8 +308,16 @@ describe("computer event reduction", () => {
         payload: { holder: "bot", reason: "released" },
       }),
     );
-    expect(expired).toMatchObject({ state: "running", controlHolder: "none" });
-    expect(released).toMatchObject({ state: "running", controlHolder: "bot" });
+    expect(expired).toMatchObject({
+      state: "running",
+      controlHolder: "none",
+      controlBotId: null,
+    });
+    expect(released).toMatchObject({
+      state: "running",
+      controlHolder: "bot",
+      controlBotId: null,
+    });
   });
 });
 
