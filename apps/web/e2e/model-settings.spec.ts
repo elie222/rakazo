@@ -8,7 +8,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "⌁ Models" }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
   await expect(page.getByRole("button", { name: "Close model settings" })).toBeVisible();
 
   const providerSearch = page.getByPlaceholder("Search providers");
