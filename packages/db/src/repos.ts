@@ -4,7 +4,7 @@ import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./co
 import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
 
-function mapBot(
+export function mapBot(
   bot: {
     id: string;
     workspaceId: string;
@@ -17,6 +17,7 @@ function mapBot(
     pinned: boolean;
     archivedAt: Date | null;
     parentBotId: string | null;
+    memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string; unread: boolean } | null;
@@ -43,6 +44,7 @@ function mapBot(
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: bot.thread.unread,
     parentBotId: bot.parentBotId,
+    memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
     preview,
     status,

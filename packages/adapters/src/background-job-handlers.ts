@@ -10,6 +10,7 @@ import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
+import type { EncryptedSecretStore } from "./secrets.js";
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -20,6 +21,7 @@ export function createBackgroundJobHandlers(deps: {
   events: ThreadEvents;
   workerId: string;
   runtime: AgentRuntime;
+  secretStore: EncryptedSecretStore;
   deploymentModelKey?: string;
 }): BackgroundJobHandlers {
   return {
@@ -43,6 +45,7 @@ export function createBackgroundJobHandlers(deps: {
           prisma: deps.prisma,
           runtime: deps.runtime,
           jobs: deps.jobs,
+          secretStore: deps.secretStore,
           deploymentModelKey: deps.deploymentModelKey,
         },
         payload.threadId,

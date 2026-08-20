@@ -74,6 +74,11 @@ const ModelSettingsOverlay = lazy(() =>
 const PluginsOverlay = lazy(() =>
   import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
+const SupermemorySettingsOverlay = lazy(() =>
+  import("./SupermemorySettingsOverlay").then((module) => ({
+    default: module.SupermemorySettingsOverlay,
+  })),
+);
 const RoutineSchedule = lazy(() =>
   import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
 );
@@ -116,6 +121,7 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [supermemorySettingsOpen, setSupermemorySettingsOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -1042,6 +1048,17 @@ export function ShellPage() {
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
+                  setSupermemorySettingsOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">◇</span>
+                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Memory</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
                   setVoiceOpen(true);
                 }}
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
@@ -1612,6 +1629,12 @@ export function ShellPage() {
             onAnswer={answerMessage}
             onClose={() => setCallOpen(false)}
           />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {supermemorySettingsOpen ? (
+          <SupermemorySettingsOverlay onClose={() => setSupermemorySettingsOpen(false)} />
         ) : null}
       </Suspense>
 
@@ -2400,6 +2423,7 @@ function BotSettings({
     description?: string;
     instructions?: string;
     computerMode: ComputerMode;
+    memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
   }) => Promise<void>;
@@ -2410,6 +2434,8 @@ function BotSettings({
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
+  const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
+  const [supermemoryConnected, setSupermemoryConnected] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -2417,6 +2443,10 @@ function BotSettings({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    void rpc.memory
+      .supermemoryConfig()
+      .then((config) => setSupermemoryConnected(config !== null))
+      .catch(() => setSupermemoryConnected(false));
     void rpc.voice
       .voices({})
       .then(setVoices)
@@ -2454,6 +2484,34 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      {supermemoryConnected ? (
+        <div className="mt-4 text-[14px] text-[#85858A]">
+          Memory scope
+          <div className="mt-2 flex gap-2">
+            {(
+              [
+                { value: null, label: "Inherit default" },
+                { value: "isolated" as const, label: "Isolated" },
+                { value: "shared" as const, label: "Shared" },
+              ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
+            ).map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                aria-pressed={memoryScope === option.value}
+                onClick={() => setMemoryScope(option.value)}
+                className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
+                  memoryScope === option.value
+                    ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
+                    : "border-[#26262A] text-[#85858A]"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
         <input
           type="checkbox"
@@ -2493,6 +2551,7 @@ function BotSettings({
               description,
               instructions: description,
               computerMode,
+              memoryScope,
               autoSpeak,
               voiceId: voiceId || null,
             })

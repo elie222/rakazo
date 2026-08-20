@@ -10,6 +10,7 @@ import {
   nextCompactionBatchRange,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import type { EncryptedSecretStore } from "./secrets.js";
 import type { SupermemorySaveResponse } from "./supermemory-client.js";
 
 describe("shouldEnqueueCompaction", () => {
@@ -100,6 +101,8 @@ function compactionHarness(
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
     messages?: HarnessMessage[];
     nextMessageSeq?: number;
+    memoryConfig?: { baseUrl?: string; secretId?: string; defaultMemoryScope?: string } | null;
+    botMemoryScope?: string | null;
   } = {},
 ) {
   const messages =
@@ -117,6 +120,15 @@ function compactionHarness(
     nextMessageSeq: options.nextMessageSeq ?? messages.length,
     historyCompactedUpToSeq: null as number | null,
   };
+  const memoryConfig =
+    options.memoryConfig === null
+      ? null
+      : {
+          id: "memcfg-1",
+          baseUrl: "http://localhost:6767",
+          secretId: "secret-1",
+          ...options.memoryConfig,
+        };
   const prisma = {
     thread: {
       findUniqueOrThrow: vi.fn(async () => thread),
@@ -141,6 +153,15 @@ function compactionHarness(
     deploymentSettings: {
       findUnique: vi.fn(async () => options.settings ?? null),
     },
+    workspaceMemoryConfig: {
+      findUnique: vi.fn(async () => memoryConfig),
+    },
+    bot: {
+      findUniqueOrThrow: vi.fn(async () => ({ memoryScope: options.botMemoryScope ?? null })),
+    },
+    secret: {
+      findUniqueOrThrow: vi.fn(async () => ({ ciphertext: "encrypted-key" })),
+    },
   };
   const runtime = {
     run: vi.fn<AgentRuntime["run"]>(async function* () {
@@ -150,6 +171,7 @@ function compactionHarness(
   const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
     ok: true,
   }));
+  const secretStore = { load: vi.fn(() => "sm_test_key") };
   const jobs = { enqueue: vi.fn(async () => undefined) };
   return {
     thread,
@@ -157,11 +179,13 @@ function compactionHarness(
     prisma,
     runtime,
     saveSupermemoryMemory,
+    secretStore,
     jobs,
     deps: {
       prisma: prisma as unknown as PrismaClient,
       runtime: runtime as unknown as AgentRuntime,
       jobs: jobs as unknown as JobPublisher,
+      secretStore: secretStore as unknown as EncryptedSecretStore,
       deploymentModelKey: options.deploymentModelKey,
       saveSupermemoryMemory,
     },
@@ -188,6 +212,7 @@ describe("compactHistory", () => {
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
       "Summary of 50 messages.",
       "rakazo:bot-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
     );
 
     const [, context] = harness.runtime.run.mock.calls[0]!;
@@ -198,6 +223,36 @@ describe("compactHistory", () => {
       where: { id: "thread-1", historyCompactedUpToSeq: null },
       data: { historyCompactedUpToSeq: 49 },
     });
+  });
+
+  it("saves a shared-scope bot's summary to the workspace container, not its own", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      botMemoryScope: "shared",
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:workspace:workspace-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
+    );
+  });
+
+  it("falls back to the workspace default scope when the bot has no override", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: { defaultMemoryScope: "shared" },
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:workspace:workspace-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
+    );
   });
 
   it("falls back to the deployment's configured default model when no cloud credential is available (covers a keyless local-mlx/Ollama default)", async () => {
@@ -239,6 +294,19 @@ describe("compactHistory", () => {
 
   it("skips compaction entirely when nothing at all is configured, rather than summarizing with the scripted runtime", async () => {
     const harness = compactionHarness();
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("skips compaction when the workspace has no Supermemory connection", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: null,
+    });
 
     await compactHistory(harness.deps, "thread-1");
 

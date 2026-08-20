@@ -172,6 +172,7 @@ export async function createApp(
     events,
     workerId: "api",
     runtime,
+    secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
