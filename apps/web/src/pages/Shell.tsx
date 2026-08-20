@@ -2028,9 +2028,19 @@ const MessageView = memo(function MessageView({
             }
             if (block.kind === "text" || block.kind === "progress") {
               return (
-                <ChatMarkdown key={i} streaming={block.kind === "progress"}>
-                  {block.text}
-                </ChatMarkdown>
+                <div key={i}>
+                  <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                  {block.kind === "text" && voiceReady ? (
+                    <button
+                      type="button"
+                      aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                      onClick={onSpeak}
+                      className="mt-2 text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                    >
+                      {speaking ? "Stop" : "Speak"}
+                    </button>
+                  ) : null}
+                </div>
               );
             }
             return null;
