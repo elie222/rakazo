@@ -409,6 +409,36 @@ describe("gtasks-slack mirror", () => {
     });
   });
 
+  it("locks user-scoped connector rows across current member workspaces", async () => {
+    const queries: string[] = [];
+    const prisma = createMockPrisma(new Map(), [], {
+      onQuery(query) {
+        queries.push(query);
+      },
+    });
+    const port = createMockPort([{ id: "task-split-scope", title: "Split scope" }]);
+    const composio = new ComposioEmulator();
+    for (const provider of ["GOOGLETASKS", "SLACK"] as const) {
+      await composio.begin(
+        { provider, redirectUrl: "http://example.test" },
+        {
+          ...ctx,
+          operationId: "test",
+          traceId: "test",
+          signal: AbortSignal.timeout(1000),
+        },
+      );
+    }
+
+    await expect(
+      syncGtasksSlackInbox({ prisma: prisma as never, composio, port }, ctx),
+    ).resolves.toEqual({ status: "ok", created: 1, updated: 0, unchanged: 0 });
+    const connectionQuery = queries.find((query) => query.includes('FROM "connections" c'));
+    expect(connectionQuery).toContain('INNER JOIN "member" m');
+    expect(connectionQuery).toContain('WHERE c."userId" = ?');
+    expect(connectionQuery).not.toContain('WHERE c."workspaceId"');
+  });
+
   it("updates Slack when inbox content materially changes", async () => {
     const store: MirrorStore = new Map();
     let tasks: GtaskInboxItem[] = [

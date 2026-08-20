@@ -110,6 +110,25 @@ describe("createJobReconciler", () => {
     });
   });
 
+  it("unions user-scoped connectors across current member workspaces", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue([
+      { workspaceId: "workspace-a", userId: "user-shared", provider: "GOOGLETASKS" },
+      { workspaceId: "workspace-b", userId: "user-shared", provider: "SLACK" },
+    ] as never);
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs });
+
+    await reconciler.reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "integration.gtasks_slack.mirror",
+      payload: { workspaceId: "workspace-a", userId: "user-shared" },
+      replaceKey: "integration.gtasks_slack.mirror:user-shared",
+    });
+  });
+
   it("does not enqueue a mirror while the user's stable job key is active", async () => {
     const prisma = fakePrisma();
     vi.mocked(prisma.connection.findMany).mockResolvedValue([
