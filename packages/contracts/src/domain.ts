@@ -5,6 +5,9 @@ import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
+export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
+export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -18,6 +21,7 @@ export const BotSchema = z.object({
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
+  memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
   preview: z.string(),
   status: z.string(),
@@ -51,6 +55,7 @@ export const UpdateBotInput = z.object({
   pinned: z.boolean().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
+  memoryScope: MemoryScopeSchema.nullable().optional(),
 });
 
 export const RoutineSchema = z.object({
@@ -259,6 +264,15 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
+
+export const WorkspaceMemoryConfigSchema = z.object({
+  mode: z.enum(["cloud", "local"]),
+  baseUrl: z.string(),
+  defaultMemoryScope: MemoryScopeSchema,
+  connected: z.boolean(),
+  updatedAt: z.string(),
+});
+export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
   provider: z.string(),

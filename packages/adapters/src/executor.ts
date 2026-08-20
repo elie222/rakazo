@@ -32,9 +32,12 @@ import {
 } from "@rakazo/core";
 import {
   createThreadMessage,
+  effectiveMemoryScope,
   findDefaultModelCredential,
+  findWorkspaceMemoryConfig,
   type PrismaClient,
   parseComputerMode,
+  supermemoryContainerTagFor,
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -75,6 +78,7 @@ import {
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import { selectMemoryTools } from "./memory-tools.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -84,11 +88,7 @@ import {
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
-import {
-  isSupermemoryEnabled,
-  searchSupermemory,
-  supermemoryContainerTag,
-} from "./supermemory-client.js";
+import { saveSupermemoryMemory, searchSupermemory } from "./supermemory-client.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
@@ -339,7 +339,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, storedConnections, credential, settings, savedSkills] =
+        const [
+          bot,
+          thread,
+          messages,
+          task,
+          storedConnections,
+          credential,
+          settings,
+          savedSkills,
+          memoryConfig,
+        ] =
           await Promise.all([
             deps.prisma.bot.findUniqueOrThrow({
               where: { id: run.botId },
@@ -362,6 +372,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             deps.prisma.taughtSkill.findMany({
               where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
             }),
+            findWorkspaceMemoryConfig(deps.prisma, run.workspaceId),
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
@@ -391,6 +402,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           connectedProviders: connectedPlugins.map((row) => row.provider),
         };
 
+        const supermemory = memoryConfig
+          ? {
+              baseUrl: memoryConfig.baseUrl,
+              apiKey: deps.secretStore!.load(
+                (await deps.prisma.secret.findUniqueOrThrow({ where: { id: memoryConfig.secretId } }))
+                  .ciphertext,
+              ),
+              containerTag: supermemoryContainerTagFor(
+                effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope),
+                bot.id,
+                run.workspaceId,
+              ),
+            }
+          : null;
+
         await deps.events.append({
           workspaceId: run.workspaceId,
           threadId: thread.id,
@@ -419,11 +445,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         const currentTurnImages = await loadCurrentTurnImages(deps, turnBlocks, context);
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
-        const supermemoryEnabled = isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY);
+        const supermemoryEnabled = Boolean(supermemory);
         let recalledMemory = "";
         let recallSucceeded = false;
-        if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
-          const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
+        if (supermemory && thread.historyCompactedUpToSeq != null) {
+          const recalled = await searchSupermemory(
+            task.prompt,
+            supermemory.containerTag,
+            supermemory,
+          );
           if (recalled.ok) {
             recallSucceeded = true;
             recalledMemory = formatRecalledMemory(recalled.results);
@@ -462,9 +492,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        const builtins = graphical
+        const nonGraphical = graphical
           ? builtinAgentTools
           : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name));
+        const builtins = selectMemoryTools(nonGraphical, Boolean(memoryConfig));
         const tools = [
           ...builtins,
           ...discovered.filter(
@@ -728,6 +759,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true });
+          }
+          if (name === "recall_memory") {
+            return searchSupermemory(String(args.query ?? ""), supermemory!.containerTag, supermemory!);
+          }
+          if (name === "save_memory") {
+            return finish(
+              await saveSupermemoryMemory(
+                String(args.content ?? ""),
+                supermemory!.containerTag,
+                supermemory!,
+              ),
+            );
           }
           if (name === "request_takeover") return { ok: true };
           if (name === "run_subagent") {
@@ -1162,7 +1205,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Last, and never fatal: the run is already finalized, so a failure here must not reach
           // the catch block below, where a second finalizeRun would match no rows and silently
           // skip the completion notification.
-          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+          if (supermemory) {
             try {
               const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
                 where: { id: thread.id },

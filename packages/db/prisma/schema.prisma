@@ -103,6 +103,7 @@ model Organization {
   notificationPreferences NotificationPreference[]
   computers   Computer[]
   externalEffects ExternalEffect[]
+  workspaceMemoryConfig WorkspaceMemoryConfig?
 
   @@unique([slug])
   @@map("organization")
@@ -202,6 +203,7 @@ model Bot {
   archivedAt     DateTime?
   parentBotId    String?
   spawnKey       String?
+  memoryScope    String?
   parent         Bot?     @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
   children       Bot[]    @relation("BotChildren")
   createdAt      DateTime @default(now())
@@ -628,6 +630,21 @@ model NotificationPreference {
 
   @@unique([workspaceId, userId])
   @@map("notification_preferences")
+}
+
+model WorkspaceMemoryConfig {
+  id                 String   @id @default(cuid())
+  workspaceId        String   @unique
+  workspace          Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId             String
+  mode               String
+  baseUrl            String
+  secretId           String
+  defaultMemoryScope String   @default("isolated")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("workspace_memory_configs")
 }
 
 model Secret {

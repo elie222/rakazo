@@ -96,6 +96,11 @@ const ModelSettingsOverlay = lazy(() =>
 const PluginsOverlay = lazy(() =>
   import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
+const SupermemorySettingsOverlay = lazy(() =>
+  import("./SupermemorySettingsOverlay").then((module) => ({
+    default: module.SupermemorySettingsOverlay,
+  })),
+);
 const RoutineSchedule = lazy(() =>
   import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
 );
@@ -147,6 +152,7 @@ export function ShellPage() {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [dictating, setDictating] = useState(false);
   const [dictationError, setDictationError] = useState<string | null>(null);
+  const [supermemorySettingsOpen, setSupermemorySettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [botMenu, setBotMenu] = useState<{
     botId: string;
@@ -1105,6 +1111,12 @@ export function ShellPage() {
               >
                 <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
                 <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Voice</span>
+                  setSupermemorySettingsOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">◇</span>
+                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Memory</span>
               </button>
               <button
                 type="button"
@@ -1670,6 +1682,12 @@ export function ShellPage() {
             onAnswer={answerMessage}
             onClose={() => setCallOpen(false)}
           />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {supermemorySettingsOpen ? (
+          <SupermemorySettingsOverlay onClose={() => setSupermemorySettingsOpen(false)} />
         ) : null}
       </Suspense>
 
@@ -2506,6 +2524,7 @@ function BotSettings({
     computerMode: ComputerMode;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    memoryScope?: "isolated" | "shared" | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -2517,6 +2536,8 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
+  const [supermemoryConnected, setSupermemoryConnected] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2525,6 +2546,10 @@ function BotSettings({
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void rpc.memory
+      .supermemoryConfig()
+      .then((config) => setSupermemoryConnected(config !== null))
+      .catch(() => setSupermemoryConnected(false));
   }, []);
 
   return (
@@ -2582,6 +2607,34 @@ function BotSettings({
             ))}
           </select>
         </label>
+      {supermemoryConnected ? (
+        <div className="mt-4 text-[14px] text-[#85858A]">
+          Memory scope
+          <div role="radiogroup" aria-label="Memory scope" className="mt-2 flex gap-2">
+            {(
+              [
+                { value: null, label: "Inherit default" },
+                { value: "isolated" as const, label: "Isolated" },
+                { value: "shared" as const, label: "Shared" },
+              ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
+            ).map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                role="radio"
+                aria-checked={memoryScope === option.value}
+                onClick={() => setMemoryScope(option.value)}
+                className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
+                  memoryScope === option.value
+                    ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
+                    : "border-[#26262A] text-[#85858A]"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       ) : null}
       {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
@@ -2599,6 +2652,7 @@ function BotSettings({
               computerMode,
               autoSpeak,
               voiceId: voiceId || null,
+              memoryScope,
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));
