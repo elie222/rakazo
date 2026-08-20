@@ -274,7 +274,60 @@ describe("thread event reduction", () => {
     ]);
   });
 
-  it("merges narration and tool calls into one live message in chronological order", () => {
+  it("holds a tool call that lands mid-sentence until the sentence completes", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+
+    // Still mid-sentence — the tool call stays hidden, folded into the streaming text instead.
+    expect(afterTool?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Let me check Slack " }],
+      }),
+    ]);
+
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "for a broad search.", streaming: true },
+      }),
+    );
+
+    // The sentence just finished — the completed sentence and the held-back tool call appear
+    // together, in that order.
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Slack for a broad search." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
+  it("keeps deferring a tool call across several sentence-less deltas", () => {
     const initial = snapshot([]);
 
     const afterNarration = reduceThreadSnapshot(
@@ -305,57 +358,12 @@ describe("thread event reduction", () => {
       }),
     );
 
+    // No sentence terminator has streamed in yet, so the tool call is still hidden and
+    // everything so far renders as one continuous progress block.
     expect(afterMore?.messages).toEqual([
       expect.objectContaining({
         id: "progress:run-1",
-        blocks: [
-          { kind: "text", text: "Let me check Slack " },
-          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
-          { kind: "progress", text: "Found it, now sanding" },
-        ],
-      }),
-    ]);
-  });
-
-  it("holds back a partial trailing word across a tool call instead of splitting it", () => {
-    const initial = snapshot([]);
-
-    const afterNarration = reduceThreadSnapshot(
-      initial,
-      event({
-        type: "thread.progress",
-        seq: 4,
-        runId: "run-1",
-        payload: { text: "Let me check what I have loca", streaming: true },
-      }),
-    );
-    const afterTool = reduceThreadSnapshot(
-      afterNarration,
-      event({
-        type: "agent.tool.called",
-        seq: 5,
-        runId: "run-1",
-        payload: { name: "shell" },
-      }),
-    );
-    const afterMore = reduceThreadSnapshot(
-      afterTool,
-      event({
-        type: "thread.progress",
-        seq: 6,
-        runId: "run-1",
-        payload: { delta: "lly and try the GitHub API.", streaming: true },
-      }),
-    );
-
-    expect(afterMore?.messages).toEqual([
-      expect.objectContaining({
-        id: "progress:run-1",
-        blocks: [
-          { kind: "text", text: "Let me check what I have " },
-          { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
-          { kind: "progress", text: "locally and try the GitHub API." },
-        ],
+        blocks: [{ kind: "progress", text: "Let me check Slack Found it, now sanding" }],
       }),
     ]);
   });

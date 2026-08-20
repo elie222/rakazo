@@ -9,13 +9,36 @@ import type {
 import {
   appendTextSegment,
   appendToolCallSegment,
+  endsSentence,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
-  splitFlushableText,
   subagentBlockFromPayload,
 } from "@rakazo/core";
+
+// reduceThreadSnapshot runs once per incoming event with no memory of its own beyond the
+// `prev`/`next` snapshots, so a tool call held back mid-sentence (see flushPendingTools below)
+// needs somewhere to live between calls. Keyed by run id; cleared once the run's durable
+// message arrives.
+const pendingToolsByRun = new Map<string, string[]>();
+
+// If `tailText` (the narration not yet folded into `segments`) now ends a sentence, fold it in
+// followed by every tool call held back since the sentence started, and return the result.
+// Returns null when there's nothing pending or the sentence hasn't finished yet — the caller
+// keeps waiting.
+function flushPendingTools(
+  liveId: string,
+  segments: readonly MessageBlock[],
+  tailText: string,
+): MessageBlock[] | null {
+  const pending = pendingToolsByRun.get(liveId);
+  if (!pending || pending.length === 0 || !endsSentence(tailText)) return null;
+  let next = appendTextSegment(segments, tailText);
+  for (const name of pending) next = appendToolCallSegment(next, name);
+  pendingToolsByRun.delete(liveId);
+  return next;
+}
 
 function liveStreamTextSoFar(blocks: readonly MessageBlock[]): string {
   return blocks
@@ -87,9 +110,11 @@ export function reduceThreadSnapshot(
     const flushedLength = liveStreamTextSoFar(flushedBlocks).length;
     const fullText = progressMessageText(event.payload, liveStreamTextSoFar(priorBlocks));
     const tailText = fullText.slice(flushedLength);
-    const blocks = tailText
-      ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
-      : flushedBlocks;
+    const blocks =
+      flushPendingTools(liveId, flushedBlocks, tailText) ??
+      (tailText
+        ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
+        : flushedBlocks);
     const streaming: ThreadMessage = {
       id: liveId,
       threadId: event.threadId,
@@ -107,14 +132,16 @@ export function reduceThreadSnapshot(
     const previous = prev.messages.find((message) => message.id === liveId);
     const priorBlocks = previous?.blocks ?? [];
     const tail = priorBlocks.at(-1);
-    // Hold back a partial trailing word rather than splitting it across the tool call — it
-    // rejoins as the start of whatever text streams next.
-    const { flush, carry } =
-      tail?.kind === "progress" ? splitFlushableText(tail.text) : { flush: "", carry: "" };
-    const flushedBlocks =
-      tail?.kind === "progress" ? appendTextSegment(priorBlocks.slice(0, -1), flush) : priorBlocks;
-    const withTool = appendToolCallSegment(flushedBlocks, String(event.payload.name ?? ""));
-    const blocks = carry ? [...withTool, { kind: "progress" as const, text: carry }] : withTool;
+    const tailText = tail?.kind === "progress" ? tail.text : "";
+    const flushedBlocks = tail?.kind === "progress" ? priorBlocks.slice(0, -1) : priorBlocks;
+    const pending = pendingToolsByRun.get(liveId) ?? [];
+    pending.push(String(event.payload.name ?? ""));
+    pendingToolsByRun.set(liveId, pending);
+    const blocks =
+      flushPendingTools(liveId, flushedBlocks, tailText) ??
+      (tailText
+        ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
+        : flushedBlocks);
     const next: ThreadMessage = {
       id: liveId,
       threadId: event.threadId,
@@ -150,6 +177,7 @@ export function reduceThreadSnapshot(
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
+    pendingToolsByRun.delete(progressMessageId(event));
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
     const next: ThreadMessage = {
