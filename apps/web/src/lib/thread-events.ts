@@ -82,7 +82,28 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
   );
 }
 
+// React StrictMode invokes a setState updater twice in development to surface impure updaters.
+// This reducer holds tool-call state pending a sentence boundary in a module-level Map
+// (pendingToolsByRun) rather than in the returned snapshot, so a naive replay would mutate it a
+// second time and corrupt the pending count. Memoize the last (prev, event) pair so a replay of
+// the exact same event returns the exact same result without touching pendingToolsByRun again.
+let lastReducedPrev: ThreadSnapshot | null = null;
+let lastReducedEventId: string | null = null;
+let lastReducedResult: ThreadSnapshot | null = null;
+
 export function reduceThreadSnapshot(
+  prev: ThreadSnapshot | null,
+  event: ProductEvent,
+): ThreadSnapshot | null {
+  if (prev === lastReducedPrev && event.id === lastReducedEventId) return lastReducedResult;
+  const result = reduceThreadSnapshotOnce(prev, event);
+  lastReducedPrev = prev;
+  lastReducedEventId = event.id;
+  lastReducedResult = result;
+  return result;
+}
+
+function reduceThreadSnapshotOnce(
   prev: ThreadSnapshot | null,
   event: ProductEvent,
 ): ThreadSnapshot | null {

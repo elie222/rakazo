@@ -327,6 +327,55 @@ describe("thread event reduction", () => {
     ]);
   });
 
+  it("survives a React StrictMode replay of the same event without double-counting", () => {
+    // StrictMode invokes a setState updater twice per event in development to catch impure
+    // updaters — reduceThreadSnapshot(prev, event) must return the same result both times
+    // rather than mutating its pending-tool-call bookkeeping a second time.
+    const initial = snapshot([]);
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check ", streaming: true },
+      }),
+    );
+    const toolEvent = event({
+      type: "agent.tool.called",
+      seq: 5,
+      runId: "run-1",
+      payload: { name: "SLACK_FIND_CHANNELS" },
+    });
+
+    // The tool call lands mid-sentence, so it's held back rather than flushed immediately —
+    // exactly the state a naive module-level mutation would double-push on replay.
+    const first = reduceThreadSnapshot(afterNarration, toolEvent);
+    const replay = reduceThreadSnapshot(afterNarration, toolEvent);
+    expect(replay).toEqual(first);
+
+    const sentenceEnd = reduceThreadSnapshot(
+      first,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Done.", streaming: true },
+      }),
+    );
+
+    // A single tool call, not two — StrictMode's replay must not have pushed it twice.
+    expect(sentenceEnd?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Done." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
   it("keeps deferring a tool call across several sentence-less deltas", () => {
     const initial = snapshot([]);
 
