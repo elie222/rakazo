@@ -84,11 +84,12 @@ function createPrisma(
           .filter((row) => row.userId === userId && row.provider === provider)
           .map(({ id }) => ({ id }));
       }
-      if (query.includes('SELECT c."provider"') && query.includes('FROM "connections" c')) {
-        const [userId, googleTasks, slack] = values;
+      if (query.includes('SELECT "provider"') && query.includes('FROM "connections"')) {
+        const [workspaceId, userId, googleTasks, slack] = values;
         return rows
           .filter(
             (row) =>
+              row.workspaceId === workspaceId &&
               row.userId === userId &&
               row.status === "connected" &&
               (row.provider === googleTasks || row.provider === slack),

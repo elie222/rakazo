@@ -110,7 +110,7 @@ describe("createJobReconciler", () => {
     });
   });
 
-  it("unions user-scoped connectors across current member workspaces", async () => {
+  it("does not combine connector authorizations across workspaces", async () => {
     const prisma = fakePrisma();
     vi.mocked(prisma.connection.findMany).mockResolvedValue([
       { workspaceId: "workspace-a", userId: "user-shared", provider: "GOOGLETASKS" },
@@ -121,12 +121,7 @@ describe("createJobReconciler", () => {
 
     await reconciler.reconcileOnce();
 
-    expect(enqueue).toHaveBeenCalledOnce();
-    expect(enqueue).toHaveBeenCalledWith({
-      name: "integration.gtasks_slack.mirror",
-      payload: { workspaceId: "workspace-a", userId: "user-shared" },
-      replaceKey: "integration.gtasks_slack.mirror:user-shared",
-    });
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("does not enqueue a mirror while the user's stable job key is active", async () => {

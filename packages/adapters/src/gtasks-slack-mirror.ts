@@ -105,14 +105,13 @@ async function lockGtasksSlackScope(
   `;
   if (members.length === 0) return false;
   const connections = await tx.$queryRaw<Array<{ provider: string }>>`
-    SELECT c."provider"
-    FROM "connections" c
-    INNER JOIN "member" m
-      ON m."organizationId" = c."workspaceId" AND m."userId" = c."userId"
-    WHERE c."userId" = ${ctx.userId}
-      AND c."status" = 'connected'
-      AND c."provider" IN (${providers[0]}, ${providers[1]})
-    FOR SHARE OF c, m
+    SELECT "provider"
+    FROM "connections"
+    WHERE "workspaceId" = ${ctx.workspaceId}
+      AND "userId" = ${ctx.userId}
+      AND "status" = 'connected'
+      AND "provider" IN (${providers[0]}, ${providers[1]})
+    FOR SHARE
   `;
   const connected = new Set(connections.map((connection) => connection.provider));
   return providers.every((provider) => connected.has(provider));
@@ -353,17 +352,32 @@ export async function listGtasksSlackMirrorTargets(
     },
     select: { workspaceId: true, userId: true, provider: true },
   });
-  if (rows.length === 0) return [];
 
-  const scopes = new Map<string, { workspaceId: string; userId: string }>();
+  const byWorkspaceUser = new Map<
+    string,
+    { workspaceId: string; userId: string; providers: Set<string> }
+  >();
   for (const row of rows) {
     const key = `${row.workspaceId}:${row.userId}`;
-    scopes.set(key, { workspaceId: row.workspaceId, userId: row.userId });
+    const entry = byWorkspaceUser.get(key) ?? {
+      workspaceId: row.workspaceId,
+      userId: row.userId,
+      providers: new Set<string>(),
+    };
+    entry.providers.add(row.provider);
+    byWorkspaceUser.set(key, entry);
   }
+
+  const readyScopes = [...byWorkspaceUser.values()].filter(
+    (entry) =>
+      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
+      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
+  );
+  if (readyScopes.length === 0) return [];
 
   const memberships = await prisma.member.findMany({
     where: {
-      OR: [...scopes.values()].map((scope) => ({
+      OR: readyScopes.map((scope) => ({
         organizationId: scope.workspaceId,
         userId: scope.userId,
       })),
@@ -374,27 +388,16 @@ export async function listGtasksSlackMirrorTargets(
     memberships.map((membership) => `${membership.organizationId}:${membership.userId}`),
   );
 
-  const byUser = new Map<string, { workspaceId: string; userId: string; providers: Set<string> }>();
-  for (const row of rows) {
-    if (!memberScopes.has(`${row.workspaceId}:${row.userId}`)) continue;
-    const existing = byUser.get(row.userId);
-    const entry = existing ?? {
-      workspaceId: row.workspaceId,
-      userId: row.userId,
-      providers: new Set<string>(),
-    };
-    if (row.workspaceId < entry.workspaceId) entry.workspaceId = row.workspaceId;
-    entry.providers.add(row.provider);
-    if (!existing) byUser.set(row.userId, entry);
+  const byUser = new Map<string, { workspaceId: string; userId: string }>();
+  for (const scope of readyScopes) {
+    if (!memberScopes.has(`${scope.workspaceId}:${scope.userId}`)) continue;
+    const existing = byUser.get(scope.userId);
+    if (!existing || scope.workspaceId < existing.workspaceId) {
+      byUser.set(scope.userId, { workspaceId: scope.workspaceId, userId: scope.userId });
+    }
   }
 
-  return [...byUser.values()]
-    .filter(
-      (entry) =>
-        entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
-        entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
-    )
-    .map(({ workspaceId, userId }) => ({ workspaceId, userId }));
+  return [...byUser.values()];
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

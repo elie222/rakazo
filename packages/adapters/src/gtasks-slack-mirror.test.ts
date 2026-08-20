@@ -409,7 +409,7 @@ describe("gtasks-slack mirror", () => {
     });
   });
 
-  it("locks user-scoped connector rows across current member workspaces", async () => {
+  it("locks connector rows only within the selected member workspace", async () => {
     const queries: string[] = [];
     const prisma = createMockPrisma(new Map(), [], {
       onQuery(query) {
@@ -433,10 +433,10 @@ describe("gtasks-slack mirror", () => {
     await expect(
       syncGtasksSlackInbox({ prisma: prisma as never, composio, port }, ctx),
     ).resolves.toEqual({ status: "ok", created: 1, updated: 0, unchanged: 0 });
-    const connectionQuery = queries.find((query) => query.includes('FROM "connections" c'));
-    expect(connectionQuery).toContain('INNER JOIN "member" m');
-    expect(connectionQuery).toContain('WHERE c."userId" = ?');
-    expect(connectionQuery).not.toContain('WHERE c."workspaceId"');
+    const connectionQuery = queries.find((query) => query.includes('FROM "connections"'));
+    expect(connectionQuery).toContain('WHERE "workspaceId" = ?');
+    expect(connectionQuery).toContain('AND "userId" = ?');
+    expect(connectionQuery).not.toContain('INNER JOIN "member"');
   });
 
   it("updates Slack when inbox content materially changes", async () => {
