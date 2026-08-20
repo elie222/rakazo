@@ -87,6 +87,7 @@ async function main() {
     events,
     workerId: process.pid.toString(),
     runtime,
+    secretStore: secrets,
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
   });
   await jobHost.start(jobHandlers);
