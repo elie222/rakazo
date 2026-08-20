@@ -100,7 +100,7 @@ export function projectMessages(
     }
     if (event.type === "thread.cleared") {
       messages.length = 0;
-      streaming = null;
+      resetLive();
       liveSubagents.clear();
       durableSubagents.clear();
       continue;
