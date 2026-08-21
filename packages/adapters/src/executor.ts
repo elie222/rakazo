@@ -110,6 +110,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
+const STREAM_FLUSH_MS = 32;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -518,7 +519,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const publishReasoning = async (force = false) => {
           if (!reasoningSteps.length) return;
           const now = Date.now();
-          if (!force && now - lastReasoningAt < 120) return;
+          if (!force && now - lastReasoningAt < STREAM_FLUSH_MS) return;
           lastReasoningAt = now;
           await deps.events.append({
             workspaceId: run.workspaceId,
@@ -991,7 +992,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               assembled += event.text;
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
-              if (!scripted && pendingProgress && now - lastProgressAt >= 250) {
+              if (!scripted && pendingProgress && now - lastProgressAt >= STREAM_FLUSH_MS) {
                 lastProgressAt = now;
                 await deps.events.append({
                   workspaceId: run.workspaceId,

@@ -35,11 +35,13 @@ import {
   pendingUserMessageTextKey,
   presetFromCron,
   speechFromBlocks,
+  visibleReasoningSteps,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
   ChevronLeft,
+  ChevronRight,
   Cpu,
   Gauge,
   LogOut,
@@ -806,7 +808,6 @@ export function ShellPage() {
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
         if (activeBotId.current === id) setAttachmentNotice(null);
-        void refreshThreadRef.current(id);
       } catch (error) {
         if (activeBotId.current === id) {
           setSnapshot((current) =>
@@ -1283,8 +1284,6 @@ export function ShellPage() {
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
           running={botWorking}
-          botName={active?.name ?? "Bot"}
-          botColor={active?.color ?? "#3EC5A8"}
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
@@ -1890,8 +1889,6 @@ export function ShellPage() {
 const Transcript = memo(function Transcript({
   scrollRef,
   botId,
-  botName,
-  botColor,
   messages,
   olderCursor,
   loadingOlder,
@@ -1908,8 +1905,6 @@ const Transcript = memo(function Transcript({
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   botId: string;
-  botName: string;
-  botColor: string;
   messages: ThreadMessage[];
   olderCursor: number | null;
   loadingOlder: boolean;
@@ -1960,8 +1955,6 @@ const Transcript = memo(function Transcript({
         >
           <MessageView
             botId={botId}
-            botName={botName}
-            botColor={botColor}
             message={message}
             canAnswer={message.id === answerableAskMessageId}
             onOpenBot={onOpenBot}
@@ -1974,7 +1967,7 @@ const Transcript = memo(function Transcript({
           />
         </div>
       ))}
-      {running && !hasLiveReasoning ? <BotWorkingStatus name={botName} color={botColor} /> : null}
+      {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
     </div>
   );
 });
@@ -2175,8 +2168,6 @@ function latestAnswerableAskMessageId(snapshot: ThreadSnapshot | null): string |
 
 const MessageView = memo(function MessageView({
   botId,
-  botName,
-  botColor,
   canAnswer,
   message,
   onAnswer,
@@ -2188,8 +2179,6 @@ const MessageView = memo(function MessageView({
   onSpeak,
 }: {
   botId: string;
-  botName: string;
-  botColor: string;
   canAnswer: boolean;
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -2224,9 +2213,7 @@ const MessageView = memo(function MessageView({
           );
         }
         if (block.kind === "reasoning") {
-          return (
-            <ReasoningTrace key={i} steps={block.steps} botName={botName} botColor={botColor} />
-          );
+          return <ReasoningTrace key={i} steps={block.steps} />;
         }
         if (block.kind === "subagent") {
           const running = block.status === "running";
@@ -2654,70 +2641,60 @@ function userMessagePlainText(message: ThreadMessage): string {
   return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
 }
 
-function BotWorkingStatus({ name, color }: { name: string; color: string }) {
+function BotWorkingStatus() {
   return (
-    <div className="flex items-center gap-3 py-1" data-testid="bot-working">
-      <BotAvatar color={color} size={28} thinking />
-      <span className="rk-working-text text-[15px] font-medium">{name} is working</span>
+    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
+      <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
+      <span className="rk-working-text text-[15px] font-medium">Thinking</span>
     </div>
   );
 }
 
-function ReasoningTrace({
-  steps,
-  botName,
-  botColor,
-}: {
-  steps: ReasoningStep[];
-  botName: string;
-  botColor: string;
-}) {
-  if (!steps.length) return null;
+function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const running = steps.some((step) => step.status === "running");
-  const active = [...steps].reverse().find((step) => step.status === "running") ?? steps.at(-1);
-  const headline = running ? (active?.title ?? "Thinking") : "Thought process";
+  const visible = visibleReasoningSteps(steps);
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    el.open = running;
+  }, [running]);
+  if (!steps.length) return null;
   return (
-    <details
-      open={running}
-      className="w-[min(520px,90%)] rounded-[18px] border border-[#232326] bg-[#141416] px-4 py-3"
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-3 text-[13.5px] text-[#A8A8AD] [&::-webkit-details-marker]:hidden">
+    <details ref={detailsRef} className="rk-thought w-[min(560px,100%)]">
+      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          size={16}
+          strokeWidth={2}
+          className="rk-thought-caret shrink-0 text-[#8E8EA0]"
+        />
         {running ? (
-          <>
-            <BotAvatar color={botColor} size={22} thinking />
-            <span className="rk-working-text min-w-0 truncate text-[15px] font-medium">
-              {botName} is working
-            </span>
-          </>
+          <span className="rk-working-text text-[15px] font-medium">Thinking</span>
         ) : (
-          <>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "#4ECB71" }} />
-            <span className="min-w-0 truncate font-medium text-[#C9C9CE]">{headline}</span>
-            <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">done</span>
-          </>
+          <span className="text-[15px] font-medium text-[#B4B4B8]">Thought</span>
         )}
       </summary>
-      <ol className="mt-3 space-y-2.5 border-t border-[#232326] pt-3">
-        {steps.map((step) => (
-          <li key={step.id} className="text-[13.5px]">
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 w-12 shrink-0 text-[11px] uppercase tracking-[0.06em] text-[#6C6C70]">
-                {step.kind === "think" ? "think" : step.kind === "tool" ? "tool" : "step"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className={step.status === "running" ? "text-[#F5A03C]" : "text-[#C9C9CE]"}>
+      {visible.length ? (
+        <div className="rk-thought-body ml-[7px] mt-2 space-y-2.5 border-l border-[#3A3A40] pl-3.5">
+          {visible.map((step) => (
+            <div key={step.id} className="text-[14px] leading-[1.55] text-[#8E8EA0]">
+              {step.kind === "tool" || !step.detail ? (
+                <div className={step.status === "running" ? "text-[#D0D0D4]" : undefined}>
                   {step.title}
                 </div>
-                {step.detail ? (
-                  <pre className="rk-scroll mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.45] text-[#85858A]">
-                    {step.detail}
-                  </pre>
-                ) : null}
-              </div>
+              ) : null}
+              {step.detail ? (
+                <pre className="rk-scroll max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55] text-[#8E8EA0]">
+                  {step.detail}
+                  {running && step.status === "running" ? (
+                    <span className="rk-thought-cursor">▍</span>
+                  ) : null}
+                </pre>
+              ) : null}
             </div>
-          </li>
-        ))}
-      </ol>
+          ))}
+        </div>
+      ) : null}
     </details>
   );
 }

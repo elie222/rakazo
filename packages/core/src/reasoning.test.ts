@@ -4,6 +4,7 @@ import {
   reasoningMessageId,
   reasoningToolTitle,
   upsertReasoningStep,
+  visibleReasoningSteps,
 } from "./reasoning.js";
 
 describe("reasoning helpers", () => {
@@ -31,6 +32,23 @@ describe("reasoning helpers", () => {
     expect(second).toHaveLength(1);
     expect(second[0]?.detail).toBe("considering files");
     expect(reasoningMessageId({ runId: "r1" })).toBe("reasoning:r1");
+  });
+
+  it("hides filler status steps from the ChatGPT-style thought body", () => {
+    expect(
+      visibleReasoningSteps([
+        { id: "status", kind: "status", title: "Working through the request", status: "running" },
+        { id: "think", kind: "think", title: "Thinking", detail: "checking files", status: "done" },
+        { id: "status-done", kind: "status", title: "Finished", status: "done" },
+        {
+          id: "err",
+          kind: "status",
+          title: "Gateway error",
+          detail: "401: bad key",
+          status: "done",
+        },
+      ]).map((step) => step.id),
+    ).toEqual(["think", "err"]);
   });
 
   it("names common tools in the trace", () => {

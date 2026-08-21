@@ -30,8 +30,13 @@ export function normalizeOpenAICompatibleBaseUrl(value: string): string {
   }
   parsed.hash = "";
   parsed.search = "";
-  const path = parsed.pathname.replace(/\/+$/, "");
-  parsed.pathname = path || "/";
+  let path = parsed.pathname.replace(/\/+$/, "") || "/";
+  path = path.replace(/\/(chat\/completions|completions|models|responses)$/i, "");
+  path = path.replace(/\/+$/, "") || "/";
+  if (!/\/v\d+[a-z0-9]*(\/|$)/i.test(path)) {
+    path = path === "/" ? "/v1" : `${path}/v1`;
+  }
+  parsed.pathname = path;
   return parsed.toString().replace(/\/+$/, "");
 }
 
@@ -248,6 +253,11 @@ const MAX_GATEWAY_ERROR_CHARS = 4000;
 
 export function errorFromOpenAICompatibleBody(raw: string, status?: number): string {
   const trimmed = raw.trim();
+  if (looksLikeHtmlDocument(trimmed)) {
+    const hint =
+      "The endpoint returned an HTML page instead of the OpenAI-compatible API. Use a base URL that ends in /v1 (for example https://api.example.com/v1) and confirm the API key is saved.";
+    return status && status >= 400 ? `${status}: ${hint}` : hint;
+  }
   const extracted = extractGatewayErrorMessage(trimmed) || trimmed;
   const clipped =
     extracted.length > MAX_GATEWAY_ERROR_CHARS
@@ -258,6 +268,15 @@ export function errorFromOpenAICompatibleBody(raw: string, status?: number): str
     return /^\d{3}\b/.test(clipped) ? clipped : `${status}: ${clipped}`;
   }
   return clipped || "The gateway returned an empty reply";
+}
+
+function looksLikeHtmlDocument(raw: string): boolean {
+  const head = raw.slice(0, 256).toLowerCase();
+  return (
+    head.startsWith("<!doctype html") ||
+    head.startsWith("<html") ||
+    (head.startsWith("<") && (head.includes("<head") || head.includes("<title")))
+  );
 }
 
 function extractGatewayErrorMessage(raw: string): string {

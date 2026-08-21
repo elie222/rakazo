@@ -24,6 +24,21 @@ describe("openai-compatible gateways", () => {
     );
   });
 
+  it("appends /v1 when the pasted URL is a host or a completions path", () => {
+    expect(normalizeOpenAICompatibleBaseUrl("https://api.example.com")).toBe(
+      "https://api.example.com/v1",
+    );
+    expect(normalizeOpenAICompatibleBaseUrl("https://api.example.com/v1/chat/completions")).toBe(
+      "https://api.example.com/v1",
+    );
+    expect(normalizeOpenAICompatibleBaseUrl("https://openrouter.ai/api")).toBe(
+      "https://openrouter.ai/api/v1",
+    );
+    expect(
+      normalizeOpenAICompatibleBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai"),
+    ).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
+  });
+
   it("rejects non-http URLs", () => {
     expect(() => normalizeOpenAICompatibleBaseUrl("ftp://example.com")).toThrow(/http/);
   });
@@ -135,5 +150,8 @@ describe("openai-compatible gateways", () => {
     expect(errorFromOpenAICompatibleBody("upstream refused the stream", 502)).toBe(
       "502: upstream refused the stream",
     );
+    expect(
+      errorFromOpenAICompatibleBody("<!DOCTYPE html><html><head><title>Home</title></head>", 200),
+    ).toMatch(/HTML page instead of the OpenAI-compatible API/);
   });
 });
