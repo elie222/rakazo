@@ -14,14 +14,17 @@ export function BotAvatar({
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.4);
   const dot = Math.max(3, Math.round(size * 0.1));
+  const radius = Math.max(4, Math.round(size * 0.24));
   return (
     <div
-      className={cn(
-        "flex items-center justify-center rounded-full",
-        thinking && "rk-avatar-think",
-        className,
-      )}
-      style={{ width: size, height: size, background: color, flex: "none" }}
+      className={cn("flex items-center justify-center", thinking && "rk-avatar-think", className)}
+      style={{
+        width: size,
+        height: size,
+        background: color,
+        flex: "none",
+        borderRadius: radius,
+      }}
     >
       <div
         className="flex items-center justify-center"
