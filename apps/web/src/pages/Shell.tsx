@@ -886,7 +886,7 @@ export function ShellPage() {
         if (state === "running") autoBooted.current = botId;
         return;
       }
-      if (autoBooted.current === botId) return;
+      if (action === "boot" && autoBooted.current === botId) return;
       autoBooted.current = botId;
       await bootComputer({
         takeControl: false,
