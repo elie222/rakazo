@@ -34,6 +34,8 @@ import {
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  matchingAskOption,
+  parseAskOptions,
   pendingUserMessageTextKey,
   presetFromCron,
   shouldShowChatTimestamp,
@@ -1083,8 +1085,13 @@ export function ShellPage() {
                           {bot.unread ? <span className="sr-only"> (unread)</span> : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? formatInboxTime(bot.updatedAt) : bot.status}
-                          {bot.unread ? (
+                          {formatInboxTime(bot.updatedAt)}
+                          {bot.status === "waiting_input" || bot.status === "waiting_takeover" ? (
+                            <span
+                              aria-hidden="true"
+                              className="inline-block h-2 w-2 rounded-full bg-[#F5A03C]"
+                            />
+                          ) : bot.unread ? (
                             <span
                               aria-hidden="true"
                               className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
@@ -1094,10 +1101,16 @@ export function ShellPage() {
                       </div>
                       <div
                         className={`mt-0.5 truncate text-[13.5px] ${
-                          bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                          bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                            ? "font-medium text-[#F5A03C]"
+                            : bot.unread
+                              ? "font-medium text-[#C9C9CE]"
+                              : "text-[#85858A]"
                         }`}
                       >
-                        {bot.preview || bot.title}
+                        {bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                          ? `Waiting for you: ${bot.preview || "needs a decision"}`
+                          : bot.preview || bot.title}
                       </div>
                     </div>
                   </button>
@@ -1208,7 +1221,13 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              setMenuOpen((open) => {
+                const next = !open;
+                if (next) void rpc.usage.summary().then(setUsage);
+                return next;
+              });
+            }}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
@@ -2010,9 +2029,9 @@ const Transcript = memo(function Transcript({
       <div
         ref={scrollRef}
         data-testid="transcript"
-        className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-7 py-6"
+        className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
       >
-        <div ref={contentRef} className="flex flex-col gap-[13px]">
+        <div ref={contentRef} className="mx-auto flex w-full max-w-[720px] flex-col gap-4">
           {olderCursor != null ? (
             <button
               type="button"
@@ -2118,121 +2137,123 @@ const Composer = memo(function Composer({
   }
 
   return (
-    <div className="px-6 pb-6 pt-3">
-      {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
-          {sendError ?? dictationError}
-        </div>
-      ) : null}
-      {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
-          {attachmentNotice}
-        </div>
-      ) : null}
-      {pendingAttachments.length ? (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {pendingAttachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
-            >
-              {attachment.previewUrl ? (
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.file.name}
-                  className="h-8 w-8 rounded object-cover"
-                />
-              ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
-              )}
-              <span className="max-w-[180px] truncate">{attachment.file.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${attachment.file.name}`}
-                onClick={() => onRemoveAttachment(attachment)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+    <div className="px-4 pb-6 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-[720px]">
+        {sendError || dictationError ? (
+          <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+            {sendError ?? dictationError}
+          </div>
+        ) : null}
+        {attachmentNotice ? (
+          <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+            {attachmentNotice}
+          </div>
+        ) : null}
+        {pendingAttachments.length ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {pendingAttachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
               >
-                <X size={13} strokeWidth={2} />
-              </button>
-            </div>
-          ))}
+                {attachment.previewUrl ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.file.name}
+                    className="h-8 w-8 rounded object-cover"
+                  />
+                ) : (
+                  <Paperclip size={14} strokeWidth={1.8} />
+                )}
+                <span className="max-w-[180px] truncate">{attachment.file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.file.name}`}
+                  onClick={() => onRemoveAttachment(attachment)}
+                  className="text-[#85858A] hover:text-[#ECECEE]"
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2 pl-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACHMENT_ACCEPT}
+            className="hidden"
+            onChange={(event) => void onAttachmentPick(event.target.files)}
+          />
+          <button
+            type="button"
+            aria-label="Attach file"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[#9A9AA0] hover:bg-[#1B1B1E] disabled:opacity-40"
+          >
+            <Plus size={18} strokeWidth={1.8} />
+          </button>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            disabled={disabled}
+            placeholder={activeName ? `Message ${activeName}` : "Message…"}
+            className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
+          />
+          {running ? (
+            <button
+              type="button"
+              aria-label="Stop"
+              onClick={() => void onStop()}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+            >
+              <Square size={12} strokeWidth={0} fill="currentColor" />
+            </button>
+          ) : canSend ? (
+            <button
+              type="button"
+              aria-label="Send"
+              disabled={sending || disabled}
+              onClick={send}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
+            >
+              <ArrowUp size={18} strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={dictating ? "Stop dictation" : "Dictate"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onMouseUp={onDictateStop}
+              onMouseLeave={() => {
+                if (dictating) onDictateStop();
+              }}
+              onTouchStart={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onTouchEnd={onDictateStop}
+              className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full ${
+                dictating ? "bg-[rgba(48,162,75,.16)] text-[#4ECB71]" : "text-[#9A9AA0]"
+              }`}
+              title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+            >
+              <Mic size={16} strokeWidth={1.8} />
+            </button>
+          )}
         </div>
-      ) : null}
-      <div className="flex items-center gap-2 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2 pl-2.5">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ATTACHMENT_ACCEPT}
-          className="hidden"
-          onChange={(event) => void onAttachmentPick(event.target.files)}
-        />
-        <button
-          type="button"
-          aria-label="Attach file"
-          disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[#9A9AA0] hover:bg-[#1B1B1E] disabled:opacity-40"
-        >
-          <Plus size={18} strokeWidth={1.8} />
-        </button>
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          disabled={disabled}
-          placeholder={activeName ? `Message ${activeName}` : "Message…"}
-          className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
-        />
-        {running ? (
-          <button
-            type="button"
-            aria-label="Stop"
-            onClick={() => void onStop()}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-          >
-            <Square size={12} strokeWidth={0} fill="currentColor" />
-          </button>
-        ) : canSend ? (
-          <button
-            type="button"
-            aria-label="Send"
-            disabled={sending || disabled}
-            onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
-          >
-            <ArrowUp size={18} strokeWidth={2} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label={dictating ? "Stop dictation" : "Dictate"}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-            }}
-            onMouseUp={onDictateStop}
-            onMouseLeave={() => {
-              if (dictating) onDictateStop();
-            }}
-            onTouchStart={(event) => {
-              event.preventDefault();
-              onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-            }}
-            onTouchEnd={onDictateStop}
-            className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full ${
-              dictating ? "bg-[rgba(48,162,75,.16)] text-[#4ECB71]" : "text-[#9A9AA0]"
-            }`}
-            title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
-          >
-            <Mic size={16} strokeWidth={1.8} />
-          </button>
-        )}
       </div>
     </div>
   );
@@ -2293,12 +2314,8 @@ const MessageView = memo(function MessageView({
       {message.blocks.map((block, i) => {
         if (block.kind === "meta") {
           return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
-            >
-              <span className="text-[#E65707]">◷</span>
-              <span>{block.text}</span>
+            <div key={i} className="px-1 py-0.5 text-[13px] leading-[1.45] text-[#6C6C70]">
+              {block.text}
             </div>
           );
         }
@@ -2425,7 +2442,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text" && message.role === "user") {
           return (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]">
+              <div className="max-w-[70%] rounded-[18px] bg-[#2F2F33] px-[16px] py-[10px] text-[15.5px] leading-[1.5] text-[#ECECEE]">
                 {block.text}
               </div>
             </div>
@@ -2434,7 +2451,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+              <div className="max-w-[80%] rounded-[18px] bg-[#1A1A1D] px-[16px] py-[10px] text-[15.5px] leading-[1.55] text-[#DFDFE2]">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
                 {voiceReady ? (
                   <button
@@ -2471,6 +2488,22 @@ const MessageView = memo(function MessageView({
             <AskCard
               key={i}
               block={block}
+              canAnswer={canAnswer}
+              onAnswer={(text) => onAnswer(message, text)}
+            />
+          );
+        }
+        if (block.kind === "choice") {
+          return (
+            <AskCard
+              key={i}
+              block={{
+                kind: "ask",
+                text: block.question,
+                detail: block.subtitle,
+                status: canAnswer ? "pending" : "answered",
+                actions: block.options.map((option) => ({ id: option.id, label: option.label })),
+              }}
               canAnswer={canAnswer}
               onAnswer={(text) => onAnswer(message, text)}
             />
@@ -2518,9 +2551,17 @@ function AskCard({
   canAnswer: boolean;
   onAnswer: (text: string) => Promise<void>;
 }) {
+  const parsed = parseAskOptions({
+    text: block.text,
+    detail: block.detail,
+    actions: block.actions,
+  });
+  const picked = matchingAskOption(parsed.options, block.answer);
   const [editing, setEditing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const pending = block.status !== "answered" && canAnswer;
 
   async function submitAnswer(value: string) {
     const text = value.trim();
@@ -2533,21 +2574,78 @@ function AskCard({
     }
   }
 
-  return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
-        <ChatMarkdown>{block.text}</ChatMarkdown>
+  if (block.status === "answered") {
+    return (
+      <div className="w-[min(420px,90%)] rounded-[20px] bg-[#151517] px-5 py-[18px]">
+        <p className="text-[16px] font-medium text-[#C9C9CE]">{parsed.question}</p>
+        {picked ? (
+          <div className="mt-3.5 flex items-center gap-3.5 rounded-[13px] border border-[#232326] px-4 py-3.5">
+            <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+              {picked.letter}
+            </span>
+            <span className="text-[15.5px] text-[#ECECEE]">{picked.label}</span>
+            <span className="ml-auto text-[#4ECB71]">✓</span>
+          </div>
+        ) : (
+          <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
+            {block.answer ? `Answered: ${block.answer}` : "Answered"}
+          </div>
+        )}
       </div>
-      {block.detail ? (
-        <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
-          {block.detail}
-        </pre>
-      ) : null}
-      {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {block.answer ? `Answered: ${block.answer}` : "Answered"}
+    );
+  }
+
+  if (dismissed && pending) {
+    return (
+      <button
+        type="button"
+        onClick={() => setDismissed(false)}
+        className="text-left text-[14.5px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        {parsed.question}
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-[min(420px,90%)] rounded-[20px] bg-[#1A1A1D] px-5 py-[18px]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[17px] font-medium leading-[1.35] text-[#F1F1F2]">{parsed.question}</p>
+          {block.detail && !parsed.options.length ? (
+            <p className="mt-1 text-[14.5px] text-[#8E8EA0]">{block.detail}</p>
+          ) : null}
         </div>
-      ) : !canAnswer ? (
+        {pending ? (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setDismissed(true)}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-[#6C6C70] hover:bg-[#222226] hover:text-[#C9C9CE]"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      {parsed.options.length > 0 && pending ? (
+        <div className="mt-3.5 overflow-hidden rounded-[13px] border border-[#232326]">
+          {parsed.options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={submitting}
+              onClick={() => void submitAnswer(option.label)}
+              className="flex w-full items-center gap-3.5 border-b border-[#202023] px-4 py-3.5 text-left text-[15.5px] text-[#ECECEE] last:border-b-0 hover:bg-[#222226] disabled:opacity-50"
+            >
+              <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                {option.letter}
+              </span>
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {!pending ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">No longer active</div>
       ) : editing ? (
         <form
@@ -2561,7 +2659,7 @@ function AskCard({
             aria-label="Answer"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Type your answer"
+            placeholder="Type your own answer"
             className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
           <div className="flex gap-2">
@@ -2585,6 +2683,15 @@ function AskCard({
             </button>
           </div>
         </form>
+      ) : parsed.options.length ? (
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => setEditing(true)}
+          className="mt-3 text-[13.5px] text-[#8E8EA0] hover:text-[#C9C9CE] disabled:opacity-50"
+        >
+          Type your own answer
+        </button>
       ) : (
         <div className="mt-3.5 flex gap-2">
           <button
