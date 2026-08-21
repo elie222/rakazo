@@ -1,7 +1,21 @@
 import type { ReasoningStep } from "@rakazo/contracts";
 
+export const PENDING_USER_MESSAGE_PREFIX = "pending:";
+
+export function isPendingUserMessageId(id: string): boolean {
+  return id.startsWith(PENDING_USER_MESSAGE_PREFIX);
+}
+
+export function createPendingUserMessageId(): string {
+  return `${PENDING_USER_MESSAGE_PREFIX}${crypto.randomUUID()}`;
+}
+
 export function isEphemeralThreadMessageId(id: string): boolean {
-  return id.startsWith("progress:") || id.startsWith("reasoning:");
+  return id.startsWith("progress:") || id.startsWith("reasoning:") || isPendingUserMessageId(id);
+}
+
+export function pendingUserMessageTextKey(text: string): string {
+  return `pending-text:${text}`;
 }
 
 export function reasoningMessageId(event: { runId?: string | null; id?: string }): string {

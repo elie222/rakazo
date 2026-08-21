@@ -159,7 +159,7 @@ export function openaiCompatibleModel(
     api: "openai-completions",
     provider,
     baseUrl,
-    reasoning: true,
+    reasoning: false,
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
@@ -208,4 +208,99 @@ export function attachOpenAICompatibleProvider(
       api: openAICompletionsApi(),
     }),
   );
+}
+
+export async function completeOpenAICompatibleChat(input: {
+  baseUrl: string;
+  apiKey?: string;
+  modelId: string;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const endpoint = `${normalizeOpenAICompatibleBaseUrl(input.baseUrl)}/chat/completions`;
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": "application/json",
+  };
+  if (input.apiKey?.trim()) headers.authorization = `Bearer ${input.apiKey.trim()}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    signal: input.signal,
+    body: JSON.stringify({
+      model: input.modelId,
+      messages: input.messages,
+      stream: false,
+    }),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`Chat completion failed (${response.status})`);
+  }
+  const text = textFromOpenAICompatibleBody(raw, response.headers.get("content-type") ?? "");
+  if (!text.trim()) throw new Error("The model returned an empty reply");
+  return text;
+}
+
+export function textFromOpenAICompatibleBody(raw: string, contentType = ""): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (contentType.includes("text/event-stream") || trimmed.startsWith("data:")) {
+    return textFromChatCompletionSse(trimmed);
+  }
+  try {
+    return extractChatMessageText(JSON.parse(trimmed) as unknown);
+  } catch {
+    return trimmed.includes("data:") ? textFromChatCompletionSse(trimmed) : "";
+  }
+}
+
+export function extractChatMessageText(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const record = body as Record<string, unknown>;
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const choice = choices[0];
+  if (!choice || typeof choice !== "object") return extractContent(record.content);
+  const row = choice as Record<string, unknown>;
+  const message =
+    row.message && typeof row.message === "object"
+      ? (row.message as Record<string, unknown>)
+      : undefined;
+  const delta =
+    row.delta && typeof row.delta === "object" ? (row.delta as Record<string, unknown>) : undefined;
+  return (
+    extractContent(message?.content) ||
+    extractContent(delta?.content) ||
+    extractContent(row.content)
+  );
+}
+
+function textFromChatCompletionSse(raw: string): string {
+  let text = "";
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      text += extractChatMessageText(JSON.parse(payload) as unknown);
+    } catch {
+      // Ignore malformed SSE lines from non-standard proxies.
+    }
+  }
+  return text;
+}
+
+function extractContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (!part || typeof part !== "object") return "";
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === "string") return record.text;
+      if (typeof record.content === "string") return record.content;
+      return "";
+    })
+    .join("");
 }

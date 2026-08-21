@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractChatMessageText,
   GATEWAY_PROVIDER_PREFIX,
   isGatewayProvider,
   labelForDiscoveredModels,
@@ -8,6 +9,7 @@ import {
   parseAvailableModels,
   secretIdForGatewayModel,
   serializeAvailableModels,
+  textFromOpenAICompatibleBody,
   unionAvailableModels,
 } from "./openai-compatible.js";
 
@@ -49,6 +51,7 @@ describe("openai-compatible gateways", () => {
       supportsStrictMode: false,
       maxTokensField: "max_tokens",
     });
+    expect(model.reasoning).toBe(false);
   });
 
   it("picks the key whose discovered models include the requested model", () => {
@@ -81,5 +84,33 @@ describe("openai-compatible gateways", () => {
     expect(labelForDiscoveredModels(["gpt-4o", "gpt-4.1"])).toBe("GPT");
     expect(labelForDiscoveredModels(["o4-mini"])).toBe("OpenAI");
     expect(labelForDiscoveredModels(["gemini-2.5-pro", "gpt-4o"])).toBe("API key");
+  });
+
+  it("reads string, array, and SSE chat completion bodies", () => {
+    expect(
+      extractChatMessageText({
+        choices: [{ message: { content: "Hello from JSON" } }],
+      }),
+    ).toBe("Hello from JSON");
+    expect(
+      extractChatMessageText({
+        choices: [
+          {
+            delta: {
+              content: [
+                { type: "text", text: "Hel" },
+                { type: "text", text: "lo" },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toBe("Hello");
+    expect(
+      textFromOpenAICompatibleBody(
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}\ndata: [DONE]\n',
+        "text/event-stream",
+      ),
+    ).toBe("Hi");
   });
 });

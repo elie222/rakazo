@@ -12,7 +12,10 @@ import type {
 import type { ReasoningStep } from "@rakazo/contracts";
 import { reasoningToolDetail, reasoningToolTitle } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { attachOpenAICompatibleProvider } from "./openai-compatible.js";
+import {
+  attachOpenAICompatibleProvider,
+  completeOpenAICompatibleChat,
+} from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 
 const running = new Map<string, AbortController>();
@@ -221,9 +224,18 @@ export class PiAgentRuntime implements AgentRuntime {
           return;
         }
         if (!streamed) {
-          const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
-          queue.push({ type: "text", text: fallback });
-          streamed = fallback;
+          const recovered =
+            (await recoverGatewayReply(request, signal).catch(() => "")) ||
+            assistantText(agent.state.messages.at(-1));
+          if (recovered) {
+            queue.push({ type: "text", text: recovered });
+            streamed = recovered;
+          } else {
+            const message =
+              "The model returned an empty reply. Check the custom endpoint and model id, then try again.";
+            queue.push({ type: "text", text: message });
+            streamed = message;
+          }
         }
         emitReasoning({
           id: "status",
@@ -235,9 +247,12 @@ export class PiAgentRuntime implements AgentRuntime {
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         if (isMissingFinishReasonError(message)) {
-          queue.push({ type: "text", text: "I finished the work." });
-          queue.push({ type: "done", text: "I finished the work." });
-          return;
+          const recovered = await recoverGatewayReply(request, signal).catch(() => "");
+          if (recovered) {
+            queue.push({ type: "text", text: recovered });
+            queue.push({ type: "done", text: recovered });
+            return;
+          }
         }
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
         queue.push({ type: "done", text: message });
@@ -749,6 +764,35 @@ function summarizeToolResult(result: unknown) {
 
 export function isMissingFinishReasonError(error: string): boolean {
   return /stream ended without finish_reason/i.test(error);
+}
+
+async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal): Promise<string> {
+  if (!request.model.baseUrl) return "";
+  return completeOpenAICompatibleChat({
+    baseUrl: request.model.baseUrl,
+    apiKey: request.model.apiKey,
+    modelId: request.model.id,
+    messages: gatewayChatMessages(request),
+    signal,
+  });
+}
+
+function gatewayChatMessages(
+  request: AgentRunRequest,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  if (request.instructions?.trim()) {
+    messages.push({ role: "system", content: request.instructions });
+  }
+  for (const item of request.history) {
+    if (item.role === "user" || item.role === "assistant") {
+      messages.push({ role: item.role, content: item.content });
+    }
+  }
+  if (messages.at(-1)?.role !== "user" || messages.at(-1)?.content !== request.prompt) {
+    messages.push({ role: "user", content: request.prompt });
+  }
+  return messages;
 }
 
 function assistantText(message: unknown): string {
