@@ -2022,6 +2022,8 @@ const Composer = memo(function Composer({
           }}
           disabled={disabled}
           placeholder={activeName ? `Message ${activeName}` : "Message…"}
+          name="chat-message"
+          autoComplete="off"
           className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
         />
         {running ? (
