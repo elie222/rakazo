@@ -131,8 +131,13 @@ export function userHoldsComputerControl(
   return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
 }
 
-export function computerPanelShouldBoot(state: ComputerStatus["state"] | undefined): boolean {
-  return state !== "running" && state !== "booting" && state !== "suspended";
+export function computerPanelAutoBoot(
+  state: ComputerStatus["state"] | undefined,
+  screenUrl?: string | null,
+): "boot" | "recover-screen" | "wait" {
+  if (state === "booting" || state === "suspended") return "wait";
+  if (state === "running") return screenUrl ? "wait" : "recover-screen";
+  return "boot";
 }
 
 export function reduceComputerStatus(

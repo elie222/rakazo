@@ -74,7 +74,7 @@ import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
 import {
-  computerPanelShouldBoot,
+  computerPanelAutoBoot,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -319,7 +319,7 @@ export function ShellPage() {
   }
 
   async function refreshComputerScreen(id: string) {
-    if (!computerVisible.current) return;
+    if (!computerVisible.current) return null;
     const request = ++screenRequest.current;
     const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
     if (
@@ -327,9 +327,10 @@ export function ShellPage() {
       activeBotId.current !== id ||
       !computerVisible.current
     ) {
-      return;
+      return null;
     }
     setScreenUrl(screen.url);
+    return screen.url;
   }
 
   async function loadOlderMessages() {
@@ -878,7 +879,10 @@ export function ShellPage() {
       const snap = await refreshThread(botId).catch(() => null);
       if (cancelled || activeBotId.current !== botId) return;
       const state = snap?.computer?.state;
-      if (!computerPanelShouldBoot(state)) {
+      const screen = state === "running" ? await refreshComputerScreen(botId) : null;
+      if (cancelled || activeBotId.current !== botId) return;
+      const action = computerPanelAutoBoot(state, screen);
+      if (action === "wait") {
         if (state === "running") autoBooted.current = botId;
         return;
       }
@@ -886,7 +890,7 @@ export function ShellPage() {
       autoBooted.current = botId;
       await bootComputer({
         takeControl: false,
-        overlay: true,
+        overlay: action === "boot",
         force: true,
       });
     })();

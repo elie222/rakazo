@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
-  computerPanelShouldBoot,
+  computerPanelAutoBoot,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
@@ -336,13 +336,14 @@ describe("computer event reduction", () => {
     expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
   });
 
-  it("only auto-boots a computer panel that is stopped or failed", () => {
-    expect(computerPanelShouldBoot("stopped")).toBe(true);
-    expect(computerPanelShouldBoot("error")).toBe(true);
-    expect(computerPanelShouldBoot(undefined)).toBe(true);
-    expect(computerPanelShouldBoot("running")).toBe(false);
-    expect(computerPanelShouldBoot("booting")).toBe(false);
-    expect(computerPanelShouldBoot("suspended")).toBe(false);
+  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
+    expect(computerPanelAutoBoot("stopped")).toBe("boot");
+    expect(computerPanelAutoBoot("error")).toBe("boot");
+    expect(computerPanelAutoBoot(undefined)).toBe("boot");
+    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
+    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
+    expect(computerPanelAutoBoot("booting")).toBe("wait");
+    expect(computerPanelAutoBoot("suspended")).toBe("wait");
   });
 });
 
