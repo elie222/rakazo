@@ -7,9 +7,10 @@ import {
 } from "./reasoning.js";
 
 describe("reasoning helpers", () => {
-  it("identifies live progress and reasoning ids", () => {
+  it("identifies live progress, reasoning, and pending ids", () => {
     expect(isEphemeralThreadMessageId("progress:run-1")).toBe(true);
     expect(isEphemeralThreadMessageId("reasoning:run-1")).toBe(true);
+    expect(isEphemeralThreadMessageId("pending:abc")).toBe(true);
     expect(isEphemeralThreadMessageId("m-1")).toBe(false);
   });
 

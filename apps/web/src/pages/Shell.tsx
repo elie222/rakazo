@@ -25,12 +25,14 @@ import {
 import {
   abortableDelay,
   attachmentsForBot,
+  createPendingUserMessageId,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  pendingUserMessageTextKey,
   presetFromCron,
   speechFromBlocks,
 } from "@rakazo/core";
@@ -753,6 +755,26 @@ export function ShellPage() {
       const attachments = attachmentsForBot(pendingAttachments, id);
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return;
+      const pendingId = createPendingUserMessageId();
+      if (trimmed) {
+        setSnapshot((current) => {
+          if (!current || current.botId !== id) return current;
+          return {
+            ...current,
+            messages: [
+              ...current.messages.filter((message) => message.id !== pendingId),
+              {
+                id: pendingId,
+                threadId: current.threadId,
+                seq: (current.messages.at(-1)?.seq ?? 0) + 1,
+                role: "user",
+                blocks: [{ kind: "text", text: trimmed }],
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+      }
       setSending(true);
       setSendError(null);
       try {
@@ -779,9 +801,17 @@ export function ShellPage() {
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
         if (activeBotId.current === id) setAttachmentNotice(null);
-        await refreshThreadRef.current(id);
+        void refreshThreadRef.current(id);
       } catch (error) {
         if (activeBotId.current === id) {
+          setSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  messages: current.messages.filter((message) => message.id !== pendingId),
+                }
+              : current,
+          );
           setSendError(error instanceof Error ? error.message : "Failed to send message");
         }
       } finally {
@@ -2600,12 +2630,23 @@ function collectEnteringUserMessageIds(
   const recent = new Set(messages.slice(-4).map((message) => message.id));
   const entering = new Set<string>();
   for (const message of messages) {
+    const text = userMessagePlainText(message);
+    const pendingKey = pendingUserMessageTextKey(text);
     if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
-      entering.add(message.id);
+      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
+      if (!replacingPending) entering.add(message.id);
     }
     state.seen.add(message.id);
+    if (message.role === "user") {
+      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
+      else state.seen.delete(pendingKey);
+    }
   }
   return entering;
+}
+
+function userMessagePlainText(message: ThreadMessage): string {
+  return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
 }
 
 function BotWorkingStatus({ name, color }: { name: string; color: string }) {

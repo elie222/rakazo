@@ -1,5 +1,10 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import { abortableDelay, attachmentsForBot } from "@rakazo/core";
+import {
+  abortableDelay,
+  attachmentsForBot,
+  createPendingUserMessageId,
+  pendingUserMessageTextKey,
+} from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -338,6 +343,20 @@ export default function Thread() {
     const attachments = attachmentsForBot(pendingAttachments, targetBotId);
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
+    const pendingId = createPendingUserMessageId();
+    if (text) {
+      setDraft("");
+      setSnap((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          messages: [
+            ...current.messages,
+            { id: pendingId, role: "user", blocks: [{ kind: "text", text }] },
+          ],
+        };
+      });
+    }
     setSending(true);
     setError(null);
     try {
@@ -360,12 +379,21 @@ export default function Thread() {
         current.filter((attachment) => attachment.botId !== targetBotId),
       );
       if (activeBotId.current === targetBotId) {
-        setDraft("");
+        if (!text) setDraft("");
         setAttachmentNotice(null);
-        await refresh();
+        void refresh();
       }
     } catch (err) {
       if (activeBotId.current === targetBotId) {
+        setSnap((current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== pendingId),
+              }
+            : current,
+        );
+        if (text) setDraft(text);
         setError(err instanceof Error ? err.message : "Failed to send message");
       }
     } finally {
@@ -607,12 +635,25 @@ function collectEnteringUserMessageIds(
   const recent = new Set(messages.slice(-4).map((message) => message.id));
   const entering = new Set<string>();
   for (const message of messages) {
+    const text = userMessagePlainText(message);
+    const pendingKey = pendingUserMessageTextKey(text);
     if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
-      entering.add(message.id);
+      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
+      if (!replacingPending) entering.add(message.id);
     }
     state.seen.add(message.id);
+    if (message.role === "user") {
+      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
+      else state.seen.delete(pendingKey);
+    }
   }
   return entering;
+}
+
+function userMessagePlainText(message: MobileMessage): string {
+  return message.blocks
+    .flatMap((block) => (block.kind === "text" ? [block.text ?? ""] : []))
+    .join("\n");
 }
 
 function DropInMessage({ active, children }: { active: boolean; children: ReactNode }) {
