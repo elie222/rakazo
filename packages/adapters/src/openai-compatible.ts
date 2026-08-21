@@ -168,6 +168,13 @@ export function openaiCompatibleModel(
       supportsDeveloperRole: false,
       supportsReasoningEffort: false,
       supportsStore: false,
+      // Custom OpenAI-compatible proxies (Gemini, Ollama, LiteLLM, Groq, …) often
+      // close the SSE stream after tokens without a terminal finish_reason chunk.
+      // Pi treats that as a hard error unless this is off.
+      supportsFinishReason: false,
+      supportsUsageInStreaming: false,
+      supportsStrictMode: false,
+      maxTokensField: "max_tokens",
     },
   };
 }
