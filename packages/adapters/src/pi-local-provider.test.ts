@@ -65,6 +65,15 @@ describe("local model provider", () => {
     expect(localProvider()?.getModels()[0]?.baseUrl).toBe("http://127.0.0.1:1234/v1");
   });
 
+  it("rejects an invalid or non-HTTP endpoint", () => {
+    for (const bad of ["not-a-url", "file:///tmp/model.sock", "ftp://127.0.0.1/models"]) {
+      process.env.RAKAZO_LOCAL_MODELS_URL = bad;
+      expect(() => localBaseUrl(), `endpoint "${bad}"`).toThrow(
+        /RAKAZO_LOCAL_MODELS_URL must be an absolute HTTP\(S\) URL/,
+      );
+    }
+  });
+
   it("defaults token limits when unset, and honours valid overrides", () => {
     setModels("qwen3:4b");
     delete process.env.RAKAZO_LOCAL_CONTEXT_WINDOW;

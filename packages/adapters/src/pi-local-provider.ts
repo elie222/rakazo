@@ -23,7 +23,17 @@ const DEFAULT_CONTEXT_WINDOW = 32_768;
 const DEFAULT_MAX_TOKENS = 4_096;
 
 export function localBaseUrl(): string {
-  return process.env.RAKAZO_LOCAL_MODELS_URL?.trim() || DEFAULT_BASE_URL;
+  const value = process.env.RAKAZO_LOCAL_MODELS_URL?.trim() || DEFAULT_BASE_URL;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("RAKAZO_LOCAL_MODELS_URL must be an absolute HTTP(S) URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("RAKAZO_LOCAL_MODELS_URL must be an absolute HTTP(S) URL");
+  }
+  return value;
 }
 
 /**
