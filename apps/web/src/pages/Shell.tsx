@@ -74,12 +74,14 @@ import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
 import {
+  computerPanelShouldBoot,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
 import type { ContextMenuPosition } from "./BotContextMenu";
@@ -868,15 +870,30 @@ export function ShellPage() {
       return;
     }
     if (!active) return;
-    if (computer?.state === "booting" || computer?.state === "suspended") return;
-    if (autoBooted.current === active.id && computer?.state === "running" && screenUrl) return;
-    autoBooted.current = active.id;
-    void bootComputer({
-      takeControl: false,
-      overlay: computer?.state !== "running",
-      force: true,
-    });
-  }, [panel, active?.id, computer?.state, screenUrl]);
+    const botId = active.id;
+    let cancelled = false;
+    void (async () => {
+      // Refresh from the server first. A stale SSE "booting" snapshot used to
+      // skip this effect, so an RPC takeover never showed "You have control".
+      const snap = await refreshThread(botId).catch(() => null);
+      if (cancelled || activeBotId.current !== botId) return;
+      const state = snap?.computer?.state;
+      if (!computerPanelShouldBoot(state)) {
+        if (state === "running") autoBooted.current = botId;
+        return;
+      }
+      if (autoBooted.current === botId) return;
+      autoBooted.current = botId;
+      await bootComputer({
+        takeControl: false,
+        overlay: true,
+        force: true,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, active?.id]);
 
   useEffect(() => {
     setComputerOpen(false);
@@ -920,7 +937,7 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
-    const needsTakeover = computer?.controlHolder !== "user";
+    const needsTakeover = !userHoldsComputerControl(computer, active.id);
     await bootComputer({
       takeControl: needsTakeover,
       overlay: needsTakeover || computer?.state !== "running",
@@ -937,6 +954,7 @@ export function ShellPage() {
   }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
+  const hasControl = userHoldsComputerControl(computer, active?.id);
 
   const userName = session.data?.user.name ?? "You";
   const initials = userName
@@ -1309,13 +1327,13 @@ export function ShellPage() {
                   <span className="text-[13.5px] text-[#85858A]">
                     {computer?.busyBotName
                       ? `${computer.busyBotName} is using it`
-                      : computer?.controlHolder === "user" && computer.controlBotId === active.id
+                      : hasControl
                         ? "You have control"
                         : computer?.state === "suspended"
                           ? "Asleep"
                           : computerLabel(computer?.mode, active.name)}
                   </span>
-                  {computer?.controlHolder === "user" && computer.controlBotId === active.id ? (
+                  {hasControl ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -1699,9 +1717,7 @@ export function ShellPage() {
                   {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
-              {!recordingSkill &&
-              computer?.controlHolder === "user" &&
-              computer.controlBotId === active.id ? (
+              {!recordingSkill && hasControl ? (
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
                   You have control
                 </span>
@@ -1710,7 +1726,7 @@ export function ShellPage() {
             <div className="flex items-center gap-3">
               {recordingSkill ? (
                 <TeachStopButton busy={teachBusy} onStop={stopTeaching} />
-              ) : computer?.controlHolder === "user" && computer.controlBotId === active.id ? (
+              ) : hasControl ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -1754,11 +1770,7 @@ export function ShellPage() {
                   className="h-full w-full border-0 bg-black"
                   allow="clipboard-read; clipboard-write; fullscreen"
                   style={{
-                    pointerEvents:
-                      recordingSkill ||
-                      !(computer?.controlHolder === "user" && computer.controlBotId === active.id)
-                        ? "none"
-                        : "auto",
+                    pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
                   }}
                 />
                 {active ? (

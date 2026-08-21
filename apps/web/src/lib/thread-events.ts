@@ -124,6 +124,17 @@ export function reduceThreadSnapshot(
   return prev;
 }
 
+export function userHoldsComputerControl(
+  computer: Pick<ComputerStatus, "controlHolder" | "controlBotId"> | null | undefined,
+  botId: string | undefined,
+): boolean {
+  return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
+}
+
+export function computerPanelShouldBoot(state: ComputerStatus["state"] | undefined): boolean {
+  return state !== "running" && state !== "booting" && state !== "suspended";
+}
+
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,

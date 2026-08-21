@@ -6,11 +6,13 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  computerPanelShouldBoot,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  userHoldsComputerControl,
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
@@ -318,6 +320,29 @@ describe("computer event reduction", () => {
       controlHolder: "bot",
       controlBotId: null,
     });
+  });
+
+  it("fills in controlBotId when a grant arrives after controlHolder is already user", () => {
+    const granted = reduceComputerStatus(
+      computer({ state: "running", controlHolder: "user", controlBotId: null }),
+      event({ type: "computer.takeover.granted", payload: {} }),
+    );
+    expect(granted).toMatchObject({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
+    expect(userHoldsComputerControl(granted, "bot-1")).toBe(true);
+    expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
+  });
+
+  it("only auto-boots a computer panel that is stopped or failed", () => {
+    expect(computerPanelShouldBoot("stopped")).toBe(true);
+    expect(computerPanelShouldBoot("error")).toBe(true);
+    expect(computerPanelShouldBoot(undefined)).toBe(true);
+    expect(computerPanelShouldBoot("running")).toBe(false);
+    expect(computerPanelShouldBoot("booting")).toBe(false);
+    expect(computerPanelShouldBoot("suspended")).toBe(false);
   });
 });
 
