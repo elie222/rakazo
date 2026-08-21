@@ -65,6 +65,37 @@ describe("local model provider", () => {
     expect(localProvider()?.getModels()[0]?.baseUrl).toBe("http://127.0.0.1:1234/v1");
   });
 
+  it("defaults token limits when unset, and honours valid overrides", () => {
+    setModels("qwen3:4b");
+    delete process.env.RAKAZO_LOCAL_CONTEXT_WINDOW;
+    delete process.env.RAKAZO_LOCAL_MAX_TOKENS;
+    let model = localProvider()?.getModels()[0];
+    expect(model?.contextWindow).toBe(32_768);
+    expect(model?.maxTokens).toBe(4_096);
+
+    process.env.RAKAZO_LOCAL_CONTEXT_WINDOW = "8192";
+    process.env.RAKAZO_LOCAL_MAX_TOKENS = "512";
+    model = localProvider()?.getModels()[0];
+    expect(model?.contextWindow).toBe(8192);
+    expect(model?.maxTokens).toBe(512);
+  });
+
+  it("rejects token limits that are not positive integers", () => {
+    setModels("qwen3:4b");
+    // A typo must not masquerade as the default, and a negative or fractional
+    // window must not reach the model definition.
+    for (const bad of ["abc", "-5", "0", "3.7", "Infinity", "1e400"]) {
+      process.env.RAKAZO_LOCAL_CONTEXT_WINDOW = bad;
+      expect(() => localProvider(), `context window "${bad}"`).toThrow(
+        /RAKAZO_LOCAL_CONTEXT_WINDOW must be a positive integer/,
+      );
+    }
+    delete process.env.RAKAZO_LOCAL_CONTEXT_WINDOW;
+
+    process.env.RAKAZO_LOCAL_MAX_TOKENS = "-1";
+    expect(() => localProvider()).toThrow(/RAKAZO_LOCAL_MAX_TOKENS must be a positive integer/);
+  });
+
   it("registers onto a Models collection only when configured", () => {
     setModels(undefined);
     const bare = registerLocalProvider(builtinModels());

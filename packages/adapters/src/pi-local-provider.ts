@@ -26,6 +26,23 @@ export function localBaseUrl(): string {
   return process.env.RAKAZO_LOCAL_MODELS_URL?.trim() || DEFAULT_BASE_URL;
 }
 
+/**
+ * A token count from the environment, or the default when unset.
+ *
+ * Token limits are only meaningful as finite positive integers, so anything
+ * else is a configuration mistake. Throwing beats `Number(x) || default`, which
+ * would accept a negative window and silently swallow a typo as the default.
+ */
+function tokenLimit(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, received "${raw}"`);
+  }
+  return value;
+}
+
 /** Comma-separated model ids exactly as the local server names them. */
 function localModelIds(): string[] {
   return (process.env.RAKAZO_LOCAL_MODELS ?? "")
@@ -45,8 +62,8 @@ function localModel(id: string): Model<"openai-completions"> {
     input: ["text"],
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: Number(process.env.RAKAZO_LOCAL_CONTEXT_WINDOW) || DEFAULT_CONTEXT_WINDOW,
-    maxTokens: Number(process.env.RAKAZO_LOCAL_MAX_TOKENS) || DEFAULT_MAX_TOKENS,
+    contextWindow: tokenLimit("RAKAZO_LOCAL_CONTEXT_WINDOW", DEFAULT_CONTEXT_WINDOW),
+    maxTokens: tokenLimit("RAKAZO_LOCAL_MAX_TOKENS", DEFAULT_MAX_TOKENS),
   };
 }
 
