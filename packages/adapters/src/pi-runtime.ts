@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { type Api, type Model, type Models, Type } from "@earendil-works/pi-ai";
+import { type Api, type Model, type Models, type MutableModels, Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   AdapterContext,
@@ -9,7 +9,10 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import type { ReasoningStep } from "@rakazo/contracts";
+import { reasoningToolDetail, reasoningToolTitle } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { attachOpenAICompatibleProvider } from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 
@@ -58,7 +61,9 @@ export class PiAgentRuntime implements AgentRuntime {
             ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
             : request.model.id;
         const models = modelsForRequest(request, provider);
-        const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        const model =
+          models.getModel(provider, modelId) ??
+          (request.model.baseUrl ? undefined : models.getModel("openrouter", modelId));
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
           queue.push({ type: "done" });
@@ -95,7 +100,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
-            thinkingLevel: "off",
+            thinkingLevel: model.reasoning ? "medium" : "off",
             tools,
             messages: history,
           },
@@ -112,7 +117,72 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.addEventListener("abort", onAbort);
 
         let streamed = "";
+        let thinking = "";
+        let lastThinkPush = 0;
+        const emitReasoning = (step: ReasoningStep) => {
+          queue.push({ type: "reasoning", step });
+        };
+        emitReasoning({
+          id: "status",
+          kind: "status",
+          title: "Working through the request",
+          status: "running",
+        });
         agent.subscribe((event) => {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_delta"
+          ) {
+            const delta = event.assistantMessageEvent.delta;
+            if (delta) {
+              thinking += delta;
+              const now = Date.now();
+              if (now - lastThinkPush >= 80) {
+                lastThinkPush = now;
+                emitReasoning({
+                  id: "think",
+                  kind: "think",
+                  title: "Thinking",
+                  detail: thinking.slice(-4000),
+                  status: "running",
+                });
+              }
+            }
+          }
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_end"
+          ) {
+            const content = event.assistantMessageEvent.content || thinking;
+            if (content) {
+              thinking = content;
+              emitReasoning({
+                id: "think",
+                kind: "think",
+                title: "Thought",
+                detail: content.slice(-8000),
+                status: "done",
+              });
+            }
+          }
+          if (event.type === "tool_execution_start") {
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              detail: reasoningToolDetail(event.toolName, event.args ?? {}),
+              status: "running",
+            });
+          }
+          if (event.type === "tool_execution_end") {
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              detail: event.isError ? "failed" : "done",
+              status: "done",
+            });
+          }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
@@ -141,7 +211,6 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         });
 
-        queue.push({ type: "progress", text: "working…" });
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
@@ -163,6 +232,12 @@ export class PiAgentRuntime implements AgentRuntime {
           streamed = fallback;
         }
         queue.push({ type: "done", text: streamed });
+        emitReasoning({
+          id: "status",
+          kind: "status",
+          title: "Finished",
+          status: "done",
+        });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
@@ -181,20 +256,28 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function modelsForRequest(request: AgentRunRequest, provider: string): Models {
+function modelsForRequest(request: AgentRunRequest, provider: string): ReturnType<typeof builtinModels> {
   const oauth = request.model.oauth;
-  if (!oauth) return catalogModels();
-
-  const persist = oauth.persist;
-  return registerLocalProvider(
-    builtinModels({
-      credentials: new PiRuntimeCredentialStore(
-        provider,
-        toOAuthCredential(oauth.credential),
-        persist ? (next) => persist(next) : undefined,
-      ),
-    }),
-  );
+  const models = oauth
+    ? registerLocalProvider(
+        builtinModels({
+          credentials: new PiRuntimeCredentialStore(
+            provider,
+            toOAuthCredential(oauth.credential),
+            oauth.persist ? (next) => oauth.persist!(next) : undefined,
+          ),
+        }),
+      )
+    : catalogModels();
+  if (request.model.baseUrl) {
+    attachOpenAICompatibleProvider(models as MutableModels, {
+      provider,
+      baseUrl: request.model.baseUrl,
+      modelId: request.model.id,
+      apiKey: request.model.apiKey,
+    });
+  }
+  return models;
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {

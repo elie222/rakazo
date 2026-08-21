@@ -30,6 +30,15 @@ import {
   hasActiveComputerControl,
   isSupermemoryEnabled,
   listPiCatalog,
+  mintGatewayProviderId,
+  normalizeOpenAICompatibleBaseUrl,
+  fetchOpenAICompatibleModels,
+  gatewayCatalogEntries,
+  customEndpointCatalogEntry,
+  isGatewayProvider,
+  OPENAI_COMPATIBLE_PROVIDER,
+  parseAvailableModels,
+  serializeAvailableModels,
   type PiOAuthLogins,
   provisionComputer,
   releaseComputerExecutionLease,
@@ -52,6 +61,7 @@ import {
   appContract,
   type ComputerStatus,
   type Me,
+  type ModelCredential,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
@@ -203,21 +213,76 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     models: {
-      list: authed.models.list.handler(async () => [...listPiCatalog(), scriptedCatalogEntry]),
+      list: authed.models.list.handler(async ({ context }) => {
+        const rows = await deps.prisma.userModelCredential.findMany({
+          where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: newestModelCredentialOrder,
+        });
+        return [
+          customEndpointCatalogEntry,
+          ...listPiCatalog(),
+          scriptedCatalogEntry,
+          ...gatewayCatalogEntries(
+            rows.map((row) => ({
+              provider: row.provider,
+              label: row.label,
+              baseUrl: row.baseUrl,
+              defaultModel: row.defaultModel,
+              availableModels: parseAvailableModels(row.availableModels),
+            })),
+          ),
+        ];
+      }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        return rows.map((row) => ({
-          id: row.id,
-          provider: row.provider,
-          label: row.label,
-          hasKey: true,
-          isDefault: row.isDefault,
-        }));
+        return rows.map((row) => credentialDto(row));
+      }),
+      probe: authed.models.probe.handler(async ({ input, context }) => {
+        throwIfAborted(context.signal);
+        try {
+          return {
+            models: await fetchOpenAICompatibleModels(
+              input.baseUrl,
+              input.apiKey,
+              context.signal,
+            ),
+          };
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Could not list models",
+          });
+        }
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        if (input.baseUrl) {
+          let baseUrl: string;
+          try {
+            baseUrl = normalizeOpenAICompatibleBaseUrl(input.baseUrl);
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Invalid base URL",
+            });
+          }
+          const provider =
+            isGatewayProvider(input.provider) && input.provider !== OPENAI_COMPATIBLE_PROVIDER
+              ? input.provider
+              : mintGatewayProviderId();
+          return persistModelCredential(deps, context.actor, {
+            provider,
+            plaintext: input.apiKey,
+            label: input.label ?? "Custom endpoint",
+            modelId: input.modelId,
+            baseUrl,
+            availableModels: input.availableModels,
+            signal: context.signal,
+          });
+        }
+        if (input.apiKey.trim().length < 8) {
+          throw new ORPCError("BAD_REQUEST", { message: "API key is too short" });
+        }
         return persistModelCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
@@ -328,6 +393,8 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
         });
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
@@ -356,6 +423,8 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1748,7 +1817,7 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
         where: {
           threadId: bot.thread.id,
           runId: run.id,
-          type: { in: ["thread.progress", "thread.subagent"] },
+          type: { in: ["thread.progress", "thread.subagent", "thread.reasoning"] },
         },
         orderBy: { seq: "asc" },
       })
@@ -1756,7 +1825,8 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
   const projected = projectMessages(liveEvents);
   const persisted = messagePage.messages;
   const live = projected.filter((message) => {
-    if (message.blocks.some((block) => block.kind === "progress")) return true;
+    if (message.blocks.some((block) => block.kind === "progress" || block.kind === "reasoning"))
+      return true;
     if (!message.id.startsWith("subagent:")) return false;
     return !persisted.some((row) =>
       row.blocks.some(
@@ -1810,6 +1880,27 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
+  };
+}
+
+function credentialDto(row: {
+  id: string;
+  provider: string;
+  label: string;
+  isDefault: boolean;
+  defaultModel: string | null;
+  baseUrl: string | null;
+  availableModels: string;
+}): ModelCredential {
+  return {
+    id: row.id,
+    provider: row.provider,
+    label: row.label,
+    hasKey: true,
+    isDefault: row.isDefault,
+    defaultModel: row.defaultModel,
+    baseUrl: row.baseUrl,
+    availableModels: parseAvailableModels(row.availableModels),
   };
 }
 
@@ -1926,6 +2017,8 @@ async function persistModelCredential(
     plaintext: string;
     label?: string;
     modelId?: string;
+    baseUrl?: string;
+    availableModels?: string[];
     signal?: AbortSignal;
   },
 ) {
@@ -1975,7 +2068,9 @@ async function persistModelCredential(
               label: input.label ?? input.provider,
               secretId: secret.id,
               isDefault: true,
-              defaultModel: input.modelId ?? deps.env.defaultModel,
+              defaultModel: input.modelId || deps.env.defaultModel,
+              baseUrl: input.baseUrl,
+              availableModels: serializeAvailableModels(input.availableModels ?? []),
             },
           });
           throwIfAborted(input.signal);
@@ -1987,7 +2082,12 @@ async function persistModelCredential(
             label: input.label ?? input.provider,
             secretId: secret.id,
             isDefault: true,
-            defaultModel: input.modelId ?? deps.env.defaultModel,
+            defaultModel: input.modelId || existing.defaultModel || deps.env.defaultModel,
+            baseUrl: input.baseUrl ?? existing.baseUrl,
+            availableModels:
+              input.availableModels !== undefined
+                ? serializeAvailableModels(input.availableModels)
+                : existing.availableModels,
           },
         });
         throwIfAborted(input.signal);
@@ -2004,13 +2104,7 @@ async function persistModelCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return {
-    id: cred.id,
-    provider: cred.provider,
-    label: cred.label,
-    hasKey: true,
-    isDefault: true,
-  };
+  return credentialDto(cred);
 }
 
 function throwIfAborted(signal?: AbortSignal) {

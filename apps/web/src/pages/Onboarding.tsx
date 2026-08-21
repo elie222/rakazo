@@ -41,6 +41,10 @@ export function OnboardingPage() {
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
+  const [probedModels, setProbedModels] = useState<string[]>([]);
+  const [probing, setProbing] = useState(false);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -115,14 +119,30 @@ export function OnboardingPage() {
   );
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const isCustom = Boolean(selected?.custom);
+  const isCustomTemplate = selected?.provider === "openai-compatible";
   const deviceSignIn = selected?.signIn === "device-code";
-  const acceptsKey = selected?.auth !== "oauth";
+  const acceptsKey = selected?.auth !== "oauth" || isCustom;
   const signInLabel = selected?.oauthLabel ?? "Sign in";
 
   async function saveModel() {
     setError(null);
     try {
-      if (apiKey) {
+      if (isCustom) {
+        const url = baseUrl.trim();
+        if (!url) {
+          setError("Enter a base URL for this endpoint.");
+          return;
+        }
+        await rpc.models.connect({
+          provider,
+          apiKey,
+          modelId: isCustomTemplate && modelId === "custom" ? probedModels[0] : modelId,
+          label: endpointLabel.trim() || selected?.providerName || "Custom endpoint",
+          baseUrl: url,
+          availableModels: probedModels.length ? probedModels : undefined,
+        });
+      } else if (apiKey) {
         await rpc.models.connect({
           provider,
           apiKey,
@@ -133,6 +153,27 @@ export function OnboardingPage() {
       setStep("bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save model");
+    }
+  }
+
+  async function probeModels() {
+    if (!baseUrl.trim()) {
+      setError("Enter a base URL to list models.");
+      return;
+    }
+    setError(null);
+    setProbing(true);
+    try {
+      const result = await rpc.models.probe({
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim() || undefined,
+      });
+      setProbedModels(result.models);
+      if (result.models[0]) setModelId(result.models[0]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not list models");
+    } finally {
+      setProbing(false);
     }
   }
 
@@ -200,8 +241,9 @@ export function OnboardingPage() {
           <div>
             <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
             <p className="mt-2 text-[#85858A]">
-              Rakazo does not pay for model usage. Paste an API key, sign in with ChatGPT, Copilot,
-              or SuperGrok, or skip if this deployment already has a key.
+              Rakazo does not pay for model usage. Paste an API key, connect any OpenAI-compatible
+              base URL, sign in with ChatGPT, Copilot, or SuperGrok, or skip if this deployment
+              already has a key.
             </p>
             <input
               value={query}
@@ -219,6 +261,9 @@ export function OnboardingPage() {
                     setProvider(entry.provider);
                     const first = catalog.find((item) => item.provider === entry.provider);
                     if (first) setModelId(first.id);
+                    setBaseUrl(first?.baseUrl ?? "");
+                    setEndpointLabel(first?.providerName ?? "Custom endpoint");
+                    setProbedModels([]);
                     setError(null);
                   }}
                   className={`flex w-full items-center justify-between border-b border-[#202023] px-3.5 py-2.5 text-left last:border-0 ${
@@ -232,23 +277,77 @@ export function OnboardingPage() {
                 </button>
               ))}
             </div>
-            <label className="mt-4 block text-sm text-[#85858A]">
-              Model
-              <select
-                value={selected?.id ?? modelId}
-                onChange={(e) => {
-                  cancelOAuthAttempt();
-                  setModelId(e.target.value);
-                }}
-                className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-              >
-                {modelsForProvider.map((entry) => (
-                  <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isCustom ? (
+              <>
+                <label className="mt-4 block text-sm text-[#85858A]">
+                  Name
+                  <input
+                    value={endpointLabel}
+                    onChange={(e) => setEndpointLabel(e.target.value)}
+                    placeholder="Office vLLM"
+                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                  />
+                </label>
+                <label className="mt-4 block text-sm text-[#85858A]">
+                  Base URL
+                  <input
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.example.com/v1"
+                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                  />
+                </label>
+                <label className="mt-4 block text-sm text-[#85858A]">
+                  Model
+                  {probedModels.length ? (
+                    <select
+                      value={modelId}
+                      onChange={(e) => setModelId(e.target.value)}
+                      className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                    >
+                      {probedModels.map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={isCustomTemplate && modelId === "custom" ? "" : modelId}
+                      onChange={(e) => setModelId(e.target.value)}
+                      placeholder="llama3.1"
+                      className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                    />
+                  )}
+                </label>
+                <button
+                  type="button"
+                  disabled={probing || !baseUrl.trim()}
+                  onClick={() => void probeModels()}
+                  className="mt-3 text-[14px] text-[#C9C9CE] disabled:opacity-40"
+                >
+                  {probing ? "Fetching…" : "Fetch models"}
+                </button>
+              </>
+            ) : (
+              <label className="mt-4 block text-sm text-[#85858A]">
+                Model
+                <select
+                  value={selected?.id ?? modelId}
+                  onChange={(e) => {
+                    cancelOAuthAttempt();
+                    setModelId(e.target.value);
+                  }}
+                  className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                >
+                  {modelsForProvider.map((entry) => (
+                    <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
             {deviceSignIn ? (
               <div className="mt-4">
@@ -284,7 +383,7 @@ export function OnboardingPage() {
             ) : null}
             {acceptsKey ? (
               <label className="mt-4 block text-sm text-[#85858A]">
-                {deviceSignIn ? "Or paste an API key" : "API key"}
+                {deviceSignIn ? "Or paste an API key" : isCustom ? "API key (optional)" : "API key"}
                 <input
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}

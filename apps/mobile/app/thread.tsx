@@ -248,6 +248,7 @@ export default function Thread() {
               retryMs = 250;
               if (
                 event.type === "thread.progress" ||
+                event.type === "thread.reasoning" ||
                 event.type === "thread.message.created" ||
                 event.type === "thread.message.updated" ||
                 event.type === "thread.subagent" ||
@@ -560,6 +561,41 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
+function ReasoningCard({
+  steps,
+}: {
+  steps: Array<{ id?: string; kind?: string; title?: string; detail?: string; status?: string }>;
+}) {
+  const running = steps.some((step) => step.status === "running");
+  const active = [...steps].reverse().find((step) => step.status === "running") ?? steps.at(-1);
+  return (
+    <View
+      style={{
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: "#232326",
+        backgroundColor: "#141416",
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+      }}
+    >
+      <Text style={{ color: "#C9C9CE", fontSize: 14, fontWeight: "600" }}>
+        {running ? active?.title || "Thinking" : "Thought process"}
+      </Text>
+      {steps.map((step, index) => (
+        <View key={step.id || String(index)} style={{ marginTop: 10 }}>
+          <Text style={{ color: step.status === "running" ? "#F5A03C" : "#A8A8AD", fontSize: 13 }}>
+            {step.title}
+          </Text>
+          {step.detail ? (
+            <Text style={{ color: "#85858A", fontSize: 13, marginTop: 4 }}>{step.detail}</Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function MessageBubble({
   botId,
   message,
@@ -571,9 +607,33 @@ function MessageBubble({
   onOpenBot: (botId: string, name: string) => void;
   onSpeak?: () => void;
 }) {
+  const reasoning = message.blocks.find((block) => block.kind === "reasoning");
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );
+  if (reasoning?.kind === "reasoning" && reasoning.steps?.length && !special) {
+    const textBlocks = message.blocks.filter(
+      (block) => (block.kind === "text" || block.kind === "progress") && block.text,
+    );
+    return (
+      <View style={{ gap: 8, maxWidth: "90%" }}>
+        <ReasoningCard steps={reasoning.steps} />
+        {textBlocks.length ? (
+          <View
+            style={{
+              backgroundColor: "#1A1A1D",
+              padding: 12,
+              borderRadius: 20,
+            }}
+          >
+            <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+              {textBlocks.map((block) => block.text).join("\n")}
+            </ChatMarkdown>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
   if (special?.kind === "subagent") {
     const running = special.status === "running";
     const failed = special.status === "failed";

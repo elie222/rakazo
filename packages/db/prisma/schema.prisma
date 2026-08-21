@@ -166,6 +166,8 @@ model UserModelCredential {
   secretId     String
   isDefault    Boolean  @default(false)
   defaultModel String?
+  baseUrl      String?
+  availableModels String @default("")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -216,6 +218,8 @@ model Bot {
   computerSwitching Boolean @default(false)
   voiceId        String?
   autoSpeak      Boolean  @default(false)
+  modelProvider  String?
+  modelId        String?
   routines       Routine[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]

@@ -1,4 +1,5 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import { reasoningMessageId, reasoningStepsFromPayload } from "./reasoning.js";
 
 export function projectMessages(
   events: Array<{
@@ -13,6 +14,7 @@ export function projectMessages(
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   let streaming: ThreadMessage | null = null;
+  let reasoning: ThreadMessage | null = null;
   const liveSubagents = new Map<string, ThreadMessage>();
   const durableSubagents = new Set<string>();
   for (const event of events) {
@@ -21,6 +23,7 @@ export function projectMessages(
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
     if (event.type === "thread.message.created") {
       streaming = null;
+      reasoning = null;
       const role = (payload.role as ThreadMessage["role"]) ?? "bot";
       const blocks = (payload.blocks as MessageBlock[]) ?? [];
       for (const block of blocks) {
@@ -58,9 +61,23 @@ export function projectMessages(
       };
       continue;
     }
+    if (event.type === "thread.reasoning") {
+      const steps = reasoningStepsFromPayload(payload);
+      reasoning = {
+        id: reasoningMessageId(event),
+        threadId: event.threadId,
+        seq: event.seq,
+        role: "bot",
+        blocks: [{ kind: "reasoning", steps }],
+        runId: event.runId ?? undefined,
+        createdAt,
+      };
+      continue;
+    }
     if (event.type === "thread.cleared") {
       messages.length = 0;
       streaming = null;
+      reasoning = null;
       liveSubagents.clear();
       durableSubagents.clear();
       continue;
@@ -85,9 +102,11 @@ export function projectMessages(
       event.type === "run.cancelled"
     ) {
       streaming = null;
+      reasoning = null;
     }
   }
   for (const live of liveSubagents.values()) messages.push(live);
+  if (reasoning) messages.push(reasoning);
   if (streaming) messages.push(streaming);
   return messages;
 }

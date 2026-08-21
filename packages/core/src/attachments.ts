@@ -90,6 +90,12 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
       if (block.kind === "text") return block.text;
+      if (block.kind === "reasoning") {
+        return block.steps
+          .map((step) => [step.title, step.detail].filter(Boolean).join(": "))
+          .filter(Boolean)
+          .join("\n");
+      }
       if (block.kind === "image") return `[image: ${block.name}]`;
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;

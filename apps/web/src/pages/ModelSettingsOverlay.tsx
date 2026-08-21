@@ -31,9 +31,12 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
+  const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "probe" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -115,8 +118,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const isCustom = Boolean(selected?.custom);
+  const isCustomTemplate = selected?.provider === "openai-compatible";
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
-  const acceptsKey = selected?.auth !== "oauth";
+  const acceptsKey = selected?.auth !== "oauth" || isCustom;
   const deviceSignIn = selected?.signIn === "device-code";
   const busy = pending !== null || oauthPending;
 
@@ -126,6 +131,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setBaseUrl(catalog.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "");
+    setEndpointLabel(
+      catalog.find((entry) => entry.provider === nextProvider)?.providerName ?? "Custom endpoint",
+    );
+    setProbedModels(
+      credentials.find((entry) => entry.provider === nextProvider)?.availableModels ?? [],
+    );
     setError(null);
     setNotice(null);
   }
@@ -147,7 +159,42 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function connectKey() {
-    if (!selected || !apiKey.trim()) return;
+    if (!selected) return;
+    if (isCustom) {
+      const url = baseUrl.trim() || selected.baseUrl;
+      if (!url) {
+        setError("Enter a base URL for this endpoint.");
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      setPending("connect");
+      try {
+        const connected = await rpc.models.connect({
+          provider: selected.provider,
+          apiKey: apiKey.trim(),
+          modelId: modelId.trim() || selected.id,
+          label: endpointLabel.trim() || selected.providerName || "Custom endpoint",
+          baseUrl: url,
+          availableModels: probedModels.length
+            ? probedModels
+            : modelId.trim()
+              ? [modelId.trim()]
+              : undefined,
+        });
+        setApiKey("");
+        await refresh();
+        setProvider(connected.provider);
+        setModelId(connected.defaultModel ?? modelId);
+        setNotice(`Connected ${connected.label}.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not connect this endpoint");
+      } finally {
+        setPending(null);
+      }
+      return;
+    }
+    if (!apiKey.trim()) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -163,6 +210,30 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect this provider");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function probeModels() {
+    const url = baseUrl.trim() || selected?.baseUrl;
+    if (!url) {
+      setError("Enter a base URL to list models.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setPending("probe");
+    try {
+      const result = await rpc.models.probe({
+        baseUrl: url,
+        apiKey: apiKey.trim() || undefined,
+      });
+      setProbedModels(result.models);
+      if (!result.models.includes(modelId) && result.models[0]) setModelId(result.models[0]);
+      setNotice(`Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not list models");
     } finally {
       setPending(null);
     }
@@ -298,20 +369,83 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
             {selected ? (
               <>
-                <div className="block text-[13.5px] text-[#85858A]">
-                  <span>Model</span>
-                  <ModelPicker
-                    options={modelsForProvider}
-                    value={selected.id}
-                    onChange={(nextModelId) => {
-                      cancelOAuthAttempt();
-                      setModelId(nextModelId);
-                      setError(null);
-                      setNotice(null);
-                    }}
-                  />
-                </div>
-                <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                {isCustom ? (
+                  <div className="space-y-4">
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Name
+                      <input
+                        value={endpointLabel}
+                        onChange={(event) => setEndpointLabel(event.target.value)}
+                        placeholder="Office vLLM"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Base URL
+                      <input
+                        value={baseUrl}
+                        onChange={(event) => setBaseUrl(event.target.value)}
+                        placeholder="https://api.example.com/v1"
+                        autoComplete="off"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <p className="text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="block min-w-[220px] flex-1 text-[13.5px] text-[#85858A]">
+                        Model id
+                        {probedModels.length || (!isCustomTemplate && modelsForProvider.length > 1) ? (
+                          <select
+                            value={modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          >
+                            {[...new Set([...probedModels, ...modelsForProvider.map((entry) => entry.id), modelId])]
+                              .filter(Boolean)
+                              .map((id) => (
+                                <option key={id} value={id}>
+                                  {id}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            value={isCustomTemplate && modelId === "custom" ? "" : modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            placeholder="llama3.1"
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          />
+                        )}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                        onClick={() => void probeModels()}
+                      >
+                        {pending === "probe" ? "Fetching…" : "Fetch models"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="block text-[13.5px] text-[#85858A]">
+                      <span>Model</span>
+                      <ModelPicker
+                        options={modelsForProvider}
+                        value={selected.id}
+                        onChange={(nextModelId) => {
+                          cancelOAuthAttempt();
+                          setModelId(nextModelId);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                  </>
+                )}
 
                 <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
@@ -322,8 +456,12 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="mt-1 text-[13px] text-[#85858A]">
                     {credential
-                      ? "Your key or subscription token is stored securely and is never shown here."
-                      : "Connect this provider to use it as your personal model."}
+                      ? isCustom
+                        ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
+                        : "Your key or subscription token is stored securely and is never shown here."
+                      : isCustom
+                        ? "Paste any OpenAI-compatible base URL. The API key is optional for local servers."
+                        : "Connect this provider to use it as your personal model."}
                   </div>
                 </div>
 
@@ -365,10 +503,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   <div className="mt-5">
                     <label className="block text-[13.5px] text-[#85858A]">
                       {credential
-                        ? "Replace API key"
+                        ? isCustom
+                          ? "Replace API key (optional)"
+                          : "Replace API key"
                         : deviceSignIn
                           ? "Or connect an API key"
-                          : "API key"}
+                          : isCustom
+                            ? "API key (optional)"
+                            : "API key"}
                       <input
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
@@ -382,15 +524,24 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={busy || apiKey.trim().length < 8}
+                      disabled={
+                        busy ||
+                        (isCustom
+                          ? !(baseUrl.trim() || selected.baseUrl)
+                          : apiKey.trim().length < 8)
+                      }
                       onClick={() => void connectKey()}
                       className="mt-3"
                     >
                       {pending === "connect"
                         ? "Saving…"
-                        : credential
-                          ? "Replace API key"
-                          : "Connect API key"}
+                        : isCustom
+                          ? credential
+                            ? "Save endpoint"
+                            : "Connect endpoint"
+                          : credential
+                            ? "Replace API key"
+                            : "Connect API key"}
                     </Button>
                   </div>
                 ) : null}
