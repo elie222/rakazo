@@ -145,7 +145,7 @@ jobs:
             echo "PR_NUMBER must be a positive integer." >&2
             exit 1
           fi
-          public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}"
+          public_base_url="${PLAYWRIGHT_PUBLIC_BASE_URL%/}/playwright"
           gallery_url="$public_base_url/prs/$PR_NUMBER/index.html"
           marker="<!-- rakazo-playwright-screenshots -->"
           body="$(printf '%s\n### Playwright screenshots\n[Open screenshot gallery](%s) · [Dashboard](%s/index.html) · [CI run](%s)\n\nUpdated for commit `%s`.' \
