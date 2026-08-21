@@ -5,7 +5,10 @@ import type {
   ComputerMode,
   ComputerStatus,
   Me,
+  ModelCatalogEntry,
+  ModelCredential,
   ProductEvent,
+  ReasoningStep,
   Routine,
   SearchHit,
   TaughtSkill,
@@ -1911,15 +1914,13 @@ const Transcript = memo(function Transcript({
           />
         </div>
       ))}
-      {running ? (
-        <div className="flex justify-start">
-          <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
-            style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
-          >
-            working…
-          </div>
-        </div>
+      {running &&
+      !messages.some(
+        (message) => message.id.startsWith("progress:") || message.id.startsWith("reasoning:"),
+      ) ? (
+        <ReasoningTrace
+          steps={[{ id: "status", kind: "status", title: "Starting", status: "running" }]}
+        />
       ) : null}
     </div>
   );
@@ -2164,6 +2165,9 @@ const MessageView = memo(function MessageView({
               </div>
             </div>
           );
+        }
+        if (block.kind === "reasoning") {
+          return <ReasoningTrace key={i} steps={block.steps} />;
         }
         if (block.kind === "subagent") {
           const running = block.status === "running";
@@ -2552,6 +2556,52 @@ function CreateBotForm({
   );
 }
 
+function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+  if (!steps.length) return null;
+  const running = steps.some((step) => step.status === "running");
+  const active = [...steps].reverse().find((step) => step.status === "running") ?? steps.at(-1);
+  const headline = running ? (active?.title ?? "Thinking") : "Thought process";
+  return (
+    <details
+      open={running}
+      className="w-[min(520px,90%)] rounded-[18px] border border-[#232326] bg-[#141416] px-4 py-3"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-[13.5px] text-[#A8A8AD] [&::-webkit-details-marker]:hidden">
+        <span
+          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{
+            background: running ? "#F5A03C" : "#4ECB71",
+            animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+          }}
+        />
+        <span className="min-w-0 truncate font-medium text-[#C9C9CE]">{headline}</span>
+        <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">{running ? "live" : "done"}</span>
+      </summary>
+      <ol className="mt-3 space-y-2.5 border-t border-[#232326] pt-3">
+        {steps.map((step) => (
+          <li key={step.id} className="text-[13.5px]">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 w-12 shrink-0 text-[11px] uppercase tracking-[0.06em] text-[#6C6C70]">
+                {step.kind === "think" ? "think" : step.kind === "tool" ? "tool" : "step"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className={step.status === "running" ? "text-[#F5A03C]" : "text-[#C9C9CE]"}>
+                  {step.title}
+                </div>
+                {step.detail ? (
+                  <pre className="rk-scroll mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[13px] leading-[1.45] text-[#85858A]">
+                    {step.detail}
+                  </pre>
+                ) : null}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function BotSettings({
   bot,
   onSave,
@@ -2567,6 +2617,8 @@ function BotSettings({
     computerMode: ComputerMode;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelProvider?: string | null;
+    modelId?: string | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -2578,6 +2630,10 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
+  const [modelProvider, setModelProvider] = useState(bot.modelProvider ?? "");
+  const [modelId, setModelId] = useState(bot.modelId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2586,7 +2642,31 @@ function BotSettings({
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void Promise.all([rpc.models.list(), rpc.models.credentials()])
+      .then(([nextCatalog, nextCredentials]) => {
+        setCatalog(nextCatalog);
+        setCredentials(nextCredentials);
+      })
+      .catch(() => undefined);
   }, []);
+
+  const connectedProviders = useMemo(() => {
+    const ids = new Set(credentials.map((entry) => entry.provider));
+    if (bot.modelProvider) ids.add(bot.modelProvider);
+    const grouped = new Map<string, ModelCatalogEntry[]>();
+    for (const entry of catalog) {
+      if (!ids.has(entry.provider)) continue;
+      const entries = grouped.get(entry.provider) ?? [];
+      entries.push(entry);
+      grouped.set(entry.provider, entries);
+    }
+    return [...grouped].map(([id, entries]) => ({
+      id,
+      name: entries[0]?.providerName ?? credentials.find((row) => row.provider === id)?.label ?? id,
+      entries,
+    }));
+  }, [bot.modelProvider, catalog, credentials]);
+  const modelsForProvider = catalog.filter((entry) => entry.provider === modelProvider);
 
   return (
     <div data-testid="bot-settings">
@@ -2618,6 +2698,52 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Inference
+        <select
+          value={modelProvider}
+          onChange={(event) => {
+            const nextProvider = event.target.value;
+            setModelProvider(nextProvider);
+            setModelId(
+              catalog.find((entry) => entry.provider === nextProvider)?.id ?? bot.modelId ?? "",
+            );
+          }}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        >
+          <option value="">Workspace default</option>
+          {connectedProviders.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {modelProvider ? (
+        <label className="mt-4 block text-[14px] text-[#85858A]">
+          Model
+          <select
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          >
+            {modelsForProvider.length ? (
+              modelsForProvider.map((entry) => (
+                <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))
+            ) : (
+              <option value={modelId || ""}>{modelId || "Choose a model"}</option>
+            )}
+          </select>
+        </label>
+      ) : (
+        <p className="mt-2 text-[13px] text-[#6C6C70]">
+          Uses the workspace default from Models. Connect a custom endpoint there to add another
+          provider.
+        </p>
+      )}
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
         <input
@@ -2660,6 +2786,8 @@ function BotSettings({
               computerMode,
               autoSpeak,
               voiceId: voiceId || null,
+              modelProvider: modelProvider || null,
+              modelId: modelProvider ? modelId || null : null,
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));

@@ -25,6 +25,7 @@ describe("contracts", () => {
     expect(ProductEventType.options).toContain("thread.message.created");
     expect(ProductEventType.options).toContain("thread.cleared");
     expect(ProductEventType.options).toContain("thread.subagent");
+    expect(ProductEventType.options).toContain("thread.reasoning");
     expect(ProductEventType.options).toContain("bot.spawned");
   });
 });

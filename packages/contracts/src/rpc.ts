@@ -62,12 +62,22 @@ export const appContract = {
       .input(
         z.object({
           provider: z.string(),
-          apiKey: z.string().min(8),
+          apiKey: z.string().max(4000).optional().default(""),
           label: z.string().optional(),
           modelId: z.string().optional(),
+          baseUrl: z.string().max(500).optional(),
+          availableModels: z.array(z.string().min(1).max(200)).max(200).optional(),
         }),
       )
       .output(ModelCredentialSchema),
+    probe: oc
+      .input(
+        z.object({
+          baseUrl: z.string().min(1).max(500),
+          apiKey: z.string().max(4000).optional(),
+        }),
+      )
+      .output(z.object({ models: z.array(z.string()) })),
     beginOAuth: oc
       .input(
         z.object({
