@@ -186,7 +186,13 @@ describe("thread event reduction", () => {
         payload: {
           steps: [
             { id: "status", kind: "status", title: "Starting", status: "done" },
-            { id: "think", kind: "think", title: "Thought", detail: "Let me check", status: "done" },
+            {
+              id: "think",
+              kind: "think",
+              title: "Thought",
+              detail: "Let me check",
+              status: "done",
+            },
             { id: "tool-1", kind: "tool", title: "Running a command", status: "running" },
           ],
         },

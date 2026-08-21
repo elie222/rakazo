@@ -234,7 +234,10 @@ describe("mobile thread event reduction", () => {
     expect(second?.messages.map((item) => item.id)).toEqual(["reasoning:run-1", "progress:run-1"]);
     expect(second?.messages[0]?.blocks[0]).toMatchObject({
       kind: "reasoning",
-      steps: [expect.objectContaining({ title: "Starting" }), expect.objectContaining({ title: "Running a command" })],
+      steps: [
+        expect.objectContaining({ title: "Starting" }),
+        expect.objectContaining({ title: "Running a command" }),
+      ],
     });
   });
 

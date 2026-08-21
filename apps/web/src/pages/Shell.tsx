@@ -2575,7 +2575,9 @@ function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
           }}
         />
         <span className="min-w-0 truncate font-medium text-[#C9C9CE]">{headline}</span>
-        <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">{running ? "live" : "done"}</span>
+        <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">
+          {running ? "live" : "done"}
+        </span>
       </summary>
       <ol className="mt-3 space-y-2.5 border-t border-[#232326] pt-3">
         {steps.map((step) => (

@@ -15,6 +15,9 @@ export function mintGatewayProviderId(): string {
 export function normalizeOpenAICompatibleBaseUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("Enter a base URL");
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) && !/^https?:\/\//i.test(trimmed)) {
+    throw new Error("Base URL must be http or https");
+  }
   const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
   let parsed: URL;
   try {
@@ -61,11 +64,7 @@ export async function fetchOpenAICompatibleModels(
     throw new Error(`Could not list models (${response.status})`);
   }
   const body = (await response.json()) as { data?: unknown; models?: unknown };
-  const rows = Array.isArray(body.data)
-    ? body.data
-    : Array.isArray(body.models)
-      ? body.models
-      : [];
+  const rows = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
   const ids = rows.flatMap((row) => {
     if (typeof row === "string") return [row];
     if (row && typeof row === "object" && "id" in row) return [String((row as { id: unknown }).id)];
@@ -119,7 +118,9 @@ export function attachOpenAICompatibleProvider(
       auth: {
         apiKey: {
           name: "Custom endpoint",
-          resolve: async () => ({ auth: input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {} }),
+          resolve: async () => ({
+            auth: input.apiKey?.trim() ? { apiKey: input.apiKey.trim() } : {},
+          }),
         },
       },
       models: ids.map((id) => openaiCompatibleModel(input.provider, id, baseUrl)),
