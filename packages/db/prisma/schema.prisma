@@ -170,9 +170,23 @@ model UserModelCredential {
   availableModels String @default("")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  keys         UserModelCredentialKey[]
 
   @@index([userId, workspaceId])
   @@map("user_model_credentials")
+}
+
+model UserModelCredentialKey {
+  id           String   @id @default(cuid())
+  credentialId String
+  credential   UserModelCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  secretId     String
+  label        String   @default("API key")
+  isActive     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([credentialId, createdAt, id])
+  @@map("user_model_credential_keys")
 }
 
 model UserVoiceCredential {

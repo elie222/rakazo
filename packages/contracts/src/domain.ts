@@ -268,6 +268,14 @@ export const ThreadSnapshotSchema = z.object({
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 
+export const ModelCredentialKeySchema = z.object({
+  id: Id,
+  label: z.string(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+});
+export type ModelCredentialKey = z.infer<typeof ModelCredentialKeySchema>;
+
 export const ModelCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
@@ -277,6 +285,7 @@ export const ModelCredentialSchema = z.object({
   baseUrl: z.string().nullable().optional(),
   defaultModel: z.string().nullable().optional(),
   availableModels: z.array(z.string()).optional(),
+  keys: z.array(ModelCredentialKeySchema),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 

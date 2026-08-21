@@ -31,12 +31,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [keyLabel, setKeyLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
   const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | "probe" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "probe" | "key" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -131,6 +132,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setKeyLabel("");
     setBaseUrl(catalog.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "");
     setEndpointLabel(
       catalog.find((entry) => entry.provider === nextProvider)?.providerName ?? "Custom endpoint",
@@ -172,7 +174,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       try {
         const connected = await rpc.models.connect({
           provider: selected.provider,
-          apiKey: apiKey.trim(),
+          apiKey: credential ? "" : apiKey.trim(),
           modelId: modelId.trim() || selected.id,
           label: endpointLabel.trim() || selected.providerName || "Custom endpoint",
           baseUrl: url,
@@ -234,6 +236,60 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setNotice(`Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not list models");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function addEndpointKey() {
+    if (!selected || !apiKey.trim()) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc.models.addKey({
+        provider: selected.provider,
+        apiKey: apiKey.trim(),
+        label: keyLabel.trim() || undefined,
+      });
+      setApiKey("");
+      setKeyLabel("");
+      await refresh();
+      setNotice("Added an API key to this endpoint.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function activateEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc.models.setActiveKey({ provider: selected.provider, keyId });
+      await refresh();
+      setNotice("This key is now used for the endpoint.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function removeEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc.models.removeKey({ provider: selected.provider, keyId });
+      await refresh();
+      setNotice("Removed that API key.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove API key");
     } finally {
       setPending(null);
     }
@@ -471,10 +527,88 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
                         : "Your key or subscription token is stored securely and is never shown here."
                       : isCustom
-                        ? "Paste any OpenAI-compatible base URL. The API key is optional for local servers."
+                        ? "Paste any OpenAI-compatible base URL. Add one or more API keys after you connect."
                         : "Connect this provider to use it as your personal model."}
                   </div>
                 </div>
+
+                {isCustom && credential ? (
+                  <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
+                    <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
+                      API keys
+                    </div>
+                    {credential.keys.length ? (
+                      <ul className="mt-3 space-y-2">
+                        {credential.keys.map((key) => (
+                          <li
+                            key={key.id}
+                            className="flex items-center gap-2 rounded-[10px] bg-[#101012] px-3 py-2"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-[14px] text-[#ECECEE]">
+                              {key.label}
+                            </span>
+                            {key.isActive ? (
+                              <span className="text-[12px] text-[#4ECB71]">Active</span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void activateEndpointKey(key.id)}
+                                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                              >
+                                Use
+                              </button>
+                            )}
+                            {credential.keys.length > 1 ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void removeEndpointKey(key.id)}
+                                className="text-[12px] text-[#E65707]"
+                              >
+                                Remove
+                              </button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-[13px] text-[#85858A]">
+                        No keys yet. Local servers can run without one.
+                      </p>
+                    )}
+                    <label className="mt-4 block text-[13.5px] text-[#85858A]">
+                      Key label
+                      <input
+                        value={keyLabel}
+                        onChange={(event) => setKeyLabel(event.target.value)}
+                        placeholder="Pool key 2"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <label className="mt-3 block text-[13.5px] text-[#85858A]">
+                      Add API key
+                      <input
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder="sk-…"
+                        type="password"
+                        autoComplete="off"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !apiKey.trim()}
+                      onClick={() => void addEndpointKey()}
+                      className="mt-3"
+                    >
+                      {pending === "key" ? "Adding…" : "Add API key"}
+                    </Button>
+                  </div>
+                ) : null}
 
                 {deviceSignIn ? (
                   <div className="mt-5">
@@ -510,13 +644,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : null}
 
-                {acceptsKey ? (
+                {acceptsKey && !(isCustom && credential) ? (
                   <div className="mt-5">
                     <label className="block text-[13.5px] text-[#85858A]">
                       {credential
-                        ? isCustom
-                          ? "Replace API key (optional)"
-                          : "Replace API key"
+                        ? "Replace API key"
                         : deviceSignIn
                           ? "Or connect an API key"
                           : isCustom
@@ -547,12 +679,24 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       {pending === "connect"
                         ? "Saving…"
                         : isCustom
-                          ? credential
-                            ? "Save endpoint"
-                            : "Connect endpoint"
+                          ? "Connect endpoint"
                           : credential
                             ? "Replace API key"
                             : "Connect API key"}
+                    </Button>
+                  </div>
+                ) : null}
+
+                {isCustom && credential ? (
+                  <div className="mt-5">
+                    <Button
+                      type="button"
+                      variant="pill"
+                      size="sm"
+                      disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                      onClick={() => void connectKey()}
+                    >
+                      {pending === "connect" ? "Saving…" : "Save endpoint"}
                     </Button>
                   </div>
                 ) : null}

@@ -110,6 +110,21 @@ export const appContract = {
     setDefault: oc
       .input(z.object({ provider: z.string(), modelId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
+    addKey: oc
+      .input(
+        z.object({
+          provider: z.string(),
+          apiKey: z.string().min(1).max(4000),
+          label: z.string().trim().min(1).max(80).optional(),
+        }),
+      )
+      .output(ModelCredentialSchema),
+    removeKey: oc
+      .input(z.object({ provider: z.string(), keyId: Id }))
+      .output(ModelCredentialSchema),
+    setActiveKey: oc
+      .input(z.object({ provider: z.string(), keyId: Id }))
+      .output(ModelCredentialSchema),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
