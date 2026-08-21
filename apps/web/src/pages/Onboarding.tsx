@@ -297,10 +297,11 @@ export function OnboardingPage() {
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                   />
                 </label>
-                <label className="mt-4 block text-sm text-[#85858A]">
-                  Model
+                <div className="mt-4 block text-sm text-[#85858A]">
+                  <label htmlFor="onboarding-custom-model">Model</label>
                   {probedModels.length ? (
                     <select
+                      id="onboarding-custom-model"
                       value={modelId}
                       onChange={(e) => setModelId(e.target.value)}
                       className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
@@ -313,13 +314,14 @@ export function OnboardingPage() {
                     </select>
                   ) : (
                     <input
+                      id="onboarding-custom-model"
                       value={isCustomTemplate && modelId === "custom" ? "" : modelId}
                       onChange={(e) => setModelId(e.target.value)}
                       placeholder="llama3.1"
                       className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                     />
                   )}
-                </label>
+                </div>
                 <button
                   type="button"
                   disabled={probing || !baseUrl.trim()}

@@ -119,6 +119,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let streamed = "";
         let thinking = "";
         let lastThinkPush = 0;
+        const toolArgs = new Map<string, Record<string, unknown>>();
         const emitReasoning = (step: ReasoningStep) => {
           queue.push({ type: "reasoning", step });
         };
@@ -166,6 +167,7 @@ export class PiAgentRuntime implements AgentRuntime {
             }
           }
           if (event.type === "tool_execution_start") {
+            toolArgs.set(event.toolCallId, event.args ?? {});
             emitReasoning({
               id: event.toolCallId,
               kind: "tool",
@@ -175,10 +177,11 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "tool_execution_end") {
+            const args = toolArgs.get(event.toolCallId) ?? {};
             emitReasoning({
               id: event.toolCallId,
               kind: "tool",
-              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              title: reasoningToolTitle(event.toolName, args),
               detail: event.isError ? "failed" : "done",
               status: "done",
             });
@@ -231,13 +234,13 @@ export class PiAgentRuntime implements AgentRuntime {
           queue.push({ type: "text", text: fallback });
           streamed = fallback;
         }
-        queue.push({ type: "done", text: streamed });
         emitReasoning({
           id: "status",
           kind: "status",
           title: "Finished",
           status: "done",
         });
+        queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
@@ -256,7 +259,10 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function modelsForRequest(request: AgentRunRequest, provider: string): ReturnType<typeof builtinModels> {
+function modelsForRequest(
+  request: AgentRunRequest,
+  provider: string,
+): ReturnType<typeof builtinModels> {
   const oauth = request.model.oauth;
   const models = oauth
     ? registerLocalProvider(

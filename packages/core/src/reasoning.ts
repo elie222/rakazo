@@ -8,16 +8,15 @@ export function reasoningMessageId(event: { runId?: string | null; id?: string }
   return `reasoning:${event.runId ?? event.id ?? "live"}`;
 }
 
-export function upsertReasoningStep(
-  steps: ReasoningStep[],
-  step: ReasoningStep,
-): ReasoningStep[] {
+export function upsertReasoningStep(steps: ReasoningStep[], step: ReasoningStep): ReasoningStep[] {
   const next = steps.map((entry) => (entry.id === step.id ? { ...entry, ...step } : entry));
   if (next.some((entry) => entry.id === step.id)) return next;
   return [...next, step];
 }
 
-export function reasoningStepsFromPayload(payload: Record<string, unknown> | undefined): ReasoningStep[] {
+export function reasoningStepsFromPayload(
+  payload: Record<string, unknown> | undefined,
+): ReasoningStep[] {
   const raw = payload?.steps;
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry) => {

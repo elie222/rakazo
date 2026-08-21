@@ -281,7 +281,13 @@ export type AgentRuntimeEvent =
   | { type: "text"; text: string }
   | { type: "progress"; text: string }
   | { type: "reasoning"; step: ReasoningStep }
-  | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string; status?: "running" | "done" }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      executionId: string;
+      status?: "running" | "done";
+    }
   | { type: "ask"; text: string; detail?: string }
   | { type: "takeover"; reason: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }

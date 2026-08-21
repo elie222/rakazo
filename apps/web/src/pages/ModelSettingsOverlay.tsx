@@ -392,15 +392,23 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </label>
                     <p className="text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
                     <div className="flex flex-wrap items-end gap-3">
-                      <label className="block min-w-[220px] flex-1 text-[13.5px] text-[#85858A]">
-                        Model id
-                        {probedModels.length || (!isCustomTemplate && modelsForProvider.length > 1) ? (
+                      <div className="block min-w-[220px] flex-1 text-[13.5px] text-[#85858A]">
+                        <label htmlFor="custom-endpoint-model">Model id</label>
+                        {probedModels.length ||
+                        (!isCustomTemplate && modelsForProvider.length > 1) ? (
                           <select
+                            id="custom-endpoint-model"
                             value={modelId}
                             onChange={(event) => setModelId(event.target.value)}
                             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                           >
-                            {[...new Set([...probedModels, ...modelsForProvider.map((entry) => entry.id), modelId])]
+                            {[
+                              ...new Set([
+                                ...probedModels,
+                                ...modelsForProvider.map((entry) => entry.id),
+                                modelId,
+                              ]),
+                            ]
                               .filter(Boolean)
                               .map((id) => (
                                 <option key={id} value={id}>
@@ -410,13 +418,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           </select>
                         ) : (
                           <input
+                            id="custom-endpoint-model"
                             value={isCustomTemplate && modelId === "custom" ? "" : modelId}
                             onChange={(event) => setModelId(event.target.value)}
                             placeholder="llama3.1"
                             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                           />
                         )}
-                      </label>
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
@@ -443,7 +452,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         }}
                       />
                     </div>
-                    <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                    <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
+                      {selected.billing}
+                    </p>
                   </>
                 )}
 
