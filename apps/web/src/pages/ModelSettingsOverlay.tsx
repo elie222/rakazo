@@ -21,6 +21,8 @@ import { rpc } from "../lib/rpc";
 type OAuthNotice = {
   verificationUri: string;
   userCode: string;
+  mode: "device-code" | "auth-url";
+  loginId: string;
 };
 
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
@@ -32,6 +34,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
+  const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
@@ -117,7 +120,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   );
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
   const acceptsKey = selected?.auth !== "oauth";
-  const deviceSignIn = selected?.signIn === "device-code";
+  const subscriptionSignIn = selected?.signIn === "device-code" || selected?.signIn === "auth-url";
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
@@ -186,7 +189,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       );
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
-      setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
+      setPasteCode("");
+      setOauth({
+        verificationUri: started.verificationUri,
+        userCode: started.userCode,
+        mode: started.mode,
+        loginId: started.loginId,
+      });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
       await waitForModelOAuth(started.loginId, controller.signal);
       if (controller.signal.aborted) return;
@@ -327,25 +336,76 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
 
-                {deviceSignIn ? (
+                {subscriptionSignIn ? (
                   <div className="mt-5">
                     {oauth ? (
                       <div className="rounded-[13px] border border-[#26262A] px-4 py-3">
-                        <p className="text-sm leading-[1.5] text-[#85858A]">
-                          Enter this code at{" "}
-                          <a
-                            href={oauth.verificationUri}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#ECECEE] underline"
-                          >
-                            {oauth.verificationUri.replace(/^https:\/\//, "")}
-                          </a>
-                        </p>
-                        <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
-                          {oauth.userCode}
-                        </p>
-                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                        {oauth.mode === "auth-url" ? (
+                          <>
+                            <p className="text-sm leading-[1.5] text-[#85858A]">
+                              Finish signing in at{" "}
+                              <a
+                                href={oauth.verificationUri}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[#ECECEE] underline"
+                              >
+                                {new URL(oauth.verificationUri).hostname}
+                              </a>
+                              . When the final page fails to load, copy its URL (or the code it
+                              shows) and paste it here:
+                            </p>
+                            <div className="mt-3 flex items-center gap-2">
+                              <input
+                                value={pasteCode}
+                                onChange={(e) => setPasteCode(e.target.value)}
+                                placeholder="http://localhost:53692/callback?code=…"
+                                className="w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-2.5 text-[13px] text-[#ECECEE]"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!pasteCode.trim()}
+                                onClick={() => {
+                                  const code = pasteCode.trim();
+                                  if (!code) return;
+                                  void rpc.models
+                                    .submitOAuthCode({ loginId: oauth.loginId, code })
+                                    .then(() => setPasteCode(""))
+                                    .catch((err) =>
+                                      setError(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "Could not submit code",
+                                      ),
+                                    );
+                                }}
+                              >
+                                Submit
+                              </Button>
+                            </div>
+                            <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm leading-[1.5] text-[#85858A]">
+                              Enter this code at{" "}
+                              <a
+                                href={oauth.verificationUri}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[#ECECEE] underline"
+                              >
+                                {oauth.verificationUri.replace(/^https:\/\//, "")}
+                              </a>
+                            </p>
+                            <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
+                              {oauth.userCode}
+                            </p>
+                            <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <Button
@@ -366,7 +426,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     <label className="block text-[13.5px] text-[#85858A]">
                       {credential
                         ? "Replace API key"
-                        : deviceSignIn
+                        : subscriptionSignIn
                           ? "Or connect an API key"
                           : "API key"}
                       <input
@@ -395,7 +455,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : null}
 
-                {selected.auth === "oauth" && !deviceSignIn ? (
+                {selected.auth === "oauth" && !subscriptionSignIn ? (
                   <p className="mt-5 text-sm leading-[1.5] text-[#85858A]">
                     This subscription sign-in is not available in Rakazo yet. Use a deployment
                     credential or choose another provider.

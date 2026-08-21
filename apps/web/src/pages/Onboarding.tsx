@@ -49,7 +49,10 @@ export function OnboardingPage() {
   const [oauth, setOauth] = useState<{
     verificationUri: string;
     userCode: string;
+    mode: "device-code" | "auth-url";
+    loginId: string;
   } | null>(null);
+  const [pasteCode, setPasteCode] = useState("");
   const [oauthPending, setOauthPending] = useState(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
@@ -115,7 +118,7 @@ export function OnboardingPage() {
   );
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const deviceSignIn = selected?.signIn === "device-code";
+  const subscriptionSignIn = selected?.signIn === "device-code" || selected?.signIn === "auth-url";
   const acceptsKey = selected?.auth !== "oauth";
   const signInLabel = selected?.oauthLabel ?? "Sign in";
 
@@ -152,9 +155,12 @@ export function OnboardingPage() {
       );
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
+      setPasteCode("");
       setOauth({
         verificationUri: started.verificationUri,
         userCode: started.userCode,
+        mode: started.mode,
+        loginId: started.loginId,
       });
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
       await waitForModelOAuth(started.loginId, controller.signal);
@@ -250,25 +256,73 @@ export function OnboardingPage() {
               </select>
             </label>
             <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
-            {deviceSignIn ? (
+            {subscriptionSignIn ? (
               <div className="mt-4">
                 {oauth ? (
                   <div className="rounded-[11px] border border-[#26262A] px-3.5 py-3">
-                    <p className="text-sm text-[#85858A]">
-                      Enter this code at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#ECECEE] underline"
-                      >
-                        {oauth.verificationUri.replace(/^https:\/\//, "")}
-                      </a>
-                    </p>
-                    <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
-                      {oauth.userCode}
-                    </p>
-                    <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                    {oauth.mode === "auth-url" ? (
+                      <>
+                        <p className="text-sm text-[#85858A]">
+                          Finish signing in at{" "}
+                          <a
+                            href={oauth.verificationUri}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#ECECEE] underline"
+                          >
+                            {new URL(oauth.verificationUri).hostname}
+                          </a>
+                          . When the final page fails to load, copy its URL (or the code it shows)
+                          and paste it here:
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            value={pasteCode}
+                            onChange={(e) => setPasteCode(e.target.value)}
+                            placeholder="http://localhost:53692/callback?code=…"
+                            className="w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-2.5 text-[13px] text-[#ECECEE]"
+                          />
+                          <button
+                            type="button"
+                            disabled={!pasteCode.trim()}
+                            onClick={() => {
+                              const code = pasteCode.trim();
+                              if (!code) return;
+                              void rpc.models
+                                .submitOAuthCode({ loginId: oauth.loginId, code })
+                                .then(() => setPasteCode(""))
+                                .catch((err) =>
+                                  setError(
+                                    err instanceof Error ? err.message : "Could not submit code",
+                                  ),
+                                );
+                            }}
+                            className="rounded-[11px] bg-[#F1F1EF] px-4 py-2.5 text-[#17171A] disabled:opacity-40"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-[#85858A]">
+                          Enter this code at{" "}
+                          <a
+                            href={oauth.verificationUri}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#ECECEE] underline"
+                          >
+                            {oauth.verificationUri.replace(/^https:\/\//, "")}
+                          </a>
+                        </p>
+                        <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
+                          {oauth.userCode}
+                        </p>
+                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <button
@@ -284,7 +338,7 @@ export function OnboardingPage() {
             ) : null}
             {acceptsKey ? (
               <label className="mt-4 block text-sm text-[#85858A]">
-                {deviceSignIn ? "Or paste an API key" : "API key"}
+                {subscriptionSignIn ? "Or paste an API key" : "API key"}
                 <input
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
@@ -293,7 +347,7 @@ export function OnboardingPage() {
                   className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                 />
               </label>
-            ) : deviceSignIn ? null : (
+            ) : subscriptionSignIn ? null : (
               <p className="mt-4 text-sm text-[#85858A]">
                 This provider cannot paste a key here. Skip if this deployment already has
                 credentials.

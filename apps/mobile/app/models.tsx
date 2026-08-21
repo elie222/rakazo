@@ -22,6 +22,8 @@ import { native } from "../lib/native";
 type OAuthNotice = {
   verificationUri: string;
   userCode: string;
+  mode: "device-code" | "auth-url";
+  loginId: string;
 };
 
 type ModelSelection = {
@@ -37,6 +39,7 @@ export default function Models() {
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
+  const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
@@ -115,7 +118,7 @@ export default function Models() {
   );
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
   const acceptsKey = selected?.auth !== "oauth";
-  const deviceSignIn = selected?.signIn === "device-code";
+  const subscriptionSignIn = selected?.signIn === "device-code" || selected?.signIn === "auth-url";
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
@@ -177,6 +180,7 @@ export default function Models() {
         loginId: string;
         verificationUri: string;
         userCode: string;
+        mode: "device-code" | "auth-url";
       }>(
         "models/beginOAuth",
         {
@@ -188,7 +192,13 @@ export default function Models() {
       );
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
-      setOauth({ verificationUri: started.verificationUri, userCode: started.userCode });
+      setPasteCode("");
+      setOauth({
+        verificationUri: started.verificationUri,
+        userCode: started.userCode,
+        mode: started.mode,
+        loginId: started.loginId,
+      });
       await Linking.openURL(started.verificationUri);
       await waitForModelOAuth(started.loginId, controller.signal);
       if (controller.signal.aborted) return;
@@ -304,15 +314,63 @@ export default function Models() {
               </Text>
             </View>
 
-            {deviceSignIn ? (
+            {subscriptionSignIn ? (
               oauth ? (
                 <View style={styles.oauthCard}>
-                  <Text style={styles.secondary}>Enter this code in your browser:</Text>
-                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
-                  <Text style={styles.code}>{oauth.userCode}</Text>
-                  <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                  {oauth.mode === "auth-url" ? (
+                    <>
+                      <Text style={styles.secondary}>Finish signing in in your browser:</Text>
+                      <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                        <Text style={styles.link}>{oauth.verificationUri}</Text>
+                      </Pressable>
+                      <Text style={styles.secondary}>
+                        When the final page fails to load, copy its URL (or the code it shows) and
+                        paste it here:
+                      </Text>
+                      <TextInput
+                        accessibilityLabel="Authorization code"
+                        value={pasteCode}
+                        onChangeText={setPasteCode}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        placeholder="http://localhost:53692/callback?code=…"
+                        placeholderTextColor={native.secondaryLabel}
+                        style={styles.keyInput}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={!pasteCode.trim()}
+                        onPress={() => {
+                          const code = pasteCode.trim();
+                          if (!code) return;
+                          void rpc("models/submitOAuthCode", { loginId: oauth.loginId, code })
+                            .then(() => setPasteCode(""))
+                            .catch((err: unknown) =>
+                              setError(
+                                err instanceof Error ? err.message : "Could not submit code",
+                              ),
+                            );
+                        }}
+                        style={({ pressed }) => [
+                          styles.outlineButton,
+                          pressed && styles.pressed,
+                          !pasteCode.trim() && styles.disabled,
+                        ]}
+                      >
+                        <Text style={styles.outlineLabel}>Submit</Text>
+                      </Pressable>
+                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.secondary}>Enter this code in your browser:</Text>
+                      <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                        <Text style={styles.link}>{oauth.verificationUri}</Text>
+                      </Pressable>
+                      <Text style={styles.code}>{oauth.userCode}</Text>
+                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                    </>
+                  )}
                 </View>
               ) : (
                 <Pressable
@@ -337,7 +395,7 @@ export default function Models() {
                 <Text style={styles.sectionTitle}>
                   {credential
                     ? "Replace API key"
-                    : deviceSignIn
+                    : subscriptionSignIn
                       ? "Or connect an API key"
                       : "API key"}
                 </Text>
@@ -375,7 +433,7 @@ export default function Models() {
               </View>
             ) : null}
 
-            {selected.auth === "oauth" && !deviceSignIn ? (
+            {selected.auth === "oauth" && !subscriptionSignIn ? (
               <Text style={styles.secondary}>
                 This subscription sign-in is not available in Rakazo yet. Use a deployment
                 credential or choose another provider.

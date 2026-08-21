@@ -1,8 +1,15 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { DEVICE_CODE_PROVIDERS, DEVICE_CODE_SIGN_IN, isDeviceCodeProvider } from "./pi-oauth.js";
+import {
+  AUTH_URL_PROVIDERS,
+  AUTH_URL_SIGN_IN,
+  DEVICE_CODE_PROVIDERS,
+  DEVICE_CODE_SIGN_IN,
+  isAuthUrlProvider,
+  isDeviceCodeProvider,
+} from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
-export type PiCatalogSignIn = typeof DEVICE_CODE_SIGN_IN;
+export type PiCatalogSignIn = typeof DEVICE_CODE_SIGN_IN | typeof AUTH_URL_SIGN_IN;
 
 export type PiCatalogEntry = {
   provider: string;
@@ -30,11 +37,15 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const apiKey = Boolean(provider.auth.apiKey);
     const oauth = Boolean(provider.auth.oauth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
-    const device = DEVICE_CODE_PROVIDERS[provider.id];
+    const signInMeta = DEVICE_CODE_PROVIDERS[provider.id] ?? AUTH_URL_PROVIDERS[provider.id];
     const oauthLabel =
-      device?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
+      signInMeta?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
     const subscription = Boolean(provider.auth.oauth?.isSubscription);
-    const signIn = isDeviceCodeProvider(provider.id) ? DEVICE_CODE_SIGN_IN : undefined;
+    const signIn = isDeviceCodeProvider(provider.id)
+      ? DEVICE_CODE_SIGN_IN
+      : isAuthUrlProvider(provider.id)
+        ? AUTH_URL_SIGN_IN
+        : undefined;
     const billing = catalogBilling(provider.id, provider.name, {
       apiKey,
       oauth,
@@ -61,8 +72,8 @@ function catalogBilling(
   name: string,
   opts: { apiKey: boolean; oauth: boolean },
 ) {
-  const device = DEVICE_CODE_PROVIDERS[providerId];
-  if (device) return device.billing;
+  const signInMeta = DEVICE_CODE_PROVIDERS[providerId] ?? AUTH_URL_PROVIDERS[providerId];
+  if (signInMeta) return signInMeta.billing;
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
   }

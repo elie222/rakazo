@@ -100,11 +100,70 @@ describe("model secrets", () => {
 });
 
 describe("PiOAuthLogins", () => {
-  it("rejects providers without a device-code flow", async () => {
+  it("rejects providers without a subscription sign-in flow", async () => {
     const logins = new PiOAuthLogins();
     await expect(
-      logins.begin({ userId: "u", workspaceId: "w", provider: "anthropic" }),
-    ).rejects.toThrow(/ChatGPT Plus\/Pro, GitHub Copilot, and SuperGrok/);
+      logins.begin({ userId: "u", workspaceId: "w", provider: "openrouter" }),
+    ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
+  });
+
+  it("runs the anthropic auth-url flow via submitted code", async () => {
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      const pasted = await interaction.prompt({
+        type: "manual_code",
+        message: "paste",
+      });
+      expect(pasted).toBe("pasted-code#state");
+      return oauthCred({ access: "claude-access" });
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: "anthropic",
+    });
+    expect(started.mode).toBe("auth-url");
+    expect(started.verificationUri).toContain("claude.ai/oauth/authorize");
+    expect(started.userCode).toBe("");
+
+    expect(
+      logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "pasted-code#state"),
+    ).toEqual({ ok: true });
+
+    await flushMicrotasks();
+    const done = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
+    expect(done.status).toBe("connected");
+    if (done.status === "connected") expect(done.credential.access).toBe("claude-access");
+  });
+
+  it("rejects submit for a login that is not waiting for a code", async () => {
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      await interaction.prompt({
+        type: "select",
+        message: "method",
+        options: [{ id: "device_code", label: "Device" }],
+      });
+      interaction.notify({
+        type: "device_code",
+        userCode: "ABCD-1234",
+        verificationUri: "https://example.com/device",
+        expiresInSeconds: 900,
+      });
+      return new Promise<Credential>(() => undefined);
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: CHATGPT_OAUTH_PROVIDER,
+    });
+    expect(() => logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "x")).toThrow(
+      /not waiting for a pasted code/,
+    );
+    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
   });
 
   it("does not start a login for an already-aborted request", async () => {

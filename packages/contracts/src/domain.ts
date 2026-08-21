@@ -269,7 +269,7 @@ export const ModelCatalogEntrySchema = z.object({
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
   oauthLabel: z.string().optional(),
   subscription: z.boolean().optional(),
-  signIn: z.enum(["device-code"]).optional(),
+  signIn: z.enum(["device-code", "auth-url"]).optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 

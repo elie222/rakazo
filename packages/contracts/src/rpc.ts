@@ -78,11 +78,15 @@ export const appContract = {
       .output(
         z.object({
           loginId: z.string(),
+          mode: z.enum(["device-code", "auth-url"]),
           verificationUri: z.string().url(),
           userCode: z.string(),
           expiresInSeconds: z.number().int(),
         }),
       ),
+    submitOAuthCode: oc
+      .input(z.object({ loginId: z.string(), code: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) })),
     completeOAuth: oc
       .input(z.object({ loginId: z.string() }))
       .output(
