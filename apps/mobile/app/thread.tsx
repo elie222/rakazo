@@ -1001,14 +1001,14 @@ function MessageBubble({
           borderRadius: 20,
           borderWidth: 1,
           borderColor: "#26262A",
-          backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
+          backgroundColor: message.role === "user" ? "#2F2F33" : "#1A1A1D",
           paddingHorizontal: 14,
           paddingVertical: 12,
           gap: 8,
         }}
       >
         {caption ? (
-          <Text style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2", fontSize: 15 }}>
+          <Text style={{ color: message.role === "user" ? "#ECECEE" : "#DFDFE2", fontSize: 15 }}>
             {caption}
           </Text>
         ) : null}
@@ -1033,7 +1033,7 @@ function MessageBubble({
               }
             >
               <Text
-                style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2", fontSize: 15 }}
+                style={{ color: message.role === "user" ? "#ECECEE" : "#DFDFE2", fontSize: 15 }}
               >
                 🖼 {attachment.name ?? "Image"}
               </Text>
@@ -1058,7 +1058,7 @@ function MessageBubble({
               }
             >
               <Text
-                style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2", fontSize: 15 }}
+                style={{ color: message.role === "user" ? "#ECECEE" : "#DFDFE2", fontSize: 15 }}
               >
                 📎 {attachment.name ?? "File"}
               </Text>
@@ -1079,13 +1079,13 @@ function MessageBubble({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "85%",
-        backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
+        backgroundColor: message.role === "user" ? "#2F2F33" : "#1A1A1D",
         padding: 12,
-        borderRadius: 20,
+        borderRadius: 18,
       }}
     >
       {message.role === "user" ? (
-        <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
+        <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>
           {blockText(message)}
         </Text>
       ) : (
