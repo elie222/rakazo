@@ -2,6 +2,7 @@ import type {
   AdapterContext,
   AgentHomeStore,
   AgentModelOAuthCredential,
+  AgentRunRequest,
   AgentRuntime,
   ArtifactStore,
   ComputerRef,
@@ -68,10 +69,12 @@ import { observationToolResult, parseComputerActions } from "./computer-tools.js
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import {
   COMPACTION_BATCH_SIZE,
+  formatCompactedSummary,
   formatRecalledMemory,
   HISTORY_WINDOW_SIZE,
   historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
+  selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
@@ -183,6 +186,35 @@ async function persistLivePluginConnections(
 
 export function createRunExecutor(deps: ExecutorDeps) {
   return {
+    async resolveModel(scope: {
+      userId: string;
+      workspaceId: string;
+    }): Promise<AgentRunRequest["model"]> {
+      const [credential, settings] = await Promise.all([
+        findDefaultModelCredential(deps.prisma, scope),
+        deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+      ]);
+      const resolved = await resolveModelKey(deps, scope.userId, scope.workspaceId, credential);
+      const provider =
+        credential?.provider ??
+        settings?.defaultModelProvider ??
+        (deps.deploymentModelKey ? "openrouter" : "scripted");
+      const id =
+        credential?.defaultModel ??
+        settings?.defaultModelId ??
+        (deps.deploymentModelKey
+          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
+          : "scripted");
+      return {
+        provider,
+        id,
+        apiKey: resolved.oauth ? undefined : resolved.apiKey,
+        oauth: resolved.oauth
+          ? { credential: resolved.oauth, persist: resolved.persistOAuth }
+          : undefined,
+      };
+    },
+
     async wakeRoutine(routineId: string, scheduledFor: string) {
       const scheduledAt = new Date(scheduledFor);
       if (!Number.isFinite(scheduledAt.getTime())) return;
@@ -350,7 +382,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               where: { threadId: run.threadId },
               orderBy: { seq: "desc" },
               take: LEGACY_HISTORY_WINDOW_SIZE,
-              select: { role: true, runId: true, blocks: true },
+              select: { seq: true, role: true, runId: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
             deps.prisma.connection.findMany({
@@ -401,13 +433,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        let history = [...messages].reverse().map((m) => ({
+        const visibleMessages = [...messages].reverse().map((m) => ({
+          seq: m.seq,
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
             | "assistant"
             | "system",
           content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
         }));
+        const compactedHistory = selectCompactedHistory({
+          messages: visibleMessages,
+          summary: thread.historyCompactionSummary,
+          historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+        });
+        let history = compactedHistory.history.map(({ role, content }) => ({ role, content }));
         const turnBlocks = userTurnBlocksForRun(
           run.trigger,
           runId,
@@ -423,21 +462,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let recalledMemory = "";
         let recallSucceeded = false;
         if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
-          const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
-          if (recalled.ok) {
+          const recalled = await searchSupermemory(
+            task.prompt,
+            supermemoryContainerTag(bot.id, thread.historyCompactionGeneration),
+          );
+          if (recalled.ok && recalled.results.length > 0) {
             recallSucceeded = true;
             recalledMemory = formatRecalledMemory(recalled.results);
-          } else {
+          } else if (!recalled.ok) {
             console.error("supermemory recall failed", recalled.error);
           }
         }
-        history = history.slice(
-          -historyWindowSize({
-            supermemoryEnabled,
-            compacted: thread.historyCompactedUpToSeq != null,
-            recallSucceeded,
-          }),
-        );
+        if (!compactedHistory.usedLocalSummary) {
+          history = history.slice(
+            -historyWindowSize({
+              supermemoryEnabled: supermemoryEnabled && !thread.historyCompactionSummary,
+              compacted: thread.historyCompactedUpToSeq != null,
+              recallSucceeded,
+            }),
+          );
+        }
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -881,6 +925,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
+                compactedHistory.usedLocalSummary && compactedHistory.summary
+                  ? redactSecrets(
+                      formatCompactedSummary(
+                        compactedHistory.summary,
+                        thread.historyCompactedUpToSeq!,
+                      ),
+                      runSecrets,
+                    )
+                  : undefined,
                 recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 workspaceInstruction,
@@ -1162,25 +1215,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Last, and never fatal: the run is already finalized, so a failure here must not reach
           // the catch block below, where a second finalizeRun would match no rows and silently
           // skip the completion notification.
-          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
-            try {
-              const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
-                where: { id: thread.id },
-                select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
-              });
-              if (
-                shouldEnqueueCompaction(
-                  updatedThread.nextMessageSeq,
-                  updatedThread.historyCompactedUpToSeq,
-                  HISTORY_WINDOW_SIZE,
-                  COMPACTION_BATCH_SIZE,
-                )
-              ) {
-                await deps.jobs.enqueue(historyCompactJob(thread.id));
-              }
-            } catch (error) {
-              console.error("history.compact enqueue failed", error);
+          try {
+            const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
+              where: { id: thread.id },
+              select: {
+                nextMessageSeq: true,
+                historyCompactedUpToSeq: true,
+              },
+            });
+            if (
+              shouldEnqueueCompaction(
+                updatedThread.nextMessageSeq,
+                updatedThread.historyCompactedUpToSeq,
+                HISTORY_WINDOW_SIZE,
+                COMPACTION_BATCH_SIZE,
+              )
+            ) {
+              await deps.jobs.enqueue(historyCompactJob(thread.id));
             }
+          } catch (error) {
+            console.error("history.compact enqueue failed", error);
           }
         } catch (error) {
           if (!terminalCheckpointComplete) {

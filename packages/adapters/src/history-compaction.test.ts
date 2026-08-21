@@ -1,13 +1,16 @@
-import type { AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   compactHistory,
+  formatCompactedSummary,
   formatRecalledMemory,
   historyWindowSize,
+  MAX_COMPACTED_SUMMARY_CHARS,
   MAX_TRANSCRIPT_CHARS,
   nextCompactionBatchRange,
+  selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import type { SupermemorySaveResponse } from "./supermemory-client.js";
@@ -65,6 +68,90 @@ describe("historyWindowSize", () => {
   });
 });
 
+describe("selectCompactedHistory", () => {
+  const messages = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, index) => ({
+      seq: from + index,
+      role: "user" as const,
+      content: `message ${from + index}`,
+    }));
+
+  it("uses the summary and every contiguous message after its cursor", () => {
+    const selected = selectCompactedHistory({
+      messages: messages(0, 199),
+      summary: "facts through 149",
+      historyCompactedUpToSeq: 149,
+    });
+
+    expect(selected.usedLocalSummary).toBe(true);
+    expect(selected.summary).toBe("facts through 149");
+    expect(selected.history.map((message) => message.seq)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index + 150),
+    );
+  });
+
+  it("keeps the full fallback window when the visible history starts after the cursor", () => {
+    const visible = messages(100, 299);
+    const selected = selectCompactedHistory({
+      messages: visible,
+      summary: "facts through 49",
+      historyCompactedUpToSeq: 49,
+    });
+
+    expect(selected.usedLocalSummary).toBe(false);
+    expect(selected.summary).toBeNull();
+    expect(selected.history).toEqual(visible);
+  });
+
+  it("keeps all 200 uncompacted messages instead of blindly shrinking to 50", () => {
+    const selected = selectCompactedHistory({
+      messages: messages(100, 299),
+      summary: "facts through 99",
+      historyCompactedUpToSeq: 99,
+    });
+
+    expect(selected.usedLocalSummary).toBe(true);
+    expect(selected.history).toHaveLength(200);
+    expect(selected.history[0]!.seq).toBe(100);
+  });
+
+  it("keeps the fallback when uncompacted messages contain an internal gap", () => {
+    const selected = selectCompactedHistory({
+      messages: [
+        messages(0, 2)[0]!,
+        messages(0, 2)[1]!,
+        messages(0, 2)[2]!,
+        { ...messages(4, 4)[0]! },
+      ],
+      summary: "facts through 0",
+      historyCompactedUpToSeq: 0,
+    });
+
+    expect(selected.usedLocalSummary).toBe(false);
+    expect(selected.history.map((message) => message.seq)).toEqual([0, 1, 2, 4]);
+  });
+
+  it("does not use a cursor without its durable summary", () => {
+    const selected = selectCompactedHistory({
+      messages: messages(0, 10),
+      summary: null,
+      historyCompactedUpToSeq: 5,
+    });
+
+    expect(selected.usedLocalSummary).toBe(false);
+    expect(selected.history).toHaveLength(11);
+  });
+});
+
+describe("formatCompactedSummary", () => {
+  it("labels the summary as data and records its coverage", () => {
+    expect(formatCompactedSummary("facts", 49)).toContain(
+      "Rakazo-owned compacted context through message sequence 49",
+    );
+    expect(formatCompactedSummary("facts", 49)).toContain("<compacted_thread_summary>");
+  });
+});
+
 describe("formatRecalledMemory", () => {
   it("formats results into a durable-memory-style block", () => {
     const block = formatRecalledMemory([
@@ -100,6 +187,16 @@ function compactionHarness(
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
     messages?: HarnessMessage[];
     nextMessageSeq?: number;
+    historyCompactedUpToSeq?: number | null;
+    historyCompactionSummary?: string | null;
+    historyCompactionGeneration?: number;
+    nextEventSeq?: number;
+    wasCleared?: boolean;
+    resolveModel?: (scope: {
+      userId: string;
+      workspaceId: string;
+    }) => Promise<AgentRunRequest["model"]>;
+    withSupermemorySaver?: boolean;
   } = {},
 ) {
   const messages =
@@ -114,28 +211,50 @@ function compactionHarness(
     botId: "bot-1",
     workspaceId: "workspace-1",
     userId: "user-1",
+    nextEventSeq: options.nextEventSeq ?? 0,
     nextMessageSeq: options.nextMessageSeq ?? messages.length,
-    historyCompactedUpToSeq: null as number | null,
+    historyCompactedUpToSeq: options.historyCompactedUpToSeq ?? (null as number | null),
+    historyCompactionSummary: options.historyCompactionSummary ?? (null as string | null),
+    historyCompactionGeneration: options.historyCompactionGeneration ?? 0,
   };
   const prisma = {
     thread: {
       findUniqueOrThrow: vi.fn(async () => thread),
       updateMany: vi.fn(
         async (args: {
-          where: { historyCompactedUpToSeq: number | null };
-          data: { historyCompactedUpToSeq: number };
+          where: {
+            id: string;
+            historyCompactedUpToSeq: number | null;
+            nextEventSeq: number;
+            historyCompactionGeneration: number;
+          };
+          data: { historyCompactedUpToSeq: number; historyCompactionSummary: string };
         }) => {
-          if (thread.historyCompactedUpToSeq !== args.where.historyCompactedUpToSeq) {
+          if (
+            thread.historyCompactedUpToSeq !== args.where.historyCompactedUpToSeq ||
+            thread.nextEventSeq !== args.where.nextEventSeq ||
+            thread.historyCompactionGeneration !== args.where.historyCompactionGeneration
+          ) {
             return { count: 0 };
           }
           thread.historyCompactedUpToSeq = args.data.historyCompactedUpToSeq;
+          thread.historyCompactionSummary = args.data.historyCompactionSummary;
           return { count: 1 };
         },
       ),
     },
+    event: {
+      findFirst: vi.fn(async () => (options.wasCleared ? { seq: 0 } : null)),
+    },
     message: {
-      findMany: vi.fn(async (args: { where: { seq: { gt: number } }; take: number }) =>
-        messages.filter((message) => message.seq > args.where.seq.gt).slice(0, args.take),
+      findMany: vi.fn(
+        async (args: { where: { seq: { gt?: number; lte?: number } }; take?: number }) => {
+          const filtered =
+            args.where.seq.lte !== undefined
+              ? messages.filter((message) => message.seq <= args.where.seq.lte!)
+              : messages.filter((message) => message.seq > args.where.seq.gt!);
+          return filtered.slice(0, args.take ?? filtered.length);
+        },
       ),
     },
     deploymentSettings: {
@@ -143,6 +262,12 @@ function compactionHarness(
     },
   };
   const runtime = {
+    describe: () => ({
+      id: "test-runtime",
+      contractVersion: "1",
+      adapterVersion: "1",
+      capabilities: { streaming: true, compaction: true, tools: false, scripted: false },
+    }),
     run: vi.fn<AgentRuntime["run"]>(async function* () {
       yield { type: "done", text: "Summary of 50 messages." };
     }),
@@ -151,6 +276,14 @@ function compactionHarness(
     ok: true,
   }));
   const jobs = { enqueue: vi.fn(async () => undefined) };
+  const deps = {
+    prisma: prisma as unknown as PrismaClient,
+    runtime: runtime as unknown as AgentRuntime,
+    jobs: jobs as unknown as JobPublisher,
+    deploymentModelKey: options.deploymentModelKey,
+    ...(options.resolveModel ? { resolveModel: options.resolveModel } : {}),
+    ...(options.withSupermemorySaver === false ? {} : { saveSupermemoryMemory }),
+  };
   return {
     thread,
     messages,
@@ -158,13 +291,7 @@ function compactionHarness(
     runtime,
     saveSupermemoryMemory,
     jobs,
-    deps: {
-      prisma: prisma as unknown as PrismaClient,
-      runtime: runtime as unknown as AgentRuntime,
-      jobs: jobs as unknown as JobPublisher,
-      deploymentModelKey: options.deploymentModelKey,
-      saveSupermemoryMemory,
-    },
+    deps,
   };
 }
 
@@ -195,16 +322,209 @@ describe("compactHistory", () => {
     expect(context.userId).toBe("user-1");
 
     expect(harness.prisma.thread.updateMany).toHaveBeenCalledWith({
-      where: { id: "thread-1", historyCompactedUpToSeq: null },
-      data: { historyCompactedUpToSeq: 49 },
+      where: {
+        id: "thread-1",
+        historyCompactedUpToSeq: null,
+        nextEventSeq: 0,
+        historyCompactionGeneration: 0,
+      },
+      data: {
+        historyCompactedUpToSeq: 49,
+        historyCompactionSummary: "Summary of 50 messages.",
+      },
     });
   });
 
-  it("falls back to the deployment's configured default model when no cloud credential is available (covers a keyless local-mlx/Ollama default)", async () => {
+  it("compacts locally without a Supermemory key", async () => {
     const harness = compactionHarness({
       settings: {
-        defaultModelProvider: "local-mlx",
-        defaultModelId: "mlx-community/Qwen3.8-27B-4bit",
+        defaultModelProvider: "openrouter",
+        defaultModelId: "deepseek/deepseek-v4-flash-0731",
+      },
+      withSupermemorySaver: false,
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).toHaveBeenCalledOnce();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+  });
+
+  it("uses the thread owner's resolved model for background compaction", async () => {
+    const resolveModel = vi.fn(async () => ({
+      provider: "anthropic",
+      id: "claude-sonnet",
+      apiKey: "user-model-key",
+    }));
+    const harness = compactionHarness({
+      deploymentModelKey: "deployment-key",
+      resolveModel,
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(resolveModel).toHaveBeenCalledWith({ userId: "user-1", workspaceId: "workspace-1" });
+    expect(harness.runtime.run.mock.calls[0]![0].model).toEqual({
+      provider: "anthropic",
+      id: "claude-sonnet",
+      apiKey: "user-model-key",
+    });
+  });
+
+  it("rebuilds local coverage without regressing the legacy cursor", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      historyCompactedUpToSeq: 99,
+      messages: Array.from({ length: 150 }, (_, i) => ({
+        seq: i,
+        role: "user",
+        blocks: [{ kind: "text", text: `message ${i}` }],
+      })),
+      nextMessageSeq: 150,
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.prompt).toContain("message 0");
+    expect(request.prompt).toContain("message 99");
+    expect(harness.thread.historyCompactedUpToSeq).toBe(99);
+    expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
+  });
+
+  it("compacts new messages after a cleared thread without bootstrapping deleted history", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      historyCompactedUpToSeq: 49,
+      historyCompactionGeneration: 1,
+      messages: Array.from({ length: 50 }, (_, i) => ({
+        seq: i + 50,
+        role: "user",
+        blocks: [{ kind: "text", text: `new message ${i + 50}` }],
+      })),
+      nextMessageSeq: 100,
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.prompt).toContain("new message 50");
+    expect(request.prompt).not.toContain("message 0");
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:bot-1:history:1",
+    );
+    expect(harness.thread.historyCompactedUpToSeq).toBe(99);
+  });
+
+  it("rolls the previous local summary into the next batch", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: Array.from({ length: 100 }, (_, i) => ({
+        seq: i,
+        role: "user",
+        blocks: [{ kind: "text", text: `message ${i}` }],
+      })),
+      nextMessageSeq: 100,
+    });
+    harness.runtime.run
+      .mockImplementationOnce(async function* () {
+        yield { type: "done", text: "Summary through 49." };
+      })
+      .mockImplementationOnce(async function* () {
+        yield { type: "done", text: "Summary through 99." };
+      });
+
+    await compactHistory(harness.deps, "thread-1");
+    await compactHistory(harness.deps, "thread-1");
+
+    const [secondRequest] = harness.runtime.run.mock.calls[1]!;
+    expect(secondRequest.prompt).toContain("Summary through 49.");
+    expect(secondRequest.prompt).toContain("message 50");
+    expect(harness.thread.historyCompactionSummary).toBe("Summary through 99.");
+    expect(harness.thread.historyCompactedUpToSeq).toBe(99);
+  });
+
+  it("does not advance across a message coverage gap", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: [
+        { seq: 0, role: "user", blocks: [{ kind: "text", text: "message 0" }] },
+        { seq: 2, role: "user", blocks: [{ kind: "text", text: "message 2" }] },
+      ],
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not resurrect a summary when clear wins while summarization is running", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    let releaseSummary!: () => void;
+    let summarizationBegan!: () => void;
+    const summarizationStarted = new Promise<void>((resolve) => {
+      releaseSummary = resolve;
+    });
+    const summarizationBegun = new Promise<void>((resolve) => {
+      summarizationBegan = resolve;
+    });
+    harness.runtime.run.mockImplementation(async function* () {
+      summarizationBegan();
+      await summarizationStarted;
+      yield { type: "done", text: "stale summary" };
+    });
+
+    const pending = compactHistory(harness.deps, "thread-1");
+    await summarizationBegun;
+    harness.thread.historyCompactedUpToSeq = 49;
+    harness.thread.historyCompactionSummary = null;
+    releaseSummary();
+    await pending;
+
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.thread.historyCompactionSummary).toBeNull();
+    expect(harness.prisma.thread.updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("does not advance when the thread event generation changes under the worker", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      withSupermemorySaver: false,
+    });
+    let releaseSummary!: () => void;
+    let summarizationBegan!: () => void;
+    const summarizationStarted = new Promise<void>((resolve) => {
+      releaseSummary = resolve;
+    });
+    const summarizationBegun = new Promise<void>((resolve) => {
+      summarizationBegan = resolve;
+    });
+    harness.runtime.run.mockImplementation(async function* () {
+      summarizationBegan();
+      await summarizationStarted;
+      yield { type: "done", text: "stale summary" };
+    });
+
+    const pending = compactHistory(harness.deps, "thread-1");
+    await summarizationBegun;
+    harness.thread.nextEventSeq = 1;
+    releaseSummary();
+    await pending;
+
+    expect(harness.thread.historyCompactedUpToSeq).toBeNull();
+    expect(harness.thread.historyCompactionSummary).toBeNull();
+  });
+
+  it("falls back to the deployment's configured default model when no deployment key is available", async () => {
+    const harness = compactionHarness({
+      settings: {
+        defaultModelProvider: "openrouter",
+        defaultModelId: "deepseek/deepseek-v4-flash-0731",
       },
     });
 
@@ -212,8 +532,8 @@ describe("compactHistory", () => {
 
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.model).toEqual({
-      provider: "local-mlx",
-      id: "mlx-community/Qwen3.8-27B-4bit",
+      provider: "openrouter",
+      id: "deepseek/deepseek-v4-flash-0731",
       apiKey: undefined,
     });
   });
@@ -247,7 +567,32 @@ describe("compactHistory", () => {
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
-  it("caps an oversized transcript at the budget, keeping the most recent content", async () => {
+  it("skips compaction when the runtime does not provide a summarizer", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.runtime.describe = () => ({
+      id: "test-runtime",
+      contractVersion: "1",
+      adapterVersion: "1",
+      capabilities: { streaming: true, compaction: false, tools: false, scripted: true },
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps the cursor unchanged when local summary persistence fails", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.prisma.thread.updateMany.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow("database unavailable");
+
+    expect(harness.thread.historyCompactedUpToSeq).toBeNull();
+    expect(harness.thread.historyCompactionSummary).toBeNull();
+  });
+
+  it("caps an oversized transcript without advancing past unsummarized messages", async () => {
     const filler = "x".repeat(2_000);
     const harness = compactionHarness({
       deploymentModelKey: "openrouter-key",
@@ -261,9 +606,22 @@ describe("compactHistory", () => {
     await compactHistory(harness.deps, "thread-1");
 
     const [request] = harness.runtime.run.mock.calls[0]!;
-    expect(request.prompt).toHaveLength(MAX_TRANSCRIPT_CHARS);
-    expect(request.prompt).toContain("marker-49");
-    expect(request.prompt).not.toContain("marker-0 ");
+    expect(request.prompt.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_CHARS);
+    expect(request.prompt).toContain("marker-0");
+    expect(request.prompt).not.toContain("marker-49 ");
+    expect(harness.thread.historyCompactedUpToSeq).toBeLessThan(49);
+  });
+
+  it("keeps the cursor unchanged when the summary exceeds the safe context budget", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.runtime.run.mockImplementation(async function* () {
+      yield { type: "done", text: "x".repeat(MAX_COMPACTED_SUMMARY_CHARS + 1) };
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.thread.historyCompactedUpToSeq).toBeNull();
   });
 
   it("re-enqueues itself while a full batch of backlog still remains", async () => {
@@ -301,6 +659,19 @@ describe("compactHistory", () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
     harness.runtime.run.mockImplementation(async function* () {
       yield { type: "done" };
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a runtime failure as a compacted summary", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.runtime.run.mockImplementation(async function* () {
+      yield { type: "text", text: "I hit a problem: model unavailable" };
+      yield { type: "done", text: "model unavailable" };
     });
 
     await compactHistory(harness.deps, "thread-1");

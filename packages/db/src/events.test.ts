@@ -463,7 +463,7 @@ describe("clearThread", () => {
       thread: {
         update: vi
           .fn()
-          .mockResolvedValueOnce({ nextMessageSeq: 42 })
+          .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
       run: {
@@ -512,7 +512,11 @@ describe("clearThread", () => {
     // Every deleted message counts as compacted, so compaction cannot summarize cleared history.
     expect(tx.thread.update).toHaveBeenCalledWith({
       where: { id: "thread-1" },
-      data: { historyCompactedUpToSeq: 41 },
+      data: {
+        historyCompactedUpToSeq: 41,
+        historyCompactionSummary: null,
+        historyCompactionGeneration: { increment: 1 },
+      },
     });
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 0 }));
   });

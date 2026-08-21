@@ -275,6 +275,8 @@ model Thread {
   nextEventSeq            Int          @default(0)
   nextMessageSeq          Int          @default(0)
   historyCompactedUpToSeq Int?
+  historyCompactionSummary String?      @db.Text
+  historyCompactionGeneration Int        @default(0)
   unread                  Boolean      @default(false)
   messages                Message[]
   events                  Event[]
