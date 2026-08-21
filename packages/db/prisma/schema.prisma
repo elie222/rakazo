@@ -183,6 +183,9 @@ model UserModelCredentialKey {
   secretId     String
   label        String   @default("API key")
   isActive     Boolean  @default(false)
+  availableModels String @default("")
+  probedAt     DateTime?
+  probeError   String   @default("")
   createdAt    DateTime @default(now())
 
   @@index([credentialId, createdAt, id])

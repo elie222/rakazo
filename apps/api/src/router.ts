@@ -33,12 +33,14 @@ import {
   hasActiveComputerControl,
   isGatewayProvider,
   isSupermemoryEnabled,
+  labelForDiscoveredModels,
   listPiCatalog,
   mintGatewayProviderId,
   normalizeOpenAICompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER,
   type PiOAuthLogins,
   parseAvailableModels,
+  parseModelSecret,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -54,6 +56,8 @@ import {
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
+  tryFetchOpenAICompatibleModels,
+  unionAvailableModels,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import {
@@ -392,6 +396,9 @@ export function createRouter(deps: RouterDeps) {
       ),
       setActiveKey: authed.models.setActiveKey.handler(async ({ context, input }) =>
         setActiveModelCredentialKey(deps, context.actor, input.provider, input.keyId),
+      ),
+      refreshKeys: authed.models.refreshKeys.handler(async ({ context, input }) =>
+        refreshGatewayKeyCoverage(deps, context.actor, input.provider, context.signal),
       ),
     },
     bots: {
@@ -1915,13 +1922,24 @@ function credentialDto(row: {
   defaultModel: string | null;
   baseUrl: string | null;
   availableModels: string;
-  keys?: Array<{ id: string; label: string; isActive: boolean; createdAt: Date }>;
+  keys?: Array<{
+    id: string;
+    label: string;
+    isActive: boolean;
+    createdAt: Date;
+    availableModels?: string;
+    probedAt?: Date | null;
+    probeError?: string;
+  }>;
 }): ModelCredential {
   const keys = (row.keys ?? []).map((key) => ({
     id: key.id,
     label: key.label,
     isActive: key.isActive,
     createdAt: key.createdAt.toISOString(),
+    availableModels: parseAvailableModels(key.availableModels),
+    probedAt: key.probedAt?.toISOString() ?? null,
+    probeError: key.probeError || undefined,
   }));
   return {
     id: row.id,
@@ -2246,7 +2264,11 @@ async function persistModelCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return loadCredentialDto(deps.prisma, cred.id);
+  const dto = await loadCredentialDto(deps.prisma, cred.id);
+  if (plaintext && isGatewayProvider(dto.provider) && dto.baseUrl) {
+    return discoverModelsForActiveGatewayKey(deps, dto, plaintext, input.keyLabel, input.signal);
+  }
+  return dto;
 }
 
 async function removeModelCredentialKey(
@@ -2286,7 +2308,10 @@ async function removeModelCredentialKey(
         });
         await tx.userModelCredential.update({
           where: { id: credential.id },
-          data: { secretId: nextActive.secretId },
+          data: {
+            secretId: nextActive.secretId,
+            availableModels: serializeAvailableModels(unionAvailableModels(remaining)),
+          },
         });
         await deleteSecretIfUnused(tx, key.secretId);
         return credential.id;
@@ -2334,6 +2359,111 @@ async function setActiveModelCredentialKey(
     ),
   );
   return loadCredentialDto(deps.prisma, updatedId);
+}
+
+async function discoverModelsForActiveGatewayKey(
+  deps: RouterDeps,
+  credential: ModelCredential,
+  plaintext: string,
+  requestedLabel: string | undefined,
+  signal?: AbortSignal,
+) {
+  if (!credential.baseUrl) return credential;
+  throwIfAborted(signal);
+  const discovered = await tryFetchOpenAICompatibleModels(credential.baseUrl, plaintext, signal);
+  const row = await deps.prisma.userModelCredential.findUnique({
+    where: { id: credential.id },
+    include: credentialKeyInclude,
+  });
+  const active = row?.keys.find((key) => key.isActive) ?? row?.keys.at(-1);
+  if (!row || !active) return credential;
+  const nextLabel =
+    requestedLabel?.trim() ||
+    (active.label && active.label !== "API key"
+      ? active.label
+      : labelForDiscoveredModels(discovered.models, active.label || "API key"));
+  await deps.prisma.userModelCredentialKey.update({
+    where: { id: active.id },
+    data: {
+      availableModels: serializeAvailableModels(discovered.models),
+      probedAt: new Date(),
+      probeError: discovered.error,
+      label: nextLabel,
+    },
+  });
+  await recomputeCredentialAvailableModels(deps.prisma, row.id, row.availableModels);
+  return loadCredentialDto(deps.prisma, row.id);
+}
+
+async function refreshGatewayKeyCoverage(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  signal?: AbortSignal,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+    include: credentialKeyInclude,
+  });
+  if (!credential || !isGatewayProvider(credential.provider) || !credential.baseUrl) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Connect a custom endpoint before refreshing API keys.",
+    });
+  }
+  throwIfAborted(signal);
+  for (const key of credential.keys) {
+    throwIfAborted(signal);
+    const secret = await deps.prisma.secret.findUnique({ where: { id: key.secretId } });
+    if (!secret) {
+      await deps.prisma.userModelCredentialKey.update({
+        where: { id: key.id },
+        data: {
+          availableModels: "",
+          probedAt: new Date(),
+          probeError: "API key is missing.",
+        },
+      });
+      continue;
+    }
+    const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext));
+    const apiKey = parsed.kind === "api_key" ? parsed.key : "";
+    const discovered = apiKey
+      ? await tryFetchOpenAICompatibleModels(credential.baseUrl, apiKey, signal)
+      : { models: [] as string[], error: "This key cannot list models." };
+    const nextLabel =
+      key.label && key.label !== "API key"
+        ? key.label
+        : labelForDiscoveredModels(discovered.models, key.label || "API key");
+    await deps.prisma.userModelCredentialKey.update({
+      where: { id: key.id },
+      data: {
+        availableModels: serializeAvailableModels(discovered.models),
+        probedAt: new Date(),
+        probeError: discovered.error,
+        label: nextLabel,
+      },
+    });
+  }
+  await recomputeCredentialAvailableModels(deps.prisma, credential.id, credential.availableModels);
+  return loadCredentialDto(deps.prisma, credential.id);
+}
+
+async function recomputeCredentialAvailableModels(
+  prisma: PrismaClient,
+  credentialId: string,
+  fallbackSerialized?: string,
+) {
+  const keys = await prisma.userModelCredentialKey.findMany({
+    where: { credentialId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const fromKeys = unionAvailableModels(keys);
+  const next = fromKeys.length ? fromKeys : parseAvailableModels(fallbackSerialized);
+  await prisma.userModelCredential.update({
+    where: { id: credentialId },
+    data: { availableModels: serializeAvailableModels(next) },
+  });
 }
 
 async function deleteSecretIfUnused(tx: Prisma.TransactionClient, secretId: string) {

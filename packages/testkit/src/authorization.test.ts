@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { appContract } from "@rakazo/contracts";
@@ -65,6 +66,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/addKey", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/removeKey", { provider: "test", keyId: "missing-key" }],
       ["models/setActiveKey", { provider: "test", keyId: "missing-key" }],
+      ["models/refreshKeys", { provider: "test" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
@@ -620,6 +622,74 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(JSON.stringify(listed)).not.toContain("ollama-optional-key");
   });
 
+  it("discovers which models each custom endpoint key can use", async () => {
+    const server = createServer((req, res) => {
+      if (!req.url?.endsWith("/models")) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      const auth = String(req.headers.authorization ?? "");
+      const ids = auth.includes("gemini-key")
+        ? ["gemini-2.5-pro", "gemini-2.5-flash"]
+        : auth.includes("openai-key")
+          ? ["gpt-4o", "gpt-4.1"]
+          : [];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: ids.map((id) => ({ id })) }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const cookie = await signup(app, `model-coverage-${stamp}@rakazo.test`, "Model Coverage");
+      const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "gemini-key-xxxx-xxxx",
+        label: "Inference router",
+        modelId: "gemini-2.5-flash",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(connected.keys).toHaveLength(1);
+      expect(connected.keys[0]).toMatchObject({
+        label: "Gemini",
+        availableModels: ["gemini-2.5-pro", "gemini-2.5-flash"],
+      });
+      expect(connected.availableModels).toEqual(["gemini-2.5-pro", "gemini-2.5-flash"]);
+
+      const withSecond = await rpc<ModelCredential>(app, cookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "openai-key-xxxx-xxxx",
+      });
+      expect(withSecond.keys).toHaveLength(2);
+      const gemini = withSecond.keys.find((key) =>
+        key.availableModels?.includes("gemini-2.5-flash"),
+      );
+      const openai = withSecond.keys.find((key) => key.availableModels?.includes("gpt-4o"));
+      expect(gemini).toMatchObject({ label: "Gemini" });
+      expect(openai).toMatchObject({ label: "GPT" });
+      expect(withSecond.availableModels).toEqual(
+        expect.arrayContaining(["gemini-2.5-pro", "gemini-2.5-flash", "gpt-4o", "gpt-4.1"]),
+      );
+
+      const refreshed = await rpc<ModelCredential>(app, cookie, "models/refreshKeys", {
+        provider: connected.provider,
+      });
+      expect(refreshed.keys.find((key) => key.id === openai?.id)?.availableModels).toEqual([
+        "gpt-4o",
+        "gpt-4.1",
+      ]);
+      expect(JSON.stringify(refreshed)).not.toContain("gemini-key");
+      expect(JSON.stringify(refreshed)).not.toContain("openai-key");
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   it("chooses the newest duplicate provider credential when selecting a default", async () => {
     const cookie = await signup(app, `model-duplicates-${stamp}@rakazo.test`, "Model Duplicates");
     const actor = await rpc<Actor>(app, cookie, "me");
@@ -823,7 +893,14 @@ interface ModelCredential {
   label: string;
   hasKey: boolean;
   isDefault: boolean;
-  keys: Array<{ id: string; label: string; isActive: boolean; createdAt: string }>;
+  keys: Array<{
+    id: string;
+    label: string;
+    isActive: boolean;
+    createdAt: string;
+    availableModels?: string[];
+  }>;
+  availableModels?: string[];
 }
 
 interface Bot {

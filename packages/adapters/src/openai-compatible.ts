@@ -51,6 +51,80 @@ export function serializeAvailableModels(models: string[]): string {
   return [...new Set(models.map((entry) => entry.trim()).filter(Boolean))].join("\n");
 }
 
+export function modelsFromKeyCoverage(value: string | string[] | null | undefined): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.map((entry) => entry.trim()).filter(Boolean))]
+    : parseAvailableModels(value);
+}
+
+export function unionAvailableModels(
+  keys: Array<{ availableModels?: string | string[] | null }>,
+): string[] {
+  return [...new Set(keys.flatMap((key) => modelsFromKeyCoverage(key.availableModels)))];
+}
+
+export function secretIdForGatewayModel(
+  credential: {
+    secretId: string;
+    keys: Array<{
+      secretId: string;
+      isActive: boolean;
+      availableModels?: string | string[] | null;
+    }>;
+  },
+  modelId?: string | null,
+): string {
+  const fallback = credential.keys.find((key) => key.isActive)?.secretId ?? credential.secretId;
+  if (!modelId?.trim() || !credential.keys.length) return fallback;
+  const matching = credential.keys.filter((key) =>
+    modelsFromKeyCoverage(key.availableModels).includes(modelId),
+  );
+  if (!matching.length) return fallback;
+  return matching.find((key) => key.isActive)?.secretId ?? matching[0]!.secretId;
+}
+
+const MODEL_FAMILY_LABELS: Array<[string, string]> = [
+  ["gemini", "Gemini"],
+  ["claude", "Claude"],
+  ["gpt", "GPT"],
+  ["o1", "OpenAI"],
+  ["o3", "OpenAI"],
+  ["o4", "OpenAI"],
+  ["llama", "Llama"],
+  ["mistral", "Mistral"],
+  ["grok", "Grok"],
+  ["deepseek", "DeepSeek"],
+  ["qwen", "Qwen"],
+  ["command", "Command"],
+];
+
+export function labelForDiscoveredModels(models: string[], fallback = "API key"): string {
+  if (!models.length) return fallback;
+  const lower = models.map((id) => id.toLowerCase());
+  for (const [needle, label] of MODEL_FAMILY_LABELS) {
+    const hits = lower.filter((id) => id.includes(needle)).length;
+    if (hits === models.length || hits >= Math.max(1, Math.ceil(models.length * 0.7))) {
+      return label;
+    }
+  }
+  return fallback;
+}
+
+export async function tryFetchOpenAICompatibleModels(
+  baseUrl: string,
+  apiKey?: string,
+  signal?: AbortSignal,
+): Promise<{ models: string[]; error: string }> {
+  try {
+    return { models: await fetchOpenAICompatibleModels(baseUrl, apiKey, signal), error: "" };
+  } catch (error) {
+    return {
+      models: [],
+      error: error instanceof Error ? error.message : "Could not list models",
+    };
+  }
+}
+
 export async function fetchOpenAICompatibleModels(
   baseUrl: string,
   apiKey?: string,

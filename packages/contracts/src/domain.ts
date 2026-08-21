@@ -273,6 +273,9 @@ export const ModelCredentialKeySchema = z.object({
   label: z.string(),
   isActive: z.boolean(),
   createdAt: z.string(),
+  availableModels: z.array(z.string()).optional(),
+  probedAt: z.string().nullable().optional(),
+  probeError: z.string().optional(),
 });
 export type ModelCredentialKey = z.infer<typeof ModelCredentialKeySchema>;
 
