@@ -581,7 +581,7 @@ export function createRouter(deps: RouterDeps) {
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        const { cancelledRunIds } = await deps.events.clearThread({
+        const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
           workspaceId: context.actor.workspaceId,
           threadId: bot.thread.id,
           botId: bot.id,
@@ -592,10 +592,20 @@ export function createRouter(deps: RouterDeps) {
         if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
-          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id));
-          if (!purged.ok) {
-            console.error("supermemory purge after thread clear failed", purged.error);
-          }
+          const tags = [
+            ...new Set([
+              supermemoryContainerTag(bot.id),
+              supermemoryContainerTag(bot.id, historyCompactionGeneration),
+            ]),
+          ];
+          await Promise.all(
+            tags.map(async (tag) => {
+              const purged = await deleteSupermemoryContainer(tag);
+              if (!purged.ok) {
+                console.error("supermemory purge after thread clear failed", purged.error);
+              }
+            }),
+          );
         }
         return { ok: true as const };
       }),
