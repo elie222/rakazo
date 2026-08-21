@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  errorFromOpenAICompatibleBody,
   extractChatMessageText,
   GATEWAY_PROVIDER_PREFIX,
   isGatewayProvider,
@@ -112,5 +113,27 @@ describe("openai-compatible gateways", () => {
         "text/event-stream",
       ),
     ).toBe("Hi");
+  });
+
+  it("surfaces the gateway error body, not a generic status", () => {
+    expect(
+      errorFromOpenAICompatibleBody(
+        JSON.stringify({
+          error: { message: "Invalid API key provided", type: "invalid_request_error" },
+        }),
+        401,
+      ),
+    ).toBe("401: Invalid API key provided");
+    expect(
+      errorFromOpenAICompatibleBody(
+        JSON.stringify({
+          error: { errors: [{ message: "Model gemini-2.5-pro is not found" }] },
+        }),
+        404,
+      ),
+    ).toBe("404: Model gemini-2.5-pro is not found");
+    expect(errorFromOpenAICompatibleBody("upstream refused the stream", 502)).toBe(
+      "502: upstream refused the stream",
+    );
   });
 });
