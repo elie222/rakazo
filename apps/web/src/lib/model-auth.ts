@@ -6,10 +6,11 @@ export type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 export { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 
 export function providerHint(entry: ModelCatalogEntry) {
-  if (entry.signIn === "device-code") {
+  if (entry.signIn === "device-code" || entry.signIn === "auth-url") {
     if (entry.provider === "openai-codex") return "ChatGPT Plus/Pro";
     if (entry.provider === "github-copilot") return "Copilot";
     if (entry.provider === "xai") return "SuperGrok / key";
+    if (entry.provider === "anthropic") return "Claude Pro/Max / key";
     return "Sign in";
   }
   if (entry.auth === "oauth") return "Skip or deploy key";
