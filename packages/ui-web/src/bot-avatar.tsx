@@ -3,10 +3,12 @@ import { cn } from "./lib/utils.js";
 export function BotAvatar({
   color,
   size = 38,
+  thinking = false,
   className,
 }: {
   color: string;
   size?: number;
+  thinking?: boolean;
   className?: string;
 }) {
   const visorW = Math.round(size * 0.68);
@@ -14,7 +16,11 @@ export function BotAvatar({
   const dot = Math.max(3, Math.round(size * 0.1));
   return (
     <div
-      className={cn("flex items-center justify-center rounded-full", className)}
+      className={cn(
+        "flex items-center justify-center rounded-full",
+        thinking && "rk-avatar-think",
+        className,
+      )}
       style={{ width: size, height: size, background: color, flex: "none" }}
     >
       <div
@@ -27,8 +33,8 @@ export function BotAvatar({
           gap: Math.max(4, Math.round(size * 0.13)),
         }}
       >
-        <span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
-        <span className="rounded-full bg-white" style={{ width: dot, height: dot }} />
+        <span className="rk-avatar-eye rounded-full bg-white" style={{ width: dot, height: dot }} />
+        <span className="rk-avatar-eye rounded-full bg-white" style={{ width: dot, height: dot }} />
       </div>
     </div>
   );

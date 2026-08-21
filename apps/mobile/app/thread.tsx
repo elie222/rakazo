@@ -1,8 +1,19 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { abortableDelay, attachmentsForBot } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  AppState,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -30,10 +41,11 @@ type PendingAttachment = PickedAttachment & { botId: string };
 export default function Thread() {
   const navigation = useNavigation();
   const router = useRouter();
-  const { botId, name, messageId } = useLocalSearchParams<{
+  const { botId, name, messageId, color } = useLocalSearchParams<{
     botId?: string;
     name?: string;
     messageId?: string;
+    color?: string;
   }>();
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
@@ -47,6 +59,7 @@ export default function Thread() {
     olderCursor: number | null;
   } | null>(null);
   const jumpScrollTarget = useRef<string | null>(null);
+  const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
@@ -56,7 +69,27 @@ export default function Thread() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
+  const botName = name || "Bot";
+  const botColor = typeof color === "string" && color ? color : "#3EC5A8";
+  const botWorking = Boolean(
+    snap?.run && ["running", "queued", "leased"].includes(snap.run.status),
+  );
+  const hasLiveReasoning = (snap?.messages ?? []).some((message) =>
+    message.id.startsWith("reasoning:"),
+  );
+
+  useLayoutEffect(() => {
+    const nextBotId = botId ?? "";
+    const switchedBot = enterState.current.botId !== nextBotId;
+    const next = collectEnteringUserMessageIds(nextBotId, snap?.messages ?? [], enterState.current);
+    if (switchedBot) {
+      setEnteringIds(new Set());
+      return;
+    }
+    if (next.size > 0) setEnteringIds(next);
+  }, [botId, snap?.messages]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -404,43 +437,49 @@ export default function Thread() {
           </Pressable>
         ) : null}
         {(snap?.messages ?? []).map((message) => (
-          <View
-            key={message.id}
-            onLayout={(event) => {
-              if (jumpScrollTarget.current !== message.id) return;
-              scroll.current?.scrollTo({
-                y: Math.max(0, event.nativeEvent.layout.y - 24),
-                animated: true,
-              });
-              jumpScrollTarget.current = null;
-            }}
-            style={{
-              marginTop: 12,
-              width: "100%",
-              flexDirection: "row",
-              justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-            }}
-          >
-            <MessageBubble
-              botId={botId ?? ""}
-              message={message}
-              onOpenBot={(id, botName) =>
-                router.push({ pathname: "/thread", params: { botId: id, name: botName } })
-              }
-              onSpeak={
-                message.role === "bot"
-                  ? () =>
-                      void speakMessage(botId ?? "", message).catch((err) =>
-                        Alert.alert(
-                          "Could not speak",
-                          err instanceof Error ? err.message : "Try again.",
-                        ),
-                      )
-                  : undefined
-              }
-            />
-          </View>
+          <DropInMessage key={message.id} active={enteringIds.has(message.id)}>
+            <View
+              onLayout={(event) => {
+                if (jumpScrollTarget.current !== message.id) return;
+                scroll.current?.scrollTo({
+                  y: Math.max(0, event.nativeEvent.layout.y - 24),
+                  animated: true,
+                });
+                jumpScrollTarget.current = null;
+              }}
+              style={{
+                marginTop: 12,
+                width: "100%",
+                flexDirection: "row",
+                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+              }}
+            >
+              <MessageBubble
+                botId={botId ?? ""}
+                botName={botName}
+                botColor={botColor}
+                message={message}
+                onOpenBot={(id, botName) =>
+                  router.push({ pathname: "/thread", params: { botId: id, name: botName } })
+                }
+                onSpeak={
+                  message.role === "bot"
+                    ? () =>
+                        void speakMessage(botId ?? "", message).catch((err) =>
+                          Alert.alert(
+                            "Could not speak",
+                            err instanceof Error ? err.message : "Try again.",
+                          ),
+                        )
+                    : undefined
+                }
+              />
+            </View>
+          </DropInMessage>
         ))}
+        {botWorking && !hasLiveReasoning ? (
+          <BotWorkingStatus name={botName} color={botColor} />
+        ) : null}
       </ScrollView>
       {attachmentNotice ? (
         <Text style={{ color: "#D6CFA0", marginTop: 12, fontSize: 13 }}>{attachmentNotice}</Text>
@@ -548,6 +587,91 @@ export default function Thread() {
   );
 }
 
+function collectEnteringUserMessageIds(
+  botId: string,
+  messages: MobileMessage[],
+  state: { botId: string; seen: Set<string>; primed: boolean },
+) {
+  if (state.botId !== botId) {
+    state.botId = botId;
+    state.seen = new Set(messages.map((message) => message.id));
+    state.primed = messages.length > 0;
+    return new Set<string>();
+  }
+  if (!state.primed) {
+    if (!messages.length) return new Set<string>();
+    for (const message of messages) state.seen.add(message.id);
+    state.primed = true;
+    return new Set<string>();
+  }
+  const recent = new Set(messages.slice(-4).map((message) => message.id));
+  const entering = new Set<string>();
+  for (const message of messages) {
+    if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
+      entering.add(message.id);
+    }
+    state.seen.add(message.id);
+  }
+  return entering;
+}
+
+function DropInMessage({ active, children }: { active: boolean; children: ReactNode }) {
+  const progress = useRef(new Animated.Value(active ? 0 : 1)).current;
+  useEffect(() => {
+    if (!active) return;
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 380,
+      useNativeDriver: true,
+    }).start();
+  }, [active, progress]);
+  if (!active) return <>{children}</>;
+  return (
+    <Animated.View
+      style={{
+        opacity: progress,
+        transform: [
+          {
+            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-18, 0] }),
+          },
+        ],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+function WorkingShimmerText({ text }: { text: string }) {
+  const shine = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(shine, { toValue: 1, duration: 1600, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shine]);
+  const opacity = shine.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.42, 1, 0.42],
+  });
+  return (
+    <Animated.Text style={{ color: "#E8E8EC", fontSize: 15, fontWeight: "600", opacity }}>
+      {text}
+    </Animated.Text>
+  );
+}
+
+function BotWorkingStatus({ name, color }: { name: string; color: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14 }}>
+      <BotAvatar color={color} size={28} thinking />
+      <WorkingShimmerText text={`${name} is working`} />
+    </View>
+  );
+}
+
 async function speakMessage(botId: string, message: MobileMessage) {
   const text = blockText(message);
   if (!text.trim()) return;
@@ -563,11 +687,14 @@ async function speakMessage(botId: string, message: MobileMessage) {
 
 function ReasoningCard({
   steps,
+  botName,
+  botColor,
 }: {
   steps: Array<{ id?: string; kind?: string; title?: string; detail?: string; status?: string }>;
+  botName: string;
+  botColor: string;
 }) {
   const running = steps.some((step) => step.status === "running");
-  const active = [...steps].reverse().find((step) => step.status === "running") ?? steps.at(-1);
   return (
     <View
       style={{
@@ -579,9 +706,14 @@ function ReasoningCard({
         paddingVertical: 14,
       }}
     >
-      <Text style={{ color: "#C9C9CE", fontSize: 14, fontWeight: "600" }}>
-        {running ? active?.title || "Thinking" : "Thought process"}
-      </Text>
+      {running ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <BotAvatar color={botColor} size={22} thinking />
+          <WorkingShimmerText text={`${botName} is working`} />
+        </View>
+      ) : (
+        <Text style={{ color: "#C9C9CE", fontSize: 14, fontWeight: "600" }}>Thought process</Text>
+      )}
       {steps.map((step, index) => (
         <View key={step.id || String(index)} style={{ marginTop: 10 }}>
           <Text style={{ color: step.status === "running" ? "#F5A03C" : "#A8A8AD", fontSize: 13 }}>
@@ -598,11 +730,15 @@ function ReasoningCard({
 
 function MessageBubble({
   botId,
+  botName,
+  botColor,
   message,
   onOpenBot,
   onSpeak,
 }: {
   botId: string;
+  botName: string;
+  botColor: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
   onSpeak?: () => void;
@@ -617,7 +753,7 @@ function MessageBubble({
     );
     return (
       <View style={{ gap: 8, maxWidth: "90%" }}>
-        <ReasoningCard steps={reasoning.steps} />
+        <ReasoningCard steps={reasoning.steps} botName={botName} botColor={botColor} />
         {textBlocks.length ? (
           <View
             style={{

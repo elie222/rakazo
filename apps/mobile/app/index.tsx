@@ -318,7 +318,10 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
       accessibilityLabel={label}
       accessibilityHint="Long press to pin or move to a section"
       onPress={() =>
-        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+        router.push({
+          pathname: "/thread",
+          params: { botId: bot.id, name: bot.name, color: bot.color },
+        })
       }
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}

@@ -66,3 +66,92 @@ body,
     opacity: 0.3;
   }
 }
+
+@keyframes rkDropIn {
+  from {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rkAvatarBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes rkAvatarEyes {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  80% {
+    opacity: 0.35;
+    transform: scaleY(0.2);
+  }
+}
+
+@keyframes rkWorkingShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+.rk-drop-in {
+  animation: rkDropIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: right center;
+}
+
+.rk-avatar-think {
+  animation: rkAvatarBob 1.15s ease-in-out infinite;
+}
+
+.rk-avatar-think .rk-avatar-eye {
+  transform-origin: center;
+  animation: rkAvatarEyes 1.6s ease-in-out infinite;
+}
+
+.rk-working-text {
+  background-image: linear-gradient(
+    90deg,
+    #6c6c70 0%,
+    #6c6c70 32%,
+    #f4f4f6 50%,
+    #6c6c70 68%,
+    #6c6c70 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: rkWorkingShimmer 1.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-drop-in,
+  .rk-avatar-think,
+  .rk-avatar-think .rk-avatar-eye,
+  .rk-working-text {
+    animation: none;
+  }
+
+  .rk-working-text {
+    background: none;
+    color: #a8a8ad;
+    -webkit-text-fill-color: #a8a8ad;
+  }
+}
