@@ -802,8 +802,18 @@ function pushRunError(
 ) {
   const message = sanitizeError(error);
   queue.push({
+    type: "reasoning",
+    step: {
+      id: "status",
+      kind: "status",
+      title: fromGateway ? "Gateway error" : "Failed",
+      detail: message,
+      status: "done",
+    },
+  });
+  queue.push({
     type: "text",
-    text: fromGateway ? message : `I hit a problem: ${message}`,
+    text: message,
   });
   queue.push({ type: "done", text: message });
 }
