@@ -2917,17 +2917,11 @@ function BotWorkingStatus() {
 }
 
 function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const running = steps.some((step) => step.status === "running");
   const visible = visibleReasoningSteps(steps);
-  useEffect(() => {
-    const el = detailsRef.current;
-    if (!el) return;
-    el.open = running;
-  }, [running]);
   if (!steps.length) return null;
   return (
-    <details ref={detailsRef} className="rk-thought w-[min(560px,100%)]">
+    <details className="rk-thought w-[min(560px,100%)]">
       <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           size={16}
