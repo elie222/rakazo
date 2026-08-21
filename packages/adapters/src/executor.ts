@@ -17,7 +17,6 @@ import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   assertTransition,
-  blocksToAgentHistoryText,
   containsSecret,
   createStreamingRedactor,
   formatSkillRunPrompt,
@@ -74,6 +73,7 @@ import {
   LEGACY_HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { buildAgentHistoryWindow } from "./history-window.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -401,13 +401,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        let history = [...messages].reverse().map((m) => ({
-          role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-            | "user"
-            | "assistant"
-            | "system",
-          content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
-        }));
         const turnBlocks = userTurnBlocksForRun(
           run.trigger,
           runId,
@@ -431,12 +424,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             console.error("supermemory recall failed", recalled.error);
           }
         }
-        history = history.slice(
-          -historyWindowSize({
-            supermemoryEnabled,
-            compacted: thread.historyCompactedUpToSeq != null,
-            recallSucceeded,
-          }),
+        const history = buildAgentHistoryWindow(
+          messages.slice(
+            0,
+            historyWindowSize({
+              supermemoryEnabled,
+              compacted: thread.historyCompactedUpToSeq != null,
+              recallSucceeded,
+            }),
+          ),
         );
         const resolved = await resolveModelKey(
           deps,
