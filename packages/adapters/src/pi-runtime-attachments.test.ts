@@ -29,6 +29,11 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
+// Attachment forwarding is unrelated to local-provider registration; keep the fake models untouched.
+vi.mock("./local-providers.js", () => ({
+  withLocalProviders: (models: unknown) => models,
+}));
+
 import { PiAgentRuntime } from "./pi-runtime.js";
 
 describe("Pi runtime attachments", () => {

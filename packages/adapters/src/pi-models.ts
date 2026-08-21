@@ -1,4 +1,5 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { LOCAL_PROVIDER_IDS, withLocalProviders } from "./local-providers.js";
 import { DEVICE_CODE_PROVIDERS, DEVICE_CODE_SIGN_IN, isDeviceCodeProvider } from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
@@ -14,6 +15,8 @@ export type PiCatalogEntry = {
   oauthLabel?: string;
   subscription: boolean;
   signIn?: PiCatalogSignIn;
+  /** True for local providers that take no API key (Ollama, Local MLX server). */
+  keyless?: boolean;
 };
 
 export function listPiCatalog(): PiCatalogEntry[] {
@@ -24,7 +27,7 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = builtinModels();
+  const models = withLocalProviders(builtinModels());
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -39,6 +42,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       apiKey,
       oauth,
     });
+    const keyless = LOCAL_PROVIDER_IDS.has(provider.id);
     for (const model of provider.getModels()) {
       entries.push({
         provider: provider.id,
@@ -50,6 +54,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         oauthLabel,
         subscription,
         signIn,
+        keyless,
       });
     }
   }
@@ -63,6 +68,9 @@ function catalogBilling(
 ) {
   const device = DEVICE_CODE_PROVIDERS[providerId];
   if (device) return device.billing;
+  if (LOCAL_PROVIDER_IDS.has(providerId)) {
+    return `Runs on your own machine via ${name}. No API key, no network egress, no cost.`;
+  }
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
   }

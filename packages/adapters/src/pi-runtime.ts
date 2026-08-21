@@ -10,10 +10,23 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { withLocalProviders } from "./local-providers.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 
 const running = new Map<string, AbortController>();
-const catalogModels = builtinModels();
+// Lazy, not module-top-level: ESM import evaluation runs this module's body
+// (including any top-level call here) before apps/api's index.ts reaches its
+// own first statement (loadRootEnv()), so an eager `withLocalProviders(...)`
+// here would build the local-provider catalog BEFORE .env is loaded into
+// process.env — silently registering local-providers.ts's hardcoded fallback
+// model/base-url defaults instead of the configured ones. Deferring the call
+// to first use (inside run(), well after the server is listening) sidesteps
+// the ordering entirely.
+let _catalogModels: ReturnType<typeof withLocalProviders> | undefined;
+function getCatalogModels() {
+  _catalogModels ??= withLocalProviders(builtinModels());
+  return _catalogModels;
+}
 const MAX_PARALLEL_SUBAGENTS = 4;
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
@@ -175,16 +188,18 @@ export class PiAgentRuntime implements AgentRuntime {
 
 function modelsForRequest(request: AgentRunRequest, provider: string): Models {
   const oauth = request.model.oauth;
-  if (!oauth) return catalogModels;
+  if (!oauth) return getCatalogModels();
 
   const persist = oauth.persist;
-  return builtinModels({
-    credentials: new PiRuntimeCredentialStore(
-      provider,
-      toOAuthCredential(oauth.credential),
-      persist ? (next) => persist(next) : undefined,
-    ),
-  });
+  return withLocalProviders(
+    builtinModels({
+      credentials: new PiRuntimeCredentialStore(
+        provider,
+        toOAuthCredential(oauth.credential),
+        persist ? (next) => persist(next) : undefined,
+      ),
+    }),
+  );
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
