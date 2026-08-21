@@ -521,9 +521,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative paths start there. Shared work goes in shared/.`
             : "This entire computer workspace is your private home. Relative paths start at its root.";
         const teammatesLine = teammates.length
-          ? `Teammates you can message_bot: ${teammates
+          ? `Teammates: ${teammates
               .map((row) => (row.title.trim() ? `${row.name} (${row.title})` : row.name))
-              .join("; ")}.`
+              .join(
+                "; ",
+              )}. If one of them owns the next step, message_bot them. Don't wait to be asked, and don't make the user relay.`
           : "No other bots in this workspace yet. spawn_bot creates one.";
 
         let assembled = "";

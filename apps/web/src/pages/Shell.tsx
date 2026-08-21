@@ -28,18 +28,22 @@ import {
   createPendingUserMessageId,
   cronFromPreset,
   defaultCronPreset,
+  formatChatTimestamp,
   formatCron,
+  formatInboxTime,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
   pendingUserMessageTextKey,
   presetFromCron,
+  shouldShowChatTimestamp,
   speechFromBlocks,
   visibleReasoningSteps,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -1079,7 +1083,7 @@ export function ShellPage() {
                           {bot.unread ? <span className="sr-only"> (unread)</span> : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? "" : bot.status}
+                          {bot.status === "idle" ? formatInboxTime(bot.updatedAt) : bot.status}
                           {bot.unread ? (
                             <span
                               aria-hidden="true"
@@ -1943,9 +1947,17 @@ const Transcript = memo(function Transcript({
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
   const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const followOutputRef = useRef(followOutput);
   followOutputRef.current = followOutput;
   const lastBotId = useRef(botId);
+  const setStickToBottom = (next: boolean) => {
+    stickToBottom.current = next;
+    setShowJump((current) => {
+      const jump = !next;
+      return current === jump ? current : jump;
+    });
+  };
   useLayoutEffect(() => {
     const switchedBot = enterState.current.botId !== botId;
     const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
@@ -1957,14 +1969,14 @@ const Transcript = memo(function Transcript({
   }, [botId, messages]);
   useLayoutEffect(() => {
     if (lastBotId.current !== botId) {
-      stickToBottom.current = true;
+      setStickToBottom(true);
       lastBotId.current = botId;
     }
     if (loadingOlder) {
-      stickToBottom.current = false;
+      setStickToBottom(false);
       return;
     }
-    if (messages.at(-1)?.id.startsWith("pending:")) stickToBottom.current = true;
+    if (messages.at(-1)?.id.startsWith("pending:")) setStickToBottom(true);
     const element = scrollRef.current;
     if (!element || !followOutput || !stickToBottom.current) return;
     scrollTranscriptToEnd(element);
@@ -1974,10 +1986,10 @@ const Transcript = memo(function Transcript({
     const content = contentRef.current;
     if (!element || !content) return;
     const onScroll = () => {
-      stickToBottom.current = isNearTranscriptEnd(element);
+      setStickToBottom(isNearTranscriptEnd(element));
     };
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) stickToBottom.current = false;
+      if (event.deltaY < 0) setStickToBottom(false);
     };
     element.addEventListener("scroll", onScroll, { passive: true });
     element.addEventListener("wheel", onWheel, { passive: true });
@@ -1994,45 +2006,66 @@ const Transcript = memo(function Transcript({
   }, [botId, scrollRef]);
   const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
-    <div
-      ref={scrollRef}
-      data-testid="transcript"
-      className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-7 py-6"
-    >
-      <div ref={contentRef} className="flex flex-col gap-[13px]">
-        {olderCursor != null ? (
-          <button
-            type="button"
-            disabled={loadingOlder}
-            onClick={() => void onLoadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-          >
-            {loadingOlder ? "Loading…" : "Load earlier messages"}
-          </button>
-        ) : null}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            data-message-id={message.id}
-            className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
-          >
-            <MessageView
-              botId={botId}
-              message={message}
-              canAnswer={message.id === answerableAskMessageId}
-              onOpenBot={onOpenBot}
-              onAnswer={onAnswer}
-              onRefresh={onRefresh}
-              onAddRoutine={onAddRoutine}
-              voiceReady={voiceReady}
-              speaking={speakingMessageId === message.id}
-              onSpeak={() => onSpeak(message)}
-              onOpenChannel={onOpenChannel}
-            />
-          </div>
-        ))}
-        {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        data-testid="transcript"
+        className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-7 py-6"
+      >
+        <div ref={contentRef} className="flex flex-col gap-[13px]">
+          {olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void onLoadOlder()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </button>
+          ) : null}
+          {messages.map((message, index) => (
+            <div key={message.id}>
+              {shouldShowChatTimestamp(messages[index - 1]?.createdAt, message.createdAt) ? (
+                <ChatTimestamp iso={message.createdAt} />
+              ) : null}
+              <div
+                data-message-id={message.id}
+                className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+              >
+                <MessageView
+                  botId={botId}
+                  message={message}
+                  canAnswer={message.id === answerableAskMessageId}
+                  onOpenBot={onOpenBot}
+                  onAnswer={onAnswer}
+                  onRefresh={onRefresh}
+                  onAddRoutine={onAddRoutine}
+                  voiceReady={voiceReady}
+                  speaking={speakingMessageId === message.id}
+                  onSpeak={() => onSpeak(message)}
+                  onOpenChannel={onOpenChannel}
+                />
+              </div>
+            </div>
+          ))}
+          {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+        </div>
       </div>
+      {showJump ? (
+        <button
+          type="button"
+          aria-label="Jump to latest"
+          data-testid="jump-to-latest"
+          onClick={() => {
+            setStickToBottom(true);
+            const element = scrollRef.current;
+            if (element) scrollTranscriptToEnd(element);
+          }}
+          className="rk-jump-latest absolute bottom-3 left-1/2 z-10 grid h-9 w-9 place-items-center rounded-full border border-[#2A2A2F] bg-[#1A1A1D] text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] hover:bg-[#222226]"
+        >
+          <ChevronDown size={18} strokeWidth={2} />
+        </button>
+      ) : null}
     </div>
   );
 });
@@ -2125,7 +2158,7 @@ const Composer = memo(function Composer({
           ))}
         </div>
       ) : null}
-      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
+      <div className="flex items-center gap-2 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2 pl-2.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -2139,34 +2172,9 @@ const Composer = memo(function Composer({
           aria-label="Attach file"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[#9A9AA0] hover:bg-[#1B1B1E] disabled:opacity-40"
         >
-          <Plus size={17} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          aria-label={dictating ? "Stop dictation" : "Dictate"}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onMouseUp={onDictateStop}
-          onMouseLeave={() => {
-            if (dictating) onDictateStop();
-          }}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
-            dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
-              : "border-[#26262A] text-[#9A9AA0]"
-          }`}
-          title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
-        >
-          <Mic size={16} strokeWidth={1.8} />
+          <Plus size={18} strokeWidth={1.8} />
         </button>
         <input
           value={draft}
@@ -2190,15 +2198,39 @@ const Composer = memo(function Composer({
           >
             <Square size={12} strokeWidth={0} fill="currentColor" />
           </button>
-        ) : (
+        ) : canSend ? (
           <button
             type="button"
             aria-label="Send"
-            disabled={sending || !canSend || disabled}
+            disabled={sending || disabled}
             onClick={send}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
           >
             <ArrowUp size={18} strokeWidth={2} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={dictating ? "Stop dictation" : "Dictate"}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+            }}
+            onMouseUp={onDictateStop}
+            onMouseLeave={() => {
+              if (dictating) onDictateStop();
+            }}
+            onTouchStart={(event) => {
+              event.preventDefault();
+              onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+            }}
+            onTouchEnd={onDictateStop}
+            className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full ${
+              dictating ? "bg-[rgba(48,162,75,.16)] text-[#4ECB71]" : "text-[#9A9AA0]"
+            }`}
+            title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+          >
+            <Mic size={16} strokeWidth={1.8} />
           </button>
         )}
       </div>
@@ -2718,6 +2750,16 @@ function userMessagePlainText(message: ThreadMessage): string {
   return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
 }
 
+function ChatTimestamp({ iso }: { iso: string }) {
+  const label = formatChatTimestamp(iso);
+  if (!label) return null;
+  return (
+    <div className="py-1.5 text-center text-[12.5px] text-[#6C6C70]" data-testid="chat-timestamp">
+      {label}
+    </div>
+  );
+}
+
 function BotMessageChip({
   block,
   onOpen,
@@ -2733,7 +2775,7 @@ function BotMessageChip({
         className="flex items-center gap-1.5 py-0.5 text-[14px] text-[#8E8EA0] hover:text-[#C9C9CE]"
       >
         <span>Messaged</span>
-        <BotAvatar color={block.peerColor} size={16} className="rounded-[5px]" />
+        <BotAvatar color={block.peerColor} size={18} />
         <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
       </button>
     );
@@ -2746,7 +2788,7 @@ function BotMessageChip({
         className="flex items-center justify-center gap-1.5 py-1 text-[13px] text-[#8E8EA0] hover:text-[#C9C9CE]"
       >
         <span>Message from</span>
-        <BotAvatar color={block.peerColor} size={16} className="rounded-[5px]" />
+        <BotAvatar color={block.peerColor} size={18} />
         <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
       </button>
       <div className="flex justify-start">

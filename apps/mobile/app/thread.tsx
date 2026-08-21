@@ -3,7 +3,9 @@ import {
   abortableDelay,
   attachmentsForBot,
   createPendingUserMessageId,
+  formatChatTimestamp,
   pendingUserMessageTextKey,
+  shouldShowChatTimestamp,
   visibleReasoningSteps,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -462,45 +464,61 @@ export default function Thread() {
             </Text>
           </Pressable>
         ) : null}
-        {(snap?.messages ?? []).map((message) => (
-          <DropInMessage key={message.id} active={enteringIds.has(message.id)}>
-            <View
-              onLayout={(event) => {
-                if (jumpScrollTarget.current !== message.id) return;
-                scroll.current?.scrollTo({
-                  y: Math.max(0, event.nativeEvent.layout.y - 24),
-                  animated: true,
-                });
-                jumpScrollTarget.current = null;
-              }}
-              style={{
-                marginTop: 12,
-                width: "100%",
-                flexDirection: "row",
-                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-              }}
-            >
-              <MessageBubble
-                botId={botId ?? ""}
-                message={message}
-                onOpenBot={(id, botName) =>
-                  router.push({ pathname: "/thread", params: { botId: id, name: botName } })
-                }
-                onOpenChannel={(peerBotId) => setChannelPeerId(peerBotId)}
-                onSpeak={
-                  message.role === "bot"
-                    ? () =>
-                        void speakMessage(botId ?? "", message).catch((err) =>
-                          Alert.alert(
-                            "Could not speak",
-                            err instanceof Error ? err.message : "Try again.",
-                          ),
-                        )
-                    : undefined
-                }
-              />
-            </View>
-          </DropInMessage>
+        {(snap?.messages ?? []).map((message, index, list) => (
+          <View key={message.id}>
+            {message.createdAt &&
+            shouldShowChatTimestamp(list[index - 1]?.createdAt, message.createdAt) ? (
+              <Text
+                style={{
+                  color: "#6C6C70",
+                  fontSize: 12.5,
+                  textAlign: "center",
+                  marginTop: 10,
+                  marginBottom: 2,
+                }}
+              >
+                {formatChatTimestamp(message.createdAt)}
+              </Text>
+            ) : null}
+            <DropInMessage active={enteringIds.has(message.id)}>
+              <View
+                onLayout={(event) => {
+                  if (jumpScrollTarget.current !== message.id) return;
+                  scroll.current?.scrollTo({
+                    y: Math.max(0, event.nativeEvent.layout.y - 24),
+                    animated: true,
+                  });
+                  jumpScrollTarget.current = null;
+                }}
+                style={{
+                  marginTop: 12,
+                  width: "100%",
+                  flexDirection: "row",
+                  justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+                }}
+              >
+                <MessageBubble
+                  botId={botId ?? ""}
+                  message={message}
+                  onOpenBot={(id, botName) =>
+                    router.push({ pathname: "/thread", params: { botId: id, name: botName } })
+                  }
+                  onOpenChannel={(peerBotId) => setChannelPeerId(peerBotId)}
+                  onSpeak={
+                    message.role === "bot"
+                      ? () =>
+                          void speakMessage(botId ?? "", message).catch((err) =>
+                            Alert.alert(
+                              "Could not speak",
+                              err instanceof Error ? err.message : "Try again.",
+                            ),
+                          )
+                      : undefined
+                  }
+                />
+              </View>
+            </DropInMessage>
+          </View>
         ))}
         {botWorking && !hasLiveReasoning ? <BotWorkingStatus /> : null}
       </ScrollView>
@@ -568,7 +586,7 @@ export default function Thread() {
         <TextInput
           value={draft}
           onChangeText={setDraft}
-          placeholder="Message…"
+          placeholder={name ? `Message ${name}` : "Message…"}
           placeholderTextColor="#6C6C70"
           keyboardAppearance="dark"
           returnKeyType="send"
@@ -1138,14 +1156,14 @@ function MobileBotChannel({
   const [channel, setChannel] = useState<{
     left: { id: string; name: string; color: string };
     right: { id: string; name: string; color: string };
-    messages: Array<{ id: string; fromBotId: string; text: string }>;
+    messages: Array<{ id: string; fromBotId: string; text: string; createdAt?: string }>;
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc<{
       left: { id: string; name: string; color: string };
       right: { id: string; name: string; color: string };
-      messages: Array<{ id: string; fromBotId: string; text: string }>;
+      messages: Array<{ id: string; fromBotId: string; text: string; createdAt?: string }>;
     }>("threads/channel", { botId, peerBotId })
       .then((next) => {
         if (!cancelled) setChannel(next);
@@ -1172,26 +1190,70 @@ function MobileBotChannel({
       }}
     >
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <Text style={{ color: "#ECECEE", fontSize: 16, fontWeight: "600" }}>
-          {channel ? `${channel.left.name} · ${channel.right.name}` : "Opening chat…"}
-        </Text>
+        {channel ? (
+          <View
+            style={{
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingRight: 12,
+            }}
+          >
+            <Text style={{ color: "#ECECEE", fontSize: 16, fontWeight: "600" }} numberOfLines={1}>
+              {channel.left.name}
+            </Text>
+            <NativeSymbol ios="link" android="link" size={14} color="#6C6C70" />
+            <Text style={{ color: "#ECECEE", fontSize: 16, fontWeight: "600" }} numberOfLines={1}>
+              {channel.right.name}
+            </Text>
+          </View>
+        ) : (
+          <Text style={{ color: "#85858A", fontSize: 16 }}>Opening chat…</Text>
+        )}
         <Pressable onPress={onClose} hitSlop={8}>
           <NativeSymbol ios="xmark" android="close" size={18} color="#C9C9CE" />
         </Pressable>
       </View>
       <ScrollView style={{ flex: 1, marginTop: 16 }}>
         {error ? <Text style={{ color: "#85858A" }}>{error}</Text> : null}
-        {channel?.messages.map((entry) => {
+        {channel && channel.messages.length === 0 && !error ? (
+          <Text style={{ color: "#6C6C70", textAlign: "center", marginTop: 48 }}>
+            No messages yet.
+          </Text>
+        ) : null}
+        {channel?.messages.map((entry, index) => {
           const from = entry.fromBotId === channel.left.id ? channel.left : channel.right;
+          const stamp =
+            entry.createdAt &&
+            shouldShowChatTimestamp(channel.messages[index - 1]?.createdAt, entry.createdAt)
+              ? formatChatTimestamp(entry.createdAt)
+              : "";
           return (
-            <View key={entry.id} style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
-              <BotAvatar color={from.color} size={22} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: "#8E8EA0", fontSize: 13, marginBottom: 4 }}>{from.name}</Text>
-                <View style={{ backgroundColor: "#1A1A1D", padding: 12, borderRadius: 18 }}>
-                  <Text style={{ color: "#DFDFE2", fontSize: 15, lineHeight: 22 }}>
-                    {entry.text}
+            <View key={entry.id} style={{ marginBottom: 14 }}>
+              {stamp ? (
+                <Text
+                  style={{
+                    color: "#6C6C70",
+                    fontSize: 12.5,
+                    textAlign: "center",
+                    marginBottom: 10,
+                  }}
+                >
+                  {stamp}
+                </Text>
+              ) : null}
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <BotAvatar color={from.color} size={28} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#8E8EA0", fontSize: 13, marginBottom: 4 }}>
+                    {from.name}
                   </Text>
+                  <View style={{ backgroundColor: "#1A1A1D", padding: 12, borderRadius: 18 }}>
+                    <Text style={{ color: "#DFDFE2", fontSize: 15, lineHeight: 22 }}>
+                      {entry.text}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
@@ -1206,7 +1268,10 @@ function MobileBotChannel({
           marginTop: 12,
         }}
       >
-        <Text style={{ color: "#85858A", fontSize: 13.5 }}>This chat is view-only</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <NativeSymbol ios="lock.fill" android="lock-closed" size={13} color="#85858A" />
+          <Text style={{ color: "#85858A", fontSize: 13.5 }}>This chat is view-only</Text>
+        </View>
         <Pressable
           onPress={onClose}
           style={{

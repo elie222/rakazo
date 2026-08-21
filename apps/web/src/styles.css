@@ -19,6 +19,21 @@ body,
   overflow-anchor: none;
 }
 
+@keyframes rkJumpIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.rk-jump-latest {
+  animation: rkJumpIn 0.18s ease-out;
+}
+
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }
@@ -206,7 +221,8 @@ body,
   .rk-avatar-think .rk-avatar-eye,
   .rk-working-text,
   .rk-thought-body,
-  .rk-thought-cursor {
+  .rk-thought-cursor,
+  .rk-jump-latest {
     animation: none;
   }
 

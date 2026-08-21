@@ -173,6 +173,7 @@ export type MobileMessage = {
   id: string;
   threadId?: string;
   seq?: number;
+  createdAt?: string;
   role: "user" | "bot" | "system";
   blocks: Array<{
     kind: string;
