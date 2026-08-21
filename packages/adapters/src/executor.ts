@@ -16,8 +16,10 @@ import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/ada
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
+  type ActionApprovalRule,
   assertTransition,
   blocksToAgentHistoryText,
+  connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
   formatSkillRunPrompt,
@@ -27,9 +29,12 @@ import {
   nextFence,
   promptInvokesSkill,
   redactSecrets,
+  resolveActionApproval,
   sandboxCommandTimeoutMs,
+  toolRequiresApproval,
   userTurnBlocksForRun,
 } from "@rakazo/core";
+import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import {
   createThreadMessage,
   findDefaultModelCredential,
@@ -37,6 +42,15 @@ import {
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { buildApprovalAskBlock } from "./approval-ask.js";
+import {
+  approvalPausedToolResult,
+  claimApprovedEffect,
+  claimIntendedEffect,
+  isApprovalPausedResult,
+  resolveDuplicateEffectGate,
+  settleUncertainEffect,
+} from "./approval-effect.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -111,6 +125,7 @@ const GRAPHICAL_AGENT_TOOLS = new Set([
   "open_path",
   "launch_app",
 ]);
+const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 export interface ExecutorDeps {
   prisma: PrismaClient;
@@ -339,30 +354,43 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, storedConnections, credential, settings, savedSkills] =
-          await Promise.all([
-            deps.prisma.bot.findUniqueOrThrow({
-              where: { id: run.botId },
-              include: { computer: true },
-            }),
-            deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
-            deps.prisma.message.findMany({
-              where: { threadId: run.threadId },
-              orderBy: { seq: "desc" },
-              take: LEGACY_HISTORY_WINDOW_SIZE,
-              select: { role: true, runId: true, blocks: true },
-            }),
-            deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
-            deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId },
-              select: { id: true, provider: true, displayName: true, status: true },
-            }),
-            findDefaultModelCredential(deps.prisma, run),
-            deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deps.prisma.taughtSkill.findMany({
-              where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
-            }),
-          ]);
+        const [
+          bot,
+          thread,
+          messages,
+          task,
+          storedConnections,
+          credential,
+          settings,
+          savedSkills,
+          approvalRules,
+        ] = await Promise.all([
+          deps.prisma.bot.findUniqueOrThrow({
+            where: { id: run.botId },
+            include: { computer: true },
+          }),
+          deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
+          deps.prisma.message.findMany({
+            where: { threadId: run.threadId },
+            orderBy: { seq: "desc" },
+            take: LEGACY_HISTORY_WINDOW_SIZE,
+            select: { role: true, runId: true, blocks: true },
+          }),
+          deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
+          deps.prisma.connection.findMany({
+            where: { userId: run.userId, workspaceId: run.workspaceId },
+            select: { id: true, provider: true, displayName: true, status: true },
+          }),
+          findDefaultModelCredential(deps.prisma, run),
+          deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+          deps.prisma.taughtSkill.findMany({
+            where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+          }),
+          deps.prisma.actionApprovalRule.findMany({
+            where: { workspaceId: run.workspaceId, createdByUserId: run.userId },
+            select: { effect: true, matchKind: true, matchValue: true },
+          }),
+        ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
         let liveSlugs: string[] = [];
@@ -484,6 +512,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let lastProgressAt = 0;
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
+        let approvalPausePending = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted
@@ -498,21 +527,109 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return result;
         };
 
+        const pauseForApproval = () => {
+          approvalPausePending = true;
+          return approvalPausedToolResult();
+        };
+
         const applyTool = async (
           name: string,
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
+          const requiresApprovalByDefault = toolRequiresApproval(name, viaConnector);
+          const approvalDecision = resolveActionApproval({
+            toolName: name,
+            viaConnector,
+            connectorKind: connectorKindFromToolName(
+              name,
+              connectedPlugins.map((plugin) => plugin.provider),
+            ),
+            rules: approvalRules as ActionApprovalRule[],
+          });
+          const needsApproval = approvalDecision === "ask";
+          const bypassApproval = approvalDecision === "allow" && requiresApprovalByDefault;
+          const effectKey =
+            needsApproval || requiresApprovalByDefault
+              ? approvalEffectKey(runId, name, args)
+              : executionId;
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined
-            : await recordEffect(deps, run, name, executionId, args);
+            : await recordEffect(deps, run, name, effectKey, args);
+
+          const claimOrReturn = async (
+            from: "approved" | "intended",
+          ): Promise<unknown | undefined> => {
+            const claim = from === "approved" ? claimApprovedEffect : claimIntendedEffect;
+            if (await claim(deps.prisma, applied!.effect.id)) return undefined;
+            const current = await deps.prisma.externalEffect.findUnique({
+              where: { id: applied!.effect.id },
+            });
+            if (current) {
+              const retryGate = resolveDuplicateEffectGate(current, name);
+              if (retryGate.action === "return") return retryGate.result;
+              if (retryGate.action === "uncertain") {
+                return settleUncertainEffect(deps.prisma, applied!.effect.id, name);
+              }
+            }
+            throw uncertainEffectError(name);
+          };
+
+          const requestApproval = async () => {
+            if (!(await renewRunLease(deps, runId, workerId, fence))) {
+              return pauseForApproval();
+            }
+            await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+            const paused = await deps.events.pauseRunForInput({
+              workspaceId: run.workspaceId,
+              threadId: run.threadId,
+              botId: run.botId,
+              runId,
+              attemptId: attempt.id,
+              leaseOwner: workerId,
+              leaseFence: fence,
+              blocks: [buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets)],
+            });
+            if (!paused) return pauseForApproval();
+            await notifyRun(deps, run, {
+              kind: "help",
+              title: `${bot.name} needs approval`,
+              body: `Review before ${name}`,
+              botId: bot.id,
+              threadId: thread.id,
+            });
+            return pauseForApproval();
+          };
+
           if (applied?.duplicate) {
-            if (applied.effect.status === "completed") {
-              return applied.effect.result ?? { duplicate: true };
+            const gate = resolveDuplicateEffectGate(applied.effect, name);
+            if (gate.action === "return") return gate.result;
+            if (gate.action === "paused") {
+              if (!needsApproval) {
+                const early = await claimOrReturn("intended");
+                if (early !== undefined) return early;
+              } else {
+                const current = await deps.prisma.run.findUnique({
+                  where: { id: runId },
+                  select: { status: true },
+                });
+                if (current?.status === "waiting_input") {
+                  return pauseForApproval();
+                }
+                return requestApproval();
+              }
             }
-            if (name !== "spawn_bot" && name !== "archive_bot" && name !== "delete_bot") {
-              throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
+            if (gate.action === "uncertain") {
+              return settleUncertainEffect(deps.prisma, applied.effect.id, gate.toolName);
             }
+            const early = await claimOrReturn("approved");
+            if (early !== undefined) return early;
+          } else if (needsApproval && applied) {
+            return requestApproval();
+          } else if (bypassApproval && applied) {
+            const early = await claimOrReturn("intended");
+            if (early !== undefined) return early;
           }
           const finish = async (result: unknown) => {
             if (applied) await completeEffect(deps, applied.effect.id, result);
@@ -819,7 +936,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (deps.connector) {
             let result: unknown = { error: `unknown tool ${name}` };
             for await (const event of deps.connector.execute(
-              { tool: name, args, executionId },
+              { tool: name, args, executionId: effectKey },
               context,
             )) {
               if (event.type === "result") {
@@ -911,6 +1028,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
             context,
           )) {
+            if (approvalPausePending) return;
             if (!leaseValid) return;
             const now = Date.now();
             if (now - lastLeaseCheckAt >= 1_000) {
@@ -1042,7 +1160,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
-              if (scripted) await applyTool(event.name, event.args, event.executionId);
+              if (scripted) {
+                const result = await applyTool(event.name, event.args, event.executionId);
+                if (isApprovalPausedResult(result)) return;
+              }
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);
               const safeProgress = event.progress
@@ -1094,6 +1215,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               assembled = assembled || event.text || assembled;
             }
           }
+
+          if (approvalPausePending) return;
 
           for (const turn of script ?? []) {
             for (const file of turn.files ?? []) {
@@ -1412,6 +1535,12 @@ async function completeEffect(deps: ExecutorDeps, effectId: string, result: unkn
     where: { id: effectId },
     data: { status: "completed", result: storedResult as never },
   });
+}
+
+function uncertainEffectError(toolName: string): Error {
+  return new Error(
+    `tool ${toolName} has an earlier execution with an uncertain outcome; it may already have completed, so verify the destination before retrying`,
+  );
 }
 
 async function runSandboxCommand(

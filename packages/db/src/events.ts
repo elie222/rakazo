@@ -4,6 +4,7 @@ import {
   MessageBlock as MessageBlockSchema,
   type ProductEvent,
 } from "@rakazo/contracts";
+import { isApprovalAskBlock } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
   assertRunCanWriteHistory,
@@ -87,6 +88,7 @@ export interface AnswerRunInput {
   botId: string;
   runId: string;
   messageId: string;
+  answeredByUserId: string;
   answer: string;
 }
 
@@ -304,7 +306,31 @@ export async function answerRunInput(
     const pendingAsk = parsed.data.find(
       (block) => block.kind === "ask" && block.status !== "answered",
     );
-    if (!pendingAsk) return null;
+    if (pendingAsk?.kind !== "ask") return null;
+    const approvalAsk = isApprovalAskBlock(pendingAsk);
+    let approvalEffect: { id: string; kind: string } | null = null;
+    let approvalUserId: string | null = null;
+
+    if (approvalAsk) {
+      if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
+      approvalEffect = await tx.externalEffect.findFirst({
+        where: {
+          id: pendingAsk.approvalEffectId,
+          workspaceId: input.workspaceId,
+          runId: input.runId,
+          status: "intended",
+        },
+      });
+      if (!approvalEffect) return null;
+      if (input.answer === "always") {
+        const run = await tx.run.findUnique({
+          where: { id: input.runId },
+          select: { userId: true },
+        });
+        if (!run || run.userId !== input.answeredByUserId) return null;
+        approvalUserId = input.answeredByUserId;
+      }
+    }
 
     const queued = await tx.run.updateMany({
       where: {
@@ -318,11 +344,40 @@ export async function answerRunInput(
     });
     if (queued.count !== 1) return null;
 
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
-      data: { prompt: input.answer },
-    });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
+    if (approvalAsk) {
+      const allowed = input.answer === "allow" || input.answer === "always";
+      await tx.externalEffect.update({
+        where: { id: approvalEffect!.id },
+        data: { status: allowed ? "approved" : "denied" },
+      });
+      if (input.answer === "always") {
+        await tx.actionApprovalRule.upsert({
+          where: {
+            workspaceId_createdByUserId_effect_matchKind_matchValue: {
+              workspaceId: input.workspaceId,
+              createdByUserId: approvalUserId!,
+              effect: "always_allow",
+              matchKind: "tool",
+              matchValue: approvalEffect!.kind,
+            },
+          },
+          create: {
+            workspaceId: input.workspaceId,
+            createdByUserId: approvalUserId!,
+            effect: "always_allow",
+            matchKind: "tool",
+            matchValue: approvalEffect!.kind,
+          },
+          update: {},
+        });
+      }
+    } else {
+      const task = await tx.task.updateMany({
+        where: { runs: { some: { id: input.runId } } },
+        data: { prompt: input.answer },
+      });
+      if (task.count !== 1) throw new Error("Run task was not available to answer");
+    }
 
     const blocks = parsed.data.map((block) =>
       block === pendingAsk

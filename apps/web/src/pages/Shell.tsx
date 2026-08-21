@@ -64,6 +64,7 @@ import {
   useState,
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { AskCard } from "../components/AskCard";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -93,6 +94,11 @@ import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
   import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
+);
+const AccountSettingsOverlay = lazy(() =>
+  import("./AccountSettingsOverlay").then((module) => ({
+    default: module.AccountSettingsOverlay,
+  })),
 );
 const ModelSettingsOverlay = lazy(() =>
   import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
@@ -145,6 +151,7 @@ export function ShellPage() {
   const [teachBusy, setTeachBusy] = useState(false);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -1131,6 +1138,18 @@ export function ShellPage() {
             <div className="absolute bottom-14 left-3 right-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
               <button
                 type="button"
+                aria-label="Settings"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setAccountSettingsOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">⚙</span>
+                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Settings</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setMenuOpen(false);
                   setModelsOpen(true);
@@ -1178,6 +1197,7 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
+            data-testid="user-menu-trigger"
             onClick={() => setMenuOpen((v) => !v)}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
@@ -1714,6 +1734,13 @@ export function ShellPage() {
       </Suspense>
 
       <Suspense fallback={null}>
+        {accountSettingsOpen ? (
+          <AccountSettingsOverlay
+            name={userName}
+            email={session.data?.user.email}
+            onClose={() => setAccountSettingsOpen(false)}
+          />
+        ) : null}
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
         {voiceOpen ? (
           <VoiceSettingsOverlay
@@ -2352,108 +2379,6 @@ const MessageView = memo(function MessageView({
     </>
   );
 });
-
-type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
-
-function AskCard({
-  block,
-  canAnswer,
-  onAnswer,
-}: {
-  block: AskBlock;
-  canAnswer: boolean;
-  onAnswer: (text: string) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [answer, setAnswer] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submitAnswer(value: string) {
-    const text = value.trim();
-    if (!text || submitting) return;
-    setSubmitting(true);
-    try {
-      await onAnswer(text);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
-        <ChatMarkdown>{block.text}</ChatMarkdown>
-      </div>
-      {block.detail ? (
-        <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
-          {block.detail}
-        </pre>
-      ) : null}
-      {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {block.answer ? `Answered: ${block.answer}` : "Answered"}
-        </div>
-      ) : !canAnswer ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">No longer active</div>
-      ) : editing ? (
-        <form
-          className="mt-3.5 flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitAnswer(answer);
-          }}
-        >
-          <input
-            aria-label="Answer"
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Type your answer"
-            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
-          />
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={!answer.trim() || submitting}
-              className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-            >
-              {submitting ? "Sending…" : "Send answer"}
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setEditing(false);
-              }}
-              className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div className="mt-3.5 flex gap-2">
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => void submitAnswer("approved")}
-            className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-          >
-            {submitting ? "Sending…" : "Send it"}
-          </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => setEditing(true)}
-            className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
-          >
-            Edit first
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ComputerModePicker({
   value,

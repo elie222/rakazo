@@ -1,3 +1,4 @@
+export * from "./action-approval.js";
 export * from "./async.js";
 export * from "./attachments.js";
 export * from "./bot-sections.js";

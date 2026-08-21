@@ -2,6 +2,7 @@ import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachments.js";
 import {
+  ActionApprovalRuleSchema,
   AppBootstrapSchema,
   ArtifactSchema,
   ArtifactWithContentSchema,
@@ -281,6 +282,19 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  approvalRules: {
+    list: oc.output(z.array(ActionApprovalRuleSchema)),
+    set: oc
+      .input(
+        z.object({
+          effect: z.enum(["always_allow", "require_approval"]),
+          matchKind: z.enum(["tool", "connector", "category"]),
+          matchValue: z.string().min(1),
+        }),
+      )
+      .output(ActionApprovalRuleSchema),
+    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),

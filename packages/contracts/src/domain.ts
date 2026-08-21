@@ -176,6 +176,15 @@ export const ConnectionCatalogItemSchema = z.object({
 });
 export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
+export const ActionApprovalRuleSchema = z.object({
+  id: Id,
+  effect: z.enum(["always_allow", "require_approval"]),
+  matchKind: z.enum(["tool", "connector", "category"]),
+  matchValue: z.string(),
+  createdAt: z.string(),
+});
+export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
+
 export const CapabilityInstallSchema = z.object({
   id: Id,
   kind: z.enum(["skill", "plugin", "mcp", "connection"]),
