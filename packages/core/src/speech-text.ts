@@ -179,6 +179,7 @@ export function narrateTool(toolName: string): string | null {
     [/^open_url$/, "opening a page"],
     [/^list_bots$/, "checking who's around"],
     [/^ask_bot$/, "asking a teammate"],
+    [/^message_bot$/, "messaging a teammate"],
     [/^run_subagent$/, "starting a subagent"],
     [/^spawn_bot$/, "creating a bot"],
     [/^(archive_bot|delete_bot)$/, "archiving a bot"],
@@ -210,6 +211,11 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
         if (block.status === "running") return `${block.name} is working on ${block.task}`;
         if (block.status === "failed") return `${block.name} failed`;
         return block.result || `${block.name} finished`;
+      }
+      if (block.kind === "bot_message") {
+        return block.direction === "out"
+          ? `Messaged ${block.peerName}`
+          : `Message from ${block.peerName}: ${block.text}`;
       }
       if (block.kind === "card") {
         return block.lines.map((line) => `${line.k}: ${line.v}`).join(". ");

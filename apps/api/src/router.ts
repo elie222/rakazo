@@ -35,6 +35,7 @@ import {
   isSupermemoryEnabled,
   labelForDiscoveredModels,
   listPiCatalog,
+  loadBotChannel,
   mintGatewayProviderId,
   normalizeOpenAICompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER,
@@ -743,6 +744,18 @@ export function createRouter(deps: RouterDeps) {
       markUnread: authed.threads.markUnread.handler(async ({ context, input }) => {
         await setThreadUnread(deps.prisma, context.actor, input.botId, true);
         return { ok: true as const };
+      }),
+      channel: authed.threads.channel.handler(async ({ context, input }) => {
+        const channel = await loadBotChannel(deps.prisma, {
+          workspaceId: context.actor.workspaceId,
+          userId: context.actor.userId,
+          botId: input.botId,
+          peerBotId: input.peerBotId,
+        });
+        if ("error" in channel) {
+          throw new ORPCError("NOT_FOUND", { message: channel.error });
+        }
+        return channel;
       }),
     },
     computer: {

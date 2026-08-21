@@ -100,8 +100,8 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
-                : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
+                ? "You are a concise operator with a real computer. Act. Don't narrate."
+                : "You are a concise operator with a sandbox filesystem and shell. Act. Don't narrate."),
             model,
             thinkingLevel: model.reasoning ? "medium" : "off",
             tools,
@@ -467,6 +467,13 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           prompt: raw.prompt ? String(raw.prompt) : "",
         };
       }
+      if (tool.name === "message_bot") {
+        return {
+          name: String(raw.name ?? ""),
+          text: String(raw.text ?? ""),
+          bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
+        };
+      }
       if (tool.name === "archive_bot" || tool.name === "delete_bot") {
         return {
           confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
@@ -684,6 +691,13 @@ function parametersFor(tool: ConnectorTool) {
       title: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
+    });
+  }
+  if (tool.name === "message_bot") {
+    return Type.Object({
+      name: Type.String(),
+      text: Type.String(),
+      bot_id: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "archive_bot" || tool.name === "delete_bot") {

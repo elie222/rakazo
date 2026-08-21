@@ -41,6 +41,7 @@ import {
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { messageBot } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -354,6 +355,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           defaultCredential,
           settings,
           savedSkills,
+          teammates,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -375,6 +377,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           deps.prisma.taughtSkill.findMany({
             where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+          }),
+          deps.prisma.bot.findMany({
+            where: {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              archivedAt: null,
+              id: { not: run.botId },
+            },
+            select: { name: true, title: true },
+            orderBy: { name: "asc" },
+            take: 40,
           }),
         ]);
         runAbortController = new AbortController();
@@ -501,12 +514,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
         ];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
-          : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+          ? "You have a real computer. Observe before you click. Use the desktop, files, and shell instead of describing what you would do."
+          : "You have a persistent sandbox filesystem and shell. Use them instead of describing what you would do.";
         const workspaceInstruction =
           computerMode === "team"
-            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative paths start there. Shared work goes in shared/.`
+            : "This entire computer workspace is your private home. Relative paths start at its root.";
+        const teammatesLine = teammates.length
+          ? `Teammates you can message_bot: ${teammates
+              .map((row) => (row.title.trim() ? `${row.name} (${row.title})` : row.name))
+              .join("; ")}.`
+          : "No other bots in this workspace yet. spawn_bot creates one.";
 
         let assembled = "";
         let pendingProgress = "";
@@ -821,6 +839,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             return spawned;
           }
+          if (name === "message_bot") {
+            const delivered = await messageBot(deps, {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              fromBotId: bot.id,
+              fromBotName: bot.name,
+              fromBotColor: bot.color,
+              fromThreadId: thread.id,
+              sourceRunId: runId,
+              name: String(args.name ?? ""),
+              text: String(args.text ?? ""),
+              botId: args.bot_id
+                ? String(args.bot_id)
+                : args.botId
+                  ? String(args.botId)
+                  : undefined,
+            });
+            return finish(delivered);
+          }
           if (name === "archive_bot" || name === "delete_bot") {
             const archived = await archiveSpawnedBot(
               deps,
@@ -932,18 +969,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
               runId,
               prompt,
               instructions: [
-                bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                [
+                  `You are ${bot.name}${bot.title.trim() ? `, ${bot.title.trim()}` : ""}.`,
+                  bot.instructions.trim() || bot.description.trim() || undefined,
+                  "Operate like a true agent: terse, concrete, no filler. Do the work. Don't recap the ask. Don't preview a plan. After tools, report the outcome in one or two lines.",
+                ]
+                  .filter((line): line is string => Boolean(line))
+                  .join("\n"),
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
-                `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
-                workspaceInstruction,
-                "A bot and a subagent are different. Never use both for the same request.",
-                "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-                "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
-                "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+                `${computerInstruction} ${workspaceInstruction} remember for durable facts. request_takeover for protected input. destination_write only for connected destination records.`,
+                teammatesLine,
+                "message_bot sends a short note to another bot. spawn_bot creates a lasting bot. run_subagent is a throwaway helper this turn only. Don't mix them. archive_bot only archives a bot you created; confirm_name must match.",
                 pluginLine,
                 taughtSkillsLine,
-                "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
+                "Never print secrets. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),

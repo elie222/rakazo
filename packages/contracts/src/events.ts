@@ -107,6 +107,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
+    kind: z.literal("bot_message"),
+    direction: z.enum(["in", "out"]),
+    channelId: z.string(),
+    peerBotId: z.string(),
+    peerName: z.string(),
+    peerColor: z.string(),
+    text: z.string(),
+  }),
+  z.object({
     kind: z.literal("skill_draft"),
     skillId: Id,
     name: z.string(),

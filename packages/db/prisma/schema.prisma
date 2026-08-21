@@ -105,6 +105,7 @@ model Organization {
   notificationPreferences NotificationPreference[]
   computers   Computer[]
   externalEffects ExternalEffect[]
+  botChannels BotChannel[]
 
   @@unique([slug])
   @@map("organization")
@@ -684,4 +685,32 @@ model Secret {
 
   @@index([userId, workspaceId])
   @@map("secrets")
+}
+
+model BotChannel {
+  id          String              @id @default(cuid())
+  workspaceId String
+  workspace   Organization        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botAId      String
+  botBId      String
+  createdAt   DateTime            @default(now())
+  messages    BotChannelMessage[]
+
+  @@unique([workspaceId, botAId, botBId])
+  @@index([workspaceId])
+  @@map("bot_channels")
+}
+
+model BotChannelMessage {
+  id          String     @id @default(cuid())
+  channelId   String
+  channel     BotChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  fromBotId   String
+  toBotId     String
+  text        String
+  sourceRunId String?
+  createdAt   DateTime   @default(now())
+
+  @@index([channelId, createdAt])
+  @@map("bot_channel_messages")
 }
