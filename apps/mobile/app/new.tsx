@@ -39,7 +39,10 @@ export default function NewBot() {
         notifyOnFinish: true,
         computerMode,
       });
-      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      router.replace({
+        pathname: "/thread",
+        params: { botId: bot.id, name: bot.name, color: bot.color },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create bot");
     } finally {

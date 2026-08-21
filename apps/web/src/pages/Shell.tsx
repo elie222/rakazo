@@ -205,6 +205,9 @@ export function ShellPage() {
   const autoSpokenBotId = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const botWorking = Boolean(
+    snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
+  );
   const activePendingAttachments = useMemo(
     () => attachmentsForBot(pendingAttachments, active?.id),
     [active?.id, pendingAttachments],
@@ -1200,7 +1203,7 @@ export function ShellPage() {
             onClick={() => setPanel("settings")}
             className="flex min-w-0 items-center gap-3"
           >
-            {active ? <BotAvatar color={active.color} size={26} /> : null}
+            {active ? <BotAvatar color={active.color} size={26} thinking={botWorking} /> : null}
             <span className="min-w-0">
               <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
                 {active?.name ?? "Select a bot"}
@@ -1244,9 +1247,9 @@ export function ShellPage() {
           olderCursor={snapshot?.olderCursor ?? null}
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
-          running={Boolean(
-            snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
-          )}
+          running={botWorking}
+          botName={active?.name ?? "Bot"}
+          botColor={active?.color ?? "#3EC5A8"}
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
@@ -1852,6 +1855,8 @@ export function ShellPage() {
 const Transcript = memo(function Transcript({
   scrollRef,
   botId,
+  botName,
+  botColor,
   messages,
   olderCursor,
   loadingOlder,
@@ -1868,6 +1873,8 @@ const Transcript = memo(function Transcript({
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   botId: string;
+  botName: string;
+  botColor: string;
   messages: ThreadMessage[];
   olderCursor: number | null;
   loadingOlder: boolean;
@@ -1882,6 +1889,18 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
+  const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  useLayoutEffect(() => {
+    const switchedBot = enterState.current.botId !== botId;
+    const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
+    if (switchedBot) {
+      setEnteringIds(new Set());
+      return;
+    }
+    if (next.size > 0) setEnteringIds(next);
+  }, [botId, messages]);
+  const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
     <div
       ref={scrollRef}
@@ -1899,9 +1918,15 @@ const Transcript = memo(function Transcript({
         </button>
       ) : null}
       {messages.map((message) => (
-        <div key={message.id} data-message-id={message.id}>
+        <div
+          key={message.id}
+          data-message-id={message.id}
+          className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+        >
           <MessageView
             botId={botId}
+            botName={botName}
+            botColor={botColor}
             message={message}
             canAnswer={message.id === answerableAskMessageId}
             onOpenBot={onOpenBot}
@@ -1914,14 +1939,7 @@ const Transcript = memo(function Transcript({
           />
         </div>
       ))}
-      {running &&
-      !messages.some(
-        (message) => message.id.startsWith("progress:") || message.id.startsWith("reasoning:"),
-      ) ? (
-        <ReasoningTrace
-          steps={[{ id: "status", kind: "status", title: "Starting", status: "running" }]}
-        />
-      ) : null}
+      {running && !hasLiveReasoning ? <BotWorkingStatus name={botName} color={botColor} /> : null}
     </div>
   );
 });
@@ -2122,6 +2140,8 @@ function latestAnswerableAskMessageId(snapshot: ThreadSnapshot | null): string |
 
 const MessageView = memo(function MessageView({
   botId,
+  botName,
+  botColor,
   canAnswer,
   message,
   onAnswer,
@@ -2133,6 +2153,8 @@ const MessageView = memo(function MessageView({
   onSpeak,
 }: {
   botId: string;
+  botName: string;
+  botColor: string;
   canAnswer: boolean;
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -2167,7 +2189,9 @@ const MessageView = memo(function MessageView({
           );
         }
         if (block.kind === "reasoning") {
-          return <ReasoningTrace key={i} steps={block.steps} />;
+          return (
+            <ReasoningTrace key={i} steps={block.steps} botName={botName} botColor={botColor} />
+          );
         }
         if (block.kind === "subagent") {
           const running = block.status === "running";
@@ -2556,7 +2580,52 @@ function CreateBotForm({
   );
 }
 
-function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+function collectEnteringUserMessageIds(
+  botId: string,
+  messages: ThreadMessage[],
+  state: { botId: string; seen: Set<string>; primed: boolean },
+) {
+  if (state.botId !== botId) {
+    state.botId = botId;
+    state.seen = new Set(messages.map((message) => message.id));
+    state.primed = messages.length > 0;
+    return new Set<string>();
+  }
+  if (!state.primed) {
+    if (!messages.length) return new Set<string>();
+    for (const message of messages) state.seen.add(message.id);
+    state.primed = true;
+    return new Set<string>();
+  }
+  const recent = new Set(messages.slice(-4).map((message) => message.id));
+  const entering = new Set<string>();
+  for (const message of messages) {
+    if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
+      entering.add(message.id);
+    }
+    state.seen.add(message.id);
+  }
+  return entering;
+}
+
+function BotWorkingStatus({ name, color }: { name: string; color: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1" data-testid="bot-working">
+      <BotAvatar color={color} size={28} thinking />
+      <span className="rk-working-text text-[15px] font-medium">{name} is working</span>
+    </div>
+  );
+}
+
+function ReasoningTrace({
+  steps,
+  botName,
+  botColor,
+}: {
+  steps: ReasoningStep[];
+  botName: string;
+  botColor: string;
+}) {
   if (!steps.length) return null;
   const running = steps.some((step) => step.status === "running");
   const active = [...steps].reverse().find((step) => step.status === "running") ?? steps.at(-1);
@@ -2566,18 +2635,21 @@ function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
       open={running}
       className="w-[min(520px,90%)] rounded-[18px] border border-[#232326] bg-[#141416] px-4 py-3"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-[13.5px] text-[#A8A8AD] [&::-webkit-details-marker]:hidden">
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{
-            background: running ? "#F5A03C" : "#4ECB71",
-            animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-          }}
-        />
-        <span className="min-w-0 truncate font-medium text-[#C9C9CE]">{headline}</span>
-        <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">
-          {running ? "live" : "done"}
-        </span>
+      <summary className="flex cursor-pointer list-none items-center gap-3 text-[13.5px] text-[#A8A8AD] [&::-webkit-details-marker]:hidden">
+        {running ? (
+          <>
+            <BotAvatar color={botColor} size={22} thinking />
+            <span className="rk-working-text min-w-0 truncate text-[15px] font-medium">
+              {botName} is working
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "#4ECB71" }} />
+            <span className="min-w-0 truncate font-medium text-[#C9C9CE]">{headline}</span>
+            <span className="ml-auto shrink-0 text-[12px] text-[#6C6C70]">done</span>
+          </>
+        )}
       </summary>
       <ol className="mt-3 space-y-2.5 border-t border-[#232326] pt-3">
         {steps.map((step) => (
