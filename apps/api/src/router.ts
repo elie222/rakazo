@@ -22,24 +22,23 @@ import {
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
   createVoiceProvider,
+  customEndpointCatalogEntry,
   deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
+  fetchOpenAICompatibleModels,
+  gatewayCatalogEntries,
   hasActiveComputerControl,
+  isGatewayProvider,
   isSupermemoryEnabled,
   listPiCatalog,
   mintGatewayProviderId,
   normalizeOpenAICompatibleBaseUrl,
-  fetchOpenAICompatibleModels,
-  gatewayCatalogEntries,
-  customEndpointCatalogEntry,
-  isGatewayProvider,
   OPENAI_COMPATIBLE_PROVIDER,
-  parseAvailableModels,
-  serializeAvailableModels,
   type PiOAuthLogins,
+  parseAvailableModels,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -49,6 +48,7 @@ import {
   scheduleComputerSleep,
   screenLeaseIdForRun,
   scriptedCatalogEntry,
+  serializeAvailableModels,
   serializeModelSecret,
   supermemoryContainerTag,
   takeoverLeaseMs,
@@ -244,11 +244,7 @@ export function createRouter(deps: RouterDeps) {
         throwIfAborted(context.signal);
         try {
           return {
-            models: await fetchOpenAICompatibleModels(
-              input.baseUrl,
-              input.apiKey,
-              context.signal,
-            ),
+            models: await fetchOpenAICompatibleModels(input.baseUrl, input.apiKey, context.signal),
           };
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
