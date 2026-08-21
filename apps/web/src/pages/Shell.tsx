@@ -113,6 +113,9 @@ const RoutineSchedule = lazy(() =>
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
+const BotChannelOverlay = lazy(() =>
+  import("./BotChannelOverlay").then((module) => ({ default: module.BotChannelOverlay })),
+);
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 
 type Panel = "computer" | "settings" | "routine" | "create" | null;
@@ -182,6 +185,7 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [channelPeer, setChannelPeer] = useState<{ botId: string; peerBotId: string } | null>(null);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -1211,7 +1215,7 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button
             type="button"
@@ -1281,6 +1285,10 @@ export function ShellPage() {
           voiceReady={Boolean(voiceStatus?.ready)}
           speakingMessageId={speakingMessageId}
           onSpeak={speakMessage}
+          onOpenChannel={(peerBotId) => {
+            if (!active) return;
+            setChannelPeer({ botId: active.id, peerBotId });
+          }}
         />
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
@@ -1312,6 +1320,15 @@ export function ShellPage() {
           }}
           onDictateStop={() => dictation.submitHold()}
         />
+        {channelPeer ? (
+          <Suspense fallback={null}>
+            <BotChannelOverlay
+              botId={channelPeer.botId}
+              peerBotId={channelPeer.peerBotId}
+              onClose={() => setChannelPeer(null)}
+            />
+          </Suspense>
+        ) : null}
       </main>
 
       <aside
@@ -1902,6 +1919,7 @@ const Transcript = memo(function Transcript({
   voiceReady,
   speakingMessageId,
   onSpeak,
+  onOpenChannel,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   botId: string;
@@ -1919,6 +1937,7 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
+  onOpenChannel: (peerBotId: string) => void;
 }) {
   const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
@@ -2008,6 +2027,7 @@ const Transcript = memo(function Transcript({
               voiceReady={voiceReady}
               speaking={speakingMessageId === message.id}
               onSpeak={() => onSpeak(message)}
+              onOpenChannel={onOpenChannel}
             />
           </div>
         ))}
@@ -2222,6 +2242,7 @@ const MessageView = memo(function MessageView({
   voiceReady,
   speaking,
   onSpeak,
+  onOpenChannel,
 }: {
   botId: string;
   canAnswer: boolean;
@@ -2233,6 +2254,7 @@ const MessageView = memo(function MessageView({
   voiceReady: boolean;
   speaking: boolean;
   onSpeak: () => void;
+  onOpenChannel: (peerBotId: string) => void;
 }) {
   return (
     <>
@@ -2294,6 +2316,11 @@ const MessageView = memo(function MessageView({
                 </div>
               ) : null}
             </div>
+          );
+        }
+        if (block.kind === "bot_message") {
+          return (
+            <BotMessageChip key={i} block={block} onOpen={() => onOpenChannel(block.peerBotId)} />
           );
         }
         if (block.kind === "child_bot") {
@@ -2669,7 +2696,12 @@ function collectEnteringUserMessageIds(
   for (const message of messages) {
     const text = userMessagePlainText(message);
     const pendingKey = pendingUserMessageTextKey(text);
-    if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
+    if (
+      !state.seen.has(message.id) &&
+      message.role === "user" &&
+      recent.has(message.id) &&
+      !message.blocks.some((block) => block.kind === "bot_message")
+    ) {
       const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
       if (!replacingPending) entering.add(message.id);
     }
@@ -2684,6 +2716,46 @@ function collectEnteringUserMessageIds(
 
 function userMessagePlainText(message: ThreadMessage): string {
   return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
+}
+
+function BotMessageChip({
+  block,
+  onOpen,
+}: {
+  block: Extract<ThreadMessage["blocks"][number], { kind: "bot_message" }>;
+  onOpen: () => void;
+}) {
+  if (block.direction === "out") {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center gap-1.5 py-0.5 text-[14px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Messaged</span>
+        <BotAvatar color={block.peerColor} size={16} className="rounded-[5px]" />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center justify-center gap-1.5 py-1 text-[13px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Message from</span>
+        <BotAvatar color={block.peerColor} size={16} className="rounded-[5px]" />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+      <div className="flex justify-start">
+        <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+          {block.text}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function BotWorkingStatus() {

@@ -241,7 +241,7 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill"]),
+  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -267,6 +267,30 @@ export const ThreadSnapshotSchema = z.object({
   computer: ComputerStatusSchema,
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
+
+export const BotChannelPeerSchema = z.object({
+  id: Id,
+  name: z.string(),
+  color: z.string(),
+});
+export type BotChannelPeer = z.infer<typeof BotChannelPeerSchema>;
+
+export const BotChannelEntrySchema = z.object({
+  id: Id,
+  fromBotId: Id,
+  toBotId: Id,
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type BotChannelEntry = z.infer<typeof BotChannelEntrySchema>;
+
+export const BotChannelSchema = z.object({
+  channelId: Id,
+  left: BotChannelPeerSchema,
+  right: BotChannelPeerSchema,
+  messages: z.array(BotChannelEntrySchema),
+});
+export type BotChannel = z.infer<typeof BotChannelSchema>;
 
 export const ModelCredentialKeySchema = z.object({
   id: Id,

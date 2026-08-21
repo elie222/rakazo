@@ -91,6 +91,8 @@ export function reasoningToolTitle(name: string, args: Record<string, unknown> =
       return args.name ? `Starting ${String(args.name)}` : "Starting a subagent";
     case "spawn_bot":
       return args.name ? `Creating ${String(args.name)}` : "Creating a bot";
+    case "message_bot":
+      return args.name ? `Messaging ${String(args.name)}` : "Messaging a bot";
     case "destination.write":
       return "Writing to a destination";
     default:
@@ -106,6 +108,7 @@ export function reasoningToolDetail(
   if (name === "write_file") return clip(String(args.content ?? ""));
   if (name === "remember") return clip(String(args.content ?? args.path ?? ""));
   if (name === "run_subagent") return clip(String(args.task ?? ""));
+  if (name === "message_bot") return clip(String(args.text ?? args.name ?? ""));
   if (name === "request_takeover") return clip(String(args.reason ?? ""));
   return undefined;
 }

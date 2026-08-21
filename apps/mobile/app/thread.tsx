@@ -19,6 +19,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -74,6 +75,7 @@ export default function Thread() {
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const [channelPeerId, setChannelPeerId] = useState<string | null>(null);
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
   const botWorking = Boolean(
     snap?.run && ["running", "queued", "leased"].includes(snap.run.status),
@@ -484,6 +486,7 @@ export default function Thread() {
                 onOpenBot={(id, botName) =>
                   router.push({ pathname: "/thread", params: { botId: id, name: botName } })
                 }
+                onOpenChannel={(peerBotId) => setChannelPeerId(peerBotId)}
                 onSpeak={
                   message.role === "bot"
                     ? () =>
@@ -603,6 +606,13 @@ export default function Thread() {
           <Text style={{ color: "#C9C9CE" }}>Open computer →</Text>
         </Pressable>
       </Link>
+      {channelPeerId && botId ? (
+        <MobileBotChannel
+          botId={botId}
+          peerBotId={channelPeerId}
+          onClose={() => setChannelPeerId(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -629,7 +639,12 @@ function collectEnteringUserMessageIds(
   for (const message of messages) {
     const text = userMessagePlainText(message);
     const pendingKey = pendingUserMessageTextKey(text);
-    if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
+    if (
+      !state.seen.has(message.id) &&
+      message.role === "user" &&
+      recent.has(message.id) &&
+      !message.blocks.some((block) => block.kind === "bot_message")
+    ) {
       const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
       if (!replacingPending) entering.add(message.id);
     }
@@ -829,12 +844,26 @@ function MessageBubble({
   message,
   onOpenBot,
   onSpeak,
+  onOpenChannel,
 }: {
   botId: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
   onSpeak?: () => void;
+  onOpenChannel: (peerBotId: string) => void;
 }) {
+  const botMessage = message.blocks.find((block) => block.kind === "bot_message");
+  if (botMessage?.kind === "bot_message" && botMessage.peerBotId) {
+    return (
+      <MobileBotMessageChip
+        direction={botMessage.direction === "out" ? "out" : "in"}
+        name={botMessage.peerName || "Bot"}
+        color={botMessage.peerColor || "#3EC5A8"}
+        text={botMessage.text || ""}
+        onOpen={() => onOpenChannel(botMessage.peerBotId!)}
+      />
+    );
+  }
   const reasoning = message.blocks.find((block) => block.kind === "reasoning");
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
@@ -1053,6 +1082,143 @@ function MessageBubble({
           ) : null}
         </>
       )}
+    </View>
+  );
+}
+
+function MobileBotMessageChip({
+  direction,
+  name,
+  color,
+  text,
+  onOpen,
+}: {
+  direction: "in" | "out";
+  name: string;
+  color: string;
+  text: string;
+  onOpen: () => void;
+}) {
+  if (direction === "out") {
+    return (
+      <Pressable onPress={onOpen} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <Text style={{ color: "#8E8EA0", fontSize: 14 }}>Messaged</Text>
+        <BotAvatar color={color} size={16} />
+        <Text style={{ color: "#C9C9CE", fontSize: 14, fontWeight: "600" }}>{name}</Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={{ gap: 8, maxWidth: "90%" }}>
+      <Pressable
+        onPress={onOpen}
+        style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}
+      >
+        <Text style={{ color: "#8E8EA0", fontSize: 13 }}>Message from</Text>
+        <BotAvatar color={color} size={16} />
+        <Text style={{ color: "#C9C9CE", fontSize: 13, fontWeight: "600" }}>{name}</Text>
+      </Pressable>
+      <View style={{ backgroundColor: "#1A1A1D", padding: 12, borderRadius: 20 }}>
+        <Text style={{ color: "#DFDFE2", fontSize: 15, lineHeight: 22 }}>{text}</Text>
+      </View>
+    </View>
+  );
+}
+
+function MobileBotChannel({
+  botId,
+  peerBotId,
+  onClose,
+}: {
+  botId: string;
+  peerBotId: string;
+  onClose: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [channel, setChannel] = useState<{
+    left: { id: string; name: string; color: string };
+    right: { id: string; name: string; color: string };
+    messages: Array<{ id: string; fromBotId: string; text: string }>;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc<{
+      left: { id: string; name: string; color: string };
+      right: { id: string; name: string; color: string };
+      messages: Array<{ id: string; fromBotId: string; text: string }>;
+    }>("threads/channel", { botId, peerBotId })
+      .then((next) => {
+        if (!cancelled) setChannel(next);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not open chat");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, peerBotId]);
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        backgroundColor: "#0D0D0E",
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 24,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <Text style={{ color: "#ECECEE", fontSize: 16, fontWeight: "600" }}>
+          {channel ? `${channel.left.name} · ${channel.right.name}` : "Opening chat…"}
+        </Text>
+        <Pressable onPress={onClose} hitSlop={8}>
+          <NativeSymbol ios="xmark" android="close" size={18} color="#C9C9CE" />
+        </Pressable>
+      </View>
+      <ScrollView style={{ flex: 1, marginTop: 16 }}>
+        {error ? <Text style={{ color: "#85858A" }}>{error}</Text> : null}
+        {channel?.messages.map((entry) => {
+          const from = entry.fromBotId === channel.left.id ? channel.left : channel.right;
+          return (
+            <View key={entry.id} style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+              <BotAvatar color={from.color} size={22} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: "#8E8EA0", fontSize: 13, marginBottom: 4 }}>{from.name}</Text>
+                <View style={{ backgroundColor: "#1A1A1D", padding: 12, borderRadius: 18 }}>
+                  <Text style={{ color: "#DFDFE2", fontSize: 15, lineHeight: 22 }}>
+                    {entry.text}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 12,
+        }}
+      >
+        <Text style={{ color: "#85858A", fontSize: 13.5 }}>This chat is view-only</Text>
+        <Pressable
+          onPress={onClose}
+          style={{
+            backgroundColor: "#F1F1EF",
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+          }}
+        >
+          <Text style={{ color: "#17171A", fontWeight: "600" }}>Close Chat</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
