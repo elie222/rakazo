@@ -235,11 +235,81 @@ export async function completeOpenAICompatibleChat(input: {
   });
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(`Chat completion failed (${response.status})`);
+    throw new Error(errorFromOpenAICompatibleBody(raw, response.status));
   }
   const text = textFromOpenAICompatibleBody(raw, response.headers.get("content-type") ?? "");
-  if (!text.trim()) throw new Error("The model returned an empty reply");
+  if (!text.trim()) {
+    throw new Error(errorFromOpenAICompatibleBody(raw, response.status));
+  }
   return text;
+}
+
+const MAX_GATEWAY_ERROR_CHARS = 4000;
+
+export function errorFromOpenAICompatibleBody(raw: string, status?: number): string {
+  const trimmed = raw.trim();
+  const extracted = extractGatewayErrorMessage(trimmed) || trimmed;
+  const clipped =
+    extracted.length > MAX_GATEWAY_ERROR_CHARS
+      ? `${extracted.slice(0, MAX_GATEWAY_ERROR_CHARS)}…`
+      : extracted;
+  if (status && status >= 400) {
+    if (!clipped) return `Gateway request failed (${status})`;
+    return /^\d{3}\b/.test(clipped) ? clipped : `${status}: ${clipped}`;
+  }
+  return clipped || "The gateway returned an empty reply";
+}
+
+function extractGatewayErrorMessage(raw: string): string {
+  if (!raw) return "";
+  try {
+    const fromJson = errorMessageFromValue(JSON.parse(raw) as unknown);
+    if (fromJson) return fromJson;
+  } catch {
+    // Fall through to SSE / plain text.
+  }
+  if (raw.includes("data:")) {
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const fromEvent = errorMessageFromValue(JSON.parse(payload) as unknown);
+        if (fromEvent) return fromEvent;
+      } catch {
+        // Ignore malformed SSE lines.
+      }
+    }
+  }
+  return "";
+}
+
+function errorMessageFromValue(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const nested = record.error;
+  if (typeof nested === "string" && nested.trim()) return nested.trim();
+  if (nested && typeof nested === "object") {
+    const inner = nested as Record<string, unknown>;
+    if (typeof inner.message === "string" && inner.message.trim()) return inner.message.trim();
+    if (typeof inner.msg === "string" && inner.msg.trim()) return inner.msg.trim();
+    if (typeof inner.error === "string" && inner.error.trim()) return inner.error.trim();
+    const errors = inner.errors;
+    if (Array.isArray(errors)) {
+      const first = errors.find(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          typeof (entry as { message?: unknown }).message === "string",
+      ) as { message: string } | undefined;
+      if (first?.message.trim()) return first.message.trim();
+    }
+  }
+  if (typeof record.message === "string" && record.message.trim()) return record.message.trim();
+  if (typeof record.msg === "string" && record.msg.trim()) return record.msg.trim();
+  if (typeof record.detail === "string" && record.detail.trim()) return record.detail.trim();
+  return "";
 }
 
 export function textFromOpenAICompatibleBody(raw: string, contentType = ""): string {

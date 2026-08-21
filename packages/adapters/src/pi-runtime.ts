@@ -228,22 +228,32 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const error = agent.state.errorMessage;
         if (error && !isMissingFinishReasonError(error)) {
-          queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
-          queue.push({ type: "done", text: sanitizeError(error) });
+          pushRunError(queue, error, Boolean(request.model.baseUrl));
           return;
         }
         if (!streamed) {
-          const recovered =
-            (await recoverGatewayReply(request, signal).catch(() => "")) ||
-            assistantText(agent.state.messages.at(-1));
-          if (recovered) {
-            queue.push({ type: "text", text: recovered });
-            streamed = recovered;
-          } else {
-            const message =
-              "The model returned an empty reply. Check the custom endpoint and model id, then try again.";
-            queue.push({ type: "text", text: message });
-            streamed = message;
+          try {
+            const recovered =
+              (await recoverGatewayReply(request, signal)) ||
+              assistantText(agent.state.messages.at(-1));
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              streamed = recovered;
+            } else {
+              pushRunError(
+                queue,
+                error || "The gateway returned an empty reply",
+                Boolean(request.model.baseUrl),
+              );
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              Boolean(request.model.baseUrl),
+            );
+            return;
           }
         }
         emitReasoning({
@@ -255,16 +265,24 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        if (isMissingFinishReasonError(message)) {
-          const recovered = await recoverGatewayReply(request, signal).catch(() => "");
-          if (recovered) {
-            queue.push({ type: "text", text: recovered });
-            queue.push({ type: "done", text: recovered });
+        if (isMissingFinishReasonError(message) && request.model.baseUrl) {
+          try {
+            const recovered = await recoverGatewayReply(request, signal);
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              queue.push({ type: "done", text: recovered });
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              true,
+            );
             return;
           }
         }
-        queue.push({ type: "text", text: `I hit a problem: ${message}` });
-        queue.push({ type: "done", text: message });
+        pushRunError(queue, message, Boolean(request.model.baseUrl));
       } finally {
         queue.close();
       }
@@ -775,6 +793,19 @@ function summarizeToolResult(result: unknown) {
 
 export function isMissingFinishReasonError(error: string): boolean {
   return /stream ended without finish_reason/i.test(error);
+}
+
+function pushRunError(
+  queue: { push(event: AgentRuntimeEvent): void },
+  error: string,
+  fromGateway: boolean,
+) {
+  const message = sanitizeError(error);
+  queue.push({
+    type: "text",
+    text: fromGateway ? message : `I hit a problem: ${message}`,
+  });
+  queue.push({ type: "done", text: message });
 }
 
 async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal): Promise<string> {
