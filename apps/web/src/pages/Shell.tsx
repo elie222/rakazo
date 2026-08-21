@@ -193,7 +193,6 @@ export function ShellPage() {
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
-  const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
     botId: string;
@@ -291,10 +290,6 @@ export function ShellPage() {
   }
 
   async function refreshThread(id: string) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
     const pin = pinnedAroundRef.current;
     const keepPin = pin?.botId === id;
@@ -325,12 +320,6 @@ export function ShellPage() {
     setRoutinesBotId(id);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
-    if (!keepPin && stickToEnd) {
-      window.requestAnimationFrame(() => {
-        const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
-      });
-    }
     return snap;
   }
 
@@ -694,16 +683,6 @@ export function ShellPage() {
     }
   }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
 
-  useLayoutEffect(() => {
-    if (!active || snapshot?.botId !== active.id) return;
-    if (initiallyScrolledThread.current === snapshot.threadId) return;
-    if (pinnedAroundRef.current?.botId === active.id) return;
-    const element = messageScroll.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    initiallyScrolledThread.current = snapshot.threadId;
-  }, [active, snapshot?.botId, snapshot?.threadId]);
-
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const answerMessage = useCallback(async (message: ThreadMessage, text: string) => {
@@ -763,6 +742,7 @@ export function ShellPage() {
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return;
       const pendingId = createPendingUserMessageId();
+      pinnedAroundRef.current = null;
       if (trimmed) {
         setSnapshot((current) => {
           if (!current || current.botId !== id) return current;
@@ -1231,7 +1211,7 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button
             type="button"
@@ -1284,6 +1264,15 @@ export function ShellPage() {
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
           running={botWorking}
+          followOutput={
+            !loadingOlder &&
+            !(
+              pinnedAroundRef.current &&
+              active &&
+              pinnedAroundRef.current.botId === active.id &&
+              pinnedAroundRef.current.threadId === snapshot?.threadId
+            )
+          }
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
@@ -1886,6 +1875,16 @@ export function ShellPage() {
   );
 }
 
+const STICK_TO_BOTTOM_PX = 96;
+
+function isNearTranscriptEnd(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= STICK_TO_BOTTOM_PX;
+}
+
+function scrollTranscriptToEnd(element: HTMLElement): void {
+  element.scrollTop = element.scrollHeight;
+}
+
 const Transcript = memo(function Transcript({
   scrollRef,
   botId,
@@ -1894,6 +1893,7 @@ const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskMessageId,
   running,
+  followOutput,
   onLoadOlder,
   onOpenBot,
   onAnswer,
@@ -1910,6 +1910,7 @@ const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskMessageId: string | null;
   running: boolean;
+  followOutput: boolean;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -1921,6 +1922,11 @@ const Transcript = memo(function Transcript({
 }) {
   const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const followOutputRef = useRef(followOutput);
+  followOutputRef.current = followOutput;
+  const lastBotId = useRef(botId);
   useLayoutEffect(() => {
     const switchedBot = enterState.current.botId !== botId;
     const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
@@ -1930,44 +1936,83 @@ const Transcript = memo(function Transcript({
     }
     if (next.size > 0) setEnteringIds(next);
   }, [botId, messages]);
+  useLayoutEffect(() => {
+    if (lastBotId.current !== botId) {
+      stickToBottom.current = true;
+      lastBotId.current = botId;
+    }
+    if (loadingOlder) {
+      stickToBottom.current = false;
+      return;
+    }
+    if (messages.at(-1)?.id.startsWith("pending:")) stickToBottom.current = true;
+    const element = scrollRef.current;
+    if (!element || !followOutput || !stickToBottom.current) return;
+    scrollTranscriptToEnd(element);
+  }, [botId, followOutput, loadingOlder, messages, running, scrollRef]);
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || !content) return;
+    const onScroll = () => {
+      stickToBottom.current = isNearTranscriptEnd(element);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) stickToBottom.current = false;
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    element.addEventListener("wheel", onWheel, { passive: true });
+    const observer = new ResizeObserver(() => {
+      if (!followOutputRef.current || !stickToBottom.current) return;
+      scrollTranscriptToEnd(element);
+    });
+    observer.observe(content);
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      element.removeEventListener("wheel", onWheel);
+      observer.disconnect();
+    };
+  }, [botId, scrollRef]);
   const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
     <div
       ref={scrollRef}
       data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
+      className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-7 py-6"
     >
-      {olderCursor != null ? (
-        <button
-          type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-        >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
-        </button>
-      ) : null}
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          data-message-id={message.id}
-          className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
-        >
-          <MessageView
-            botId={botId}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onAnswer={onAnswer}
-            onRefresh={onRefresh}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+      <div ref={contentRef} className="flex flex-col gap-[13px]">
+        {olderCursor != null ? (
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void onLoadOlder()}
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+          >
+            {loadingOlder ? "Loading…" : "Load earlier messages"}
+          </button>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+          >
+            <MessageView
+              botId={botId}
+              message={message}
+              canAnswer={message.id === answerableAskMessageId}
+              onOpenBot={onOpenBot}
+              onAnswer={onAnswer}
+              onRefresh={onRefresh}
+              onAddRoutine={onAddRoutine}
+              voiceReady={voiceReady}
+              speaking={speakingMessageId === message.id}
+              onSpeak={() => onSpeak(message)}
+            />
+          </div>
+        ))}
+        {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+      </div>
     </div>
   );
 });
