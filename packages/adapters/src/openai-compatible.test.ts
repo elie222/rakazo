@@ -4,6 +4,7 @@ import {
   isGatewayProvider,
   labelForDiscoveredModels,
   normalizeOpenAICompatibleBaseUrl,
+  openaiCompatibleModel,
   parseAvailableModels,
   secretIdForGatewayModel,
   serializeAvailableModels,
@@ -34,6 +35,20 @@ describe("openai-compatible gateways", () => {
     expect(isGatewayProvider(`${GATEWAY_PROVIDER_PREFIX}abc`)).toBe(true);
     expect(isGatewayProvider("openai-compatible")).toBe(true);
     expect(isGatewayProvider("openrouter")).toBe(false);
+  });
+
+  it("does not require streamed finish_reason on custom endpoints", () => {
+    const model = openaiCompatibleModel(
+      `${GATEWAY_PROVIDER_PREFIX}abc`,
+      "gemini-2.5-flash",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+    );
+    expect(model.compat).toMatchObject({
+      supportsFinishReason: false,
+      supportsUsageInStreaming: false,
+      supportsStrictMode: false,
+      maxTokensField: "max_tokens",
+    });
   });
 
   it("picks the key whose discovered models include the requested model", () => {

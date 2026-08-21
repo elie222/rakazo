@@ -224,7 +224,7 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.removeEventListener("abort", onAbort);
 
         const error = agent.state.errorMessage;
-        if (error) {
+        if (error && !isMissingFinishReasonError(error)) {
           queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
           queue.push({ type: "done", text: sanitizeError(error) });
           return;
@@ -243,6 +243,11 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
+        if (isMissingFinishReasonError(message)) {
+          queue.push({ type: "text", text: "I finished the work." });
+          queue.push({ type: "done", text: "I finished the work." });
+          return;
+        }
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
         queue.push({ type: "done", text: message });
       } finally {
@@ -584,7 +589,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     await nested.waitForIdle();
     host.signal.removeEventListener("abort", onAbort);
     const error = nested.state.errorMessage;
-    if (error) {
+    if (error && !isMissingFinishReasonError(error)) {
       const message = sanitizeError(error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
@@ -751,6 +756,10 @@ function summarizeToolResult(result: unknown) {
   } catch {
     return "ok";
   }
+}
+
+export function isMissingFinishReasonError(error: string): boolean {
+  return /stream ended without finish_reason/i.test(error);
 }
 
 function assistantText(message: unknown): string {
