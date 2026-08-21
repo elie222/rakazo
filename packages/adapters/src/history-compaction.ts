@@ -2,6 +2,7 @@ import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapte
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  deleteSupermemoryContainer as defaultDeleteSupermemoryContainer,
   saveSupermemoryMemory as defaultSaveSupermemoryMemory,
   isSupermemoryEnabled,
   MAX_RECALLED_MEMORIES,
@@ -122,12 +123,12 @@ export interface CompactHistoryDeps {
     workspaceId: string;
   }) => Promise<AgentRunRequest["model"]>;
   saveSupermemoryMemory?: typeof defaultSaveSupermemoryMemory;
+  deleteSupermemoryContainer?: typeof defaultDeleteSupermemoryContainer;
 }
 
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
   const previousCursor = thread.historyCompactedUpToSeq;
-  const previousEventSeq = thread.nextEventSeq;
   const previousGeneration = thread.historyCompactionGeneration;
   const previousSummary = thread.historyCompactionSummary?.trim() || null;
   const needsLocalBootstrap =
@@ -298,17 +299,12 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)
       ? defaultSaveSupermemoryMemory
       : undefined);
-  if (save) {
-    const result = await save(summary, supermemoryContainerTag(thread.botId, previousGeneration));
-    if (!result.ok) throw new Error(`Failed to save compacted memory: ${result.error}`);
-  }
-
+  const containerTag = supermemoryContainerTag(thread.botId, previousGeneration);
   const lastSeq = batch[batch.length - 1]!.seq;
   const advanced = await deps.prisma.thread.updateMany({
     where: {
       id: threadId,
       historyCompactedUpToSeq: previousCursor,
-      nextEventSeq: previousEventSeq,
       historyCompactionGeneration: previousGeneration,
     },
     data: {
@@ -318,10 +314,39 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   });
   if (advanced.count === 0) return;
 
+  // Local compaction is first-party behavior and must not depend on an optional external store.
+  // Saving only after the compare-and-set also prevents losing workers from creating duplicates.
+  let externalSaveAttempted = false;
+  if (save) {
+    externalSaveAttempted = true;
+    try {
+      const result = await save(summary, containerTag);
+      if (!result.ok) console.error(`Failed to save compacted memory: ${result.error}`);
+    } catch (error) {
+      console.error("Failed to save compacted memory", error);
+    }
+  }
+
   const latest = await deps.prisma.thread.findUniqueOrThrow({
     where: { id: threadId },
-    select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
+    select: {
+      nextMessageSeq: true,
+      historyCompactedUpToSeq: true,
+      historyCompactionGeneration: true,
+    },
   });
+
+  // A clear can commit and purge while the network save above is still in flight. Purge the old
+  // generation again so that the late save cannot leave cleared conversation data behind.
+  if (externalSaveAttempted && latest.historyCompactionGeneration !== previousGeneration) {
+    const remove = deps.deleteSupermemoryContainer ?? defaultDeleteSupermemoryContainer;
+    const removed = await remove(containerTag);
+    if (!removed.ok) {
+      console.error(
+        `history.compact could not purge stale Supermemory container ${containerTag}: ${removed.error}`,
+      );
+    }
+  }
 
   // Drain a pre-existing backlog at queue speed rather than one batch per completed run, which
   // for a thread that accumulated thousands of messages before Supermemory was enabled would

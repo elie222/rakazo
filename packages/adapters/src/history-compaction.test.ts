@@ -190,7 +190,6 @@ function compactionHarness(
     historyCompactedUpToSeq?: number | null;
     historyCompactionSummary?: string | null;
     historyCompactionGeneration?: number;
-    nextEventSeq?: number;
     wasCleared?: boolean;
     resolveModel?: (scope: {
       userId: string;
@@ -211,7 +210,7 @@ function compactionHarness(
     botId: "bot-1",
     workspaceId: "workspace-1",
     userId: "user-1",
-    nextEventSeq: options.nextEventSeq ?? 0,
+    nextEventSeq: 0,
     nextMessageSeq: options.nextMessageSeq ?? messages.length,
     historyCompactedUpToSeq: options.historyCompactedUpToSeq ?? (null as number | null),
     historyCompactionSummary: options.historyCompactionSummary ?? (null as string | null),
@@ -225,14 +224,12 @@ function compactionHarness(
           where: {
             id: string;
             historyCompactedUpToSeq: number | null;
-            nextEventSeq: number;
             historyCompactionGeneration: number;
           };
           data: { historyCompactedUpToSeq: number; historyCompactionSummary: string };
         }) => {
           if (
             thread.historyCompactedUpToSeq !== args.where.historyCompactedUpToSeq ||
-            thread.nextEventSeq !== args.where.nextEventSeq ||
             thread.historyCompactionGeneration !== args.where.historyCompactionGeneration
           ) {
             return { count: 0 };
@@ -275,6 +272,9 @@ function compactionHarness(
   const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
     ok: true,
   }));
+  const deleteSupermemoryContainer = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
+    ok: true,
+  }));
   const jobs = { enqueue: vi.fn(async () => undefined) };
   const deps = {
     prisma: prisma as unknown as PrismaClient,
@@ -282,7 +282,9 @@ function compactionHarness(
     jobs: jobs as unknown as JobPublisher,
     deploymentModelKey: options.deploymentModelKey,
     ...(options.resolveModel ? { resolveModel: options.resolveModel } : {}),
-    ...(options.withSupermemorySaver === false ? {} : { saveSupermemoryMemory }),
+    ...(options.withSupermemorySaver === false
+      ? {}
+      : { saveSupermemoryMemory, deleteSupermemoryContainer }),
   };
   return {
     thread,
@@ -290,6 +292,7 @@ function compactionHarness(
     prisma,
     runtime,
     saveSupermemoryMemory,
+    deleteSupermemoryContainer,
     jobs,
     deps,
   };
@@ -325,7 +328,6 @@ describe("compactHistory", () => {
       where: {
         id: "thread-1",
         historyCompactedUpToSeq: null,
-        nextEventSeq: 0,
         historyCompactionGeneration: 0,
       },
       data: {
@@ -491,7 +493,7 @@ describe("compactHistory", () => {
     expect(harness.prisma.thread.updateMany).toHaveBeenCalledOnce();
   });
 
-  it("does not advance when the thread event generation changes under the worker", async () => {
+  it("still advances when an unrelated thread event arrives during summarization", async () => {
     const harness = compactionHarness({
       deploymentModelKey: "openrouter-key",
       withSupermemorySaver: false,
@@ -507,7 +509,7 @@ describe("compactHistory", () => {
     harness.runtime.run.mockImplementation(async function* () {
       summarizationBegan();
       await summarizationStarted;
-      yield { type: "done", text: "stale summary" };
+      yield { type: "done", text: "valid summary" };
     });
 
     const pending = compactHistory(harness.deps, "thread-1");
@@ -516,8 +518,36 @@ describe("compactHistory", () => {
     releaseSummary();
     await pending;
 
-    expect(harness.thread.historyCompactedUpToSeq).toBeNull();
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.thread.historyCompactionSummary).toBe("valid summary");
+  });
+
+  it("purges a stale Supermemory save when clear advances the history generation", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    let releaseSave!: () => void;
+    let saveBegan!: () => void;
+    const saveCanFinish = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const saveStarted = new Promise<void>((resolve) => {
+      saveBegan = resolve;
+    });
+    harness.saveSupermemoryMemory.mockImplementationOnce(async () => {
+      saveBegan();
+      await saveCanFinish;
+      return { ok: true };
+    });
+
+    const pending = compactHistory(harness.deps, "thread-1");
+    await saveStarted;
+    harness.thread.historyCompactedUpToSeq = 49;
+    harness.thread.historyCompactionSummary = null;
+    harness.thread.historyCompactionGeneration = 1;
+    releaseSave();
+    await pending;
+
     expect(harness.thread.historyCompactionSummary).toBeNull();
+    expect(harness.deleteSupermemoryContainer).toHaveBeenCalledWith("rakazo:bot-1");
   });
 
   it("falls back to the deployment's configured default model when no deployment key is available", async () => {
@@ -590,6 +620,7 @@ describe("compactHistory", () => {
 
     expect(harness.thread.historyCompactedUpToSeq).toBeNull();
     expect(harness.thread.historyCompactionSummary).toBeNull();
+    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
   });
 
   it("caps an oversized transcript without advancing past unsummarized messages", async () => {
@@ -695,13 +726,14 @@ describe("compactHistory", () => {
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
-  it("does not advance the cursor if saving to Supermemory fails", async () => {
+  it("keeps local compaction when the optional Supermemory save fails", async () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
     harness.saveSupermemoryMemory.mockResolvedValueOnce({ ok: false, error: "network error" });
 
-    await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow();
+    await compactHistory(harness.deps, "thread-1");
 
-    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
   });
 
   it("does not advance or re-enqueue if another worker already moved the cursor", async () => {
