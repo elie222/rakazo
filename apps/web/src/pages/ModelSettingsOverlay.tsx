@@ -23,6 +23,12 @@ type OAuthNotice = {
   userCode: string;
 };
 
+function formatKeyCoverage(models: string[] | undefined) {
+  if (!models?.length) return "Not probed yet. Refresh coverage after you add keys.";
+  if (models.length <= 8) return models.join(", ");
+  return `${models.slice(0, 8).join(", ")} +${models.length - 8} more`;
+}
+
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
@@ -37,7 +43,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | "probe" | "key" | null>(null);
+  const [pending, setPending] = useState<
+    "connect" | "default" | "probe" | "key" | "refresh" | null
+  >(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -247,17 +255,35 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setNotice(null);
     setPending("key");
     try {
-      await rpc.models.addKey({
+      const updated = await rpc.models.addKey({
         provider: selected.provider,
         apiKey: apiKey.trim(),
         label: keyLabel.trim() || undefined,
       });
       setApiKey("");
       setKeyLabel("");
+      setProbedModels(updated.availableModels ?? []);
       await refresh();
-      setNotice("Added an API key to this endpoint.");
+      setNotice("Saved that key. Rakazo will use it for the models it can access.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function refreshEndpointKeys() {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("refresh");
+    try {
+      const updated = await rpc.models.refreshKeys({ provider: selected.provider });
+      setProbedModels(updated.availableModels ?? []);
+      await refresh();
+      setNotice("Updated which models each API key can use.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh API keys");
     } finally {
       setPending(null);
     }
@@ -527,53 +553,77 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
                         : "Your key or subscription token is stored securely and is never shown here."
                       : isCustom
-                        ? "Paste any OpenAI-compatible base URL. Add one or more API keys after you connect."
+                        ? "Paste any OpenAI-compatible base URL. Extra API keys live under Advanced — Rakazo matches each key to the models it can run."
                         : "Connect this provider to use it as your personal model."}
                   </div>
                 </div>
 
                 {isCustom && credential ? (
-                  <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
-                    <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-                      API keys
-                    </div>
+                  <details className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13.5px] text-[#ECECEE] [&::-webkit-details-marker]:hidden">
+                      <span className="font-medium">Advanced</span>
+                      <span className="text-[12px] text-[#6C6C70]">
+                        {credential.keys.length
+                          ? `${credential.keys.length} API key${credential.keys.length === 1 ? "" : "s"}`
+                          : "API keys"}
+                      </span>
+                    </summary>
+                    <p className="mt-3 text-[13px] leading-[1.5] text-[#85858A]">
+                      Save every provider key here. Rakazo asks the endpoint which models each key
+                      can access, then uses that key automatically — Gemini keys for Gemini models,
+                      and so on. You do not assign keys yourself.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !credential.keys.length}
+                      onClick={() => void refreshEndpointKeys()}
+                      className="mt-3"
+                    >
+                      {pending === "refresh" ? "Refreshing…" : "Refresh model coverage"}
+                    </Button>
                     {credential.keys.length ? (
                       <ul className="mt-3 space-y-2">
                         {credential.keys.map((key) => (
-                          <li
-                            key={key.id}
-                            className="flex items-center gap-2 rounded-[10px] bg-[#101012] px-3 py-2"
-                          >
-                            <span className="min-w-0 flex-1 truncate text-[14px] text-[#ECECEE]">
-                              {key.label}
-                            </span>
-                            {key.isActive ? (
-                              <span className="text-[12px] text-[#4ECB71]">Active</span>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void activateEndpointKey(key.id)}
-                                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
-                              >
-                                Use
-                              </button>
-                            )}
-                            {credential.keys.length > 1 ? (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void removeEndpointKey(key.id)}
-                                className="text-[12px] text-[#E65707]"
-                              >
-                                Remove
-                              </button>
-                            ) : null}
+                          <li key={key.id} className="rounded-[10px] bg-[#101012] px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-[14px] text-[#ECECEE]">
+                                {key.label}
+                              </span>
+                              {key.isActive ? (
+                                <span className="text-[12px] text-[#4ECB71]">Fallback</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void activateEndpointKey(key.id)}
+                                  className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                                >
+                                  Fallback
+                                </button>
+                              )}
+                              {credential.keys.length > 1 ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void removeEndpointKey(key.id)}
+                                  className="text-[12px] text-[#E65707]"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-[12px] leading-[1.45] text-[#85858A]">
+                              {key.probeError
+                                ? key.probeError
+                                : formatKeyCoverage(key.availableModels)}
+                            </p>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="mt-2 text-[13px] text-[#85858A]">
+                      <p className="mt-3 text-[13px] text-[#85858A]">
                         No keys yet. Local servers can run without one.
                       </p>
                     )}
@@ -582,7 +632,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       <input
                         value={keyLabel}
                         onChange={(event) => setKeyLabel(event.target.value)}
-                        placeholder="Pool key 2"
+                        placeholder="Optional"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                       />
                     </label>
@@ -607,7 +657,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     >
                       {pending === "key" ? "Adding…" : "Add API key"}
                     </Button>
-                  </div>
+                  </details>
                 ) : null}
 
                 {deviceSignIn ? (

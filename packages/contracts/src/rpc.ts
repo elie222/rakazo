@@ -125,6 +125,7 @@ export const appContract = {
     setActiveKey: oc
       .input(z.object({ provider: z.string(), keyId: Id }))
       .output(ModelCredentialSchema),
+    refreshKeys: oc.input(z.object({ provider: z.string() })).output(ModelCredentialSchema),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),

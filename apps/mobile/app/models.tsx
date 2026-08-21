@@ -29,6 +29,12 @@ type ModelSelection = {
   modelId?: string;
 };
 
+function formatKeyCoverage(models: string[] | undefined) {
+  if (!models?.length) return "Not probed yet. Refresh coverage after you add keys.";
+  if (models.length <= 8) return models.join(", ");
+  return `${models.slice(0, 8).join(", ")} +${models.length - 8} more`;
+}
+
 export default function Models() {
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
@@ -42,7 +48,10 @@ export default function Models() {
   const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | "probe" | "key" | null>(null);
+  const [pending, setPending] = useState<
+    "connect" | "default" | "probe" | "key" | "refresh" | null
+  >(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -250,9 +259,25 @@ export default function Models() {
       setApiKey("");
       setKeyLabel("");
       await load({ provider, modelId });
-      setNotice("Added an API key to this endpoint.");
+      setNotice("Saved that key. Rakazo will use it for the models it can access.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function refreshEndpointKeys() {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("refresh");
+    try {
+      await rpc("models/refreshKeys", { provider: selected.provider });
+      await load({ provider, modelId });
+      setNotice("Updated which models each API key can use.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh API keys");
     } finally {
       setPending(null);
     }
@@ -266,7 +291,7 @@ export default function Models() {
     try {
       await rpc("models/setActiveKey", { provider: selected.provider, keyId });
       await load({ provider, modelId });
-      setNotice("This key is now used for the endpoint.");
+      setNotice("This key is the fallback when a model is not on any other key.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not switch API key");
     } finally {
@@ -509,72 +534,120 @@ export default function Models() {
                     ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
                     : "Your key or subscription token is stored securely and is never shown here."
                   : isCustom
-                    ? "Paste any OpenAI-compatible base URL. Add one or more API keys after you connect."
+                    ? "Paste any OpenAI-compatible base URL. Extra API keys live under Advanced — Rakazo matches each key to the models it can run."
                     : "Connect this provider to use it as your personal model."}
               </Text>
             </View>
 
             {isCustom && credential ? (
               <View style={styles.credentialCard}>
-                <Text style={styles.eyebrow}>API keys</Text>
-                {credential.keys.length ? (
-                  credential.keys.map((key) => (
-                    <View key={key.id} style={styles.keyRow}>
-                      <Text style={styles.keyName}>{key.label}</Text>
-                      {key.isActive ? (
-                        <Text style={styles.connected}>Active</Text>
-                      ) : (
-                        <Pressable disabled={busy} onPress={() => void activateEndpointKey(key.id)}>
-                          <Text style={styles.secondaryAction}>Use</Text>
-                        </Pressable>
-                      )}
-                      {credential.keys.length > 1 ? (
-                        <Pressable disabled={busy} onPress={() => void removeEndpointKey(key.id)}>
-                          <Text style={styles.error}>Remove</Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.secondary}>
-                    No keys yet. Local servers can run without one.
-                  </Text>
-                )}
-                <TextInput
-                  accessibilityLabel="Key label"
-                  onChangeText={setKeyLabel}
-                  placeholder="Pool key 2"
-                  placeholderTextColor={native.tertiaryLabel}
-                  style={styles.keyInput}
-                  value={keyLabel}
-                />
-                <TextInput
-                  accessibilityLabel="Add API key"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  editable={!busy}
-                  onChangeText={setApiKey}
-                  placeholder="sk-…"
-                  placeholderTextColor={native.tertiaryLabel}
-                  secureTextEntry
-                  style={styles.keyInput}
-                  value={apiKey}
-                />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={busy || !apiKey.trim()}
-                  onPress={() => void addEndpointKey()}
-                  style={({ pressed }) => [
-                    styles.outlineButton,
-                    (busy || !apiKey.trim()) && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
+                  onPress={() => setAdvancedOpen((open) => !open)}
+                  style={styles.advancedHeader}
                 >
-                  <Text style={styles.outlineLabel}>
-                    {pending === "key" ? "Adding…" : "Add API key"}
+                  <Text style={styles.eyebrow}>Advanced</Text>
+                  <Text style={styles.secondaryAction}>
+                    {advancedOpen
+                      ? "Hide"
+                      : credential.keys.length
+                        ? `${credential.keys.length} API key${credential.keys.length === 1 ? "" : "s"}`
+                        : "API keys"}
                   </Text>
                 </Pressable>
+                {advancedOpen ? (
+                  <>
+                    <Text style={styles.secondary}>
+                      Save every provider key here. Rakazo asks the endpoint which models each key
+                      can access, then uses that key automatically.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={busy || !credential.keys.length}
+                      onPress={() => void refreshEndpointKeys()}
+                      style={({ pressed }) => [
+                        styles.outlineButton,
+                        (busy || !credential.keys.length) && styles.disabled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.outlineLabel}>
+                        {pending === "refresh" ? "Refreshing…" : "Refresh model coverage"}
+                      </Text>
+                    </Pressable>
+                    {credential.keys.length ? (
+                      credential.keys.map((key) => (
+                        <View key={key.id} style={styles.keyCard}>
+                          <View style={styles.keyRow}>
+                            <Text style={styles.keyName}>{key.label}</Text>
+                            {key.isActive ? (
+                              <Text style={styles.connected}>Fallback</Text>
+                            ) : (
+                              <Pressable
+                                disabled={busy}
+                                onPress={() => void activateEndpointKey(key.id)}
+                              >
+                                <Text style={styles.secondaryAction}>Fallback</Text>
+                              </Pressable>
+                            )}
+                            {credential.keys.length > 1 ? (
+                              <Pressable
+                                disabled={busy}
+                                onPress={() => void removeEndpointKey(key.id)}
+                              >
+                                <Text style={styles.error}>Remove</Text>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                          <Text style={styles.secondary}>
+                            {key.probeError
+                              ? key.probeError
+                              : formatKeyCoverage(key.availableModels)}
+                          </Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.secondary}>
+                        No keys yet. Local servers can run without one.
+                      </Text>
+                    )}
+                    <TextInput
+                      accessibilityLabel="Key label"
+                      onChangeText={setKeyLabel}
+                      placeholder="Optional"
+                      placeholderTextColor={native.tertiaryLabel}
+                      style={styles.keyInput}
+                      value={keyLabel}
+                    />
+                    <TextInput
+                      accessibilityLabel="Add API key"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      editable={!busy}
+                      onChangeText={setApiKey}
+                      placeholder="sk-…"
+                      placeholderTextColor={native.tertiaryLabel}
+                      secureTextEntry
+                      style={styles.keyInput}
+                      value={apiKey}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={busy || !apiKey.trim()}
+                      onPress={() => void addEndpointKey()}
+                      style={({ pressed }) => [
+                        styles.outlineButton,
+                        (busy || !apiKey.trim()) && styles.disabled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.outlineLabel}>
+                        {pending === "key" ? "Adding…" : "Add API key"}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
               </View>
             ) : null}
 
@@ -841,6 +914,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    marginTop: 10,
+  },
+  advancedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  keyCard: {
     marginTop: 10,
   },
   keyName: {
