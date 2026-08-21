@@ -15,6 +15,10 @@ body,
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
+.rk-transcript {
+  overflow-anchor: none;
+}
+
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }
