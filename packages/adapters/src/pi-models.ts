@@ -15,6 +15,8 @@ export type PiCatalogEntry = {
   oauthLabel?: string;
   subscription: boolean;
   signIn?: PiCatalogSignIn;
+  custom?: boolean;
+  baseUrl?: string;
 };
 
 export function listPiCatalog(): PiCatalogEntry[] {
@@ -85,3 +87,50 @@ export const scriptedCatalogEntry: PiCatalogEntry = {
   auth: "api-key",
   subscription: false,
 };
+
+export const customEndpointCatalogEntry: PiCatalogEntry = {
+  provider: "openai-compatible",
+  providerName: "Custom endpoint",
+  id: "custom",
+  label: "OpenAI-compatible",
+  billing:
+    "Any OpenAI-compatible server. Paste a base URL — Ollama, vLLM, LiteLLM, OpenAI, Azure-compatible proxies, or your own gateway.",
+  auth: "api-key",
+  subscription: false,
+  custom: true,
+};
+
+export function gatewayCatalogEntries(
+  credentials: Array<{
+    provider: string;
+    label: string;
+    baseUrl?: string | null;
+    defaultModel?: string | null;
+    availableModels?: string[];
+  }>,
+): PiCatalogEntry[] {
+  return credentials.flatMap((credential) => {
+    if (!credential.baseUrl && !credential.provider.startsWith("gateway:")) return [];
+    const models = [
+      ...new Set(
+        [credential.defaultModel, ...(credential.availableModels ?? [])].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ];
+    const ids = models.length ? models : ["custom"];
+    return ids.map((id) => ({
+      provider: credential.provider,
+      providerName: credential.label || "Custom endpoint",
+      id,
+      label: id,
+      billing: credential.baseUrl
+        ? `Uses ${credential.baseUrl}. Rakazo does not pay for model usage.`
+        : "Custom OpenAI-compatible endpoint.",
+      auth: "api-key" as const,
+      subscription: false,
+      custom: true,
+      baseUrl: credential.baseUrl ?? undefined,
+    }));
+  });
+}

@@ -36,9 +36,12 @@ export default function Models() {
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
+  const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "probe" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -113,8 +116,10 @@ export default function Models() {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const isCustom = Boolean(selected?.custom);
+  const isCustomTemplate = selected?.provider === "openai-compatible";
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
-  const acceptsKey = selected?.auth !== "oauth";
+  const acceptsKey = selected?.auth !== "oauth" || isCustom;
   const deviceSignIn = selected?.signIn === "device-code";
   const busy = pending !== null || oauthPending;
 
@@ -123,6 +128,13 @@ export default function Models() {
     setProvider(nextProvider);
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     setApiKey("");
+    setBaseUrl(catalog.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "");
+    setEndpointLabel(
+      catalog.find((entry) => entry.provider === nextProvider)?.providerName ?? "Custom endpoint",
+    );
+    setProbedModels(
+      credentials.find((entry) => entry.provider === nextProvider)?.availableModels ?? [],
+    );
     setError(null);
     setNotice(null);
   }
@@ -144,7 +156,40 @@ export default function Models() {
   }
 
   async function connectKey() {
-    if (!selected || !apiKey.trim()) return;
+    if (!selected) return;
+    if (isCustom) {
+      const url = baseUrl.trim() || selected.baseUrl;
+      if (!url) {
+        setError("Enter a base URL for this endpoint.");
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      setPending("connect");
+      try {
+        const connected = await rpc<MobileModelCredential>("models/connect", {
+          provider: selected.provider,
+          apiKey: apiKey.trim(),
+          modelId: modelId.trim() || selected.id,
+          label: endpointLabel.trim() || selected.providerName || "Custom endpoint",
+          baseUrl: url,
+          availableModels: probedModels.length
+            ? probedModels
+            : modelId.trim()
+              ? [modelId.trim()]
+              : undefined,
+        });
+        setApiKey("");
+        await load({ provider: connected.provider, modelId: connected.defaultModel ?? modelId });
+        setNotice(`Connected ${connected.label}.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not connect this endpoint");
+      } finally {
+        setPending(null);
+      }
+      return;
+    }
+    if (!apiKey.trim()) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -160,6 +205,30 @@ export default function Models() {
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect this provider");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function probeModels() {
+    const url = baseUrl.trim() || selected?.baseUrl;
+    if (!url) {
+      setError("Enter a base URL to list models.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setPending("probe");
+    try {
+      const result = await rpc<{ models: string[] }>("models/probe", {
+        baseUrl: url,
+        apiKey: apiKey.trim() || undefined,
+      });
+      setProbedModels(result.models);
+      if (!result.models.includes(modelId) && result.models[0]) setModelId(result.models[0]);
+      setNotice(`Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not list models");
     } finally {
       setPending(null);
     }
@@ -264,33 +333,114 @@ export default function Models() {
 
         {selected ? (
           <>
-            <Text style={styles.sectionTitle}>Model</Text>
-            <View style={styles.card}>
-              {modelsForProvider.map((entry) => (
+            {isCustom ? (
+              <>
+                <Text style={styles.sectionTitle}>Custom endpoint</Text>
+                <TextInput
+                  accessibilityLabel="Endpoint name"
+                  onChangeText={setEndpointLabel}
+                  placeholder="Office vLLM"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.keyInput}
+                  value={endpointLabel}
+                />
+                <TextInput
+                  accessibilityLabel="Base URL"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setBaseUrl}
+                  placeholder="https://api.example.com/v1"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.keyInput}
+                  value={baseUrl}
+                />
+                <Text style={styles.billing}>{selected.billing}</Text>
+                {probedModels.length || (!isCustomTemplate && modelsForProvider.length > 1) ? (
+                  <View style={styles.card}>
+                    {[
+                      ...new Set([
+                        ...probedModels,
+                        ...modelsForProvider.map((entry) => entry.id),
+                        modelId,
+                      ]),
+                    ]
+                      .filter(Boolean)
+                      .map((id) => (
+                        <Pressable
+                          key={id}
+                          accessibilityRole="radio"
+                          onPress={() => setModelId(id)}
+                          style={({ pressed }) => [
+                            styles.modelRow,
+                            id === modelId && styles.selectedRow,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <View style={styles.radio}>
+                            {id === modelId ? <View style={styles.radioDot} /> : null}
+                          </View>
+                          <Text style={styles.modelLabel}>{id}</Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                ) : (
+                  <TextInput
+                    accessibilityLabel="Model id"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onChangeText={setModelId}
+                    placeholder="llama3.1"
+                    placeholderTextColor={native.tertiaryLabel}
+                    style={styles.keyInput}
+                    value={isCustomTemplate && modelId === "custom" ? "" : modelId}
+                  />
+                )}
                 <Pressable
-                  key={`${entry.provider}:${entry.id}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: entry.id === selected.id }}
-                  onPress={() => {
-                    cancelOAuth();
-                    setModelId(entry.id);
-                    setError(null);
-                    setNotice(null);
-                  }}
+                  accessibilityRole="button"
+                  disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                  onPress={() => void probeModels()}
                   style={({ pressed }) => [
-                    styles.modelRow,
-                    entry.id === selected.id && styles.selectedRow,
+                    styles.outlineButton,
                     pressed && styles.pressed,
+                    (busy || !(baseUrl.trim() || selected.baseUrl)) && styles.disabled,
                   ]}
                 >
-                  <View style={styles.radio}>
-                    {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
-                  </View>
-                  <Text style={styles.modelLabel}>{entry.label}</Text>
+                  <Text style={styles.outlineLabel}>
+                    {pending === "probe" ? "Fetching…" : "Fetch models"}
+                  </Text>
                 </Pressable>
-              ))}
-            </View>
-            <Text style={styles.billing}>{selected.billing}</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionTitle}>Model</Text>
+                <View style={styles.card}>
+                  {modelsForProvider.map((entry) => (
+                    <Pressable
+                      key={`${entry.provider}:${entry.id}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: entry.id === selected.id }}
+                      onPress={() => {
+                        cancelOAuth();
+                        setModelId(entry.id);
+                        setError(null);
+                        setNotice(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.modelRow,
+                        entry.id === selected.id && styles.selectedRow,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <View style={styles.radio}>
+                        {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
+                      </View>
+                      <Text style={styles.modelLabel}>{entry.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.billing}>{selected.billing}</Text>
+              </>
+            )}
 
             <View style={styles.credentialCard}>
               <Text style={styles.eyebrow}>Personal credential</Text>
@@ -299,8 +449,12 @@ export default function Models() {
               </Text>
               <Text style={styles.secondary}>
                 {credential
-                  ? "Your key or subscription token is stored securely and is never shown here."
-                  : "Connect this provider to use it as your personal model."}
+                  ? isCustom
+                    ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
+                    : "Your key or subscription token is stored securely and is never shown here."
+                  : isCustom
+                    ? "Paste any OpenAI-compatible base URL. The API key is optional for local servers."
+                    : "Connect this provider to use it as your personal model."}
               </Text>
             </View>
 
@@ -336,10 +490,14 @@ export default function Models() {
               <View style={styles.keySection}>
                 <Text style={styles.sectionTitle}>
                   {credential
-                    ? "Replace API key"
+                    ? isCustom
+                      ? "Replace API key (optional)"
+                      : "Replace API key"
                     : deviceSignIn
                       ? "Or connect an API key"
-                      : "API key"}
+                      : isCustom
+                        ? "API key (optional)"
+                        : "API key"}
                 </Text>
                 <TextInput
                   accessibilityLabel="API key"
@@ -356,20 +514,31 @@ export default function Models() {
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={busy || apiKey.trim().length < 8}
+                  disabled={
+                    busy ||
+                    (isCustom ? !(baseUrl.trim() || selected.baseUrl) : apiKey.trim().length < 8)
+                  }
                   onPress={() => void connectKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
-                    (busy || apiKey.trim().length < 8) && styles.disabled,
+                    (busy ||
+                      (isCustom
+                        ? !(baseUrl.trim() || selected.baseUrl)
+                        : apiKey.trim().length < 8)) &&
+                      styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Text style={styles.primaryLabel}>
                     {pending === "connect"
                       ? "Saving…"
-                      : credential
-                        ? "Replace API key"
-                        : "Connect API key"}
+                      : isCustom
+                        ? credential
+                          ? "Save endpoint"
+                          : "Connect endpoint"
+                        : credential
+                          ? "Replace API key"
+                          : "Connect API key"}
                   </Text>
                 </Pressable>
               </View>

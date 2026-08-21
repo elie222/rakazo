@@ -13,7 +13,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import type { MessageBlock, ReasoningStep, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -26,13 +26,17 @@ import {
   nextCronDate,
   nextFence,
   promptInvokesSkill,
+  reasoningToolDetail,
+  reasoningToolTitle,
   redactSecrets,
   sandboxCommandTimeoutMs,
+  upsertReasoningStep,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import {
   createThreadMessage,
   findDefaultModelCredential,
+  newestModelCredentialOrder,
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
@@ -339,7 +343,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, storedConnections, credential, settings, savedSkills] =
+        const [bot, thread, messages, task, storedConnections, defaultCredential, settings, savedSkills] =
           await Promise.all([
             deps.prisma.bot.findUniqueOrThrow({
               where: { id: run.botId },
@@ -365,6 +369,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        let credential = defaultCredential;
+        if (bot.modelProvider) {
+          const specific = await deps.prisma.userModelCredential.findFirst({
+            where: {
+              userId: run.userId,
+              workspaceId: run.workspaceId,
+              provider: bot.modelProvider,
+            },
+            orderBy: newestModelCredentialOrder,
+          });
+          if (specific) credential = specific;
+        }
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(storedConnections)) {
           const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
@@ -482,9 +498,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let assembled = "";
         let pendingProgress = "";
         let lastProgressAt = 0;
+        let lastReasoningAt = 0;
+        let reasoningSteps: ReasoningStep[] = [];
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
+        const publishReasoning = async (force = false) => {
+          if (!reasoningSteps.length) return;
+          const now = Date.now();
+          if (!force && now - lastReasoningAt < 120) return;
+          lastReasoningAt = now;
+          await deps.events.append({
+            workspaceId: run.workspaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            type: "thread.reasoning",
+            runId,
+            payload: { steps: reasoningSteps },
+          });
+        };
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted
           ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
@@ -871,6 +903,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             )}\n\n${taskPrompt}`
           : taskPrompt;
 
+        reasoningSteps = upsertReasoningStep(reasoningSteps, {
+          id: "status",
+          kind: "status",
+          title: "Starting",
+          status: "running",
+        });
+        await publishReasoning(true);
+
         try {
           for await (const event of deps.runtime.run(
             {
@@ -898,9 +938,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentTurnImages,
               tools,
               model: {
-                provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
-                id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                provider: bot.modelProvider ?? credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
+                id: bot.modelId ?? credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
+                baseUrl: credential?.baseUrl ?? undefined,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
@@ -955,6 +996,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { text: redactSecrets(event.text, runSecrets) },
               });
+            } else if (event.type === "reasoning") {
+              const step = {
+                ...event.step,
+                title: redactSecrets(event.step.title, runSecrets),
+                detail: event.step.detail
+                  ? redactSecrets(event.step.detail, runSecrets)
+                  : undefined,
+              };
+              reasoningSteps = upsertReasoningStep(reasoningSteps, step);
+              await publishReasoning(event.step.status === "done");
             } else if (event.type === "ask") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
               const safeText = redactSecrets(event.text, runSecrets);
@@ -1042,6 +1093,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
+              reasoningSteps = upsertReasoningStep(reasoningSteps, {
+                id: event.executionId,
+                kind: "tool",
+                title: reasoningToolTitle(event.name, event.args),
+                detail: reasoningToolDetail(event.name, event.args),
+                status: event.status === "done" ? "done" : "running",
+              });
+              await publishReasoning(event.status === "done");
               if (scripted) await applyTool(event.name, event.args, event.executionId);
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);
@@ -1092,6 +1151,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             } else if (event.type === "done") {
               assembled = assembled || event.text || assembled;
+              reasoningSteps = reasoningSteps.map((step) =>
+                step.status === "running" ? { ...step, status: "done" as const } : step,
+              );
+              await publishReasoning(true);
             }
           }
 
@@ -1137,6 +1200,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+          const completedBlocks: MessageBlock[] = [];
+          if (reasoningSteps.length) {
+            completedBlocks.push({
+              kind: "reasoning",
+              steps: reasoningSteps.map((step) =>
+                step.status === "running" ? { ...step, status: "done" as const } : step,
+              ),
+            });
+          }
+          completedBlocks.push({ kind: "text", text });
           const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
@@ -1147,7 +1220,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseOwner: workerId,
             leaseFence: fence,
             outcome: "completed",
-            blocks: [{ kind: "text", text }],
+            blocks: completedBlocks,
           });
           if (!completed) return;
           if (bot.notifyOnFinish) {
@@ -1340,7 +1413,9 @@ async function requeueComputerRun(
 }
 
 async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
-  await deps.prisma.event.deleteMany({ where: { runId, type: "thread.progress" } });
+  await deps.prisma.event.deleteMany({
+    where: { runId, type: { in: ["thread.progress", "thread.reasoning"] } },
+  });
 }
 
 async function publishMessage(

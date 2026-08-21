@@ -14,11 +14,13 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 ## Features
 
 - Persistent bots with their own conversations, memory, routines, and history
-- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, or Cartesia key
+- Live reasoning traces while a bot runs (thinking, tools, and status — not a generic “working…” spinner)
 - Shared Team Computers and isolated Private computers
 - Browser, terminal, file, and graphical desktop access
 - Bots that can delegate to peer bots or short-lived subagents
-- Bring-your-own model credentials through Pi
+- Bring-your-own model credentials through Pi, including OpenAI-compatible base URLs
+- Multiple inference providers, with a model chosen per bot
+- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, or Cartesia key
 - Optional app integrations through Composio
 - Docker, E2B, Daytona, and trusted local-computer support
 

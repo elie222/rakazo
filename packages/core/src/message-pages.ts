@@ -1,3 +1,5 @@
+import { isEphemeralThreadMessageId } from "./reasoning.js";
+
 interface MessageIdentity {
   id: string;
   seq?: number;
@@ -68,5 +70,5 @@ export function mergeMessagesById<T extends { id: string }>(
 }
 
 function isDurableMessage(message: { id: string }): boolean {
-  return !message.id.startsWith("progress:") && !message.id.startsWith("subagent:");
+  return !isEphemeralThreadMessageId(message.id) && !message.id.startsWith("subagent:");
 }
