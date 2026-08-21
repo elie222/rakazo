@@ -767,8 +767,8 @@ function ReasoningCard({
   }>;
 }) {
   const running = steps.some((step) => step.status === "running");
-  const [open, setOpen] = useState(running);
-  const rotation = useRef(new Animated.Value(running ? 1 : 0)).current;
+  const [open, setOpen] = useState(false);
+  const rotation = useRef(new Animated.Value(0)).current;
   const visible = visibleReasoningSteps(
     steps.flatMap((step, index) => {
       if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") return [];
@@ -784,9 +784,6 @@ function ReasoningCard({
       ];
     }),
   );
-  useEffect(() => {
-    setOpen(running);
-  }, [running]);
   useEffect(() => {
     Animated.timing(rotation, {
       toValue: open ? 1 : 0,
