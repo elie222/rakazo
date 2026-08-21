@@ -19,6 +19,7 @@
       ],
       "expo-router",
       "expo-secure-store",
+      "expo-audio",
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
       [
@@ -27,7 +28,16 @@
           "icon": "./assets/notification-icon.png",
           "color": "#2965EC"
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
+          "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
+          "microphonePermission": false
+        }
+      ],
+      "./plugins/with-worklets-headers"
     ],
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
@@ -38,6 +48,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
+        "NSCameraUsageDescription": "Rakazo uses the camera so you can attach photos to a bot message.",
+        "NSPhotoLibraryUsageDescription": "Rakazo uses your photo library so you can attach images to a bot message.",
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true

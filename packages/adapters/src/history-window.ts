@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { blocksToAgentHistoryText } from "@rakazo/core";
 
-export const MAX_AGENT_HISTORY_MESSAGES = 200;
 export const MAX_AGENT_HISTORY_BYTES = 32 * 1024;
 export const MAX_AGENT_HISTORY_MESSAGE_BYTES = 4 * 1024;
 export const MIN_AGENT_HISTORY_MESSAGES = 8;
@@ -16,34 +16,31 @@ export interface AgentHistoryWindowOptions {
   maxBytes?: number;
   maxMessageBytes?: number;
   minMessages?: number;
-  currentPrompt?: string;
 }
 
 export function buildAgentHistoryWindow(
-  messages: Array<{ role: string; blocks: MessageBlock[] }>,
+  messages: Array<{ role: string; blocks: unknown }>,
   options: AgentHistoryWindowOptions = {},
 ): AgentHistoryEntry[] {
   if (messages.length === 0) return [];
   const maxBytes = options.maxBytes ?? MAX_AGENT_HISTORY_BYTES;
   const maxMessageBytes = options.maxMessageBytes ?? MAX_AGENT_HISTORY_MESSAGE_BYTES;
   const minMessages = options.minMessages ?? MIN_AGENT_HISTORY_MESSAGES;
-  const currentPrompt = options.currentPrompt;
 
   const window: AgentHistoryEntry[] = [];
   let bytes = 0;
-  messages.forEach((message, index) => {
-    let content = blocksToText(message.blocks);
-    const currentTurn = index === 0 && content === currentPrompt;
-    if (!currentTurn && byteLength(content) > maxMessageBytes) {
+  for (const message of messages) {
+    let content = blocksToAgentHistoryText(message.blocks as MessageBlock[]);
+    if (byteLength(content) > maxMessageBytes) {
       content =
         truncateUtf8(content, Math.max(0, maxMessageBytes - byteLength(TRUNCATION_SUFFIX))) +
         TRUNCATION_SUFFIX;
     }
     const size = byteLength(content);
-    if (window.length > 0 && window.length >= minMessages && bytes + size > maxBytes) return;
+    if (window.length > 0 && window.length >= minMessages && bytes + size > maxBytes) break;
     window.unshift({ role: roleOf(message.role), content });
-    if (!currentTurn) bytes += size;
-  });
+    bytes += size;
+  }
   return window;
 }
 
@@ -51,15 +48,6 @@ function roleOf(role: string): "user" | "assistant" | "system" {
   if (role === "user") return "user";
   if (role === "system") return "system";
   return "assistant";
-}
-
-function blocksToText(blocks: MessageBlock[]): string {
-  return blocks
-    .map((block) => {
-      if ("text" in block && block.text) return block.text;
-      return JSON.stringify(block);
-    })
-    .join("\n");
 }
 
 function byteLength(value: string): number {

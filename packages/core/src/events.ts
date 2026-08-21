@@ -58,6 +58,13 @@ export function projectMessages(
       };
       continue;
     }
+    if (event.type === "thread.cleared") {
+      messages.length = 0;
+      streaming = null;
+      liveSubagents.clear();
+      durableSubagents.clear();
+      continue;
+    }
     if (event.type === "thread.subagent") {
       const block = subagentBlockFromPayload(payload);
       if (durableSubagents.has(block.agentId)) continue;

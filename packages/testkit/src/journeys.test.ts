@@ -6,7 +6,7 @@ import {
   FakeSandboxProvider,
   ManagedSandboxEmulator,
 } from "@rakazo/adapters";
-import { appendEvent, createThreadMessage } from "@rakazo/db";
+import { appendEvent, createThreadMessage, RunHistoryWriteError } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -33,6 +33,28 @@ describeJourneys("required product journeys", () => {
   let jobs: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["jobs"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
+
+  async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
+    const { runId } = await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text });
+    let terminal: { status: string; error: string | null } | null = null;
+    await waitForDatabase(async () => {
+      terminal = await prisma.run.findUnique({
+        where: { id: runId },
+        select: { status: true, error: true },
+      });
+      return Boolean(terminal && ["completed", "failed", "cancelled"].includes(terminal.status));
+    });
+    if (!terminal) throw new Error(`run ${runId} was not found after completion`);
+    if (terminal.status !== "completed") {
+      throw new Error(
+        `run ${runId} ended ${terminal.status}: ${terminal.error ?? "unknown error"}`,
+      );
+    }
+    return {
+      ...(await rpc<Snap>(app, cookie, "threads/get", { botId })),
+      run: { status: terminal.status },
+    };
+  }
 
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
@@ -100,6 +122,33 @@ describeJourneys("required product journeys", () => {
 
     const pinned = await rpc<Bot>(app, ada, "bots/update", { botId: coder.id, pinned: true });
     expect(pinned.pinned).toBe(true);
+    const [section, concurrentSection] = await Promise.all([
+      rpc<{ id: string; name: string }>(app, ada, "botSections/create", {
+        botId: chief.id,
+        name: "Planning",
+      }),
+      rpc<{ id: string; name: string }>(app, ada, "botSections/create", {
+        botId: coder.id,
+        name: "Planning",
+      }),
+    ]);
+    expect(section.name).toBe("Planning");
+    expect(concurrentSection.id).toBe(section.id);
+    expect(await rpc<Array<{ id: string }>>(app, ada, "botSections/list")).toEqual([
+      expect.objectContaining({ id: section.id }),
+    ]);
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === chief.id)?.sectionId,
+    ).toBe(section.id);
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === coder.id)?.sectionId,
+    ).toBe(section.id);
+    const foreignSection = await raw(app, bob, "bots/update", {
+      botId: bobBot.id,
+      sectionId: section.id,
+    });
+    expect(foreignSection.status).toBeGreaterThanOrEqual(400);
+    expect(await rpc<unknown[]>(app, bob, "botSections/list")).toEqual([]);
     const duplicate = await rpc<Bot>(app, ada, "bots/duplicate", { botId: chief.id });
     expect(duplicate).toMatchObject({
       name: "Chief copy",
@@ -109,6 +158,7 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: chief.notifyOnFinish,
       color: chief.color,
       pinned: false,
+      sectionId: null,
       unread: false,
     });
     expect(duplicate.id).not.toBe(chief.id);
@@ -167,6 +217,177 @@ describeJourneys("required product journeys", () => {
     const reusedDedicated = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
     expect(reusedDedicated.computerId).toBe(dedicatedRecord.computerId);
     expect(bobBot.id).not.toBe(chief.id);
+  });
+
+  it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
+    const cookie = await signup(app, `clear-j-${stamp}@rakazo.test`, "Clear Journey");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Keeps its setup",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/result.txt that says kept-after-clear",
+    );
+    const memories = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: memories[0]!.id,
+      content: "# Keeper\n\nRemember this after clearing.",
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Kept routine",
+      prompt: "Check in",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const task = await prisma.task.create({
+      data: {
+        workspaceId: thread.workspaceId,
+        userId: thread.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        prompt: "queued before clear",
+        status: "queued",
+      },
+    });
+    const run = await prisma.run.create({
+      data: {
+        workspaceId: thread.workspaceId,
+        userId: thread.userId,
+        botId: bot.id,
+        threadId: thread.id,
+        taskId: task.id,
+        status: "queued",
+        trigger: "user",
+      },
+    });
+
+    await rpc(app, cookie, "threads/clear", { botId: bot.id });
+
+    const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(snap.messages).toEqual([]);
+    expect(snap.run).toBeNull();
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
+      { type: "thread.cleared" },
+    ]);
+    // The deleted messages all count as compacted, so compaction cannot summarize them and
+    // recall cannot treat the fresh conversation as having uncompacted history.
+    const clearedThread = await prisma.thread.findUniqueOrThrow({ where: { id: thread.id } });
+    expect(clearedThread.historyCompactedUpToSeq).toBe(clearedThread.nextMessageSeq - 1);
+    expect(await prisma.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(
+      (await rpc<Bot[]>(app, cookie, "bots/list")).find((item) => item.id === bot.id),
+    ).toMatchObject({
+      preview: "",
+      unread: false,
+    });
+    expect(
+      await rpc(app, cookie, "computer/readFile", { botId: bot.id, path: "notes/result.txt" }),
+    ).toMatchObject({ content: expect.stringContaining("kept-after-clear") });
+    expect(await rpc(app, cookie, "memory/list", { botId: bot.id })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining("Remember this") }),
+      ]),
+    );
+    expect(await rpc(app, cookie, "routines/list", { botId: bot.id })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: routine.id })]),
+    );
+
+    await expect(
+      appendEvent(prisma, {
+        workspaceId: thread.workspaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        type: "thread.progress",
+        runId: run.id,
+        payload: { text: "stale output after clear" },
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    await expect(
+      createThreadMessage(prisma, {
+        threadId: thread.id,
+        role: "bot",
+        blocks: [{ kind: "text", text: "stale output after clear" }],
+        runId: run.id,
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
+      { type: "thread.cleared" },
+    ]);
+
+    const after = await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/after-clear.txt that says hello-after-clear",
+    );
+    expect(after.messages.length).toBeGreaterThan(0);
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBeGreaterThan(0);
+  });
+
+  it("2b: two Team bots send at once on distinct screens", async () => {
+    const cookie = await signup(app, `parallel-j-${stamp}@rakazo.test`, "Parallel");
+    const writer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const [writerSnap, researcherSnap] = await Promise.all([
+      sendAndWait(app, cookie, writer.id, "observe your screen and type writer-desk"),
+      sendAndWait(app, cookie, researcher.id, "observe your screen and type researcher-desk"),
+    ]);
+    expect(writerSnap.run?.status).toBe("completed");
+    expect(researcherSnap.run?.status).toBe("completed");
+    expect(
+      (
+        await rpc<{ busyBotName: string | null }>(app, cookie, "computer/status", {
+          botId: writer.id,
+        })
+      ).busyBotName,
+    ).toBeNull();
+    expect(
+      (
+        await rpc<{ busyBotName: string | null }>(app, cookie, "computer/status", {
+          botId: researcher.id,
+        })
+      ).busyBotName,
+    ).toBeNull();
+    const writerScreen = await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", {
+      botId: writer.id,
+    });
+    const researcherScreen = await rpc<{ url: string | null }>(app, cookie, "computer/screenUrl", {
+      botId: researcher.id,
+    });
+    expect(writerScreen.url).toContain(writer.id);
+    expect(researcherScreen.url).toContain(researcher.id);
+    expect(writerScreen.url).not.toBe(researcherScreen.url);
   });
 
   it("3: disconnect and reconnect from a cursor reconstructs the thread", async () => {
@@ -314,6 +535,37 @@ describeJourneys("required product journeys", () => {
       if (previousTakeoverTtl === undefined) delete process.env.COMPUTER_TAKEOVER_TTL_MS;
       else process.env.COMPUTER_TAKEOVER_TTL_MS = previousTakeoverTtl;
     }
+  });
+
+  it("4c: a takeover authorizes input only on the controlled bot screen", async () => {
+    const cookie = await signup(app, `takeover-scope-j-${stamp}@rakazo.test`, "Takeover Scope");
+    const writer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    await rpc(app, cookie, "computer/boot", { botId: writer.id });
+    await rpc(app, cookie, "computer/takeover", { botId: writer.id });
+    expect(
+      (
+        await raw(app, cookie, "computer/input", {
+          botId: researcher.id,
+          kind: "key",
+          payload: { key: "A" },
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+    await rpc(app, cookie, "computer/release", { botId: writer.id });
   });
 
   it("5: a routine wakes the bot and posts into the existing thread", async () => {
@@ -889,6 +1141,123 @@ describeJourneys("required product journeys", () => {
       )?.status,
     ).toBe("revoked");
   });
+
+  it("17: teach a task end to end", async () => {
+    const cookie = await signup(app, `teach-j-${stamp}@rakazo.test`, "Teach Ada");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Teacher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    void rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "keep working until I stop you",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const skill = await rpc<{
+      id: string;
+      status: string;
+      playbook: { steps: string[] };
+      recording: { events: Array<{ kind: string }> };
+    }>(app, cookie, "skills/start", {
+      botId: bot.id,
+      goal: "Export weekly CRM list",
+    });
+    expect(skill.status).toBe("recording");
+    await rpc(app, cookie, "computer/input", {
+      botId: bot.id,
+      kind: "pointer",
+      payload: { x: 120, y: 40, button: "left", type: "click" },
+    });
+    await rpc(app, cookie, "computer/input", {
+      botId: bot.id,
+      kind: "key",
+      payload: { key: "x" },
+    });
+    const blocked = await raw(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "please act now",
+    });
+    expect(blocked.status).toBeGreaterThanOrEqual(400);
+    const stopped = await rpc<{
+      status: string;
+      playbook: { steps: string[] };
+      recording: { events: Array<{ kind: string }>; snapshots: Array<{ summary: string }> };
+    }>(app, cookie, "skills/stop", { skillId: skill.id });
+    expect(stopped.status).toBe("draft");
+    expect(stopped.playbook.steps.join(" ")).toMatch(/Click|120|40|x/i);
+    expect(stopped.recording.events.some((event) => event.kind === "pointer")).toBe(true);
+    expect(stopped.recording.snapshots.length).toBeGreaterThanOrEqual(2);
+    const computerAfterStop = await rpc<{ controlHolder: string; controlBotId: string | null }>(
+      app,
+      cookie,
+      "computer/status",
+      { botId: bot.id },
+    );
+    expect(computerAfterStop.controlHolder).toBe("bot");
+    expect(computerAfterStop.controlBotId).toBeNull();
+    await rpc(app, cookie, "skills/updateDraft", {
+      skillId: skill.id,
+      name: "Export weekly CRM list",
+      playbook: stopped.playbook,
+    });
+    const saved = await rpc<{ status: string; name: string }>(app, cookie, "skills/save", {
+      skillId: skill.id,
+      name: "Export weekly CRM list",
+    });
+    expect(saved.status).toBe("saved");
+    const listed = await rpc<Array<{ id: string; name: string }>>(app, cookie, "skills/list", {
+      botId: bot.id,
+    });
+    expect(listed.some((row) => row.id === skill.id)).toBe(true);
+    const testRun = await rpc<{ runId: string }>(app, cookie, "skills/testRun", {
+      skillId: skill.id,
+    });
+    expect(testRun.runId).toBeTruthy();
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    await sendAndWait(app, cookie, bot.id, "run Export weekly CRM list");
+    const messages = (await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id })).messages;
+    const botText = JSON.stringify(messages);
+    expect(botText.toLowerCase()).toContain("taught skill");
+  });
+
+  it("18: teaching expiry auto-stops recording", async () => {
+    const previousTtl = process.env.TEACH_RECORDING_TTL_MS;
+    process.env.TEACH_RECORDING_TTL_MS = "1000";
+    try {
+      const cookie = await signup(app, `teach-exp-j-${stamp}@rakazo.test`, "Teach Exp Ada");
+      const bot = await rpc<Bot>(app, cookie, "bots/create", {
+        name: "Timer",
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+      await rpc(app, cookie, "computer/boot", { botId: bot.id });
+      await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+      const skill = await rpc<{ id: string; status: string }>(app, cookie, "skills/start", {
+        botId: bot.id,
+        goal: "Timed demo",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const current = await rpc<{ status: string }>(app, cookie, "skills/get", {
+        skillId: skill.id,
+      });
+      expect(["draft", "drafting"].includes(current.status)).toBe(true);
+    } finally {
+      if (previousTtl === undefined) delete process.env.TEACH_RECORDING_TTL_MS;
+      else process.env.TEACH_RECORDING_TTL_MS = previousTtl;
+    }
+  });
 });
 
 type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };
@@ -901,6 +1270,7 @@ type Bot = {
   notifyOnFinish: boolean;
   color: string;
   pinned: boolean;
+  sectionId: string | null;
   unread: boolean;
   computerMode: "team" | "dedicated";
   parentBotId?: string | null;
@@ -950,16 +1320,6 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
     throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? text}`);
   }
   return parsed.json as T;
-}
-
-async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
-  await rpc(app, cookie, "threads/send", { botId, text });
-  return waitFor(
-    app,
-    cookie,
-    botId,
-    (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
-  );
 }
 
 async function waitFor(app: App, cookie: string, botId: string, pred: (snap: Snap) => boolean) {

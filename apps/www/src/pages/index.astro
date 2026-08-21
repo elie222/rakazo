@@ -1,16 +1,25 @@
 ---
-import { BotAvatar } from "@rakazo/ui-web";
 import Button from "../components/Button.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { ProductDemo } from "../components/ProductDemo";
+import RosterBotAvatar from "../components/RosterBotAvatar.astro";
 import { DEMO_ROSTER } from "../demo";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { DOCS_URL, GITHUB_URL, SITE_DESCRIPTION, SITE_NAME, SITE_URL, WAITLIST_HREF } from "../site";
+import {
+  DOCS_URL,
+  GITHUB_URL,
+  SETUP_PROMPT_URL,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_URL,
+  WAITLIST_HREF,
+} from "../site";
 
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
@@ -63,6 +72,16 @@ const structuredData = {
           <Button href={GITHUB_URL} external>View on GitHub</Button>
           <Button href="#demo" variant="secondary">See it in action</Button>
         </div>
+        <div class="hero__agent-setup">
+          <button class="setup-copy" type="button" data-setup-copy={setupAgentPrompt}>
+            <span class="setup-copy__prefix" aria-hidden="true">$</span>
+            <span class="setup-copy__label">Set up with your agent</span>
+            <svg class="setup-copy__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+            </svg>
+          </button>
+        </div>
       </section>
 
       <section id="demo">
@@ -106,7 +125,7 @@ const structuredData = {
         <div class="card-grid-4">
           {DEMO_ROSTER.map((bot) => (
             <article class="roster-card">
-              <BotAvatar color={bot.color} size={30} />
+              <RosterBotAvatar color={bot.color} name={bot.name} />
               <h3>{bot.name}</h3>
               <p>{bot.desc}</p>
             </article>
@@ -189,3 +208,23 @@ const structuredData = {
     <Footer />
   </div>
 </BaseLayout>
+
+<script>
+  const setupCopy = document.querySelector<HTMLButtonElement>("[data-setup-copy]");
+  const setupCopyLabel = setupCopy?.querySelector<HTMLElement>(".setup-copy__label");
+
+  setupCopy?.addEventListener("click", async () => {
+    const prompt = setupCopy.dataset.setupCopy;
+    if (!prompt || !setupCopyLabel) return;
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setupCopyLabel.textContent = "Copied for your agent";
+      window.setTimeout(() => {
+        setupCopyLabel.textContent = "Set up with your agent";
+      }, 2400);
+    } catch {
+      setupCopyLabel.textContent = "Copy failed — try again";
+    }
+  });
+</script>

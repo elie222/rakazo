@@ -23,28 +23,24 @@ describe("agent history window", () => {
 
   it("drops oldest messages once the byte budget is exceeded", () => {
     const result = buildAgentHistoryWindow(
-      [message("user", "n5"), message("bot", "n4"), message("user", "n3"), message("bot", "n2"), message("user", "n1"), message("bot", "n0")],
+      [
+        message("user", "n5"),
+        message("bot", "n4"),
+        message("user", "n3"),
+        message("bot", "n2"),
+        message("user", "n1"),
+        message("bot", "n0"),
+      ],
       { maxBytes: 5, minMessages: 0 },
     );
 
     expect(result.map((entry) => entry.content)).toEqual(["n4", "n5"]);
   });
 
-  it("keeps the newest message in full when it matches the current prompt", () => {
-    const huge = "x".repeat(10_000);
-    const result = buildAgentHistoryWindow(
-      [message("user", huge), message("bot", "n0")],
-      { maxBytes: 100, minMessages: 0, currentPrompt: huge },
-    );
-
-    expect(result).toHaveLength(2);
-    expect(result[1]).toEqual({ role: "user", content: huge });
-  });
-
-  it("truncates the newest message when it differs from the current prompt", () => {
+  it("truncates the newest stored message", () => {
     const result = buildAgentHistoryWindow(
       [message("bot", "x".repeat(10_000)), message("bot", "n0")],
-      { maxBytes: 100_000, minMessages: 0, currentPrompt: "different prompt" },
+      { maxBytes: 100_000, minMessages: 0 },
     );
 
     expect(result).toHaveLength(2);
@@ -56,6 +52,15 @@ describe("agent history window", () => {
     const result = buildAgentHistoryWindow(
       [message("user", "n5"), message("bot", "n4"), message("user", "n3")],
       { maxBytes: 2, minMessages: 0 },
+    );
+
+    expect(result.map((entry) => entry.content)).toEqual(["n5"]);
+  });
+
+  it("does not backfill older messages after the newest contiguous window is full", () => {
+    const result = buildAgentHistoryWindow(
+      [message("user", "n5"), message("bot", "wide"), message("user", "n3")],
+      { maxBytes: 3, minMessages: 0 },
     );
 
     expect(result.map((entry) => entry.content)).toEqual(["n5"]);
@@ -86,7 +91,14 @@ describe("agent history window", () => {
 
   it("keeps at least the minimum message floor even over budget", () => {
     const result = buildAgentHistoryWindow(
-      [message("user", "n5"), message("bot", "n4"), message("user", "n3"), message("bot", "n2"), message("user", "n1"), message("bot", "n0")],
+      [
+        message("user", "n5"),
+        message("bot", "n4"),
+        message("user", "n3"),
+        message("bot", "n2"),
+        message("user", "n1"),
+        message("bot", "n0"),
+      ],
       { maxBytes: 5, minMessages: 4 },
     );
 
@@ -97,16 +109,27 @@ describe("agent history window", () => {
     expect(buildAgentHistoryWindow([])).toEqual([]);
   });
 
-  it("serializes non-text blocks as JSON", () => {
+  it("uses the shared attachment summaries instead of serializing raw UI blocks", () => {
     const result = buildAgentHistoryWindow(
       [
         message("user", "newest"),
-        { role: "bot", blocks: [{ kind: "card", lines: [{ k: "a", v: "b" }] }] },
+        {
+          role: "bot",
+          blocks: [
+            {
+              kind: "file",
+              artifactId: "artifact-1",
+              name: "brief.pdf",
+              mimeType: "application/pdf",
+              size: 42,
+            },
+          ],
+        },
       ],
       { maxBytes: 100_000, minMessages: 0 },
     );
 
-    expect(result[0]!.content).toContain('"kind":"card"');
+    expect(result[0]!.content).toBe("[file: brief.pdf (application/pdf, 42 bytes)]");
   });
 });
 

@@ -6,10 +6,13 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  computerPanelAutoBoot,
+  isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  userHoldsComputerControl,
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
@@ -24,6 +27,16 @@ describe("thread event reduction", () => {
 
     expect(next?.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2", "m-3"]);
     expect(next?.olderCursor).toBeNull();
+  });
+
+  it("ignores a stale older page after the conversation was cleared", () => {
+    const cleared = snapshot([], null);
+    const next = prependThreadMessagePage(cleared, {
+      threadId: "thread-1",
+      messages: [message("old-1", [], 0), message("old-2", [], 1)],
+      olderCursor: null,
+    });
+    expect(next).toBe(cleared);
   });
 
   it("merges a refreshed recent page with loaded history and drops stale live messages", () => {
@@ -149,6 +162,43 @@ describe("thread event reduction", () => {
     expect(next?.messages[1]?.blocks).toEqual([completedBlock]);
   });
 
+  it("clears durable and transient history when another client clears the thread", () => {
+    const initial = snapshot(
+      [
+        message("message-1", [{ kind: "text", text: "old" }]),
+        message("progress:run-1", [{ kind: "progress", text: "draft" }]),
+      ],
+      1,
+    );
+    initial.run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "running",
+      trigger: "user",
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({ type: "thread.cleared", seq: 12, runId: undefined }),
+    );
+
+    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
+  });
+
+  it("routes live clear events through the snapshot reducer", () => {
+    expect(
+      isThreadSnapshotEvent(event({ type: "thread.cleared", seq: 12, runId: undefined })),
+    ).toBe(true);
+    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(false);
+  });
+
   it("applies the durable waiting-input run transition without a refresh", () => {
     const initial: ThreadSnapshot = {
       ...snapshot([]),
@@ -230,14 +280,22 @@ describe("computer event reduction", () => {
       computer({ state: "suspended", controlHolder: "bot" }),
       event({ type: "computer.takeover.granted", payload: {} }),
     );
-    expect(granted).toMatchObject({ state: "suspended", controlHolder: "user" });
+    expect(granted).toMatchObject({
+      state: "suspended",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     expect(
       reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
     ).toBe(granted);
   });
 
   it("applies the authoritative holder when a takeover is released or expires", () => {
-    const initial = computer({ state: "running", controlHolder: "user" });
+    const initial = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     const expired = reduceComputerStatus(
       initial,
       event({
@@ -252,8 +310,40 @@ describe("computer event reduction", () => {
         payload: { holder: "bot", reason: "released" },
       }),
     );
-    expect(expired).toMatchObject({ state: "running", controlHolder: "none" });
-    expect(released).toMatchObject({ state: "running", controlHolder: "bot" });
+    expect(expired).toMatchObject({
+      state: "running",
+      controlHolder: "none",
+      controlBotId: null,
+    });
+    expect(released).toMatchObject({
+      state: "running",
+      controlHolder: "bot",
+      controlBotId: null,
+    });
+  });
+
+  it("fills in controlBotId when a grant arrives after controlHolder is already user", () => {
+    const granted = reduceComputerStatus(
+      computer({ state: "running", controlHolder: "user", controlBotId: null }),
+      event({ type: "computer.takeover.granted", payload: {} }),
+    );
+    expect(granted).toMatchObject({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
+    expect(userHoldsComputerControl(granted, "bot-1")).toBe(true);
+    expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
+  });
+
+  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
+    expect(computerPanelAutoBoot("stopped")).toBe("boot");
+    expect(computerPanelAutoBoot("error")).toBe("boot");
+    expect(computerPanelAutoBoot(undefined)).toBe("boot");
+    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
+    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
+    expect(computerPanelAutoBoot("booting")).toBe("wait");
+    expect(computerPanelAutoBoot("suspended")).toBe("wait");
   });
 });
 
@@ -276,7 +366,10 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     kind: "fake",
     state: "booting",
     controlHolder: "none",
+    controlBotId: null,
     screenAvailable: false,
+    screenWidth: 1280,
+    screenHeight: 800,
     homeRevision: null,
     busyBotName: null,
     ...overrides,

@@ -5,6 +5,7 @@ import {
   COMPUTER_IMAGE,
   containerCreateOptions,
   containerNameFor,
+  screenPorts,
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
@@ -28,9 +29,29 @@ describe("graphical computer spec", () => {
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
     expect(options.Env).toContain("NPM_CONFIG_PREFIX=/home/rakazo/.local");
-    expect(options.ExposedPorts).toEqual({ "6080/tcp": {}, "6081/tcp": {} });
+    expect(options.ExposedPorts).toEqual({
+      "6080/tcp": {},
+      "6081/tcp": {},
+      "6082/tcp": {},
+      "6083/tcp": {},
+      "6084/tcp": {},
+      "6085/tcp": {},
+      "6086/tcp": {},
+      "6087/tcp": {},
+      "6088/tcp": {},
+      "6089/tcp": {},
+      "6090/tcp": {},
+      "6091/tcp": {},
+      "6092/tcp": {},
+      "6093/tcp": {},
+      "6094/tcp": {},
+      "6095/tcp": {},
+    });
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.PortBindings["6081/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
+    expect(options.HostConfig.PortBindings["6082/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
+    expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6081" });
+    expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6082", controlPort: "6083" });
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
     expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
     expect(options.HostConfig.NetworkMode).toBe("rakazo_default");

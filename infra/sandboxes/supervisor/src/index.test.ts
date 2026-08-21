@@ -1,15 +1,23 @@
+import { spawnSync } from "node:child_process";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { supervisorApp } from "./index.js";
 import {
   assertRequestIdentity,
+  clearComputerScreenRegistry,
+  completeReleasedScreen,
   containerActionStep,
+  ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
+  nextScreenIndex,
   normalizeWorkspaceRelative,
   parseObservation,
+  releaseAssignedScreen,
+  type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  stopExtraScreenCommand,
 } from "./supervisor-logic.js";
 
 const token = resolveSupervisorToken(process.env);
@@ -30,6 +38,7 @@ describe("sandbox supervisor HTTP boundary", () => {
       ["POST", "/computers/id/files"],
       ["GET", "/computers/id/screen"],
       ["POST", "/computers/id/screen-mode"],
+      ["DELETE", "/computers/id/screen"],
       ["POST", "/computers/id/input"],
       ["POST", "/computers/id/stop"],
       ["DELETE", "/computers/id"],
@@ -127,6 +136,103 @@ describe("sandbox supervisor input containment", () => {
     expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6081/);
     expect(interactiveScreenCommand(true, "lease-new")).not.toMatch(/-rfbport 5900/);
     expect(interactiveScreenCommand(false, "lease-old")).toContain("!= 'lease-old'");
+  });
+
+  it("assigns distinct screen indexes per Team bot and starts extra displays", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
+    expect(nextScreenIndex(assigned, "researcher")).toBe(1);
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
+    expect(ensureScreenCommand(0)).toContain("-display :1");
+    expect(ensureScreenCommand(0)).toContain("seq 1 100");
+    expect(ensureScreenCommand(1)).toContain("Xvfb :2");
+    expect(ensureScreenCommand(1)).toContain("rfbport 5902");
+    expect(ensureScreenCommand(1)).toContain("0.0.0.0:6082");
+    expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(
+      /cannot allocate another screen/,
+    );
+  });
+
+  it("generates syntactically valid shell to start an extra display", () => {
+    const result = spawnSync("bash", ["-n"], { input: ensureScreenCommand(1) });
+    expect(result.status).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+  });
+
+  it("frees a released screen slot so a ninth Team bot can reuse it", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    for (let index = 0; index < 8; index += 1) {
+      expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
+    }
+    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(releaseAssignedScreen(assigned, "bot-3")).toBe(3);
+    expect(assigned.get("bot-0")?.index).toBe(0);
+    expect(assigned.get("bot-3")?.releasing).toBe(true);
+    expect(() => nextScreenIndex(assigned, "bot-3")).toThrow(/still being released/);
+    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    completeReleasedScreen(assigned, "bot-3", 3);
+    expect(assigned.get("bot-3")).toBeUndefined();
+    expect(nextScreenIndex(assigned, "bot-8")).toBe(3);
+    expect(nextScreenIndex(assigned, "bot-0")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "missing")).toBeUndefined();
+    expect(() => nextScreenIndex(assigned, "bot-9")).toThrow(/cannot allocate another screen/);
+  });
+
+  it("clears all screen assignments when a container stops so slots can be reused", () => {
+    const registry = new Map<string, Map<string, ScreenAssignment>>();
+    const containerId = "container-1";
+    const assigned = new Map<string, ScreenAssignment>();
+    registry.set(containerId, assigned);
+    for (let index = 0; index < 8; index += 1) {
+      nextScreenIndex(assigned, `bot-${index}`);
+    }
+    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+
+    clearComputerScreenRegistry(registry, containerId);
+    expect(registry.has(containerId)).toBe(false);
+
+    const fresh = new Map<string, ScreenAssignment>();
+    registry.set(containerId, fresh);
+    for (let index = 0; index < 8; index += 1) {
+      expect(nextScreenIndex(fresh, `bot-fresh-${index}`)).toBe(index);
+    }
+  });
+
+  it("does not release a screen reclaimed by a newer execution fence", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
+    expect(nextScreenIndex(assigned, "researcher")).toBe(1);
+    expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
+    completeReleasedScreen(assigned, "writer", 0);
+  });
+
+  it("releases a retained screen after the same run resumes", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:8")).toBe(0);
+    completeReleasedScreen(assigned, "writer", 0);
+    expect(nextScreenIndex(assigned, "researcher")).toBe(0);
+  });
+
+  it("does not let a delayed request restore an older lease", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(() => nextScreenIndex(assigned, "writer", "run-1:1")).toThrow(
+      /owned by a newer execution/,
+    );
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
+    expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
+  });
+
+  it("stops extra displays without touching the primary desktop", () => {
+    expect(stopExtraScreenCommand(0)).toBe("");
+    expect(stopExtraScreenCommand(1)).toContain("Xvfb :2 -screen");
+    expect(stopExtraScreenCommand(1)).toContain("rfbport 5902");
+    expect(stopExtraScreenCommand(1)).toContain("websockify.*6082");
+    expect(stopExtraScreenCommand(1)).not.toMatch(/Xvfb :1 /);
+    expect(stopExtraScreenCommand(1)).not.toMatch(/6080/);
   });
 
   it("parses a captured frame without trusting optional desktop metadata", () => {

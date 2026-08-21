@@ -63,6 +63,16 @@ describe("E2B computer backend", () => {
     const typeText = vi.fn(async () => undefined);
     const command = vi.fn(async (value: string, _options?: Record<string, unknown>) => {
       if (value.startsWith('test "$(readlink')) throw new Error("profiles are not configured");
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      if (value.includes("RAKAZO_SCREEN_RELEASE=")) {
+        return {
+          stdout: "RAKAZO_SCREEN_RELEASE=0\n",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
       if (value.includes("hang")) {
         throw new TimeoutError("command timed out");
       }
@@ -173,7 +183,10 @@ describe("E2B computer backend", () => {
 
     await provider.writeFile(
       computer,
-      { path: "notes/result.txt", content: new TextEncoder().encode("portable") },
+      {
+        path: "notes/result.txt",
+        content: new TextEncoder().encode("portable"),
+      },
       context,
     );
     expect(
@@ -270,5 +283,183 @@ describe("E2B computer backend", () => {
     await stopping;
     expect(desktop.pause).toHaveBeenCalled();
     expect(streamStop).toHaveBeenCalled();
+  });
+
+  it("gives Team bots distinct E2B screens and shared files", async () => {
+    const files = new Map<string, Uint8Array>();
+    const screenSlots = new Map<string, number>();
+    const command = vi.fn(async (value: string) => {
+      const screenKey = value.match(/slot="\$dir\/([a-f0-9]+)\.slot"/)?.[1];
+      if (screenKey && value.includes("RAKAZO_SCREEN_INDEX=")) {
+        let index = screenSlots.get(screenKey);
+        if (index === undefined) {
+          index = Array.from({ length: 8 }, (_, candidate) => candidate).find(
+            (candidate) => ![...screenSlots.values()].includes(candidate),
+          );
+          if (index === undefined) return { stdout: "", stderr: "full", exitCode: 75 };
+          screenSlots.set(screenKey, index);
+        }
+        return {
+          stdout: `RAKAZO_SCREEN_INDEX=${index}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      if (screenKey && value.includes("RAKAZO_SCREEN_RELEASE=")) {
+        const index = screenSlots.get(screenKey);
+        if (index === undefined) {
+          return {
+            stdout: "RAKAZO_SCREEN_RELEASE=missing\n",
+            stderr: "",
+            exitCode: 0,
+          };
+        }
+        screenSlots.delete(screenKey);
+        return {
+          stdout: `RAKAZO_SCREEN_RELEASE=${index}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      if (value.includes("command -v Xvfb")) return { stdout: "", stderr: "", exitCode: 0 };
+      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+        return {
+          stdout: "RAKAZO_SCREEN_PASSWORD=test-view-password\n",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      if (value.includes("scrot") || value.includes("import")) {
+        return {
+          stdout: `${Buffer.from([137, 80, 78, 71]).toString("base64")}\nCURSOR X=3 Y=4`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      if (value.includes("xdotool")) return { stdout: "", stderr: "", exitCode: 0 };
+      if (value.includes("pkill -x x11vnc")) {
+        throw new Error("global x11vnc kill is forbidden");
+      }
+      return { stdout: "shell-ok\n", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-shared",
+      display: ":0",
+      getHost: (port: number) => `${port}-desktop.test`,
+      commands: { run: command },
+      files: {
+        makeDir: vi.fn(async () => undefined),
+        write: vi.fn(async (entries: Array<{ path: string; data: ArrayBuffer }>) => {
+          for (const entry of entries) files.set(entry.path, new Uint8Array(entry.data));
+        }),
+        read: vi.fn(async (filePath: string) => {
+          const content = files.get(filePath);
+          if (!content) throw new Error("missing file");
+          return content;
+        }),
+        list: vi.fn(async (directory: string) => {
+          const prefix = `${directory.replace(/\/$/, "")}/`;
+          return [...files.entries()]
+            .filter(([filePath]) => filePath.startsWith(prefix))
+            .map(([filePath, content]) => ({
+              name: filePath.slice(prefix.length),
+              type: "file" as const,
+              size: content.byteLength,
+              mode: 0o600,
+            }));
+        }),
+      },
+      stream: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => "key",
+        getUrl: () => "https://6080-desktop.test/vnc.html",
+      },
+      screenshot: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
+      getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
+      getCursorPosition: vi.fn(async () => ({ x: 1, y: 1 })),
+      getCurrentWindowId: vi.fn(async () => "1"),
+      getWindowTitle: vi.fn(async () => "Desk"),
+      leftClick: vi.fn(async () => undefined),
+      moveMouse: vi.fn(async () => undefined),
+      write: vi.fn(async () => undefined),
+      wait: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("e2b_test", {
+      create: vi.fn(async () => desktop as never),
+      connect: vi.fn(),
+      pause: vi.fn(),
+    } as unknown as E2BSandboxSdk);
+    const computer = await provider.provision({ botId: "team-home", homePath: "/tmp" }, context);
+    const writer = { ...context, botId: "writer" };
+    const researcher = { ...context, botId: "researcher" };
+
+    await provider.observe(computer, writer);
+    await provider.observe(computer, researcher);
+    const writerView = await provider.connectScreen(computer, { view: "stream" }, writer);
+    const researcherView = await provider.connectScreen(computer, { view: "stream" }, researcher);
+    expect(writerView.url).toContain("6080-desktop.test");
+    expect(researcherView.url).toContain("6082-desktop.test");
+    expect(researcherView.url).toContain("password=test-view-password");
+    expect(writerView.url).not.toBe(researcherView.url);
+    expect(command.mock.calls.some(([value]) => String(value).includes("Xvfb :2"))).toBe(true);
+    expect(
+      command.mock.calls.some(
+        ([value]) =>
+          String(value).includes("-viewonly -rfbauth") && !String(value).includes("-nopw"),
+      ),
+    ).toBe(true);
+    expect(command.mock.calls.some(([value]) => String(value).includes("pkill -x x11vnc"))).toBe(
+      false,
+    );
+
+    await provider.act(
+      computer,
+      {
+        actions: [{ kind: "pointer", type: "click", x: 1, y: 2 }],
+        observe: false,
+      },
+      researcher,
+    );
+    expect(command.mock.calls.some(([value]) => String(value).includes("DISPLAY=:2 xdotool"))).toBe(
+      true,
+    );
+    expect(desktop.moveMouse).not.toHaveBeenCalled();
+
+    const control = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true, controlToken: "lease-1" },
+      researcher,
+    );
+    expect(control.url).toMatch(/6083-desktop\.test/);
+    expect(command.mock.calls.some(([value]) => String(value).includes("-rfbport 5903"))).toBe(
+      true,
+    );
+
+    await provider.writeFile(
+      computer,
+      { path: "shared/note.txt", content: new TextEncoder().encode("office") },
+      researcher,
+    );
+    expect(
+      new TextDecoder().decode(await provider.readFile(computer, "shared/note.txt", writer)),
+    ).toBe("office");
+
+    await provider.releaseScreen(computer, writer);
+    await expect(provider.observe(computer, researcher)).resolves.toMatchObject({
+      width: 1280,
+      height: 800,
+    });
+    expect(provider.describe().capabilities.multiScreen).toBe(true);
+
+    for (let index = 0; index < 7; index += 1) {
+      await provider.observe(computer, {
+        ...context,
+        botId: `bot-${index + 2}`,
+      });
+    }
+    await expect(provider.observe(computer, { ...context, botId: "bot-9" })).rejects.toThrow(
+      /does not support multiple screens/,
+    );
   });
 });

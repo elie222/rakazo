@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import type {
   AdapterContext,
   AgentHomeStore,
+  ArtifactStore,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -187,6 +188,7 @@ type BotLifecycleDeps = {
   home: AgentHomeStore;
   jobs: JobPublisher;
   dataDir?: string;
+  artifacts?: ArtifactStore;
 };
 
 type LifecycleBot = {
@@ -194,6 +196,7 @@ type LifecycleBot = {
   workspaceId: string;
   name: string;
   archivedAt: Date | null;
+  computerId?: string | null;
 };
 
 export async function archiveSpawnedBot(
@@ -279,6 +282,7 @@ export async function archiveBot(
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
     });
+    await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
     await tx.computer.updateMany({
       where: {
         OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
@@ -300,6 +304,7 @@ export async function archiveBot(
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
+  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
   const currentDedicated = dedicated
     ? await deps.prisma.computer.findUnique({ where: { id: dedicated.id } })
     : null;
@@ -324,7 +329,7 @@ export async function destroyBot(
   context: AdapterContext,
   options: { deleteMemories: boolean },
 ) {
-  const [dedicated, activeRuns, routines] = await Promise.all([
+  const [dedicated, activeRuns, routines, artifactRows] = await Promise.all([
     deps.prisma.computer.findUnique({
       where: { scopeKey: computerScopeKey("dedicated", bot.workspaceId, bot.id) },
     }),
@@ -333,6 +338,10 @@ export async function destroyBot(
       select: { id: true },
     }),
     deps.prisma.routine.findMany({ where: { botId: bot.id }, select: { id: true } }),
+    deps.prisma.artifact.findMany({
+      where: { botId: bot.id, workspaceId: bot.workspaceId },
+      select: { storageKey: true },
+    }),
   ]);
   const runIds = activeRuns.map((run) => run.id);
   await deps.prisma.run.updateMany({
@@ -343,10 +352,12 @@ export async function destroyBot(
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...routines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
+  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
   if (dedicated?.providerRef) {
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
   await deps.prisma.$transaction(async (tx) => {
+    await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
     await tx.computer.updateMany({
       where: {
         ...(dedicated ? { id: { not: dedicated.id } } : {}),
@@ -383,6 +394,12 @@ export async function destroyBot(
       force: true,
     }).catch(() => undefined);
   }
+  const artifactStore = deps.artifacts;
+  if (artifactStore) {
+    await Promise.all(
+      artifactRows.map((artifact) => artifactStore.remove(artifact.storageKey, context)),
+    );
+  }
 }
 
 function archivedMemoryDirectory(name: string, botId: string) {
@@ -400,4 +417,16 @@ function releasedComputerLease() {
     executionBotId: null,
     executionLeaseExpiresAt: null,
   };
+}
+
+async function releaseTeamComputerScreen(
+  deps: BotLifecycleDeps,
+  bot: LifecycleBot,
+  dedicatedId: string | undefined,
+  context: AdapterContext,
+) {
+  if (!bot.computerId || bot.computerId === dedicatedId) return;
+  const computer = await deps.prisma.computer.findUnique({ where: { id: bot.computerId } });
+  if (!computer?.providerRef) return;
+  await deps.sandbox.releaseScreen?.(toComputerRef(computer), context).catch(() => undefined);
 }

@@ -1,4 +1,11 @@
-import type { Bot, ComputerMode, Me, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
+import type {
+  Bot,
+  BotSection,
+  ComputerMode,
+  Me,
+  ModelCatalogEntry,
+  ModelCredential,
+} from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -140,12 +147,15 @@ export type MobileBot = Pick<
   | "title"
   | "color"
   | "pinned"
+  | "sectionId"
   | "archivedAt"
   | "unread"
   | "updatedAt"
   | "computerMode"
 > &
   Partial<Pick<Bot, "parentBotId">>;
+
+export type MobileBotSection = BotSection;
 
 export type MobileMe = Pick<
   Me,
@@ -174,6 +184,9 @@ export type MobileMessage = {
     botId?: string;
     title?: string;
     agentId?: string;
+    artifactId?: string;
+    mimeType?: string;
+    size?: number;
   }>;
 };
 
@@ -218,6 +231,10 @@ export function blockText(message: MobileMessage) {
       }
       if (block.kind === "child_bot") {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+      }
+      if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
+      if (block.kind === "file") {
+        return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;
       }
       return block.text ?? block.state ?? "";
     })
@@ -282,6 +299,9 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev) return prev;
+  if (event.type === "thread.cleared") {
+    return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
+  }
   if (event.type === "run.waiting_input") {
     if (!prev.run || prev.run.status === "waiting_input") return prev;
     return { ...prev, run: { ...prev.run, status: "waiting_input" } };

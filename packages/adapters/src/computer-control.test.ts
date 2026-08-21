@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_TAKEOVER_LEASE_MS,
   expireComputerControl,
+  extendActiveComputerControl,
   hasActiveComputerControl,
   takeoverLeaseMs,
+  teachingControlLeaseExpiresAt,
 } from "./computer-control.js";
 
 describe("computer control leases", () => {
@@ -119,6 +121,56 @@ describe("computer control leases", () => {
     );
     expect(harness.setScreenControl).not.toHaveBeenCalled();
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("teaching control lease extension", () => {
+  it("covers the teaching window and the default takeover ttl", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    expect(teachingControlLeaseExpiresAt(new Date("2026-01-01T00:10:00.000Z"), now)).toEqual(
+      new Date(now.getTime() + DEFAULT_TAKEOVER_LEASE_MS),
+    );
+    expect(teachingControlLeaseExpiresAt(new Date("2026-01-01T00:20:00.000Z"), now)).toEqual(
+      new Date("2026-01-01T00:20:00.000Z"),
+    );
+  });
+
+  it("extends an existing user lease and reschedules expiry", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const teachingUntil = new Date("2026-01-01T00:10:00.000Z");
+    const harness = controlHarness({
+      controlLeaseExpiresAt: new Date("2026-01-01T00:04:00.000Z"),
+    });
+    const computer = {
+      id: "computer-id",
+      controlHolder: "user",
+      controlLeaseId: "lease-1",
+      controlLeaseExpiresAt: new Date("2026-01-01T00:04:00.000Z"),
+      controlBotId: "bot",
+    };
+
+    await expect(
+      extendActiveComputerControl(
+        harness.deps.prisma,
+        harness.deps.jobs,
+        computer,
+        "bot",
+        teachingUntil,
+        now,
+      ),
+    ).resolves.toBe(true);
+
+    const expectedExpiry = new Date(now.getTime() + DEFAULT_TAKEOVER_LEASE_MS);
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-id",
+        controlHolder: "user",
+        controlBotId: "bot",
+        controlLeaseId: "lease-1",
+      },
+      data: { controlLeaseExpiresAt: expectedExpiry },
+    });
+    expect(harness.enqueue).toHaveBeenCalled();
   });
 });
 

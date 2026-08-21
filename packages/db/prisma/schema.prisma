@@ -20,7 +20,9 @@ model User {
   members       Member[]
   invitations   Invitation[]
   modelCredentials UserModelCredential[]
+  voiceCredentials UserVoiceCredential[]
   secrets          Secret[]
+  botSections      BotSection[]
 
   @@unique([email])
   @@map("user")
@@ -85,12 +87,14 @@ model Organization {
   members     Member[]
   invitations Invitation[]
   bots        Bot[]
+  botSections BotSection[]
   botDeletions BotDeletion[]
   threads     Thread[]
   events      Event[]
   tasks       Task[]
   runs        Run[]
   routines    Routine[]
+  taughtSkills TaughtSkill[]
   connections Connection[]
   capabilities CapabilityInstall[]
   memoryDocuments MemoryDocument[]
@@ -169,6 +173,22 @@ model UserModelCredential {
   @@map("user_model_credentials")
 }
 
+model UserVoiceCredential {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  provider    String
+  secretId    String
+  isDefault   Boolean  @default(false)
+  voiceId     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, workspaceId, provider])
+  @@map("user_voice_credentials")
+}
+
 model Bot {
   id             String   @id @default(cuid())
   workspaceId    String
@@ -181,6 +201,8 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  sectionId      String?
+  section        BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt     DateTime?
   parentBotId    String?
   spawnKey       String?
@@ -192,7 +214,10 @@ model Bot {
   computerId     String?
   computer       Computer? @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean @default(false)
+  voiceId        String?
+  autoSpeak      Boolean  @default(false)
   routines       Routine[]
+  taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
   agentHome      AgentHome?
   browserProfile BrowserProfile?
@@ -202,10 +227,28 @@ model Bot {
   runs           Run[]
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
+  @@index([sectionId])
   @@index([computerId])
   @@index([parentBotId])
   @@unique([workspaceId, spawnKey])
   @@map("bots")
+}
+
+model BotSection {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  position    Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  bots        Bot[]
+
+  @@unique([workspaceId, userId, name])
+  @@index([workspaceId, userId, position, createdAt])
+  @@map("bot_sections")
 }
 
 model BotDeletion {
@@ -222,20 +265,21 @@ model BotDeletion {
 }
 
 model Thread {
-  id          String   @id @default(cuid())
-  workspaceId String
-  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  botId       String   @unique
-  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId      String
-  createdAt   DateTime @default(now())
-  nextEventSeq   Int   @default(0)
-  nextMessageSeq Int   @default(0)
-  unread      Boolean  @default(false)
-  messages    Message[]
-  events      Event[]
-  tasks       Task[]
-  runs        Run[]
+  id                      String       @id @default(cuid())
+  workspaceId             String
+  workspace               Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId                   String       @unique
+  bot                     Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId                  String
+  createdAt               DateTime     @default(now())
+  nextEventSeq            Int          @default(0)
+  nextMessageSeq          Int          @default(0)
+  historyCompactedUpToSeq Int?
+  unread                  Boolean      @default(false)
+  messages                Message[]
+  events                  Event[]
+  tasks                   Task[]
+  runs                    Run[]
 
   @@index([workspaceId])
   @@map("threads")
@@ -387,6 +431,31 @@ model Routine {
   @@map("routines")
 }
 
+model TaughtSkill {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String    @default("")
+  goal        String
+  status      String
+  playbook    Json      @default("{}")
+  recording   Json      @default("{\"events\":[],\"snapshots\":[]}")
+  startedAt   DateTime?
+  expiresAt   DateTime?
+  stoppedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([workspaceId, botId])
+  @@index([workspaceId, botId, status])
+  // Partial unique index taught_skills_botId_recording_key is created in SQL:
+  // one recording session per bot.
+  @@map("taught_skills")
+}
+
 model Connection {
   id            String   @id @default(cuid())
   workspaceId   String
@@ -509,9 +578,27 @@ model Computer {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   bots                     Bot[]
+  executionLeases          ComputerExecutionLease[]
 
   @@index([workspaceId, scope])
   @@map("computers")
+}
+
+model ComputerExecutionLease {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  runId      String
+  fence      Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([computerId, botId])
+  @@index([runId])
+  @@index([computerId, expiresAt])
+  @@map("computer_execution_leases")
 }
 
 model Artifact {

@@ -42,6 +42,46 @@ export function scheduleComputerControlExpiry(
   return jobs.enqueue(computerControlExpireJob(computerId, leaseId, expiresAt));
 }
 
+export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
+  return new Date(Math.max(now.getTime() + takeoverLeaseMs(), teachingExpiresAt.getTime()));
+}
+
+export async function extendActiveComputerControl(
+  prisma: PrismaClient,
+  jobs: JobPublisher,
+  computer: {
+    id: string;
+    controlHolder: string;
+    controlLeaseId: string | null;
+    controlLeaseExpiresAt: Date | null;
+    controlBotId: string | null;
+  },
+  botId: string,
+  until: Date,
+  now = new Date(),
+): Promise<boolean> {
+  if (
+    !hasActiveComputerControl(computer, now) ||
+    computer.controlBotId !== botId ||
+    !computer.controlLeaseId
+  ) {
+    return false;
+  }
+  const expiresAt = teachingControlLeaseExpiresAt(until, now);
+  const extended = await prisma.computer.updateMany({
+    where: {
+      id: computer.id,
+      controlHolder: "user",
+      controlBotId: botId,
+      controlLeaseId: computer.controlLeaseId,
+    },
+    data: { controlLeaseExpiresAt: expiresAt },
+  });
+  if (extended.count !== 1) return false;
+  await scheduleComputerControlExpiry(jobs, computer.id, computer.controlLeaseId, expiresAt);
+  return true;
+}
+
 export async function expireComputerControl(
   deps: {
     prisma: PrismaClient;

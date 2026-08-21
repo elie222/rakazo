@@ -1,0 +1,116 @@
+import type {
+  AdapterContext,
+  AdapterDescriptor,
+  SpeechClip,
+  VoiceCapabilities,
+  VoiceInfo,
+  VoiceProvider,
+  VoiceSynthesizeRequest,
+  VoiceTranscribeRequest,
+  VoiceVerifyResult,
+} from "@rakazo/adapter-kit";
+import {
+  readVoiceJson,
+  requireOk,
+  speechUploadName,
+  voiceDeadline,
+  voiceHttpError,
+} from "./voice-http.js";
+
+const API = "https://api.openai.com/v1";
+const TTS_MODEL = "gpt-4o-mini-tts";
+const STT_MODEL = "gpt-4o-mini-transcribe";
+
+const OPENAI_VOICES: VoiceInfo[] = [
+  { id: "alloy", label: "Alloy", description: "Neutral" },
+  { id: "ash", label: "Ash", description: "Clear" },
+  { id: "ballad", label: "Ballad", description: "Warm" },
+  { id: "coral", label: "Coral", description: "Bright" },
+  { id: "echo", label: "Echo", description: "Even" },
+  { id: "fable", label: "Fable", description: "Narrative" },
+  { id: "onyx", label: "Onyx", description: "Deep" },
+  { id: "nova", label: "Nova", description: "Energetic" },
+  { id: "sage", label: "Sage", description: "Calm" },
+  { id: "shimmer", label: "Shimmer", description: "Soft" },
+  { id: "verse", label: "Verse", description: "Expressive" },
+];
+
+export class OpenAIVoiceProvider implements VoiceProvider {
+  describe(): AdapterDescriptor<VoiceCapabilities> {
+    return {
+      id: "openai",
+      contractVersion: "1",
+      adapterVersion: "0.1.0",
+      capabilities: { catalog: true, synthesize: true, transcribe: true },
+    };
+  }
+
+  async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
+    try {
+      const res = await fetch(`${API}/models`, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: voiceDeadline(context.signal, 20_000),
+      });
+      if (res.ok) return { ok: true };
+      return {
+        ok: false,
+        message: voiceHttpError(
+          res.status,
+          "OpenAI",
+          "checking that key",
+          await readVoiceJson(res),
+        ),
+      };
+    } catch {
+      return {
+        ok: false,
+        message: "Couldn't reach OpenAI to check that key — check your connection.",
+      };
+    }
+  }
+
+  async listVoices(_apiKey: string, _context: AdapterContext): Promise<VoiceInfo[]> {
+    return OPENAI_VOICES;
+  }
+
+  async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
+    const res = await fetch(`${API}/audio/speech`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${request.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: TTS_MODEL,
+        voice: request.voiceId,
+        input: request.text,
+        response_format: "mp3",
+      }),
+      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+    });
+    await requireOk(res, "OpenAI", "speaking");
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType: "audio/mpeg" };
+  }
+
+  async transcribe(
+    request: VoiceTranscribeRequest,
+    context: AdapterContext,
+  ): Promise<{ text: string }> {
+    const form = new FormData();
+    form.set("model", STT_MODEL);
+    form.set(
+      "file",
+      new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
+      speechUploadName(request.mimeType),
+    );
+    const res = await fetch(`${API}/audio/transcriptions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${request.apiKey}` },
+      body: form,
+      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+    });
+    const body = await readVoiceJson(res);
+    if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));
+    return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
+  }
+}

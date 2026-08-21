@@ -69,11 +69,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["botSections/list"],
+      ["botSections/create", { botId: "missing-bot", name: "Planning" }],
       ["threads/get", { botId: "missing-bot" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
       ["threads/stop", { botId: "missing-bot" }],
+      ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
       [
         "threads/answer",
@@ -104,6 +107,22 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
       ["routines/remove", { routineId: "missing-routine" }],
       ["routines/testRun", { routineId: "missing-routine" }],
+      ["skills/list", { botId: "missing-bot" }],
+      ["skills/get", { skillId: "missing-skill" }],
+      ["skills/start", { botId: "missing-bot", goal: "Demonstrate export" }],
+      [
+        "skills/appendEvent",
+        {
+          skillId: "missing-skill",
+          event: { at: new Date().toISOString(), kind: "key", key: "a" },
+        },
+      ],
+      ["skills/snapshot", { skillId: "missing-skill" }],
+      ["skills/stop", { skillId: "missing-skill" }],
+      ["skills/updateDraft", { skillId: "missing-skill", playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: "missing-skill" }],
+      ["skills/testRun", { skillId: "missing-skill" }],
+      ["skills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
@@ -117,6 +136,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
+      ["search/query", { q: "anything" }],
+      ["voice/catalog"],
+      ["voice/status"],
+      ["voice/credentials"],
+      ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
+      ["voice/setVoice", { voiceId: "missing-voice" }],
+      ["voice/voices", {}],
+      ["voice/prepare", { text: "Nope" }],
     ]);
 
     const results = await Promise.all(
@@ -150,6 +177,18 @@ describeWithDatabase("API authorization and resource isolation", () => {
       "routines/create",
       routineInput(ownerBot.id),
     );
+    const ownerSkill = await handles.prisma.taughtSkill.create({
+      data: {
+        workspaceId: ownerActor.workspaceId,
+        botId: ownerBot.id,
+        userId: ownerActor.userId,
+        name: "Owner Skill",
+        goal: "Owner-only skill",
+        status: "saved",
+        playbook: skillPlaybookInput(),
+        recording: { events: [], snapshots: [] },
+      },
+    });
     const ownerCapability = await rpc<{ id: string }>(
       app,
       owner,
@@ -172,7 +211,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         content: "owner-only-memory",
       },
     });
-    await handles.prisma.artifact.create({
+    const ownerArtifact = await handles.prisma.artifact.create({
       data: {
         workspaceId: ownerActor.workspaceId,
         userId: ownerActor.userId,
@@ -219,7 +258,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { botId: ownerBot.id, before: 1 }],
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
+      ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
+      ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
       [
         "threads/answer",
@@ -244,8 +285,21 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
+      ["skills/list", { botId: ownerBot.id }],
+      ["skills/start", { botId: ownerBot.id, goal: "Intruder demo" }],
       ["artifacts/list", { botId: ownerBot.id }],
+      [
+        "artifacts/create",
+        {
+          botId: ownerBot.id,
+          name: "intruder.txt",
+          mimeType: "text/plain",
+          contentBase64: Buffer.from("nope").toString("base64"),
+        },
+      ],
+      ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
+      ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
@@ -263,6 +317,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      ["skills/get", { skillId: ownerSkill.id }],
+      [
+        "skills/appendEvent",
+        { skillId: ownerSkill.id, event: { at: new Date().toISOString(), kind: "key", key: "x" } },
+      ],
+      ["skills/snapshot", { skillId: ownerSkill.id }],
+      ["skills/stop", { skillId: ownerSkill.id }],
+      ["skills/updateDraft", { skillId: ownerSkill.id, playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: ownerSkill.id }],
+      ["skills/testRun", { skillId: ownerSkill.id }],
+      ["skills/remove", { skillId: ownerSkill.id }],
       ["memory/update", { documentId: ownerMemory.id, content: "stolen" }],
       ["connections/complete", { connectionId: ownerConnection.connectionId }],
     ] satisfies Array<[string, unknown]>;
@@ -280,6 +345,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, intruder, "connections/list")).not.toContainEqual(
       expect.objectContaining({ id: ownerConnection.connectionId }),
     );
+    expect(
+      await rpc<{ hits: unknown[] }>(app, intruder, "search/query", { q: ownerBot.name }),
+    ).toEqual({ hits: [] });
 
     // These endpoints are deliberately idempotent for unknown IDs. Success must not mutate
     // a row in a different workspace or disclose whether it exists.
@@ -547,6 +615,18 @@ function routineInput(botId: string) {
     timezone: "UTC",
     notify: false,
     active: false,
+  };
+}
+
+function skillPlaybookInput() {
+  return {
+    whenToUse: "When needed",
+    inputs: ["example"],
+    steps: ["Do the thing"],
+    howToCheck: "Verify result",
+    whatToReturn: "Summary",
+    approvalBoundaries: "Ask first",
+    failureHandling: "Stop and ask",
   };
 }
 

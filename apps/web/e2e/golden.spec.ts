@@ -52,7 +52,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await composer.fill("install the gsc cli and sign in");
   await page.keyboard.press("Enter");
   await expect(page.getByText(/sign in to continue|protected input/i).first()).toBeVisible({
-    timeout: 30_000,
+    timeout: realSandboxTimeout(90_000, 30_000),
   });
   await expect
     .poll(() => threadRunStatus(page), {
@@ -62,12 +62,24 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .toBe("waiting_takeover");
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await page.getByTitle("Agent computer").click();
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel).toHaveCSS("width", "384px");
+  const [mainBox, panelBox] = await Promise.all([
+    page.locator("main").boundingBox(),
+    sidePanel.boundingBox(),
+  ]);
+  expect(mainBox).not.toBeNull();
+  expect(panelBox).not.toBeNull();
+  expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover");
   await page.getByRole("button", { name: "Release" }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
-  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
+    timeout: realSandboxTimeout(90_000, 30_000),
+  });
 
   await page.getByText("+ New routine").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
@@ -80,11 +92,31 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await page.getByText("Plugins").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
+  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
+  await expect(page.getByText("Slack", { exact: true })).toBeVisible();
+  await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
+
+  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  await gmailRow.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Connected", exact: true }).click();
+  await expect(page.getByText("Slack", { exact: true })).toBeHidden();
+  await captureScreenshot(page, testInfo, "11a-connected-plugins");
+
+  await gmailRow.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(page.getByText("No connected apps yet.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gmail", { exact: true })).toBeHidden();
+  await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
+
+  await page.getByRole("tab", { name: "All", exact: true }).click();
+  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close plugins" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.locator("button:has-text('⚙')");
+  const gear = page.getByRole("button", { name: "Bot settings" });
   if (!(await gear.isVisible().catch(() => false))) {
     await page.getByTitle("Agent computer").click();
   }
@@ -93,9 +125,17 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
-  await expect(page.getByRole("button", { name: "Archive bot" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete bot" })).toBeVisible();
-  await page.getByRole("button", { name: "Delete bot" }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("button", { name: "Archive bot" })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Delete bot" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close panel" }).click();
+
+  await page.locator("aside").first().getByRole("button", { name: /Chief/ }).first().click({
+    button: "right",
+  });
+  const botMenu = page.getByRole("menu", { name: "Actions for Chief" });
+  await expect(botMenu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
+  await botMenu.getByRole("menuitem", { name: "Delete" }).click();
   await expect(page.getByRole("radio", { name: /Keep memories/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /Delete memories too/ })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -191,4 +231,27 @@ async function threadRunStatus(page: Page) {
     botId: activeBotId(page),
   });
   return result.run?.status ?? "idle";
+}
+
+async function waitForBoxFramebuffer(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        for (const frame of page.frames()) {
+          if (frame === page.mainFrame()) continue;
+          const canvas = frame.locator("canvas").first();
+          if ((await canvas.count()) === 0) continue;
+          const ready = await canvas
+            .evaluate((element) => {
+              const framebuffer = element as HTMLCanvasElement;
+              return framebuffer.width > 0 && framebuffer.height > 0;
+            })
+            .catch(() => false);
+          if (ready) return true;
+        }
+        return false;
+      },
+      { timeout: 60_000, message: "the Box noVNC framebuffer must be ready" },
+    )
+    .toBe(true);
 }

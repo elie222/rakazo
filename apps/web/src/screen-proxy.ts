@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createDecipheriv, createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 
 const SENSITIVE_FORWARD_HEADERS = new Set([
@@ -9,12 +9,34 @@ const SENSITIVE_FORWARD_HEADERS = new Set([
   "proxy-authorization",
 ]);
 const SENSITIVE_RESPONSE_HEADERS = new Set(["clear-site-data", "set-cookie", "set-cookie2"]);
+const SCREEN_PROXY_CIPHER = "aes-256-gcm";
 
 export function resolveNovncTarget(url: string | undefined, secret: string, now = Date.now()) {
   const match = url?.match(
     /^\/novnc\/([A-Za-z0-9_-]+)\/(\d+)\/(view|control)\/(\d+)\.([A-Za-z0-9_-]{43})(\/[^?]*)?(\?.*)?$/,
   );
-  if (!match) return null;
+  if (match) return resolveLocalTarget(match, secret, now);
+
+  const remoteMatch = url?.match(
+    /^\/novnc\/remote\/(view|control)\/(\d+)\.([A-Za-z0-9_-]+)(\/[^?]*)?(\?.*)?$/,
+  );
+  if (!remoteMatch) return null;
+  const policy = remoteMatch[1]! as "view" | "control";
+  const expiresAt = Number(remoteMatch[2]);
+  if (!Number.isInteger(expiresAt) || expiresAt < now) return null;
+  const target = openScreenTarget(remoteMatch[3]!, secret, policy, expiresAt);
+  if (target?.protocol !== "https:") return null;
+  const requestedPath = `${remoteMatch[4] || target.pathname || "/"}${remoteMatch[5] || ""}`;
+  return {
+    protocol: target.protocol,
+    hostname: target.hostname,
+    port: Number(target.port || 443),
+    path: screenPolicyPath(remoteTargetPath(target, requestedPath), policy === "control"),
+    interactive: policy === "control",
+  };
+}
+
+function resolveLocalTarget(match: RegExpMatchArray, secret: string, now: number) {
   const hostname = Buffer.from(match[1]!, "base64url").toString("utf8");
   const port = Number(match[2]);
   const policy = match[3]! as "view" | "control";
@@ -44,10 +66,44 @@ export function resolveNovncTarget(url: string | undefined, secret: string, now 
 
 export function screenPolicyPath(requestedPath: string, interactive: boolean) {
   const parsed = new URL(requestedPath, "http://screen.invalid");
-  if (parsed.pathname === "/embed.html") {
-    return `/embed.html?view_only=${interactive ? "false" : "true"}`;
+  if (parsed.pathname === "/embed.html" || parsed.pathname === "/vnc.html") {
+    parsed.searchParams.set("view_only", interactive ? "false" : "true");
   }
-  return parsed.pathname;
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+function remoteTargetPath(target: URL, requestedPath: string) {
+  const requested = new URL(requestedPath, "https://screen.invalid");
+  const path = requested.pathname || target.pathname || "/";
+  if (path === target.pathname || path === "/websockify") {
+    return `${path}${target.search}`;
+  }
+  return `${path}${requested.search}`;
+}
+
+function openScreenTarget(
+  token: string,
+  secret: string,
+  policy: "view" | "control",
+  expiresAt: number,
+) {
+  try {
+    const sealed = Buffer.from(token, "base64url");
+    if (sealed.length <= 28) return null;
+    const decipher = createDecipheriv(
+      SCREEN_PROXY_CIPHER,
+      createHash("sha256").update(secret).digest(),
+      sealed.subarray(0, 12),
+    );
+    decipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
+    decipher.setAuthTag(sealed.subarray(12, 28));
+    const target = new URL(
+      Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]).toString("utf8"),
+    );
+    return target.hostname && target.protocol === "https:" ? target : null;
+  } catch {
+    return null;
+  }
 }
 
 function isAllowedTargetName(hostname: string) {
