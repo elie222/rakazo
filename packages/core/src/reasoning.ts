@@ -22,6 +22,19 @@ export function reasoningMessageId(event: { runId?: string | null; id?: string }
   return `reasoning:${event.runId ?? event.id ?? "live"}`;
 }
 
+const FILLER_REASONING_TITLES = new Set(["working through the request", "finished"]);
+
+export function visibleReasoningSteps(steps: ReasoningStep[]): ReasoningStep[] {
+  return steps.filter((step) => {
+    if (step.detail?.trim()) return true;
+    if (step.kind === "tool" || step.kind === "think") return true;
+    if (step.kind === "status") {
+      return !FILLER_REASONING_TITLES.has(step.title.trim().toLowerCase());
+    }
+    return Boolean(step.title.trim());
+  });
+}
+
 export function upsertReasoningStep(steps: ReasoningStep[], step: ReasoningStep): ReasoningStep[] {
   const next = steps.map((entry) => (entry.id === step.id ? { ...entry, ...step } : entry));
   if (next.some((entry) => entry.id === step.id)) return next;

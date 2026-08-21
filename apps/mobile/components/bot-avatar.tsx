@@ -26,8 +26,8 @@ export function BotAvatar({
     const motion = Animated.loop(
       Animated.parallel([
         Animated.sequence([
-          Animated.timing(bob, { toValue: 1, duration: 520, useNativeDriver: true }),
-          Animated.timing(bob, { toValue: 0, duration: 520, useNativeDriver: true }),
+          Animated.timing(bob, { toValue: 1, duration: 380, useNativeDriver: true }),
+          Animated.timing(bob, { toValue: 0, duration: 380, useNativeDriver: true }),
         ]),
         Animated.sequence([
           Animated.delay(900),

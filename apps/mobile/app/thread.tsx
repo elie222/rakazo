@@ -4,6 +4,7 @@ import {
   attachmentsForBot,
   createPendingUserMessageId,
   pendingUserMessageTextKey,
+  visibleReasoningSteps,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -18,7 +19,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -46,11 +46,10 @@ type PendingAttachment = PickedAttachment & { botId: string };
 export default function Thread() {
   const navigation = useNavigation();
   const router = useRouter();
-  const { botId, name, messageId, color } = useLocalSearchParams<{
+  const { botId, name, messageId } = useLocalSearchParams<{
     botId?: string;
     name?: string;
     messageId?: string;
-    color?: string;
   }>();
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
@@ -76,8 +75,6 @@ export default function Thread() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
-  const botName = name || "Bot";
-  const botColor = typeof color === "string" && color ? color : "#3EC5A8";
   const botWorking = Boolean(
     snap?.run && ["running", "queued", "leased"].includes(snap.run.status),
   );
@@ -381,7 +378,6 @@ export default function Thread() {
       if (activeBotId.current === targetBotId) {
         if (!text) setDraft("");
         setAttachmentNotice(null);
-        void refresh();
       }
     } catch (err) {
       if (activeBotId.current === targetBotId) {
@@ -484,8 +480,6 @@ export default function Thread() {
             >
               <MessageBubble
                 botId={botId ?? ""}
-                botName={botName}
-                botColor={botColor}
                 message={message}
                 onOpenBot={(id, botName) =>
                   router.push({ pathname: "/thread", params: { botId: id, name: botName } })
@@ -505,9 +499,7 @@ export default function Thread() {
             </View>
           </DropInMessage>
         ))}
-        {botWorking && !hasLiveReasoning ? (
-          <BotWorkingStatus name={botName} color={botColor} />
-        ) : null}
+        {botWorking && !hasLiveReasoning ? <BotWorkingStatus /> : null}
       </ScrollView>
       {attachmentNotice ? (
         <Text style={{ color: "#D6CFA0", marginTop: 12, fontSize: 13 }}>{attachmentNotice}</Text>
@@ -661,9 +653,10 @@ function DropInMessage({ active, children }: { active: boolean; children: ReactN
   useEffect(() => {
     if (!active) return;
     progress.setValue(0);
-    Animated.timing(progress, {
+    Animated.spring(progress, {
       toValue: 1,
-      duration: 380,
+      friction: 6.4,
+      tension: 148,
       useNativeDriver: true,
     }).start();
   }, [active, progress]);
@@ -674,7 +667,10 @@ function DropInMessage({ active, children }: { active: boolean; children: ReactN
         opacity: progress,
         transform: [
           {
-            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-18, 0] }),
+            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }),
+          },
+          {
+            scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }),
           },
         ],
       }}
@@ -688,7 +684,7 @@ function WorkingShimmerText({ text }: { text: string }) {
   const shine = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
-      Animated.timing(shine, { toValue: 1, duration: 1600, useNativeDriver: true }),
+      Animated.timing(shine, { toValue: 1, duration: 980, useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
@@ -704,11 +700,11 @@ function WorkingShimmerText({ text }: { text: string }) {
   );
 }
 
-function BotWorkingStatus({ name, color }: { name: string; color: string }) {
+function BotWorkingStatus() {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14 }}>
-      <BotAvatar color={color} size={28} thinking />
-      <WorkingShimmerText text={`${name} is working`} />
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+      <NativeSymbol ios="chevron.right" android="chevron-forward" size={14} color="#8E8EA0" />
+      <WorkingShimmerText text="Thinking" />
     </View>
   );
 }
@@ -728,58 +724,113 @@ async function speakMessage(botId: string, message: MobileMessage) {
 
 function ReasoningCard({
   steps,
-  botName,
-  botColor,
 }: {
-  steps: Array<{ id?: string; kind?: string; title?: string; detail?: string; status?: string }>;
-  botName: string;
-  botColor: string;
+  steps: Array<{
+    id?: string;
+    kind?: "status" | "think" | "tool";
+    title?: string;
+    detail?: string;
+    status?: "running" | "done";
+  }>;
 }) {
   const running = steps.some((step) => step.status === "running");
+  const [open, setOpen] = useState(running);
+  const rotation = useRef(new Animated.Value(running ? 1 : 0)).current;
+  const visible = visibleReasoningSteps(
+    steps.flatMap((step, index) => {
+      if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") return [];
+      if (step.status !== "running" && step.status !== "done") return [];
+      return [
+        {
+          id: step.id || String(index),
+          kind: step.kind,
+          title: step.title ?? "",
+          detail: step.detail,
+          status: step.status,
+        },
+      ];
+    }),
+  );
+  useEffect(() => {
+    setOpen(running);
+  }, [running]);
+  useEffect(() => {
+    Animated.timing(rotation, {
+      toValue: open ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [open, rotation]);
   return (
-    <View
-      style={{
-        borderRadius: 18,
-        borderWidth: 1,
-        borderColor: "#232326",
-        backgroundColor: "#141416",
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-      }}
-    >
-      {running ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <BotAvatar color={botColor} size={22} thinking />
-          <WorkingShimmerText text={`${botName} is working`} />
+    <View>
+      <Pressable
+        onPress={() => setOpen((current) => !current)}
+        style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 2 }}
+      >
+        <Animated.View
+          style={{
+            transform: [
+              {
+                rotate: rotation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ["0deg", "90deg"],
+                }),
+              },
+            ],
+          }}
+        >
+          <NativeSymbol ios="chevron.right" android="chevron-forward" size={14} color="#8E8EA0" />
+        </Animated.View>
+        {running ? (
+          <WorkingShimmerText text="Thinking" />
+        ) : (
+          <Text style={{ color: "#B4B4B8", fontSize: 15, fontWeight: "600" }}>Thought</Text>
+        )}
+      </Pressable>
+      {open && visible.length ? (
+        <View
+          style={{
+            marginLeft: 7,
+            marginTop: 8,
+            borderLeftWidth: 1,
+            borderLeftColor: "#3A3A40",
+            paddingLeft: 14,
+            gap: 10,
+          }}
+        >
+          {visible.map((step) => (
+            <View key={step.id}>
+              {step.kind === "tool" || !step.detail ? (
+                <Text
+                  style={{
+                    color: step.status === "running" ? "#D0D0D4" : "#8E8EA0",
+                    fontSize: 14,
+                    lineHeight: 21,
+                  }}
+                >
+                  {step.title}
+                </Text>
+              ) : null}
+              {step.detail ? (
+                <Text style={{ color: "#8E8EA0", fontSize: 14, lineHeight: 21 }}>
+                  {step.detail}
+                </Text>
+              ) : null}
+            </View>
+          ))}
         </View>
-      ) : (
-        <Text style={{ color: "#C9C9CE", fontSize: 14, fontWeight: "600" }}>Thought process</Text>
-      )}
-      {steps.map((step, index) => (
-        <View key={step.id || String(index)} style={{ marginTop: 10 }}>
-          <Text style={{ color: step.status === "running" ? "#F5A03C" : "#A8A8AD", fontSize: 13 }}>
-            {step.title}
-          </Text>
-          {step.detail ? (
-            <Text style={{ color: "#85858A", fontSize: 13, marginTop: 4 }}>{step.detail}</Text>
-          ) : null}
-        </View>
-      ))}
+      ) : null}
     </View>
   );
 }
 
 function MessageBubble({
   botId,
-  botName,
-  botColor,
   message,
   onOpenBot,
   onSpeak,
 }: {
   botId: string;
-  botName: string;
-  botColor: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
   onSpeak?: () => void;
@@ -794,7 +845,7 @@ function MessageBubble({
     );
     return (
       <View style={{ gap: 8, maxWidth: "90%" }}>
-        <ReasoningCard steps={reasoning.steps} botName={botName} botColor={botColor} />
+        <ReasoningCard steps={reasoning.steps} />
         {textBlocks.length ? (
           <View
             style={{
