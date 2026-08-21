@@ -36,12 +36,13 @@ export default function Models() {
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [keyLabel, setKeyLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
   const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | "probe" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "probe" | "key" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -128,6 +129,7 @@ export default function Models() {
     setProvider(nextProvider);
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     setApiKey("");
+    setKeyLabel("");
     setBaseUrl(catalog.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "");
     setEndpointLabel(
       catalog.find((entry) => entry.provider === nextProvider)?.providerName ?? "Custom endpoint",
@@ -169,7 +171,7 @@ export default function Models() {
       try {
         const connected = await rpc<MobileModelCredential>("models/connect", {
           provider: selected.provider,
-          apiKey: apiKey.trim(),
+          apiKey: credential ? "" : apiKey.trim(),
           modelId: modelId.trim() || selected.id,
           label: endpointLabel.trim() || selected.providerName || "Custom endpoint",
           baseUrl: url,
@@ -229,6 +231,60 @@ export default function Models() {
       setNotice(`Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not list models");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function addEndpointKey() {
+    if (!selected || !apiKey.trim()) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc("models/addKey", {
+        provider: selected.provider,
+        apiKey: apiKey.trim(),
+        label: keyLabel.trim() || undefined,
+      });
+      setApiKey("");
+      setKeyLabel("");
+      await load({ provider, modelId });
+      setNotice("Added an API key to this endpoint.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function activateEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc("models/setActiveKey", { provider: selected.provider, keyId });
+      await load({ provider, modelId });
+      setNotice("This key is now used for the endpoint.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function removeEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc("models/removeKey", { provider: selected.provider, keyId });
+      await load({ provider, modelId });
+      setNotice("Removed that API key.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove API key");
     } finally {
       setPending(null);
     }
@@ -453,10 +509,74 @@ export default function Models() {
                     ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
                     : "Your key or subscription token is stored securely and is never shown here."
                   : isCustom
-                    ? "Paste any OpenAI-compatible base URL. The API key is optional for local servers."
+                    ? "Paste any OpenAI-compatible base URL. Add one or more API keys after you connect."
                     : "Connect this provider to use it as your personal model."}
               </Text>
             </View>
+
+            {isCustom && credential ? (
+              <View style={styles.credentialCard}>
+                <Text style={styles.eyebrow}>API keys</Text>
+                {credential.keys.length ? (
+                  credential.keys.map((key) => (
+                    <View key={key.id} style={styles.keyRow}>
+                      <Text style={styles.keyName}>{key.label}</Text>
+                      {key.isActive ? (
+                        <Text style={styles.connected}>Active</Text>
+                      ) : (
+                        <Pressable disabled={busy} onPress={() => void activateEndpointKey(key.id)}>
+                          <Text style={styles.secondaryAction}>Use</Text>
+                        </Pressable>
+                      )}
+                      {credential.keys.length > 1 ? (
+                        <Pressable disabled={busy} onPress={() => void removeEndpointKey(key.id)}>
+                          <Text style={styles.error}>Remove</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.secondary}>
+                    No keys yet. Local servers can run without one.
+                  </Text>
+                )}
+                <TextInput
+                  accessibilityLabel="Key label"
+                  onChangeText={setKeyLabel}
+                  placeholder="Pool key 2"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.keyInput}
+                  value={keyLabel}
+                />
+                <TextInput
+                  accessibilityLabel="Add API key"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  onChangeText={setApiKey}
+                  placeholder="sk-…"
+                  placeholderTextColor={native.tertiaryLabel}
+                  secureTextEntry
+                  style={styles.keyInput}
+                  value={apiKey}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy || !apiKey.trim()}
+                  onPress={() => void addEndpointKey()}
+                  style={({ pressed }) => [
+                    styles.outlineButton,
+                    (busy || !apiKey.trim()) && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.outlineLabel}>
+                    {pending === "key" ? "Adding…" : "Add API key"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {deviceSignIn ? (
               oauth ? (
@@ -486,7 +606,7 @@ export default function Models() {
               )
             ) : null}
 
-            {acceptsKey ? (
+            {acceptsKey && !(isCustom && credential) ? (
               <View style={styles.keySection}>
                 <Text style={styles.sectionTitle}>
                   {credential
@@ -549,6 +669,23 @@ export default function Models() {
                 This subscription sign-in is not available in Rakazo yet. Use a deployment
                 credential or choose another provider.
               </Text>
+            ) : null}
+
+            {isCustom && credential ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                onPress={() => void connectKey()}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  (busy || !(baseUrl.trim() || selected.baseUrl)) && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.primaryLabel}>
+                  {pending === "connect" ? "Saving…" : "Save endpoint"}
+                </Text>
+              </Pressable>
             ) : null}
 
             {credential ? (
@@ -699,6 +836,21 @@ const styles = StyleSheet.create({
     color: native.label,
     fontSize: 16,
     marginTop: 6,
+  },
+  keyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+  },
+  keyName: {
+    flex: 1,
+    color: native.label,
+    fontSize: 15,
+  },
+  secondaryAction: {
+    color: native.secondaryLabel,
+    fontSize: 13,
   },
   oauthCard: {
     borderRadius: 14,
