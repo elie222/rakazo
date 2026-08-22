@@ -9,7 +9,10 @@ import {
   truncateOutput,
 } from "./updater-logic.js";
 
-const base = { RAKAZO_DEPLOY_DIR: "/srv/rakazo", RAKAZO_UPDATER_TOKEN: "token" } as const;
+const base = {
+  RAKAZO_DEPLOY_DIR: "/srv/rakazo",
+  RAKAZO_UPDATER_TOKEN: "fake-review-updater-token-000000000000",
+} as const;
 
 describe("resolveUpdaterConfig", () => {
   it("derives the compose file, env file, and defaults from the deployment directory", () => {

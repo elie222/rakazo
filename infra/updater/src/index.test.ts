@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { commandEnvironment, createUpdaterApp, type UpdaterCommandRunner } from "./index.js";
 import { resolveUpdaterConfig } from "./updater-logic.js";
 
-const token = "updater-token-for-tests";
+const token = "fake-review-updater-token-000000000000";
 const app = createUpdaterApp(
   resolveUpdaterConfig({
     RAKAZO_DEPLOY_DIR: "/rakazo-updater-tests-no-such-directory",
