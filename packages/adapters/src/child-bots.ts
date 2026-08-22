@@ -270,7 +270,10 @@ export async function archiveBot(
   const runIds = activeRuns.map((run) => run.id);
   const now = new Date();
   await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
+    await tx.bot.update({
+      where: { id: bot.id },
+      data: { archivedAt: bot.archivedAt ?? now, pinned: false },
+    });
     await tx.run.updateMany({
       where: { id: { in: runIds } },
       data: { status: "cancelled", completedAt: now },
@@ -297,10 +300,6 @@ export async function archiveBot(
         data: { state: "stopped" },
       });
     }
-    await tx.bot.update({
-      where: { id: bot.id },
-      data: { archivedAt: bot.archivedAt ?? now, pinned: false },
-    });
   });
   await Promise.allSettled([
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
@@ -359,7 +358,6 @@ export async function destroyBot(
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
   await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
     await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
     await tx.computer.updateMany({
       where: {

@@ -116,6 +116,7 @@ describe("spawned bot archival", () => {
           run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          channelMember: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
           computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
           bot: { update: vi.fn().mockResolvedValue({}) },
@@ -253,11 +254,13 @@ describe("archiveBot", () => {
   it("stops work and routines while preserving the bot", async () => {
     const updateBot = vi.fn().mockResolvedValue({});
     const disableRoutines = vi.fn().mockResolvedValue({ count: 2 });
+    const removeMemberships = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
         run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         routine: { updateMany: disableRoutines },
+        channelMember: { deleteMany: removeMemberships },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         bot: { update: updateBot },
@@ -297,6 +300,7 @@ describe("archiveBot", () => {
       where: { id: "bot-1" },
       data: { archivedAt: expect.any(Date), pinned: false },
     });
+    expect(removeMemberships).toHaveBeenCalledWith({ where: { botId: "bot-1" } });
     expect(cancel).toHaveBeenCalledWith("run:run-1");
   });
 
@@ -308,6 +312,7 @@ describe("archiveBot", () => {
         run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        channelMember: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         bot: { update: vi.fn().mockResolvedValue({}) },
@@ -372,6 +377,7 @@ describe("archiveBot", () => {
         run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        channelMember: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         bot: { update: vi.fn().mockResolvedValue({}) },
