@@ -1,9 +1,26 @@
 import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
 import type { BotChannel, MessageBlock } from "@rakazo/contracts";
-import { createThreadMessage, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  Prisma,
+  type PrismaClient,
+  type ThreadEvents,
+} from "@rakazo/db";
 
 const PING_PONG_WINDOW_MS = 5 * 60 * 1000;
 const PING_PONG_LIMIT = 8;
+const CHANNEL_HISTORY_LIMIT = 200;
+
+type MessageBotResult =
+  | { ok: true; channelId: string; peerBotId: string; peerName: string }
+  | { error: string };
+
+type CommittedDelivery = {
+  response: MessageBotResult;
+  recipientRunId?: string;
+  notifications: Array<{ threadId: string; seq: number }>;
+};
 
 export function orderedBotPair(a: string, b: string): [string, string] {
   return a < b ? [a, b] : [b, a];
@@ -20,196 +37,290 @@ export async function messageBot(
     workspaceId: string;
     userId: string;
     fromBotId: string;
-    fromBotName: string;
-    fromBotColor: string;
-    fromThreadId: string;
     sourceRunId: string;
+    deliveryKey: string;
     name: string;
     text: string;
     botId?: string;
   },
-): Promise<
-  { ok: true; channelId: string; peerBotId: string; peerName: string } | { error: string }
-> {
+): Promise<MessageBotResult> {
   const name = input.name.trim();
-  const text = input.text.trim();
+  const messageText = input.text.trim();
   if (!name) return { error: "Bot name is required." };
-  if (!text) return { error: "Message text is required." };
-  if (text.length > 8000) return { error: "Message is too long." };
+  if (!messageText) return { error: "Message text is required." };
+  if (messageText.length > 8000) return { error: "Message is too long." };
+  if (!input.deliveryKey.trim()) return { error: "Message delivery key is required." };
+  if (input.botId === input.fromBotId) return { error: "A bot cannot message itself." };
 
-  const teammates = await deps.prisma.bot.findMany({
-    where: {
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      archivedAt: null,
-      id: { not: input.fromBotId },
-    },
-    select: { id: true, name: true, color: true, thread: { select: { id: true } } },
-  });
-  const matches = input.botId
-    ? teammates.filter((bot) => bot.id === input.botId)
-    : teammates.filter((bot) => bot.name.toLowerCase() === name.toLowerCase());
-  if (input.botId && matches.length === 0) {
-    return { error: "That bot is not in this workspace." };
+  let committed: CommittedDelivery;
+  try {
+    committed = await deps.prisma.$transaction(async (tx) => {
+      const sender = await tx.bot.findFirst({
+        where: {
+          id: input.fromBotId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          archivedAt: null,
+        },
+        select: { id: true, name: true, color: true, thread: { select: { id: true } } },
+      });
+      if (!sender?.thread) return deliveryError("The sending bot is not available.");
+
+      const sourceRun = await tx.run.findFirst({
+        where: {
+          id: input.sourceRunId,
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          botId: sender.id,
+          threadId: sender.thread.id,
+          status: { not: "cancelled" },
+        },
+        select: { id: true },
+      });
+      if (!sourceRun) return deliveryError("The sending run is no longer available.");
+
+      const replay = await findCommittedDelivery(tx, input);
+      if (replay) return replay;
+
+      const candidates = await tx.bot.findMany({
+        where: {
+          workspaceId: input.workspaceId,
+          userId: input.userId,
+          archivedAt: null,
+          ...(input.botId
+            ? { id: input.botId }
+            : { name: { equals: name, mode: "insensitive" as const } }),
+        },
+        select: { id: true, name: true, color: true, thread: { select: { id: true } } },
+        orderBy: { id: "asc" },
+        take: 3,
+      });
+      if (!input.botId && candidates.length > 1) {
+        return deliveryError(`More than one bot is named "${name}". Pass bot_id as well.`);
+      }
+      const peer = candidates[0];
+      if (!peer) {
+        return deliveryError(
+          input.botId
+            ? "That bot is not in this workspace."
+            : `No bot named "${name}" in this workspace.`,
+        );
+      }
+      if (peer.id === sender.id) return deliveryError("A bot cannot message itself.");
+      if (!peer.thread) return deliveryError(`${peer.name} has no thread.`);
+
+      const botIds = [sender.id, peer.id].sort();
+      const lockedBots = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "bots"
+        WHERE "id" IN (${Prisma.join(botIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+      if (lockedBots.length !== 2) return deliveryError("One of the bots is no longer available.");
+
+      const [botAId, botBId] = orderedBotPair(sender.id, peer.id);
+      const channel = await tx.botChannel.upsert({
+        where: {
+          workspaceId_botAId_botBId: { workspaceId: input.workspaceId, botAId, botBId },
+        },
+        create: { workspaceId: input.workspaceId, botAId, botBId },
+        update: {},
+      });
+      await tx.$queryRaw`
+        SELECT "id" FROM "bot_channels" WHERE "id" = ${channel.id} FOR UPDATE
+      `;
+
+      const replayAfterLock = await findCommittedDelivery(tx, input);
+      if (replayAfterLock) return replayAfterLock;
+
+      const recent = await tx.botChannelMessage.findMany({
+        where: { channelId: channel.id },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: PING_PONG_LIMIT,
+        select: { createdAt: true },
+      });
+      if (pingPongBlocked(recent.map((row) => row.createdAt))) {
+        return deliveryError(
+          "Too many back-and-forth messages. Summarize for the user instead of ping-ponging.",
+        );
+      }
+
+      const outbound: MessageBlock = {
+        kind: "bot_message",
+        direction: "out",
+        channelId: channel.id,
+        peerBotId: peer.id,
+        peerName: peer.name,
+        peerColor: peer.color,
+        text: messageText,
+      };
+      const inbound: MessageBlock = {
+        kind: "bot_message",
+        direction: "in",
+        channelId: channel.id,
+        peerBotId: sender.id,
+        peerName: sender.name,
+        peerColor: sender.color,
+        text: messageText,
+      };
+      const prompt = `Message from ${sender.name}:\n${messageText}\n\nIf they need a reply, message_bot ${sender.name}. Keep it short. Don't ping-pong.`;
+
+      const task = await tx.task.create({
+        data: {
+          workspaceId: input.workspaceId,
+          botId: peer.id,
+          threadId: peer.thread.id,
+          userId: input.userId,
+          prompt,
+          status: "queued",
+        },
+      });
+      const recipientRun = await tx.run.create({
+        data: {
+          workspaceId: input.workspaceId,
+          botId: peer.id,
+          threadId: peer.thread.id,
+          taskId: task.id,
+          userId: input.userId,
+          status: "queued",
+          trigger: "bot_message",
+          clientNonce: `botmsg:${input.deliveryKey}`,
+        },
+      });
+
+      const threadIds = [sender.thread.id, peer.thread.id].sort();
+      const lockedThreads = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "threads"
+        WHERE "id" IN (${Prisma.join(threadIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+      if (lockedThreads.length !== 2) throw new Error("A bot message thread disappeared");
+
+      const outboundMessage = await createThreadMessageInTransaction(tx, {
+        threadId: sender.thread.id,
+        role: "bot",
+        blocks: [outbound],
+        runId: input.sourceRunId,
+      });
+      const outboundEvent = await appendEventInTransaction(tx, {
+        workspaceId: input.workspaceId,
+        threadId: sender.thread.id,
+        botId: sender.id,
+        type: "thread.message.created",
+        runId: input.sourceRunId,
+        payload: { messageId: outboundMessage.id, role: "bot", blocks: [outbound] },
+      });
+
+      const inboundMessage = await createThreadMessageInTransaction(tx, {
+        threadId: peer.thread.id,
+        role: "user",
+        blocks: [inbound],
+        runId: recipientRun.id,
+      });
+      await tx.thread.update({ where: { id: peer.thread.id }, data: { unread: true } });
+      const inboundEvent = await appendEventInTransaction(tx, {
+        workspaceId: input.workspaceId,
+        threadId: peer.thread.id,
+        botId: peer.id,
+        type: "thread.message.created",
+        runId: recipientRun.id,
+        payload: { messageId: inboundMessage.id, role: "user", blocks: [inbound] },
+      });
+
+      await tx.botChannelMessage.create({
+        data: {
+          channelId: channel.id,
+          fromBotId: sender.id,
+          toBotId: peer.id,
+          text: messageText,
+          sourceRunId: input.sourceRunId,
+          recipientRunId: recipientRun.id,
+          deliveryKey: input.deliveryKey,
+        },
+      });
+
+      return {
+        response: {
+          ok: true as const,
+          channelId: channel.id,
+          peerBotId: peer.id,
+          peerName: peer.name,
+        },
+        recipientRunId: recipientRun.id,
+        notifications: [
+          { threadId: sender.thread.id, seq: outboundEvent.seq },
+          { threadId: peer.thread.id, seq: inboundEvent.seq },
+        ],
+      };
+    });
+  } catch (error) {
+    const recovered = await findCommittedDelivery(deps.prisma, input);
+    if (!recovered) throw error;
+    committed = recovered;
   }
-  if (!input.botId && matches.length === 0) {
-    return { error: `No bot named "${name}" in this workspace.` };
-  }
-  if (!input.botId && matches.length > 1) {
-    return { error: `More than one bot is named "${name}". Pass bot_id as well.` };
-  }
-  const peer = matches[0]!;
-  if (!peer.thread) return { error: `${peer.name} has no thread.` };
-  if (peer.id === input.fromBotId) return { error: "A bot cannot message itself." };
 
-  const [botAId, botBId] = orderedBotPair(input.fromBotId, peer.id);
-  const channel = await deps.prisma.botChannel.upsert({
-    where: {
-      workspaceId_botAId_botBId: { workspaceId: input.workspaceId, botAId, botBId },
-    },
-    create: { workspaceId: input.workspaceId, botAId, botBId },
-    update: {},
-  });
-  const recent = await deps.prisma.botChannelMessage.findMany({
-    where: { channelId: channel.id },
-    orderBy: { createdAt: "desc" },
-    take: PING_PONG_LIMIT,
-    select: { createdAt: true },
-  });
-  if (pingPongBlocked(recent.map((row) => row.createdAt))) {
-    return {
-      error: "Too many back-and-forth messages. Summarize for the user instead of ping-ponging.",
-    };
-  }
-
-  const outbound: MessageBlock = {
-    kind: "bot_message",
-    direction: "out",
-    channelId: channel.id,
-    peerBotId: peer.id,
-    peerName: peer.name,
-    peerColor: peer.color,
-    text,
-  };
-  const inbound: MessageBlock = {
-    kind: "bot_message",
-    direction: "in",
-    channelId: channel.id,
-    peerBotId: input.fromBotId,
-    peerName: input.fromBotName,
-    peerColor: input.fromBotColor,
-    text,
-  };
-
-  const outboundMessage = await createThreadMessage(deps.prisma, {
-    threadId: input.fromThreadId,
-    role: "bot",
-    blocks: [outbound],
-    runId: input.sourceRunId,
-  });
-  await deps.events.append({
-    workspaceId: input.workspaceId,
-    threadId: input.fromThreadId,
-    botId: input.fromBotId,
-    type: "thread.message.created",
-    runId: input.sourceRunId,
-    payload: { messageId: outboundMessage.id, role: "bot", blocks: [outbound] },
-  });
-
-  const inboundMessage = await createThreadMessage(deps.prisma, {
-    threadId: peer.thread.id,
-    role: "user",
-    blocks: [inbound],
-  });
-  await deps.prisma.thread.update({
-    where: { id: peer.thread.id },
-    data: { unread: true },
-  });
-  const recipientRun = await enqueueRecipientRun(deps, {
-    workspaceId: input.workspaceId,
-    userId: input.userId,
-    botId: peer.id,
-    threadId: peer.thread.id,
-    sourceRunId: input.sourceRunId,
-    prompt: `Message from ${input.fromBotName}:\n${text}\n\nIf they need a reply, message_bot ${input.fromBotName}. Keep it short. Don't ping-pong.`,
-  });
-  await deps.events.append({
-    workspaceId: input.workspaceId,
-    threadId: peer.thread.id,
-    botId: peer.id,
-    type: "thread.message.created",
-    runId: recipientRun?.id,
-    payload: { messageId: inboundMessage.id, role: "user", blocks: [inbound] },
-  });
-
-  await deps.prisma.botChannelMessage.create({
-    data: {
-      channelId: channel.id,
-      fromBotId: input.fromBotId,
-      toBotId: peer.id,
-      text,
-      sourceRunId: input.sourceRunId,
-    },
-  });
-
-  if (recipientRun) {
-    await deps.jobs.enqueue(runContinueJob(recipientRun.id)).catch((error) => {
+  if (!("ok" in committed.response)) return committed.response;
+  await Promise.all(
+    committed.notifications.map(({ threadId, seq }) =>
+      deps.events
+        .notify(threadId, seq)
+        .catch((error) => console.error("bot message realtime notification", error)),
+    ),
+  );
+  if (committed.recipientRunId) {
+    await deps.jobs.enqueue(runContinueJob(committed.recipientRunId)).catch((error) => {
       console.error("bot message enqueue", error);
     });
   }
-
-  return { ok: true, channelId: channel.id, peerBotId: peer.id, peerName: peer.name };
+  return committed.response;
 }
 
-async function enqueueRecipientRun(
-  deps: { prisma: PrismaClient },
+function deliveryError(error: string): CommittedDelivery {
+  return { response: { error }, notifications: [] };
+}
+
+async function findCommittedDelivery(
+  prisma: Prisma.TransactionClient | PrismaClient,
   input: {
+    deliveryKey: string;
     workspaceId: string;
     userId: string;
-    botId: string;
-    threadId: string;
-    sourceRunId: string;
-    prompt: string;
+    fromBotId: string;
   },
-) {
-  const busy = await deps.prisma.run.findFirst({
-    where: { botId: input.botId, status: { in: ["running", "queued", "leased"] } },
-    select: { id: true },
+): Promise<CommittedDelivery | null> {
+  const existing = await prisma.botChannelMessage.findUnique({
+    where: { deliveryKey: input.deliveryKey },
+    include: { channel: { select: { id: true, workspaceId: true } } },
   });
-  if (busy) return null;
-  const clientNonce = `botmsg:${input.sourceRunId}:${input.botId}`;
-  const existing = await deps.prisma.run.findUnique({
-    where: { workspaceId_clientNonce: { workspaceId: input.workspaceId, clientNonce } },
-  });
-  if (existing) return existing;
-  try {
-    const task = await deps.prisma.task.create({
-      data: {
-        workspaceId: input.workspaceId,
-        botId: input.botId,
-        threadId: input.threadId,
-        userId: input.userId,
-        prompt: input.prompt,
-        status: "queued",
-      },
-    });
-    return await deps.prisma.run.create({
-      data: {
-        workspaceId: input.workspaceId,
-        botId: input.botId,
-        threadId: input.threadId,
-        taskId: task.id,
-        userId: input.userId,
-        status: "queued",
-        trigger: "bot_message",
-        clientNonce,
-      },
-    });
-  } catch {
-    return deps.prisma.run.findUnique({
-      where: { workspaceId_clientNonce: { workspaceId: input.workspaceId, clientNonce } },
-    });
+  if (!existing) return null;
+  if (
+    existing.fromBotId !== input.fromBotId ||
+    existing.channel.workspaceId !== input.workspaceId
+  ) {
+    throw new Error("Bot message delivery key belongs to another delivery");
   }
+  const peer = await prisma.bot.findFirst({
+    where: {
+      id: existing.toBotId,
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+    },
+    select: { name: true },
+  });
+  if (!peer) throw new Error("Delivered bot message recipient no longer exists");
+  return {
+    response: {
+      ok: true,
+      channelId: existing.channel.id,
+      peerBotId: existing.toBotId,
+      peerName: peer.name,
+    },
+    recipientRunId: existing.recipientRunId,
+    notifications: [],
+  };
 }
 
 export async function loadBotChannel(
@@ -233,18 +344,28 @@ export async function loadBotChannel(
     where: {
       workspaceId_botAId_botBId: { workspaceId: input.workspaceId, botAId, botBId },
     },
-    include: { messages: { orderBy: { createdAt: "asc" }, take: 200 } },
+    include: {
+      messages: {
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: CHANNEL_HISTORY_LIMIT + 1,
+      },
+    },
   });
+  const newest = channel?.messages ?? [];
   return {
     channelId: channel?.id ?? `${left.id}:${right.id}`,
     left,
     right,
-    messages: (channel?.messages ?? []).map((message) => ({
-      id: message.id,
-      fromBotId: message.fromBotId,
-      toBotId: message.toBotId,
-      text: message.text,
-      createdAt: message.createdAt.toISOString(),
-    })),
+    messages: newest
+      .slice(0, CHANNEL_HISTORY_LIMIT)
+      .reverse()
+      .map((message) => ({
+        id: message.id,
+        fromBotId: message.fromBotId,
+        toBotId: message.toBotId,
+        text: message.text,
+        createdAt: message.createdAt.toISOString(),
+      })),
+    hasOlderMessages: newest.length > CHANNEL_HISTORY_LIMIT,
   };
 }

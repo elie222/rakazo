@@ -47,7 +47,10 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield { type: "progress", text: "working…" };
           yield { type: "text", text: turn.assistant };
         }
-        for (const call of turn.toolCalls ?? []) {
+        for (const [callIndex, call] of (turn.toolCalls ?? []).entries()) {
+          const executionId = `${request.runId}:${call.name}${
+            call.name === "message_bot" ? `:${callIndex}` : ""
+          }`;
           if (call.name === "run_subagent") {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
@@ -64,7 +67,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
               type: "tool",
               name: call.name,
               args: call.args,
-              executionId: `${request.runId}:${call.name}`,
+              executionId,
             };
             yield {
               type: "subagent",
@@ -80,7 +83,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
             type: "tool",
             name: call.name,
             args: call.args,
-            executionId: `${request.runId}:${call.name}`,
+            executionId,
           };
         }
         if (turn.ask) {
@@ -165,6 +168,21 @@ export function inferScript(
               actions: [{ kind: "type", text: typed }],
               observe: true,
             },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  const botMessage = botMessageRequest(prompt);
+  if (botMessage) {
+    return [
+      {
+        assistant: `sending that to ${botMessage.name}.`,
+        toolCalls: [
+          {
+            name: "message_bot",
+            args: { name: botMessage.name, text: botMessage.text },
           },
         ],
         complete: true,
@@ -310,6 +328,18 @@ function shouldHang(prompt: string): boolean {
 
 function namedBot(prompt: string) {
   return /named\s+([A-Za-z0-9][A-Za-z0-9_-]{0,39})/i.exec(prompt)?.[1];
+}
+
+function botMessageRequest(prompt: string): { name: string; text: string } | null {
+  const match =
+    /message (?:the )?bot named\s+([A-Za-z0-9][A-Za-z0-9_-]{0,39})(?:\s+(?:saying|with message))?\s*[:,-]?\s*(.+)$/i.exec(
+      prompt.trim(),
+    );
+  if (!match?.[1] || !match[2]) return null;
+  return {
+    name: match[1],
+    text: match[2].trim().replace(/^['"]|['"]$/g, ""),
+  };
 }
 
 function summarize(prompt: string): string {

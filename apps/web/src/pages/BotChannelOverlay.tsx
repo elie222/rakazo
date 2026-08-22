@@ -32,7 +32,10 @@ export function BotChannelOverlay({
     };
   }, [botId, peerBotId]);
   return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-[#0D0D0E]">
+    <div
+      data-testid="bot-channel-overlay"
+      className="absolute inset-0 z-40 flex flex-col bg-[#0D0D0E]"
+    >
       <div className="flex items-center justify-between border-b border-[#141416] px-5 py-4">
         <div className="flex min-w-0 items-center gap-2.5">
           {channel ? (
@@ -62,6 +65,11 @@ export function BotChannelOverlay({
       </div>
       <div className="rk-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
         {error ? <div className="text-center text-[14px] text-[#85858A]">{error}</div> : null}
+        {channel?.hasOlderMessages ? (
+          <div className="text-center text-[13px] text-[#6C6C70]">
+            Showing the latest 200 messages.
+          </div>
+        ) : null}
         {channel && channel.messages.length === 0 ? (
           <div className="text-center text-[14px] text-[#6C6C70]">No messages yet.</div>
         ) : null}

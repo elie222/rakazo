@@ -192,13 +192,6 @@ export type MobileMessage = {
     peerName?: string;
     peerColor?: string;
     channelId?: string;
-    steps?: Array<{
-      id: string;
-      kind: string;
-      title: string;
-      detail?: string;
-      status: string;
-    }>;
   }>;
 };
 

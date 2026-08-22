@@ -283,19 +283,9 @@ export const BotChannelSchema = z.object({
   left: BotChannelPeerSchema,
   right: BotChannelPeerSchema,
   messages: z.array(BotChannelEntrySchema),
+  hasOlderMessages: z.boolean(),
 });
 export type BotChannel = z.infer<typeof BotChannelSchema>;
-
-export const ModelCredentialKeySchema = z.object({
-  id: Id,
-  label: z.string(),
-  isActive: z.boolean(),
-  createdAt: z.string(),
-  availableModels: z.array(z.string()).optional(),
-  probedAt: z.string().nullable().optional(),
-  probeError: z.string().optional(),
-});
-export type ModelCredentialKey = z.infer<typeof ModelCredentialKeySchema>;
 
 export const ModelCredentialSchema = z.object({
   id: Id,

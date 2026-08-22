@@ -5,8 +5,14 @@ import {
   DesktopSandboxProvider,
   FakeSandboxProvider,
   ManagedSandboxEmulator,
+  messageBot,
 } from "@rakazo/adapters";
-import { appendEvent, createThreadMessage, RunHistoryWriteError } from "@rakazo/db";
+import {
+  appendEvent,
+  createThreadEvents,
+  createThreadMessage,
+  RunHistoryWriteError,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -939,6 +945,182 @@ describeJourneys("required product journeys", () => {
     expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual(["Nested"]);
   });
 
+  it("12b: bot DMs are authorized, durable, replay-safe, and wake a busy recipient", async () => {
+    const ada = await signup(app, `bot-dm-j-${stamp}@rakazo.test`, "Bot DM Ada");
+    const bob = await signup(app, `bot-dm-bob-j-${stamp}@rakazo.test`, "Bot DM Bob");
+    const adaMe = await rpc<Me>(app, ada, "me");
+    const chief = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Chief",
+      title: "Coordinator",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const researcher = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Researcher",
+      title: "Researcher",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await rpc<Bot>(app, bob, "bots/create", {
+      name: "Researcher",
+      title: "Other workspace",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+
+    const researcherThread = await prisma.thread.findUniqueOrThrow({
+      where: { botId: researcher.id },
+    });
+    const busyTask = await prisma.task.create({
+      data: {
+        workspaceId: adaMe.workspaceId,
+        userId: adaMe.userId,
+        botId: researcher.id,
+        threadId: researcherThread.id,
+        prompt: "deterministic busy fixture",
+        status: "running",
+      },
+    });
+    const busyRun = await prisma.run.create({
+      data: {
+        workspaceId: adaMe.workspaceId,
+        userId: adaMe.userId,
+        botId: researcher.id,
+        threadId: researcherThread.id,
+        taskId: busyTask.id,
+        status: "running",
+        trigger: "user",
+        leaseOwner: "deterministic-fixture",
+        leaseFence: 1,
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const source = await rpc<{ runId: string }>(app, ada, "threads/send", {
+      botId: chief.id,
+      text: "message the bot named Researcher saying Review the launch brief.",
+    });
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findUnique({
+        where: { id: source.runId },
+        select: { status: true },
+      });
+      return run?.status === "completed";
+    });
+    const recipientRun = await prisma.run.findFirstOrThrow({
+      where: { botId: researcher.id, trigger: "bot_message" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(recipientRun.status).toBe("queued");
+
+    await prisma.$transaction([
+      prisma.run.update({
+        where: { id: busyRun.id },
+        data: {
+          status: "completed",
+          completedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
+      }),
+      prisma.task.update({ where: { id: busyTask.id }, data: { status: "completed" } }),
+    ]);
+    await executor.continueRun(recipientRun.id, "bot-dm-journey");
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findUnique({
+        where: { id: recipientRun.id },
+        select: { status: true },
+      });
+      return run?.status === "completed";
+    });
+
+    const [chiefSnap, researcherSnap] = await Promise.all([
+      rpc<Snap>(app, ada, "threads/get", { botId: chief.id }),
+      rpc<Snap>(app, ada, "threads/get", { botId: researcher.id }),
+    ]);
+    expect(JSON.stringify(chiefSnap.messages)).toMatch(
+      /"kind":"bot_message".*"direction":"out".*Review the launch brief/,
+    );
+    expect(JSON.stringify(researcherSnap.messages)).toMatch(
+      /"kind":"bot_message".*"direction":"in".*Review the launch brief/,
+    );
+
+    const channel = await rpc<BotChannelView>(app, ada, "threads/channel", {
+      botId: chief.id,
+      peerBotId: researcher.id,
+    });
+    expect(channel).toMatchObject({
+      hasOlderMessages: false,
+      messages: [{ fromBotId: chief.id, toBotId: researcher.id, text: "Review the launch brief." }],
+    });
+    expect(
+      (
+        await raw(app, bob, "threads/channel", {
+          botId: chief.id,
+          peerBotId: researcher.id,
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+
+    const effect = await prisma.externalEffect.findFirstOrThrow({
+      where: { runId: source.runId, kind: "message_bot" },
+    });
+    const beforeReplay = await prisma.botChannelMessage.count({
+      where: { channelId: channel.channelId },
+    });
+    const replay = await messageBot(
+      { prisma, events: createThreadEvents(prisma), jobs },
+      {
+        workspaceId: adaMe.workspaceId,
+        userId: adaMe.userId,
+        fromBotId: chief.id,
+        sourceRunId: source.runId,
+        deliveryKey: effect.idempotencyKey,
+        name: researcher.name,
+        text: "Review the launch brief.",
+        botId: researcher.id,
+      },
+    );
+    expect(replay).toMatchObject({ ok: true, channelId: channel.channelId });
+    expect(await prisma.botChannelMessage.count({ where: { channelId: channel.channelId } })).toBe(
+      beforeReplay,
+    );
+    expect(
+      await prisma.run.count({ where: { botId: researcher.id, trigger: "bot_message" } }),
+    ).toBe(1);
+
+    const historyStart = new Date("2035-01-01T00:00:00.000Z");
+    await prisma.botChannelMessage.createMany({
+      data: Array.from({ length: 204 }, (_, index) => ({
+        channelId: channel.channelId,
+        fromBotId: index % 2 === 0 ? chief.id : researcher.id,
+        toBotId: index % 2 === 0 ? researcher.id : chief.id,
+        text: `history-${index}`,
+        sourceRunId: source.runId,
+        recipientRunId: recipientRun.id,
+        deliveryKey: `bot-dm-history-${stamp}-${index}`,
+        createdAt: new Date(historyStart.getTime() + index * 1000),
+      })),
+    });
+    const latest = await rpc<BotChannelView>(app, ada, "threads/channel", {
+      botId: chief.id,
+      peerBotId: researcher.id,
+    });
+    expect(latest.hasOlderMessages).toBe(true);
+    expect(latest.messages).toHaveLength(200);
+    expect(latest.messages[0]?.text).toBe("history-4");
+    expect(latest.messages.at(-1)?.text).toBe("history-203");
+
+    await rpc(app, ada, "bots/remove", { botId: researcher.id, deleteMemories: true });
+    expect(await prisma.botChannel.count({ where: { id: channel.channelId } })).toBe(0);
+    expect(await prisma.botChannelMessage.count({ where: { channelId: channel.channelId } })).toBe(
+      0,
+    );
+  });
+
   it("13: a subagent shows up in the parent thread without creating a bot", async () => {
     const cookie = await signup(app, `subagent-j-${stamp}@rakazo.test`, "Subagent");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
@@ -1278,6 +1460,11 @@ type Bot = {
 type Snap = {
   messages: Array<{ seq: number; blocks: unknown[] }>;
   run: { status: string } | null;
+};
+type BotChannelView = {
+  channelId: string;
+  messages: Array<{ fromBotId: string; toBotId: string; text: string }>;
+  hasOlderMessages: boolean;
 };
 
 async function signup(app: App, email: string, name: string) {

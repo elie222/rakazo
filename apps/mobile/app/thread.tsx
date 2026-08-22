@@ -1,18 +1,8 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { abortableDelay, attachmentsForBot } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Animated,
-  AppState,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
@@ -67,7 +57,6 @@ export default function Thread() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
   const [channelPeerId, setChannelPeerId] = useState<string | null>(null);
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
 
@@ -416,44 +405,43 @@ export default function Thread() {
           </Pressable>
         ) : null}
         {(snap?.messages ?? []).map((message) => (
-          <DropInMessage key={message.id} active={enteringIds.has(message.id)}>
-            <View
-              onLayout={(event) => {
-                if (jumpScrollTarget.current !== message.id) return;
-                scroll.current?.scrollTo({
-                  y: Math.max(0, event.nativeEvent.layout.y - 24),
-                  animated: true,
-                });
-                jumpScrollTarget.current = null;
-              }}
-              style={{
-                marginTop: 12,
-                width: "100%",
-                flexDirection: "row",
-                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-              }}
-            >
-              <MessageBubble
-                botId={botId ?? ""}
-                message={message}
-                onOpenBot={(id, botName) =>
-                  router.push({ pathname: "/thread", params: { botId: id, name: botName } })
-                }
-                onOpenChannel={(peerBotId) => setChannelPeerId(peerBotId)}
-                onSpeak={
-                  message.role === "bot"
-                    ? () =>
-                        void speakMessage(botId ?? "", message).catch((err) =>
-                          Alert.alert(
-                            "Could not speak",
-                            err instanceof Error ? err.message : "Try again.",
-                          ),
-                        )
-                    : undefined
-                }
-              />
-            </View>
-          </DropInMessage>
+          <View
+            key={message.id}
+            onLayout={(event) => {
+              if (jumpScrollTarget.current !== message.id) return;
+              scroll.current?.scrollTo({
+                y: Math.max(0, event.nativeEvent.layout.y - 24),
+                animated: true,
+              });
+              jumpScrollTarget.current = null;
+            }}
+            style={{
+              marginTop: 12,
+              width: "100%",
+              flexDirection: "row",
+              justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+            }}
+          >
+            <MessageBubble
+              botId={botId ?? ""}
+              message={message}
+              onOpenBot={(id, botName) =>
+                router.push({ pathname: "/thread", params: { botId: id, name: botName } })
+              }
+              onOpenChannel={(peerBotId) => setChannelPeerId(peerBotId)}
+              onSpeak={
+                message.role === "bot"
+                  ? () =>
+                      void speakMessage(botId ?? "", message).catch((err) =>
+                        Alert.alert(
+                          "Could not speak",
+                          err instanceof Error ? err.message : "Try again.",
+                        ),
+                      )
+                  : undefined
+              }
+            />
+          </View>
         ))}
       </ScrollView>
       {attachmentNotice ? (
@@ -569,113 +557,6 @@ export default function Thread() {
   );
 }
 
-function collectEnteringUserMessageIds(
-  botId: string,
-  messages: MobileMessage[],
-  state: { botId: string; seen: Set<string>; primed: boolean },
-) {
-  if (state.botId !== botId) {
-    state.botId = botId;
-    state.seen = new Set(messages.map((message) => message.id));
-    state.primed = messages.length > 0;
-    return new Set<string>();
-  }
-  if (!state.primed) {
-    if (!messages.length) return new Set<string>();
-    for (const message of messages) state.seen.add(message.id);
-    state.primed = true;
-    return new Set<string>();
-  }
-  const recent = new Set(messages.slice(-4).map((message) => message.id));
-  const entering = new Set<string>();
-  for (const message of messages) {
-    const text = userMessagePlainText(message);
-    const pendingKey = pendingUserMessageTextKey(text);
-    if (
-      !state.seen.has(message.id) &&
-      message.role === "user" &&
-      recent.has(message.id) &&
-      !message.blocks.some((block) => block.kind === "bot_message")
-    ) {
-      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
-      if (!replacingPending) entering.add(message.id);
-    }
-    state.seen.add(message.id);
-    if (message.role === "user") {
-      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
-      else state.seen.delete(pendingKey);
-    }
-  }
-  return entering;
-}
-
-function userMessagePlainText(message: MobileMessage): string {
-  return message.blocks
-    .flatMap((block) => (block.kind === "text" ? [block.text ?? ""] : []))
-    .join("\n");
-}
-
-function DropInMessage({ active, children }: { active: boolean; children: ReactNode }) {
-  const progress = useRef(new Animated.Value(active ? 0 : 1)).current;
-  useEffect(() => {
-    if (!active) return;
-    progress.setValue(0);
-    Animated.spring(progress, {
-      toValue: 1,
-      friction: 6.4,
-      tension: 148,
-      useNativeDriver: true,
-    }).start();
-  }, [active, progress]);
-  if (!active) return <>{children}</>;
-  return (
-    <Animated.View
-      style={{
-        opacity: progress,
-        transform: [
-          {
-            translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }),
-          },
-          {
-            scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }),
-          },
-        ],
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-}
-
-function WorkingShimmerText({ text }: { text: string }) {
-  const shine = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(shine, { toValue: 1, duration: 980, useNativeDriver: true }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [shine]);
-  const opacity = shine.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0.42, 1, 0.42],
-  });
-  return (
-    <Animated.Text style={{ color: "#E8E8EC", fontSize: 15, fontWeight: "600", opacity }}>
-      {text}
-    </Animated.Text>
-  );
-}
-
-function BotWorkingStatus() {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
-      <NativeSymbol ios="chevron.right" android="chevron-forward" size={14} color="#8E8EA0" />
-      <WorkingShimmerText text="Thinking" />
-    </View>
-  );
-}
-
 async function speakMessage(botId: string, message: MobileMessage) {
   const text = blockText(message);
   if (!text.trim()) return;
@@ -714,7 +595,6 @@ function MessageBubble({
       />
     );
   }
-  const reasoning = message.blocks.find((block) => block.kind === "reasoning");
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );
@@ -966,6 +846,7 @@ function MobileBotChannel({
     left: { id: string; name: string; color: string };
     right: { id: string; name: string; color: string };
     messages: Array<{ id: string; fromBotId: string; text: string }>;
+    hasOlderMessages: boolean;
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -973,6 +854,7 @@ function MobileBotChannel({
       left: { id: string; name: string; color: string };
       right: { id: string; name: string; color: string };
       messages: Array<{ id: string; fromBotId: string; text: string }>;
+      hasOlderMessages: boolean;
     }>("threads/channel", { botId, peerBotId })
       .then((next) => {
         if (!cancelled) setChannel(next);
@@ -1008,6 +890,11 @@ function MobileBotChannel({
       </View>
       <ScrollView style={{ flex: 1, marginTop: 16 }}>
         {error ? <Text style={{ color: "#85858A" }}>{error}</Text> : null}
+        {channel?.hasOlderMessages ? (
+          <Text style={{ color: "#85858A", textAlign: "center", marginBottom: 14, fontSize: 13 }}>
+            Showing the latest 200 messages.
+          </Text>
+        ) : null}
         {channel?.messages.map((entry) => {
           const from = entry.fromBotId === channel.left.id ? channel.left : channel.right;
           return (

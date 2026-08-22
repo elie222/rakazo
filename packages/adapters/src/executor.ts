@@ -247,28 +247,57 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (isTerminal(run.status as RunStatus)) return;
       const resumeFromTakeover = run.status === "waiting_takeover";
 
-      const fence = nextFence(run.leaseFence);
       const now = new Date();
-      const leased = await deps.prisma.run.updateMany({
-        where: {
-          id: runId,
-          OR: [
-            { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
-            {
-              status: { in: ["leased", "running"] },
-              leaseExpiresAt: { lte: now },
-            },
-          ],
-        },
-        data: {
-          status: "leased",
-          leaseOwner: workerId,
-          leaseFence: fence,
-          leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
-          error: null,
-        },
+      const fence = nextFence(run.leaseFence);
+      const claim = await deps.prisma.$transaction(async (tx) => {
+        // A bot has one conversational history and one computer. Serialize claims even for
+        // dedicated computers so a DM arriving mid-run becomes a real follow-up instead of a
+        // concurrent run that snapshots stale history.
+        await tx.$queryRaw<Array<{ locked: boolean }>>`
+          SELECT pg_advisory_xact_lock(hashtextextended(${run.botId}, 1380019075)) IS NULL AS "locked"
+        `;
+        const executing = await tx.run.findFirst({
+          where: {
+            botId: run.botId,
+            id: { not: runId },
+            status: { in: ["leased", "running"] },
+            OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { gt: now } }],
+          },
+          select: { id: true },
+        });
+        if (executing) return { claimed: false as const, busy: true as const };
+        const leased = await tx.run.updateMany({
+          where: {
+            id: runId,
+            OR: [
+              { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+              {
+                status: { in: ["leased", "running"] },
+                leaseExpiresAt: { lte: now },
+              },
+            ],
+          },
+          data: {
+            status: "leased",
+            leaseOwner: workerId,
+            leaseFence: fence,
+            leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+            error: null,
+          },
+        });
+        return { claimed: leased.count === 1, busy: false as const };
       });
-      if (leased.count !== 1) return;
+      if (!claim.claimed) {
+        if (claim.busy) {
+          await deps.jobs
+            .enqueue({
+              ...runContinueJob(runId),
+              availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+            })
+            .catch(() => undefined);
+        }
+        return;
+      }
 
       const current = await deps.prisma.run.findUniqueOrThrow({ where: { id: runId } });
       if (
@@ -346,7 +375,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           messages,
           task,
           storedConnections,
-          defaultCredential,
+          credential,
           settings,
           savedSkills,
           teammates,
@@ -493,12 +522,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
         ];
         const computerInstruction = graphical
-          ? "You have a real computer. Observe before you click. Use the desktop, files, and shell instead of describing what you would do."
-          : "You have a persistent sandbox filesystem and shell. Use them instead of describing what you would do.";
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
-            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative paths start there. Shared work goes in shared/.`
-            : "This entire computer workspace is your private home. Relative paths start at its root.";
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
+            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
         const teammatesLine = teammates.length
           ? `Teammates you can message_bot: ${teammates
               .map((row) => (row.title.trim() ? `${row.name} (${row.title})` : row.name))
@@ -529,6 +558,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          if (name === "message_bot" && containsSecret(String(args.text ?? ""), runSecrets)) {
+            return { error: "Refusing to send a secret to another bot." };
+          }
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined
             : await recordEffect(deps, run, name, executionId, args);
@@ -536,7 +568,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            if (name !== "spawn_bot" && name !== "archive_bot" && name !== "delete_bot") {
+            if (
+              name !== "spawn_bot" &&
+              name !== "message_bot" &&
+              name !== "archive_bot" &&
+              name !== "delete_bot"
+            ) {
               throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
             }
           }
@@ -807,10 +844,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               workspaceId: run.workspaceId,
               userId: run.userId,
               fromBotId: bot.id,
-              fromBotName: bot.name,
-              fromBotColor: bot.color,
-              fromThreadId: thread.id,
               sourceRunId: runId,
+              deliveryKey: executionId,
               name: String(args.name ?? ""),
               text: String(args.text ?? ""),
               botId: args.bot_id
@@ -924,21 +959,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               runId,
               prompt,
               instructions: [
-                [
-                  `You are ${bot.name}${bot.title.trim() ? `, ${bot.title.trim()}` : ""}.`,
-                  bot.instructions.trim() || bot.description.trim() || undefined,
-                  "Operate like a true agent: terse, concrete, no filler. Do the work. Don't recap the ask. Don't preview a plan. After tools, report the outcome in one or two lines.",
-                ]
-                  .filter((line): line is string => Boolean(line))
-                  .join("\n"),
+                bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
-                `${computerInstruction} ${workspaceInstruction} remember for durable facts. request_takeover for protected input. destination_write only for connected destination records.`,
+                `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
+                workspaceInstruction,
                 teammatesLine,
-                "message_bot sends a short note to another bot. spawn_bot creates a lasting bot. run_subagent is a throwaway helper this turn only. Don't mix them. archive_bot only archives a bot you created; confirm_name must match.",
+                "A bot and a subagent are different. Never use both for the same request.",
+                "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
+                "message_bot sends a short text-only note to another bot in this workspace. Use bot_id when names are ambiguous. Do not send secrets or use it for recursive chatter.",
+                "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+                "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 taughtSkillsLine,
-                "Never print secrets. Prefer tools over claiming you already did the work.",
+                "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),

@@ -226,6 +226,8 @@ model Bot {
   usageRecords   UsageRecord[]
   tasks          Task[]
   runs           Run[]
+  botChannelsAsA BotChannel[] @relation("BotChannelA")
+  botChannelsAsB BotChannel[] @relation("BotChannelB")
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -671,12 +673,16 @@ model BotChannel {
   workspaceId String
   workspace   Organization        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   botAId      String
+  botA        Bot                 @relation("BotChannelA", fields: [botAId], references: [id], onDelete: Cascade)
   botBId      String
+  botB        Bot                 @relation("BotChannelB", fields: [botBId], references: [id], onDelete: Cascade)
   createdAt   DateTime            @default(now())
   messages    BotChannelMessage[]
 
   @@unique([workspaceId, botAId, botBId])
   @@index([workspaceId])
+  @@index([botAId])
+  @@index([botBId])
   @@map("bot_channels")
 }
 
@@ -687,9 +693,11 @@ model BotChannelMessage {
   fromBotId   String
   toBotId     String
   text        String
-  sourceRunId String?
+  sourceRunId String
+  recipientRunId String
+  deliveryKey String @unique
   createdAt   DateTime   @default(now())
 
-  @@index([channelId, createdAt])
+  @@index([channelId, createdAt, id])
   @@map("bot_channel_messages")
 }

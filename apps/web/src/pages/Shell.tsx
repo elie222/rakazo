@@ -1927,6 +1927,7 @@ const Transcript = memo(function Transcript({
             voiceReady={voiceReady}
             speaking={speakingMessageId === message.id}
             onSpeak={() => onSpeak(message)}
+            onOpenChannel={onOpenChannel}
           />
         </div>
       ))}
@@ -1936,19 +1937,7 @@ const Transcript = memo(function Transcript({
             className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
             style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
           >
-            <MessageView
-              botId={botId}
-              message={message}
-              canAnswer={message.id === answerableAskMessageId}
-              onOpenBot={onOpenBot}
-              onAnswer={onAnswer}
-              onRefresh={onRefresh}
-              onAddRoutine={onAddRoutine}
-              voiceReady={voiceReady}
-              speaking={speakingMessageId === message.id}
-              onSpeak={() => onSpeak(message)}
-              onOpenChannel={onOpenChannel}
-            />
+            working…
           </div>
         </div>
       ) : null}
@@ -2593,50 +2582,6 @@ function CreateBotForm({
   );
 }
 
-function collectEnteringUserMessageIds(
-  botId: string,
-  messages: ThreadMessage[],
-  state: { botId: string; seen: Set<string>; primed: boolean },
-) {
-  if (state.botId !== botId) {
-    state.botId = botId;
-    state.seen = new Set(messages.map((message) => message.id));
-    state.primed = messages.length > 0;
-    return new Set<string>();
-  }
-  if (!state.primed) {
-    if (!messages.length) return new Set<string>();
-    for (const message of messages) state.seen.add(message.id);
-    state.primed = true;
-    return new Set<string>();
-  }
-  const recent = new Set(messages.slice(-4).map((message) => message.id));
-  const entering = new Set<string>();
-  for (const message of messages) {
-    const text = userMessagePlainText(message);
-    const pendingKey = pendingUserMessageTextKey(text);
-    if (
-      !state.seen.has(message.id) &&
-      message.role === "user" &&
-      recent.has(message.id) &&
-      !message.blocks.some((block) => block.kind === "bot_message")
-    ) {
-      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
-      if (!replacingPending) entering.add(message.id);
-    }
-    state.seen.add(message.id);
-    if (message.role === "user") {
-      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
-      else state.seen.delete(pendingKey);
-    }
-  }
-  return entering;
-}
-
-function userMessagePlainText(message: ThreadMessage): string {
-  return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
-}
-
 function BotMessageChip({
   block,
   onOpen,
@@ -2674,64 +2619,6 @@ function BotMessageChip({
         </div>
       </div>
     </div>
-  );
-}
-
-function BotWorkingStatus() {
-  return (
-    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
-      <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
-      <span className="rk-working-text text-[15px] font-medium">Thinking</span>
-    </div>
-  );
-}
-
-function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const running = steps.some((step) => step.status === "running");
-  const visible = visibleReasoningSteps(steps);
-  useEffect(() => {
-    const el = detailsRef.current;
-    if (!el) return;
-    el.open = running;
-  }, [running]);
-  if (!steps.length) return null;
-  return (
-    <details ref={detailsRef} className="rk-thought w-[min(560px,100%)]">
-      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          size={16}
-          strokeWidth={2}
-          className="rk-thought-caret shrink-0 text-[#8E8EA0]"
-        />
-        {running ? (
-          <span className="rk-working-text text-[15px] font-medium">Thinking</span>
-        ) : (
-          <span className="text-[15px] font-medium text-[#B4B4B8]">Thought</span>
-        )}
-      </summary>
-      {visible.length ? (
-        <div className="rk-thought-body ml-[7px] mt-2 space-y-2.5 border-l border-[#3A3A40] pl-3.5">
-          {visible.map((step) => (
-            <div key={step.id} className="text-[14px] leading-[1.55] text-[#8E8EA0]">
-              {step.kind === "tool" || !step.detail ? (
-                <div className={step.status === "running" ? "text-[#D0D0D4]" : undefined}>
-                  {step.title}
-                </div>
-              ) : null}
-              {step.detail ? (
-                <pre className="rk-scroll max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55] text-[#8E8EA0]">
-                  {step.detail}
-                  {running && step.status === "running" ? (
-                    <span className="rk-thought-cursor">▍</span>
-                  ) : null}
-                </pre>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </details>
   );
 }
 

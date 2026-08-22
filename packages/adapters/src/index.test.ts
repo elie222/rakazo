@@ -43,6 +43,20 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.toolCalls?.some((c) => c.args.name === "Scout"))).toBe(true);
   });
 
+  it("messages a named bot with the requested text", () => {
+    const script = inferScript("message the bot named Researcher saying Review the launch brief.");
+    expect(
+      script?.some((turn) =>
+        turn.toolCalls?.some(
+          (call) =>
+            call.name === "message_bot" &&
+            call.args.name === "Researcher" &&
+            call.args.text === "Review the launch brief.",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("runs an in-thread subagent", () => {
     const script = inferScript("run a subagent to summarize the notes");
     expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "run_subagent"))).toBe(true);
