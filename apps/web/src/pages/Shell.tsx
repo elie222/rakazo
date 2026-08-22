@@ -24,16 +24,23 @@ import {
   attachmentsForBot,
   cronFromPreset,
   defaultCronPreset,
+  formatChatTimestamp,
   formatCron,
+  formatInboxTime,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  matchingAskOption,
+  parseAskOptions,
+  pendingUserMessageTextKey,
   presetFromCron,
+  shouldShowChatTimestamp,
   speechFromBlocks,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
+  ChevronDown,
   ChevronLeft,
   Cpu,
   Gauge,
@@ -1053,8 +1060,13 @@ export function ShellPage() {
                           {bot.unread ? <span className="sr-only"> (unread)</span> : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? "" : bot.status}
-                          {bot.unread ? (
+                          {formatInboxTime(bot.updatedAt)}
+                          {bot.status === "waiting_input" || bot.status === "waiting_takeover" ? (
+                            <span
+                              aria-hidden="true"
+                              className="inline-block h-2 w-2 rounded-full bg-[#F5A03C]"
+                            />
+                          ) : bot.unread ? (
                             <span
                               aria-hidden="true"
                               className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
@@ -1064,10 +1076,16 @@ export function ShellPage() {
                       </div>
                       <div
                         className={`mt-0.5 truncate text-[13.5px] ${
-                          bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                          bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                            ? "font-medium text-[#F5A03C]"
+                            : bot.unread
+                              ? "font-medium text-[#C9C9CE]"
+                              : "text-[#85858A]"
                         }`}
                       >
-                        {bot.preview || bot.title}
+                        {bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                          ? `Waiting for you: ${bot.preview || "needs a decision"}`
+                          : bot.preview || bot.title}
                       </div>
                     </div>
                   </button>
@@ -1178,7 +1196,13 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              setMenuOpen((open) => {
+                const next = !open;
+                if (next) void rpc.usage.summary().then(setUsage);
+                return next;
+              });
+            }}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
@@ -1879,47 +1903,128 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
+  const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const followOutputRef = useRef(followOutput);
+  followOutputRef.current = followOutput;
+  const lastBotId = useRef(botId);
+  const setStickToBottom = (next: boolean) => {
+    stickToBottom.current = next;
+    setShowJump((current) => {
+      const jump = !next;
+      return current === jump ? current : jump;
+    });
+  };
+  useLayoutEffect(() => {
+    const switchedBot = enterState.current.botId !== botId;
+    const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
+    if (switchedBot) {
+      setEnteringIds(new Set());
+      return;
+    }
+    if (next.size > 0) setEnteringIds(next);
+  }, [botId, messages]);
+  useLayoutEffect(() => {
+    if (lastBotId.current !== botId) {
+      setStickToBottom(true);
+      lastBotId.current = botId;
+    }
+    if (loadingOlder) {
+      setStickToBottom(false);
+      return;
+    }
+    if (messages.at(-1)?.id.startsWith("pending:")) setStickToBottom(true);
+    const element = scrollRef.current;
+    if (!element || !followOutput || !stickToBottom.current) return;
+    scrollTranscriptToEnd(element);
+  }, [botId, followOutput, loadingOlder, messages, running, scrollRef]);
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || !content) return;
+    const onScroll = () => {
+      setStickToBottom(isNearTranscriptEnd(element));
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) setStickToBottom(false);
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    element.addEventListener("wheel", onWheel, { passive: true });
+    const observer = new ResizeObserver(() => {
+      if (!followOutputRef.current || !stickToBottom.current) return;
+      scrollTranscriptToEnd(element);
+    });
+    observer.observe(content);
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      element.removeEventListener("wheel", onWheel);
+      observer.disconnect();
+    };
+  }, [botId, scrollRef]);
+  const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
-    <div
-      ref={scrollRef}
-      data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
-    >
-      {olderCursor != null ? (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        data-testid="transcript"
+        className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
+      >
+        <div ref={contentRef} className="mx-auto flex w-full max-w-[720px] flex-col gap-4">
+          {olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void onLoadOlder()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </button>
+          ) : null}
+          {messages.map((message, index) => (
+            <div key={message.id}>
+              {shouldShowChatTimestamp(messages[index - 1]?.createdAt, message.createdAt) ? (
+                <ChatTimestamp iso={message.createdAt} />
+              ) : null}
+              <div
+                data-message-id={message.id}
+                className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+              >
+                <MessageView
+                  botId={botId}
+                  message={message}
+                  canAnswer={message.id === answerableAskMessageId}
+                  onOpenBot={onOpenBot}
+                  onAnswer={onAnswer}
+                  onRefresh={onRefresh}
+                  onAddRoutine={onAddRoutine}
+                  voiceReady={voiceReady}
+                  speaking={speakingMessageId === message.id}
+                  onSpeak={() => onSpeak(message)}
+                  onOpenChannel={onOpenChannel}
+                />
+              </div>
+            </div>
+          ))}
+          {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+        </div>
+      </div>
+      {showJump ? (
         <button
           type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+          aria-label="Jump to latest"
+          data-testid="jump-to-latest"
+          onClick={() => {
+            setStickToBottom(true);
+            const element = scrollRef.current;
+            if (element) scrollTranscriptToEnd(element);
+          }}
+          className="rk-jump-latest absolute bottom-3 left-1/2 z-10 grid h-9 w-9 place-items-center rounded-full border border-[#2A2A2F] bg-[#1A1A1D] text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] hover:bg-[#222226]"
         >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
+          <ChevronDown size={18} strokeWidth={2} />
         </button>
-      ) : null}
-      {messages.map((message) => (
-        <div key={message.id} data-message-id={message.id}>
-          <MessageView
-            botId={botId}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onAnswer={onAnswer}
-            onRefresh={onRefresh}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running ? (
-        <div className="flex justify-start">
-          <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
-            style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
-          >
-            working…
-          </div>
-        </div>
       ) : null}
     </div>
   );
@@ -1973,125 +2078,123 @@ const Composer = memo(function Composer({
   }
 
   return (
-    <div className="px-6 pb-6 pt-3">
-      {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
-          {sendError ?? dictationError}
-        </div>
-      ) : null}
-      {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
-          {attachmentNotice}
-        </div>
-      ) : null}
-      {pendingAttachments.length ? (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {pendingAttachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
-            >
-              {attachment.previewUrl ? (
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.file.name}
-                  className="h-8 w-8 rounded object-cover"
-                />
-              ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
-              )}
-              <span className="max-w-[180px] truncate">{attachment.file.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${attachment.file.name}`}
-                onClick={() => onRemoveAttachment(attachment)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+    <div className="px-4 pb-6 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-[720px]">
+        {sendError || dictationError ? (
+          <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+            {sendError ?? dictationError}
+          </div>
+        ) : null}
+        {attachmentNotice ? (
+          <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+            {attachmentNotice}
+          </div>
+        ) : null}
+        {pendingAttachments.length ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {pendingAttachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
               >
-                <X size={13} strokeWidth={2} />
-              </button>
-            </div>
-          ))}
+                {attachment.previewUrl ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.file.name}
+                    className="h-8 w-8 rounded object-cover"
+                  />
+                ) : (
+                  <Paperclip size={14} strokeWidth={1.8} />
+                )}
+                <span className="max-w-[180px] truncate">{attachment.file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.file.name}`}
+                  onClick={() => onRemoveAttachment(attachment)}
+                  className="text-[#85858A] hover:text-[#ECECEE]"
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2 pl-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACHMENT_ACCEPT}
+            className="hidden"
+            onChange={(event) => void onAttachmentPick(event.target.files)}
+          />
+          <button
+            type="button"
+            aria-label="Attach file"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[#9A9AA0] hover:bg-[#1B1B1E] disabled:opacity-40"
+          >
+            <Plus size={18} strokeWidth={1.8} />
+          </button>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            disabled={disabled}
+            placeholder={activeName ? `Message ${activeName}` : "Message…"}
+            className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
+          />
+          {running ? (
+            <button
+              type="button"
+              aria-label="Stop"
+              onClick={() => void onStop()}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+            >
+              <Square size={12} strokeWidth={0} fill="currentColor" />
+            </button>
+          ) : canSend ? (
+            <button
+              type="button"
+              aria-label="Send"
+              disabled={sending || disabled}
+              onClick={send}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
+            >
+              <ArrowUp size={18} strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={dictating ? "Stop dictation" : "Dictate"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onMouseUp={onDictateStop}
+              onMouseLeave={() => {
+                if (dictating) onDictateStop();
+              }}
+              onTouchStart={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onTouchEnd={onDictateStop}
+              className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full ${
+                dictating ? "bg-[rgba(48,162,75,.16)] text-[#4ECB71]" : "text-[#9A9AA0]"
+              }`}
+              title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+            >
+              <Mic size={16} strokeWidth={1.8} />
+            </button>
+          )}
         </div>
-      ) : null}
-      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ATTACHMENT_ACCEPT}
-          className="hidden"
-          onChange={(event) => void onAttachmentPick(event.target.files)}
-        />
-        <button
-          type="button"
-          aria-label="Attach file"
-          disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
-        >
-          <Plus size={17} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          aria-label={dictating ? "Stop dictation" : "Dictate"}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onMouseUp={onDictateStop}
-          onMouseLeave={() => {
-            if (dictating) onDictateStop();
-          }}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
-            dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
-              : "border-[#26262A] text-[#9A9AA0]"
-          }`}
-          title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
-        >
-          <Mic size={16} strokeWidth={1.8} />
-        </button>
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          disabled={disabled}
-          placeholder={activeName ? `Message ${activeName}` : "Message…"}
-          aria-label={activeName ? `Message ${activeName}` : "Message"}
-          name="chat-message"
-          autoComplete="off"
-          className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
-        />
-        {running ? (
-          <button
-            type="button"
-            aria-label="Stop"
-            onClick={() => void onStop()}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-          >
-            <Square size={12} strokeWidth={0} fill="currentColor" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label="Send"
-            disabled={sending || !canSend || disabled}
-            onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
-          >
-            <ArrowUp size={18} strokeWidth={2} />
-          </button>
-        )}
       </div>
     </div>
   );
@@ -2150,12 +2253,8 @@ const MessageView = memo(function MessageView({
       {message.blocks.map((block, i) => {
         if (block.kind === "meta") {
           return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
-            >
-              <span className="text-[#E65707]">◷</span>
-              <span>{block.text}</span>
+            <div key={i} className="px-1 py-0.5 text-[13px] leading-[1.45] text-[#6C6C70]">
+              {block.text}
             </div>
           );
         }
@@ -2274,7 +2373,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text" && message.role === "user") {
           return (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]">
+              <div className="max-w-[70%] rounded-[18px] bg-[#2F2F33] px-[16px] py-[10px] text-[15.5px] leading-[1.5] text-[#ECECEE]">
                 {block.text}
               </div>
             </div>
@@ -2283,7 +2382,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+              <div className="max-w-[80%] rounded-[18px] bg-[#1A1A1D] px-[16px] py-[10px] text-[15.5px] leading-[1.55] text-[#DFDFE2]">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
                 {voiceReady ? (
                   <button
@@ -2320,6 +2419,22 @@ const MessageView = memo(function MessageView({
             <AskCard
               key={i}
               block={block}
+              canAnswer={canAnswer}
+              onAnswer={(text) => onAnswer(message, text)}
+            />
+          );
+        }
+        if (block.kind === "choice") {
+          return (
+            <AskCard
+              key={i}
+              block={{
+                kind: "ask",
+                text: block.question,
+                detail: block.subtitle,
+                status: canAnswer ? "pending" : "answered",
+                actions: block.options.map((option) => ({ id: option.id, label: option.label })),
+              }}
               canAnswer={canAnswer}
               onAnswer={(text) => onAnswer(message, text)}
             />
@@ -2367,9 +2482,17 @@ function AskCard({
   canAnswer: boolean;
   onAnswer: (text: string) => Promise<void>;
 }) {
+  const parsed = parseAskOptions({
+    text: block.text,
+    detail: block.detail,
+    actions: block.actions,
+  });
+  const picked = matchingAskOption(parsed.options, block.answer);
   const [editing, setEditing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const pending = block.status !== "answered" && canAnswer;
 
   async function submitAnswer(value: string) {
     const text = value.trim();
@@ -2382,21 +2505,78 @@ function AskCard({
     }
   }
 
-  return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
-        <ChatMarkdown>{block.text}</ChatMarkdown>
+  if (block.status === "answered") {
+    return (
+      <div className="w-[min(420px,90%)] rounded-[20px] bg-[#151517] px-5 py-[18px]">
+        <p className="text-[16px] font-medium text-[#C9C9CE]">{parsed.question}</p>
+        {picked ? (
+          <div className="mt-3.5 flex items-center gap-3.5 rounded-[13px] border border-[#232326] px-4 py-3.5">
+            <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+              {picked.letter}
+            </span>
+            <span className="text-[15.5px] text-[#ECECEE]">{picked.label}</span>
+            <span className="ml-auto text-[#4ECB71]">✓</span>
+          </div>
+        ) : (
+          <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
+            {block.answer ? `Answered: ${block.answer}` : "Answered"}
+          </div>
+        )}
       </div>
-      {block.detail ? (
-        <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
-          {block.detail}
-        </pre>
-      ) : null}
-      {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {block.answer ? `Answered: ${block.answer}` : "Answered"}
+    );
+  }
+
+  if (dismissed && pending) {
+    return (
+      <button
+        type="button"
+        onClick={() => setDismissed(false)}
+        className="text-left text-[14.5px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        {parsed.question}
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-[min(420px,90%)] rounded-[20px] bg-[#1A1A1D] px-5 py-[18px]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[17px] font-medium leading-[1.35] text-[#F1F1F2]">{parsed.question}</p>
+          {block.detail && !parsed.options.length ? (
+            <p className="mt-1 text-[14.5px] text-[#8E8EA0]">{block.detail}</p>
+          ) : null}
         </div>
-      ) : !canAnswer ? (
+        {pending ? (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setDismissed(true)}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-[#6C6C70] hover:bg-[#222226] hover:text-[#C9C9CE]"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      {parsed.options.length > 0 && pending ? (
+        <div className="mt-3.5 overflow-hidden rounded-[13px] border border-[#232326]">
+          {parsed.options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={submitting}
+              onClick={() => void submitAnswer(option.label)}
+              className="flex w-full items-center gap-3.5 border-b border-[#202023] px-4 py-3.5 text-left text-[15.5px] text-[#ECECEE] last:border-b-0 hover:bg-[#222226] disabled:opacity-50"
+            >
+              <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                {option.letter}
+              </span>
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {!pending ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">No longer active</div>
       ) : editing ? (
         <form
@@ -2410,7 +2590,7 @@ function AskCard({
             aria-label="Answer"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Type your answer"
+            placeholder="Type your own answer"
             className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
           <div className="flex gap-2">
@@ -2434,6 +2614,15 @@ function AskCard({
             </button>
           </div>
         </form>
+      ) : parsed.options.length ? (
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => setEditing(true)}
+          className="mt-3 text-[13.5px] text-[#8E8EA0] hover:text-[#C9C9CE] disabled:opacity-50"
+        >
+          Type your own answer
+        </button>
       ) : (
         <div className="mt-3.5 flex gap-2">
           <button
@@ -2552,6 +2741,152 @@ function CreateBotForm({
         Create
       </button>
     </div>
+  );
+}
+
+function collectEnteringUserMessageIds(
+  botId: string,
+  messages: ThreadMessage[],
+  state: { botId: string; seen: Set<string>; primed: boolean },
+) {
+  if (state.botId !== botId) {
+    state.botId = botId;
+    state.seen = new Set(messages.map((message) => message.id));
+    state.primed = messages.length > 0;
+    return new Set<string>();
+  }
+  if (!state.primed) {
+    if (!messages.length) return new Set<string>();
+    for (const message of messages) state.seen.add(message.id);
+    state.primed = true;
+    return new Set<string>();
+  }
+  const recent = new Set(messages.slice(-4).map((message) => message.id));
+  const entering = new Set<string>();
+  for (const message of messages) {
+    const text = userMessagePlainText(message);
+    const pendingKey = pendingUserMessageTextKey(text);
+    if (
+      !state.seen.has(message.id) &&
+      message.role === "user" &&
+      recent.has(message.id) &&
+      !message.blocks.some((block) => block.kind === "bot_message")
+    ) {
+      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
+      if (!replacingPending) entering.add(message.id);
+    }
+    state.seen.add(message.id);
+    if (message.role === "user") {
+      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
+      else state.seen.delete(pendingKey);
+    }
+  }
+  return entering;
+}
+
+function userMessagePlainText(message: ThreadMessage): string {
+  return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
+}
+
+function ChatTimestamp({ iso }: { iso: string }) {
+  const label = formatChatTimestamp(iso);
+  if (!label) return null;
+  return (
+    <div className="py-1.5 text-center text-[12.5px] text-[#6C6C70]" data-testid="chat-timestamp">
+      {label}
+    </div>
+  );
+}
+
+function BotMessageChip({
+  block,
+  onOpen,
+}: {
+  block: Extract<ThreadMessage["blocks"][number], { kind: "bot_message" }>;
+  onOpen: () => void;
+}) {
+  if (block.direction === "out") {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center gap-1.5 py-0.5 text-[14px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Messaged</span>
+        <BotAvatar color={block.peerColor} size={18} />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center justify-center gap-1.5 py-1 text-[13px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Message from</span>
+        <BotAvatar color={block.peerColor} size={18} />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+      <div className="flex justify-start">
+        <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+          {block.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotWorkingStatus() {
+  return (
+    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
+      <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
+      <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+    </div>
+  );
+}
+
+function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+  const running = steps.some((step) => step.status === "running");
+  const visible = visibleReasoningSteps(steps);
+  if (!steps.length) return null;
+  return (
+    <details className="rk-thought w-[min(560px,100%)]">
+      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          size={16}
+          strokeWidth={2}
+          className="rk-thought-caret shrink-0 text-[#8E8EA0]"
+        />
+        {running ? (
+          <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+        ) : (
+          <span className="text-[15px] font-medium text-[#B4B4B8]">Thought</span>
+        )}
+      </summary>
+      {visible.length ? (
+        <div className="rk-thought-body ml-[7px] mt-2 space-y-2.5 border-l border-[#3A3A40] pl-3.5">
+          {visible.map((step) => (
+            <div key={step.id} className="text-[14px] leading-[1.55] text-[#8E8EA0]">
+              {step.kind === "tool" || !step.detail ? (
+                <div className={step.status === "running" ? "text-[#D0D0D4]" : undefined}>
+                  {step.title}
+                </div>
+              ) : null}
+              {step.detail ? (
+                <pre className="rk-scroll max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55] text-[#8E8EA0]">
+                  {step.detail}
+                  {running && step.status === "running" ? (
+                    <span className="rk-thought-cursor">▍</span>
+                  ) : null}
+                </pre>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </details>
   );
 }
 

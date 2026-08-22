@@ -1,6 +1,5 @@
+import { formatInboxTime } from "@rakazo/core";
 import type { MobileBot } from "./api";
-
-const DAY_MS = 86_400_000;
 
 export function filterBots(bots: MobileBot[], query: string) {
   const needle = query.trim().toLowerCase();
@@ -29,22 +28,5 @@ export function userInitials(name: string) {
 }
 
 export function formatThreadTime(iso: string, now = new Date()) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfThatDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const dayDiff = Math.round((startOfToday - startOfThatDay) / DAY_MS);
-
-  if (dayDiff <= 0) {
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-  if (dayDiff < 7) {
-    return date.toLocaleDateString("en-US", { weekday: "long" });
-  }
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function pad(value: number) {
-  return String(value).padStart(2, "0");
+  return formatInboxTime(iso, now);
 }

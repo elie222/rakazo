@@ -476,8 +476,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
-            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative paths start there. Shared work goes in shared/.`
+            : "This entire computer workspace is your private home. Relative paths start at its root.";
+        const teammatesLine = teammates.length
+          ? `Teammates: ${teammates
+              .map((row) => (row.title.trim() ? `${row.name} (${row.title})` : row.name))
+              .join(
+                "; ",
+              )}. If one of them owns the next step, message_bot them. Don't wait to be asked, and don't make the user relay.`
+          : "No other bots in this workspace yet. spawn_bot creates one.";
 
         let assembled = "";
         let pendingProgress = "";

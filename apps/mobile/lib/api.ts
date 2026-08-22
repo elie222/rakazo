@@ -153,7 +153,7 @@ export type MobileBot = Pick<
   | "updatedAt"
   | "computerMode"
 > &
-  Partial<Pick<Bot, "parentBotId">>;
+  Partial<Pick<Bot, "parentBotId" | "status">>;
 
 export type MobileBotSection = BotSection;
 
@@ -170,6 +170,7 @@ export type MobileMessage = {
   id: string;
   threadId?: string;
   seq?: number;
+  createdAt?: string;
   role: "user" | "bot" | "system";
   blocks: Array<{
     kind: string;

@@ -10,7 +10,7 @@ export function BotAvatar({ color, size = 54 }: { color: string; size?: number }
       style={{
         width: size,
         height: size,
-        borderRadius: size / 2,
+        borderRadius: Math.max(4, Math.round(size * 0.24)),
         backgroundColor: color,
         alignItems: "center",
         justifyContent: "center",
