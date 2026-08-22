@@ -30,6 +30,7 @@ import {
   isSupermemoryEnabled,
   listPiCatalog,
   type PiOAuthLogins,
+  planLiveConnectionSync,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -96,6 +97,53 @@ import {
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+async function reconcilePendingComposioConnections(
+  prisma: PrismaClient,
+  owner: Pick<Actor, "workspaceId" | "userId">,
+  connectedProviders: string[],
+): Promise<void> {
+  const rows = await prisma.connection.findMany({
+    where: {
+      workspaceId: owner.workspaceId,
+      userId: owner.userId,
+      provider: { in: connectedProviders },
+      status: { in: ["pending", "connected"] },
+    },
+    select: { id: true, provider: true, displayName: true, status: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const sync = planLiveConnectionSync(rows, connectedProviders);
+  const updates = [
+    ...(sync.connectIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.connectIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "connected" },
+          }),
+        ]
+      : []),
+    ...(sync.revokeIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.revokeIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "revoked" },
+          }),
+        ]
+      : []),
+  ];
+  if (updates.length > 0) await prisma.$transaction(updates);
+}
 
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
@@ -1312,21 +1360,17 @@ export function createRouter(deps: RouterDeps) {
             // A connection can finish on Composio's side after our own completion check gave
             // up (see PluginsOverlay's polling timeout) — reconcile stale "pending" rows here
             // so callers like the run executor, which trust our local status, stay in sync.
+            // Reuse the executor's one-row-per-provider plan so duplicate auth attempts do not
+            // leave stale locally connected rows behind after a later revoke.
             // Best effort: a failed reconciliation write shouldn't blank out an otherwise
             // successful catalog fetch — the caller still gets accurate, if unreconciled, data.
-            await deps.prisma.connection
-              .updateMany({
-                where: {
-                  workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
-                  status: "pending",
-                  provider: { in: nowConnected },
-                },
-                data: { status: "connected" },
-              })
-              .catch((error) => {
-                console.error("composio pending-connection reconciliation failed", error);
-              });
+            await reconcilePendingComposioConnections(
+              deps.prisma,
+              context.actor,
+              nowConnected,
+            ).catch((error) => {
+              console.error("composio pending-connection reconciliation failed", error);
+            });
           }
           return items;
         } catch {
