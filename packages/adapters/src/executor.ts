@@ -1132,7 +1132,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
           terminalCheckpointComplete = true;
 
-          const text = redactSecrets(assembled || "done.", runSecrets);
+          const assembledText = assembled.trim();
+          if (!assembledText) {
+            throw new Error("The model returned no text");
+          }
+          const text = redactSecrets(assembledText, runSecrets);
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }

@@ -543,6 +543,22 @@ export async function finalizeRun(
         runId: input.runId,
         payload: { messageId: message.id, role: "bot", blocks: input.blocks },
       });
+    } else {
+      const blocks = [{ kind: "text" as const, text: input.error }];
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: input.threadId,
+        role: "bot",
+        blocks,
+        runId: input.runId,
+      });
+      await appendEventInTransaction(tx, {
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: "thread.message.created",
+        runId: input.runId,
+        payload: { messageId: message.id, role: "bot", blocks },
+      });
     }
     const lastEvent = await appendEventInTransaction(tx, {
       workspaceId: input.workspaceId,

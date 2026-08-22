@@ -116,6 +116,26 @@ describe("thread event reduction", () => {
     });
   });
 
+  it("replaces a pending user bubble with the durable message", () => {
+    const initial = snapshot([
+      { ...message("pending:local", [{ kind: "text", text: "yo" }], 1), role: "user" },
+    ]);
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        payload: {
+          messageId: "m-real",
+          role: "user",
+          blocks: [{ kind: "text", text: "yo" }],
+        },
+      }),
+    );
+    expect(next?.messages.map((item) => item.id)).toEqual(["m-real"]);
+    expect(next?.messages[0]?.role).toBe("user");
+  });
+
   it("replaces transient progress and a matching live subagent with the durable message", () => {
     const initial = snapshot([
       message("durable", [{ kind: "text", text: "old value" }]),

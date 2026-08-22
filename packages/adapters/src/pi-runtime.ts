@@ -10,6 +10,10 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import {
+  attachOpenAICompatibleProvider,
+  completeOpenAICompatibleChat,
+} from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 
@@ -152,21 +156,56 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.removeEventListener("abort", onAbort);
 
         const error = agent.state.errorMessage;
-        if (error) {
-          queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
-          queue.push({ type: "done", text: sanitizeError(error) });
+        if (error && !isMissingFinishReasonError(error)) {
+          pushRunError(queue, error, Boolean(request.model.baseUrl));
           return;
         }
         if (!streamed) {
-          const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
-          queue.push({ type: "text", text: fallback });
-          streamed = fallback;
+          try {
+            const recovered =
+              (await recoverGatewayReply(request, signal)) ||
+              assistantText(agent.state.messages.at(-1));
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              streamed = recovered;
+            } else {
+              pushRunError(
+                queue,
+                error || "The gateway returned an empty reply",
+                Boolean(request.model.baseUrl),
+              );
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              Boolean(request.model.baseUrl),
+            );
+            return;
+          }
         }
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        queue.push({ type: "text", text: `I hit a problem: ${message}` });
-        queue.push({ type: "done", text: message });
+        if (isMissingFinishReasonError(message) && request.model.baseUrl) {
+          try {
+            const recovered = await recoverGatewayReply(request, signal);
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              queue.push({ type: "done", text: recovered });
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              true,
+            );
+            return;
+          }
+        }
+        pushRunError(queue, message, Boolean(request.model.baseUrl));
       } finally {
         queue.close();
       }
@@ -495,7 +534,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     await nested.waitForIdle();
     host.signal.removeEventListener("abort", onAbort);
     const error = nested.state.errorMessage;
-    if (error) {
+    if (error && !isMissingFinishReasonError(error)) {
       const message = sanitizeError(error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
@@ -662,6 +701,62 @@ function summarizeToolResult(result: unknown) {
   } catch {
     return "ok";
   }
+}
+
+export function isMissingFinishReasonError(error: string): boolean {
+  return /stream ended without finish_reason/i.test(error);
+}
+
+function pushRunError(
+  queue: { push(event: AgentRuntimeEvent): void },
+  error: string,
+  fromGateway: boolean,
+) {
+  const message = sanitizeError(error);
+  queue.push({
+    type: "reasoning",
+    step: {
+      id: "status",
+      kind: "status",
+      title: fromGateway ? "Gateway error" : "Failed",
+      detail: message,
+      status: "done",
+    },
+  });
+  queue.push({
+    type: "text",
+    text: message,
+  });
+  queue.push({ type: "done", text: message });
+}
+
+async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal): Promise<string> {
+  if (!request.model.baseUrl) return "";
+  return completeOpenAICompatibleChat({
+    baseUrl: request.model.baseUrl,
+    apiKey: request.model.apiKey,
+    modelId: request.model.id,
+    messages: gatewayChatMessages(request),
+    signal,
+  });
+}
+
+function gatewayChatMessages(
+  request: AgentRunRequest,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  if (request.instructions?.trim()) {
+    messages.push({ role: "system", content: request.instructions });
+  }
+  for (const item of request.history) {
+    if (item.role === "user" || item.role === "assistant") {
+      messages.push({ role: item.role, content: item.content });
+    }
+  }
+  if (messages.at(-1)?.role !== "user" || messages.at(-1)?.content !== request.prompt) {
+    messages.push({ role: "user", content: request.prompt });
+  }
+  return messages;
 }
 
 function assistantText(message: unknown): string {
