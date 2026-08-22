@@ -17,6 +17,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertOpenAICompatibleBaseUrlAllowed,
   type ComposioProvider,
   ComputerBusyError,
   type ComputerExecutionLease,
@@ -35,7 +36,6 @@ import {
   isSupermemoryEnabled,
   listPiCatalog,
   mintGatewayProviderId,
-  normalizeOpenAICompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER,
   type PiOAuthLogins,
   parseAvailableModels,
@@ -292,7 +292,9 @@ export function createRouter(deps: RouterDeps) {
         throwIfAborted(context.signal);
         try {
           return {
-            models: await fetchOpenAICompatibleModels(input.baseUrl, input.apiKey, context.signal),
+            models: await fetchOpenAICompatibleModels(input.baseUrl, input.apiKey, context.signal, {
+              allowPrivateNetwork: context.actor.isDeploymentOwner,
+            }),
           };
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
@@ -304,7 +306,10 @@ export function createRouter(deps: RouterDeps) {
         if (input.baseUrl) {
           let baseUrl: string;
           try {
-            baseUrl = normalizeOpenAICompatibleBaseUrl(input.baseUrl);
+            baseUrl = await assertOpenAICompatibleBaseUrlAllowed(input.baseUrl, {
+              allowPrivateNetwork: context.actor.isDeploymentOwner,
+              hasCredentials: Boolean(input.apiKey.trim()),
+            });
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
               message: error instanceof Error ? error.message : "Invalid base URL",
@@ -685,7 +690,7 @@ export function createRouter(deps: RouterDeps) {
         }
         await deps.prisma.event.deleteMany({
           where: {
-            type: "thread.progress",
+            type: { in: ["thread.progress", "thread.reasoning"] },
             runId: { in: activeRuns.map((run) => run.id) },
           },
         });

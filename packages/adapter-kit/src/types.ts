@@ -252,6 +252,8 @@ export interface AgentRunRequest {
     id: string;
     apiKey?: string;
     baseUrl?: string;
+    /** Deployment-owner opt-in for loopback/LAN gateway requests. */
+    allowPrivateNetwork?: boolean;
     /** In-process OAuth credential from the encrypted store for this run. */
     oauth?: {
       credential: AgentModelOAuthCredential;

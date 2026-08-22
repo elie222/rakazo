@@ -137,6 +137,34 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
 }
 
+export function selectProviderCredential<T extends { provider: string }>(
+  requestedProvider: string | null | undefined,
+  defaultCredential: T | null,
+  requestedCredential: T | null,
+): T | null {
+  if (!requestedProvider) return defaultCredential;
+  return requestedCredential?.provider === requestedProvider ? requestedCredential : null;
+}
+
+export function redactedToolReasoningStep(
+  event: {
+    name: string;
+    args: Record<string, unknown>;
+    executionId: string;
+    status?: "running" | "done";
+  },
+  secrets: string[],
+): ReasoningStep {
+  const detail = reasoningToolDetail(event.name, event.args);
+  return {
+    id: event.executionId,
+    kind: "tool",
+    title: redactSecrets(reasoningToolTitle(event.name, event.args), secrets),
+    detail: detail ? redactSecrets(detail, secrets) : undefined,
+    status: event.status === "done" ? "done" : "running",
+  };
+}
+
 export async function deferFutureRoutine(
   jobs: JobPublisher,
   routineId: string,
@@ -198,11 +226,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
       ]);
-      const resolved = await resolveModelKey(deps, scope.userId, scope.workspaceId, credential);
       const provider =
         credential?.provider ??
         settings?.defaultModelProvider ??
         (deps.deploymentModelKey ? "openrouter" : "scripted");
+      const resolved = await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.workspaceId,
+        credential,
+        provider,
+      );
       const id =
         credential?.defaultModel ??
         settings?.defaultModelId ??
@@ -213,6 +247,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         provider,
         id,
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
+        baseUrl: credential?.baseUrl ?? undefined,
+        allowPrivateNetwork: Boolean(credential?.baseUrl) && settings?.ownerUserId === scope.userId,
         oauth: resolved.oauth
           ? { credential: resolved.oauth, persist: resolved.persistOAuth }
           : undefined,
@@ -419,7 +455,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
             orderBy: newestModelCredentialOrder,
           });
-          if (specific) credential = specific;
+          credential = selectProviderCredential(bot.modelProvider, defaultCredential, specific);
         }
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(storedConnections)) {
@@ -506,11 +542,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         }
+        const provider =
+          bot.modelProvider ?? credential?.provider ?? settings?.defaultModelProvider ?? "scripted";
+        if (credential?.provider !== provider) credential = null;
         const resolved = await resolveModelKey(
           deps,
           run.userId,
           run.workspaceId,
           credential,
+          provider,
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
@@ -1009,15 +1049,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentTurnImages,
               tools,
               model: {
-                provider:
-                  bot.modelProvider ??
-                  credential?.provider ??
-                  settings?.defaultModelProvider ??
-                  "scripted",
+                provider,
                 id:
                   bot.modelId ?? credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 baseUrl: credential?.baseUrl ?? undefined,
+                allowPrivateNetwork:
+                  Boolean(credential?.baseUrl) && settings?.ownerUserId === run.userId,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
@@ -1169,13 +1207,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
-              reasoningSteps = upsertReasoningStep(reasoningSteps, {
-                id: event.executionId,
-                kind: "tool",
-                title: reasoningToolTitle(event.name, event.args),
-                detail: reasoningToolDetail(event.name, event.args),
-                status: event.status === "done" ? "done" : "running",
-              });
+              reasoningSteps = upsertReasoningStep(
+                reasoningSteps,
+                redactedToolReasoningStep(event, runSecrets),
+              );
               await publishReasoning(event.status === "done");
               if (scripted) await applyTool(event.name, event.args, event.executionId);
             } else if (event.type === "subagent") {
@@ -1601,6 +1636,7 @@ async function resolveModelKey(
   userId: string,
   workspaceId: string,
   credential: { secretId: string; provider: string } | null,
+  provider: string,
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
@@ -1611,7 +1647,7 @@ async function resolveModelKey(
   if (credential && deps.secretStore) {
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
-      if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
+      if (!row) return { redact: [] };
       const plaintext = deps.secretStore!.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {
@@ -1665,7 +1701,11 @@ async function resolveModelKey(
       };
     });
   }
-  return { apiKey: deps.deploymentModelKey, redact: [] };
+  return {
+    apiKey:
+      provider === "openrouter" || provider === "scripted" ? deps.deploymentModelKey : undefined,
+    redact: [],
+  };
 }
 
 async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

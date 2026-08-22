@@ -423,7 +423,9 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: {},
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, type: { in: ["thread.progress", "thread.reasoning"] } },
+    });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
   });
 
@@ -578,7 +580,9 @@ export async function finalizeRun(
       runId: input.runId,
       payload: input.outcome === "completed" ? {} : { error: input.error },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, type: { in: ["thread.progress", "thread.reasoning"] } },
+    });
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq };
   });

@@ -12,7 +12,11 @@ import type {
 import type { ReasoningStep } from "@rakazo/contracts";
 import { reasoningToolDetail, reasoningToolTitle } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { attachOpenAICompatibleProvider } from "./openai-compatible.js";
+import {
+  attachOpenAICompatibleProvider,
+  createOpenAICompatibleFetch,
+  OPENAI_COMPATIBLE_KEYLESS_API_KEY,
+} from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 
@@ -72,7 +76,14 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const apiKey = request.model.oauth
           ? undefined
-          : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+          : request.model.baseUrl
+            ? request.model.apiKey?.trim() || OPENAI_COMPATIBLE_KEYLESS_API_KEY
+            : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+        const providerFetch = request.model.baseUrl
+          ? createOpenAICompatibleFetch({
+              allowPrivateNetwork: request.model.allowPrivateNetwork,
+            })
+          : undefined;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -81,6 +92,7 @@ export class PiAgentRuntime implements AgentRuntime {
           models,
           model,
           apiKey,
+          providerFetch,
           nestedAgents,
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           signal,
@@ -90,7 +102,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const history = toHistory(request.history, request.prompt);
 
         const agent = new Agent({
-          streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
+          streamFn: (m, ctx, options) =>
+            models.streamSimple(m, ctx, { ...options, fetch: providerFetch ?? options?.fetch }),
           getApiKey: async () => apiKey,
           transformContext: async (messages) => pruneComputerScreenshotContext(messages),
           initialState: {
@@ -235,7 +248,7 @@ export class PiAgentRuntime implements AgentRuntime {
           streamed = fallback;
         }
         emitReasoning({
-          id: "status",
+          id: "status:done",
           kind: "status",
           title: "Finished",
           status: "done",
@@ -259,11 +272,9 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function modelsForRequest(
-  request: AgentRunRequest,
-  provider: string,
-): ReturnType<typeof builtinModels> {
+function modelsForRequest(request: AgentRunRequest, provider: string): Models {
   const oauth = request.model.oauth;
+  if (!oauth && !request.model.baseUrl) return catalogModels();
   const models = oauth
     ? registerLocalProvider(
         builtinModels({
@@ -274,7 +285,7 @@ function modelsForRequest(
           ),
         }),
       )
-    : catalogModels();
+    : registerLocalProvider(builtinModels());
   if (request.model.baseUrl) {
     attachOpenAICompatibleProvider(models as MutableModels, {
       provider,
@@ -499,7 +510,11 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
   );
   const nestedHost: ToolHost = { ...host, depth: 1 };
   const nested = new Agent({
-    streamFn: (m, ctx, options) => host.models.streamSimple(m, ctx, options),
+    streamFn: (m, ctx, options) =>
+      host.models.streamSimple(m, ctx, {
+        ...options,
+        fetch: host.providerFetch ?? options?.fetch,
+      }),
     getApiKey: async () => host.apiKey,
     transformContext: async (messages) => pruneComputerScreenshotContext(messages),
     initialState: {
@@ -788,6 +803,7 @@ interface ToolHost {
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;
+  providerFetch: typeof fetch | undefined;
   nestedAgents: Set<Agent>;
   subagentGate: { acquire(): Promise<void>; release(): void };
   signal: AbortSignal;

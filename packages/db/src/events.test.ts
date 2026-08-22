@@ -243,6 +243,12 @@ describe("pauseRunForInput", () => {
       "thread.message.created",
       "run.waiting_input",
     ]);
+    expect(tx.event.deleteMany).toHaveBeenCalledWith({
+      where: {
+        runId: "run-1",
+        type: { in: ["thread.progress", "thread.reasoning"] },
+      },
+    });
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 8 }));
   });
 });
