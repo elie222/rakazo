@@ -660,11 +660,15 @@ export function createRouter(deps: RouterDeps) {
           linkMessageToRun: true,
         });
         const runId = sent.runId!;
+        // A user message supersedes the opening question a new bot parks in `waiting_input`:
+        // the message says what to take on, so the question is answered by being ignored. Left
+        // active it would outlive this run and become the thread's current run again once this
+        // one finishes, showing the bot as forever waiting and holding its computer awake.
         await deps.prisma.run.updateMany({
           where: {
             botId: bot.id,
-            status: "queued",
             id: { not: runId },
+            OR: [{ status: "queued" }, { status: "waiting_input", trigger: "onboarding" }],
           },
           data: { status: "cancelled", completedAt: new Date() },
         });

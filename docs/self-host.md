@@ -115,21 +115,32 @@ DATA_DIR=/data
 # Absolute path of this checkout on the host. Required: the updater sidecar is bind-mounted at
 # exactly this path so Compose derives the same project name and bind mounts that you do.
 RAKAZO_DEPLOY_DIR=/srv/rakazo
-RAKAZO_IMAGE_TAG=latest
+RAKAZO_IMAGE_TAG=local
 ```
 
-4. Start the stack and verify its public health endpoint:
+4. Build the images from your checkout and start the stack, then verify its public health endpoint:
 
 ```bash
-docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  build --build-arg GIT_SHA=$(git rev-parse HEAD)
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d
 curl --fail https://app.example.com/health
 ```
 
-The published images carry the commit they were built from, so `GET /health` reports it as
-`"revision"` with nothing for you to set. Leave `GIT_SHA` unset: it is a build argument, and a value
-in `.env` would override what the image already knows. To build from source instead of pulling, add
-`--build` and pass `GIT_SHA=$(git rev-parse HEAD)` on the command line.
+**Build, do not pull, for a first deployment.** `RAKAZO_IMAGE_TAG` ships as `local`, a tag no
+registry serves, so the commands above build `api`, `worker`, `web`, and `updater` from the checkout
+you just cloned. Running `docker compose … pull` first — as earlier versions of this page told you
+to — fails outright with `error from registry: denied` whenever the tag you are on has not been
+published, and there is nothing to fall back to.
+
+Passing `GIT_SHA` is what makes `GET /health` report a `"revision"`; a locally built image has no
+other way to know its commit. Prebuilt images from the registry bake it in at publish time, so when
+you switch to a release tag you should leave `GIT_SHA` unset — a value in `.env` would override what
+the image already knows.
+
+Once a release has been published you can switch this host to prebuilt images by setting
+`RAKAZO_IMAGE_TAG` to that release tag and running `pull` followed by `up -d`. See
+[Published images and tags](#published-images-and-tags) for what exists today.
 
 The root `.env` is excluded from both Git and the Docker build context. The database, application data,
 and Caddy certificates live in named Docker volumes.
@@ -148,11 +159,20 @@ substitute for an encrypted off-host backup or provider snapshot.
 
 ## Upgrade
 
-Compose deployments run published images from GHCR and upgrade by moving a tag:
+A Compose deployment on a published release tag upgrades by moving that tag:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d api worker web
+```
+
+A deployment on the default `local` tag has no registry to pull from, so it upgrades by rebuilding
+the checkout instead:
+
+```bash
+git pull
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  up -d --build api worker web
 ```
 
 `up -d` replaces the API, worker, and web containers together, so the three never disagree about
@@ -170,24 +190,42 @@ Product contracts stay compatible across cloud and self-hosted.
 
 ### Published images and tags
 
-Two images are published to GHCR by `.github/workflows/publish-server-image.yml`:
+> **The registry is empty today.** `.github/workflows/publish-server-image.yml` has never run, so
+> nothing exists under either image name yet and every `pull` of them fails with
+> `error from registry: denied`. Until that workflow runs on a release tag, the only working path is
+> building from source, which is why `RAKAZO_IMAGE_TAG` ships as `local`. Everything in this section
+> describes what the workflow will publish once it runs, not what you can pull right now.
+
+`.github/workflows/publish-server-image.yml` publishes to `ghcr.io/<owner>/<repo>/…`, derived from
+`${{ github.repository }}` rather than hardcoded, so a fork's CI fills the fork's own namespace. For
+this repository that is:
 
 | Image | Contents |
 | --- | --- |
-| `ghcr.io/elie222/rakazo/app` | api, worker, and web — one image, three commands |
-| `ghcr.io/elie222/rakazo/updater` | the updater sidecar, plus the Docker CLI |
+| `ghcr.io/millson1/rakazo/app` | api, worker, and web — one image, three commands |
+| `ghcr.io/millson1/rakazo/updater` | the updater sidecar, plus the Docker CLI |
+
+If you deploy from your own fork, set `RAKAZO_IMAGE` and `RAKAZO_UPDATER_IMAGE` to your namespace —
+your CI cannot publish into someone else's.
 
 | Tag | Published on | Moves? |
 | --- | --- | --- |
+| `local` | nothing — built locally by `up --build` | rebuilt in place |
+| `local-<commit>` | nothing — built on the server by a fork update | never |
 | `vX.Y.Z`, `vX.Y` | release tags | no / on patch releases |
 | `latest` | release tags | yes, to the newest release |
-| `sha-<commit>` | pushes to main | never |
+| `sha-<commit>` | every push and manual run | never |
 | `edge` | pushes to main | yes, to the newest main build |
 
-Pin `RAKAZO_IMAGE_TAG` to a release tag in production. Every tag is retained, so the tag a
-deployment ran yesterday is still pullable today — which is what makes rollback a redeploy rather
-than a rebuild. `sha-<commit>` is the immutable identity: the commit in a tag is the commit
-`GET /health` reports as `"revision"`, because the workflow bakes it into the image.
+Pin `RAKAZO_IMAGE_TAG` to a release tag in production once releases exist. Published tags are
+retained, so the tag a deployment ran yesterday is still pullable today — which is what makes
+rollback a redeploy rather than a rebuild. The two `local*` tags are the exception: they only exist
+on the host that built them, so the updater skips `docker compose pull` when rolling back onto one.
+`sha-<commit>` is the immutable identity: the commit in a tag is the commit `GET /health` reports as
+`"revision"`, because the workflow bakes it into the image.
+
+To populate the registry the first time, run the workflow manually (`workflow_dispatch`) or push a
+`v*` tag. A manual run always produces at least `sha-<commit>`; only a `v*` tag produces `latest`.
 
 ### In-app self-update
 
@@ -203,6 +241,15 @@ two engines, and the overlay tells you which one is in play.
 - *Official repository:* resolves the newest release tag with `git ls-remote --tags`, pins
   `RAKAZO_IMAGE_TAG` in your `.env`, keeps the outgoing tag in `RAKAZO_IMAGE_TAG_PREVIOUS`, then
   `docker compose pull` and `up -d`. No build on your machine — a download and a restart.
+
+  Two things have to line up for this path to work, and today they do not. It reads release tags
+  from `OFFICIAL_REPO_URL` (`packages/core/src/self-update.ts`, currently the upstream
+  `elie222/rakazo`) and then pulls that tag from `PUBLISHED_IMAGE_REPO`
+  (`packages/core/src/compose-update.ts`, this repository). Release tags and published images only
+  agree when both name the same repository, so these two constants should be set from one value.
+  Changing `OFFICIAL_REPO_URL` also means updating the default-source expectation in
+  `packages/testkit/src/journeys.test.ts`. Until then, drive the pull path by setting
+  `RAKAZO_IMAGE`/`RAKAZO_IMAGE_TAG` yourself, or use the fork path below.
 - *Fork (Advanced):* a fork has no published images, so the sidecar fast-forwards the checkout in
   `RAKAZO_DEPLOY_DIR` and runs `up -d --build`. This builds on the server and takes **minutes rather
   than seconds**. It needs `RAKAZO_DEPLOY_DIR` to be a git checkout of your fork; the UI says so

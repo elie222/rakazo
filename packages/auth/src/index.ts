@@ -104,19 +104,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 createdAt: new Date(),
               },
             });
-            const existing = await prisma.deploymentSettings.findUnique({
-              where: { id: "default" },
+            // The first account on a fresh deployment owns it. Reading before writing would let
+            // two simultaneous signups both see no row and both insert, so claim the row with an
+            // insert that tolerates losing, then take ownership only while it is still unclaimed.
+            await prisma.deploymentSettings.createMany({
+              data: { id: "default", ownerUserId: user.id },
+              skipDuplicates: true,
             });
-            if (!existing) {
-              await prisma.deploymentSettings.create({
-                data: { id: "default", ownerUserId: user.id },
-              });
-            } else if (!existing.ownerUserId) {
-              await prisma.deploymentSettings.update({
-                where: { id: "default" },
-                data: { ownerUserId: user.id },
-              });
-            }
+            await prisma.deploymentSettings.updateMany({
+              where: { id: "default", ownerUserId: null },
+              data: { ownerUserId: user.id },
+            });
             await prisma.memoryDocument.create({
               data: {
                 workspaceId: orgId,

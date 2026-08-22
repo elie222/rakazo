@@ -5,9 +5,30 @@ import {
   normalizeUpdateBranch,
 } from "./self-update.js";
 
-/** The published server image for the official repository. One image runs api, worker, and web. */
-export const OFFICIAL_SERVER_IMAGE = "ghcr.io/elie222/rakazo/app";
-export const DEFAULT_IMAGE_TAG = "latest";
+/**
+ * The GitHub repository whose CI fills the image namespace. `publish-server-image.yml` pushes to
+ * `ghcr.io/${{ github.repository }}`, so the namespace always belongs to whichever repository ran
+ * the workflow. Naming a different owner here points the deployment at packages nobody publishes.
+ *
+ * Note that `OFFICIAL_REPO_URL` still names the upstream repository, not this one. The pull path
+ * reads release tags from `OFFICIAL_REPO_URL` and then pulls that tag from this namespace, so the
+ * two only agree when the same repository both tags releases and publishes images. See the
+ * follow-up noted in docs/self-host.md before relying on the pull path.
+ */
+export const PUBLISHED_IMAGE_REPO = "millson1/rakazo";
+
+/** The published server image. One image runs api, worker, and web. */
+export const OFFICIAL_SERVER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/app`;
+/** The updater sidecar's image, published alongside the server image but tagged independently. */
+export const OFFICIAL_UPDATER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/updater`;
+
+/**
+ * The tag a deployment that has never run an update is on. It is deliberately *not* `latest`: no
+ * registry serves this tag, so `docker compose up --build` builds it from the checkout and a fresh
+ * install works with an empty registry. `latest` only exists once a release has been published.
+ */
+export const LOCAL_IMAGE_TAG = "local";
+export const DEFAULT_IMAGE_TAG = LOCAL_IMAGE_TAG;
 export const IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG";
 export const PREVIOUS_IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG_PREVIOUS";
 
@@ -56,14 +77,20 @@ export function forkImageTag(commit: string): string {
   return `local-${commit.slice(0, 12)}`;
 }
 
-/** A tag that only exists on this host, so trying to pull it would fail rather than find nothing. */
+/**
+ * A tag that only exists on this host, so trying to pull it would fail rather than find nothing.
+ * Covers both the per-commit fork builds (`local-<commit>`) and the bare `local` a fresh install
+ * builds, because a rollback onto either has to skip `docker compose pull`.
+ */
 export function isLocalImageTag(tag: string): boolean {
-  return tag.startsWith("local-");
+  return tag === LOCAL_IMAGE_TAG || tag.startsWith(`${LOCAL_IMAGE_TAG}-`);
 }
 
 /**
- * The immutable per-commit tag the publish workflow pushes for every build on main. The length
- * matches `docker/metadata-action`'s `type=sha`, or a deployment could not pull what CI published.
+ * The immutable per-commit tag the publish workflow pushes. This has to agree character for
+ * character with `docker/metadata-action`'s `type=sha`, or a deployment could not pull what CI
+ * published: that action defaults to `prefix=sha-` and `format=short`, and its short SHA is 7
+ * characters. Setting `DOCKER_METADATA_SHORT_SHA_LENGTH` in the workflow would break the agreement.
  */
 export function commitImageTag(commit: string): string {
   if (!COMMIT.test(commit)) throw new Error("A commit tag needs a resolved commit.");

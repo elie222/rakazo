@@ -25,7 +25,11 @@ services:
   api:
     # The tag is what the updater moves. `docker compose pull` fetches it, `up -d` recreates onto
     # it, and the previous tag stays in .env so a rollback is one redeploy rather than a rebuild.
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
+    #
+    # The default tag is `local`, which no registry serves, so a fresh install builds from the
+    # checkout via `up -d --build` instead of failing on a `pull` of an image that does not exist
+    # yet. Once a release is published, pin RAKAZO_IMAGE_TAG to it and the pull path takes over.
+    image: ${RAKAZO_IMAGE:-ghcr.io/millson1/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
@@ -74,7 +78,7 @@ services:
       retries: 20
 
   worker:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
+    image: ${RAKAZO_IMAGE:-ghcr.io/millson1/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
@@ -110,7 +114,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
+    image: ${RAKAZO_IMAGE:-ghcr.io/millson1/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
@@ -147,7 +151,7 @@ services:
   updater:
     # Pinned separately from the application image: the updater does not recreate itself, so moving
     # its own version is an operator action, not something an update can do underneath itself.
-    image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-latest}
+    image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/millson1/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/updater/Dockerfile
