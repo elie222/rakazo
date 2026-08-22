@@ -57,4 +57,28 @@ describe("createBackgroundJobHandlers", () => {
       oauth: undefined,
     });
   });
+
+  it("preserves a configured local model when resolving background compaction", async () => {
+    const prisma = {
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          defaultModelProvider: "local",
+          defaultModelId: "qwen3:4b",
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+    } as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", workspaceId: "workspace-1" }),
+    ).resolves.toEqual({
+      provider: "local",
+      id: "qwen3:4b",
+      apiKey: undefined,
+      oauth: undefined,
+    });
+  });
 });
