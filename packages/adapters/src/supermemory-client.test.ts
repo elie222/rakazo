@@ -28,6 +28,7 @@ describe("supermemory client", () => {
   describe("supermemoryContainerTag", () => {
     it("scopes the tag to the bot id", () => {
       expect(supermemoryContainerTag("bot-123")).toBe("rakazo:bot-123");
+      expect(supermemoryContainerTag("bot-123", 2)).toBe("rakazo:bot-123:history:2");
     });
   });
 

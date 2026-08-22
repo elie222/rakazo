@@ -31,6 +31,9 @@ describeJourneys("required product journeys", () => {
     ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
   >["executor"];
   let jobs: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["jobs"];
+  let sandbox: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["sandbox"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
@@ -70,6 +73,7 @@ describeJourneys("required product journeys", () => {
     connector = handles.connector;
     executor = handles.executor;
     jobs = handles.jobs;
+    sandbox = handles.sandbox;
   });
 
   afterAll(async () => {
@@ -272,6 +276,14 @@ describeJourneys("required product journeys", () => {
         trigger: "user",
       },
     });
+    await prisma.thread.update({
+      where: { id: thread.id },
+      data: {
+        historyCompactedUpToSeq: 0,
+        historyCompactionSummary: "summary that must be invalidated",
+        historyCompactionGeneration: 3,
+      },
+    });
 
     await rpc(app, cookie, "threads/clear", { botId: bot.id });
 
@@ -286,6 +298,8 @@ describeJourneys("required product journeys", () => {
     // recall cannot treat the fresh conversation as having uncompacted history.
     const clearedThread = await prisma.thread.findUniqueOrThrow({ where: { id: thread.id } });
     expect(clearedThread.historyCompactedUpToSeq).toBe(clearedThread.nextMessageSeq - 1);
+    expect(clearedThread.historyCompactionSummary).toBeNull();
+    expect(clearedThread.historyCompactionGeneration).toBe(4);
     expect(await prisma.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
       status: "cancelled",
     });
@@ -566,6 +580,157 @@ describeJourneys("required product journeys", () => {
       ).status,
     ).toBeGreaterThanOrEqual(400);
     await rpc(app, cookie, "computer/release", { botId: writer.id });
+  });
+
+  it("4d: a stale Team release cannot clear a newer bot takeover", async () => {
+    const cookie = await signup(
+      app,
+      `takeover-release-fence-j-${stamp}@rakazo.test`,
+      "Release Fence",
+    );
+    const writer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    await rpc(app, cookie, "computer/boot", { botId: writer.id });
+    await rpc(app, cookie, "threads/send", {
+      botId: researcher.id,
+      text: "install the gsc cli and sign in",
+    });
+    await waitFor(app, cookie, researcher.id, (snap) => snap.run?.status === "waiting_takeover");
+
+    const writerLease = await rpc<{ leaseId: string; expiresAt: string }>(
+      app,
+      cookie,
+      "computer/takeover",
+      { botId: writer.id },
+    );
+    const releaseEventsBefore = await prisma.event.count({
+      where: { botId: researcher.id, type: "computer.takeover.released" },
+    });
+
+    const originalSetScreenControl = sandbox.setScreenControl;
+    let signalReleaseRevocation!: () => void;
+    let allowReleaseRevocation!: () => void;
+    const releaseRevocationReached = new Promise<void>((resolve) => {
+      signalReleaseRevocation = resolve;
+    });
+    const releaseRevocationAllowed = new Promise<void>((resolve) => {
+      allowReleaseRevocation = resolve;
+    });
+    const revokedLeases: string[] = [];
+    sandbox.setScreenControl = async (_computer, interactive, context, controlToken) => {
+      expect(interactive).toBe(false);
+      revokedLeases.push(controlToken ?? "");
+      if (revokedLeases.length !== 1) return;
+      expect(context.botId).toBe(writer.id);
+      expect(controlToken).toBe(writerLease.leaseId);
+      signalReleaseRevocation();
+      await releaseRevocationAllowed;
+    };
+
+    let staleRelease: Promise<{ ok: true }> | undefined;
+    let researcherLease!: { leaseId: string; expiresAt: string };
+    try {
+      // Pause Release after it captures Writer's lease but before database finalization. The
+      // replacement takeover then commits first, so the resumed Release must lose its lease CAS.
+      staleRelease = rpc<{ ok: true }>(app, cookie, "computer/release", { botId: writer.id });
+      await releaseRevocationReached;
+      researcherLease = await rpc<{ leaseId: string; expiresAt: string }>(
+        app,
+        cookie,
+        "computer/takeover",
+        { botId: researcher.id },
+      );
+      allowReleaseRevocation();
+      await staleRelease;
+    } finally {
+      allowReleaseRevocation();
+      await staleRelease?.catch(() => undefined);
+      sandbox.setScreenControl = originalSetScreenControl;
+    }
+
+    expect(researcherLease.leaseId).not.toBe(writerLease.leaseId);
+    expect(revokedLeases).toEqual([writerLease.leaseId, writerLease.leaseId]);
+
+    const writerRecord = await prisma.bot.findUniqueOrThrow({
+      where: { id: writer.id },
+      include: { computer: true },
+    });
+    const researcherRecord = await prisma.bot.findUniqueOrThrow({
+      where: { id: researcher.id },
+      include: { computer: true },
+    });
+    const computerId = writerRecord.computer!.id;
+    expect(researcherRecord.computer!.id).toBe(computerId);
+    const afterStaleRelease = await prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+    });
+    expect(afterStaleRelease.controlHolder).toBe("user");
+    expect(afterStaleRelease.controlBotId).toBe(researcher.id);
+    expect(afterStaleRelease.controlLeaseId).toBe(researcherLease.leaseId);
+    expect(afterStaleRelease.controlLeaseExpiresAt?.toISOString()).toBe(researcherLease.expiresAt);
+    expect(
+      await prisma.event.count({
+        where: { botId: researcher.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(releaseEventsBefore);
+    expect(
+      (
+        await prisma.run.findFirstOrThrow({
+          where: { botId: researcher.id, status: "waiting_takeover" },
+        })
+      ).status,
+    ).toBe("waiting_takeover");
+
+    await rpc(app, cookie, "computer/release", { botId: researcher.id });
+    const afterOwnerRelease = await prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+    });
+    expect(afterOwnerRelease).toMatchObject({
+      controlHolder: "bot",
+      controlBotId: null,
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+    });
+    await waitFor(
+      app,
+      cookie,
+      researcher.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    expect(
+      await prisma.event.count({
+        where: { botId: researcher.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(releaseEventsBefore + 1);
+    const releaseEvent = await prisma.event.findFirstOrThrow({
+      where: { botId: researcher.id, type: "computer.takeover.released" },
+      orderBy: { seq: "desc" },
+    });
+    expect(releaseEvent.payload).toMatchObject({
+      holder: "bot",
+      leaseId: researcherLease.leaseId,
+      reason: "released",
+    });
+
+    await rpc(app, cookie, "computer/release", { botId: researcher.id });
+    expect(
+      await prisma.event.count({
+        where: { botId: researcher.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(releaseEventsBefore + 1);
   });
 
   it("5: a routine wakes the bot and posts into the existing thread", async () => {

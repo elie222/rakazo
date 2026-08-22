@@ -20,8 +20,8 @@ export type SupermemorySearchResponse =
 export type SupermemorySaveResponse = { ok: true } | { ok: false; error: string };
 
 /** Every bot gets its own container tag, mirroring the existing bot-scoped memory model. */
-export function supermemoryContainerTag(botId: string): string {
-  return `rakazo:${botId}`;
+export function supermemoryContainerTag(botId: string, historyGeneration = 0): string {
+  return historyGeneration > 0 ? `rakazo:${botId}:history:${historyGeneration}` : `rakazo:${botId}`;
 }
 
 export function isSupermemoryEnabled(apiKey: string | undefined): boolean {

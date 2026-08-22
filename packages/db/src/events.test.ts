@@ -98,7 +98,7 @@ describe("finalizeComputerControlRelease", () => {
     const tx = {
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       bot: {
-        findUnique: vi.fn().mockResolvedValue({
+        findFirst: vi.fn().mockResolvedValue({
           computerId: "computer-1",
           thread: { id: "thread-1" },
         }),
@@ -132,7 +132,12 @@ describe("finalizeComputerControlRelease", () => {
     ).resolves.toBe(true);
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1", controlLeaseId: "lease-1" },
+      where: {
+        id: "computer-1",
+        workspaceId: "workspace-1",
+        controlBotId: "bot-1",
+        controlLeaseId: "lease-1",
+      },
       data: {
         controlHolder: "none",
         controlLeaseId: null,
@@ -154,7 +159,7 @@ describe("finalizeComputerControlRelease", () => {
   it("clears the lease even if its controlling bot was deleted", async () => {
     const tx = {
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      bot: { findUnique: vi.fn().mockResolvedValue(null) },
+      bot: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -463,7 +468,7 @@ describe("clearThread", () => {
       thread: {
         update: vi
           .fn()
-          .mockResolvedValueOnce({ nextMessageSeq: 42 })
+          .mockResolvedValueOnce({ nextMessageSeq: 42, historyCompactionGeneration: 0 })
           .mockResolvedValue({ nextEventSeq: 1 }),
       },
       run: {
@@ -512,7 +517,11 @@ describe("clearThread", () => {
     // Every deleted message counts as compacted, so compaction cannot summarize cleared history.
     expect(tx.thread.update).toHaveBeenCalledWith({
       where: { id: "thread-1" },
-      data: { historyCompactedUpToSeq: 41 },
+      data: {
+        historyCompactedUpToSeq: 41,
+        historyCompactionSummary: null,
+        historyCompactionGeneration: { increment: 1 },
+      },
     });
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 0 }));
   });
