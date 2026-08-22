@@ -7,24 +7,26 @@ import type { ServerUpdateRun } from "@rakazo/contracts";
 import {
   type ComposeUpdateStep,
   chooseUpdateStrategy,
+  commitImageTag,
+  composeUpArgv,
   composeUpdatePlan,
   DEFAULT_UPDATE_REMOTE,
   forkImageTag,
   gitIndexContentDiffArgv,
   gitStatusArgv,
+  gitUntrackedFilesArgv,
   gitWorktreeContentDiffArgv,
   hasValidBearerToken,
   IMAGE_TAG_ENV,
   imageRef,
-  isLocalImageTag,
   PREVIOUS_IMAGE_TAG_ENV,
   parseGitNameOnly,
   parseGitStatusPorcelain,
-  parseLsRemoteTags,
+  parseLsRemoteReleases,
   repoIdentity,
   resolveTrackedDirtyPaths,
   rollbackTarget,
-  selectLatestReleaseTag,
+  selectLatestRelease,
   upsertEnvAssignments,
   validateUpdateRequest,
 } from "@rakazo/core";
@@ -42,16 +44,61 @@ const STEP_TIMEOUT_MS: Record<string, number> = {
   fetch: 180_000,
   checkout: 60_000,
   merge: 60_000,
-  pull: 1_200_000,
+  pull: 600_000,
   recreate: 1_800_000,
+  recover: 1_800_000,
 };
 const DEFAULT_TIMEOUT_MS = 120_000;
 const COMMIT = /^[0-9a-f]{40}$/;
 
-interface CommandResult {
+export interface CommandResult {
   ok: boolean;
   exitCode: number | null;
   output: string;
+}
+
+export type UpdaterCommandRunner = (
+  command: string,
+  args: string[],
+  options: { cwd: string; timeoutMs: number; env?: Record<string, string> },
+) => Promise<CommandResult>;
+
+const PASSTHROUGH_ENV = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "DOCKER_HOST",
+  "DOCKER_CONFIG",
+  "DOCKER_TLS_VERIFY",
+  "DOCKER_CERT_PATH",
+] as const;
+
+/** Child processes get connectivity and Docker settings, never the application's secret-filled env. */
+export function commandEnvironment(
+  source: NodeJS.ProcessEnv,
+  overrides: Readonly<Record<string, string>> = {},
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of PASSTHROUGH_ENV) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return {
+    ...env,
+    ...overrides,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_ASKPASS: "true",
+    CI: "1",
+  };
 }
 
 /**
@@ -59,12 +106,12 @@ interface CommandResult {
  * argument and reaches Compose not at all, so there is no string a caller can craft that becomes
  * part of a command line, a build argument, or a service definition.
  */
-function runCommand(
+const runCommand: UpdaterCommandRunner = (
   command: string,
   args: string[],
   options: { cwd: string; timeoutMs: number; env?: Record<string, string> },
-): Promise<CommandResult> {
-  return new Promise((resolve) => {
+): Promise<CommandResult> =>
+  new Promise((resolve) => {
     execFile(
       command,
       args,
@@ -74,13 +121,7 @@ function runCommand(
         maxBuffer: 8 * 1024 * 1024,
         windowsHide: true,
         shell: false,
-        env: {
-          ...process.env,
-          ...options.env,
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_ASKPASS: "true",
-          CI: "1",
-        },
+        env: commandEnvironment(process.env, options.env),
       },
       (error, stdout, stderr) => {
         const output = truncateOutput(`${stdout}${stderr}`);
@@ -93,10 +134,13 @@ function runCommand(
       },
     );
   });
-}
 
-export function createUpdaterApp(config: UpdaterConfig) {
+export function createUpdaterApp(
+  config: UpdaterConfig,
+  options: { run?: UpdaterCommandRunner } = {},
+) {
   const app = new Hono();
+  const run = options.run ?? runCommand;
   const composeTarget = {
     composeFile: config.composeFile,
     envFiles: [config.envFile],
@@ -150,15 +194,15 @@ export function createUpdaterApp(config: UpdaterConfig) {
           checkout,
         });
       }
-      const targetTag = await resolveReleaseTag(request.repoUrl);
+      const target = await resolveRelease(request.repoUrl);
       return c.json({
         strategy: decision.strategy,
-        reason: decision.reason,
+        reason: `${decision.reason} Latest stable release: ${target.releaseTag}.`,
         currentTag: tags.currentTag,
         previousTag: tags.previousTag,
-        targetTag,
-        targetCommit: null,
-        upToDate: targetTag === tags.currentTag,
+        targetTag: target.imageTag,
+        targetCommit: target.commit,
+        upToDate: target.imageTag === tags.currentTag,
         checkout,
       });
     } catch (error) {
@@ -169,7 +213,7 @@ export function createUpdaterApp(config: UpdaterConfig) {
   app.post("/apply", async (c) => {
     try {
       const request = parseRequest(await body(c.req.raw));
-      return c.json(await apply(request));
+      return c.json(await withRunLock(() => apply(request)));
     } catch (error) {
       return refusal(c, error);
     }
@@ -177,7 +221,7 @@ export function createUpdaterApp(config: UpdaterConfig) {
 
   app.post("/rollback", async (c) => {
     try {
-      return c.json(await rollback());
+      return c.json(await withRunLock(rollback));
     } catch (error) {
       return refusal(c, error);
     }
@@ -206,6 +250,16 @@ export function createUpdaterApp(config: UpdaterConfig) {
     return c.json({ error: message }, error instanceof UpdateRefused ? 400 : 500);
   }
 
+  async function withRunLock<T>(work: () => Promise<T>): Promise<T> {
+    if (running) throw new UpdateRefused("An update is already running.");
+    running = true;
+    try {
+      return await work();
+    } finally {
+      running = false;
+    }
+  }
+
   function readEnvFile() {
     return readFile(config.envFile, "utf8").catch(() => "");
   }
@@ -218,7 +272,7 @@ export function createUpdaterApp(config: UpdaterConfig) {
   }
 
   function git(args: string[], stepId = "read") {
-    return runCommand("git", args, {
+    return run("git", args, {
       cwd: config.deployDir,
       timeoutMs: STEP_TIMEOUT_MS[stepId] ?? DEFAULT_TIMEOUT_MS,
     });
@@ -244,11 +298,12 @@ export function createUpdaterApp(config: UpdaterConfig) {
         dirtyPaths: [] as string[],
       };
     }
-    const [head, branch, remote, status] = await Promise.all([
+    const [head, branch, remote, status, untracked] = await Promise.all([
       git(["rev-parse", "HEAD"]),
       git(["rev-parse", "--abbrev-ref", "HEAD"]),
       git(["remote", "get-url", DEFAULT_UPDATE_REMOTE]),
       git(gitStatusArgv()),
+      git(gitUntrackedFilesArgv()),
     ]);
     const porcelain = parseGitStatusPorcelain(status.ok ? status.output : "");
     let contentChanged: string[] = [];
@@ -268,38 +323,46 @@ export function createUpdaterApp(config: UpdaterConfig) {
       porcelainChanged: porcelain.changed,
       contentChanged,
       contentDiffOk,
+      untrackedPaths: parseGitNameOnly(untracked.ok ? untracked.output : ""),
     });
+    const stateReadable = status.ok && untracked.ok;
     return {
       present: true,
       commit: head.ok ? head.output.trim() : null,
       branch: branch.ok ? branch.output.trim() : null,
       remoteUrl: remote.ok ? remote.output.trim() : null,
-      dirty: status.ok ? tracked.dirty : false,
-      dirtyPaths: tracked.dirtyPaths,
+      dirty: stateReadable ? tracked.dirty : true,
+      dirtyPaths: stateReadable
+        ? tracked.dirtyPaths
+        : ["(the updater could not verify the checkout state)"],
     };
   }
 
   /** `ls-remote` reads the tag list without cloning, so it works for the pull path with no checkout. */
-  async function resolveReleaseTag(repoUrl: string) {
-    const listed = await runCommand("git", ["ls-remote", "--tags", "--", repoUrl], {
+  async function resolveRelease(repoUrl: string) {
+    const listed = await run("git", ["ls-remote", "--tags", "--", repoUrl], {
       cwd: config.deployDir,
       timeoutMs: STEP_TIMEOUT_MS.fetch ?? DEFAULT_TIMEOUT_MS,
     });
     if (!listed.ok) {
       throw new UpdateRefused(`Could not read releases from ${repoUrl}: ${listed.output}`);
     }
-    const tag = selectLatestReleaseTag(parseLsRemoteTags(listed.output));
-    if (tag === null) {
+    const release = selectLatestRelease(parseLsRemoteReleases(listed.output));
+    if (release === null) {
       throw new UpdateRefused(
         `${repoUrl} has no published release tags, so there is no image to pull.`,
       );
     }
-    return tag;
+    return {
+      releaseTag: release.tag,
+      commit: release.commit,
+      imageTag: commitImageTag(release.commit),
+    };
   }
 
   /** The branch head on the remote, read without fetching, so a plan does not mutate the checkout. */
   async function resolveRemoteHead(request: { repoUrl: string; branch: string }) {
-    const listed = await runCommand(
+    const listed = await run(
       "git",
       ["ls-remote", "--heads", "--", request.repoUrl, request.branch],
       { cwd: config.deployDir, timeoutMs: STEP_TIMEOUT_MS.fetch ?? DEFAULT_TIMEOUT_MS },
@@ -325,7 +388,6 @@ export function createUpdaterApp(config: UpdaterConfig) {
   }
 
   async function apply(request: { repoUrl: string; branch: string; official: boolean }) {
-    if (running) throw new UpdateRefused("An update is already running.");
     const decision = chooseUpdateStrategy(request);
     const tags = readTagState(await readEnvFile());
     const checkout = await readCheckout();
@@ -336,16 +398,26 @@ export function createUpdaterApp(config: UpdaterConfig) {
           "Building a fork needs the deployment's git checkout, and RAKAZO_DEPLOY_DIR has no .git directory. Clone the fork to the deployment directory, or switch back to the official repository to use published images.",
         );
       }
+      if (checkout.remoteUrl === null) {
+        throw new UpdateRefused(
+          `Building a fork needs the deployment checkout to have an ${DEFAULT_UPDATE_REMOTE} remote. Add it or clone the fork again before updating.`,
+        );
+      }
       if (checkout.dirty) {
         throw new UpdateRefused(
-          "The deployment checkout has uncommitted changes to tracked files. Commit, stash, or discard them before updating.",
+          "The deployment checkout has changed or untracked source files, or its state could not be verified. Commit, stash, clean, or fix it before updating.",
         );
       }
     }
 
     let targetTag: string | null = null;
+    let targetCommit: string | null = null;
+    let releaseTag: string | null = null;
     if (decision.strategy === "pull") {
-      targetTag = await resolveReleaseTag(request.repoUrl);
+      const target = await resolveRelease(request.repoUrl);
+      targetTag = target.imageTag;
+      targetCommit = target.commit;
+      releaseTag = target.releaseTag;
       if (targetTag === tags.currentTag) return upToDateRecord(request, targetTag, "pull");
     } else {
       const remoteHead = await resolveRemoteHead(request);
@@ -374,22 +446,29 @@ export function createUpdaterApp(config: UpdaterConfig) {
       originalPreviousTag: tags.previousTag,
       toTag: targetTag,
       fromCommit: checkout.commit,
+      toCommit: targetCommit,
+      restoreRemoteUrl:
+        decision.strategy === "build" &&
+        checkout.remoteUrl !== null &&
+        repoIdentity(checkout.remoteUrl) !== repoIdentity(request.repoUrl)
+          ? checkout.remoteUrl
+          : null,
       steps,
       restartAdvice:
         decision.strategy === "pull"
-          ? "The updater pulled the new images and recreated the API, worker, and web containers. Migrations ran inside the new API container before it started serving."
+          ? `The updater deployed ${releaseTag ?? targetTag} from its full source-commit image tag and recreated the API, worker, and web containers. Migrations ran inside the new API container before it became healthy.`
           : "The updater built the fork and recreated the API, worker, and web containers. Migrations ran inside the new API container before it started serving.",
     });
   }
 
   async function rollback(): Promise<ServerUpdateRun> {
-    if (running) throw new UpdateRefused("An update is already running.");
     const tags = readTagState(await readEnvFile());
     const decision = rollbackTarget(tags);
     if ("error" in decision) throw new UpdateRefused(decision.error);
     const checkout = await readCheckout();
+    // Never re-pull a rollback tag: registry tags can move. Reuse the exact image cached when it ran.
     const steps = composeUpdatePlan({ strategy: "pull", target: composeTarget }).filter(
-      (step) => step.id !== "pull" || !isLocalImageTag(decision.tag),
+      (step) => step.id !== "pull",
     );
     return execute({
       request: { repoUrl: "", branch: "" },
@@ -398,6 +477,8 @@ export function createUpdaterApp(config: UpdaterConfig) {
       originalPreviousTag: tags.previousTag,
       toTag: decision.tag,
       fromCommit: checkout.commit,
+      toCommit: null,
+      restoreRemoteUrl: null,
       steps,
       restartAdvice: `Rolled back to ${decision.tag}. Database migrations are not reversed: if the newer version added a migration, roll forward again or restore a database backup.`,
     });
@@ -414,22 +495,23 @@ export function createUpdaterApp(config: UpdaterConfig) {
     originalPreviousTag: string | null;
     toTag: string | null;
     fromCommit: string | null;
+    toCommit: string | null;
+    restoreRemoteUrl: string | null;
     steps: ComposeUpdateStep[];
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
-    running = true;
     const record: ServerUpdateRun = {
       startedAt: new Date().toISOString(),
       finishedAt: null,
       ok: false,
       fromCommit: input.fromCommit,
-      toCommit: null,
+      toCommit: input.toCommit,
       fromTag: input.fromTag,
       toTag: input.toTag,
       strategy: input.strategy,
       repoUrl: input.request.repoUrl,
       branch: input.request.branch,
-      restart: "recreated",
+      restart: "not-required",
       restartAdvice: input.restartAdvice,
       error: null,
       steps: [],
@@ -443,7 +525,7 @@ export function createUpdaterApp(config: UpdaterConfig) {
       const composeSteps = input.steps.filter((step) => step.command !== "git");
 
       for (const step of gitSteps) {
-        if (!(await runStep(record, step))) return finish(record);
+        if (!(await runStep(record, step))) return record;
       }
 
       // The build path only knows its tag after the fast-forward, because the tag is the commit.
@@ -453,7 +535,7 @@ export function createUpdaterApp(config: UpdaterConfig) {
         const commit = head.ok ? head.output.trim() : "";
         if (!COMMIT.test(commit)) {
           record.error = "Could not read the commit to build.";
-          return finish(record);
+          return record;
         }
         record.toCommit = commit;
         toTag = forkImageTag(commit);
@@ -461,27 +543,74 @@ export function createUpdaterApp(config: UpdaterConfig) {
       }
       if (toTag === null) {
         record.error = "Could not resolve a target image tag.";
-        return finish(record);
+        return record;
       }
 
-      await writeEnvAssignments({
-        [IMAGE_TAG_ENV]: toTag,
-        [PREVIOUS_IMAGE_TAG_ENV]: input.fromTag,
-      });
+      try {
+        await writeEnvAssignments({
+          [IMAGE_TAG_ENV]: toTag,
+          [PREVIOUS_IMAGE_TAG_ENV]: input.fromTag,
+        });
+      } catch {
+        record.error = "Could not persist the target image tag in the deployment environment.";
+        record.restartAdvice = `${record.error} Nothing was recreated.`;
+        return record;
+      }
       const composeEnv: Record<string, string> = { [IMAGE_TAG_ENV]: toTag };
       if (record.toCommit !== null) composeEnv.GIT_SHA = record.toCommit;
 
       for (const step of composeSteps) {
         if (!(await runStep(record, step, composeEnv))) {
-          await writeEnvAssignments(revertAssignments).catch(() => undefined);
-          record.restartAdvice = `${record.error} The deployment was left pinned to ${input.fromTag}; nothing was recreated past the failing step. Read the step output, fix the cause, then run the update again.`;
-          return finish(record);
+          const primaryError = record.error ?? `${step.label} failed.`;
+          const envRestored = await writeEnvAssignments(revertAssignments).then(
+            () => true,
+            () => false,
+          );
+          if (step.id === "recreate") {
+            const previous = composeUpArgv(composeTarget);
+            const recovered = await runStep(
+              record,
+              {
+                id: "recover",
+                label: `Restore the previously running ${input.fromTag} image`,
+                command: previous.command,
+                args: previous.args,
+              },
+              { [IMAGE_TAG_ENV]: input.fromTag },
+              false,
+            );
+            record.restart = recovered ? "not-required" : "manual";
+            record.restartAdvice = recovered
+              ? `${primaryError} The updater restored the previously running ${input.fromTag} image${envRestored ? " and its environment pin" : ", but could not restore the environment pin"}. Read the failed step output before retrying.`
+              : `${primaryError} Automatic recovery to ${input.fromTag} also failed${envRestored ? "" : ", and the environment pin could not be restored"}. The runtime may contain a mix of versions; use the recorded commands to recover it manually.`;
+          } else {
+            record.restartAdvice = `${primaryError} No service was recreated${envRestored ? ", and the prior environment pin was restored" : ", but the prior environment pin could not be restored"}. Read the failed step output before retrying.`;
+          }
+          record.error = primaryError;
+          return record;
         }
       }
       record.ok = true;
-      return finish(record);
+      record.restart = "recreated";
+      return record;
     } finally {
-      running = false;
+      if (!record.ok && input.restoreRemoteUrl !== null) {
+        const restored = await runStep(
+          record,
+          {
+            id: "restore-remote",
+            label: `Restore the previous ${DEFAULT_UPDATE_REMOTE} remote`,
+            command: "git",
+            args: ["remote", "set-url", DEFAULT_UPDATE_REMOTE, input.restoreRemoteUrl],
+          },
+          undefined,
+          false,
+        );
+        if (!restored) {
+          record.restartAdvice = `${record.restartAdvice} The previous Git remote also could not be restored; fix it before retrying.`;
+        }
+      }
+      record.finishedAt = new Date().toISOString();
     }
   }
 
@@ -489,11 +618,12 @@ export function createUpdaterApp(config: UpdaterConfig) {
     record: ServerUpdateRun,
     step: ComposeUpdateStep,
     env?: Record<string, string>,
+    setError = true,
   ) {
-    const result = await runCommand(step.command, step.args, {
+    const result = await run(step.command, step.args, {
       cwd: config.deployDir,
       timeoutMs: STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS,
-      env,
+      env: step.command === "docker" ? { COMPOSE_PROJECT_NAME: config.projectName, ...env } : env,
     });
     record.steps.push({
       id: step.id,
@@ -502,14 +632,8 @@ export function createUpdaterApp(config: UpdaterConfig) {
       exitCode: result.exitCode,
       output: result.output,
     });
-    if (!result.ok) record.error = `${step.label} failed.`;
+    if (!result.ok && setError) record.error = `${step.label} failed.`;
     return result.ok;
-  }
-
-  function finish(record: ServerUpdateRun): ServerUpdateRun {
-    record.finishedAt = new Date().toISOString();
-    if (!record.ok && record.restart === "recreated") record.restart = "manual";
-    return record;
   }
 
   function upToDateRecord(

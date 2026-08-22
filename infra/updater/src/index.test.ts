@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { createUpdaterApp } from "./index.js";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import type { ServerUpdateRun } from "@rakazo/contracts";
+import { afterEach, describe, expect, it } from "vitest";
+import { commandEnvironment, createUpdaterApp, type UpdaterCommandRunner } from "./index.js";
 import { resolveUpdaterConfig } from "./updater-logic.js";
 
 const token = "updater-token-for-tests";
@@ -10,6 +14,41 @@ const app = createUpdaterApp(
   }),
 );
 const authorized = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+const currentCommit = "1".repeat(40);
+const targetCommit = "2".repeat(40);
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
+  );
+});
+
+async function deployment(env = "RAKAZO_IMAGE_TAG=v1.0.0\nRAKAZO_IMAGE_TAG_PREVIOUS=v0.9.0\n") {
+  const deployDir = await mkdtemp(path.join(os.tmpdir(), "rakazo-updater-test-"));
+  temporaryDirectories.push(deployDir);
+  await writeFile(path.join(deployDir, ".env"), env);
+  return {
+    deployDir,
+    config: resolveUpdaterConfig({ RAKAZO_DEPLOY_DIR: deployDir, RAKAZO_UPDATER_TOKEN: token }),
+  };
+}
+
+function ok(output = "") {
+  return { ok: true, exitCode: 0, output };
+}
+
+function failed(output: string) {
+  return { ok: false, exitCode: 1, output };
+}
+
+function request(app: ReturnType<typeof createUpdaterApp>, pathname: string, body?: unknown) {
+  return app.request(pathname, {
+    method: "POST",
+    headers: authorized,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
 
 describe("updater HTTP surface", () => {
   it("answers health without credentials, for the compose healthcheck", async () => {
@@ -95,5 +134,147 @@ describe("updater HTTP surface", () => {
       previousTag: null,
       checkout: { present: false },
     });
+  });
+});
+
+describe("updater orchestration", () => {
+  it("serializes updates before their asynchronous preflight can race", async () => {
+    const fixture = await deployment();
+    let releaseGate: ((result: ReturnType<typeof ok>) => void) | undefined;
+    const pendingRelease = new Promise<ReturnType<typeof ok>>((resolve) => {
+      releaseGate = resolve;
+    });
+    const run: UpdaterCommandRunner = async (command, args) => {
+      if (command === "git" && args.includes("ls-remote")) return pendingRelease;
+      return ok();
+    };
+    const subject = createUpdaterApp(fixture.config, { run });
+    const input = { repoUrl: "https://github.com/elie222/rakazo", branch: "main" };
+    const first = request(subject, "/apply", input);
+    await Promise.resolve();
+    const second = await request(subject, "/apply", input);
+    expect(second.status).toBe(400);
+    await expect(second.json()).resolves.toEqual({ error: "An update is already running." });
+    releaseGate?.(ok(`${targetCommit}\trefs/tags/v1.1.0\n`));
+    expect((await first).status).toBe(200);
+  });
+
+  it("restores the previous remote when a fork update fails after repointing it", async () => {
+    const fixture = await deployment();
+    await mkdir(path.join(fixture.deployDir, ".git"));
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const previousRemote = "https://github.com/example/previous-fork";
+    const nextRemote = "https://github.com/example/next-fork";
+    const run: UpdaterCommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      const joined = args.join(" ");
+      if (joined === "rev-parse HEAD") return ok(currentCommit);
+      if (joined === "rev-parse --abbrev-ref HEAD") return ok("main");
+      if (joined === "remote get-url origin") return ok(previousRemote);
+      if (args.includes("status") || joined === "ls-files --others --exclude-standard") return ok();
+      if (args.includes("ls-remote")) return ok(`${targetCommit}\trefs/heads/main\n`);
+      if (args[0] === "fetch") return failed("registry unavailable");
+      return ok();
+    };
+    const subject = createUpdaterApp(fixture.config, { run });
+    const response = await request(subject, "/apply", { repoUrl: nextRemote, branch: "main" });
+    const record = (await response.json()) as ServerUpdateRun;
+    expect(record.ok).toBe(false);
+    expect(record.steps.map((step) => step.id)).toEqual(["remote", "fetch", "restore-remote"]);
+    expect(
+      calls.filter(({ args }) => args.slice(0, 3).join(" ") === "remote set-url origin"),
+    ).toEqual([
+      { command: "git", args: ["remote", "set-url", "origin", nextRemote] },
+      { command: "git", args: ["remote", "set-url", "origin", previousRemote] },
+    ]);
+  });
+
+  it("restores the prior image after a recreate fails health checks", async () => {
+    const fixture = await deployment();
+    const calls: Array<{ command: string; args: string[]; env?: Record<string, string> }> = [];
+    let upCalls = 0;
+    const run: UpdaterCommandRunner = async (command, args, options) => {
+      calls.push({ command, args, env: options.env });
+      if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+      if (args.includes("pull")) return ok("pulled");
+      upCalls += 1;
+      return upCalls === 1 ? failed("api did not become healthy") : ok("restored");
+    };
+    const subject = createUpdaterApp(fixture.config, { run });
+    const response = await request(subject, "/apply", {
+      repoUrl: "https://github.com/elie222/rakazo",
+      branch: "main",
+    });
+    const record = (await response.json()) as ServerUpdateRun;
+    expect(record).toMatchObject({ ok: false, restart: "not-required" });
+    expect(record.steps.map((step) => step.id)).toEqual(["pull", "recreate", "recover"]);
+    expect(record.restartAdvice).toMatch(/restored the previously running v1\.0\.0 image/);
+    const composeUp = calls.filter(({ args }) => args.includes("up"));
+    expect(composeUp).toHaveLength(2);
+    expect(composeUp[0]?.args).toEqual(expect.arrayContaining(["--wait", "--pull", "never"]));
+    expect(composeUp[0]?.env?.RAKAZO_IMAGE_TAG).toBe(`sha-${targetCommit}`);
+    expect(composeUp[1]?.env?.RAKAZO_IMAGE_TAG).toBe("v1.0.0");
+    expect(await readFile(path.join(fixture.deployDir, ".env"), "utf8")).toContain(
+      "RAKAZO_IMAGE_TAG=v1.0.0",
+    );
+  });
+
+  it("rolls back from the cached image without trusting the registry tag again", async () => {
+    const fixture = await deployment();
+    const calls: string[][] = [];
+    const run: UpdaterCommandRunner = async (_command, args) => {
+      calls.push(args);
+      return ok();
+    };
+    const response = await request(createUpdaterApp(fixture.config, { run }), "/rollback");
+    const record = (await response.json()) as ServerUpdateRun;
+    expect(record.ok).toBe(true);
+    expect(calls.some((args) => args.includes("pull"))).toBe(false);
+    expect(calls.find((args) => args.includes("up"))).toEqual(
+      expect.arrayContaining(["--pull", "never"]),
+    );
+  });
+
+  it("fails closed when it cannot verify checkout cleanliness", async () => {
+    const fixture = await deployment();
+    await mkdir(path.join(fixture.deployDir, ".git"));
+    const run: UpdaterCommandRunner = async (_command, args) => {
+      const joined = args.join(" ");
+      if (joined === "rev-parse HEAD") return ok(currentCommit);
+      if (joined === "rev-parse --abbrev-ref HEAD") return ok("main");
+      if (joined === "remote get-url origin") return ok("https://github.com/example/fork");
+      if (args.includes("status")) return failed("cannot read index");
+      return ok();
+    };
+    const response = await request(createUpdaterApp(fixture.config, { run }), "/apply", {
+      repoUrl: "https://github.com/example/fork",
+      branch: "main",
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/verified/),
+    });
+  });
+});
+
+describe("child process environment", () => {
+  it("passes operational settings and explicit overrides without leaking application secrets", () => {
+    const env = commandEnvironment(
+      {
+        PATH: "/usr/bin",
+        HTTPS_PROXY: "http://proxy.invalid",
+        BETTER_AUTH_SECRET: "fake-secret-that-must-not-leak",
+        DATABASE_URL: "postgres://fake.invalid/db",
+      },
+      { RAKAZO_IMAGE_TAG: "sha-123" },
+    );
+    expect(env).toMatchObject({
+      PATH: "/usr/bin",
+      HTTPS_PROXY: "http://proxy.invalid",
+      RAKAZO_IMAGE_TAG: "sha-123",
+      GIT_TERMINAL_PROMPT: "0",
+    });
+    expect(env.BETTER_AUTH_SECRET).toBeUndefined();
+    expect(env.DATABASE_URL).toBeUndefined();
   });
 });

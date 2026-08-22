@@ -10,12 +10,10 @@ import {
  * `ghcr.io/${{ github.repository }}`, so the namespace always belongs to whichever repository ran
  * the workflow. Naming a different owner here points the deployment at packages nobody publishes.
  *
- * Note that `OFFICIAL_REPO_URL` still names the upstream repository, not this one. The pull path
- * reads release tags from `OFFICIAL_REPO_URL` and then pulls that tag from this namespace, so the
- * two only agree when the same repository both tags releases and publishes images. See the
- * follow-up noted in docs/self-host.md before relying on the pull path.
+ * `OFFICIAL_REPO_URL` names the same repository, so the source commit selected from a release is
+ * guaranteed to have been eligible for this repository's publishing workflow.
  */
-export const PUBLISHED_IMAGE_REPO = "millson1/rakazo";
+export const PUBLISHED_IMAGE_REPO = "elie222/rakazo";
 
 /** The published server image. One image runs api, worker, and web. */
 export const OFFICIAL_SERVER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/app`;
@@ -50,7 +48,7 @@ export const RECREATED_SERVICES = ["api", "worker", "web"] as const;
 const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
 const IMAGE_NAME_SEGMENT = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const IMAGE_HOST = /^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?$/;
-const COMMIT = /^[0-9a-f]{7,64}$/;
+const COMMIT = /^[0-9a-f]{40,64}$/;
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/;
 const ENV_VALUE = /^[A-Za-z0-9._:/@+-]{0,256}$/;
 const RELEASE_TAG = /^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
@@ -107,7 +105,7 @@ export function imageRef(name: string, tag: string): string {
  */
 export function forkImageTag(commit: string): string {
   if (!COMMIT.test(commit)) throw new Error("A fork build needs a resolved commit to tag.");
-  return `local-${commit.slice(0, 12)}`;
+  return `local-${commit}`;
 }
 
 /**
@@ -120,14 +118,14 @@ export function isLocalImageTag(tag: string): boolean {
 }
 
 /**
- * The immutable per-commit tag the publish workflow pushes. This has to agree character for
- * character with `docker/metadata-action`'s `type=sha`, or a deployment could not pull what CI
- * published: that action defaults to `prefix=sha-` and `format=short`, and its short SHA is 7
- * characters. Setting `DOCKER_METADATA_SHORT_SHA_LENGTH` in the workflow would break the agreement.
+ * The source-addressed per-commit tag the publish workflow pushes. This has to agree character for
+ * character with `docker/metadata-action`'s `type=sha`. The workflow deliberately raises
+ * `DOCKER_METADATA_SHORT_SHA_LENGTH` to 40 so source-addressed image tags cannot collide at the
+ * action's unsafe seven-character default.
  */
 export function commitImageTag(commit: string): string {
   if (!COMMIT.test(commit)) throw new Error("A commit tag needs a resolved commit.");
-  return `sha-${commit.slice(0, 7)}`;
+  return `sha-${commit}`;
 }
 
 export interface ReleaseTag {
@@ -172,6 +170,35 @@ export function parseLsRemoteTags(stdout: string): string[] {
   return [...tags];
 }
 
+export interface RemoteRelease {
+  tag: string;
+  /** The commit behind the tag, never the object id of an annotated tag. */
+  commit: string;
+}
+
+/**
+ * Reads the source commit for each release. Annotated tags have two `ls-remote` rows; the peeled
+ * `^{}` row wins so the image tag agrees with `github.sha` in the publishing workflow.
+ */
+export function parseLsRemoteReleases(stdout: string): RemoteRelease[] {
+  const releases = new Map<string, { direct?: string; peeled?: string }>();
+  for (const line of stdout.split("\n")) {
+    const [commit = "", rawRef = ""] = line.trim().split(/\s+/, 2);
+    if (!COMMIT.test(commit) || !rawRef.startsWith("refs/tags/")) continue;
+    const peeled = rawRef.endsWith("^{}");
+    const tag = rawRef.slice("refs/tags/".length).replace(/\^\{\}$/, "");
+    if (tag === "" || !isValidImageTag(tag)) continue;
+    const entry = releases.get(tag) ?? {};
+    if (peeled) entry.peeled = commit;
+    else entry.direct = commit;
+    releases.set(tag, entry);
+  }
+  return [...releases].flatMap(([tag, commits]) => {
+    const commit = commits.peeled ?? commits.direct;
+    return commit === undefined ? [] : [{ tag, commit }];
+  });
+}
+
 /**
  * The newest stable release. Pre-releases are skipped because "update to latest" should not move a
  * deployment onto a release candidate, and there is no way to opt back out once it has recreated.
@@ -184,6 +211,19 @@ export function selectLatestReleaseTag(tags: readonly string[]): string | null {
     if (best === null || compareReleaseTags(parsed, best) > 0) best = parsed;
   }
   return best?.tag ?? null;
+}
+
+/** Selects the newest stable release together with the commit-tagged image CI published for it. */
+export function selectLatestRelease(releases: readonly RemoteRelease[]): RemoteRelease | null {
+  let best: { release: ReleaseTag; commit: string } | null = null;
+  for (const candidate of releases) {
+    const parsed = parseReleaseTag(candidate.tag);
+    if (!parsed || parsed.prerelease !== null) continue;
+    if (best === null || compareReleaseTags(parsed, best.release) > 0) {
+      best = { release: parsed, commit: candidate.commit };
+    }
+  }
+  return best === null ? null : { tag: best.release.tag, commit: best.commit };
 }
 
 export type UpdateStrategy = "pull" | "build";
@@ -274,7 +314,16 @@ export function composeUpArgv(
   target: ComposeTarget,
   options: { build?: boolean; services?: readonly string[] } = {},
 ): ComposeInvocation {
-  const args = [...composeBase(target), "up", "--detach"];
+  const args = [
+    ...composeBase(target),
+    "up",
+    "--detach",
+    "--wait",
+    "--wait-timeout",
+    "300",
+    "--pull",
+    "never",
+  ];
   if (options.build === true) args.push("--build");
   args.push(...(options.services ?? RECREATED_SERVICES));
   return { command: "docker", args };
@@ -303,6 +352,11 @@ export function gitIndexContentDiffArgv(): string[] {
   return ["-c", "core.autocrlf=true", "diff", "--cached", "--name-only", "--ignore-cr-at-eol"];
 }
 
+/** Untracked source can enter `COPY . .`, so a build must not silently include it. */
+export function gitUntrackedFilesArgv(): string[] {
+  return ["ls-files", "--others", "--exclude-standard"];
+}
+
 export function parseGitNameOnly(stdout: string): string[] {
   const paths: string[] = [];
   for (const line of stdout.split("\n")) {
@@ -328,12 +382,14 @@ export function resolveTrackedDirtyPaths(input: {
   porcelainChanged: readonly string[];
   contentChanged: readonly string[];
   contentDiffOk: boolean;
+  untrackedPaths?: readonly string[];
 }): TrackedDirtyDecision {
+  const untrackedPaths = input.untrackedPaths ?? [];
   if (!input.contentDiffOk) {
-    const dirtyPaths = uniquePaths(input.porcelainChanged);
+    const dirtyPaths = uniquePaths([...input.porcelainChanged, ...untrackedPaths]);
     return { dirty: dirtyPaths.length > 0, dirtyPaths };
   }
-  const dirtyPaths = uniquePaths(input.contentChanged);
+  const dirtyPaths = uniquePaths([...input.contentChanged, ...untrackedPaths]);
   return { dirty: dirtyPaths.length > 0, dirtyPaths };
 }
 
@@ -392,7 +448,7 @@ export function composeUpdatePlan(input: ComposeUpdatePlanInput): ComposeUpdateS
         id: "fetch",
         label: "Fetch the latest commits",
         command: "git",
-        args: ["fetch", "--prune", remote, branch],
+        args: ["fetch", remote, branch],
       },
       {
         id: "checkout",
@@ -429,8 +485,9 @@ export function composeUpdatePlan(input: ComposeUpdatePlanInput): ComposeUpdateS
 export type RollbackDecision = { tag: string } | { error: string };
 
 /**
- * Rollback is "deploy the tag that was running before the last update". It only works because
- * every published tag is immutable and retained, so the previous tag is still pullable.
+ * Rollback is "deploy the tag that was running before the last update". The updater reuses the
+ * image already cached on this host instead of trusting that a mutable registry tag still points
+ * at the same content.
  */
 export function rollbackTarget(input: {
   currentTag: string | null;
@@ -468,8 +525,8 @@ export function upsertEnvAssignments(
   const pending = new Map(Object.entries(assignments));
   const next = lines.map((line) => {
     const key = line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1];
-    if (key === undefined || !pending.has(key)) return line;
-    const value = pending.get(key) as string;
+    if (key === undefined || !Object.hasOwn(assignments, key)) return line;
+    const value = assignments[key] as string;
     pending.delete(key);
     return `${key}=${value}`;
   });

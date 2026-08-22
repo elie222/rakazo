@@ -13,6 +13,7 @@ import {
   forkImageTag,
   gitIndexContentDiffArgv,
   gitStatusArgv,
+  gitUntrackedFilesArgv,
   gitWorktreeContentDiffArgv,
   imageRef,
   isValidComposeProjectName,
@@ -20,6 +21,7 @@ import {
   isValidImageTag,
   OFFICIAL_SERVER_IMAGE,
   parseGitNameOnly,
+  parseLsRemoteReleases,
   parseLsRemoteTags,
   parseReleaseTag,
   RECREATED_SERVICES,
@@ -27,6 +29,7 @@ import {
   resolveExecutionMode,
   resolveTrackedDirtyPaths,
   rollbackTarget,
+  selectLatestRelease,
   selectLatestReleaseTag,
   upsertEnvAssignments,
   validateUpdateRequest,
@@ -73,8 +76,12 @@ describe("image references", () => {
   });
 
   it("derives local and per-commit tags from a resolved commit only", () => {
-    expect(forkImageTag("0123456789abcdef0123456789abcdef01234567")).toBe("local-0123456789ab");
-    expect(commitImageTag("0123456789abcdef0123456789abcdef01234567")).toBe("sha-0123456");
+    expect(forkImageTag("0123456789abcdef0123456789abcdef01234567")).toBe(
+      "local-0123456789abcdef0123456789abcdef01234567",
+    );
+    expect(commitImageTag("0123456789abcdef0123456789abcdef01234567")).toBe(
+      "sha-0123456789abcdef0123456789abcdef01234567",
+    );
     expect(() => forkImageTag("HEAD")).toThrow(/commit/);
     expect(() => commitImageTag("")).toThrow(/commit/);
   });
@@ -99,15 +106,26 @@ describe("release tag resolution", () => {
   });
 
   it("reads ls-remote output, collapsing peeled refs", () => {
+    const first = "1".repeat(40);
+    const second = "2".repeat(40);
+    const tagObject = "a".repeat(40);
     const stdout = [
-      "9f1c\trefs/tags/v0.1.0",
-      "9f1c\trefs/tags/v0.1.0^{}",
-      "aa02\trefs/tags/v0.2.0",
-      "bb03\trefs/heads/main",
-      "cc04\trefs/tags/",
+      `${tagObject}\trefs/tags/v0.1.0`,
+      `${first}\trefs/tags/v0.1.0^{}`,
+      `${second}\trefs/tags/v0.2.0`,
+      `${"b".repeat(40)}\trefs/heads/main`,
+      `${"c".repeat(40)}\trefs/tags/`,
       "",
     ].join("\n");
     expect(parseLsRemoteTags(stdout)).toEqual(["v0.1.0", "v0.2.0"]);
+    expect(parseLsRemoteReleases(stdout)).toEqual([
+      { tag: "v0.1.0", commit: first },
+      { tag: "v0.2.0", commit: second },
+    ]);
+    expect(selectLatestRelease(parseLsRemoteReleases(stdout))).toEqual({
+      tag: "v0.2.0",
+      commit: second,
+    });
   });
 
   it("drops ls-remote tags that would not be usable as image tags", () => {
@@ -192,6 +210,9 @@ describe("compose argv construction", () => {
 
   it("recreates detached, and only builds when asked to", () => {
     expect(composeUpArgv(target).args).toContain("--detach");
+    expect(composeUpArgv(target).args).toContain("--wait");
+    expect(composeUpArgv(target).args).toContain("--wait-timeout");
+    expect(composeUpArgv(target).args).toContain("never");
     expect(composeUpArgv(target).args).not.toContain("--build");
     expect(composeUpArgv(target, { build: true }).args).toContain("--build");
   });
@@ -263,6 +284,7 @@ describe("dirty-tree argv and CRLF filtering", () => {
       "--name-only",
       "--ignore-cr-at-eol",
     ]);
+    expect(gitUntrackedFilesArgv()).toEqual(["ls-files", "--others", "--exclude-standard"]);
   });
 
   it("reads git name-only output as one path per line", () => {
@@ -312,6 +334,17 @@ describe("dirty-tree argv and CRLF filtering", () => {
       }),
     ).toEqual({ dirty: true, dirtyPaths: ["apps/api/src/app.ts"] });
   });
+
+  it("keeps untracked source files because Docker COPY can include them in a build", () => {
+    expect(
+      resolveTrackedDirtyPaths({
+        porcelainChanged: [],
+        contentChanged: [],
+        contentDiffOk: true,
+        untrackedPaths: ["packages/core/src/untracked.ts"],
+      }),
+    ).toEqual({ dirty: true, dirtyPaths: ["packages/core/src/untracked.ts"] });
+  });
 });
 
 describe("update plans", () => {
@@ -341,6 +374,7 @@ describe("update plans", () => {
     ]);
     const merge = steps.find((step) => step.id === "merge");
     expect(merge?.args).toEqual(["merge", "--ff-only", "origin/trunk"]);
+    expect(steps.find((step) => step.id === "fetch")?.args).not.toContain("--prune");
     expect(steps.at(-1)?.args).toContain("--build");
   });
 
@@ -422,6 +456,15 @@ describe("managed env assignments", () => {
       RAKAZO_IMAGE_TAG: "v2.0.0",
     });
     expect(result).toBe("A=1\r\nRAKAZO_IMAGE_TAG=v2.0.0\r\n");
+  });
+
+  it("rewrites every duplicate managed assignment so the last value cannot win", () => {
+    const result = upsertEnvAssignments(
+      "RAKAZO_IMAGE_TAG=stale\nA=1\nRAKAZO_IMAGE_TAG=still-stale\n",
+      { RAKAZO_IMAGE_TAG: "sha-0123456789abcdef0123456789abcdef01234567" },
+    );
+    expect(result.match(/RAKAZO_IMAGE_TAG=sha-/g)).toHaveLength(2);
+    expect(result).not.toContain("stale");
   });
 
   it("refuses values that would inject a second assignment or a compose expression", () => {
