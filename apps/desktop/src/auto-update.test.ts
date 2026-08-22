@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   classifyUpdaterFailure,
+  DesktopUpdateController,
+  type ElectronAutoUpdater,
   initialUpdateState,
   MIN_CHECK_INTERVAL_MS,
   reduceUpdateState,
@@ -11,12 +13,46 @@ import {
 
 const NOW = "2026-08-22T12:00:00.000Z";
 const packaged = { packaged: true, version: "0.1.0" };
+const clock = { now: () => 1_000, iso: () => NOW };
 
 function apply(events: UpdaterEvent[], env = packaged) {
   return events.reduce(
     (state, event) => reduceUpdateState(state, event, NOW),
     initialUpdateState(env),
   );
+}
+
+function fakeUpdater(overrides: Partial<ElectronAutoUpdater> = {}) {
+  const listeners = new Map<string, (payload: unknown) => void>();
+  const updater: ElectronAutoUpdater = {
+    autoDownload: true,
+    autoInstallOnAppQuit: false,
+    allowDowngrade: true,
+    allowPrerelease: true,
+    disableWebInstaller: false,
+    on: vi.fn((event, listener) => {
+      listeners.set(event, listener);
+      return updater;
+    }),
+    checkForUpdates: vi.fn(async () => undefined),
+    downloadUpdate: vi.fn(async () => undefined),
+    quitAndInstall: vi.fn(),
+    ...overrides,
+  };
+  return {
+    updater,
+    emit(event: string, payload?: unknown) {
+      listeners.get(event)?.(payload);
+    },
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 describe("updaterSupport", () => {
@@ -53,20 +89,21 @@ describe("classifyUpdaterFailure", () => {
     }
   });
 
-  it("always surfaces a signing problem with the original detail", () => {
+  it("surfaces signing failures without leaking the updater's raw URL or path", () => {
     const failure = classifyUpdaterFailure(
-      new Error("Code signature at URL did not pass validation"),
+      new Error("Code signature at https://private.invalid/update.zip did not pass validation"),
     );
     expect(failure.kind).toBe("signature");
-    expect(failure.message).toContain("did not pass validation");
+    expect(failure.message).toContain("could not be verified");
+    expect(failure.message).not.toContain("private.invalid");
   });
 
-  it("keeps anything else as a plain message", () => {
-    expect(classifyUpdaterFailure(new Error("disk full"))).toEqual({
+  it("keeps unclassified updater detail out of the renderer bridge", () => {
+    const failure = classifyUpdaterFailure(new Error("disk full at /Users/example/private"));
+    expect(failure).toEqual({
       kind: "other",
-      message: "disk full",
+      message: "The update could not be completed. Try again later.",
     });
-    expect(classifyUpdaterFailure("")).toMatchObject({ kind: "other" });
   });
 });
 
@@ -92,7 +129,7 @@ describe("reduceUpdateState", () => {
     expect(apply([{ type: "progress", percent: 250 }]).percent).toBe(100);
   });
 
-  it("clears an offer when a later check finds nothing", () => {
+  it("clears an offer when a completed check finds nothing", () => {
     const state = apply([
       { type: "available", version: "0.2.0" },
       { type: "check-start" },
@@ -104,11 +141,10 @@ describe("reduceUpdateState", () => {
   it("goes quiet on a missing feed instead of nagging every launch", () => {
     const state = apply([
       { type: "check-start" },
-      { type: "failed", error: new Error("HttpError: 404"), userInitiated: false },
+      { type: "failed", error: new Error("HttpError: 404 Not Found"), userInitiated: false },
     ]);
     expect(state.phase).toBe("unsupported");
     expect(state.message).toContain("No desktop releases");
-    // An unsupported install stops reacting, so later launches cannot re-raise the same notice.
     expect(reduceUpdateState(state, { type: "check-start" }, NOW)).toBe(state);
     expect(shouldCheck(state, 10_000_000, 0)).toBe(false);
   });
@@ -121,9 +157,12 @@ describe("reduceUpdateState", () => {
     );
   });
 
-  it("reports a real failure either way", () => {
+  it("reports other failures with a safe generic message", () => {
     const state = apply([{ type: "failed", error: new Error("disk full"), userInitiated: false }]);
-    expect(state).toMatchObject({ phase: "error", message: "disk full" });
+    expect(state).toMatchObject({
+      phase: "error",
+      message: "The update could not be completed. Try again later.",
+    });
   });
 });
 
@@ -135,10 +174,107 @@ describe("shouldCheck", () => {
     expect(shouldCheck(idle, MIN_CHECK_INTERVAL_MS + 1_000, 1_000)).toBe(true);
   });
 
-  it("never starts a second check on top of work already running", () => {
-    const busy = apply([{ type: "check-start" }]);
-    expect(shouldCheck(busy, 10_000_000, 0)).toBe(false);
-    const downloading = apply([{ type: "download-start" }]);
-    expect(shouldCheck(downloading, 10_000_000, 0)).toBe(false);
+  it("does not replace work, an available update, or a downloaded update", () => {
+    for (const state of [
+      apply([{ type: "check-start" }]),
+      apply([{ type: "available", version: "0.2.0" }]),
+      apply([{ type: "download-start" }]),
+      apply([{ type: "downloaded", version: "0.2.0" }]),
+    ]) {
+      expect(shouldCheck(state, 10_000_000, 0)).toBe(false);
+    }
+  });
+});
+
+describe("DesktopUpdateController", () => {
+  it("locks the updater to stable, upgrade-only, signed installer behavior", async () => {
+    const fake = fakeUpdater();
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+
+    await controller.check(false);
+
+    expect(fake.updater).toMatchObject({
+      autoDownload: false,
+      autoInstallOnAppQuit: true,
+      allowPrerelease: false,
+      allowDowngrade: false,
+      disableWebInstaller: true,
+    });
+  });
+
+  it("serializes concurrent checks across the asynchronous updater load", async () => {
+    const check = deferred();
+    const fake = fakeUpdater({ checkForUpdates: vi.fn(() => check.promise) });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+
+    const first = controller.check(false);
+    const second = controller.check(true);
+    await vi.waitFor(() => expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1));
+    expect(second).toBe(first);
+    check.resolve();
+    await first;
+  });
+
+  it("automatically downloads one verified stable update and tracks progress", async () => {
+    let fake: ReturnType<typeof fakeUpdater>;
+    fake = fakeUpdater({
+      checkForUpdates: vi.fn(async () => {
+        fake.emit("checking-for-update");
+        fake.emit("update-available", { version: "0.2.0" });
+      }),
+      downloadUpdate: vi.fn(async () => {
+        fake.emit("download-progress", { percent: 48.8 });
+        fake.emit("update-downloaded", { version: "0.2.0" });
+      }),
+    });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+
+    await controller.check(false);
+    await vi.waitFor(() => expect(fake.updater.downloadUpdate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+    expect(controller.state()).toMatchObject({
+      availableVersion: "0.2.0",
+      percent: 100,
+    });
+  });
+
+  it("joins manual downloads to the automatic download already in flight", async () => {
+    const download = deferred();
+    let fake: ReturnType<typeof fakeUpdater>;
+    fake = fakeUpdater({
+      checkForUpdates: vi.fn(async () => {
+        fake.emit("checking-for-update");
+        fake.emit("update-available", { version: "0.2.0" });
+      }),
+      downloadUpdate: vi.fn(() => download.promise),
+    });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+
+    await controller.check(false);
+    const first = controller.download();
+    const second = controller.download();
+    expect(second).toBe(first);
+    expect(fake.updater.downloadUpdate).toHaveBeenCalledTimes(1);
+    download.resolve();
+    await first;
+  });
+
+  it("runs installation at most once", async () => {
+    let fake: ReturnType<typeof fakeUpdater>;
+    fake = fakeUpdater({
+      checkForUpdates: vi.fn(async () => {
+        fake.emit("checking-for-update");
+        fake.emit("update-available", { version: "0.2.0" });
+      }),
+      downloadUpdate: vi.fn(async () => {
+        fake.emit("update-downloaded", { version: "0.2.0" });
+      }),
+    });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+    await controller.check(false);
+    await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+
+    await Promise.all([controller.install(), controller.install()]);
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 });

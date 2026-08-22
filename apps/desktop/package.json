@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json && cp src/preload.cjs dist/preload.cjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
-    "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish always",
+    "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts"
@@ -55,6 +55,7 @@
     "mac": {
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
+      "notarize": true,
       "target": [
         "dmg",
         "zip"
@@ -62,6 +63,7 @@
     },
     "win": {
       "icon": "assets/icon.ico",
+      "verifyUpdateCodeSignature": true,
       "target": [
         "nsis"
       ]

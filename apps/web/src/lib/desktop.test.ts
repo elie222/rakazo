@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 import { type RakazoDesktop, windowChromeKind } from "./desktop.js";
 
 function desktop(platform: string): RakazoDesktop {
+  const updateState = {
+    phase: "unsupported" as const,
+    currentVersion: "0.1.0",
+    availableVersion: null,
+    percent: null,
+    message: "Automatic updates only run in an installed build.",
+    checkedAt: null,
+  };
   return {
     platform,
     window: {
@@ -12,6 +20,12 @@ function desktop(platform: string): RakazoDesktop {
       minimize: async () => undefined,
       toggleMaximize: async () => undefined,
       state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
+    },
+    update: {
+      state: async () => updateState,
+      check: async () => updateState,
+      download: async () => updateState,
+      install: async () => updateState,
     },
   };
 }
