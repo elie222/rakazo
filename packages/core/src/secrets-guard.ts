@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 export const DEV_AUTH_SECRET_PLACEHOLDER = "dev-secret-change-me-please-32chars";
 export const DEV_ENCRYPTION_KEY_PLACEHOLDER = "dev-encryption-key";
 
@@ -54,10 +52,25 @@ export function resolveUpdaterToken(env: NodeJS.ProcessEnv = process.env): strin
   return resolveAuthSecret(env);
 }
 
-/** Constant-time bearer comparison, shared by every privileged sidecar. */
+/**
+ * Constant-time bearer comparison, shared by every privileged sidecar.
+ *
+ * Deliberately not `node:crypto`'s `timingSafeEqual`: this module is reachable from the web bundle
+ * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build with
+ * `"timingSafeEqual" is not exported by "__vite-browser-external"`, which takes the whole
+ * application image down with it. The XOR accumulation below inspects every byte no matter where
+ * the first difference falls, which is the property that mattered. Length is compared first, as it
+ * was before — a length mismatch is already observable from the response.
+ */
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
   const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-  const actual = Buffer.from(expectedToken);
-  const candidate = Buffer.from(supplied);
-  return actual.length === candidate.length && timingSafeEqual(actual, candidate);
+  const encoder = new TextEncoder();
+  const actual = encoder.encode(expectedToken);
+  const candidate = encoder.encode(supplied);
+  if (actual.length !== candidate.length) return false;
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) {
+    difference |= (actual[index] ?? 0) ^ (candidate[index] ?? 0);
+  }
+  return difference === 0;
 }
