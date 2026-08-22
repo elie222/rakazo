@@ -38,6 +38,7 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { postBotChannelMessage } from "./channels.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -775,6 +776,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
               console.error("spawned bot notification", error);
             }
             return spawned;
+          }
+          if (name === "message_bot") {
+            const delivered = await messageBot(deps, {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              fromBotId: bot.id,
+              fromBotName: bot.name,
+              fromBotColor: bot.color,
+              fromThreadId: thread.id,
+              sourceRunId: runId,
+              name: String(args.name ?? ""),
+              text: String(args.text ?? ""),
+              botId: args.bot_id
+                ? String(args.bot_id)
+                : args.botId
+                  ? String(args.botId)
+                  : undefined,
+            });
+            return finish(delivered);
+          }
+          if (name === "post_to_channel") {
+            const posted = await postBotChannelMessage(deps.prisma, {
+              workspaceId: run.workspaceId,
+              channelId: String(args.channel_id ?? args.channelId ?? ""),
+              botId: bot.id,
+              text: String(args.text ?? ""),
+              sourceRunId: runId,
+            });
+            return finish(posted);
           }
           if (name === "archive_bot" || name === "delete_bot") {
             const archived = await archiveSpawnedBot(

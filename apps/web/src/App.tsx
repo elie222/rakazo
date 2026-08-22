@@ -22,7 +22,10 @@ export function App() {
     markAfterPaint("rk:renderer:session-painted");
   }, [session.isPending]);
   if (session.isPending) {
-    return window.location.pathname.startsWith("/app") ? (
+    const shellRoute =
+      window.location.pathname.startsWith("/app") ||
+      window.location.pathname.startsWith("/channel");
+    return shellRoute ? (
       <ShellSkeleton />
     ) : (
       <div className="grid h-full place-items-center text-[#6C6C70]">Loading…</div>
@@ -48,6 +51,10 @@ export function App() {
         <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
         <Route
           path="/app/:botId"
+          element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+        />
+        <Route
+          path="/channel/:channelId"
           element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
         />
       </Routes>

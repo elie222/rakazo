@@ -4,6 +4,7 @@ export * from "./box-emulator.js";
 export * from "./box-sandbox.js";
 export * from "./builtin-tools.js";
 export * from "./cartesia-voice.js";
+export * from "./channels.js";
 export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";
 export * from "./composio-connector.js";

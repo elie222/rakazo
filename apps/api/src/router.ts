@@ -21,18 +21,29 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
+  createChannel,
   createVoiceProvider,
   deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
+  fetchOpenAICompatibleModels,
+  gatewayCatalogEntries,
+  getChannel,
   hasActiveComputerControl,
   isSupermemoryEnabled,
+  labelForDiscoveredModels,
+  listChannels,
   listPiCatalog,
   type PiOAuthLogins,
+  parseAvailableModels,
+  parseModelSecret,
+  postUserChannelMessage,
   provisionComputer,
   releaseComputerExecutionLease,
+  removeChannel,
+  renameChannel,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -41,6 +52,7 @@ import {
   screenLeaseIdForRun,
   scriptedCatalogEntry,
   serializeModelSecret,
+  setChannelMembers,
   supermemoryContainerTag,
   takeoverLeaseMs,
   toComputerRef,
@@ -644,6 +656,27 @@ export function createRouter(deps: RouterDeps) {
         await setThreadUnread(deps.prisma, context.actor, input.botId, true);
         return { ok: true as const };
       }),
+    },
+    channels: {
+      list: authed.channels.list.handler(({ context }) => listChannels(deps.prisma, context.actor)),
+      create: authed.channels.create.handler(({ context, input }) =>
+        createChannel(deps.prisma, context.actor, input),
+      ),
+      get: authed.channels.get.handler(({ context, input }) =>
+        getChannel(deps.prisma, context.actor, input.channelId),
+      ),
+      rename: authed.channels.rename.handler(({ context, input }) =>
+        renameChannel(deps.prisma, context.actor, input),
+      ),
+      setMembers: authed.channels.setMembers.handler(({ context, input }) =>
+        setChannelMembers(deps.prisma, context.actor, input),
+      ),
+      post: authed.channels.post.handler(({ context, input }) =>
+        postUserChannelMessage({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input),
+      ),
+      remove: authed.channels.remove.handler(({ context, input }) =>
+        removeChannel(deps.prisma, context.actor, input.channelId),
+      ),
     },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
