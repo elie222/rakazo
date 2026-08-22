@@ -418,7 +418,12 @@ export async function finalizeComputerControlRelease(
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
-      where: { id: input.computerId, controlLeaseId: input.leaseId },
+      where: {
+        id: input.computerId,
+        workspaceId: input.workspaceId,
+        controlBotId: input.botId,
+        controlLeaseId: input.leaseId,
+      },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
@@ -428,8 +433,8 @@ export async function finalizeComputerControlRelease(
     });
     if (cleared.count !== 1) return null;
 
-    const bot = await tx.bot.findUnique({
-      where: { id: input.botId },
+    const bot = await tx.bot.findFirst({
+      where: { id: input.botId, workspaceId: input.workspaceId },
       select: { thread: { select: { id: true } } },
     });
     if (!bot?.thread) return { threadId: null, seq: null };

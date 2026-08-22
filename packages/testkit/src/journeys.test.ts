@@ -31,6 +31,9 @@ describeJourneys("required product journeys", () => {
     ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
   >["executor"];
   let jobs: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["jobs"];
+  let sandbox: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["sandbox"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
@@ -70,6 +73,7 @@ describeJourneys("required product journeys", () => {
     connector = handles.connector;
     executor = handles.executor;
     jobs = handles.jobs;
+    sandbox = handles.sandbox;
   });
 
   afterAll(async () => {
@@ -602,13 +606,53 @@ describeJourneys("required product journeys", () => {
       "computer/takeover",
       { botId: writer.id },
     );
-    const researcherLease = await rpc<{ leaseId: string; expiresAt: string }>(
-      app,
-      cookie,
-      "computer/takeover",
-      { botId: researcher.id },
-    );
+    const releaseEventsBefore = await prisma.event.count({
+      where: { botId: researcher.id, type: "computer.takeover.released" },
+    });
+
+    const originalSetScreenControl = sandbox.setScreenControl;
+    let signalReleaseRevocation!: () => void;
+    let allowReleaseRevocation!: () => void;
+    const releaseRevocationReached = new Promise<void>((resolve) => {
+      signalReleaseRevocation = resolve;
+    });
+    const releaseRevocationAllowed = new Promise<void>((resolve) => {
+      allowReleaseRevocation = resolve;
+    });
+    const revokedLeases: string[] = [];
+    sandbox.setScreenControl = async (_computer, interactive, context, controlToken) => {
+      expect(interactive).toBe(false);
+      revokedLeases.push(controlToken ?? "");
+      if (revokedLeases.length !== 1) return;
+      expect(context.botId).toBe(writer.id);
+      expect(controlToken).toBe(writerLease.leaseId);
+      signalReleaseRevocation();
+      await releaseRevocationAllowed;
+    };
+
+    let staleRelease: Promise<{ ok: true }> | undefined;
+    let researcherLease!: { leaseId: string; expiresAt: string };
+    try {
+      // Pause Release after it captures Writer's lease but before database finalization. The
+      // replacement takeover then commits first, so the resumed Release must lose its lease CAS.
+      staleRelease = rpc<{ ok: true }>(app, cookie, "computer/release", { botId: writer.id });
+      await releaseRevocationReached;
+      researcherLease = await rpc<{ leaseId: string; expiresAt: string }>(
+        app,
+        cookie,
+        "computer/takeover",
+        { botId: researcher.id },
+      );
+      allowReleaseRevocation();
+      await staleRelease;
+    } finally {
+      allowReleaseRevocation();
+      await staleRelease?.catch(() => undefined);
+      sandbox.setScreenControl = originalSetScreenControl;
+    }
+
     expect(researcherLease.leaseId).not.toBe(writerLease.leaseId);
+    expect(revokedLeases).toEqual([writerLease.leaseId, writerLease.leaseId]);
 
     const writerRecord = await prisma.bot.findUniqueOrThrow({
       where: { id: writer.id },
@@ -620,19 +664,6 @@ describeJourneys("required product journeys", () => {
     });
     const computerId = writerRecord.computer!.id;
     expect(researcherRecord.computer!.id).toBe(computerId);
-    const computerBefore = await prisma.computer.findUniqueOrThrow({
-      where: { id: computerId },
-    });
-    expect(computerBefore.controlHolder).toBe("user");
-    expect(computerBefore.controlBotId).toBe(researcher.id);
-    expect(computerBefore.controlLeaseId).toBe(researcherLease.leaseId);
-
-    const releaseEventsBefore = await prisma.event.count({
-      where: { botId: researcher.id, type: "computer.takeover.released" },
-    });
-    await rpc(app, cookie, "computer/release", { botId: writer.id });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
     const afterStaleRelease = await prisma.computer.findUniqueOrThrow({
       where: { id: computerId },
     });
