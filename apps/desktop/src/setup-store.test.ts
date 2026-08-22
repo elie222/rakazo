@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,6 +35,29 @@ describe("setup store", () => {
       serverUrl: "http://127.0.0.1:5173",
     });
   });
+
+  it.runIf(process.platform !== "win32")("keeps the saved address private", async () => {
+    await writeSetup(userData, { mode: "existing", serverUrl: "https://rakazo.example.com" });
+    const info = await stat(setupFilePath(userData));
+    expect(info.mode & 0o777).toBe(0o600);
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "replaces a final symlink instead of overwriting its target",
+    async () => {
+      const victim = path.join(userData, "victim.txt");
+      await writeFile(victim, "untouched", "utf8");
+      await symlink(victim, setupFilePath(userData));
+
+      await writeSetup(userData, { mode: "existing", serverUrl: "https://rakazo.example.com" });
+
+      await expect(readSetup(userData)).resolves.toEqual({
+        mode: "existing",
+        serverUrl: "https://rakazo.example.com",
+      });
+      await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
+    },
+  );
 
   it("falls back to setup when the saved file is corrupt", async () => {
     await writeFile(setupFilePath(userData), "{ not json", "utf8");

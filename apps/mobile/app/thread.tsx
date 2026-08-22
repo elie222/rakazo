@@ -1,14 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import type { ReasoningStep } from "@rakazo/contracts";
-import {
-  abortableDelay,
-  attachmentsForBot,
-  createPendingUserMessageId,
-  formatChatTimestamp,
-  pendingUserMessageTextKey,
-  shouldShowChatTimestamp,
-  visibleReasoningSteps,
-} from "@rakazo/core";
+import { abortableDelay, attachmentsForBot } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -567,83 +558,6 @@ async function speakMessage(botId: string, message: MobileMessage) {
   for (const utterance of prepared.utterances) {
     await playMpeg(await speakUtterance(utterance, { botId }));
   }
-}
-
-function ReasoningCard({ steps }: { steps: ReasoningStep[] }) {
-  const running = steps.some((step) => step.status === "running");
-  const [open, setOpen] = useState(false);
-  const rotation = useRef(new Animated.Value(0)).current;
-  const visible = visibleReasoningSteps(
-    steps.map((step, index) => ({ ...step, id: step.id || String(index) })),
-  );
-  useEffect(() => {
-    Animated.timing(rotation, {
-      toValue: open ? 1 : 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-  }, [open, rotation]);
-  return (
-    <View>
-      <Pressable
-        onPress={() => setOpen((current) => !current)}
-        style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 2 }}
-      >
-        <Animated.View
-          style={{
-            transform: [
-              {
-                rotate: rotation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0deg", "90deg"],
-                }),
-              },
-            ],
-          }}
-        >
-          <NativeSymbol ios="chevron.right" android="chevron-forward" size={14} color="#8E8EA0" />
-        </Animated.View>
-        {running ? (
-          <WorkingShimmerText text="Thinking" />
-        ) : (
-          <Text style={{ color: "#B4B4B8", fontSize: 15, fontWeight: "600" }}>Thought</Text>
-        )}
-      </Pressable>
-      {open && visible.length ? (
-        <View
-          style={{
-            marginLeft: 7,
-            marginTop: 8,
-            borderLeftWidth: 1,
-            borderLeftColor: "#3A3A40",
-            paddingLeft: 14,
-            gap: 10,
-          }}
-        >
-          {visible.map((step) => (
-            <View key={step.id}>
-              {step.kind === "tool" || !step.detail ? (
-                <Text
-                  style={{
-                    color: step.status === "running" ? "#D0D0D4" : "#8E8EA0",
-                    fontSize: 14,
-                    lineHeight: 21,
-                  }}
-                >
-                  {step.title}
-                </Text>
-              ) : null}
-              {step.detail ? (
-                <Text style={{ color: "#8E8EA0", fontSize: 14, lineHeight: 21 }}>
-                  {step.detail}
-                </Text>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 function MessageBubble({

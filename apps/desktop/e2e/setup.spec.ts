@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -26,7 +26,12 @@ async function reserveClosedPort() {
 }
 
 test.beforeAll(async () => {
-  server = createServer((_request, response) => {
+  server = createServer((request, response) => {
+    if (request.url === "/rpc/health" && request.method === "POST") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
+      return;
+    }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rakazo</title></head><body><main>${APP_MARKER}</main></body></html>`,
@@ -66,16 +71,18 @@ function launch(extraEnv: Record<string, string> = {}) {
   });
 }
 
-test("first run asks whether to create a new instance or connect to an existing one", async () => {
+test("first run asks whether to use a local or existing instance", async () => {
   app = await launch();
   const setup = await app.firstWindow();
 
   await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
-  await expect(setup.getByText("Set up a new instance")).toBeVisible();
+  await expect(setup.getByText("Use an instance on this computer")).toBeVisible();
   await expect(setup.getByText("Connect to an existing instance")).toBeVisible();
 
   // A new instance is the default and points at the local development stack.
-  await expect(setup.getByRole("radio", { name: /Set up a new instance/ })).toBeChecked();
+  await expect(
+    setup.getByRole("radio", { name: /Use an instance on this computer/ }),
+  ).toBeChecked();
   await expect(setup.locator("#local-url")).toHaveValue("http://127.0.0.1:5173");
   await expect(setup.locator("#panel-existing")).toBeHidden();
 
@@ -108,7 +115,7 @@ test("connecting to an existing instance verifies, saves, and opens it", async (
   expect(saved).toEqual({ mode: "existing", serverUrl });
 });
 
-test("a verified instance is remembered so setup does not run again", async () => {
+test("Continue verifies and remembers the instance so setup does not run again", async () => {
   app = await launch();
   const setup = await app.firstWindow();
   await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
@@ -136,6 +143,11 @@ test("an unreachable address is reported instead of being saved", async () => {
 
   await expect(setup.locator("#status")).toHaveAttribute("data-tone", "error");
   await expect(setup.locator("#status")).toHaveText("Nothing is listening at that address yet.");
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#status")).toHaveText("Nothing is listening at that address yet.");
+  await expect(async () => {
+    await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
+  }).toPass();
   await setup.screenshot({ path: "e2e/screenshots/04-setup-unreachable.png" });
 });
 
@@ -147,10 +159,151 @@ test("a malformed address is rejected before anything is written", async () => {
   await setup.locator("#server-url").fill("not a server");
   await setup.getByRole("button", { name: "Continue" }).click();
 
-  await expect(setup.locator("#status")).toHaveText("Enter a valid http:// or https:// address.");
+  await expect(setup.locator("#status")).toContainText("Enter a valid server address.");
   await expect(async () => {
     await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
   }).toPass();
+});
+
+test("a generic web page is not accepted as a Rakazo server", async () => {
+  const plain = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><p>not Rakazo</p>");
+  });
+  await new Promise<void>((resolve) => plain.listen(0, "127.0.0.1", resolve));
+  const address = plain.address();
+  if (address === null || typeof address === "string") throw new Error("plain server has no port");
+
+  try {
+    app = await launch();
+    const setup = await app.firstWindow();
+    await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
+    await setup.locator("#server-url").fill(`http://127.0.0.1:${address.port}`);
+    await setup.getByRole("button", { name: "Continue" }).click();
+
+    await expect(setup.locator("#status")).toHaveText(
+      "That address did not respond like a Rakazo server.",
+    );
+    await expect(async () => {
+      await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
+    }).toPass();
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      plain.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test("the setup probe refuses redirects instead of following them", async () => {
+  const redirect = createServer((_request, response) => {
+    response.writeHead(302, { location: `${serverUrl}/rpc/health` });
+    response.end();
+  });
+  await new Promise<void>((resolve) => redirect.listen(0, "127.0.0.1", resolve));
+  const address = redirect.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("redirect server has no port");
+  }
+
+  try {
+    app = await launch();
+    const setup = await app.firstWindow();
+    await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
+    await setup.locator("#server-url").fill(`http://127.0.0.1:${address.port}`);
+    await setup.getByRole("button", { name: "Continue" }).click();
+
+    await expect(setup.locator("#status")).toHaveText("Could not reach that address.");
+    await expect(async () => {
+      await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
+    }).toPass();
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      redirect.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test("an unreachable saved server falls back to setup with a recovery message", async () => {
+  await writeFile(
+    path.join(userData, "setup.json"),
+    `${JSON.stringify({ mode: "existing", serverUrl: closedUrl }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+
+  app = await launch();
+  const setup = await app.firstWindow();
+
+  await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(setup.getByRole("radio", { name: /Connect to an existing instance/ })).toBeChecked();
+  await expect(setup.locator("#server-url")).toHaveValue(closedUrl);
+  await expect(setup.locator("#status")).toContainText("Could not reconnect to the saved server.");
+  await setup.screenshot({ path: "e2e/screenshots/05-saved-server-recovery.png" });
+});
+
+test("the native application menu can reopen setup without exposing setup IPC to the server", async () => {
+  app = await launch({ RAKAZO_WEB_URL: serverUrl });
+  const appWindow = await app.firstWindow();
+  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+
+  const setupPromise = app.waitForEvent("window");
+  await app.evaluate(({ Menu }) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById("change-rakazo-server");
+    if (!item) throw new Error("Change server menu item is missing");
+    item.click();
+  });
+  const setup = await setupPromise;
+
+  await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(setup.locator("#status")).toBeEmpty();
+});
+
+test("servers on the same host but different ports do not share login cookies", async () => {
+  const first = createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "set-cookie": "rakazo_session=fake-one; Path=/; SameSite=Lax",
+    });
+    response.end("<!doctype html><main>Cookie stored</main>");
+  });
+  const second = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(`<!doctype html><main>Cookies: ${request.headers.cookie ?? "none"}</main>`);
+  });
+  await Promise.all([
+    new Promise<void>((resolve) => first.listen(0, "127.0.0.1", resolve)),
+    new Promise<void>((resolve) => second.listen(0, "127.0.0.1", resolve)),
+  ]);
+  const firstAddress = first.address();
+  const secondAddress = second.address();
+  if (
+    firstAddress === null ||
+    typeof firstAddress === "string" ||
+    secondAddress === null ||
+    typeof secondAddress === "string"
+  ) {
+    throw new Error("cookie fixture server has no port");
+  }
+
+  try {
+    app = await launch({ RAKAZO_WEB_URL: `http://127.0.0.1:${firstAddress.port}` });
+    const firstWindow = await app.firstWindow();
+    await expect(firstWindow.getByText("Cookie stored")).toBeVisible();
+    await expect.poll(() => firstWindow.evaluate(() => document.cookie)).toContain("fake-one");
+    await app.close();
+
+    app = await launch({ RAKAZO_WEB_URL: `http://127.0.0.1:${secondAddress.port}` });
+    const secondWindow = await app.firstWindow();
+    await expect(secondWindow.getByText("Cookies: none")).toBeVisible();
+  } finally {
+    await Promise.all([
+      new Promise<void>((resolve, reject) =>
+        first.close((error) => (error ? reject(error) : resolve())),
+      ),
+      new Promise<void>((resolve, reject) =>
+        second.close((error) => (error ? reject(error) : resolve())),
+      ),
+    ]);
+  }
 });
 
 test("setup IPC is not reachable from the connected app window", async () => {

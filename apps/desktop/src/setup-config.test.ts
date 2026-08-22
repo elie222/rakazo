@@ -1,26 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  isRakazoHealth,
   normalizeServerUrl,
   parseSetupInput,
   parseStoredSetup,
   probeFailureMessage,
   resolveStartupTarget,
+  safeExternalUrl,
   serializeSetup,
   servesBundledRenderer,
+  sessionPartitionForServerUrl,
 } from "./setup-config.js";
 
 describe("server address normalization", () => {
-  it("assumes http for a bare host or host:port", () => {
+  it("assumes http locally and https for a bare public host", () => {
     expect(normalizeServerUrl("127.0.0.1:5173")).toBe("http://127.0.0.1:5173");
     expect(normalizeServerUrl("localhost:5173")).toBe("http://localhost:5173");
-    expect(normalizeServerUrl("rakazo.example.com")).toBe("http://rakazo.example.com");
+    expect(normalizeServerUrl("192.168.1.20:3100")).toBe("http://192.168.1.20:3100");
+    expect(normalizeServerUrl("rakazo.example.com")).toBe("https://rakazo.example.com");
   });
 
-  it("keeps an explicit scheme, port, and base path", () => {
+  it("keeps an explicit secure scheme and port but stores only the origin", () => {
     expect(normalizeServerUrl("https://rakazo.example.com")).toBe("https://rakazo.example.com");
     expect(normalizeServerUrl("https://rakazo.example.com:8443/team")).toBe(
-      "https://rakazo.example.com:8443/team",
+      "https://rakazo.example.com:8443",
     );
   });
 
@@ -30,6 +34,12 @@ describe("server address normalization", () => {
     expect(normalizeServerUrl("http://127.0.0.1:5173/?next=/bots#top")).toBe(
       "http://127.0.0.1:5173",
     );
+  });
+
+  it("rejects cleartext public servers but permits private-network development", () => {
+    expect(normalizeServerUrl("http://rakazo.example.com")).toBeNull();
+    expect(normalizeServerUrl("http://10.0.0.8:3100")).toBe("http://10.0.0.8:3100");
+    expect(normalizeServerUrl("http://[fd00::1]:3100")).toBe("http://[fd00::1]:3100");
   });
 
   it.each(["", "   ", "not a url", "ftp://example.com", "file:///etc/passwd", "http://"])(
@@ -71,6 +81,14 @@ describe("saved setup", () => {
     expect(parseSetupInput(null)).toBeNull();
     expect(parseSetupInput({ mode: "new", serverUrl: 5173 })).toBeNull();
   });
+
+  it("keeps the new-instance choice on this computer", () => {
+    expect(parseSetupInput({ mode: "new", serverUrl: "http://192.168.1.20:3100" })).toBeNull();
+    expect(parseSetupInput({ mode: "existing", serverUrl: "http://192.168.1.20:3100" })).toEqual({
+      mode: "existing",
+      serverUrl: "http://192.168.1.20:3100",
+    });
+  });
 });
 
 describe("startup target", () => {
@@ -109,6 +127,11 @@ describe("startup target", () => {
     expect(resolveStartupTarget({ saved: { mode: "new", serverUrl: "nope://x" } })).toEqual({
       kind: "setup",
     });
+    expect(
+      resolveStartupTarget({
+        saved: { mode: "new", serverUrl: "http://192.168.1.20:3100" },
+      }),
+    ).toEqual({ kind: "setup" });
   });
 });
 
@@ -118,6 +141,31 @@ describe("bundled renderer eligibility", () => {
     expect(servesBundledRenderer("https://rakazo.example.com")).toBe(true);
     expect(servesBundledRenderer("data:text/html,<p>fixture</p>")).toBe(false);
     expect(servesBundledRenderer("nonsense")).toBe(false);
+  });
+});
+
+describe("remote-content isolation", () => {
+  it("uses a stable, opaque session partition per server origin", () => {
+    const first = sessionPartitionForServerUrl("https://one.example.com/path");
+    expect(first).toBe(sessionPartitionForServerUrl("https://one.example.com/other"));
+    expect(first).not.toBe(sessionPartitionForServerUrl("https://one.example.com:8443"));
+    expect(first).toMatch(/^persist:rakazo-[a-f0-9]{24}$/);
+    expect(first).not.toContain("one.example.com");
+    expect(sessionPartitionForServerUrl("data:text/html,fixture")).toBeNull();
+  });
+
+  it("opens only web URLs outside Electron", () => {
+    expect(safeExternalUrl("https://example.com/docs")).toBe("https://example.com/docs");
+    expect(safeExternalUrl("mailto:person@example.com")).toBeNull();
+    expect(safeExternalUrl("file:///etc/passwd")).toBeNull();
+  });
+});
+
+describe("Rakazo health response", () => {
+  it("requires the public RPC health contract", () => {
+    expect(isRakazoHealth({ json: { ok: true, version: "0.1.0" } })).toBe(true);
+    expect(isRakazoHealth({ json: { ok: true } })).toBe(false);
+    expect(isRakazoHealth({ ok: true, version: "0.1.0" })).toBe(false);
   });
 });
 

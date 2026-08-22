@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopSetup } from "@rakazo/contracts";
 import { parseStoredSetup, SETUP_FILE_NAME, serializeSetup } from "./setup-config.js";
@@ -20,7 +21,22 @@ export async function readSetup(userDataDir: string): Promise<DesktopSetup | nul
 
 export async function writeSetup(userDataDir: string, setup: DesktopSetup): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
-  await writeFile(setupFilePath(userDataDir), serializeSetup(setup), "utf8");
+  const destination = setupFilePath(userDataDir);
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+  let file: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    file = await open(temporary, "wx", 0o600);
+    await file.writeFile(serializeSetup(setup), "utf8");
+    await file.sync();
+    await file.close();
+    file = undefined;
+    // Replacing the complete file avoids following a malicious final symlink and
+    // leaves either the old or new valid JSON after an interrupted write.
+    await rename(temporary, destination);
+  } finally {
+    await file?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function clearSetup(userDataDir: string): Promise<void> {

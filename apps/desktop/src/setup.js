@@ -50,11 +50,15 @@
     try {
       const result = await bridge.test(value);
       if (result.ok) {
+        activeField().value = result.url;
         setStatus(`Rakazo answered at ${result.url}.`, "ok");
       } else {
         setStatus(result.error ?? "Could not reach that address.", "error");
       }
       return result;
+    } catch {
+      setStatus("Could not run the connection check. Try again.", "error");
+      return null;
     } finally {
       setBusy(false);
     }
@@ -82,6 +86,8 @@
     try {
       const saved = await bridge.save({ mode, serverUrl: value });
       if (!saved.ok) setStatus(saved.error ?? "Could not save that address.", "error");
+    } catch {
+      setStatus("Could not save that address. Try again.", "error");
     } finally {
       setBusy(false);
     }
@@ -94,16 +100,23 @@
       return;
     }
 
-    const state = await bridge.state();
-    localUrl.value = state.defaultLocalUrl;
-    if (state.saved !== null) {
-      const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
-      if (modeInput !== null) modeInput.checked = true;
-      if (state.saved.mode === "existing") serverUrl.value = state.saved.serverUrl;
-      else localUrl.value = state.saved.serverUrl;
+    try {
+      const state = await bridge.state();
+      if (state === null) throw new Error("Setup is not active");
+      localUrl.value = state.defaultLocalUrl;
+      if (state.saved !== null) {
+        const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
+        if (modeInput !== null) modeInput.checked = true;
+        if (state.saved.mode === "existing") serverUrl.value = state.saved.serverUrl;
+        else localUrl.value = state.saved.serverUrl;
+      }
+      syncPanels();
+      if (state.error) setStatus(state.error, "error");
+      activeField().focus();
+    } catch {
+      setStatus("Setup could not start. Quit Rakazo and try again.", "error");
+      setBusy(true);
     }
-    syncPanels();
-    activeField().focus();
   }
 
   void init();

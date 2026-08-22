@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import type { DesktopSetup } from "@rakazo/contracts";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
@@ -13,8 +15,8 @@ const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
 /**
  * Accepts what a person would actually type ("localhost:5173", "rakazo.example.com")
- * and returns a canonical http(s) origin plus optional base path, or null when the
- * input can never address a Rakazo server.
+ * and returns a canonical http(s) origin, or null when the input can never
+ * securely address a Rakazo server.
  */
 export function normalizeServerUrl(input: string): string | null {
   const trimmed = input.trim();
@@ -22,7 +24,12 @@ export function normalizeServerUrl(input: string): string | null {
 
   let url: URL;
   try {
-    url = new URL(SCHEME.test(trimmed) ? trimmed : `http://${trimmed}`);
+    if (SCHEME.test(trimmed)) {
+      url = new URL(trimmed);
+    } else {
+      const candidate = new URL(`http://${trimmed}`);
+      url = isLocalNetworkHost(candidate.hostname) ? candidate : new URL(`https://${trimmed}`);
+    }
   } catch {
     return null;
   }
@@ -31,8 +38,12 @@ export function normalizeServerUrl(input: string): string | null {
   if (url.hostname === "") return null;
   // Embedded credentials would be written to disk in cleartext.
   if (url.username !== "" || url.password !== "") return null;
+  // Public login cookies and API traffic must never cross a cleartext connection.
+  if (url.protocol === "http:" && !isLocalNetworkHost(url.hostname)) return null;
 
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  // Rakazo serves its renderer, RPC, and auth routes from one origin. Keeping a
+  // user-supplied path would make the setup probe and the loaded app disagree.
+  return url.origin;
 }
 
 /** Validates an untrusted value (saved file or IPC payload) into a usable setup. */
@@ -44,7 +55,9 @@ export function parseSetupInput(value: unknown): DesktopSetup | null {
   if (typeof serverUrl !== "string") return null;
 
   const normalized = normalizeServerUrl(serverUrl);
-  return normalized === null ? null : { mode, serverUrl: normalized };
+  if (normalized === null) return null;
+  if (mode === "new" && !isLoopbackHost(new URL(normalized).hostname)) return null;
+  return { mode, serverUrl: normalized };
 }
 
 export function parseStoredSetup(raw: string): DesktopSetup | null {
@@ -75,8 +88,8 @@ export function resolveStartupTarget(input: {
   if (envUrl !== undefined && envUrl !== "") return { kind: "app", url: envUrl, source: "env" };
 
   if (input.saved != null) {
-    const normalized = normalizeServerUrl(input.saved.serverUrl);
-    if (normalized !== null) return { kind: "app", url: normalized, source: "saved" };
+    const saved = parseSetupInput(input.saved);
+    if (saved !== null) return { kind: "app", url: saved.serverUrl, source: "saved" };
   }
   return { kind: "setup" };
 }
@@ -109,4 +122,65 @@ export function servesBundledRenderer(targetUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Each Rakazo origin gets its own persistent cookie and storage partition. */
+export function sessionPartitionForServerUrl(targetUrl: string): string | null {
+  try {
+    const url = new URL(targetUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    const digest = createHash("sha256").update(url.origin).digest("hex").slice(0, 24);
+    return `persist:rakazo-${digest}`;
+  } catch {
+    return null;
+  }
+}
+
+/** External pages are opened by the OS, never in a privileged Electron child window. */
+export function safeExternalUrl(targetUrl: string): string | null {
+  if (!servesBundledRenderer(targetUrl)) return null;
+  return new URL(targetUrl).toString();
+}
+
+export function isRakazoHealth(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const json = (value as { json?: unknown }).json;
+  return (
+    typeof json === "object" &&
+    json !== null &&
+    (json as { ok?: unknown }).ok === true &&
+    typeof (json as { version?: unknown }).version === "string"
+  );
+}
+
+function isLoopbackHost(hostname: string) {
+  const host = unbracketedHost(hostname);
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (isIP(host) === 4) return host.startsWith("127.");
+  return isIP(host) === 6 && host === "::1";
+}
+
+function isLocalNetworkHost(hostname: string) {
+  const host = unbracketedHost(hostname);
+  if (isLoopbackHost(host) || host.endsWith(".local")) return true;
+
+  if (isIP(host) === 4) {
+    const [first, second] = host.split(".").map(Number);
+    return (
+      first === 10 ||
+      (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 169 && second === 254)
+    );
+  }
+
+  if (isIP(host) === 6) {
+    const first = host.split(":", 1)[0] ?? "";
+    return /^f[cd]/.test(first) || /^fe[89ab]/.test(first);
+  }
+  return false;
+}
+
+function unbracketedHost(hostname: string) {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
 }
