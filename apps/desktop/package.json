@@ -9,12 +9,14 @@
     "build": "tsc -p tsconfig.json && cp src/preload.cjs dist/preload.cjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
+    "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish always",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@rakazo/contracts": "workspace:*"
+    "@rakazo/contracts": "workspace:*",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
@@ -26,6 +28,13 @@
   "build": {
     "appId": "dev.rakazo.desktop",
     "productName": "Rakazo",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "elie222",
+        "repo": "rakazo"
+      }
+    ],
     "directories": {
       "output": "out",
       "buildResources": "assets"
