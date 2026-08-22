@@ -22,7 +22,7 @@ describe("resolveUpdaterConfig", () => {
       composeFile: `/srv/rakazo/${DEFAULT_COMPOSE_FILE}`,
       envFile: "/srv/rakazo/.env",
       projectName: DEFAULT_COMPOSE_PROJECT_NAME,
-      token: "token",
+      token: base.RAKAZO_UPDATER_TOKEN,
       port: DEFAULT_UPDATER_PORT,
     });
   });
