@@ -38,7 +38,3 @@ export async function writeSetup(userDataDir: string, setup: DesktopSetup): Prom
     await rm(temporary, { force: true }).catch(() => undefined);
   }
 }
-
-export async function clearSetup(userDataDir: string): Promise<void> {
-  await rm(setupFilePath(userDataDir), { force: true });
-}

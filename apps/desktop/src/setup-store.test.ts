@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearSetup, readSetup, setupFilePath, writeSetup } from "./setup-store.js";
+import { readSetup, setupFilePath, writeSetup } from "./setup-store.js";
 
 let userData: string;
 
@@ -62,15 +62,5 @@ describe("setup store", () => {
   it("falls back to setup when the saved file is corrupt", async () => {
     await writeFile(setupFilePath(userData), "{ not json", "utf8");
     await expect(readSetup(userData)).resolves.toBeNull();
-  });
-
-  it("forgets the instance after clearing", async () => {
-    await writeSetup(userData, { mode: "new", serverUrl: "http://127.0.0.1:5173" });
-    await clearSetup(userData);
-    await expect(readSetup(userData)).resolves.toBeNull();
-  });
-
-  it("clears without complaint when nothing was saved", async () => {
-    await expect(clearSetup(userData)).resolves.toBeUndefined();
   });
 });

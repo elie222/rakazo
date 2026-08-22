@@ -428,7 +428,6 @@ app.whenReady().then(async () => {
     if (!fromSetupWindow(event)) return null;
     return {
       defaultLocalUrl: DEFAULT_LOCAL_WEB_URL,
-      platform: process.platform,
       saved: currentSetup,
       error: setupError ?? undefined,
     };
@@ -504,6 +503,7 @@ app.whenReady().then(async () => {
       mainWindow.focus();
       return;
     }
+    if (openAppPromise !== null) return;
     if (currentTargetUrl === null) showSetupWindow(setupError);
     else void openApp(currentTargetUrl);
   });
