@@ -248,7 +248,8 @@ const MAX_GATEWAY_ERROR_CHARS = 4000;
 
 export function errorFromOpenAICompatibleBody(raw: string, status?: number): string {
   const trimmed = raw.trim();
-  const extracted = extractGatewayErrorMessage(trimmed) || (isJson(trimmed) ? "" : trimmed);
+  const parsed = parseGatewayError(trimmed);
+  const extracted = parsed.message || (parsed.isJson ? "" : trimmed);
   const clipped =
     extracted.length > MAX_GATEWAY_ERROR_CHARS
       ? `${extracted.slice(0, MAX_GATEWAY_ERROR_CHARS)}…`
@@ -260,21 +261,11 @@ export function errorFromOpenAICompatibleBody(raw: string, status?: number): str
   return clipped || "The gateway returned an empty reply";
 }
 
-function isJson(value: string): boolean {
-  if (!value) return false;
-  try {
-    JSON.parse(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function extractGatewayErrorMessage(raw: string): string {
-  if (!raw) return "";
+function parseGatewayError(raw: string): { message: string; isJson: boolean } {
+  if (!raw) return { message: "", isJson: false };
   try {
     const fromJson = errorMessageFromValue(JSON.parse(raw) as unknown);
-    if (fromJson) return fromJson;
+    return { message: fromJson, isJson: true };
   } catch {
     // Fall through to SSE / plain text.
   }
@@ -285,13 +276,13 @@ function extractGatewayErrorMessage(raw: string): string {
       if (!payload || payload === "[DONE]") continue;
       try {
         const fromEvent = errorMessageFromValue(JSON.parse(payload) as unknown);
-        if (fromEvent) return fromEvent;
+        if (fromEvent) return { message: fromEvent, isJson: false };
       } catch {
         // Ignore malformed SSE lines.
       }
     }
   }
-  return "";
+  return { message: "", isJson: false };
 }
 
 function errorMessageFromValue(value: unknown): string {
