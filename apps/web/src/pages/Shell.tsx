@@ -22,19 +22,23 @@ import {
 import {
   abortableDelay,
   attachmentsForBot,
+  createPendingUserMessageId,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  pendingUserMessageTextKey,
   presetFromCron,
   speechFromBlocks,
+  visibleReasoningSteps,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
   ChevronLeft,
+  ChevronRight,
   Cpu,
   Gauge,
   LogOut,
@@ -186,7 +190,6 @@ export function ShellPage() {
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
-  const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
     botId: string;
@@ -202,6 +205,9 @@ export function ShellPage() {
   const autoSpokenBotId = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const botWorking = Boolean(
+    snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
+  );
   const activePendingAttachments = useMemo(
     () => attachmentsForBot(pendingAttachments, active?.id),
     [active?.id, pendingAttachments],
@@ -281,10 +287,6 @@ export function ShellPage() {
   }
 
   async function refreshThread(id: string) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
     const pin = pinnedAroundRef.current;
     const keepPin = pin?.botId === id;
@@ -315,12 +317,6 @@ export function ShellPage() {
     setRoutinesBotId(id);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
-    if (!keepPin && stickToEnd) {
-      window.requestAnimationFrame(() => {
-        const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
-      });
-    }
     return snap;
   }
 
@@ -679,16 +675,6 @@ export function ShellPage() {
     }
   }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
 
-  useLayoutEffect(() => {
-    if (!active || snapshot?.botId !== active.id) return;
-    if (initiallyScrolledThread.current === snapshot.threadId) return;
-    if (pinnedAroundRef.current?.botId === active.id) return;
-    const element = messageScroll.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    initiallyScrolledThread.current = snapshot.threadId;
-  }, [active, snapshot?.botId, snapshot?.threadId]);
-
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const answerMessage = useCallback(async (message: ThreadMessage, text: string) => {
@@ -747,6 +733,27 @@ export function ShellPage() {
       const attachments = attachmentsForBot(pendingAttachments, id);
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return;
+      const pendingId = createPendingUserMessageId();
+      pinnedAroundRef.current = null;
+      if (trimmed) {
+        setSnapshot((current) => {
+          if (!current || current.botId !== id) return current;
+          return {
+            ...current,
+            messages: [
+              ...current.messages.filter((message) => message.id !== pendingId),
+              {
+                id: pendingId,
+                threadId: current.threadId,
+                seq: (current.messages.at(-1)?.seq ?? 0) + 1,
+                role: "user",
+                blocks: [{ kind: "text", text: trimmed }],
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+      }
       setSending(true);
       setSendError(null);
       try {
@@ -773,9 +780,16 @@ export function ShellPage() {
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
         if (activeBotId.current === id) setAttachmentNotice(null);
-        await refreshThreadRef.current(id);
       } catch (error) {
         if (activeBotId.current === id) {
+          setSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  messages: current.messages.filter((message) => message.id !== pendingId),
+                }
+              : current,
+          );
           setSendError(error instanceof Error ? error.message : "Failed to send message");
         }
       } finally {
@@ -1189,7 +1203,7 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button
             type="button"
@@ -1197,7 +1211,7 @@ export function ShellPage() {
             onClick={() => setPanel("settings")}
             className="flex min-w-0 items-center gap-3"
           >
-            {active ? <BotAvatar color={active.color} size={26} /> : null}
+            {active ? <BotAvatar color={active.color} size={26} thinking={botWorking} /> : null}
             <span className="min-w-0">
               <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
                 {active?.name ?? "Select a bot"}
@@ -1241,9 +1255,16 @@ export function ShellPage() {
           olderCursor={snapshot?.olderCursor ?? null}
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
-          running={Boolean(
-            snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
-          )}
+          running={botWorking}
+          followOutput={
+            !loadingOlder &&
+            !(
+              pinnedAroundRef.current &&
+              active &&
+              pinnedAroundRef.current.botId === active.id &&
+              pinnedAroundRef.current.threadId === snapshot?.threadId
+            )
+          }
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
@@ -1846,6 +1867,16 @@ export function ShellPage() {
   );
 }
 
+const STICK_TO_BOTTOM_PX = 96;
+
+function isNearTranscriptEnd(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= STICK_TO_BOTTOM_PX;
+}
+
+function scrollTranscriptToEnd(element: HTMLElement): void {
+  element.scrollTop = element.scrollHeight;
+}
+
 const Transcript = memo(function Transcript({
   scrollRef,
   botId,
@@ -1854,6 +1885,7 @@ const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskMessageId,
   running,
+  followOutput,
   onLoadOlder,
   onOpenBot,
   onAnswer,
@@ -1870,6 +1902,7 @@ const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskMessageId: string | null;
   running: boolean;
+  followOutput: boolean;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -1879,48 +1912,99 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
+  const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const followOutputRef = useRef(followOutput);
+  followOutputRef.current = followOutput;
+  const lastBotId = useRef(botId);
+  useLayoutEffect(() => {
+    const switchedBot = enterState.current.botId !== botId;
+    const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
+    if (switchedBot) {
+      setEnteringIds(new Set());
+      return;
+    }
+    if (next.size > 0) setEnteringIds(next);
+  }, [botId, messages]);
+  useLayoutEffect(() => {
+    if (lastBotId.current !== botId) {
+      stickToBottom.current = true;
+      lastBotId.current = botId;
+    }
+    if (loadingOlder) {
+      stickToBottom.current = false;
+      return;
+    }
+    if (messages.at(-1)?.id.startsWith("pending:")) stickToBottom.current = true;
+    const element = scrollRef.current;
+    if (!element || !followOutput || !stickToBottom.current) return;
+    scrollTranscriptToEnd(element);
+  }, [botId, followOutput, loadingOlder, messages, running, scrollRef]);
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || !content) return;
+    const onScroll = () => {
+      stickToBottom.current = isNearTranscriptEnd(element);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) stickToBottom.current = false;
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    element.addEventListener("wheel", onWheel, { passive: true });
+    const observer = new ResizeObserver(() => {
+      if (!followOutputRef.current || !stickToBottom.current) return;
+      scrollTranscriptToEnd(element);
+    });
+    observer.observe(content);
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      element.removeEventListener("wheel", onWheel);
+      observer.disconnect();
+    };
+  }, [botId, scrollRef]);
+  const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
     <div
       ref={scrollRef}
       data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
+      className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-7 py-6"
     >
-      {olderCursor != null ? (
-        <button
-          type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-        >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
-        </button>
-      ) : null}
-      {messages.map((message) => (
-        <div key={message.id} data-message-id={message.id}>
-          <MessageView
-            botId={botId}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onAnswer={onAnswer}
-            onRefresh={onRefresh}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running ? (
-        <div className="flex justify-start">
-          <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
-            style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
+      <div ref={contentRef} className="flex flex-col gap-[13px]">
+        {olderCursor != null ? (
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void onLoadOlder()}
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
           >
-            working…
+            {loadingOlder ? "Loading…" : "Load earlier messages"}
+          </button>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+          >
+            <MessageView
+              botId={botId}
+              message={message}
+              canAnswer={message.id === answerableAskMessageId}
+              onOpenBot={onOpenBot}
+              onAnswer={onAnswer}
+              onRefresh={onRefresh}
+              onAddRoutine={onAddRoutine}
+              voiceReady={voiceReady}
+              speaking={speakingMessageId === message.id}
+              onSpeak={() => onSpeak(message)}
+            />
           </div>
-        </div>
-      ) : null}
+        ))}
+        {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+      </div>
     </div>
   );
 });
@@ -2552,6 +2636,103 @@ function CreateBotForm({
         Create
       </button>
     </div>
+  );
+}
+
+function collectEnteringUserMessageIds(
+  botId: string,
+  messages: ThreadMessage[],
+  state: { botId: string; seen: Set<string>; primed: boolean },
+) {
+  if (state.botId !== botId) {
+    state.botId = botId;
+    state.seen = new Set(messages.map((message) => message.id));
+    state.primed = messages.length > 0;
+    return new Set<string>();
+  }
+  if (!state.primed) {
+    if (!messages.length) return new Set<string>();
+    for (const message of messages) state.seen.add(message.id);
+    state.primed = true;
+    return new Set<string>();
+  }
+  const recent = new Set(messages.slice(-4).map((message) => message.id));
+  const entering = new Set<string>();
+  for (const message of messages) {
+    const text = userMessagePlainText(message);
+    const pendingKey = pendingUserMessageTextKey(text);
+    if (!state.seen.has(message.id) && message.role === "user" && recent.has(message.id)) {
+      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
+      if (!replacingPending) entering.add(message.id);
+    }
+    state.seen.add(message.id);
+    if (message.role === "user") {
+      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
+      else state.seen.delete(pendingKey);
+    }
+  }
+  return entering;
+}
+
+function userMessagePlainText(message: ThreadMessage): string {
+  return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
+}
+
+function BotWorkingStatus() {
+  return (
+    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
+      <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
+      <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+    </div>
+  );
+}
+
+function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const running = steps.some((step) => step.status === "running");
+  const visible = visibleReasoningSteps(steps);
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    el.open = running;
+  }, [running]);
+  if (!steps.length) return null;
+  return (
+    <details ref={detailsRef} className="rk-thought w-[min(560px,100%)]">
+      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          size={16}
+          strokeWidth={2}
+          className="rk-thought-caret shrink-0 text-[#8E8EA0]"
+        />
+        {running ? (
+          <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+        ) : (
+          <span className="text-[15px] font-medium text-[#B4B4B8]">Thought</span>
+        )}
+      </summary>
+      {visible.length ? (
+        <div className="rk-thought-body ml-[7px] mt-2 space-y-2.5 border-l border-[#3A3A40] pl-3.5">
+          {visible.map((step) => (
+            <div key={step.id} className="text-[14px] leading-[1.55] text-[#8E8EA0]">
+              {step.kind === "tool" || !step.detail ? (
+                <div className={step.status === "running" ? "text-[#D0D0D4]" : undefined}>
+                  {step.title}
+                </div>
+              ) : null}
+              {step.detail ? (
+                <pre className="rk-scroll max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55] text-[#8E8EA0]">
+                  {step.detail}
+                  {running && step.status === "running" ? (
+                    <span className="rk-thought-cursor">▍</span>
+                  ) : null}
+                </pre>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </details>
   );
 }
 

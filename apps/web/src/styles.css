@@ -15,6 +15,10 @@ body,
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
+.rk-transcript {
+  overflow-anchor: none;
+}
+
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }
@@ -64,5 +68,155 @@ body,
   }
   50% {
     opacity: 0.3;
+  }
+}
+
+@keyframes rkDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.94);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rkAvatarBob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-5px) scale(1.06);
+    filter: brightness(1.22);
+  }
+}
+
+@keyframes rkAvatarEyes {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  80% {
+    opacity: 0.35;
+    transform: scaleY(0.2);
+  }
+}
+
+@keyframes rkWorkingShimmer {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -140% 0;
+  }
+}
+
+@keyframes rkThoughtReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rkCaretBlink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.rk-drop-in {
+  animation: rkDropIn 0.34s cubic-bezier(0.22, 1.18, 0.32, 1) both;
+  transform-origin: right top;
+  will-change: transform, opacity;
+}
+
+.rk-avatar-think {
+  animation: rkAvatarBob 0.85s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+.rk-avatar-think .rk-avatar-eye {
+  transform-origin: center;
+  animation: rkAvatarEyes 1.35s ease-in-out infinite;
+}
+
+.rk-working-text {
+  background-image: linear-gradient(
+    90deg,
+    #6c6c70 0%,
+    #6c6c70 28%,
+    #f7f7f8 50%,
+    #6c6c70 72%,
+    #6c6c70 100%
+  );
+  background-size: 180% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: rkWorkingShimmer 1.05s linear infinite;
+}
+
+.rk-thought-summary {
+  outline: none;
+}
+
+.rk-thought-caret {
+  display: block;
+  transform-origin: center;
+  transition: transform 0.18s cubic-bezier(0.22, 1.2, 0.36, 1);
+}
+
+.rk-thought[open] .rk-thought-caret {
+  transform: rotate(90deg);
+}
+
+.rk-thought-body {
+  animation: rkThoughtReveal 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rk-thought-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: #c9c9ce;
+  animation: rkCaretBlink 0.9s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-drop-in,
+  .rk-avatar-think,
+  .rk-avatar-think .rk-avatar-eye,
+  .rk-working-text,
+  .rk-thought-body,
+  .rk-thought-cursor {
+    animation: none;
+  }
+
+  .rk-thought-caret {
+    transition: none;
+  }
+
+  .rk-working-text {
+    background: none;
+    color: #a8a8ad;
+    -webkit-text-fill-color: #a8a8ad;
   }
 }

@@ -115,6 +115,62 @@ export class PiAgentRuntime implements AgentRuntime {
         agent.subscribe((event) => {
           if (
             event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_delta"
+          ) {
+            const delta = event.assistantMessageEvent.delta;
+            if (delta) {
+              thinking += delta;
+              const now = Date.now();
+              if (now - lastThinkPush >= 24) {
+                lastThinkPush = now;
+                emitReasoning({
+                  id: "think",
+                  kind: "think",
+                  title: "Thinking",
+                  detail: thinking.slice(-4000),
+                  status: "running",
+                });
+              }
+            }
+          }
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_end"
+          ) {
+            const content = event.assistantMessageEvent.content || thinking;
+            if (content) {
+              thinking = content;
+              emitReasoning({
+                id: "think",
+                kind: "think",
+                title: "Thought",
+                detail: content.slice(-8000),
+                status: "done",
+              });
+            }
+          }
+          if (event.type === "tool_execution_start") {
+            toolArgs.set(event.toolCallId, event.args ?? {});
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              detail: reasoningToolDetail(event.toolName, event.args ?? {}),
+              status: "running",
+            });
+          }
+          if (event.type === "tool_execution_end") {
+            const args = toolArgs.get(event.toolCallId) ?? {};
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, args),
+              detail: event.isError ? "failed" : "done",
+              status: "done",
+            });
+          }
+          if (
+            event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
           ) {
             const delta = event.assistantMessageEvent.delta;
