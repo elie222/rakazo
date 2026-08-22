@@ -282,7 +282,9 @@ export function createUpdaterApp(
     try {
       temporaryFile = await open(temporary, "wx", 0o600);
       await temporaryFile.writeFile(contents, { encoding: "utf8" });
-      if (metadata.uid !== process.getuid() || metadata.gid !== process.getgid()) {
+      const currentUid = process.getuid?.();
+      const currentGid = process.getgid?.();
+      if (metadata.uid !== currentUid || metadata.gid !== currentGid) {
         await temporaryFile.chown(metadata.uid, metadata.gid);
       }
       await temporaryFile.sync();
