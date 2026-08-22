@@ -10,14 +10,19 @@ import {
   composeUpdatePlan,
   DEFAULT_UPDATE_REMOTE,
   forkImageTag,
+  gitIndexContentDiffArgv,
+  gitStatusArgv,
+  gitWorktreeContentDiffArgv,
   hasValidBearerToken,
   IMAGE_TAG_ENV,
   imageRef,
   isLocalImageTag,
   PREVIOUS_IMAGE_TAG_ENV,
+  parseGitNameOnly,
   parseGitStatusPorcelain,
   parseLsRemoteTags,
   repoIdentity,
+  resolveTrackedDirtyPaths,
   rollbackTarget,
   selectLatestReleaseTag,
   upsertEnvAssignments,
@@ -92,7 +97,11 @@ function runCommand(
 
 export function createUpdaterApp(config: UpdaterConfig) {
   const app = new Hono();
-  const composeTarget = { composeFile: config.composeFile, envFiles: [config.envFile] };
+  const composeTarget = {
+    composeFile: config.composeFile,
+    envFiles: [config.envFile],
+    projectName: config.projectName,
+  };
   let running = false;
 
   app.get("/health", (c) => c.json({ ok: true, service: "updater", image: config.image }));
@@ -239,16 +248,34 @@ export function createUpdaterApp(config: UpdaterConfig) {
       git(["rev-parse", "HEAD"]),
       git(["rev-parse", "--abbrev-ref", "HEAD"]),
       git(["remote", "get-url", DEFAULT_UPDATE_REMOTE]),
-      git(["status", "--porcelain", "--untracked-files=no"]),
+      git(gitStatusArgv()),
     ]);
     const porcelain = parseGitStatusPorcelain(status.ok ? status.output : "");
+    let contentChanged: string[] = [];
+    let contentDiffOk = true;
+    if (status.ok && !porcelain.clean) {
+      const [worktree, index] = await Promise.all([
+        git(gitWorktreeContentDiffArgv()),
+        git(gitIndexContentDiffArgv()),
+      ]);
+      contentDiffOk = worktree.ok && index.ok;
+      contentChanged = [
+        ...parseGitNameOnly(worktree.ok ? worktree.output : ""),
+        ...parseGitNameOnly(index.ok ? index.output : ""),
+      ];
+    }
+    const tracked = resolveTrackedDirtyPaths({
+      porcelainChanged: porcelain.changed,
+      contentChanged,
+      contentDiffOk,
+    });
     return {
       present: true,
       commit: head.ok ? head.output.trim() : null,
       branch: branch.ok ? branch.output.trim() : null,
       remoteUrl: remote.ok ? remote.output.trim() : null,
-      dirty: status.ok ? !porcelain.clean : false,
-      dirtyPaths: porcelain.changed,
+      dirty: status.ok ? tracked.dirty : false,
+      dirtyPaths: tracked.dirtyPaths,
     };
   }
 

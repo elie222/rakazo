@@ -295,11 +295,14 @@ it at a fork you control, never one you found.
 
 `RAKAZO_DEPLOY_DIR` is bind-mounted into the updater at the same path it is read from
 (`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. When the
-updater runs `docker compose --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
+updater runs `docker compose -p <project> --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
 the Compose CLI *inside* the container expands this file's relative bind mounts — `../../.env`,
 `./Caddyfile.prod` — against that path and hands the results to the daemon. The daemon has to be
 able to resolve the same strings, or it silently creates empty directories where your `.env` and
-Caddyfile should be.
+Caddyfile should be. The `-p` value is `COMPOSE_PROJECT_NAME` (Compose injects this into running
+services) or `RAKAZO_COMPOSE_PROJECT_NAME`, falling back to `rakazo-prod` from the compose file —
+without it, a stack started as `docker compose -p something-else` would be left alone and a second
+project with a new empty Postgres volume would come up beside it.
 
 The value therefore has to be the path **the daemon** sees, which is not always the path your shell
 sees:
@@ -308,7 +311,7 @@ sees:
   `RAKAZO_DEPLOY_DIR=/srv/rakazo`. This is the supported production layout.
 - **Docker Desktop (Windows/macOS).** The daemon runs in a VM that mounts your drive somewhere else.
   On Windows, `C:` appears at `/run/desktop/mnt/host/c`, so a checkout at `C:\Users\you\rakazo` is
-  `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`. Verify it before deploying:
+  `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`. Host Git may use `core.autocrlf=true`; the updater ignores CR-only diffs so that does not block `/apply`. Verify the mount before deploying:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \

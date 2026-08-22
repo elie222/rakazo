@@ -1,21 +1,31 @@
 import { describe, expect, it } from "vitest";
+
 import {
   chooseUpdateStrategy,
   commitImageTag,
   compareReleaseTags,
+  composePsArgv,
   composePullArgv,
   composeUpArgv,
   composeUpdatePlan,
+  DEFAULT_COMPOSE_PROJECT_NAME,
   DEFAULT_IMAGE_TAG,
   forkImageTag,
+  gitIndexContentDiffArgv,
+  gitStatusArgv,
+  gitWorktreeContentDiffArgv,
   imageRef,
+  isValidComposeProjectName,
   isValidImageName,
   isValidImageTag,
   OFFICIAL_SERVER_IMAGE,
+  parseGitNameOnly,
   parseLsRemoteTags,
   parseReleaseTag,
   RECREATED_SERVICES,
+  resolveComposeProjectName,
   resolveExecutionMode,
+  resolveTrackedDirtyPaths,
   rollbackTarget,
   selectLatestReleaseTag,
   upsertEnvAssignments,
@@ -144,6 +154,8 @@ describe("compose argv construction", () => {
       command: "docker",
       args: [
         "compose",
+        "-p",
+        DEFAULT_COMPOSE_PROJECT_NAME,
         "--env-file",
         "/srv/rakazo/.env",
         "--file",
@@ -154,6 +166,28 @@ describe("compose argv construction", () => {
         "web",
       ],
     });
+  });
+
+  it("passes the project name as its own -p argument so a custom stack is the one updated", () => {
+    const named = { ...target, projectName: "operator-stack" };
+    for (const invocation of [composePullArgv(named), composeUpArgv(named), composePsArgv(named)]) {
+      const projectFlag = invocation.args.indexOf("-p");
+      expect(projectFlag).toBeGreaterThanOrEqual(0);
+      expect(invocation.args[projectFlag + 1]).toBe("operator-stack");
+      expect(
+        invocation.args.some((arg) => arg.includes("operator-stack") && arg !== "operator-stack"),
+      ).toBe(false);
+    }
+  });
+
+  it("defaults -p to the name pinned in the compose file", () => {
+    expect(DEFAULT_COMPOSE_PROJECT_NAME).toBe("rakazo-prod");
+    expect(composePsArgv(target).args.slice(0, 3)).toEqual(["compose", "-p", "rakazo-prod"]);
+  });
+
+  it("refuses a project name that could be parsed as another flag or a second argument", () => {
+    expect(() => composeUpArgv({ ...target, projectName: "-f" })).toThrow(/project name/);
+    expect(() => composePullArgv({ ...target, projectName: "two words" })).toThrow(/project name/);
   });
 
   it("recreates detached, and only builds when asked to", () => {
@@ -176,11 +210,118 @@ describe("compose argv construction", () => {
   });
 });
 
+describe("compose project name resolution", () => {
+  it("prefers the name Compose injects into running services", () => {
+    expect(resolveComposeProjectName({ COMPOSE_PROJECT_NAME: "live-stack" })).toBe("live-stack");
+    expect(
+      resolveComposeProjectName({
+        COMPOSE_PROJECT_NAME: "live-stack",
+        RAKAZO_COMPOSE_PROJECT_NAME: "manual-stack",
+      }),
+    ).toBe("live-stack");
+  });
+
+  it("falls back to a dedicated override, then to the name pinned in the compose file", () => {
+    expect(resolveComposeProjectName({ RAKAZO_COMPOSE_PROJECT_NAME: "manual-stack" })).toBe(
+      "manual-stack",
+    );
+    expect(resolveComposeProjectName({})).toBe(DEFAULT_COMPOSE_PROJECT_NAME);
+  });
+
+  it("ignores blank values and refuses a name that is not a single argv", () => {
+    expect(resolveComposeProjectName({ COMPOSE_PROJECT_NAME: "  " })).toBe(
+      DEFAULT_COMPOSE_PROJECT_NAME,
+    );
+    expect(isValidComposeProjectName("-p")).toBe(false);
+    expect(() => resolveComposeProjectName({ COMPOSE_PROJECT_NAME: "evil;rm" })).toThrow(
+      /project name/,
+    );
+  });
+});
+
+describe("dirty-tree argv and CRLF filtering", () => {
+  it("runs status with autocrlf as its own -c arguments, not interpolated into a shell string", () => {
+    expect(gitStatusArgv()).toEqual([
+      "-c",
+      "core.autocrlf=true",
+      "status",
+      "--porcelain",
+      "--untracked-files=no",
+    ]);
+    expect(gitWorktreeContentDiffArgv()).toEqual([
+      "-c",
+      "core.autocrlf=true",
+      "diff",
+      "--name-only",
+      "--ignore-cr-at-eol",
+    ]);
+    expect(gitIndexContentDiffArgv()).toEqual([
+      "-c",
+      "core.autocrlf=true",
+      "diff",
+      "--cached",
+      "--name-only",
+      "--ignore-cr-at-eol",
+    ]);
+  });
+
+  it("reads git name-only output as one path per line", () => {
+    expect(parseGitNameOnly("apps/api/src/app.ts\npackages/core/src/x.ts\n")).toEqual([
+      "apps/api/src/app.ts",
+      "packages/core/src/x.ts",
+    ]);
+    expect(parseGitNameOnly("\n  \n")).toEqual([]);
+  });
+
+  it("treats porcelain-only paths as CRLF noise when the ignore-cr diff is empty", () => {
+    expect(
+      resolveTrackedDirtyPaths({
+        porcelainChanged: ["apps/api/src/app.ts", "README.md"],
+        contentChanged: [],
+        contentDiffOk: true,
+      }),
+    ).toEqual({ dirty: false, dirtyPaths: [] });
+  });
+
+  it("keeps a real content change even when it sits among CRLF-only porcelain noise", () => {
+    expect(
+      resolveTrackedDirtyPaths({
+        porcelainChanged: ["apps/api/src/app.ts", "README.md"],
+        contentChanged: ["apps/api/src/app.ts"],
+        contentDiffOk: true,
+      }),
+    ).toEqual({ dirty: true, dirtyPaths: ["apps/api/src/app.ts"] });
+  });
+
+  it("keeps a content diff that porcelain parsing missed, so the guard is not weakened", () => {
+    expect(
+      resolveTrackedDirtyPaths({
+        porcelainChanged: [],
+        contentChanged: ["packages/core/src/x.ts"],
+        contentDiffOk: true,
+      }),
+    ).toEqual({ dirty: true, dirtyPaths: ["packages/core/src/x.ts"] });
+  });
+
+  it("falls back to porcelain when the ignore-cr diffs cannot be read", () => {
+    expect(
+      resolveTrackedDirtyPaths({
+        porcelainChanged: ["apps/api/src/app.ts"],
+        contentChanged: [],
+        contentDiffOk: false,
+      }),
+    ).toEqual({ dirty: true, dirtyPaths: ["apps/api/src/app.ts"] });
+  });
+});
+
 describe("update plans", () => {
   it("pulls then recreates on the official path, with no migration step", () => {
     const steps = composeUpdatePlan({ strategy: "pull", target });
     expect(steps.map((step) => step.id)).toEqual(["pull", "recreate"]);
     expect(steps.some((step) => step.id === "migrate")).toBe(false);
+    for (const step of steps) {
+      expect(step.args.slice(0, 3)).toEqual(["compose", "-p", DEFAULT_COMPOSE_PROJECT_NAME]);
+    }
   });
 
   it("fetches, fast-forwards, then builds on the fork path", () => {

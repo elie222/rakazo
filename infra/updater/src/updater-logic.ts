@@ -6,6 +6,7 @@ import {
   isValidImageTag,
   OFFICIAL_SERVER_IMAGE,
   PREVIOUS_IMAGE_TAG_ENV,
+  resolveComposeProjectName,
   resolveUpdaterToken,
 } from "@rakazo/core";
 
@@ -18,6 +19,8 @@ export interface UpdaterConfig {
   deployDir: string;
   composeFile: string;
   envFile: string;
+  /** Passed as `docker compose -p`. Compose injects this into running services. */
+  projectName: string;
   image: string;
   token: string;
   host: string;
@@ -25,9 +28,10 @@ export interface UpdaterConfig {
 }
 
 /**
- * The deployment directory has to be an absolute path because Compose derives the project name and
- * every relative bind mount from it. Mounting it anywhere other than its host path would make this
- * container reconcile a *different* project than the operator's, quietly creating a second stack.
+ * The deployment directory has to be an absolute path because Compose derives every relative bind
+ * mount from it. Mounting it anywhere other than its host path would make this container reconcile
+ * a *different* tree than the operator's. The project name is passed as `-p` separately so a custom
+ * `docker compose -p` stack is the one that is updated.
  */
 export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   const deployDir = env.RAKAZO_DEPLOY_DIR?.trim() ?? "";
@@ -49,6 +53,7 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
     deployDir,
     composeFile: path.posix.join(deployDir, composeFile),
     envFile: path.posix.join(deployDir, ".env"),
+    projectName: resolveComposeProjectName(env),
     image,
     token: resolveUpdaterToken(env),
     host: env.RAKAZO_UPDATER_HOST?.trim() || "127.0.0.1",

@@ -1,4 +1,4 @@
-import { isLocalImageTag } from "@rakazo/core";
+import { DEFAULT_COMPOSE_PROJECT_NAME, isLocalImageTag } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COMPOSE_FILE,
@@ -18,9 +18,25 @@ describe("resolveUpdaterConfig", () => {
       deployDir: "/srv/rakazo",
       composeFile: `/srv/rakazo/${DEFAULT_COMPOSE_FILE}`,
       envFile: "/srv/rakazo/.env",
+      projectName: DEFAULT_COMPOSE_PROJECT_NAME,
       token: "token",
       port: DEFAULT_UPDATER_PORT,
     });
+  });
+
+  it("uses the Compose-injected project name so -p matches the running stack", () => {
+    expect(
+      resolveUpdaterConfig({ ...base, COMPOSE_PROJECT_NAME: "operator-stack" }).projectName,
+    ).toBe("operator-stack");
+    expect(
+      resolveUpdaterConfig({ ...base, RAKAZO_COMPOSE_PROJECT_NAME: "manual-stack" }).projectName,
+    ).toBe("manual-stack");
+  });
+
+  it("refuses a project name it would not pass as a single -p argument", () => {
+    expect(() => resolveUpdaterConfig({ ...base, COMPOSE_PROJECT_NAME: "-f" })).toThrow(
+      /project name/,
+    );
   });
 
   it("binds to loopback unless the deployment says otherwise, so a stray port is not a door", () => {

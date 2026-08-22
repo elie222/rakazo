@@ -33,6 +33,14 @@ export const IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG";
 export const PREVIOUS_IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG_PREVIOUS";
 
 /**
+ * Matches the `name:` pinned in `infra/compose/docker-compose.prod.yml`. Used when Compose has not
+ * injected `COMPOSE_PROJECT_NAME` (it does, into running services) and no dedicated override is set.
+ */
+export const DEFAULT_COMPOSE_PROJECT_NAME = "rakazo-prod";
+export const COMPOSE_PROJECT_NAME_ENV = "COMPOSE_PROJECT_NAME";
+export const COMPOSE_PROJECT_NAME_OVERRIDE_ENV = "RAKAZO_COMPOSE_PROJECT_NAME";
+
+/**
  * The services a recreate replaces. `updater` is deliberately absent: it is the process running
  * the update, and recreating it would kill the run half way through. `postgres` and `caddy` are
  * absent because neither uses the Rakazo image.
@@ -46,6 +54,8 @@ const COMMIT = /^[0-9a-f]{7,64}$/;
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/;
 const ENV_VALUE = /^[A-Za-z0-9._:/@+-]{0,256}$/;
 const RELEASE_TAG = /^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+/** Compose project names must not start with `-`, or `-p` would treat them as a second flag. */
+const COMPOSE_PROJECT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 export function isValidImageTag(tag: string): boolean {
   return IMAGE_TAG.test(tag);
@@ -59,6 +69,29 @@ export function isValidImageName(name: string): boolean {
   const hasHost = segments.length > 1 && (first.includes(".") || first.includes(":"));
   if (hasHost && !IMAGE_HOST.test(first)) return false;
   return segments.slice(hasHost ? 1 : 0).every((segment) => IMAGE_NAME_SEGMENT.test(segment));
+}
+
+export function isValidComposeProjectName(name: string): boolean {
+  return COMPOSE_PROJECT_NAME.test(name);
+}
+
+/**
+ * The project `-p` must name. Compose injects `COMPOSE_PROJECT_NAME` into running services, which
+ * is the stack the operator actually started (including `docker compose -p something-else`). A
+ * dedicated override exists for running the sidecar outside Compose. Unset falls back to the name
+ * pinned in the compose file, never to guessing from the working directory.
+ */
+export function resolveComposeProjectName(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const injected = env[COMPOSE_PROJECT_NAME_ENV]?.trim() ?? "";
+  const override = env[COMPOSE_PROJECT_NAME_OVERRIDE_ENV]?.trim() ?? "";
+  const candidate = injected || override;
+  if (candidate === "") return DEFAULT_COMPOSE_PROJECT_NAME;
+  if (!isValidComposeProjectName(candidate)) {
+    throw new Error(`Refusing an unusable Compose project name: ${candidate}`);
+  }
+  return candidate;
 }
 
 export function imageRef(name: string, tag: string): string {
@@ -215,10 +248,16 @@ export interface ComposeInvocation {
 export interface ComposeTarget {
   composeFile: string;
   envFiles?: readonly string[];
+  /** Passed as `docker compose -p <name>`. Defaults to {@link DEFAULT_COMPOSE_PROJECT_NAME}. */
+  projectName?: string;
 }
 
 function composeBase(target: ComposeTarget): string[] {
-  const args = ["compose"];
+  const projectName = target.projectName ?? DEFAULT_COMPOSE_PROJECT_NAME;
+  if (!isValidComposeProjectName(projectName)) {
+    throw new Error(`Refusing an unusable Compose project name: ${projectName}`);
+  }
+  const args = ["compose", "-p", projectName];
   for (const envFile of target.envFiles ?? []) args.push("--env-file", envFile);
   args.push("--file", target.composeFile);
   return args;
@@ -243,6 +282,70 @@ export function composeUpArgv(
 
 export function composePsArgv(target: ComposeTarget): ComposeInvocation {
   return { command: "docker", args: [...composeBase(target), "ps", "--format", "json"] };
+}
+
+/**
+ * `git status` as seen inside the Linux sidecar against a Windows checkout. `core.autocrlf=true`
+ * makes CR-only worktree noise match what the host already considers clean. The `-c` is argv, not a
+ * shell fragment.
+ */
+export function gitStatusArgv(): string[] {
+  return ["-c", "core.autocrlf=true", "status", "--porcelain", "--untracked-files=no"];
+}
+
+/** Worktree vs index, ignoring CR at EOL so a CRLF-only file does not count as dirty. */
+export function gitWorktreeContentDiffArgv(): string[] {
+  return ["-c", "core.autocrlf=true", "diff", "--name-only", "--ignore-cr-at-eol"];
+}
+
+/** Index vs HEAD, same CR rule, so a staged content change cannot hide behind the worktree check. */
+export function gitIndexContentDiffArgv(): string[] {
+  return ["-c", "core.autocrlf=true", "diff", "--cached", "--name-only", "--ignore-cr-at-eol"];
+}
+
+export function parseGitNameOnly(stdout: string): string[] {
+  const paths: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const path = line.trim();
+    if (path !== "") paths.push(path);
+  }
+  return paths;
+}
+
+export interface TrackedDirtyDecision {
+  dirty: boolean;
+  dirtyPaths: string[];
+}
+
+/**
+ * Porcelain lists every tracked path git considers dirty, including CRLF-only noise when a Windows
+ * `core.autocrlf=true` checkout is bind-mounted into Linux. `contentChanged` is the same comparison
+ * after `--ignore-cr-at-eol`. Porcelain-only paths are dropped; a path that still has a content
+ * diff stays dirty. If the content diffs could not be read, porcelain is the last word — the guard
+ * is not weakened for a failed filter.
+ */
+export function resolveTrackedDirtyPaths(input: {
+  porcelainChanged: readonly string[];
+  contentChanged: readonly string[];
+  contentDiffOk: boolean;
+}): TrackedDirtyDecision {
+  if (!input.contentDiffOk) {
+    const dirtyPaths = uniquePaths(input.porcelainChanged);
+    return { dirty: dirtyPaths.length > 0, dirtyPaths };
+  }
+  const dirtyPaths = uniquePaths(input.contentChanged);
+  return { dirty: dirtyPaths.length > 0, dirtyPaths };
+}
+
+function uniquePaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const path of paths) {
+    if (path === "" || seen.has(path)) continue;
+    seen.add(path);
+    unique.push(path);
+  }
+  return unique;
 }
 
 export interface ComposeUpdateStep {
