@@ -27,6 +27,8 @@ export const BotSchema = z.object({
   createdAt: z.string(),
   voiceId: z.string().nullable(),
   autoSpeak: z.boolean(),
+  modelProvider: z.string().nullable(),
+  modelId: z.string().nullable(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -47,6 +49,8 @@ export const CreateBotInput = z.object({
   notifyOnFinish: z.boolean().default(true),
   color: z.string().optional(),
   computerMode: ComputerModeSchema.default("team"),
+  modelProvider: z.string().max(120).nullable().optional(),
+  modelId: z.string().max(200).nullable().optional(),
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
@@ -62,6 +66,8 @@ export const UpdateBotInput = z.object({
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
+  modelProvider: z.string().max(120).nullable().optional(),
+  modelId: z.string().max(200).nullable().optional(),
 });
 
 export const RoutineSchema = z.object({
@@ -262,12 +268,27 @@ export const ThreadSnapshotSchema = z.object({
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 
+export const ModelCredentialKeySchema = z.object({
+  id: Id,
+  label: z.string(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+  availableModels: z.array(z.string()).optional(),
+  probedAt: z.string().nullable().optional(),
+  probeError: z.string().optional(),
+});
+export type ModelCredentialKey = z.infer<typeof ModelCredentialKeySchema>;
+
 export const ModelCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
   label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
+  baseUrl: z.string().nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
+  availableModels: z.array(z.string()).optional(),
+  keys: z.array(ModelCredentialKeySchema),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -281,6 +302,8 @@ export const ModelCatalogEntrySchema = z.object({
   oauthLabel: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: z.enum(["device-code"]).optional(),
+  custom: z.boolean().optional(),
+  baseUrl: z.string().optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 

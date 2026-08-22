@@ -128,6 +128,70 @@ describe("projectMessages", () => {
     expect(durable[0]?.blocks[0]).toMatchObject({ status: "completed", result: "ok" });
   });
 
+  it("keeps a live reasoning trace until the completed message is durable", () => {
+    const live = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.reasoning",
+        runId: "r1",
+        payload: {
+          steps: [
+            {
+              id: "think",
+              kind: "think",
+              title: "Thinking",
+              detail: "checking the inbox",
+              status: "running",
+            },
+          ],
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    expect(live[0]?.id).toBe("reasoning:r1");
+    expect(live[0]?.blocks[0]).toMatchObject({
+      kind: "reasoning",
+      steps: [expect.objectContaining({ title: "Thinking", detail: "checking the inbox" })],
+    });
+
+    const durable = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.reasoning",
+        runId: "r1",
+        payload: {
+          steps: [{ id: "think", kind: "think", title: "Thinking", status: "done" }],
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m2",
+          role: "bot",
+          blocks: [
+            {
+              kind: "reasoning",
+              steps: [{ id: "think", kind: "think", title: "Thinking", status: "done" }],
+            },
+            { kind: "text", text: "Done." },
+          ],
+        },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+    ]);
+    expect(durable).toHaveLength(1);
+    expect(durable[0]?.blocks.map((block) => block.kind)).toEqual(["reasoning", "text"]);
+  });
+
   it("drops prior history when a later clear event is replayed", () => {
     const messages = projectMessages([
       {

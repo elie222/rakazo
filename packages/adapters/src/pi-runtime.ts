@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { type Api, type Model, type Models, Type } from "@earendil-works/pi-ai";
+import { type Api, type Model, type Models, type MutableModels, Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   AdapterContext,
@@ -9,10 +9,14 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import type { ReasoningStep } from "@rakazo/contracts";
+import { reasoningToolDetail, reasoningToolTitle } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import {
   attachOpenAICompatibleProvider,
   completeOpenAICompatibleChat,
+  createOpenAICompatibleFetch,
+  OPENAI_COMPATIBLE_KEYLESS_API_KEY,
 } from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -66,7 +70,9 @@ export class PiAgentRuntime implements AgentRuntime {
             ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
             : request.model.id;
         const models = modelsForRequest(request, provider);
-        const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        const model =
+          models.getModel(provider, modelId) ??
+          (request.model.baseUrl ? undefined : models.getModel("openrouter", modelId));
         if (!model) {
           pushRunError(
             queue,
@@ -78,7 +84,14 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const apiKey = request.model.oauth
           ? undefined
-          : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+          : request.model.baseUrl
+            ? request.model.apiKey?.trim() || OPENAI_COMPATIBLE_KEYLESS_API_KEY
+            : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+        const providerFetch = request.model.baseUrl
+          ? createOpenAICompatibleFetch({
+              allowPrivateNetwork: request.model.allowPrivateNetwork,
+            })
+          : undefined;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -87,6 +100,7 @@ export class PiAgentRuntime implements AgentRuntime {
           models,
           model,
           apiKey,
+          providerFetch,
           nestedAgents,
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           signal,
@@ -96,7 +110,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const history = toHistory(request.history, request.prompt);
 
         agent = new Agent({
-          streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
+          streamFn: (m, ctx, options) =>
+            models.streamSimple(m, ctx, { ...options, fetch: providerFetch ?? options?.fetch }),
           getApiKey: async () => apiKey,
           transformContext: async (messages) => pruneComputerScreenshotContext(messages),
           initialState: {
@@ -106,7 +121,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
-            thinkingLevel: "off",
+            thinkingLevel: model.reasoning ? "medium" : "off",
             tools,
             messages: history,
           },
@@ -122,9 +137,77 @@ export class PiAgentRuntime implements AgentRuntime {
         };
         signal.addEventListener("abort", onAbort);
 
+        let thinking = "";
+        let lastThinkPush = 0;
+        const toolArgs = new Map<string, Record<string, unknown>>();
+        const emitReasoning = (step: ReasoningStep) => {
+          queue.push({ type: "reasoning", step });
+        };
+        emitReasoning({
+          id: "status",
+          kind: "status",
+          title: "Working through the request",
+          status: "running",
+        });
         agent.subscribe((event) => {
           if (event.type === "tool_execution_start") {
             sawToolExecution = true;
+          }
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_delta"
+          ) {
+            const delta = event.assistantMessageEvent.delta;
+            if (delta) {
+              thinking += delta;
+              const now = Date.now();
+              if (now - lastThinkPush >= 80) {
+                lastThinkPush = now;
+                emitReasoning({
+                  id: "think",
+                  kind: "think",
+                  title: "Thinking",
+                  detail: thinking.slice(-4000),
+                  status: "running",
+                });
+              }
+            }
+          }
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_end"
+          ) {
+            const content = event.assistantMessageEvent.content || thinking;
+            if (content) {
+              thinking = content;
+              emitReasoning({
+                id: "think",
+                kind: "think",
+                title: "Thought",
+                detail: content.slice(-8000),
+                status: "done",
+              });
+            }
+          }
+          if (event.type === "tool_execution_start") {
+            toolArgs.set(event.toolCallId, event.args ?? {});
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              detail: reasoningToolDetail(event.toolName, event.args ?? {}),
+              status: "running",
+            });
+          }
+          if (event.type === "tool_execution_end") {
+            const args = toolArgs.get(event.toolCallId) ?? {};
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, args),
+              detail: event.isError ? "failed" : "done",
+              status: "done",
+            });
           }
           if (
             event.type === "message_update" &&
@@ -154,7 +237,6 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         });
 
-        queue.push({ type: "progress", text: "working…" });
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
@@ -197,6 +279,12 @@ export class PiAgentRuntime implements AgentRuntime {
             return;
           }
         }
+        emitReasoning({
+          id: "status:done",
+          kind: "status",
+          title: "Finished",
+          status: "done",
+        });
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
@@ -249,18 +337,27 @@ export class PiAgentRuntime implements AgentRuntime {
 
 function modelsForRequest(request: AgentRunRequest, provider: string): Models {
   const oauth = request.model.oauth;
-  if (!oauth) return catalogModels();
-
-  const persist = oauth.persist;
-  return registerLocalProvider(
-    builtinModels({
-      credentials: new PiRuntimeCredentialStore(
-        provider,
-        toOAuthCredential(oauth.credential),
-        persist ? (next) => persist(next) : undefined,
-      ),
-    }),
-  );
+  if (!oauth && !request.model.baseUrl) return catalogModels();
+  const models = oauth
+    ? registerLocalProvider(
+        builtinModels({
+          credentials: new PiRuntimeCredentialStore(
+            provider,
+            toOAuthCredential(oauth.credential),
+            oauth.persist ? (next) => oauth.persist!(next) : undefined,
+          ),
+        }),
+      )
+    : registerLocalProvider(builtinModels());
+  if (request.model.baseUrl) {
+    attachOpenAICompatibleProvider(models as MutableModels, {
+      provider,
+      baseUrl: request.model.baseUrl,
+      modelId: request.model.id,
+      apiKey: request.model.apiKey,
+    });
+  }
+  return models;
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
@@ -476,7 +573,11 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
   );
   const nestedHost: ToolHost = { ...host, depth: 1 };
   const nested = new Agent({
-    streamFn: (m, ctx, options) => host.models.streamSimple(m, ctx, options),
+    streamFn: (m, ctx, options) =>
+      host.models.streamSimple(m, ctx, {
+        ...options,
+        fetch: host.providerFetch ?? options?.fetch,
+      }),
     getApiKey: async () => host.apiKey,
     transformContext: async (messages) => pruneComputerScreenshotContext(messages),
     initialState: {
@@ -764,6 +865,7 @@ async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal
     modelId: request.model.id,
     messages: gatewayChatMessages(request),
     signal,
+    allowPrivateNetwork: request.model.allowPrivateNetwork,
   });
 }
 
@@ -820,6 +922,7 @@ interface ToolHost {
   models: Models;
   model: Model<Api>;
   apiKey: string | undefined;
+  providerFetch: typeof fetch | undefined;
   nestedAgents: Set<Agent>;
   subagentGate: { acquire(): Promise<void>; release(): void };
   signal: AbortSignal;

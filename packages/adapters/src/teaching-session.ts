@@ -312,7 +312,7 @@ async function releaseTeachingComputerControl(
       leaseId,
     );
   }
-  await deps.jobs.cancel(computerControlExpireJobKey(computer.id));
+  await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId));
   await deps.events.finalizeComputerControlRelease({
     workspaceId: actor.workspaceId,
     computerId: computer.id,

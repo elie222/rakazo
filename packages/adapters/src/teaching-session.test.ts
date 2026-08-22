@@ -156,7 +156,7 @@ describe("expireTaughtSkillTeaching", () => {
     };
     deps.prisma.bot.findUnique = vi.fn().mockResolvedValue(bot);
     await expireTaughtSkillTeaching(deps as never, "skill-1");
-    expect(deps.jobs.cancel).toHaveBeenCalled();
+    expect(deps.jobs.cancel).toHaveBeenCalledWith("computer.control-expire:computer-1:lease-1");
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

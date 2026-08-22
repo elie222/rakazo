@@ -17,20 +17,31 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertOpenAICompatibleBaseUrlAllowed,
   type ComposioProvider,
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
   createVoiceProvider,
+  customEndpointCatalogEntry,
   deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
+  fetchOpenAICompatibleModels,
+  gatewayCatalogEntries,
   hasActiveComputerControl,
+  isGatewayProvider,
   isSupermemoryEnabled,
+  labelForDiscoveredModels,
   listPiCatalog,
+  mintGatewayProviderId,
+  OPENAI_COMPATIBLE_PROVIDER,
   type PiOAuthLogins,
+  parseAvailableModels,
+  parseModelSecret,
+  planLiveConnectionSync,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -40,11 +51,14 @@ import {
   scheduleComputerSleep,
   screenLeaseIdForRun,
   scriptedCatalogEntry,
+  serializeAvailableModels,
   serializeModelSecret,
   supermemoryContainerTag,
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
+  tryFetchOpenAICompatibleModels,
+  unionAvailableModels,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import {
@@ -52,6 +66,7 @@ import {
   appContract,
   type ComputerStatus,
   type Me,
+  type ModelCredential,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
@@ -99,6 +114,53 @@ import {
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+async function reconcilePendingComposioConnections(
+  prisma: PrismaClient,
+  owner: Pick<Actor, "workspaceId" | "userId">,
+  connectedProviders: string[],
+): Promise<void> {
+  const rows = await prisma.connection.findMany({
+    where: {
+      workspaceId: owner.workspaceId,
+      userId: owner.userId,
+      provider: { in: connectedProviders },
+      status: { in: ["pending", "connected"] },
+    },
+    select: { id: true, provider: true, displayName: true, status: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const sync = planLiveConnectionSync(rows, connectedProviders);
+  const updates = [
+    ...(sync.connectIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.connectIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "connected" },
+          }),
+        ]
+      : []),
+    ...(sync.revokeIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.revokeIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "revoked" },
+          }),
+        ]
+      : []),
+  ];
+  if (updates.length > 0) await prisma.$transaction(updates);
+}
 
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
@@ -203,21 +265,78 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     models: {
-      list: authed.models.list.handler(async () => [...listPiCatalog(), scriptedCatalogEntry]),
-      credentials: authed.models.credentials.handler(async ({ context }) => {
+      list: authed.models.list.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        return rows.map((row) => ({
-          id: row.id,
-          provider: row.provider,
-          label: row.label,
-          hasKey: true,
-          isDefault: row.isDefault,
-        }));
+        return [
+          customEndpointCatalogEntry,
+          ...listPiCatalog(),
+          scriptedCatalogEntry,
+          ...gatewayCatalogEntries(
+            rows.map((row) => ({
+              provider: row.provider,
+              label: row.label,
+              baseUrl: row.baseUrl,
+              defaultModel: row.defaultModel,
+              availableModels: parseAvailableModels(row.availableModels),
+            })),
+          ),
+        ];
+      }),
+      credentials: authed.models.credentials.handler(async ({ context }) => {
+        const rows = await deps.prisma.userModelCredential.findMany({
+          where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        return rows.map((row) => credentialDto(row));
+      }),
+      probe: authed.models.probe.handler(async ({ input, context }) => {
+        throwIfAborted(context.signal);
+        try {
+          return {
+            models: await fetchOpenAICompatibleModels(input.baseUrl, input.apiKey, context.signal, {
+              allowPrivateNetwork: context.actor.isDeploymentOwner,
+            }),
+          };
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Could not list models",
+          });
+        }
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        if (input.baseUrl) {
+          let baseUrl: string;
+          try {
+            baseUrl = await assertOpenAICompatibleBaseUrlAllowed(input.baseUrl, {
+              allowPrivateNetwork: context.actor.isDeploymentOwner,
+              hasCredentials: Boolean(input.apiKey.trim()),
+            });
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Invalid base URL",
+            });
+          }
+          const provider =
+            isGatewayProvider(input.provider) && input.provider !== OPENAI_COMPATIBLE_PROVIDER
+              ? input.provider
+              : mintGatewayProviderId();
+          return persistModelCredential(deps, context.actor, {
+            provider,
+            plaintext: input.apiKey,
+            label: input.label ?? "Custom endpoint",
+            modelId: input.modelId,
+            baseUrl,
+            availableModels: input.availableModels,
+            signal: context.signal,
+          });
+        }
+        if (input.apiKey.trim().length < 8) {
+          throw new ORPCError("BAD_REQUEST", { message: "API key is too short" });
+        }
         return persistModelCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
@@ -304,6 +423,36 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      addKey: authed.models.addKey.handler(async ({ context, input }) => {
+        const credential = await findWorkspaceModelCredential(
+          deps.prisma,
+          context.actor,
+          input.provider,
+        );
+        if (!credential || !isGatewayProvider(credential.provider) || !credential.baseUrl) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Connect a custom endpoint before adding API keys.",
+          });
+        }
+        return persistModelCredential(deps, context.actor, {
+          provider: credential.provider,
+          plaintext: input.apiKey,
+          label: credential.label,
+          keyLabel: input.label,
+          appendKey: true,
+          setDefault: false,
+          signal: context.signal,
+        });
+      }),
+      removeKey: authed.models.removeKey.handler(async ({ context, input }) =>
+        removeModelCredentialKey(deps, context.actor, input.provider, input.keyId),
+      ),
+      setActiveKey: authed.models.setActiveKey.handler(async ({ context, input }) =>
+        setActiveModelCredentialKey(deps, context.actor, input.provider, input.keyId),
+      ),
+      refreshKeys: authed.models.refreshKeys.handler(async ({ context, input }) =>
+        refreshGatewayKeyCoverage(deps, context.actor, input.provider, context.signal),
+      ),
     },
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
@@ -328,6 +477,8 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
         });
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
@@ -356,6 +507,8 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -572,7 +725,7 @@ export function createRouter(deps: RouterDeps) {
         }
         await deps.prisma.event.deleteMany({
           where: {
-            type: "thread.progress",
+            type: { in: ["thread.progress", "thread.reasoning"] },
             runId: { in: activeRuns.map((run) => run.id) },
           },
         });
@@ -581,7 +734,7 @@ export function createRouter(deps: RouterDeps) {
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        const { cancelledRunIds } = await deps.events.clearThread({
+        const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
           workspaceId: context.actor.workspaceId,
           threadId: bot.thread.id,
           botId: bot.id,
@@ -592,10 +745,20 @@ export function createRouter(deps: RouterDeps) {
         if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
-          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id));
-          if (!purged.ok) {
-            console.error("supermemory purge after thread clear failed", purged.error);
-          }
+          const tags = [
+            ...new Set([
+              supermemoryContainerTag(bot.id),
+              supermemoryContainerTag(bot.id, historyCompactionGeneration),
+            ]),
+          ];
+          await Promise.all(
+            tags.map(async (tag) => {
+              const purged = await deleteSupermemoryContainer(tag);
+              if (!purged.ok) {
+                console.error("supermemory purge after thread clear failed", purged.error);
+              }
+            }),
+          );
         }
         return { ok: true as const };
       }),
@@ -685,6 +848,7 @@ export function createRouter(deps: RouterDeps) {
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        const controlLeaseId = bot.computer.controlLeaseId;
         const now = new Date();
         const claimed = await deps.prisma.computer.updateMany({
           where: {
@@ -747,7 +911,9 @@ export function createRouter(deps: RouterDeps) {
             .catch(() => undefined);
           throw error;
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
+        await deps.jobs.cancel(
+          computerControlExpireJobKey(bot.computer.id, controlLeaseId ?? undefined),
+        );
         return computerStatus(deps, context.actor, input.botId);
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
@@ -880,54 +1046,40 @@ export function createRouter(deps: RouterDeps) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        const controlBotId = bot.computer.controlBotId ?? bot.id;
-        const storedControlBot =
-          controlBotId === bot.id
-            ? bot
-            : await deps.prisma.bot.findFirst({
-                where: {
-                  id: controlBotId,
-                  workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
-                },
-                include: { thread: true },
-              });
-        const controlBot = storedControlBot ?? bot;
-        const controlChanged =
-          bot.computer?.controlHolder !== "bot" ||
-          bot.computer.controlLeaseId !== null ||
-          bot.computer.controlLeaseExpiresAt !== null;
-        const shouldRevokeUserControl =
-          bot.computer?.controlHolder === "user" || Boolean(bot.computer?.controlLeaseId);
-        if (bot.computer?.providerRef && shouldRevokeUserControl) {
+        const controlBotId = bot.computer.controlBotId;
+        const controlLeaseId = bot.computer.controlLeaseId;
+        if (
+          !hasActiveComputerControl(bot.computer) ||
+          bot.computer.controlHolder !== "user" ||
+          !controlBotId ||
+          !controlLeaseId ||
+          controlBotId !== bot.id
+        ) {
+          return { ok: true as const };
+        }
+        if (bot.computer.providerRef) {
           await deps.sandbox.setScreenControl?.(
             toComputerRef(bot.computer),
             false,
-            computerContext(context.actor, bot.id, "screen.release"),
-            bot.computer.controlLeaseId ?? undefined,
+            computerContext(context.actor, controlBotId, "screen.release"),
+            controlLeaseId,
           );
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
-        await deps.prisma.computer.update({
-          where: { id: bot.computer.id },
-          data: {
-            controlHolder: "bot",
-            controlLeaseId: null,
-            controlLeaseExpiresAt: null,
-            controlBotId: null,
-          },
+
+        const released = await deps.events.finalizeComputerControlRelease({
+          workspaceId: context.actor.workspaceId,
+          computerId: bot.computer.id,
+          botId: controlBotId,
+          leaseId: controlLeaseId,
+          holder: "bot",
+          reason: "released",
         });
-        if (controlBot.thread && controlChanged) {
-          await deps.events.append({
-            workspaceId: context.actor.workspaceId,
-            threadId: controlBot.thread.id,
-            botId: controlBot.id,
-            type: "computer.takeover.released",
-            payload: { holder: "bot", reason: "released" },
-          });
-        }
+        if (!released) return { ok: true as const };
+        // The lease-specific key makes this cancellation safe after a replacement takeover.
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
+
         const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBot.id, status: "waiting_takeover" },
+          where: { botId: controlBotId, status: "waiting_takeover" },
           orderBy: { createdAt: "desc" },
         });
         if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
@@ -1389,7 +1541,25 @@ export function createRouter(deps: RouterDeps) {
       catalog: authed.connections.catalog.handler(async ({ context, input }) => {
         if (!deps.composio) return [];
         try {
-          return await deps.composio.catalog(context.actor.userId, input.query);
+          const items = await deps.composio.catalog(context.actor.userId, input.query);
+          const nowConnected = items.filter((item) => item.connected).map((item) => item.slug);
+          if (nowConnected.length > 0) {
+            // A connection can finish on Composio's side after our own completion check gave
+            // up (see PluginsOverlay's polling timeout) — reconcile stale "pending" rows here
+            // so callers like the run executor, which trust our local status, stay in sync.
+            // Reuse the executor's one-row-per-provider plan so duplicate auth attempts do not
+            // leave stale locally connected rows behind after a later revoke.
+            // Best effort: a failed reconciliation write shouldn't blank out an otherwise
+            // successful catalog fetch — the caller still gets accurate, if unreconciled, data.
+            await reconcilePendingComposioConnections(
+              deps.prisma,
+              context.actor,
+              nowConnected,
+            ).catch((error) => {
+              console.error("composio pending-connection reconciliation failed", error);
+            });
+          }
+          return items;
         } catch {
           return [];
         }
@@ -1748,7 +1918,7 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
         where: {
           threadId: bot.thread.id,
           runId: run.id,
-          type: { in: ["thread.progress", "thread.subagent"] },
+          type: { in: ["thread.progress", "thread.subagent", "thread.reasoning"] },
         },
         orderBy: { seq: "asc" },
       })
@@ -1756,7 +1926,8 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
   const projected = projectMessages(liveEvents);
   const persisted = messagePage.messages;
   const live = projected.filter((message) => {
-    if (message.blocks.some((block) => block.kind === "progress")) return true;
+    if (message.blocks.some((block) => block.kind === "progress" || block.kind === "reasoning"))
+      return true;
     if (!message.id.startsWith("subagent:")) return false;
     return !persisted.some((row) =>
       row.blocks.some(
@@ -1811,6 +1982,65 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
+}
+
+function credentialDto(row: {
+  id: string;
+  provider: string;
+  label: string;
+  isDefault: boolean;
+  defaultModel: string | null;
+  baseUrl: string | null;
+  availableModels: string;
+  keys?: Array<{
+    id: string;
+    label: string;
+    isActive: boolean;
+    createdAt: Date;
+    availableModels?: string;
+    probedAt?: Date | null;
+    probeError?: string;
+  }>;
+}): ModelCredential {
+  const keys = (row.keys ?? []).map((key) => ({
+    id: key.id,
+    label: key.label,
+    isActive: key.isActive,
+    createdAt: key.createdAt.toISOString(),
+    availableModels: parseAvailableModels(key.availableModels),
+    probedAt: key.probedAt?.toISOString() ?? null,
+    probeError: key.probeError || undefined,
+  }));
+  return {
+    id: row.id,
+    provider: row.provider,
+    label: row.label,
+    hasKey: keys.length > 0,
+    isDefault: row.isDefault,
+    defaultModel: row.defaultModel,
+    baseUrl: row.baseUrl,
+    availableModels: parseAvailableModels(row.availableModels),
+    keys,
+  };
+}
+
+const credentialKeyInclude = {
+  keys: { orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] },
+};
+
+async function loadCredentialDto(prisma: PrismaClient, id: string): Promise<ModelCredential> {
+  const row = await prisma.userModelCredential.findUniqueOrThrow({
+    where: { id },
+    include: credentialKeyInclude,
+  });
+  return credentialDto(row);
+}
+
+function findWorkspaceModelCredential(prisma: PrismaClient, actor: Actor, provider: string) {
+  return prisma.userModelCredential.findFirst({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+  });
 }
 
 async function computerStatus(
@@ -1925,12 +2155,65 @@ async function persistModelCredential(
     provider: string;
     plaintext: string;
     label?: string;
+    keyLabel?: string;
     modelId?: string;
+    baseUrl?: string;
+    availableModels?: string[];
+    appendKey?: boolean;
+    setDefault?: boolean;
     signal?: AbortSignal;
   },
 ) {
   throwIfAborted(input.signal);
-  const stored = await deps.secrets.put(input.plaintext, {
+  const plaintext = input.plaintext.trim();
+  const existing = await findWorkspaceModelCredential(deps.prisma, actor, input.provider);
+  let baseUrl = input.baseUrl;
+  if (baseUrl && baseUrl !== existing?.baseUrl) {
+    try {
+      baseUrl = await assertOpenAICompatibleBaseUrlAllowed(baseUrl, {
+        allowPrivateNetwork: actor.isDeploymentOwner,
+        hasCredentials: Boolean(plaintext),
+      });
+    } catch (error) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error instanceof Error ? error.message : "Invalid base URL",
+      });
+    }
+  }
+  const appendKey = Boolean(input.appendKey || (baseUrl && plaintext));
+  const makeDefault = input.setDefault !== false;
+  if (!plaintext && existing && !appendKey) {
+    const updated = await withSerializableRetry(() =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          throwIfAborted(input.signal);
+          if (makeDefault) {
+            await tx.userModelCredential.updateMany({
+              where: { userId: actor.userId, workspaceId: actor.workspaceId },
+              data: { isDefault: false },
+            });
+          }
+          return tx.userModelCredential.update({
+            where: { id: existing.id },
+            data: {
+              label: input.label ?? existing.label,
+              isDefault: makeDefault ? true : existing.isDefault,
+              defaultModel: input.modelId || existing.defaultModel || deps.env.defaultModel,
+              baseUrl: baseUrl ?? existing.baseUrl,
+              availableModels:
+                input.availableModels !== undefined
+                  ? serializeAvailableModels(input.availableModels)
+                  : existing.availableModels,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
+    return loadCredentialDto(deps.prisma, updated.id);
+  }
+
+  const stored = await deps.secrets.put(plaintext, {
     operationId: "cred",
     traceId: "cred",
     workspaceId: actor.workspaceId,
@@ -1942,13 +2225,14 @@ async function persistModelCredential(
     deps.prisma.$transaction(
       async (tx) => {
         throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
+        const current = await tx.userModelCredential.findFirst({
           where: {
             userId: actor.userId,
             workspaceId: actor.workspaceId,
             provider: input.provider,
           },
           orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
         });
         throwIfAborted(input.signal);
         const secret = await tx.secret.create({
@@ -1961,12 +2245,14 @@ async function persistModelCredential(
           },
         });
         throwIfAborted(input.signal);
-        await tx.userModelCredential.updateMany({
-          where: { userId: actor.userId, workspaceId: actor.workspaceId },
-          data: { isDefault: false },
-        });
+        if (makeDefault) {
+          await tx.userModelCredential.updateMany({
+            where: { userId: actor.userId, workspaceId: actor.workspaceId },
+            data: { isDefault: false },
+          });
+        }
         throwIfAborted(input.signal);
-        if (!existing) {
+        if (!current) {
           const created = await tx.userModelCredential.create({
             data: {
               userId: actor.userId,
@@ -1975,42 +2261,352 @@ async function persistModelCredential(
               label: input.label ?? input.provider,
               secretId: secret.id,
               isDefault: true,
-              defaultModel: input.modelId ?? deps.env.defaultModel,
+              defaultModel: input.modelId || deps.env.defaultModel,
+              baseUrl: input.baseUrl,
+              availableModels: serializeAvailableModels(input.availableModels ?? []),
             },
           });
+          if (plaintext) {
+            await tx.userModelCredentialKey.create({
+              data: {
+                credentialId: created.id,
+                secretId: secret.id,
+                label: input.keyLabel ?? "API key",
+                isActive: true,
+              },
+            });
+          }
           throwIfAborted(input.signal);
           return created;
         }
+
+        if (appendKey && isGatewayProvider(current.provider)) {
+          if (current.keys.length >= 20) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "A custom endpoint can store at most 20 API keys.",
+            });
+          }
+          const previousSecretId = current.secretId;
+          if (current.keys.length) {
+            await tx.userModelCredentialKey.updateMany({
+              where: { credentialId: current.id },
+              data: { isActive: false },
+            });
+          }
+          await tx.userModelCredentialKey.create({
+            data: {
+              credentialId: current.id,
+              secretId: secret.id,
+              label: input.keyLabel ?? "API key",
+              isActive: true,
+            },
+          });
+          const updated = await tx.userModelCredential.update({
+            where: { id: current.id },
+            data: {
+              label: input.label ?? current.label,
+              secretId: secret.id,
+              isDefault: makeDefault ? true : current.isDefault,
+              defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
+              baseUrl: baseUrl ?? current.baseUrl,
+              availableModels:
+                input.availableModels !== undefined
+                  ? serializeAvailableModels(input.availableModels)
+                  : current.availableModels,
+            },
+          });
+          await deleteSecretIfUnused(tx, previousSecretId);
+          return updated;
+        }
+
+        await tx.userModelCredentialKey.deleteMany({ where: { credentialId: current.id } });
+        if (plaintext) {
+          await tx.userModelCredentialKey.create({
+            data: {
+              credentialId: current.id,
+              secretId: secret.id,
+              label: input.keyLabel ?? "API key",
+              isActive: true,
+            },
+          });
+        }
         const updated = await tx.userModelCredential.update({
-          where: { id: existing.id },
+          where: { id: current.id },
           data: {
             label: input.label ?? input.provider,
             secretId: secret.id,
-            isDefault: true,
-            defaultModel: input.modelId ?? deps.env.defaultModel,
+            isDefault: makeDefault ? true : current.isDefault,
+            defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
+            baseUrl: baseUrl ?? current.baseUrl,
+            availableModels:
+              input.availableModels !== undefined
+                ? serializeAvailableModels(input.availableModels)
+                : current.availableModels,
           },
         });
         throwIfAborted(input.signal);
-        const sharedSecret = await tx.userModelCredential.count({
-          where: { id: { not: existing.id }, secretId: existing.secretId },
-        });
+        await deleteSecretIfUnused(tx, current.secretId);
         throwIfAborted(input.signal);
-        if (sharedSecret === 0) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-          throwIfAborted(input.signal);
-        }
         return updated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return {
-    id: cred.id,
-    provider: cred.provider,
-    label: cred.label,
-    hasKey: true,
-    isDefault: true,
-  };
+  const dto = await loadCredentialDto(deps.prisma, cred.id);
+  if (plaintext && isGatewayProvider(dto.provider) && dto.baseUrl) {
+    const savedKey = await deps.prisma.userModelCredentialKey.findFirst({
+      where: { credentialId: cred.id, secretId: stored.id },
+      select: { id: true },
+    });
+    if (savedKey) {
+      return discoverModelsForGatewayKey(
+        deps,
+        dto,
+        savedKey.id,
+        plaintext,
+        input.keyLabel,
+        actor.isDeploymentOwner,
+        input.signal,
+      );
+    }
+  }
+  return dto;
+}
+
+async function removeModelCredentialKey(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  keyId: string,
+) {
+  const updatedId = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const credential = await tx.userModelCredential.findFirst({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        if (!credential || !isGatewayProvider(credential.provider)) {
+          throw new ORPCError("NOT_FOUND", { message: "Custom endpoint not found." });
+        }
+        const key = credential.keys.find((entry) => entry.id === keyId);
+        if (!key) throw new ORPCError("NOT_FOUND", { message: "API key not found." });
+        if (credential.keys.length < 2) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Keep at least one API key, or connect the endpoint without a key.",
+          });
+        }
+        await tx.userModelCredentialKey.delete({ where: { id: key.id } });
+        const remaining = credential.keys.filter((entry) => entry.id !== key.id);
+        const nextActive = remaining.find((entry) => entry.isActive) ?? remaining.at(-1)!;
+        await tx.userModelCredentialKey.updateMany({
+          where: { credentialId: credential.id },
+          data: { isActive: false },
+        });
+        await tx.userModelCredentialKey.update({
+          where: { id: nextActive.id },
+          data: { isActive: true },
+        });
+        await tx.userModelCredential.update({
+          where: { id: credential.id },
+          data: {
+            secretId: nextActive.secretId,
+            availableModels: serializeAvailableModels(unionAvailableModels(remaining)),
+          },
+        });
+        await deleteSecretIfUnused(tx, key.secretId);
+        return credential.id;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  return loadCredentialDto(deps.prisma, updatedId);
+}
+
+async function setActiveModelCredentialKey(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  keyId: string,
+) {
+  const updatedId = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const credential = await tx.userModelCredential.findFirst({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        if (!credential || !isGatewayProvider(credential.provider)) {
+          throw new ORPCError("NOT_FOUND", { message: "Custom endpoint not found." });
+        }
+        const key = credential.keys.find((entry) => entry.id === keyId);
+        if (!key) throw new ORPCError("NOT_FOUND", { message: "API key not found." });
+        await tx.userModelCredentialKey.updateMany({
+          where: { credentialId: credential.id },
+          data: { isActive: false },
+        });
+        await tx.userModelCredentialKey.update({
+          where: { id: key.id },
+          data: { isActive: true },
+        });
+        await tx.userModelCredential.update({
+          where: { id: credential.id },
+          data: { secretId: key.secretId },
+        });
+        return credential.id;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  return loadCredentialDto(deps.prisma, updatedId);
+}
+
+async function discoverModelsForGatewayKey(
+  deps: RouterDeps,
+  credential: ModelCredential,
+  keyId: string,
+  plaintext: string,
+  requestedLabel: string | undefined,
+  allowPrivateNetwork: boolean,
+  signal?: AbortSignal,
+) {
+  if (!credential.baseUrl) return credential;
+  throwIfAborted(signal);
+  const discovered = await tryFetchOpenAICompatibleModels(credential.baseUrl, plaintext, signal, {
+    allowPrivateNetwork,
+  });
+  const key = await deps.prisma.userModelCredentialKey.findFirst({
+    where: { id: keyId, credentialId: credential.id },
+  });
+  if (!key) return loadCredentialDto(deps.prisma, credential.id);
+  const nextLabel =
+    requestedLabel?.trim() ||
+    (key.label && key.label !== "API key"
+      ? key.label
+      : labelForDiscoveredModels(discovered.models, key.label || "API key"));
+  await deps.prisma.userModelCredentialKey.updateMany({
+    where: { id: key.id, credentialId: credential.id },
+    data: {
+      availableModels: serializeAvailableModels(discovered.models),
+      probedAt: new Date(),
+      probeError: discovered.error,
+      label: nextLabel,
+    },
+  });
+  await recomputeCredentialAvailableModels(
+    deps.prisma,
+    credential.id,
+    serializeAvailableModels(credential.availableModels ?? []),
+  );
+  return loadCredentialDto(deps.prisma, credential.id);
+}
+
+async function refreshGatewayKeyCoverage(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  signal?: AbortSignal,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+    include: credentialKeyInclude,
+  });
+  if (!credential || !isGatewayProvider(credential.provider) || !credential.baseUrl) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Connect a custom endpoint before refreshing API keys.",
+    });
+  }
+  throwIfAborted(signal);
+  for (let offset = 0; offset < credential.keys.length; offset += 4) {
+    await Promise.all(
+      credential.keys.slice(offset, offset + 4).map(async (key) => {
+        throwIfAborted(signal);
+        const secret = await deps.prisma.secret.findFirst({
+          where: {
+            id: key.secretId,
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+          },
+        });
+        if (!secret) {
+          await deps.prisma.userModelCredentialKey.updateMany({
+            where: { id: key.id, credentialId: credential.id },
+            data: {
+              availableModels: "",
+              probedAt: new Date(),
+              probeError: "API key is missing.",
+            },
+          });
+          return;
+        }
+        let apiKey = "";
+        try {
+          const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext));
+          apiKey = parsed.kind === "api_key" ? parsed.key : "";
+        } catch {
+          await deps.prisma.userModelCredentialKey.updateMany({
+            where: { id: key.id, credentialId: credential.id },
+            data: {
+              availableModels: "",
+              probedAt: new Date(),
+              probeError: "API key could not be read.",
+            },
+          });
+          return;
+        }
+        const discovered = apiKey
+          ? await tryFetchOpenAICompatibleModels(credential.baseUrl!, apiKey, signal, {
+              allowPrivateNetwork: actor.isDeploymentOwner,
+            })
+          : { models: [] as string[], error: "This key cannot list models." };
+        const nextLabel =
+          key.label && key.label !== "API key"
+            ? key.label
+            : labelForDiscoveredModels(discovered.models, key.label || "API key");
+        await deps.prisma.userModelCredentialKey.updateMany({
+          where: { id: key.id, credentialId: credential.id },
+          data: {
+            availableModels: serializeAvailableModels(discovered.models),
+            probedAt: new Date(),
+            probeError: discovered.error,
+            label: nextLabel,
+          },
+        });
+      }),
+    );
+  }
+  await recomputeCredentialAvailableModels(deps.prisma, credential.id, credential.availableModels);
+  return loadCredentialDto(deps.prisma, credential.id);
+}
+
+async function recomputeCredentialAvailableModels(
+  prisma: PrismaClient,
+  credentialId: string,
+  fallbackSerialized?: string,
+) {
+  const keys = await prisma.userModelCredentialKey.findMany({
+    where: { credentialId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const fromKeys = unionAvailableModels(keys);
+  const next = fromKeys.length ? fromKeys : parseAvailableModels(fallbackSerialized);
+  await prisma.userModelCredential.update({
+    where: { id: credentialId },
+    data: { availableModels: serializeAvailableModels(next) },
+  });
+}
+
+async function deleteSecretIfUnused(tx: Prisma.TransactionClient, secretId: string) {
+  const [credentials, keys] = await Promise.all([
+    tx.userModelCredential.count({ where: { secretId } }),
+    tx.userModelCredentialKey.count({ where: { secretId } }),
+  ]);
+  if (credentials === 0 && keys === 0) {
+    await tx.secret.deleteMany({ where: { id: secretId } });
+  }
 }
 
 function throwIfAborted(signal?: AbortSignal) {

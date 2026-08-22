@@ -7,10 +7,13 @@ import type {
   ModelCredential,
 } from "@rakazo/contracts";
 import {
+  isEphemeralThreadMessageId,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
+  reasoningMessageId,
+  reasoningStepsFromPayload,
   type ThreadHistory,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
@@ -187,6 +190,13 @@ export type MobileMessage = {
     artifactId?: string;
     mimeType?: string;
     size?: number;
+    steps?: Array<{
+      id: string;
+      kind: string;
+      title: string;
+      detail?: string;
+      status: string;
+    }>;
   }>;
 };
 
@@ -235,6 +245,12 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
         return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;
+      }
+      if (block.kind === "reasoning") {
+        return (block.steps ?? [])
+          .map((step) => step.title)
+          .filter(Boolean)
+          .join(". ");
       }
       return block.text ?? block.state ?? "";
     })
@@ -325,6 +341,23 @@ export function applyMobileThreadEvent(
       ],
     };
   }
+  if (event.type === "thread.reasoning") {
+    const streaming: MobileMessage = {
+      id: reasoningMessageId(event),
+      role: "bot",
+      blocks: [{ kind: "reasoning", steps: reasoningStepsFromPayload(event.payload ?? {}) }],
+    };
+    return {
+      ...prev,
+      messages: [
+        ...prev.messages.filter(
+          (message) => message.id !== streaming.id && !message.id.startsWith("progress:"),
+        ),
+        streaming,
+        ...prev.messages.filter((message) => message.id.startsWith("progress:")),
+      ],
+    };
+  }
   if (event.type === "thread.subagent") {
     const agentId = String(event.payload?.agentId ?? event.id ?? "live");
     const streaming: MobileMessage = {
@@ -364,7 +397,7 @@ export function applyMobileThreadEvent(
         ...prev.messages.filter(
           (message) =>
             message.id !== next.id &&
-            !message.id.startsWith("progress:") &&
+            !isEphemeralThreadMessageId(message.id) &&
             !(
               message.id.startsWith("subagent:") &&
               next.blocks.some(

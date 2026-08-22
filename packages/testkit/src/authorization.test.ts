@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { appContract } from "@rakazo/contracts";
@@ -26,6 +27,7 @@ const describeWithDatabase = hasDb ? describe : describe.skip;
 describeWithDatabase("API authorization and resource isolation", () => {
   let handles: AppHandles;
   let app: App;
+  let deploymentOwnerCookie: string;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
 
@@ -40,6 +42,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       signupsEnabled: "true",
     });
     app = handles.app;
+    deploymentOwnerCookie = await signup(
+      app,
+      `deployment-owner-fixture-${stamp}@rakazo.test`,
+      "Deployment Owner Fixture",
+    );
+    const deploymentOwner = await rpc<Actor>(app, deploymentOwnerCookie, "me");
+    await handles.prisma.deploymentSettings.update({
+      where: { id: "default" },
+      data: { ownerUserId: deploymentOwner.userId },
+    });
   });
 
   afterAll(async () => {
@@ -50,22 +62,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
+      ["bootstrap", {}],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
+      ["models/probe", { baseUrl: "http://127.0.0.1:9/v1" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
+      ["models/addKey", { provider: "test", apiKey: "not-a-real-key" }],
+      ["models/removeKey", { provider: "test", keyId: "missing-key" }],
+      ["models/setActiveKey", { provider: "test", keyId: "missing-key" }],
+      ["models/refreshKeys", { provider: "test" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
       ["bots/update", { botId: "missing-bot", name: "Nope" }],
+      ["bots/setComputer", { botId: "missing-bot", mode: "team" }],
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
@@ -132,6 +151,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["artifacts/list", { botId: "missing-bot" }],
+      [
+        "artifacts/create",
+        {
+          botId: "missing-bot",
+          name: "nope.txt",
+          mimeType: "text/plain",
+          contentBase64: "Tm9wZQ==",
+        },
+      ],
       ["usage/list"],
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
@@ -494,6 +522,329 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(missing.status).toBeGreaterThanOrEqual(400);
     expect(await missing.text()).toMatch(/credential/i);
+
+    const addKeyDenied = await raw(app, cookie, "models/addKey", {
+      provider: "provider-a",
+      apiKey: "another-provider-a-key",
+      label: "Spare",
+    });
+    expect(addKeyDenied.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("lets a custom endpoint keep multiple labeled API keys", async () => {
+    const cookie = deploymentOwnerCookie;
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "openai-compatible",
+      apiKey: "custom-endpoint-key-one-xxxx",
+      label: "Office vLLM",
+      modelId: "llama3.1",
+      baseUrl: "http://127.0.0.1:11434/v1",
+    });
+    expect(connected.provider).toMatch(/^gateway:/);
+    expect(connected.hasKey).toBe(true);
+    expect(connected.keys).toHaveLength(1);
+    expect(connected.keys[0]).toMatchObject({ label: "API key", isActive: true });
+    expect(JSON.stringify(connected)).not.toContain("custom-endpoint-key");
+
+    const withSecond = await rpc<ModelCredential>(app, cookie, "models/addKey", {
+      provider: connected.provider,
+      apiKey: "custom-endpoint-key-two-xxxx",
+      label: "Pool key 2",
+    });
+    expect(withSecond.id).toBe(connected.id);
+    expect(withSecond.isDefault).toBe(true);
+    expect(withSecond.keys).toHaveLength(2);
+    const originalKey = withSecond.keys.find((key) => key.label === "API key");
+    const poolKey = withSecond.keys.find((key) => key.label === "Pool key 2");
+    expect(originalKey?.isActive).toBe(false);
+    expect(poolKey?.isActive).toBe(true);
+
+    const storedKeys = await handles.prisma.userModelCredentialKey.findMany({
+      where: { credentialId: connected.id },
+    });
+    expect(new Set(storedKeys.map((key) => key.secretId)).size).toBe(2);
+
+    const activated = await rpc<ModelCredential>(app, cookie, "models/setActiveKey", {
+      provider: connected.provider,
+      keyId: originalKey!.id,
+    });
+    expect(activated.keys.find((key) => key.id === originalKey?.id)?.isActive).toBe(true);
+    expect(activated.keys.find((key) => key.id === poolKey?.id)?.isActive).toBe(false);
+    const originalSecretId = storedKeys.find((key) => key.id === originalKey?.id)?.secretId;
+    expect(originalSecretId).toBeTruthy();
+    const afterSwitch = await handles.prisma.userModelCredential.findUniqueOrThrow({
+      where: { id: connected.id },
+    });
+    expect(afterSwitch.secretId).toBe(originalSecretId);
+
+    const removed = await rpc<ModelCredential>(app, cookie, "models/removeKey", {
+      provider: connected.provider,
+      keyId: originalKey!.id,
+    });
+    expect(removed.keys).toHaveLength(1);
+    expect(removed.keys[0]?.id).toBe(poolKey?.id);
+    expect(removed.keys[0]?.isActive).toBe(true);
+    expect(await handles.prisma.secret.findUnique({ where: { id: originalSecretId! } })).toBeNull();
+
+    const lastRemove = await raw(app, cookie, "models/removeKey", {
+      provider: connected.provider,
+      keyId: poolKey!.id,
+    });
+    expect(lastRemove.status).toBeGreaterThanOrEqual(400);
+
+    const renamed = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: connected.provider,
+      apiKey: "",
+      label: "Office vLLM renamed",
+      modelId: "llama3.1",
+      baseUrl: "http://127.0.0.1:11434/v1",
+    });
+    expect(renamed.keys).toHaveLength(1);
+    expect(renamed.label).toBe("Office vLLM renamed");
+
+    const empty = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      provider: "openai-compatible",
+      apiKey: "",
+      label: "Local Ollama",
+      modelId: "llama3.1",
+      baseUrl: "http://127.0.0.1:22434/v1",
+    });
+    expect(empty.provider).not.toBe(connected.provider);
+    expect(empty.hasKey).toBe(false);
+    expect(empty.keys).toEqual([]);
+    const secretsBeforeAdd = await handles.prisma.secret.count({
+      where: { userId: actor.userId, kind: "model" },
+    });
+    const added = await rpc<ModelCredential>(app, cookie, "models/addKey", {
+      provider: empty.provider,
+      apiKey: "ollama-optional-key-xxxx",
+      label: "Spare",
+    });
+    expect(added.keys).toHaveLength(1);
+    expect(added.keys[0]).toMatchObject({ label: "Spare", isActive: true });
+    expect(added.hasKey).toBe(true);
+    expect(
+      await handles.prisma.secret.count({ where: { userId: actor.userId, kind: "model" } }),
+    ).toBe(secretsBeforeAdd);
+
+    const listed = await rpc<ModelCredential[]>(app, cookie, "models/credentials");
+    expect(JSON.stringify(listed)).not.toContain("custom-endpoint-key");
+    expect(JSON.stringify(listed)).not.toContain("ollama-optional-key");
+  });
+
+  it("discovers which models each custom endpoint key can use", async () => {
+    const server = createServer((req, res) => {
+      if (!req.url?.endsWith("/models")) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      const auth = String(req.headers.authorization ?? "");
+      const ids = auth.includes("gemini-key")
+        ? ["gemini-2.5-pro", "gemini-2.5-flash"]
+        : auth.includes("openai-key")
+          ? ["gpt-4o", "gpt-4.1"]
+          : [];
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: ids.map((id) => ({ id })) }));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const cookie = deploymentOwnerCookie;
+      const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "gemini-key-xxxx-xxxx",
+        label: "Inference router",
+        modelId: "gemini-2.5-flash",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(connected.keys).toHaveLength(1);
+      expect(connected.keys[0]).toMatchObject({
+        label: "Gemini",
+        availableModels: ["gemini-2.5-pro", "gemini-2.5-flash"],
+      });
+      expect(connected.availableModels).toEqual(["gemini-2.5-pro", "gemini-2.5-flash"]);
+
+      const withSecond = await rpc<ModelCredential>(app, cookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "openai-key-xxxx-xxxx",
+      });
+      expect(withSecond.keys).toHaveLength(2);
+      const gemini = withSecond.keys.find((key) =>
+        key.availableModels?.includes("gemini-2.5-flash"),
+      );
+      const openai = withSecond.keys.find((key) => key.availableModels?.includes("gpt-4o"));
+      expect(gemini).toMatchObject({ label: "Gemini" });
+      expect(openai).toMatchObject({ label: "GPT" });
+      expect(withSecond.availableModels).toEqual(
+        expect.arrayContaining(["gemini-2.5-pro", "gemini-2.5-flash", "gpt-4o", "gpt-4.1"]),
+      );
+
+      const refreshed = await rpc<ModelCredential>(app, cookie, "models/refreshKeys", {
+        provider: connected.provider,
+      });
+      expect(refreshed.keys.find((key) => key.id === openai?.id)?.availableModels).toEqual([
+        "gpt-4o",
+        "gpt-4.1",
+      ]);
+      expect(JSON.stringify(refreshed)).not.toContain("gemini-key");
+      expect(JSON.stringify(refreshed)).not.toContain("openai-key");
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("keeps concurrent key probes attached to the key that supplied them", async () => {
+    let releaseSlow = () => undefined;
+    let markSlowStarted = () => undefined;
+    const slowRelease = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const slowStarted = new Promise<void>((resolve) => {
+      markSlowStarted = resolve;
+    });
+    const server = createServer(async (req, res) => {
+      const auth = String(req.headers.authorization ?? "");
+      const slow = auth.includes("slow-probe-key");
+      if (slow) {
+        markSlowStarted();
+        await slowRelease;
+      }
+      const id = slow ? "slow-model" : "fast-model";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const connected = await rpc<ModelCredential>(app, deploymentOwnerCookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "",
+        label: "Concurrent key router",
+        modelId: "slow-model",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      const slowRequest = rpc<ModelCredential>(app, deploymentOwnerCookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "slow-probe-key-xxxx",
+        label: "Slow key",
+      });
+      await slowStarted;
+      await rpc<ModelCredential>(app, deploymentOwnerCookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "fast-probe-key-xxxx",
+        label: "Fast key",
+      });
+      releaseSlow();
+      await slowRequest;
+
+      const listed = await rpc<ModelCredential[]>(app, deploymentOwnerCookie, "models/credentials");
+      const updated = listed.find((credential) => credential.provider === connected.provider)!;
+      expect(updated.keys.find((key) => key.label === "Slow key")?.availableModels).toEqual([
+        "slow-model",
+      ]);
+      expect(updated.keys.find((key) => key.label === "Fast key")?.availableModels).toEqual([
+        "fast-model",
+      ]);
+    } finally {
+      releaseSlow();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("blocks non-owner users from probing or saving private-network endpoints", async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "private-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const baseUrl = `http://127.0.0.1:${port}/v1`;
+    try {
+      const cookie = await signup(app, `private-probe-${stamp}@rakazo.test`, "Private Probe");
+      const probe = await raw(app, cookie, "models/probe", {
+        baseUrl,
+        apiKey: "fake-private-probe-key",
+      });
+      expect(probe.status).toBeGreaterThanOrEqual(400);
+      expect(await probe.text()).toMatch(/private|local|deployment.owner/i);
+
+      const connect = await raw(app, cookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "fake-private-connect-key",
+        label: "Private endpoint",
+        modelId: "private-model",
+        baseUrl,
+      });
+      expect(connect.status).toBeGreaterThanOrEqual(400);
+      expect(await connect.text()).toMatch(/private|local|deployment.owner/i);
+      expect(requests).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("does not let another user inspect or mutate endpoint keys", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "owner-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const ownerCredential = await rpc<ModelCredential>(
+        app,
+        deploymentOwnerCookie,
+        "models/connect",
+        {
+          provider: "openai-compatible",
+          apiKey: "fake-owner-endpoint-key",
+          label: "Owner endpoint",
+          modelId: "owner-model",
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+        },
+      );
+      const ownerKey = ownerCredential.keys[0]!;
+      const intruder = await signup(app, `model-key-intruder-${stamp}@rakazo.test`, "Intruder");
+      const secretCount = await handles.prisma.secret.count();
+
+      for (const [procedure, input] of [
+        ["models/addKey", { provider: ownerCredential.provider, apiKey: "fake-intruder-key" }],
+        ["models/removeKey", { provider: ownerCredential.provider, keyId: ownerKey.id }],
+        ["models/setActiveKey", { provider: ownerCredential.provider, keyId: ownerKey.id }],
+        ["models/refreshKeys", { provider: ownerCredential.provider }],
+      ] satisfies Array<[string, unknown]>) {
+        await expectDenied(app, intruder, procedure, input);
+      }
+
+      expect(
+        await handles.prisma.userModelCredentialKey.findUnique({ where: { id: ownerKey.id } }),
+      ).toMatchObject({ credentialId: ownerCredential.id, isActive: true });
+      expect(await handles.prisma.secret.count()).toBe(secretCount);
+      expect(await rpc<ModelCredential[]>(app, intruder, "models/credentials")).not.toContainEqual(
+        expect.objectContaining({ provider: ownerCredential.provider }),
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it("chooses the newest duplicate provider credential when selecting a default", async () => {
@@ -699,6 +1050,14 @@ interface ModelCredential {
   label: string;
   hasKey: boolean;
   isDefault: boolean;
+  keys: Array<{
+    id: string;
+    label: string;
+    isActive: boolean;
+    createdAt: string;
+    availableModels?: string[];
+  }>;
+  availableModels?: string[];
 }
 
 interface Bot {

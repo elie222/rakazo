@@ -269,6 +269,7 @@ function requestFor(modelId: string, withGateway = true): AgentRunRequest {
     provider: "gateway:test",
     id: modelId,
     baseUrl: withGateway ? gatewayBaseUrl : undefined,
+    allowPrivateNetwork: withGateway || undefined,
   };
   return {
     botId: "bot",

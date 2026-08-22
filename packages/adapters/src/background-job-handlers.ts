@@ -48,6 +48,7 @@ export function createBackgroundJobHandlers(deps: {
           runtime: deps.runtime,
           jobs: deps.jobs,
           deploymentModelKey: deps.deploymentModelKey,
+          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },
         payload.threadId,
       );

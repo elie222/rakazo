@@ -44,7 +44,15 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           return;
         }
         if (turn.assistant) {
-          yield { type: "progress", text: "working…" };
+          yield {
+            type: "reasoning",
+            step: {
+              id: "status",
+              kind: "status",
+              title: "Writing a reply",
+              status: "running",
+            },
+          };
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {
@@ -81,6 +89,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
             name: call.name,
             args: call.args,
             executionId: `${request.runId}:${call.name}`,
+            status: "running",
           };
         }
         if (turn.ask) {

@@ -166,11 +166,30 @@ model UserModelCredential {
   secretId     String
   isDefault    Boolean  @default(false)
   defaultModel String?
+  baseUrl      String?
+  availableModels String @default("")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  keys         UserModelCredentialKey[]
 
   @@index([userId, workspaceId])
   @@map("user_model_credentials")
+}
+
+model UserModelCredentialKey {
+  id           String   @id @default(cuid())
+  credentialId String
+  credential   UserModelCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  secretId     String
+  label        String   @default("API key")
+  isActive     Boolean  @default(false)
+  availableModels String @default("")
+  probedAt     DateTime?
+  probeError   String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([credentialId, createdAt, id])
+  @@map("user_model_credential_keys")
 }
 
 model UserVoiceCredential {
@@ -216,6 +235,8 @@ model Bot {
   computerSwitching Boolean @default(false)
   voiceId        String?
   autoSpeak      Boolean  @default(false)
+  modelProvider  String?
+  modelId        String?
   routines       Routine[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
@@ -275,6 +296,8 @@ model Thread {
   nextEventSeq            Int          @default(0)
   nextMessageSeq          Int          @default(0)
   historyCompactedUpToSeq Int?
+  historyCompactionSummary String?      @db.Text
+  historyCompactionGeneration Int        @default(0)
   unread                  Boolean      @default(false)
   messages                Message[]
   events                  Event[]
