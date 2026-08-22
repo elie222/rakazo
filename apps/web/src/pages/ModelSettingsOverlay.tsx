@@ -309,7 +309,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setNotice(null);
     setPending("key");
     try {
-      await rpc.models.removeKey({ provider: selected.provider, keyId });
+      const updated = await rpc.models.removeKey({ provider: selected.provider, keyId });
+      setProbedModels(updated.availableModels ?? []);
       await refresh();
       setNotice("Removed that API key.");
     } catch (err) {

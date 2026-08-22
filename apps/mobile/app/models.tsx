@@ -249,13 +249,14 @@ export default function Models() {
     setNotice(null);
     setPending("key");
     try {
-      await rpc("models/addKey", {
+      const updated = await rpc<MobileModelCredential>("models/addKey", {
         provider: selected.provider,
         apiKey: apiKey.trim(),
         label: keyLabel.trim() || undefined,
       });
       setApiKey("");
       setKeyLabel("");
+      setProbedModels(updated.availableModels ?? []);
       await load({ provider, modelId });
       setNotice("Saved that key. Rakazo will use it for the models it can access.");
     } catch (err) {
@@ -271,7 +272,10 @@ export default function Models() {
     setNotice(null);
     setPending("refresh");
     try {
-      await rpc("models/refreshKeys", { provider: selected.provider });
+      const updated = await rpc<MobileModelCredential>("models/refreshKeys", {
+        provider: selected.provider,
+      });
+      setProbedModels(updated.availableModels ?? []);
       await load({ provider, modelId });
       setNotice("Updated which models each API key can use.");
     } catch (err) {
@@ -303,7 +307,11 @@ export default function Models() {
     setNotice(null);
     setPending("key");
     try {
-      await rpc("models/removeKey", { provider: selected.provider, keyId });
+      const updated = await rpc<MobileModelCredential>("models/removeKey", {
+        provider: selected.provider,
+        keyId,
+      });
+      setProbedModels(updated.availableModels ?? []);
       await load({ provider, modelId });
       setNotice("Removed that API key.");
     } catch (err) {
