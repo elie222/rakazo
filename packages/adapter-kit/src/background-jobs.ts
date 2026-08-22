@@ -50,8 +50,10 @@ export function computerSleepJobKey(computerId: string): string {
   return `computer.sleep:${computerId}`;
 }
 
-export function computerControlExpireJobKey(computerId: string): string {
-  return `computer.control-expire:${computerId}`;
+export function computerControlExpireJobKey(computerId: string, leaseId?: string): string {
+  return leaseId
+    ? `computer.control-expire:${computerId}:${leaseId}`
+    : `computer.control-expire:${computerId}`;
 }
 
 export function skillTeachingExpireJobKey(skillId: string): string {
@@ -93,7 +95,7 @@ export function computerControlExpireJob(
     name: "computer.control-expire",
     payload: { computerId, leaseId },
     availableAt,
-    replaceKey: computerControlExpireJobKey(computerId),
+    replaceKey: computerControlExpireJobKey(computerId, leaseId),
   };
 }
 

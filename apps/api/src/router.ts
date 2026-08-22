@@ -31,6 +31,7 @@ import {
   isSupermemoryEnabled,
   listPiCatalog,
   type PiOAuthLogins,
+  planLiveConnectionSync,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -100,6 +101,53 @@ import {
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+async function reconcilePendingComposioConnections(
+  prisma: PrismaClient,
+  owner: Pick<Actor, "workspaceId" | "userId">,
+  connectedProviders: string[],
+): Promise<void> {
+  const rows = await prisma.connection.findMany({
+    where: {
+      workspaceId: owner.workspaceId,
+      userId: owner.userId,
+      provider: { in: connectedProviders },
+      status: { in: ["pending", "connected"] },
+    },
+    select: { id: true, provider: true, displayName: true, status: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const sync = planLiveConnectionSync(rows, connectedProviders);
+  const updates = [
+    ...(sync.connectIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.connectIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "connected" },
+          }),
+        ]
+      : []),
+    ...(sync.revokeIds.length > 0
+      ? [
+          prisma.connection.updateMany({
+            where: {
+              id: { in: sync.revokeIds },
+              workspaceId: owner.workspaceId,
+              userId: owner.userId,
+              status: "pending",
+            },
+            data: { status: "revoked" },
+          }),
+        ]
+      : []),
+  ];
+  if (updates.length > 0) await prisma.$transaction(updates);
+}
 
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
@@ -581,7 +629,7 @@ export function createRouter(deps: RouterDeps) {
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.thread) throw new IsolationError();
-        const { cancelledRunIds } = await deps.events.clearThread({
+        const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
           workspaceId: context.actor.workspaceId,
           threadId: bot.thread.id,
           botId: bot.id,
@@ -592,10 +640,20 @@ export function createRouter(deps: RouterDeps) {
         if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
-          const purged = await deleteSupermemoryContainer(supermemoryContainerTag(bot.id));
-          if (!purged.ok) {
-            console.error("supermemory purge after thread clear failed", purged.error);
-          }
+          const tags = [
+            ...new Set([
+              supermemoryContainerTag(bot.id),
+              supermemoryContainerTag(bot.id, historyCompactionGeneration),
+            ]),
+          ];
+          await Promise.all(
+            tags.map(async (tag) => {
+              const purged = await deleteSupermemoryContainer(tag);
+              if (!purged.ok) {
+                console.error("supermemory purge after thread clear failed", purged.error);
+              }
+            }),
+          );
         }
         return { ok: true as const };
       }),
@@ -685,6 +743,7 @@ export function createRouter(deps: RouterDeps) {
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        const controlLeaseId = bot.computer.controlLeaseId;
         const now = new Date();
         const claimed = await deps.prisma.computer.updateMany({
           where: {
@@ -747,7 +806,9 @@ export function createRouter(deps: RouterDeps) {
             .catch(() => undefined);
           throw error;
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
+        await deps.jobs.cancel(
+          computerControlExpireJobKey(bot.computer.id, controlLeaseId ?? undefined),
+        );
         return computerStatus(deps, context.actor, input.botId);
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
@@ -880,54 +941,40 @@ export function createRouter(deps: RouterDeps) {
       release: authed.computer.release.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        const controlBotId = bot.computer.controlBotId ?? bot.id;
-        const storedControlBot =
-          controlBotId === bot.id
-            ? bot
-            : await deps.prisma.bot.findFirst({
-                where: {
-                  id: controlBotId,
-                  workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
-                },
-                include: { thread: true },
-              });
-        const controlBot = storedControlBot ?? bot;
-        const controlChanged =
-          bot.computer?.controlHolder !== "bot" ||
-          bot.computer.controlLeaseId !== null ||
-          bot.computer.controlLeaseExpiresAt !== null;
-        const shouldRevokeUserControl =
-          bot.computer?.controlHolder === "user" || Boolean(bot.computer?.controlLeaseId);
-        if (bot.computer?.providerRef && shouldRevokeUserControl) {
+        const controlBotId = bot.computer.controlBotId;
+        const controlLeaseId = bot.computer.controlLeaseId;
+        if (
+          !hasActiveComputerControl(bot.computer) ||
+          bot.computer.controlHolder !== "user" ||
+          !controlBotId ||
+          !controlLeaseId ||
+          controlBotId !== bot.id
+        ) {
+          return { ok: true as const };
+        }
+        if (bot.computer.providerRef) {
           await deps.sandbox.setScreenControl?.(
             toComputerRef(bot.computer),
             false,
-            computerContext(context.actor, bot.id, "screen.release"),
-            bot.computer.controlLeaseId ?? undefined,
+            computerContext(context.actor, controlBotId, "screen.release"),
+            controlLeaseId,
           );
         }
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id));
-        await deps.prisma.computer.update({
-          where: { id: bot.computer.id },
-          data: {
-            controlHolder: "bot",
-            controlLeaseId: null,
-            controlLeaseExpiresAt: null,
-            controlBotId: null,
-          },
+
+        const released = await deps.events.finalizeComputerControlRelease({
+          workspaceId: context.actor.workspaceId,
+          computerId: bot.computer.id,
+          botId: controlBotId,
+          leaseId: controlLeaseId,
+          holder: "bot",
+          reason: "released",
         });
-        if (controlBot.thread && controlChanged) {
-          await deps.events.append({
-            workspaceId: context.actor.workspaceId,
-            threadId: controlBot.thread.id,
-            botId: controlBot.id,
-            type: "computer.takeover.released",
-            payload: { holder: "bot", reason: "released" },
-          });
-        }
+        if (!released) return { ok: true as const };
+        // The lease-specific key makes this cancellation safe after a replacement takeover.
+        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
+
         const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBot.id, status: "waiting_takeover" },
+          where: { botId: controlBotId, status: "waiting_takeover" },
           orderBy: { createdAt: "desc" },
         });
         if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
@@ -1389,7 +1436,25 @@ export function createRouter(deps: RouterDeps) {
       catalog: authed.connections.catalog.handler(async ({ context, input }) => {
         if (!deps.composio) return [];
         try {
-          return await deps.composio.catalog(context.actor.userId, input.query);
+          const items = await deps.composio.catalog(context.actor.userId, input.query);
+          const nowConnected = items.filter((item) => item.connected).map((item) => item.slug);
+          if (nowConnected.length > 0) {
+            // A connection can finish on Composio's side after our own completion check gave
+            // up (see PluginsOverlay's polling timeout) — reconcile stale "pending" rows here
+            // so callers like the run executor, which trust our local status, stay in sync.
+            // Reuse the executor's one-row-per-provider plan so duplicate auth attempts do not
+            // leave stale locally connected rows behind after a later revoke.
+            // Best effort: a failed reconciliation write shouldn't blank out an otherwise
+            // successful catalog fetch — the caller still gets accurate, if unreconciled, data.
+            await reconcilePendingComposioConnections(
+              deps.prisma,
+              context.actor,
+              nowConnected,
+            ).catch((error) => {
+              console.error("composio pending-connection reconciliation failed", error);
+            });
+          }
+          return items;
         } catch {
           return [];
         }

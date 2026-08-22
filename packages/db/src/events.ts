@@ -46,6 +46,7 @@ export interface ClearThreadInput {
 export interface ClearThreadResult {
   event: ProductEvent;
   cancelledRunIds: string[];
+  historyCompactionGeneration: number;
 }
 
 export interface FinalizeComputerControlReleaseInput {
@@ -161,7 +162,7 @@ export async function clearThread(
         botId: input.botId,
       },
       data: { unread: false },
-      select: { nextMessageSeq: true },
+      select: { nextMessageSeq: true, historyCompactionGeneration: true },
     });
     const activeRuns = await tx.run.findMany({
       where: {
@@ -211,7 +212,19 @@ export async function clearThread(
       // to null, immediately re-fire on the fresh conversation).
       await tx.thread.update({
         where: { id: input.threadId },
-        data: { historyCompactedUpToSeq: thread.nextMessageSeq - 1 },
+        data: {
+          historyCompactedUpToSeq: thread.nextMessageSeq - 1,
+          historyCompactionSummary: null,
+          historyCompactionGeneration: { increment: 1 },
+        },
+      });
+    } else {
+      await tx.thread.update({
+        where: { id: input.threadId },
+        data: {
+          historyCompactionSummary: null,
+          historyCompactionGeneration: { increment: 1 },
+        },
       });
     }
     await tx.bot.update({
@@ -223,10 +236,18 @@ export async function clearThread(
       type: "thread.cleared",
       payload: {},
     });
-    return { event, cancelledRunIds: runIds };
+    return {
+      event,
+      cancelledRunIds: runIds,
+      historyCompactionGeneration: thread.historyCompactionGeneration,
+    };
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
-  return { event: mapProductEvent(committed.event), cancelledRunIds: committed.cancelledRunIds };
+  return {
+    event: mapProductEvent(committed.event),
+    cancelledRunIds: committed.cancelledRunIds,
+    historyCompactionGeneration: committed.historyCompactionGeneration,
+  };
 }
 
 export async function sendUserMessage(
@@ -495,7 +516,12 @@ export async function finalizeComputerControlRelease(
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
-      where: { id: input.computerId, controlLeaseId: input.leaseId },
+      where: {
+        id: input.computerId,
+        workspaceId: input.workspaceId,
+        controlBotId: input.botId,
+        controlLeaseId: input.leaseId,
+      },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
@@ -505,8 +531,8 @@ export async function finalizeComputerControlRelease(
     });
     if (cleared.count !== 1) return null;
 
-    const bot = await tx.bot.findUnique({
-      where: { id: input.botId },
+    const bot = await tx.bot.findFirst({
+      where: { id: input.botId, workspaceId: input.workspaceId },
       select: { thread: { select: { id: true } } },
     });
     if (!bot?.thread) return { threadId: null, seq: null };
