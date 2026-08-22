@@ -79,6 +79,14 @@ With the development stack running, launch Electron with:
 pnpm --filter @rakazo/desktop dev
 ```
 
+On first run the desktop app asks whether to set up a new instance or connect to an existing one. A
+new instance uses the Rakazo stack on this computer (`http://127.0.0.1:5173`); connecting to an
+existing instance takes the address of a server you or your team already runs. Either way the app
+checks that the address answers before saving it, and later launches go straight to that instance.
+
+Set `RAKAZO_WEB_URL` to point the shell somewhere else without changing the saved instance, or
+`RAKAZO_FORCE_SETUP=1` to run setup again.
+
 Mobile build and release instructions live in [docs/mobile-release.md](./docs/mobile-release.md).
 
 ## Development

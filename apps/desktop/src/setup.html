@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
+    />
+    <title>Set up Rakazo</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <span class="titlebar-name">Rakazo</span>
+      <button id="quit" class="titlebar-quit" type="button" title="Quit Rakazo">Quit</button>
+    </header>
+
+    <main class="shell">
+      <h1 class="heading">Welcome to Rakazo</h1>
+      <p class="subheading">
+        Rakazo runs on a server that hosts your bots, memory, and computers. Choose how this desktop
+        app should connect.
+      </p>
+
+      <form id="setup" class="card" novalidate>
+        <fieldset class="choices">
+          <legend class="sr-only">Instance</legend>
+
+          <label class="choice" for="mode-new">
+            <input id="mode-new" type="radio" name="mode" value="new" checked />
+            <span class="choice-body">
+              <span class="choice-title">Set up a new instance</span>
+              <span class="choice-note">
+                Use a Rakazo stack running on this computer. Best if you are self-hosting locally.
+              </span>
+            </span>
+          </label>
+
+          <label class="choice" for="mode-existing">
+            <input id="mode-existing" type="radio" name="mode" value="existing" />
+            <span class="choice-body">
+              <span class="choice-title">Connect to an existing instance</span>
+              <span class="choice-note">
+                Point at a Rakazo server you or your team already runs.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <section id="panel-new" class="panel">
+          <label class="field-label" for="local-url">Local server address</label>
+          <input id="local-url" class="field" type="text" spellcheck="false" autocomplete="off" />
+          <p class="hint">
+            Not running yet? Start the stack from your Rakazo checkout with
+            <code>pnpm dev</code>, then check again.
+          </p>
+        </section>
+
+        <section id="panel-existing" class="panel" hidden>
+          <label class="field-label" for="server-url">Server address</label>
+          <input
+            id="server-url"
+            class="field"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="https://rakazo.example.com"
+          />
+          <p class="hint">Use the address you open Rakazo with in a browser.</p>
+        </section>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="actions">
+          <button id="check" class="button button-secondary" type="button">Check connection</button>
+          <button id="continue" class="button button-primary" type="submit">Continue</button>
+        </div>
+      </form>
+
+      <p class="footnote">You can change this later by reconnecting from the app.</p>
+    </main>
+
+    <script src="setup.js"></script>
+  </body>
+</html>
