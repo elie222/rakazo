@@ -5,6 +5,7 @@ import type {
   Me,
   ModelCatalogEntry,
   ModelCredential,
+  ReasoningStep,
 } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
@@ -187,6 +188,12 @@ export type MobileMessage = {
     artifactId?: string;
     mimeType?: string;
     size?: number;
+    direction?: "in" | "out";
+    peerBotId?: string;
+    peerName?: string;
+    peerColor?: string;
+    channelId?: string;
+    steps?: ReasoningStep[];
   }>;
 };
 
