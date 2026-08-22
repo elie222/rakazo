@@ -1,4 +1,6 @@
 export * from "./async.js";
+export * from "./attachments.js";
+export * from "./bot-sections.js";
 export * from "./cron.js";
 export * from "./events.js";
 export * from "./message-pages.js";
@@ -6,5 +8,9 @@ export * from "./model-oauth.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";
 export * from "./screen-lease.js";
+export * from "./search.js";
 export * from "./secrets-guard.js";
 export * from "./signup-policy.js";
+export * from "./speech-text.js";
+export * from "./teach-playbook.js";
+export * from "./teach-recording.js";

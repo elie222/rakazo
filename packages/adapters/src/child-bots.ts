@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import type {
   AdapterContext,
   AgentHomeStore,
+  ArtifactStore,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -187,6 +188,7 @@ type BotLifecycleDeps = {
   home: AgentHomeStore;
   jobs: JobPublisher;
   dataDir?: string;
+  artifacts?: ArtifactStore;
 };
 
 type LifecycleBot = {
@@ -327,7 +329,7 @@ export async function destroyBot(
   context: AdapterContext,
   options: { deleteMemories: boolean },
 ) {
-  const [dedicated, activeRuns, routines] = await Promise.all([
+  const [dedicated, activeRuns, routines, artifactRows] = await Promise.all([
     deps.prisma.computer.findUnique({
       where: { scopeKey: computerScopeKey("dedicated", bot.workspaceId, bot.id) },
     }),
@@ -336,6 +338,10 @@ export async function destroyBot(
       select: { id: true },
     }),
     deps.prisma.routine.findMany({ where: { botId: bot.id }, select: { id: true } }),
+    deps.prisma.artifact.findMany({
+      where: { botId: bot.id, workspaceId: bot.workspaceId },
+      select: { storageKey: true },
+    }),
   ]);
   const runIds = activeRuns.map((run) => run.id);
   await deps.prisma.run.updateMany({
@@ -387,6 +393,12 @@ export async function destroyBot(
       recursive: true,
       force: true,
     }).catch(() => undefined);
+  }
+  const artifactStore = deps.artifacts;
+  if (artifactStore) {
+    await Promise.all(
+      artifactRows.map((artifact) => artifactStore.remove(artifact.storageKey, context)),
+    );
   }
 }
 

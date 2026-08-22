@@ -24,6 +24,7 @@ describe("ComposioEmulator", () => {
     await emulator.begin({ provider: "GMAIL", redirectUrl: "http://example.test" }, context);
 
     await expect(emulator.connectionReady(context.userId, "GMAIL")).resolves.toBe(true);
+    await expect(emulator.listConnectedSlugs(context.userId)).resolves.toEqual(["GMAIL"]);
     await expect(emulator.connectionReady("user-2", "GMAIL")).resolves.toBe(false);
     await expect(emulator.catalog(context.userId, "gmail")).resolves.toEqual([
       expect.objectContaining({ slug: "GMAIL", connected: true }),

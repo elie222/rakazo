@@ -25,7 +25,9 @@ export function prependThreadHistoryPage<
   TMessage extends MessageIdentity,
   TSnapshot extends ThreadHistory<TMessage>,
 >(previous: TSnapshot | null, page: ThreadHistory<TMessage>): TSnapshot | null {
-  if (!previous || previous.threadId !== page.threadId) return previous;
+  if (!previous || previous.threadId !== page.threadId || previous.olderCursor == null) {
+    return previous;
+  }
   return {
     ...previous,
     messages: mergeMessagesById(page.messages, previous.messages),

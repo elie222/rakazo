@@ -24,6 +24,39 @@ export async function savePushToken(dataDir: string, userId: string, token: stri
   await writeFile(pushTokenPath(dataDir, userId), token.trim(), "utf8");
 }
 
+export type ExpoPushTicket = {
+  status?: string;
+  message?: string;
+  details?: { error?: string };
+};
+
+export function expoPushTickets(body: unknown): ExpoPushTicket[] {
+  if (!body || typeof body !== "object") return [];
+  const data = (body as { data?: unknown }).data;
+  if (Array.isArray(data)) {
+    return data.filter((item): item is ExpoPushTicket => Boolean(item) && typeof item === "object");
+  }
+  if (data && typeof data === "object") return [data as ExpoPushTicket];
+  return [];
+}
+
+export function expoPushErrorMessage(body: unknown, status: number): string | undefined {
+  if (body && typeof body === "object" && "errors" in body) {
+    const errors = (body as { errors?: Array<{ message?: string }> }).errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors.map((error) => error.message ?? "expo push error").join("; ");
+    }
+  }
+  const failed = expoPushTickets(body).filter((ticket) => ticket.status === "error");
+  if (failed.length > 0) {
+    return failed
+      .map((ticket) => ticket.message ?? ticket.details?.error ?? "expo push ticket error")
+      .join("; ");
+  }
+  if (status < 200 || status >= 300) return `expo push failed (${status})`;
+  return undefined;
+}
+
 export class ExpoPushProvider implements NotificationProvider {
   constructor(private readonly dataDir: string) {}
 
@@ -39,15 +72,26 @@ export class ExpoPushProvider implements NotificationProvider {
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
     const token = await loadPushToken(this.dataDir, context.userId);
     if (!token) return;
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        to: token,
-        title: message.title,
-        body: message.body,
-        data: { kind: message.kind, botId: message.botId, threadId: message.threadId },
-      }),
-    }).catch(() => undefined);
+    let response: Response;
+    try {
+      response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          to: token,
+          title: message.title,
+          body: message.body,
+          data: { kind: message.kind, botId: message.botId, threadId: message.threadId },
+        }),
+      });
+    } catch (error) {
+      console.error("expo push request failed", error);
+      throw error;
+    }
+    const body = await response.json().catch(() => undefined);
+    const failure = expoPushErrorMessage(body, response.status);
+    if (!failure) return;
+    console.error(failure);
+    throw new Error(failure);
   }
 }

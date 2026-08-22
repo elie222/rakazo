@@ -3,6 +3,7 @@ import { Id } from "./ids.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
+  "thread.cleared",
   "thread.message.updated",
   "thread.progress",
   "thread.artifact",
@@ -25,6 +26,10 @@ export const ProductEventType = z.enum([
   "routine.created",
   "routine.updated",
   "routine.fired",
+  "skill.teaching.started",
+  "skill.teaching.stopped",
+  "skill.draft.created",
+  "skill.saved",
   "effect.recorded",
   "agent.tool.called",
   "effect.reconciled",
@@ -86,6 +91,35 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     name: z.string(),
     title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
+  }),
+  z.object({
+    kind: z.literal("skill_draft"),
+    skillId: Id,
+    name: z.string(),
+    goal: z.string(),
+    playbook: z.object({
+      whenToUse: z.string(),
+      inputs: z.array(z.string()),
+      steps: z.array(z.string()),
+      howToCheck: z.string(),
+      whatToReturn: z.string(),
+      approvalBoundaries: z.string(),
+      failureHandling: z.string(),
+    }),
+    status: z.enum(["draft", "saved"]),
+  }),
+  z.object({
+    kind: z.literal("image"),
+    artifactId: Id,
+    mimeType: z.string(),
+    name: z.string(),
+  }),
+  z.object({
+    kind: z.literal("file"),
+    artifactId: Id,
+    mimeType: z.string(),
+    name: z.string(),
+    size: z.number().int().nonnegative(),
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;

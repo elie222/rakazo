@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createCipheriv, createHash, createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   resolveNovncTarget,
@@ -20,6 +20,20 @@ function signedPath(
     .digest("base64url");
   const target = Buffer.from(hostname).toString("base64url");
   return `/novnc/${target}/${port}/${policy}/${expiresAt}.${signature}${rest}`;
+}
+
+function remotePath(
+  expiresAt: number,
+  secret: string,
+  url: string,
+  policy: "view" | "control" = "view",
+) {
+  const iv = Buffer.alloc(12, 1);
+  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv);
+  cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
+  const ciphertext = Buffer.concat([cipher.update(url, "utf8"), cipher.final()]);
+  const token = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
+  return `/novnc/remote/${policy}/${expiresAt}.${token}/vnc.html`;
 }
 
 describe("noVNC proxy authorization", () => {
@@ -66,6 +80,25 @@ describe("noVNC proxy authorization", () => {
       path: "/embed.html?view_only=false",
       interactive: true,
     });
+  });
+
+  it("keeps encrypted external Box targets bound to their view/control policy", () => {
+    const target = "https://box.example/vnc.html?token=provider-secret&view_only=true";
+    const view = remotePath(2_000, "secret", target);
+    expect(resolveNovncTarget(view, "secret", 1_000)).toMatchObject({
+      protocol: "https:",
+      hostname: "box.example",
+      port: 443,
+      path: "/vnc.html?token=provider-secret&view_only=true",
+      interactive: false,
+    });
+    expect(
+      resolveNovncTarget(view.replace("/vnc.html", "/vnc.html?view_only=false"), "secret", 1_000),
+    ).toMatchObject({
+      path: "/vnc.html?token=provider-secret&view_only=true",
+      interactive: false,
+    });
+    expect(resolveNovncTarget(view.replace("/view/", "/control/"), "secret", 1_000)).toBeNull();
   });
 
   it("does not forward application credentials", () => {

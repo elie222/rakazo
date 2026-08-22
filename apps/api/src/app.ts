@@ -17,6 +17,7 @@ import {
   InMemoryRealtimeFanout,
   isComposioEnabled,
   LocalAgentHomeStore,
+  LocalArtifactStore,
   PiAgentRuntime,
   PiOAuthLogins,
   PostgresRealtimeFanout,
@@ -30,6 +31,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
   app: Hono;
@@ -86,12 +88,15 @@ export async function createApp(
     daytonaApiKey: env.daytonaApiKey,
     daytonaApiUrl: env.daytonaApiUrl,
     daytonaTarget: env.daytonaTarget,
+    boxApiKey: env.boxApiKey,
+    boxApiUrl: env.boxApiUrl,
     dataDir: env.dataDir,
     prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
+  const artifacts = new LocalArtifactStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride);
   const connector = stack.destination;
@@ -123,7 +128,7 @@ export async function createApp(
       await Promise.all(
         bots.map((bot) =>
           destroyBot(
-            { prisma, sandbox, home, jobs, dataDir: env.dataDir },
+            { prisma, sandbox, home, jobs, artifacts, dataDir: env.dataDir },
             bot,
             {
               operationId: `account-delete:${userId}`,
@@ -146,7 +151,9 @@ export async function createApp(
     sandbox,
     memory,
     home,
+    artifacts,
     connector: stack.connector,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
@@ -164,6 +171,8 @@ export async function createApp(
     jobs,
     events,
     workerId: "api",
+    runtime,
+    deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -182,6 +191,7 @@ export async function createApp(
     secrets,
     oauthLogins,
     composio: stack.composio,
+    artifacts,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,
@@ -223,6 +233,11 @@ export async function createApp(
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
+  mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
+    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    if (!session?.user) return null;
+    return requireMembership(prisma, session.user.id).catch(() => null);
+  });
   app.get("/health", (c) =>
     c.json({
       ok: true,
@@ -231,6 +246,7 @@ export async function createApp(
       composio: Boolean(stack.composio),
       jobs: jobKind,
       realtime: realtime.describe().id,
+      revision: env.gitSha ?? null,
     }),
   );
 

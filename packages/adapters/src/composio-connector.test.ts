@@ -7,6 +7,9 @@ import {
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
+  mergeConnectedPlugins,
+  needsLivePluginSync,
+  planLiveConnectionSync,
   sanitizeComposioError,
 } from "./composio-connector.js";
 
@@ -77,6 +80,93 @@ describe("composio tool mapping", () => {
   it("keys execute sessions by sorted unique toolkits", () => {
     expect(executeSessionKey(["hackernews", "gmail", "hackernews"])).toBe("gmail,hackernews");
     expect(executeSessionKey([])).toBe("");
+  });
+
+  it("merges live Composio slugs onto pending DB plugin rows", () => {
+    const merged = mergeConnectedPlugins(
+      [
+        { provider: "github", displayName: "GitHub", status: "connected" },
+        { provider: "gmail", displayName: "Gmail", status: "pending" },
+        { provider: "linear", displayName: "Linear", status: "revoked" },
+      ],
+      ["gmail", "github", "notion"],
+    );
+    expect(merged).toEqual([
+      { provider: "github", displayName: "GitHub" },
+      { provider: "gmail", displayName: "Gmail" },
+    ]);
+  });
+
+  it("only fetches live Composio slugs when a Rakazo row is still pending or errored", () => {
+    expect(needsLivePluginSync([{ status: "connected" }, { status: "revoked" }])).toBe(false);
+    expect(needsLivePluginSync([{ status: "pending" }])).toBe(true);
+    expect(needsLivePluginSync([{ status: "error" }])).toBe(true);
+  });
+
+  it("keeps DB-connected plugins when live Composio listing is empty", () => {
+    expect(
+      mergeConnectedPlugins(
+        [{ provider: "github", displayName: "GitHub", status: "connected" }],
+        [],
+      ),
+    ).toEqual([{ provider: "github", displayName: "GitHub" }]);
+  });
+
+  it("plans DB sync when Composio is connected but Rakazo is still pending", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail", "slack"],
+      ),
+    ).toEqual({
+      connectIds: ["row-gmail"],
+      revokeIds: [],
+    });
+  });
+
+  it("does not create connection rows for live slugs that have no workspace row", () => {
+    expect(
+      planLiveConnectionSync(
+        [{ id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" }],
+        ["github", "slack"],
+      ),
+    ).toEqual({ connectIds: [], revokeIds: [] });
+  });
+
+  it("reconnects existing error or revoked rows instead of inserting duplicates", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-err", provider: "gmail", status: "error", displayName: "Gmail" },
+          { id: "row-old", provider: "slack", status: "revoked", displayName: "Slack" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail", "slack", "github", "slack"],
+      ),
+    ).toEqual({
+      connectIds: ["row-err", "row-old"],
+      revokeIds: [],
+    });
+  });
+
+  it("revokes abandoned pending or error rows after a successful live listing", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-dup", provider: "gmail", status: "pending", displayName: "Gmail" },
+          { id: "row-err", provider: "slack", status: "error", displayName: "Slack" },
+          { id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" },
+        ],
+        ["gmail"],
+      ),
+    ).toEqual({
+      connectIds: ["row-gmail"],
+      revokeIds: ["row-dup", "row-err"],
+    });
   });
 
   it("filters the catalog by name or slug", () => {

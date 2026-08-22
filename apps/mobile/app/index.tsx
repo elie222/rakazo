@@ -1,3 +1,5 @@
+import type { SearchHit } from "@rakazo/contracts";
+import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -12,17 +14,32 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
+import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { NativeSymbol } from "../components/native-symbol";
-import { loadSessionToken, type MobileBot, type MobileMe, rpc } from "../lib/api";
+import {
+  loadSessionToken,
+  type MobileBot,
+  type MobileBotSection,
+  type MobileMe,
+  rpc,
+} from "../lib/api";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
+import { queryWorkspaceSearch } from "../lib/search";
+import { mobileSearchDestination } from "../lib/search-destination";
 
 const FALLBACK_COLOR = "#9B5CF6";
 
+type InboxItem =
+  | { type: "bot"; bot: MobileBot }
+  | { type: "search"; hit: SearchHit }
+  | { type: "heading"; key: string; title: string };
+
 export default function Home() {
   const [bots, setBots] = useState<MobileBot[]>([]);
+  const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -30,11 +47,19 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
 
   const loadBots = useCallback(async () => {
     setError(null);
     try {
-      setBots(await rpc<MobileBot[]>("bots/list"));
+      const [nextBots, nextSections] = await Promise.all([
+        rpc<MobileBot[]>("bots/list"),
+        rpc<MobileBotSection[]>("botSections/list"),
+      ]);
+      setBots(nextBots);
+      setBotSections(nextSections);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load bots");
     }
@@ -70,8 +95,45 @@ export default function Home() {
     }, [hasSession, loadBots]),
   );
 
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!searching || !trimmed) {
+      setSearchHits([]);
+      setSearchLoading(false);
+      return;
+    }
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      setSearchLoading(true);
+      void queryWorkspaceSearch(trimmed)
+        .then((hits) => {
+          if (!abort.signal.aborted) setSearchHits(hits);
+        })
+        .catch(() => {
+          if (!abort.signal.aborted) setSearchHits([]);
+        })
+        .finally(() => {
+          if (!abort.signal.aborted) setSearchLoading(false);
+        });
+    }, 200);
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [query, searching]);
+
   const visible = useMemo(() => filterBots(bots, query), [bots, query]);
+  const listData = useMemo((): InboxItem[] => {
+    if (query.trim() && searching) {
+      return searchHits.map((hit) => ({ type: "search", hit }));
+    }
+    return groupBotsForSidebar(visible, botSections).flatMap((group) => [
+      ...(group.title ? [{ type: "heading" as const, key: group.key, title: group.title }] : []),
+      ...group.bots.map((bot) => ({ type: "bot" as const, bot })),
+    ]);
+  }, [botSections, query, searching, searchHits, visible]);
   const initials = userInitials(me?.name ?? "");
+  const organizeBot = bots.find((bot) => bot.id === organizeBotId) ?? null;
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -127,9 +189,14 @@ export default function Home() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <FlatList
-        data={visible}
-        keyExtractor={(bot) => bot.id}
+      <FlatList<InboxItem>
+        data={listData}
+        keyExtractor={(item) => {
+          if (item.type === "heading") return `heading-${item.key}`;
+          if (item.type === "bot") return item.bot.id;
+          const hit = item.hit;
+          return `${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
+        }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         indicatorStyle="white"
@@ -145,15 +212,49 @@ export default function Home() {
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {query.trim()
-              ? "No matching bots"
-              : searching
-                ? "Search your bots"
-                : "Tap + to create a bot"}
+            {query.trim() && searching
+              ? searchLoading
+                ? "Searching…"
+                : "No results"
+              : query.trim()
+                ? "No matching bots"
+                : searching
+                  ? "Search conversations, files, and routines"
+                  : "Tap + to create a bot"}
           </Text>
         }
-        renderItem={({ item }) => <BotRow bot={item} />}
+        renderItem={({ item }) =>
+          item.type === "search" ? (
+            <SearchRow
+              hit={item.hit}
+              onPress={() => {
+                setQuery("");
+                setSearchHits([]);
+                router.push(mobileSearchDestination(item.hit));
+              }}
+            />
+          ) : item.type === "heading" ? (
+            <Text style={styles.sectionHeading}>{item.title}</Text>
+          ) : (
+            <BotRow bot={item.bot} onLongPress={() => setOrganizeBotId(item.bot.id)} />
+          )
+        }
       />
+      {organizeBot ? (
+        <BotOrganizeModal
+          bot={organizeBot}
+          sections={botSections}
+          onClose={() => setOrganizeBotId(null)}
+          onUpdate={async (update) => {
+            await rpc("bots/update", { botId: organizeBot.id, ...update });
+            await loadBots();
+          }}
+          onCreateSection={async (name) => {
+            await rpc("botSections/create", { botId: organizeBot.id, name });
+            await loadBots();
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -182,7 +283,28 @@ function CircleButton({
   );
 }
 
-function BotRow({ bot }: { bot: MobileBot }) {
+function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.name} numberOfLines={1}>
+            {hit.title}
+          </Text>
+          <Text style={styles.time}>{hit.kind}</Text>
+        </View>
+        <Text style={styles.preview} numberOfLines={2}>
+          {hit.botName} · {hit.snippet}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void }) {
   const router = useRouter();
   const preview = previewSnippet(bot.preview, 40) || bot.title || "No messages yet";
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
@@ -194,9 +316,11 @@ function BotRow({ bot }: { bot: MobileBot }) {
   return (
     <Pressable
       accessibilityLabel={label}
+      accessibilityHint="Long press to pin or move to a section"
       onPress={() =>
         router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
       }
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
       <BotAvatar color={bot.color || FALLBACK_COLOR} />
@@ -288,6 +412,14 @@ const styles = StyleSheet.create({
   list: {
     flexGrow: 1,
     paddingBottom: 32,
+  },
+  sectionHeading: {
+    color: native.secondaryLabel,
+    fontSize: 14,
+    fontWeight: "600",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
   },
   empty: {
     color: native.secondaryLabel,

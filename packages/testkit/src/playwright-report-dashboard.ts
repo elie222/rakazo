@@ -17,7 +17,9 @@ export type PlaywrightRun = {
   createdAt: string;
   event: string;
   id: string;
-  reportUrl: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
+  reportUrl?: string;
   result: string;
   runNumber: number;
   runUrl: string;
@@ -27,10 +29,74 @@ export type PlaywrightRun = {
 };
 
 export type PlaywrightScreenshot = {
+  captureType: "checkpoint" | "failure";
+  comparison: "changed" | "new" | "unavailable" | "unchanged";
   fileName: string;
+  hash: string;
   source: string;
+  testId: string;
   title: string;
 };
+
+export type PlaywrightScreenshotManifest = {
+  attempt?: number;
+  id?: string;
+  screenshots: PlaywrightScreenshotMetadata[];
+  version: 1;
+};
+
+export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "comparison" | "fileName">;
+
+export function createScreenshotManifest(
+  screenshots: PlaywrightScreenshot[],
+  run?: { attempt: number; id: string },
+): PlaywrightScreenshotManifest {
+  return {
+    ...(run === undefined ? {} : { attempt: run.attempt, id: run.id }),
+    screenshots: screenshots.map(({ captureType, hash, source, testId, title }) => ({
+      captureType,
+      hash,
+      source,
+      testId,
+      title,
+    })),
+    version: 1,
+  };
+}
+
+export function compareScreenshotsWithBaseline(
+  screenshots: Array<Omit<PlaywrightScreenshot, "comparison">>,
+  baseline: unknown,
+): { baselineAvailable: boolean; screenshots: PlaywrightScreenshot[] } {
+  if (!isScreenshotManifest(baseline)) {
+    return {
+      baselineAvailable: false,
+      screenshots: screenshots.map((screenshot) => ({
+        ...screenshot,
+        comparison: "unavailable",
+      })),
+    };
+  }
+
+  const baselineHashes = new Map(
+    baseline.screenshots.map((screenshot) => [screenshot.source, screenshot.hash]),
+  );
+  return {
+    baselineAvailable: true,
+    screenshots: screenshots.map((screenshot) => {
+      const baselineHash = baselineHashes.get(screenshot.source);
+      return {
+        ...screenshot,
+        comparison:
+          baselineHash === undefined
+            ? "new"
+            : baselineHash === screenshot.hash
+              ? "unchanged"
+              : "changed",
+      };
+    }),
+  };
+}
 
 export function updatePlaywrightHistory(
   existingHistory: unknown,
@@ -48,7 +114,46 @@ export function updatePlaywrightHistory(
     .slice(0, MAX_HISTORY_LENGTH);
 }
 
-function compareRunRecency(left: PlaywrightRun, right: PlaywrightRun): number {
+export function shouldPublishStableMainBaseline(input: {
+  candidate: { attempt: number; id: string };
+  existingBaseline: unknown;
+  history: unknown;
+}): boolean {
+  const history = Array.isArray(input.history) ? input.history.filter(isPlaywrightRun) : [];
+  const latestMain = history.find(
+    (run) => run.event === "push" && run.branch === "main" && run.result === "success",
+  );
+  if (
+    latestMain === undefined ||
+    latestMain.id !== input.candidate.id ||
+    latestMain.attempt !== input.candidate.attempt
+  ) {
+    return false;
+  }
+
+  const existingIdentity = screenshotBaselineIdentity(input.existingBaseline);
+  // An existing manifest without a trustworthy run identity may be newer than
+  // the candidate. Preserve it rather than allowing a delayed run to replace
+  // unknown data; an absent baseline is represented by undefined.
+  if (input.existingBaseline !== undefined && existingIdentity === undefined) {
+    return false;
+  }
+  return (
+    existingIdentity === undefined || compareRunRecency(input.candidate, existingIdentity) <= 0
+  );
+}
+
+function screenshotBaselineIdentity(value: unknown): { attempt: number; id: string } | undefined {
+  if (!isScreenshotManifest(value)) return undefined;
+  if (typeof value.id !== "string" || !/^\d+$/.test(value.id)) return undefined;
+  if (typeof value.attempt !== "number") return undefined;
+  return { attempt: value.attempt, id: value.id };
+}
+
+function compareRunRecency(
+  left: { attempt: number; id: string },
+  right: { attempt: number; id: string },
+): number {
   const leftId = BigInt(left.id);
   const rightId = BigInt(right.id);
   if (leftId !== rightId) return leftId > rightId ? -1 : 1;
@@ -136,13 +241,18 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
     const generatedAt = document.querySelector("#generated-at");
     const latestReport = document.querySelector("#latest-report");
     const latestScreenshots = document.querySelector("#latest-screenshots");
+    const latestWithReport = history.find((run) => run.reportUrl);
 
     if (history.length === 0) {
       empty.hidden = false;
       latestReport.hidden = true;
       latestScreenshots.hidden = true;
     } else {
-      latestReport.href = history[0].reportUrl;
+      if (latestWithReport) {
+        latestReport.href = latestWithReport.reportUrl;
+      } else {
+        latestReport.hidden = true;
+      }
       latestScreenshots.href = history[0].screenshotsUrl;
     }
 
@@ -184,7 +294,9 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       commit.className = "mono";
       commit.textContent = run.sha.slice(0, 7);
       const event = document.createElement("td");
-      event.textContent = run.event + " · " + run.branch;
+      event.textContent = run.pullRequestNumber
+        ? "PR #" + run.pullRequestNumber + " · " + run.branch
+        : run.event + " · " + run.branch;
       const screenshotCount = document.createElement("td");
       screenshotCount.textContent = String(run.screenshotCount);
       const published = document.createElement("td");
@@ -195,13 +307,23 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       const screenshots = document.createElement("a");
       screenshots.href = run.screenshotsUrl;
       screenshots.textContent = "Screenshots";
-      const report = document.createElement("a");
-      report.href = run.reportUrl;
-      report.textContent = "Report";
       const actions = document.createElement("a");
       actions.href = run.runUrl;
       actions.textContent = "Actions";
-      linkList.append(screenshots, report, actions);
+      linkList.append(screenshots);
+      if (run.reportUrl) {
+        const report = document.createElement("a");
+        report.href = run.reportUrl;
+        report.textContent = "Report";
+        linkList.append(report);
+      }
+      if (run.pullRequestUrl) {
+        const pullRequest = document.createElement("a");
+        pullRequest.href = run.pullRequestUrl;
+        pullRequest.textContent = "PR";
+        linkList.append(pullRequest);
+      }
+      linkList.append(actions);
       links.append(linkList);
 
       row.append(result, runNumber, commit, event, screenshotCount, published, links);
@@ -217,27 +339,62 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
 }
 
 export function renderScreenshotGallery(input: {
+  baselineAvailable: boolean;
   createdAt: string;
   dashboardUrl: string;
-  reportUrl: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
+  reportUrl?: string;
   result: string;
   runUrl: string;
   screenshots: PlaywrightScreenshot[];
+  screenshotsUrl: string;
   sha: string;
 }): string {
+  const galleryBaseUrl = new URL(".", input.screenshotsUrl);
+  const counts = {
+    changed: input.screenshots.filter((screenshot) => screenshot.comparison === "changed").length,
+    failed: input.screenshots.filter((screenshot) => screenshot.captureType === "failure").length,
+    new: input.screenshots.filter((screenshot) => screenshot.comparison === "new").length,
+  };
+  const reviewCount = input.screenshots.filter(
+    (screenshot) =>
+      screenshot.captureType === "failure" ||
+      screenshot.comparison === "changed" ||
+      screenshot.comparison === "new",
+  ).length;
   const screenshots = input.screenshots
-    .map(
-      (screenshot, index) => `
-        <figure>
-          <a href="${escapeHtml(screenshot.fileName)}" target="_blank" rel="noreferrer">
-            <img src="${escapeHtml(screenshot.fileName)}" alt="${escapeHtml(screenshot.title)}" loading="lazy" />
+    .map((screenshot, index) => {
+      const imageUrl = new URL(screenshot.fileName, galleryBaseUrl).toString();
+      const badges = [
+        screenshot.captureType === "failure"
+          ? '<span class="badge failure">FAILED</span>'
+          : '<span class="badge checkpoint">CHECKPOINT</span>',
+        screenshot.comparison === "new"
+          ? '<span class="badge new">NEW</span>'
+          : screenshot.comparison === "changed"
+            ? '<span class="badge changed">CHANGED</span>'
+            : screenshot.comparison === "unchanged"
+              ? '<span class="badge unchanged">UNCHANGED</span>'
+              : '<span class="badge unavailable">NO BASELINE</span>',
+      ].join("");
+      return `
+        <figure data-capture="${screenshot.captureType}" data-comparison="${screenshot.comparison}">
+          <a href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer">
+            <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(screenshot.title)}" loading="lazy" />
           </a>
           <figcaption>
             <span class="number">${String(index + 1).padStart(2, "0")}</span>
-            <span><strong>${escapeHtml(screenshot.title)}</strong><small>${escapeHtml(screenshot.source)}</small></span>
+            <span class="caption-copy">
+              <span class="badges">${badges}</span>
+              <strong>${escapeHtml(screenshot.title)}</strong>
+              <small>${screenshot.captureType === "failure" ? "Automatic failure capture" : "Intentional test checkpoint"} · ${escapeHtml(screenshot.testId)}</small>
+              <small title="${escapeHtml(screenshot.source)}">${escapeHtml(screenshot.source)}</small>
+              <small>SHA-256 ${escapeHtml(screenshot.hash.slice(0, 12))}</small>
+            </span>
           </figcaption>
-        </figure>`,
-    )
+        </figure>`;
+    })
     .join("");
 
   return `<!doctype html>
@@ -253,6 +410,11 @@ export function renderScreenshotGallery(input: {
     main { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 80px; }
     header { margin-bottom: 30px; }
     .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: -10px 0 24px; }
+    .filter { padding: 8px 12px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 999px; color: #d4d4d8; background: rgba(9, 9, 11, 0.7); cursor: pointer; }
+    .filter:hover { border-color: #a78bfa; }
+    .filter[aria-pressed="true"] { border-color: #8b5cf6; color: #fff; background: #4c1d95; }
+    .filter:disabled { opacity: 0.45; cursor: not-allowed; }
     .meta { display: flex; flex-wrap: wrap; gap: 10px; }
     .pill { padding: 8px 12px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 999px; color: #d4d4d8; background: rgba(9, 9, 11, 0.7); }
     .view-options { display: inline-flex; flex: 0 0 auto; gap: 4px; padding: 4px; border: 1px solid rgba(113, 113, 122, 0.45); border-radius: 10px; background: rgba(9, 9, 11, 0.7); }
@@ -266,12 +428,20 @@ export function renderScreenshotGallery(input: {
     figure > a { display: grid; min-height: 300px; place-items: center; padding: 12px; background: #18181b; }
     img { display: block; width: 100%; max-height: 820px; object-fit: contain; object-position: top; border-radius: 10px; }
     figcaption { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-top: 1px solid rgba(63, 63, 70, 0.72); }
-    figcaption span:last-child { min-width: 0; }
+    .caption-copy { min-width: 0; }
     figcaption strong, figcaption small { display: block; }
     figcaption strong { text-transform: capitalize; }
     figcaption small { margin-top: 4px; overflow: hidden; color: #71717a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .badge { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; }
+    .badge.failure { color: #fecdd3; background: #881337; }
+    .badge.checkpoint { color: #ddd6fe; background: #4c1d95; }
+    .badge.new { color: #bbf7d0; background: #14532d; }
+    .badge.changed { color: #fde68a; background: #713f12; }
+    .badge.unchanged, .badge.unavailable { color: #d4d4d8; background: #3f3f46; }
     .number { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #ddd6fe; background: #2e1065; font-size: 0.78rem; font-weight: 700; }
     .empty { padding: 80px 24px; border: 1px solid rgba(113, 113, 122, 0.38); border-radius: 18px; color: #a1a1aa; text-align: center; background: rgba(9, 9, 11, 0.78); }
+    .filter-empty { margin-top: 20px; }
     @media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }
       .toolbar { align-items: start; flex-direction: column; }
@@ -285,11 +455,12 @@ export function renderScreenshotGallery(input: {
     <header>
       <div>
         <p class="eyebrow">Rakazo · visual review</p>
-        <h1>Run screenshots</h1>
-        <p class="subtitle">Scan every captured product state from this Playwright run.</p>
+        <h1>${input.pullRequestNumber ? `PR #${input.pullRequestNumber} screenshots` : "Run screenshots"}</h1>
+        <p class="subtitle">Review intentional checkpoints separately from automatic failure captures.</p>
       </div>
       <div class="actions">
-        <a class="button" href="${escapeHtml(input.reportUrl)}">Full report</a>
+        ${input.reportUrl ? `<a class="button" href="${escapeHtml(input.reportUrl)}">Full report</a>` : ""}
+        ${input.pullRequestUrl ? `<a class="button" href="${escapeHtml(input.pullRequestUrl)}">PR #${input.pullRequestNumber}</a>` : ""}
         <a class="button" href="${escapeHtml(input.runUrl)}">GitHub Actions</a>
         <a class="button" href="${escapeHtml(input.dashboardUrl)}">All runs</a>
       </div>
@@ -299,6 +470,7 @@ export function renderScreenshotGallery(input: {
         <span class="pill">${escapeHtml(input.result)}</span>
         <span class="pill">${escapeHtml(input.sha.slice(0, 7))}</span>
         <span class="pill">${input.screenshots.length} screenshots</span>
+        <span class="pill">${input.baselineAvailable ? "Compared with latest successful main run" : "No comparable main baseline"}</span>
         <span class="pill">${escapeHtml(new Date(input.createdAt).toLocaleString("en-US", { timeZone: "UTC" }))} UTC</span>
       </section>
       ${
@@ -320,10 +492,25 @@ export function renderScreenshotGallery(input: {
           : ""
       }
     </div>
+    ${
+      screenshots
+        ? `<nav class="filters" aria-label="Screenshot filters">
+      <button class="filter" type="button" data-filter="all" aria-pressed="${String(!input.baselineAvailable)}">All (${input.screenshots.length})</button>
+      <button class="filter" type="button" data-filter="review" aria-pressed="${String(input.baselineAvailable)}">Review changes (${reviewCount})</button>
+      <button class="filter" type="button" data-filter="new" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>New (${counts.new})</button>
+      <button class="filter" type="button" data-filter="changed" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>Changed (${counts.changed})</button>
+      <button class="filter" type="button" data-filter="failed" aria-pressed="false">Failed (${counts.failed})</button>
+    </nav>`
+        : ""
+    }
     ${screenshots ? `<section class="gallery">${screenshots}</section>` : '<div class="empty">No screenshots were produced by this run.</div>'}
+    ${screenshots ? '<div class="empty filter-empty" hidden>No screenshots match this filter.</div>' : ""}
   </main>
   <script>
     const gallery = document.querySelector(".gallery");
+    const figures = Array.from(document.querySelectorAll("figure"));
+    const filters = Array.from(document.querySelectorAll(".filter"));
+    const filterEmpty = document.querySelector(".filter-empty");
     const viewOptions = Array.from(document.querySelectorAll(".view-option"));
     const storageKey = "rakazo-playwright-gallery-columns";
 
@@ -351,6 +538,27 @@ export function renderScreenshotGallery(input: {
     for (const option of viewOptions) {
       option.addEventListener("click", () => setGalleryColumns(option.dataset.columns, true));
     }
+
+    function setFilter(filter) {
+      let visible = 0;
+      for (const figure of figures) {
+        const show = filter === "all" ||
+          (filter === "review" && (figure.dataset.capture === "failure" || ["new", "changed"].includes(figure.dataset.comparison))) ||
+          (filter === "failed" && figure.dataset.capture === "failure") ||
+          filter === figure.dataset.capture || filter === figure.dataset.comparison;
+        figure.hidden = !show;
+        if (show) visible += 1;
+      }
+      for (const button of filters) {
+        button.setAttribute("aria-pressed", String(button.dataset.filter === filter));
+      }
+      if (filterEmpty) filterEmpty.hidden = visible !== 0;
+    }
+
+    setFilter(${JSON.stringify(input.baselineAvailable ? "review" : "all")});
+    for (const filter of filters) {
+      filter.addEventListener("click", () => setFilter(filter.dataset.filter));
+    }
   </script>
 </body>
 </html>`;
@@ -367,13 +575,39 @@ function isPlaywrightRun(value: unknown): value is PlaywrightRun {
     typeof run.event === "string" &&
     typeof run.id === "string" &&
     /^\d+$/.test(run.id) &&
-    isHttpsUrl(run.reportUrl) &&
+    (run.reportUrl === undefined || isHttpsUrl(run.reportUrl)) &&
+    (run.pullRequestNumber === undefined ||
+      (Number.isInteger(run.pullRequestNumber) && run.pullRequestNumber > 0)) &&
+    (run.pullRequestUrl === undefined || isHttpsUrl(run.pullRequestUrl)) &&
+    ((run.pullRequestNumber === undefined && run.pullRequestUrl === undefined) ||
+      (run.pullRequestNumber !== undefined && run.pullRequestUrl !== undefined)) &&
     typeof run.result === "string" &&
     typeof run.runNumber === "number" &&
     isHttpsUrl(run.runUrl) &&
     typeof run.screenshotCount === "number" &&
     isHttpsUrl(run.screenshotsUrl) &&
     typeof run.sha === "string"
+  );
+}
+
+function isScreenshotManifest(value: unknown): value is PlaywrightScreenshotManifest {
+  if (!value || typeof value !== "object") return false;
+  const manifest = value as Partial<PlaywrightScreenshotManifest>;
+  return (
+    manifest.version === 1 &&
+    Array.isArray(manifest.screenshots) &&
+    manifest.screenshots.every((screenshot) => {
+      if (!screenshot || typeof screenshot !== "object") return false;
+      const candidate = screenshot as Partial<PlaywrightScreenshotMetadata>;
+      return (
+        (candidate.captureType === "checkpoint" || candidate.captureType === "failure") &&
+        typeof candidate.hash === "string" &&
+        /^[a-f0-9]{64}$/.test(candidate.hash) &&
+        typeof candidate.source === "string" &&
+        typeof candidate.testId === "string" &&
+        typeof candidate.title === "string"
+      );
+    })
   );
 }
 

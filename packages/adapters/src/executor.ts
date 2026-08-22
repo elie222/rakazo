@@ -3,6 +3,7 @@ import type {
   AgentHomeStore,
   AgentModelOAuthCredential,
   AgentRuntime,
+  ArtifactStore,
   ComputerRef,
   ConnectorProvider,
   JobPublisher,
@@ -11,17 +12,23 @@ import type {
   NotificationProvider,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   assertTransition,
+  blocksToAgentHistoryText,
   containsSecret,
   createStreamingRedactor,
+  formatSkillRunPrompt,
+  inferAttachmentMimeType,
   isTerminal,
   nextCronDate,
   nextFence,
+  promptInvokesSkill,
   redactSecrets,
   sandboxCommandTimeoutMs,
+  userTurnBlocksForRun,
 } from "@rakazo/core";
 import {
   createThreadMessage,
@@ -32,7 +39,13 @@ import {
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
-import { collectLogIds } from "./composio-connector.js";
+import {
+  collectLogIds,
+  mergeConnectedPlugins,
+  needsLivePluginSync,
+  type PluginConnectionRow,
+  planLiveConnectionSync,
+} from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
@@ -53,6 +66,14 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import {
+  COMPACTION_BATCH_SIZE,
+  formatRecalledMemory,
+  HISTORY_WINDOW_SIZE,
+  historyWindowSize,
+  LEGACY_HISTORY_WINDOW_SIZE,
+  shouldEnqueueCompaction,
+} from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -63,6 +84,17 @@ import {
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
+import {
+  isSupermemoryEnabled,
+  searchSupermemory,
+  supermemoryContainerTag,
+} from "./supermemory-client.js";
+import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
+import {
+  attachWorkspaceFileToThread,
+  currentTurnFilesInstruction,
+  materializeCurrentTurnFiles,
+} from "./thread-artifacts.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
 const READ_ONLY_AGENT_TOOLS = new Set([
@@ -73,7 +105,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-const MAX_AGENT_HISTORY_MESSAGES = 200;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -88,6 +119,7 @@ export interface ExecutorDeps {
   sandbox: SandboxProvider;
   memory: MemoryStore;
   home: AgentHomeStore;
+  artifacts?: ArtifactStore;
   connector?: ConnectorProvider;
   secrets: string[];
   secretStore?: EncryptedSecretStore;
@@ -95,6 +127,7 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
+  listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
 }
 
 export async function deferFutureRoutine(
@@ -105,6 +138,47 @@ export async function deferFutureRoutine(
   if (scheduledAt.getTime() <= Date.now() + 1_000) return false;
   await jobs.enqueue(routineWakeupJob(routineId, scheduledAt));
   return true;
+}
+
+async function loadLivePluginSlugs(
+  listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
+  userId: string,
+): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
+  if (!listConnectedPluginSlugs) return { ok: false };
+  try {
+    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function persistLivePluginConnections(
+  prisma: PrismaClient,
+  owner: { userId: string; workspaceId: string },
+  rows: PluginConnectionRow[],
+  liveSlugs: string[],
+): Promise<void> {
+  const sync = planLiveConnectionSync(rows, liveSlugs);
+  if (sync.connectIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.connectIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "connected" },
+    });
+  }
+  if (sync.revokeIds.length > 0) {
+    await prisma.connection.updateMany({
+      where: {
+        id: { in: sync.revokeIds },
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      },
+      data: { status: "revoked" },
+    });
+  }
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -265,7 +339,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, connectedPlugins, credential, settings] =
+        const [bot, thread, messages, task, storedConnections, credential, settings, savedSkills] =
           await Promise.all([
             deps.prisma.bot.findUniqueOrThrow({
               where: { id: run.botId },
@@ -275,19 +349,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
             deps.prisma.message.findMany({
               where: { threadId: run.threadId },
               orderBy: { seq: "desc" },
-              take: MAX_AGENT_HISTORY_MESSAGES,
-              select: { role: true, blocks: true },
+              take: LEGACY_HISTORY_WINDOW_SIZE,
+              select: { role: true, runId: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
             deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
-              select: { provider: true, displayName: true },
+              where: { userId: run.userId, workspaceId: run.workspaceId },
+              select: { id: true, provider: true, displayName: true, status: true },
             }),
             findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+            deps.prisma.taughtSkill.findMany({
+              where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+            }),
           ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        let liveSlugs: string[] = [];
+        if (needsLivePluginSync(storedConnections)) {
+          const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          if (listing.ok) {
+            liveSlugs = listing.slugs;
+            await persistLivePluginConnections(
+              deps.prisma,
+              run,
+              storedConnections,
+              listing.slugs,
+            ).catch(() => undefined);
+          }
+        }
+        const connectedPlugins = mergeConnectedPlugins(storedConnections, liveSlugs);
         const context = {
           operationId: runId,
           traceId: runId,
@@ -310,14 +401,43 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
         const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
-        const history = [...messages].reverse().map((m) => ({
+        let history = [...messages].reverse().map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
             | "assistant"
             | "system",
-          content: blocksToText(m.blocks as MessageBlock[]),
+          content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
         }));
+        const turnBlocks = userTurnBlocksForRun(
+          run.trigger,
+          runId,
+          messages.map((message) => ({
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          })),
+        );
+        const currentTurnImages = await loadCurrentTurnImages(deps, turnBlocks, context);
         const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
+        const supermemoryEnabled = isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY);
+        let recalledMemory = "";
+        let recallSucceeded = false;
+        if (supermemoryEnabled && thread.historyCompactedUpToSeq != null) {
+          const recalled = await searchSupermemory(task.prompt, supermemoryContainerTag(bot.id));
+          if (recalled.ok) {
+            recallSucceeded = true;
+            recalledMemory = formatRecalledMemory(recalled.results);
+          } else {
+            console.error("supermemory recall failed", recalled.error);
+          }
+        }
+        history = history.slice(
+          -historyWindowSize({
+            supermemoryEnabled,
+            compacted: thread.historyCompactedUpToSeq != null,
+            recallSucceeded,
+          }),
+        );
         const resolved = await resolveModelKey(
           deps,
           run.userId,
@@ -332,6 +452,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         screenRelease = { computer, context };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
+        const currentTurnFiles = deps.artifacts
+          ? await materializeCurrentTurnFiles(
+              { prisma: deps.prisma, artifacts: deps.artifacts, sandbox: deps.sandbox },
+              turnBlocks,
+              { context, computer, computerMode },
+            )
+          : [];
+        const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
         const builtins = graphical
@@ -391,11 +519,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return result;
           };
           if (name === "computer_observe") {
+            if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
+              return { error: "Teaching is in progress. Stop teaching before using the computer." };
+            }
             return computerScreenToolResult(async () =>
               formatObservation(await deps.sandbox.observe(computer, context)),
             );
           }
           if (name === "computer_act") {
+            if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
+              return { error: "Teaching is in progress. Stop teaching before using the computer." };
+            }
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
                 computer,
@@ -477,6 +611,46 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true, path: filePath });
+          }
+          if (name === "attach_file") {
+            const filePath = String(args.path ?? "");
+            if (!deps.artifacts) {
+              return finish({ error: "artifact storage unavailable", path: filePath });
+            }
+            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
+            let bytes: Uint8Array;
+            try {
+              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
+                maxBytes: ATTACHMENT_MAX_BYTES,
+              });
+            } catch {
+              return finish({ error: "file not found or unreadable", path: filePath });
+            }
+            const mimeType = inferAttachmentMimeType(filePath);
+            if (!mimeType) {
+              return finish({ error: "unsupported attachment type", path: filePath });
+            }
+            try {
+              const attached = await attachWorkspaceFileToThread(
+                { prisma: deps.prisma, artifacts: deps.artifacts },
+                {
+                  workspaceId: run.workspaceId,
+                  userId: run.userId,
+                  botId: bot.id,
+                  runId: run.id,
+                  filePath,
+                  bytes,
+                  operationId: executionId,
+                },
+              );
+              await publishMessage(deps, run, "bot", [attached.block]);
+              return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
+            } catch (error) {
+              return finish({
+                error: error instanceof Error ? error.message : "could not attach file",
+                path: filePath,
+              });
+            }
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
@@ -673,6 +847,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
           connectedPlugins.length > 0
             ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.provider})`).join(", ")}. Use those plugin tools when the user asks about those apps.`
             : "No plugins are connected yet.";
+        const taughtSkillIndex = savedSkills.slice(0, 20);
+        const taughtSkillsLine =
+          taughtSkillIndex.length > 0
+            ? `Saved taught skills:\n${taughtSkillIndex
+                .map((skill) => {
+                  const playbook = parsePlaybook(skill.playbook);
+                  const name = skill.name || skill.goal.slice(0, 80);
+                  return `- ${name}: ${playbook.whenToUse || skill.goal}`;
+                })
+                .join(
+                  "\n",
+                )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
+            : undefined;
+        const taskPrompt = [task.prompt, attachedFilesPrompt].filter(Boolean).join("\n\n");
+        const invokedSkill = savedSkills.find((skill) =>
+          promptInvokesSkill(taskPrompt, skill.name || skill.goal),
+        );
+        const prompt = invokedSkill
+          ? `${formatSkillRunPrompt(
+              invokedSkill.name || invokedSkill.goal.slice(0, 80),
+              parsePlaybook(invokedSkill.playbook),
+            )}\n\n${taskPrompt}`
+          : taskPrompt;
 
         try {
           for await (const event of deps.runtime.run(
@@ -680,10 +877,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               threadId: thread.id,
               runId,
-              prompt: task.prompt,
+              prompt,
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
+                recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
                 `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
@@ -691,11 +889,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
+                taughtSkillsLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
               history,
+              currentTurnImages,
               tools,
               model: {
                 provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
@@ -959,6 +1159,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
               threadId: thread.id,
             });
           }
+          // Last, and never fatal: the run is already finalized, so a failure here must not reach
+          // the catch block below, where a second finalizeRun would match no rows and silently
+          // skip the completion notification.
+          if (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)) {
+            try {
+              const updatedThread = await deps.prisma.thread.findUniqueOrThrow({
+                where: { id: thread.id },
+                select: { nextMessageSeq: true, historyCompactedUpToSeq: true },
+              });
+              if (
+                shouldEnqueueCompaction(
+                  updatedThread.nextMessageSeq,
+                  updatedThread.historyCompactedUpToSeq,
+                  HISTORY_WINDOW_SIZE,
+                  COMPACTION_BATCH_SIZE,
+                )
+              ) {
+                await deps.jobs.enqueue(historyCompactJob(thread.id));
+              }
+            } catch (error) {
+              console.error("history.compact enqueue failed", error);
+            }
+          }
         } catch (error) {
           if (!terminalCheckpointComplete) {
             await checkpointAndRecordComputerWorkspace(
@@ -1077,7 +1300,9 @@ async function notifyRun(
       botId: run.botId,
       signal: new AbortController().signal,
     })
-    .catch(() => undefined);
+    .catch((error) => {
+      console.error("run notification", error);
+    });
 }
 
 async function renewRunLease(
@@ -1310,11 +1535,46 @@ async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Pr
   }
 }
 
-function blocksToText(blocks: MessageBlock[]): string {
-  return blocks
-    .map((block) => {
-      if ("text" in block && block.text) return block.text;
-      return JSON.stringify(block);
-    })
-    .join("\n");
+async function loadCurrentTurnImages(
+  deps: ExecutorDeps,
+  blocks: MessageBlock[] | undefined,
+  context: {
+    operationId: string;
+    traceId: string;
+    workspaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+) {
+  if (!deps.artifacts || !blocks?.length) return undefined;
+  const imageBlocks = blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "image" }> => block.kind === "image",
+  );
+  if (!imageBlocks.length) return undefined;
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: imageBlocks.map((block) => block.artifactId) },
+      workspaceId: context.workspaceId,
+      botId: context.botId,
+    },
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const images: NonNullable<import("@rakazo/adapter-kit").AgentRunRequest["currentTurnImages"]> =
+    [];
+
+  for (const block of imageBlocks) {
+    const row = byId.get(block.artifactId);
+    if (!row || !isAttachmentImageMimeType(block.mimeType)) continue;
+    const bytes = await deps.artifacts.get(row.storageKey, context);
+    images.push({
+      name: block.name,
+      mimeType: block.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      data: bytes,
+    });
+  }
+
+  return images.length ? images : undefined;
 }

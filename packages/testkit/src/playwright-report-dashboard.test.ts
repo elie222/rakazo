@@ -1,10 +1,66 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareScreenshotsWithBaseline,
+  createScreenshotManifest,
   type PlaywrightRun,
+  type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
+  shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
 } from "./playwright-report-dashboard.js";
+
+describe("compareScreenshotsWithBaseline", () => {
+  it("marks matching, changed, and new screenshots using source and SHA-256", () => {
+    const unchanged = getScreenshot({ hash: "a".repeat(64), source: "test-a/checkpoint.png" });
+    const changed = getScreenshot({ hash: "b".repeat(64), source: "test-b/checkpoint.png" });
+    const added = getScreenshot({ hash: "c".repeat(64), source: "test-c/checkpoint.png" });
+    const baseline = createScreenshotManifest([
+      { ...unchanged, comparison: "unavailable" },
+      { ...changed, comparison: "unavailable", hash: "d".repeat(64) },
+    ]);
+
+    expect(compareScreenshotsWithBaseline([unchanged, changed, added], baseline)).toEqual({
+      baselineAvailable: true,
+      screenshots: [
+        { ...unchanged, comparison: "unchanged" },
+        { ...changed, comparison: "changed" },
+        { ...added, comparison: "new" },
+      ],
+    });
+  });
+
+  it("does not claim screenshots are new when the baseline is unavailable or invalid", () => {
+    const screenshot = getScreenshot();
+
+    expect(compareScreenshotsWithBaseline([screenshot], undefined)).toEqual({
+      baselineAvailable: false,
+      screenshots: [{ ...screenshot, comparison: "unavailable" }],
+    });
+    expect(
+      compareScreenshotsWithBaseline([screenshot], {
+        screenshots: [{ ...screenshot, hash: "not-a-sha256" }],
+        version: 1,
+      }),
+    ).toEqual({
+      baselineAvailable: false,
+      screenshots: [{ ...screenshot, comparison: "unavailable" }],
+    });
+  });
+
+  it("ignores run identity when comparing screenshot hashes", () => {
+    const screenshot = getScreenshot();
+    const baseline = createScreenshotManifest([{ ...screenshot, comparison: "unavailable" }], {
+      attempt: 1,
+      id: "100",
+    });
+
+    expect(compareScreenshotsWithBaseline([screenshot], baseline)).toEqual({
+      baselineAvailable: true,
+      screenshots: [{ ...screenshot, comparison: "unchanged" }],
+    });
+  });
+});
 
 describe("updatePlaywrightHistory", () => {
   it("places the current attempt first and replaces an existing copy", () => {
@@ -61,6 +117,97 @@ describe("updatePlaywrightHistory", () => {
       ),
     ).toEqual([currentRun]);
   });
+
+  it("keeps screenshot-only pull request runs", () => {
+    const pullRequestRun = getRun({
+      branch: "external-contributor-branch",
+      event: "pull_request",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      reportUrl: undefined,
+    });
+
+    expect(updatePlaywrightHistory([], pullRequestRun)).toEqual([pullRequestRun]);
+  });
+});
+
+describe("shouldPublishStableMainBaseline", () => {
+  const screenshot = getScreenshot();
+
+  it("publishes when this successful main run is the newest and no baseline exists", () => {
+    const current = getRun({ id: "300", runNumber: 12 });
+    const pullRequest = getRun({
+      event: "pull_request",
+      id: "250",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      reportUrl: undefined,
+    });
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: undefined,
+        history: updatePlaywrightHistory([pullRequest], current),
+      }),
+    ).toBe(true);
+  });
+
+  it("does not let an older or rerun main replace a newer published baseline", () => {
+    const newest = getRun({ attempt: 2, id: "300", runNumber: 12 });
+    const delayed = getRun({ id: "250", runNumber: 10 });
+    const history = updatePlaywrightHistory([newest], delayed);
+    const newerBaseline = createScreenshotManifest(
+      [{ ...screenshot, comparison: "unavailable" }],
+      newest,
+    );
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: delayed,
+        existingBaseline: newerBaseline,
+        history,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: delayed,
+        existingBaseline: newerBaseline,
+        history: [delayed],
+      }),
+    ).toBe(false);
+  });
+
+  it("preserves an identity-less baseline but replaces an older identified baseline", () => {
+    const current = getRun({ id: "300", runNumber: 12 });
+    const previous = getRun({ id: "200", runNumber: 9 });
+    const history = updatePlaywrightHistory([previous], current);
+
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: createScreenshotManifest([{ ...screenshot, comparison: "unavailable" }]),
+        history,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: null,
+        history,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPublishStableMainBaseline({
+        candidate: current,
+        existingBaseline: createScreenshotManifest(
+          [{ ...screenshot, comparison: "unavailable" }],
+          previous,
+        ),
+        history,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("renderPlaywrightDashboard", () => {
@@ -71,7 +218,7 @@ describe("renderPlaywrightDashboard", () => {
 
     expect(html).not.toContain("</script><script>alert(1)</script>");
     expect(html).toContain("\\u003c/script>\\u003cscript>alert(1)\\u003c/script>");
-    expect(html).toContain("latestReport.href = history[0].reportUrl");
+    expect(html).toContain("latestReport.href = latestWithReport.reportUrl");
     expect(html).toContain("latestScreenshots.href = history[0].screenshotsUrl");
   });
 });
@@ -79,6 +226,7 @@ describe("renderPlaywrightDashboard", () => {
 describe("renderScreenshotGallery", () => {
   it("renders scan-friendly images and escapes labels", () => {
     const html = renderScreenshotGallery({
+      baselineAvailable: true,
       createdAt: "2026-08-16T10:00:00.000Z",
       dashboardUrl: "https://example.com/playwright/index.html",
       reportUrl: "https://example.com/report",
@@ -86,27 +234,86 @@ describe("renderScreenshotGallery", () => {
       runUrl: "https://github.com/example/repository/actions/runs/200",
       screenshots: [
         {
+          captureType: "checkpoint",
+          comparison: "new",
           fileName: "images/001-shell.png",
+          hash: "a".repeat(64),
           source: "golden/<script>.png",
+          testId: "golden shell",
           title: "main <script>alert(1)</script>",
         },
       ],
+      screenshotsUrl: "https://example.com/playwright/runs/200-1/screenshots/index.html",
       sha: "abcdef1234567890",
     });
 
-    expect(html).toContain('src="images/001-shell.png"');
+    expect(html).toContain(
+      'src="https://example.com/playwright/runs/200-1/screenshots/images/001-shell.png"',
+    );
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("main &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).toContain("repeat(var(--gallery-columns, 1), minmax(0, 1fr))");
     expect(html).toContain('data-columns="1" aria-label="One column" aria-pressed="true"');
     expect(html).toContain('data-columns="4" aria-label="Four columns" aria-pressed="false"');
     expect(html).toContain("initialColumns = localStorage.getItem(storageKey) || initialColumns");
+    expect(html).toContain('<span class="badge checkpoint">CHECKPOINT</span>');
+    expect(html).toContain('<span class="badge new">NEW</span>');
+    expect(html).toContain('data-filter="review" aria-pressed="true"');
+    expect(html).toContain("Compared with latest successful main run");
     expect(html).toContain(`@media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }
       .toolbar { align-items: start; flex-direction: column; }
       .view-options { display: none; }
       .gallery { grid-template-columns: 1fr; }
     }`);
+  });
+
+  it("links a pull request without exposing an untrusted HTML report", () => {
+    const html = renderScreenshotGallery({
+      baselineAvailable: false,
+      createdAt: "2026-08-16T10:00:00.000Z",
+      dashboardUrl: "https://example.com/playwright/index.html",
+      pullRequestNumber: 59,
+      pullRequestUrl: "https://github.com/example/repository/pull/59",
+      result: "success",
+      runUrl: "https://github.com/example/repository/actions/runs/200",
+      screenshots: [],
+      screenshotsUrl: "https://example.com/playwright/runs/200-1/screenshots/index.html",
+      sha: "abcdef1234567890",
+    });
+
+    expect(html).toContain('href="https://github.com/example/repository/pull/59">PR #59</a>');
+    expect(html).not.toContain("Full report");
+    expect(html).toContain("PR #59 screenshots");
+  });
+
+  it("clearly labels automatic failure captures without inventing a comparison", () => {
+    const html = renderScreenshotGallery({
+      baselineAvailable: false,
+      createdAt: "2026-08-16T10:00:00.000Z",
+      dashboardUrl: "https://example.com/playwright/index.html",
+      result: "failure",
+      runUrl: "https://github.com/example/repository/actions/runs/200",
+      screenshots: [
+        {
+          captureType: "failure",
+          comparison: "unavailable",
+          fileName: "images/001-test-failed-1.png",
+          hash: "f".repeat(64),
+          source: "approval-chromium/test-failed-1.png",
+          testId: "approval chromium",
+          title: "test failed 1",
+        },
+      ],
+      screenshotsUrl: "https://example.com/playwright/runs/200-1/screenshots/index.html",
+      sha: "abcdef1234567890",
+    });
+
+    expect(html).toContain('<span class="badge failure">FAILED</span>');
+    expect(html).toContain('<span class="badge unavailable">NO BASELINE</span>');
+    expect(html).toContain("Automatic failure capture");
+    expect(html).toContain('data-filter="all" aria-pressed="true"');
+    expect(html).toContain('data-filter="new" aria-pressed="false" disabled');
   });
 });
 
@@ -124,6 +331,20 @@ function getRun(overrides: Partial<PlaywrightRun> = {}): PlaywrightRun {
     screenshotCount: 12,
     screenshotsUrl: "https://example.com/playwright/runs/200-1/screenshots/index.html",
     sha: "abcdef1234567890",
+    ...overrides,
+  };
+}
+
+function getScreenshot(
+  overrides: Partial<Omit<PlaywrightScreenshot, "comparison">> = {},
+): Omit<PlaywrightScreenshot, "comparison"> {
+  return {
+    captureType: "checkpoint",
+    fileName: "images/001-checkpoint.png",
+    hash: "a".repeat(64),
+    source: "golden-chromium/checkpoint.png",
+    testId: "golden chromium",
+    title: "checkpoint",
     ...overrides,
   };
 }

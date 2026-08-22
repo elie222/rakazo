@@ -15,6 +15,7 @@ export const BotSchema = z.object({
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
+  sectionId: Id.nullable(),
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
@@ -24,8 +25,19 @@ export const BotSchema = z.object({
   computerMode: ComputerModeSchema,
   updatedAt: z.string(),
   createdAt: z.string(),
+  voiceId: z.string().nullable(),
+  autoSpeak: z.boolean(),
 });
 export type Bot = z.infer<typeof BotSchema>;
+
+export const BotSectionSchema = z.object({
+  id: Id,
+  name: z.string(),
+  position: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type BotSection = z.infer<typeof BotSectionSchema>;
 
 export const CreateBotInput = z.object({
   name: z.string().min(1).max(80),
@@ -47,6 +59,9 @@ export const UpdateBotInput = z.object({
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
   pinned: z.boolean().optional(),
+  sectionId: Id.nullable().optional(),
+  voiceId: z.string().max(120).nullable().optional(),
+  autoSpeak: z.boolean().optional(),
 });
 
 export const RoutineSchema = z.object({
@@ -73,6 +88,63 @@ export const CreateRoutineInput = z.object({
   notify: z.boolean().default(true),
   active: z.boolean().default(false),
 });
+
+export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
+export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
+
+export const SkillPlaybookSchema = z.object({
+  whenToUse: z.string(),
+  inputs: z.array(z.string()),
+  steps: z.array(z.string()),
+  howToCheck: z.string(),
+  whatToReturn: z.string(),
+  approvalBoundaries: z.string(),
+  failureHandling: z.string(),
+});
+export type SkillPlaybook = z.infer<typeof SkillPlaybookSchema>;
+
+export const TeachRecordingEventSchema = z.object({
+  at: z.string(),
+  kind: z.enum(["pointer", "key", "clipboard", "snapshot", "scroll"]),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  button: z.string().optional(),
+  type: z.string().optional(),
+  key: z.string().optional(),
+  text: z.string().optional(),
+  summary: z.string().optional(),
+});
+export type TeachRecordingEvent = z.infer<typeof TeachRecordingEventSchema>;
+
+export const TeachSnapshotSchema = z.object({
+  at: z.string(),
+  summary: z.string(),
+  hash: z.string().optional(),
+});
+export type TeachSnapshot = z.infer<typeof TeachSnapshotSchema>;
+
+export const TeachRecordingSchema = z.object({
+  events: z.array(TeachRecordingEventSchema),
+  snapshots: z.array(TeachSnapshotSchema),
+  controlLeaseId: z.string().optional(),
+});
+export type TeachRecording = z.infer<typeof TeachRecordingSchema>;
+
+export const TaughtSkillSchema = z.object({
+  id: Id,
+  botId: Id,
+  name: z.string(),
+  goal: z.string(),
+  status: TaughtSkillStatusSchema,
+  playbook: SkillPlaybookSchema,
+  recording: TeachRecordingSchema,
+  startedAt: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  stoppedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type TaughtSkill = z.infer<typeof TaughtSkillSchema>;
 
 export const MemoryDocumentSchema = z.object({
   id: Id,
@@ -126,6 +198,11 @@ export const ArtifactSchema = z.object({
   createdAt: z.string(),
 });
 
+export const ArtifactWithContentSchema = ArtifactSchema.extend({
+  contentBase64: z.string(),
+});
+export type ArtifactWithContent = z.infer<typeof ArtifactWithContentSchema>;
+
 export const UsageRecordSchema = z.object({
   id: Id,
   botId: Id.nullable(),
@@ -145,6 +222,8 @@ export const ComputerStatusSchema = z.object({
   controlHolder: z.enum(["bot", "user", "none"]),
   controlBotId: Id.nullable(),
   screenAvailable: z.boolean(),
+  screenWidth: z.number().int().positive(),
+  screenHeight: z.number().int().positive(),
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
 });
@@ -156,7 +235,7 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn"]),
+  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill"]),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -205,6 +284,40 @@ export const ModelCatalogEntrySchema = z.object({
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
+export const VoiceCatalogEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  transcribe: z.boolean(),
+});
+export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
+
+export const VoiceInfoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string().optional(),
+});
+export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
+
+export const VoiceCredentialSchema = z.object({
+  id: Id,
+  provider: z.string(),
+  hasKey: z.boolean(),
+  isDefault: z.boolean(),
+  voiceId: z.string(),
+  transcribe: z.boolean(),
+});
+export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;
+
+export const VoiceStatusSchema = z.object({
+  configured: z.boolean(),
+  ready: z.boolean(),
+  transcribe: z.boolean(),
+  provider: z.string().nullable(),
+  voiceId: z.string(),
+});
+export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;
+
 export const DeploymentSettingsSchema = z.object({
   ownerUserId: Id.nullable(),
   signupsEnabled: z.boolean(),
@@ -233,6 +346,7 @@ export type Me = z.infer<typeof MeSchema>;
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
   bots: z.array(BotSchema),
+  botSections: z.array(BotSectionSchema),
   archivedBots: z.array(BotSchema),
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),

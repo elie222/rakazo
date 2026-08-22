@@ -1,6 +1,8 @@
 import type { ComputerMode } from "@rakazo/contracts";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
+export const SCREEN_URL_OPEN_ATTEMPTS = 5;
+export const SCREEN_URL_RETRY_DELAY_MS = 400;
 
 export type ComputerStatus = {
   state: string;
@@ -18,6 +20,33 @@ function isLocalHostname(hostname: string) {
     hostname === "[::1]" ||
     hostname === "::1"
   );
+}
+
+export async function readScreenUrl(
+  request: () => Promise<{ url: string | null }>,
+  options: {
+    attempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<string | null> {
+  const attempts = Math.max(1, options.attempts ?? 1);
+  const delayMs = options.delayMs ?? SCREEN_URL_RETRY_DELAY_MS;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const screen = await request();
+      if (screen.url) return screen.url;
+      lastError = undefined;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < attempts) await sleep(delayMs);
+  }
+  if (lastError) throw lastError;
+  return null;
 }
 
 /** Point a loopback noVNC URL at the same host the app uses for the API. */

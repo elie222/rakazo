@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -21,7 +22,7 @@ export class LocalArtifactStore implements ArtifactStore {
   }
 
   async put(artifact: ArtifactPut, context: AdapterContext) {
-    const id = `${context.workspaceId}-${Date.now()}`;
+    const id = randomUUID();
     const dir = path.join(this.root, "artifacts", context.workspaceId);
     await mkdir(dir, { recursive: true });
     const file = path.join(dir, id);

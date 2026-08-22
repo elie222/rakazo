@@ -1,4 +1,4 @@
-import { BotAvatar, Button } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_BOTS,
@@ -7,6 +7,7 @@ import {
   type DemoRoutine,
   type DemoScreen,
 } from "../demo";
+import { LandingBotAvatar } from "./LandingBotAvatar";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -329,6 +330,8 @@ export function ProductDemo() {
   const [bots, setBots] = useState<LiveBot[]>(cloneBots);
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("computer");
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
@@ -339,6 +342,8 @@ export function ProductDemo() {
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<number[]>([]);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const widePanelRef = useRef(true);
   const booting = bootPct > 0;
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
@@ -381,6 +386,41 @@ export function ProductDemo() {
   }, []);
 
   useEffect(() => {
+    const query = window.matchMedia("(max-width: 860px)");
+    const sync = () => setCompact(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  // Phone widths show one screen at a time, so the bot list starts hidden behind
+  // the hamburger and the side panel stays closed until asked for. Growing the
+  // window back restores however the panel was left at wide widths: this effect
+  // only runs when `compact` flips, so it closes over that render's panelOpen.
+  useEffect(() => {
+    if (compact) {
+      widePanelRef.current = panelOpen;
+      setPanelOpen(false);
+    } else {
+      setMenuOpen(false);
+      setPanelOpen(widePanelRef.current);
+    }
+  }, [compact]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (!takeover && !booting) {
       return;
     }
@@ -404,6 +444,16 @@ export function ProductDemo() {
       callback();
     }, delayMs);
     timersRef.current.push(timer);
+  }
+
+  function closeMenu() {
+    if (!menuOpen) {
+      return;
+    }
+    setMenuOpen(false);
+    // The drawer is hidden from the focus order once closed, so hand focus back
+    // to the control that opened it.
+    menuButtonRef.current?.focus();
   }
 
   function openComputer() {
@@ -536,6 +586,7 @@ export function ProductDemo() {
     setBots((current) => [bot, ...current]);
     setActiveId(bot.id);
     setDraft("");
+    closeMenu();
     openSettings();
   }
 
@@ -612,6 +663,7 @@ export function ProductDemo() {
 
   function selectBot(id: string) {
     setActiveId(id);
+    closeMenu();
     if (panelMode === "routine") {
       setPanelMode("computer");
       setRoutineDraft(null);
@@ -643,21 +695,36 @@ export function ProductDemo() {
   return (
     <div className="product-demo">
       <div className={`product-demo__frame${panelOpen ? "" : " is-collapsed"}`}>
-        <aside className="product-demo__sidebar">
+        <aside
+          id="product-demo-bots"
+          className={`product-demo__sidebar${menuOpen ? " is-open" : ""}`}
+          aria-hidden={compact && !menuOpen}
+        >
           <div className="product-demo__chrome">
             <div className="product-demo__traffic" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <button
-              type="button"
-              className="product-demo__new"
-              aria-label="New bot"
-              onClick={startNewBot}
-            >
-              +
-            </button>
+            <span className="product-demo__drawer-title">Bots</span>
+            <div className="product-demo__chrome-actions">
+              <button
+                type="button"
+                className="product-demo__new"
+                aria-label="New bot"
+                onClick={startNewBot}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="product-demo__sidebar-close"
+                aria-label="Hide bots"
+                onClick={closeMenu}
+              >
+                ✕
+              </button>
+            </div>
           </div>
           <label className="product-demo__search">
             <span aria-hidden="true">⌕</span>
@@ -678,7 +745,7 @@ export function ProductDemo() {
                   className={`product-demo__bot-row${isActive ? " is-active" : ""}`}
                   onClick={() => selectBot(bot.id)}
                 >
-                  <BotAvatar color={bot.color} size={34} />
+                  <LandingBotAvatar color={bot.color} size={38} />
                   <span className="product-demo__bot-copy">
                     <span className="product-demo__bot-meta">
                       <span className="product-demo__bot-name">{bot.name}</span>
@@ -696,12 +763,44 @@ export function ProductDemo() {
           </div>
         </aside>
 
+        {menuOpen ? (
+          <button
+            type="button"
+            className="product-demo__scrim"
+            aria-label="Hide bots"
+            onClick={closeMenu}
+          />
+        ) : null}
+
         <main className="product-demo__main">
           <div className="product-demo__topbar">
-            <button type="button" className="product-demo__name-btn" onClick={openSettings}>
-              <BotAvatar color={active.color} size={24} />
-              <span className="product-demo__active-name">{active.name}</span>
-            </button>
+            <div className="product-demo__topbar-left">
+              <button
+                type="button"
+                ref={menuButtonRef}
+                className="product-demo__menu-btn"
+                aria-label="Show bots"
+                aria-expanded={menuOpen}
+                aria-controls="product-demo-bots"
+                onClick={() => setMenuOpen(true)}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </button>
+              <button type="button" className="product-demo__name-btn" onClick={openSettings}>
+                <LandingBotAvatar color={active.color} size={28} />
+                <span className="product-demo__active-name">{active.name}</span>
+              </button>
+            </div>
             <button
               type="button"
               className="product-demo__panel-toggle"
@@ -854,7 +953,7 @@ export function ProductDemo() {
             {panelMode === "settings" ? (
               <div className="product-demo__settings">
                 <div className="product-demo__settings-avatar">
-                  <BotAvatar color={active.color} size={64} />
+                  <LandingBotAvatar color={active.color} size={72} />
                 </div>
                 <label className="product-demo__field">
                   Name
@@ -1097,7 +1196,7 @@ export function ProductDemo() {
               <div className="product-demo__takeover">
                 <div className="product-demo__takeover-bar">
                   <div className="product-demo__takeover-who">
-                    <BotAvatar color={active.color} size={28} />
+                    <LandingBotAvatar color={active.color} size={32} />
                     <span>{active.name}’s computer</span>
                     <span className="product-demo__takeover-pill">You have control</span>
                   </div>
