@@ -27,6 +27,7 @@ const describeWithDatabase = hasDb ? describe : describe.skip;
 describeWithDatabase("API authorization and resource isolation", () => {
   let handles: AppHandles;
   let app: App;
+  let deploymentOwnerCookie: string;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
 
@@ -41,6 +42,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       signupsEnabled: "true",
     });
     app = handles.app;
+    deploymentOwnerCookie = await signup(
+      app,
+      `deployment-owner-fixture-${stamp}@rakazo.test`,
+      "Deployment Owner Fixture",
+    );
   });
 
   afterAll(async () => {
@@ -521,7 +527,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   });
 
   it("lets a custom endpoint keep multiple labeled API keys", async () => {
-    const cookie = await signup(app, `model-keys-${stamp}@rakazo.test`, "Model Keys");
+    const cookie = deploymentOwnerCookie;
     const actor = await rpc<Actor>(app, cookie, "me");
     const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
       provider: "openai-compatible",
@@ -644,7 +650,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 0;
     try {
-      const cookie = await signup(app, `model-coverage-${stamp}@rakazo.test`, "Model Coverage");
+      const cookie = deploymentOwnerCookie;
       const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
         provider: "openai-compatible",
         apiKey: "gemini-key-xxxx-xxxx",
@@ -687,6 +693,152 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
+    }
+  });
+
+  it("keeps concurrent key probes attached to the key that supplied them", async () => {
+    let releaseSlow = () => undefined;
+    let markSlowStarted = () => undefined;
+    const slowRelease = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const slowStarted = new Promise<void>((resolve) => {
+      markSlowStarted = resolve;
+    });
+    const server = createServer(async (req, res) => {
+      const auth = String(req.headers.authorization ?? "");
+      const slow = auth.includes("slow-probe-key");
+      if (slow) {
+        markSlowStarted();
+        await slowRelease;
+      }
+      const id = slow ? "slow-model" : "fast-model";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const connected = await rpc<ModelCredential>(app, deploymentOwnerCookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "",
+        label: "Concurrent key router",
+        modelId: "slow-model",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      const slowRequest = rpc<ModelCredential>(app, deploymentOwnerCookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "slow-probe-key-xxxx",
+        label: "Slow key",
+      });
+      await slowStarted;
+      await rpc<ModelCredential>(app, deploymentOwnerCookie, "models/addKey", {
+        provider: connected.provider,
+        apiKey: "fast-probe-key-xxxx",
+        label: "Fast key",
+      });
+      releaseSlow();
+      await slowRequest;
+
+      const listed = await rpc<ModelCredential[]>(app, deploymentOwnerCookie, "models/credentials");
+      const updated = listed.find((credential) => credential.provider === connected.provider)!;
+      expect(updated.keys.find((key) => key.label === "Slow key")?.availableModels).toEqual([
+        "slow-model",
+      ]);
+      expect(updated.keys.find((key) => key.label === "Fast key")?.availableModels).toEqual([
+        "fast-model",
+      ]);
+    } finally {
+      releaseSlow();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("blocks non-owner users from probing or saving private-network endpoints", async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "private-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const baseUrl = `http://127.0.0.1:${port}/v1`;
+    try {
+      const cookie = await signup(app, `private-probe-${stamp}@rakazo.test`, "Private Probe");
+      const probe = await raw(app, cookie, "models/probe", {
+        baseUrl,
+        apiKey: "fake-private-probe-key",
+      });
+      expect(probe.status).toBeGreaterThanOrEqual(400);
+      expect(await probe.text()).toMatch(/private.network|deployment.owner/i);
+
+      const connect = await raw(app, cookie, "models/connect", {
+        provider: "openai-compatible",
+        apiKey: "fake-private-connect-key",
+        label: "Private endpoint",
+        modelId: "private-model",
+        baseUrl,
+      });
+      expect(connect.status).toBeGreaterThanOrEqual(400);
+      expect(await connect.text()).toMatch(/private.network|deployment.owner/i);
+      expect(requests).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("does not let another user inspect or mutate endpoint keys", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "owner-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const ownerCredential = await rpc<ModelCredential>(
+        app,
+        deploymentOwnerCookie,
+        "models/connect",
+        {
+          provider: "openai-compatible",
+          apiKey: "fake-owner-endpoint-key",
+          label: "Owner endpoint",
+          modelId: "owner-model",
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+        },
+      );
+      const ownerKey = ownerCredential.keys[0]!;
+      const intruder = await signup(app, `model-key-intruder-${stamp}@rakazo.test`, "Intruder");
+      const secretCount = await handles.prisma.secret.count();
+
+      for (const [procedure, input] of [
+        ["models/addKey", { provider: ownerCredential.provider, apiKey: "fake-intruder-key" }],
+        ["models/removeKey", { provider: ownerCredential.provider, keyId: ownerKey.id }],
+        ["models/setActiveKey", { provider: ownerCredential.provider, keyId: ownerKey.id }],
+        ["models/refreshKeys", { provider: ownerCredential.provider }],
+      ] satisfies Array<[string, unknown]>) {
+        await expectDenied(app, intruder, procedure, input);
+      }
+
+      expect(
+        await handles.prisma.userModelCredentialKey.findUnique({ where: { id: ownerKey.id } }),
+      ).toMatchObject({ credentialId: ownerCredential.id, isActive: true });
+      expect(await handles.prisma.secret.count()).toBe(secretCount);
+      expect(await rpc<ModelCredential[]>(app, intruder, "models/credentials")).not.toContainEqual(
+        expect.objectContaining({ provider: ownerCredential.provider }),
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   });
 

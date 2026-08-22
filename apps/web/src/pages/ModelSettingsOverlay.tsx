@@ -295,7 +295,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     try {
       await rpc.models.setActiveKey({ provider: selected.provider, keyId });
       await refresh();
-      setNotice("This key is now used for the endpoint.");
+      setNotice("This key is the fallback when a model is not on any other key.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not switch API key");
     } finally {
@@ -567,7 +567,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         onChange={(event) => setApiKey(event.target.value)}
                         placeholder="sk-…"
                         type="password"
-                        autoComplete="off"
+                        autoComplete="new-password"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                       />
                     </label>

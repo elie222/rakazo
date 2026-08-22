@@ -11,6 +11,10 @@ CREATE TABLE "user_model_credential_keys" (
 CREATE INDEX "user_model_credential_keys_credentialId_createdAt_id_idx"
 ON "user_model_credential_keys"("credentialId", "createdAt", "id");
 
+CREATE UNIQUE INDEX "user_model_credential_keys_one_active_idx"
+ON "user_model_credential_keys"("credentialId")
+WHERE "isActive" = TRUE;
+
 ALTER TABLE "user_model_credential_keys"
 ADD CONSTRAINT "user_model_credential_keys_credentialId_fkey"
 FOREIGN KEY ("credentialId") REFERENCES "user_model_credentials"("id")

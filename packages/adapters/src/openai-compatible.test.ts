@@ -1,5 +1,7 @@
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import {
+  fetchOpenAICompatibleModels,
   GATEWAY_PROVIDER_PREFIX,
   isGatewayProvider,
   labelForDiscoveredModels,
@@ -22,6 +24,80 @@ describe("openai-compatible gateways", () => {
 
   it("rejects non-http URLs", () => {
     expect(() => normalizeOpenAICompatibleBaseUrl("ftp://example.com")).toThrow(/http/);
+    expect(() => normalizeOpenAICompatibleBaseUrl("https://user:pass@example.com/v1")).toThrow(
+      /credentials/,
+    );
+  });
+
+  it("blocks private-network model probes unless deployment-owner access is explicit", async () => {
+    let requests = 0;
+    const server = createServer((_request, response) => {
+      requests += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "local-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const baseUrl = `http://127.0.0.1:${port}/v1`;
+    try {
+      await expect(fetchOpenAICompatibleModels(baseUrl, "fake-probe-key")).rejects.toThrow(
+        /deployment-owner/,
+      );
+      expect(requests).toBe(0);
+      await expect(
+        fetchOpenAICompatibleModels(baseUrl, "fake-probe-key", undefined, {
+          allowPrivateNetwork: true,
+        }),
+      ).resolves.toEqual(["local-model"]);
+      expect(requests).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("does not forward an API key across model-discovery origins", async () => {
+    let forwardedAuthorization = "";
+    const destination = createServer((request, response) => {
+      forwardedAuthorization = String(request.headers.authorization ?? "");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "redirected-model" }] }));
+    });
+    await new Promise<void>((resolve) => destination.listen(0, "127.0.0.1", resolve));
+    const destinationAddress = destination.address();
+    const destinationPort =
+      typeof destinationAddress === "object" && destinationAddress ? destinationAddress.port : 0;
+    const source = createServer((_request, response) => {
+      response.writeHead(302, {
+        location: `http://127.0.0.1:${destinationPort}/v1/models`,
+      });
+      response.end();
+    });
+    await new Promise<void>((resolve) => source.listen(0, "127.0.0.1", resolve));
+    const sourceAddress = source.address();
+    const sourcePort = typeof sourceAddress === "object" && sourceAddress ? sourceAddress.port : 0;
+    try {
+      await expect(
+        fetchOpenAICompatibleModels(
+          `http://127.0.0.1:${sourcePort}/v1`,
+          "fake-origin-key",
+          undefined,
+          { allowPrivateNetwork: true },
+        ),
+      ).resolves.toEqual(["redirected-model"]);
+      expect(forwardedAuthorization).toBe("");
+    } finally {
+      await Promise.all(
+        [source, destination].map(
+          (server) =>
+            new Promise<void>((resolve, reject) =>
+              server.close((error) => (error ? reject(error) : resolve())),
+            ),
+        ),
+      );
+    }
   });
 
   it("round-trips model lists and recognizes gateway provider ids", () => {

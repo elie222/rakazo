@@ -1452,7 +1452,7 @@ async function runSandboxCommand(
   return { stdout, stderr, code };
 }
 
-async function resolveModelKey(
+export async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
   workspaceId: string,
@@ -1476,7 +1476,9 @@ async function resolveModelKey(
     }
     return withModelCredentialLock(secretId, async () => {
       const row = await deps.prisma.secret.findUnique({ where: { id: secretId } });
-      if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
+      // A missing personal secret must never fall through to the deployment-wide key,
+      // especially when the credential points at a user-controlled custom endpoint.
+      if (!row) return { redact: [] };
       const plaintext = deps.secretStore!.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {

@@ -542,11 +542,13 @@ export default function Models() {
                       autoCorrect={false}
                       autoComplete="off"
                       editable={!busy}
+                      importantForAutofill="no"
                       onChangeText={setApiKey}
                       placeholder="sk-…"
                       placeholderTextColor={native.tertiaryLabel}
                       secureTextEntry
                       style={styles.keyInput}
+                      textContentType="none"
                       value={apiKey}
                     />
                     <Pressable

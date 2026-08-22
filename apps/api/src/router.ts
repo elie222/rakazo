@@ -17,6 +17,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertOpenAICompatibleEndpointAllowed,
   type ComposioProvider,
   ComputerBusyError,
   type ComputerExecutionLease,
@@ -2031,9 +2032,15 @@ async function persistModelCredential(
 ) {
   throwIfAborted(input.signal);
   const plaintext = input.plaintext.trim();
-  const appendKey = Boolean(input.appendKey || (input.baseUrl && plaintext));
-  const makeDefault = input.setDefault !== false;
   const existing = await findWorkspaceModelCredential(deps.prisma, actor, input.provider);
+  const baseUrl =
+    input.baseUrl && input.baseUrl !== existing?.baseUrl
+      ? await assertOpenAICompatibleEndpointAllowed(input.baseUrl, {
+          allowPrivateNetwork: actor.isDeploymentOwner,
+        })
+      : input.baseUrl;
+  const appendKey = Boolean(input.appendKey || (baseUrl && plaintext));
+  const makeDefault = input.setDefault !== false;
   if (!plaintext && existing && !appendKey) {
     const updated = await withSerializableRetry(() =>
       deps.prisma.$transaction(
@@ -2051,7 +2058,7 @@ async function persistModelCredential(
               label: input.label ?? existing.label,
               isDefault: makeDefault ? true : existing.isDefault,
               defaultModel: input.modelId || existing.defaultModel || deps.env.defaultModel,
-              baseUrl: input.baseUrl ?? existing.baseUrl,
+              baseUrl: baseUrl ?? existing.baseUrl,
               availableModels:
                 input.availableModels !== undefined
                   ? serializeAvailableModels(input.availableModels)
@@ -2131,6 +2138,11 @@ async function persistModelCredential(
         }
 
         if (appendKey && isGatewayProvider(current.provider)) {
+          if (current.keys.length >= 20) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "A custom endpoint can store at most 20 API keys.",
+            });
+          }
           const previousSecretId = current.secretId;
           if (current.keys.length) {
             await tx.userModelCredentialKey.updateMany({
@@ -2153,7 +2165,7 @@ async function persistModelCredential(
               secretId: secret.id,
               isDefault: makeDefault ? true : current.isDefault,
               defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
-              baseUrl: input.baseUrl ?? current.baseUrl,
+              baseUrl: baseUrl ?? current.baseUrl,
               availableModels:
                 input.availableModels !== undefined
                   ? serializeAvailableModels(input.availableModels)
@@ -2182,7 +2194,7 @@ async function persistModelCredential(
             secretId: secret.id,
             isDefault: makeDefault ? true : current.isDefault,
             defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
-            baseUrl: input.baseUrl ?? current.baseUrl,
+            baseUrl: baseUrl ?? current.baseUrl,
             availableModels:
               input.availableModels !== undefined
                 ? serializeAvailableModels(input.availableModels)
@@ -2199,7 +2211,21 @@ async function persistModelCredential(
   );
   const dto = await loadCredentialDto(deps.prisma, cred.id);
   if (plaintext && isGatewayProvider(dto.provider) && dto.baseUrl) {
-    return discoverModelsForActiveGatewayKey(deps, dto, plaintext, input.keyLabel, input.signal);
+    const savedKey = await deps.prisma.userModelCredentialKey.findFirst({
+      where: { credentialId: cred.id, secretId: stored.id },
+      select: { id: true },
+    });
+    if (savedKey) {
+      return discoverModelsForGatewayKey(
+        deps,
+        dto,
+        savedKey.id,
+        plaintext,
+        input.keyLabel,
+        actor.isDeploymentOwner,
+        input.signal,
+      );
+    }
   }
   return dto;
 }
@@ -2294,29 +2320,31 @@ async function setActiveModelCredentialKey(
   return loadCredentialDto(deps.prisma, updatedId);
 }
 
-async function discoverModelsForActiveGatewayKey(
+async function discoverModelsForGatewayKey(
   deps: RouterDeps,
   credential: ModelCredential,
+  keyId: string,
   plaintext: string,
   requestedLabel: string | undefined,
+  allowPrivateNetwork: boolean,
   signal?: AbortSignal,
 ) {
   if (!credential.baseUrl) return credential;
   throwIfAborted(signal);
-  const discovered = await tryFetchOpenAICompatibleModels(credential.baseUrl, plaintext, signal);
-  const row = await deps.prisma.userModelCredential.findUnique({
-    where: { id: credential.id },
-    include: credentialKeyInclude,
+  const discovered = await tryFetchOpenAICompatibleModels(credential.baseUrl, plaintext, signal, {
+    allowPrivateNetwork,
   });
-  const active = row?.keys.find((key) => key.isActive) ?? row?.keys.at(-1);
-  if (!row || !active) return credential;
+  const key = await deps.prisma.userModelCredentialKey.findFirst({
+    where: { id: keyId, credentialId: credential.id },
+  });
+  if (!key) return loadCredentialDto(deps.prisma, credential.id);
   const nextLabel =
     requestedLabel?.trim() ||
-    (active.label && active.label !== "API key"
-      ? active.label
-      : labelForDiscoveredModels(discovered.models, active.label || "API key"));
-  await deps.prisma.userModelCredentialKey.update({
-    where: { id: active.id },
+    (key.label && key.label !== "API key"
+      ? key.label
+      : labelForDiscoveredModels(discovered.models, key.label || "API key"));
+  await deps.prisma.userModelCredentialKey.updateMany({
+    where: { id: key.id, credentialId: credential.id },
     data: {
       availableModels: serializeAvailableModels(discovered.models),
       probedAt: new Date(),
@@ -2324,8 +2352,12 @@ async function discoverModelsForActiveGatewayKey(
       label: nextLabel,
     },
   });
-  await recomputeCredentialAvailableModels(deps.prisma, row.id, row.availableModels);
-  return loadCredentialDto(deps.prisma, row.id);
+  await recomputeCredentialAvailableModels(
+    deps.prisma,
+    credential.id,
+    serializeAvailableModels(credential.availableModels ?? []),
+  );
+  return loadCredentialDto(deps.prisma, credential.id);
 }
 
 async function refreshGatewayKeyCoverage(
@@ -2345,38 +2377,63 @@ async function refreshGatewayKeyCoverage(
     });
   }
   throwIfAborted(signal);
-  for (const key of credential.keys) {
-    throwIfAborted(signal);
-    const secret = await deps.prisma.secret.findUnique({ where: { id: key.secretId } });
-    if (!secret) {
-      await deps.prisma.userModelCredentialKey.update({
-        where: { id: key.id },
-        data: {
-          availableModels: "",
-          probedAt: new Date(),
-          probeError: "API key is missing.",
-        },
-      });
-      continue;
-    }
-    const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext));
-    const apiKey = parsed.kind === "api_key" ? parsed.key : "";
-    const discovered = apiKey
-      ? await tryFetchOpenAICompatibleModels(credential.baseUrl, apiKey, signal)
-      : { models: [] as string[], error: "This key cannot list models." };
-    const nextLabel =
-      key.label && key.label !== "API key"
-        ? key.label
-        : labelForDiscoveredModels(discovered.models, key.label || "API key");
-    await deps.prisma.userModelCredentialKey.update({
-      where: { id: key.id },
-      data: {
-        availableModels: serializeAvailableModels(discovered.models),
-        probedAt: new Date(),
-        probeError: discovered.error,
-        label: nextLabel,
-      },
-    });
+  for (let offset = 0; offset < credential.keys.length; offset += 4) {
+    await Promise.all(
+      credential.keys.slice(offset, offset + 4).map(async (key) => {
+        throwIfAborted(signal);
+        const secret = await deps.prisma.secret.findFirst({
+          where: {
+            id: key.secretId,
+            userId: actor.userId,
+            workspaceId: actor.workspaceId,
+          },
+        });
+        if (!secret) {
+          await deps.prisma.userModelCredentialKey.updateMany({
+            where: { id: key.id, credentialId: credential.id },
+            data: {
+              availableModels: "",
+              probedAt: new Date(),
+              probeError: "API key is missing.",
+            },
+          });
+          return;
+        }
+        let apiKey = "";
+        try {
+          const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext));
+          apiKey = parsed.kind === "api_key" ? parsed.key : "";
+        } catch {
+          await deps.prisma.userModelCredentialKey.updateMany({
+            where: { id: key.id, credentialId: credential.id },
+            data: {
+              availableModels: "",
+              probedAt: new Date(),
+              probeError: "API key could not be read.",
+            },
+          });
+          return;
+        }
+        const discovered = apiKey
+          ? await tryFetchOpenAICompatibleModels(credential.baseUrl!, apiKey, signal, {
+              allowPrivateNetwork: actor.isDeploymentOwner,
+            })
+          : { models: [] as string[], error: "This key cannot list models." };
+        const nextLabel =
+          key.label && key.label !== "API key"
+            ? key.label
+            : labelForDiscoveredModels(discovered.models, key.label || "API key");
+        await deps.prisma.userModelCredentialKey.updateMany({
+          where: { id: key.id, credentialId: credential.id },
+          data: {
+            availableModels: serializeAvailableModels(discovered.models),
+            probedAt: new Date(),
+            probeError: discovered.error,
+            label: nextLabel,
+          },
+        });
+      }),
+    );
   }
   await recomputeCredentialAvailableModels(deps.prisma, credential.id, credential.availableModels);
   return loadCredentialDto(deps.prisma, credential.id);
