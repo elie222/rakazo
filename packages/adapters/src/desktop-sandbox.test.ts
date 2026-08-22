@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -65,5 +65,25 @@ describe("desktop sandbox", () => {
     }
     expect(code).toBe(0);
     await desktop.destroy(computer, ctx);
+  });
+
+  it("does not follow a final symlink outside the workspace on write", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-write-symlink-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "write-symlink", homePath: "/unused" }, ctx);
+    const outside = path.join(root, "outside.txt");
+    writeFileSync(outside, "before");
+    symlinkSync(outside, path.join(computer.providerRef, "escape.txt"));
+
+    await expect(
+      desktop.writeFile(computer, {
+        path: "escape.txt",
+        content: new TextEncoder().encode("after"),
+      }),
+    ).rejects.toThrow();
+    expect(readFileSync(outside, "utf8")).toBe("before");
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
   });
 });
