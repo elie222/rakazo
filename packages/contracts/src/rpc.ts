@@ -178,15 +178,21 @@ export const appContract = {
   channels: {
     list: oc.output(z.array(ChannelSchema)),
     create: oc
-      .input(z.object({ name: z.string().min(1).max(80), botIds: z.array(Id).default([]) }))
+      .input(z.object({ name: z.string().trim().min(1).max(80), botIds: z.array(Id).default([]) }))
       .output(ChannelSchema),
     get: oc.input(z.object({ channelId: Id })).output(ChannelDetailSchema),
     rename: oc
-      .input(z.object({ channelId: Id, name: z.string().min(1).max(80) }))
+      .input(z.object({ channelId: Id, name: z.string().trim().min(1).max(80) }))
       .output(ChannelSchema),
     setMembers: oc.input(z.object({ channelId: Id, botIds: z.array(Id) })).output(ChannelSchema),
     post: oc
-      .input(z.object({ channelId: Id, text: z.string().min(1).max(8000) }))
+      .input(
+        z.object({
+          channelId: Id,
+          text: z.string().trim().min(1).max(8000),
+          clientNonce: z.string().trim().min(1).max(128),
+        }),
+      )
       .output(ChannelDetailSchema),
     remove: oc.input(z.object({ channelId: Id })).output(z.object({ ok: z.literal(true) })),
   },

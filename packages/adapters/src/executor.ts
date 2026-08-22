@@ -38,7 +38,7 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
-import { postBotChannelMessage } from "./channels.js";
+import { isUnavailableChannelPost, postBotChannelMessage } from "./channels.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -105,6 +105,12 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "request_takeover",
   "run_subagent",
 ]);
+const RETRYABLE_EFFECT_TOOLS = new Set([
+  "spawn_bot",
+  "archive_bot",
+  "delete_bot",
+  "post_to_channel",
+]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
@@ -129,6 +135,38 @@ export interface ExecutorDeps {
   notifications?: NotificationProvider;
   jobs: JobPublisher;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+}
+
+async function ensureChannelRunReply(
+  prisma: PrismaClient,
+  run: {
+    id: string;
+    workspaceId: string;
+    userId: string;
+    botId: string;
+    trigger: string;
+    channelId: string | null;
+  },
+  text: string,
+): Promise<void> {
+  if (run.trigger !== "channel" || !run.channelId) return;
+  const existing = await prisma.channelMessage.findFirst({
+    where: { sourceRunId: run.id },
+    select: { id: true },
+  });
+  if (existing) return;
+  const posted = await postBotChannelMessage(prisma, {
+    workspaceId: run.workspaceId,
+    userId: run.userId,
+    channelId: run.channelId,
+    botId: run.botId,
+    text: text.slice(0, 8000),
+    sourceRunId: run.id,
+    sourceEffectId: `channel-final:${run.id}`,
+  });
+  if ("error" in posted && !isUnavailableChannelPost(posted)) {
+    throw new Error(posted.error);
+  }
 }
 
 export async function deferFutureRoutine(
@@ -511,7 +549,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (applied.effect.status === "completed") {
               return applied.effect.result ?? { duplicate: true };
             }
-            if (name !== "spawn_bot" && name !== "archive_bot" && name !== "delete_bot") {
+            if (!RETRYABLE_EFFECT_TOOLS.has(name)) {
               throw new Error(`tool ${name} has an earlier execution with an uncertain outcome`);
             }
           }
@@ -799,10 +837,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "post_to_channel") {
             const posted = await postBotChannelMessage(deps.prisma, {
               workspaceId: run.workspaceId,
+              userId: run.userId,
               channelId: String(args.channel_id ?? args.channelId ?? ""),
               botId: bot.id,
               text: String(args.text ?? ""),
               sourceRunId: runId,
+              sourceEffectId: executionId,
             });
             return finish(posted);
           }
@@ -1167,6 +1207,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+          await ensureChannelRunReply(deps.prisma, run, text);
           const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
@@ -1178,9 +1219,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "completed",
             blocks: [{ kind: "text", text }],
+            publishMessage: run.trigger !== "channel",
           });
           if (!completed) return;
-          if (bot.notifyOnFinish) {
+          if (bot.notifyOnFinish && run.trigger !== "channel") {
             await notifyRun(deps, run, {
               kind: "completion",
               title: `${bot.name} finished`,

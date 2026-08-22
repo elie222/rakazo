@@ -669,13 +669,13 @@ export function createRouter(deps: RouterDeps) {
         renameChannel(deps.prisma, context.actor, input),
       ),
       setMembers: authed.channels.setMembers.handler(({ context, input }) =>
-        setChannelMembers(deps.prisma, context.actor, input),
+        setChannelMembers({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input),
       ),
       post: authed.channels.post.handler(({ context, input }) =>
         postUserChannelMessage({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input),
       ),
       remove: authed.channels.remove.handler(({ context, input }) =>
-        removeChannel(deps.prisma, context.actor, input.channelId),
+        removeChannel({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input.channelId),
       ),
     },
     computer: {

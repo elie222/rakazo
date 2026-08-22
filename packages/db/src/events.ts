@@ -68,7 +68,10 @@ interface FinalizeRunBase {
 }
 
 export type FinalizeRunInput = FinalizeRunBase &
-  ({ outcome: "completed"; blocks: MessageBlock[] } | { outcome: "failed"; error: string });
+  (
+    | { outcome: "completed"; blocks: MessageBlock[]; publishMessage?: boolean }
+    | { outcome: "failed"; error: string }
+  );
 
 export interface PauseRunForInput {
   workspaceId: string;
@@ -528,7 +531,7 @@ export async function finalizeRun(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed") {
+    if (input.outcome === "completed" && input.publishMessage !== false) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "bot",

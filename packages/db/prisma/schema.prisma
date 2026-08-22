@@ -23,6 +23,8 @@ model User {
   voiceCredentials UserVoiceCredential[]
   secrets          Secret[]
   botSections      BotSection[]
+  channels         Channel[]
+  channelMessages  ChannelMessage[]
 
   @@unique([email])
   @@map("user")
@@ -364,6 +366,10 @@ model Run {
   leaseExpiresAt DateTime?
   checkpoint    String?
   clientNonce   String?
+  channelId     String?
+  channel       Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  channelMessageId String?
+  channelMessage ChannelMessage? @relation("ChannelMessageWake", fields: [channelMessageId], references: [id], onDelete: SetNull)
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime  @default(now())
@@ -376,6 +382,8 @@ model Run {
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
   @@index([workspaceId, botId])
+  @@index([channelId, status])
+  @@index([channelMessageId])
   @@map("runs")
 }
 
@@ -704,11 +712,13 @@ model Channel {
   workspaceId String
   workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   members     ChannelMember[]
   messages    ChannelMessage[]
+  runs        Run[]
 
   @@unique([workspaceId, userId, name])
   @@index([workspaceId, userId, updatedAt])
@@ -737,10 +747,17 @@ model ChannelMessage {
   authorBotId String?
   authorBot   Bot?     @relation("ChannelMessageAuthor", fields: [authorBotId], references: [id], onDelete: SetNull)
   userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   text        String
   sourceRunId String?
+  sourceEffectId String?
+  clientNonce String?
   createdAt   DateTime @default(now())
+  wokenRuns   Run[]    @relation("ChannelMessageWake")
 
-  @@index([channelId, createdAt])
+  @@unique([channelId, userId, clientNonce])
+  @@unique([channelId, sourceEffectId])
+  @@index([channelId, createdAt, id])
+  @@index([sourceRunId])
   @@map("channel_messages")
 }

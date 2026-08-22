@@ -1318,6 +1318,22 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
+    const foreignBot = await rpc<Bot>(app, intruder, "bots/create", {
+      name: "Foreign",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    expect(
+      (
+        await raw(app, cookie, "channels/create", {
+          name: "cross-workspace",
+          botIds: [foreignBot.id],
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
 
     const channel = await rpc<ChannelDto>(app, cookie, "channels/create", {
       name: "general",
@@ -1329,9 +1345,11 @@ describeJourneys("required product journeys", () => {
       channel.id,
     );
 
+    const channelPostNonce = `channel-post-${stamp}`;
     const posted = await rpc<ChannelDetailDto>(app, cookie, "channels/post", {
       channelId: channel.id,
       text: "@Alpha can you take the invoice?",
+      clientNonce: channelPostNonce,
     });
     const userMessage = posted.messages.at(-1);
     expect(userMessage?.authorType).toBe("user");
@@ -1348,15 +1366,70 @@ describeJourneys("required product journeys", () => {
     });
     expect(alphaRun.task?.prompt).toContain("#general");
     expect(alphaRun.task?.prompt).toContain(channel.id);
+    expect(alphaRun).toMatchObject({
+      channelId: channel.id,
+      channelMessageId: userMessage?.id,
+    });
+    await rpc<ChannelDetailDto>(app, cookie, "channels/post", {
+      channelId: channel.id,
+      text: "@Alpha can you take the invoice?",
+      clientNonce: channelPostNonce,
+    });
+    expect(
+      await prisma.channelMessage.count({
+        where: { channelId: channel.id, clientNonce: channelPostNonce },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.run.count({ where: { channelMessageId: userMessage!.id, botId: alpha.id } }),
+    ).toBe(1);
+    expect(
+      (
+        await raw(app, cookie, "channels/post", {
+          channelId: channel.id,
+          text: "a different payload",
+          clientNonce: channelPostNonce,
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+    await waitForDatabase(async () => {
+      const current = await prisma.run.findUnique({
+        where: { id: alphaRun.id },
+        select: { status: true },
+      });
+      return Boolean(current && ["completed", "failed", "cancelled"].includes(current.status));
+    });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: alphaRun.id } })).status).toBe(
+      "completed",
+    );
+    expect(await prisma.channelMessage.count({ where: { sourceRunId: alphaRun.id } })).toBe(1);
+    expect(await prisma.message.count({ where: { runId: alphaRun.id } })).toBe(0);
+    expect(await prisma.event.count({ where: { runId: alphaRun.id, type: "run.completed" } })).toBe(
+      1,
+    );
 
     // A bot posts back through the same path the post_to_channel tool uses.
     const me = await rpc<Me>(app, cookie, "me");
     expect(
       await postBotChannelMessage(prisma, {
         workspaceId: me.workspaceId,
+        userId: me.userId,
         channelId: channel.id,
         botId: alpha.id,
         text: "On it.",
+        sourceRunId: alphaRun.id,
+        sourceEffectId: `channel-effect-${stamp}`,
+      }),
+    ).toEqual({ ok: true, channelId: channel.id });
+    expect(
+      await postBotChannelMessage(prisma, {
+        workspaceId: me.workspaceId,
+        userId: me.userId,
+        channelId: channel.id,
+        botId: alpha.id,
+        text: "On it.",
+        sourceRunId: alphaRun.id,
+        sourceEffectId: `channel-effect-${stamp}`,
       }),
     ).toEqual({ ok: true, channelId: channel.id });
     const reply = (
@@ -1370,6 +1443,7 @@ describeJourneys("required product journeys", () => {
     expect(
       await postBotChannelMessage(prisma, {
         workspaceId: me.workspaceId,
+        userId: me.userId,
         channelId: channel.id,
         botId: (
           await rpc<Bot>(app, cookie, "bots/create", {
@@ -1381,6 +1455,8 @@ describeJourneys("required product journeys", () => {
           })
         ).id,
         text: "let me in",
+        sourceRunId: alphaRun.id,
+        sourceEffectId: `outsider-effect-${stamp}`,
       }),
     ).toEqual({ error: "You are not a member of that channel." });
     expect(await rpc<ChannelDto[]>(app, intruder, "channels/list")).toEqual([]);
@@ -1390,7 +1466,13 @@ describeJourneys("required product journeys", () => {
       ).toBeGreaterThanOrEqual(400);
     }
     expect(
-      (await raw(app, intruder, "channels/post", { channelId: channel.id, text: "hi" })).status,
+      (
+        await raw(app, intruder, "channels/post", {
+          channelId: channel.id,
+          text: "hi",
+          clientNonce: `intruder-${stamp}`,
+        })
+      ).status,
     ).toBeGreaterThanOrEqual(400);
 
     const renamed = await rpc<ChannelDto>(app, cookie, "channels/rename", {
@@ -1398,6 +1480,19 @@ describeJourneys("required product journeys", () => {
       name: "invoices",
     });
     expect(renamed.name).toBe("invoices");
+    expect(
+      (
+        await raw(app, cookie, "channels/setMembers", {
+          channelId: channel.id,
+          botIds: [beta.id, foreignBot.id],
+        })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+    expect(
+      (await rpc<ChannelDetailDto>(app, cookie, "channels/get", { channelId: channel.id })).members
+        .map((member) => member.botId)
+        .sort(),
+    ).toEqual([alpha.id, beta.id].sort());
     const trimmed = await rpc<ChannelDto>(app, cookie, "channels/setMembers", {
       channelId: channel.id,
       botIds: [beta.id],
@@ -1408,6 +1503,29 @@ describeJourneys("required product journeys", () => {
       channelId: channel.id,
     });
     expect(afterDrop.messages.some((message) => message.text === "On it.")).toBe(true);
+
+    const historyChannel = await rpc<ChannelDto>(app, cookie, "channels/create", {
+      name: "history",
+      botIds: [],
+    });
+    await prisma.channelMessage.createMany({
+      data: Array.from({ length: 205 }, (_, index) => ({
+        channelId: historyChannel.id,
+        authorType: "user",
+        userId: me.userId,
+        text: `history-${index}`,
+        clientNonce: `history-${stamp}-${index}`,
+        createdAt: new Date(1_800_000_000_000 + index * 1_000),
+      })),
+    });
+    const boundedHistory = await rpc<ChannelDetailDto>(app, cookie, "channels/get", {
+      channelId: historyChannel.id,
+    });
+    expect(boundedHistory.messages).toHaveLength(200);
+    expect(boundedHistory.messages[0]?.text).toBe("history-5");
+    expect(boundedHistory.messages.at(-1)?.text).toBe("history-204");
+    expect(boundedHistory.preview).toBe("history-204");
+    await rpc(app, cookie, "channels/remove", { channelId: historyChannel.id });
 
     await rpc(app, cookie, "channels/remove", { channelId: channel.id });
     expect((await rpc<ChannelDto[]>(app, cookie, "channels/list")).map((c) => c.id)).not.toContain(

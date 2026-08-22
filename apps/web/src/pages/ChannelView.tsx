@@ -27,6 +27,7 @@ export function ChannelView({
   // Escape unmounts the rename input, and the blur that follows would otherwise commit the
   // edit the user just abandoned.
   const renameAbandoned = useRef(false);
+  const pendingPostRef = useRef<{ text: string; clientNonce: string } | null>(null);
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -57,6 +58,7 @@ export function ChannelView({
     setDetail(null);
     setError(null);
     setDraft("");
+    pendingPostRef.current = null;
     setMembersOpen(false);
     setEditingName(false);
     setDeleteOpen(false);
@@ -114,11 +116,15 @@ export function ChannelView({
   async function post() {
     const text = draft.trim();
     if (!text || posting) return;
+    const pending = pendingPostRef.current;
+    const clientNonce = pending?.text === text ? pending.clientNonce : window.crypto.randomUUID();
+    pendingPostRef.current = { text, clientNonce };
     setPosting(true);
     setError(null);
     try {
       const seq = ++requestSeq.current;
-      const next = await rpc.channels.post({ channelId, text });
+      const next = await rpc.channels.post({ channelId, text, clientNonce });
+      pendingPostRef.current = null;
       setDraft("");
       if (seq === requestSeq.current) setDetail(next);
       onChannelChanged();
