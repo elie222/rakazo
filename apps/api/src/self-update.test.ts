@@ -17,6 +17,8 @@ type Row = {
   updateRepoUrl: string | null;
   updateBranch: string | null;
   updateLastRun: string | null;
+  updateLeaseId: string | null;
+  updateLeaseExpiresAt: Date | null;
 };
 
 function fakePrisma(initial: Partial<Row> = {}) {
@@ -24,6 +26,8 @@ function fakePrisma(initial: Partial<Row> = {}) {
     updateRepoUrl: null,
     updateBranch: null,
     updateLastRun: null,
+    updateLeaseId: null,
+    updateLeaseExpiresAt: null,
     ...initial,
   };
   return {
@@ -35,6 +39,34 @@ function fakePrisma(initial: Partial<Row> = {}) {
           Object.assign(row, update);
           return row;
         },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: {
+            updateLeaseId?: string;
+            OR?: Array<{
+              updateLeaseExpiresAt: null | { lte: Date };
+            }>;
+          };
+          data: Partial<Row>;
+        }) => {
+          if (where.updateLeaseId !== undefined && row.updateLeaseId !== where.updateLeaseId) {
+            return { count: 0 };
+          }
+          if (where.OR) {
+            const available = where.OR.some((condition) => {
+              if (condition.updateLeaseExpiresAt === null) return row.updateLeaseExpiresAt === null;
+              return (
+                row.updateLeaseExpiresAt !== null &&
+                row.updateLeaseExpiresAt <= condition.updateLeaseExpiresAt.lte
+              );
+            });
+            if (!available) return { count: 0 };
+          }
+          Object.assign(row, data);
+          return { count: 1 };
+        },
       },
     } as unknown as PrismaClient,
   };
@@ -42,15 +74,20 @@ function fakePrisma(initial: Partial<Row> = {}) {
 
 function recorder(overrides: Record<string, CommandResult> = {}) {
   const calls: Array<{ command: string; args: string[] }> = [];
+  let currentHead = HEAD;
   const runner: CommandRunner = async (command, args) => {
     calls.push({ command, args });
     const key = [command, ...args].join(" ");
     const override = Object.entries(overrides).find(([prefix]) => key.startsWith(prefix));
     if (override) return override[1];
-    if (key === "git rev-parse HEAD") return ok(HEAD);
+    if (key === "git rev-parse HEAD") return ok(currentHead);
     if (key.startsWith("git rev-parse --abbrev-ref")) return ok("main");
     if (key.startsWith("git remote get-url")) return ok("https://github.com/elie222/rakazo.git");
-    if (key.startsWith("git rev-parse origin/")) return ok(TARGET);
+    if (key.startsWith("git rev-parse --verify FETCH_HEAD")) return ok(TARGET);
+    if (key.startsWith("git merge --ff-only")) {
+      currentHead = args.at(-1) ?? currentHead;
+      return ok("");
+    }
     if (key.startsWith("git rev-list")) return ok("3");
     if (key.startsWith("git status")) return ok("");
     return ok("");
@@ -230,7 +267,7 @@ describe("check", () => {
   });
 
   it("reports up to date when the remote points at the same commit", async () => {
-    const { runner } = recorder({ "git rev-parse origin/": ok(HEAD) });
+    const { runner } = recorder({ "git rev-parse --verify FETCH_HEAD": ok(HEAD) });
     expect(await service({ runner }).check()).toMatchObject({
       status: "up-to-date",
       commit: HEAD,
@@ -251,6 +288,19 @@ describe("check", () => {
     expect(result.status).toBe("unavailable");
     expect(result.reason).toContain("could not read Username");
   });
+
+  it("fetches a newly selected repository directly instead of checking the stale origin", async () => {
+    const { prisma } = fakePrisma({ updateRepoUrl: "https://github.com/me/rakazo.git" });
+    const recorded = recorder();
+    await service({ prisma, runner: recorded.runner }).check();
+    expect(recorded.calls.find((call) => call.args[0] === "fetch")?.args).toEqual([
+      "fetch",
+      "--no-tags",
+      "--prune",
+      "https://github.com/me/rakazo.git",
+      "main",
+    ]);
+  });
 });
 
 describe("apply", () => {
@@ -263,7 +313,6 @@ describe("apply", () => {
     expect(record.ok).toBe(true);
     expect(record.steps.map((step) => step.id)).toEqual([
       "fetch",
-      "checkout",
       "merge",
       "install",
       "generate",
@@ -274,6 +323,14 @@ describe("apply", () => {
     expect(exited).toBe(false);
     expect(JSON.parse(row.updateLastRun ?? "null")).toMatchObject({ ok: true });
     expect(calls.every((call) => call.command === "git" || call.command === "pnpm")).toBe(true);
+    expect(calls.find((call) => call.args[0] === "merge")?.args).toEqual([
+      "merge",
+      "--ff-only",
+      TARGET,
+    ]);
+    expect(
+      calls.find((call) => call.command === "pnpm" && call.args[0] === "install")?.args,
+    ).toEqual(["install", "--frozen-lockfile"]);
   });
 
   it("exits for the supervisor to restart once a supervisor is known", async () => {
@@ -330,7 +387,7 @@ describe("apply", () => {
   });
 
   it("does nothing when the checkout is already on the target commit", async () => {
-    const { runner, calls } = recorder({ "git rev-parse origin/": ok(HEAD) });
+    const { runner, calls } = recorder({ "git rev-parse --verify FETCH_HEAD": ok(HEAD) });
     const record = await service({ runner }).apply();
     expect(record).toMatchObject({ ok: true, restart: "not-required", steps: [] });
     expect(calls.some((call) => call.command === "pnpm")).toBe(false);
@@ -343,6 +400,55 @@ describe("apply", () => {
 
   it("refuses when the deployment is not a checkout", async () => {
     await expect(service({ repoRoot: null }).apply()).rejects.toBeInstanceOf(SelfUpdateRefused);
+  });
+
+  it("uses a database lease so two requests cannot update the checkout concurrently", async () => {
+    const { prisma, row } = fakePrisma();
+    const recorded = recorder();
+    let releaseFetch: () => void = () => undefined;
+    let markFetchStarted: () => void = () => undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      markFetchStarted = resolve;
+    });
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    let held = false;
+    const runner: CommandRunner = async (command, args, options) => {
+      if (!held && command === "git" && args[0] === "fetch") {
+        held = true;
+        markFetchStarted();
+        await fetchGate;
+      }
+      return recorded.runner(command, args, options);
+    };
+    const subject = service({ prisma, runner });
+    const first = subject.apply();
+    await fetchStarted;
+    await expect(subject.apply()).rejects.toThrow(/already running/);
+    await expect(subject.check()).rejects.toThrow(/already running/);
+    await expect(
+      subject.setSource({ repoUrl: "https://github.com/me/rakazo", branch: "main" }),
+    ).rejects.toThrow(/running update/);
+    releaseFetch();
+    await expect(first).resolves.toMatchObject({ ok: true });
+    expect(row.updateLeaseId).toBeNull();
+  });
+
+  it("persists an unfinished run before every mutation so process death is visible", async () => {
+    const { prisma, row } = fakePrisma();
+    const recorded = recorder();
+    const runner: CommandRunner = async (command, args, options) => {
+      if (command === "pnpm" && args.includes("build")) throw new Error("simulated process death");
+      return recorded.runner(command, args, options);
+    };
+    await expect(service({ prisma, runner }).apply()).rejects.toThrow(/simulated process death/);
+    expect(JSON.parse(row.updateLastRun ?? "null")).toMatchObject({
+      ok: false,
+      finishedAt: null,
+      steps: expect.arrayContaining([expect.objectContaining({ id: "generate", ok: true })]),
+    });
+    expect(row.updateLeaseId).toBeNull();
   });
 });
 

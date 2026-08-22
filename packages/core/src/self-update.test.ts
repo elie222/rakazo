@@ -49,6 +49,8 @@ describe("normalizeRepoUrl", () => {
       "https://github.com/onlyone",
       "https://github.com/me/../../etc",
       "https://user:secret@github.com/me/rakazo",
+      "https://token@github.com/me/rakazo",
+      "ssh://bad%0auser@github.com/me/rakazo",
       "https://github.com/me/rakazo?x=1",
       "https://github.com/me/rakazo#frag",
       "https://github.com/me/rak azo",
@@ -97,6 +99,11 @@ describe("normalizeUpdateBranch", () => {
       "tip@{1}",
       "bad~1",
       "x:y",
+      ".hidden",
+      "feature/.hidden",
+      "feature//nested",
+      "trailing.",
+      "@",
       "/lead",
       "t/",
       "x.lock",
@@ -122,10 +129,13 @@ describe("parseGitStatusPorcelain", () => {
 
 describe("updateSteps", () => {
   it("orders the work so migrations land immediately before the restart", () => {
-    const steps = updateSteps({ remoteUrl: OFFICIAL_REPO_URL, branch: DEFAULT_UPDATE_BRANCH });
+    const steps = updateSteps({
+      remoteUrl: OFFICIAL_REPO_URL,
+      branch: DEFAULT_UPDATE_BRANCH,
+      targetCommit: "2".repeat(40),
+    });
     expect(steps.map((step) => step.id)).toEqual([
       "fetch",
-      "checkout",
       "merge",
       "install",
       "generate",
@@ -138,6 +148,7 @@ describe("updateSteps", () => {
     const steps = updateSteps({
       remoteUrl: "git@github.com:me/rakazo.git",
       branch: "release/1.2",
+      targetCommit: "2".repeat(40),
       repointRemote: true,
     });
     expect(steps[0]).toEqual({
@@ -149,14 +160,16 @@ describe("updateSteps", () => {
     expect(steps.find((step) => step.id === "merge")?.args).toEqual([
       "merge",
       "--ff-only",
-      "origin/release/1.2",
+      "2".repeat(40),
     ]);
   });
 
   it("never rewrites history, so local commits fail the update instead of vanishing", () => {
-    const args = updateSteps({ remoteUrl: OFFICIAL_REPO_URL, branch: "main" }).flatMap(
-      (step) => step.args,
-    );
+    const args = updateSteps({
+      remoteUrl: OFFICIAL_REPO_URL,
+      branch: "main",
+      targetCommit: "2".repeat(40),
+    }).flatMap((step) => step.args);
     expect(args).not.toContain("--hard");
     expect(args).not.toContain("--force");
     expect(args).toContain("--ff-only");

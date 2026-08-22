@@ -1,4 +1,3 @@
-import type { DesktopUpdateState } from "@rakazo/contracts";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { buildIdentity, clientKind } from "../lib/build-info";
@@ -15,18 +14,12 @@ const POLL_MS = 5 * 60 * 1000;
 export function VersionNotice() {
   const desktop = desktopBridge();
   const [server, setServer] = useState<{ version: string; revision: string | null } | null>(null);
-  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState | null>(null);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [health, update] = await Promise.all([
-      rpc.health().catch(() => null),
-      desktop ? desktop.update.state().catch(() => null) : Promise.resolve(null),
-    ]);
+    const health = await rpc.health().catch(() => null);
     if (health) setServer({ version: health.version, revision: health.revision });
-    if (update) setDesktopUpdate(update);
-  }, [desktop]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -43,28 +36,11 @@ export function VersionNotice() {
     client: buildIdentity,
     clientKind: clientKind(Boolean(desktop)),
     server,
-    desktop: desktopUpdate,
   });
   if (notice === null || notice.key === dismissedKey) return null;
 
-  async function act(current: Notice) {
-    if (current.action === "reload") {
-      window.location.reload();
-      return;
-    }
-    if (!desktop) return;
-    setPending(true);
-    try {
-      const next =
-        current.action === "download-desktop"
-          ? await desktop.update.download()
-          : await desktop.update.install();
-      setDesktopUpdate(next);
-    } catch {
-      setDismissedKey(current.key);
-    } finally {
-      setPending(false);
-    }
+  function act(current: Notice) {
+    if (current.action === "reload") window.location.reload();
   }
 
   return (
@@ -89,11 +65,11 @@ export function VersionNotice() {
       {notice.action && notice.actionLabel ? (
         <button
           type="button"
-          disabled={pending || notice.busy}
-          onClick={() => void act(notice)}
+          disabled={notice.busy}
+          onClick={() => act(notice)}
           className="mt-3 rounded-full border border-[#343438] px-3.5 py-1.5 text-[13px] text-[#ECECEE] hover:bg-[#222226] disabled:opacity-50"
         >
-          {pending ? "Working…" : notice.actionLabel}
+          {notice.actionLabel}
         </button>
       ) : null}
     </div>

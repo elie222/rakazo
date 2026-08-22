@@ -36,11 +36,12 @@ export interface AppEnv {
   selfUpdateDisabled: boolean;
   /** Set only in Compose deployments; unset means the checkout engine or nothing at all. */
   updaterUrl: string | undefined;
-  updaterToken: string;
+  updaterToken: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
+  const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   return {
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
@@ -70,8 +71,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
     selfUpdateDisabled: optional(source.RAKAZO_SELF_UPDATE) === "0",
-    updaterUrl: optional(source.RAKAZO_UPDATER_URL),
-    updaterToken: resolveUpdaterToken(source),
+    updaterUrl,
+    updaterToken: updaterUrl === undefined ? undefined : resolveUpdaterToken(source),
   };
 }
 

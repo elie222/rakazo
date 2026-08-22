@@ -186,7 +186,6 @@ export function ShellPage() {
     outputTokens: number;
     runs: number;
   } | null>(null);
-  const [deploymentOwner, setDeploymentOwner] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
   const routineRunPending = useRef(false);
@@ -1173,7 +1172,7 @@ export function ShellPage() {
                   {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
                 </p>
               ) : null}
-              {deploymentOwner ? (
+              {bootstrapMe?.isDeploymentOwner ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -1200,19 +1199,7 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => {
-              setMenuOpen((open) => {
-                const next = !open;
-                if (next) {
-                  void rpc.usage.summary().then(setUsage);
-                  void rpc
-                    .me()
-                    .then((me) => setDeploymentOwner(me.isDeploymentOwner))
-                    .catch(() => undefined);
-                }
-                return next;
-              });
-            }}
+            onClick={() => setMenuOpen((v) => !v)}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
@@ -1681,15 +1668,6 @@ export function ShellPage() {
               setBotMenu(null);
             }}
           />
-        ) : null}
-
-        {toast ? (
-          <div
-            role="status"
-            className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[#343438] bg-[#1A1A1D] px-4 py-2 text-[13px] text-[#ECECEE] shadow-[0_18px_40px_rgba(0,0,0,.5)]"
-          >
-            {toast}
-          </div>
         ) : null}
 
         <VersionNotice />

@@ -1938,6 +1938,16 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
   };
 }
 
+function computerHostFor(
+  stored: string | null | undefined,
+  sandboxProvider: string,
+): "docker" | "this-mac" | null {
+  if (sandboxProvider === "desktop") return "this-mac";
+  if (sandboxProvider !== "docker") return null;
+  if (stored === "this-mac" || stored === "docker") return stored;
+  return null;
+}
+
 /** A refused update is operator error, not a server fault, so it reads as a message not a 500. */
 async function asBadRequest<T>(work: () => Promise<T>): Promise<T> {
   try {

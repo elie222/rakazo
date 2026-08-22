@@ -101,15 +101,27 @@ describe("loadEnv", () => {
 
   it("has no updater until Compose points it at one", () => {
     expect(loadEnv(base).updaterUrl).toBeUndefined();
-    expect(loadEnv({ ...base, RAKAZO_UPDATER_URL: " http://updater:7092 " }).updaterUrl).toBe(
-      "http://updater:7092",
+    expect(() => loadEnv({ ...base, RAKAZO_UPDATER_URL: " http://updater:7092 " })).toThrow(
+      /RAKAZO_UPDATER_TOKEN/,
     );
+    expect(
+      loadEnv({
+        ...base,
+        RAKAZO_UPDATER_URL: " http://updater:7092 ",
+        RAKAZO_UPDATER_TOKEN: "updater-only",
+      }).updaterUrl,
+    ).toBe("http://updater:7092");
   });
 
-  it("derives the updater token from the auth secret unless one is set", () => {
-    expect(loadEnv(base).updaterToken).toBe(loadEnv(base).authSecret);
-    expect(loadEnv({ ...base, RAKAZO_UPDATER_TOKEN: "updater-only" }).updaterToken).toBe(
-      "updater-only",
-    );
+  it("loads an updater token only for a configured sidecar", () => {
+    expect(loadEnv(base).updaterToken).toBeUndefined();
+    expect(loadEnv({ ...base, RAKAZO_UPDATER_TOKEN: "updater-only" }).updaterToken).toBeUndefined();
+    expect(
+      loadEnv({
+        ...base,
+        RAKAZO_UPDATER_URL: "http://updater:7092",
+        RAKAZO_UPDATER_TOKEN: "updater-only",
+      }).updaterToken,
+    ).toBe("updater-only");
   });
 });

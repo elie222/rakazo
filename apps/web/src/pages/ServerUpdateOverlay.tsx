@@ -122,15 +122,22 @@ export function ServerUpdateOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const busy = pending !== null;
+  const busy = pending !== null || status?.running === true;
   const lastRun = status?.lastRun ?? null;
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex h-[min(760px,100%)] w-[760px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="server-update-title"
+        className="flex h-[min(760px,100%)] w-[760px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+      >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">Server updates</div>
+            <div id="server-update-title" className="text-2xl font-medium text-[#F1F1F2]">
+              Server updates
+            </div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
               {loading
                 ? "Loading deployment state…"
@@ -188,6 +195,13 @@ export function ServerUpdateOverlay({ onClose }: { onClose: () => void }) {
                   <p className="mt-4 text-[13px] leading-[1.5] text-[#85858A]">
                     {status.restartAdvice}
                   </p>
+
+                  {status.running ? (
+                    <p className="mt-3 text-[13px] leading-[1.5] text-[#E65707]">
+                      An update is already running. Controls will unlock when its lease finishes or
+                      expires after an interrupted process.
+                    </p>
+                  ) : null}
 
                   <div className="mt-4 flex flex-wrap items-center gap-3">
                     <Button
@@ -320,7 +334,14 @@ export function ServerUpdateOverlay({ onClose }: { onClose: () => void }) {
                     Last update
                   </div>
                   <div className="mt-1 text-[14px] text-[#ECECEE]">
-                    {lastRun.ok ? "Succeeded" : "Failed"} ·{" "}
+                    {lastRun.finishedAt === null
+                      ? status.running
+                        ? "Running"
+                        : "Interrupted"
+                      : lastRun.ok
+                        ? "Succeeded"
+                        : "Failed"}{" "}
+                    ·{" "}
                     {lastRun.toTag === null
                       ? `${short(lastRun.fromCommit)} → ${short(lastRun.toCommit)}`
                       : `${lastRun.fromTag ?? "unknown"} → ${lastRun.toTag}`}{" "}

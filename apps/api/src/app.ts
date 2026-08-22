@@ -41,7 +41,7 @@ import { mountVoiceHttpRoutes } from "./voice.js";
 function serverVersion(): string {
   try {
     const require = createRequire(import.meta.url);
-    const manifest = require("../package.json") as { version?: string };
+    const manifest = require("../../../package.json") as { version?: string };
     return manifest.version ?? "0.0.0";
   } catch {
     return "0.0.0";
@@ -198,14 +198,15 @@ export async function createApp(
   const version = serverVersion();
   const repoRoot = env.selfUpdateDisabled ? null : await resolveRepoRoot(process.cwd());
   const bootCommit = repoRoot === null ? null : await readHeadCommit(repoRoot);
+  const revision = repoRoot === null ? (env.gitSha ?? null) : (bootCommit ?? env.gitSha ?? null);
   const selfUpdate = createSelfUpdateService({
     prisma,
     version,
-    revision: env.gitSha ?? bootCommit,
+    revision,
     repoRoot,
     disabled: env.selfUpdateDisabled,
     updater:
-      env.selfUpdateDisabled || !env.updaterUrl
+      env.selfUpdateDisabled || !env.updaterUrl || !env.updaterToken
         ? null
         : createUpdaterClient({ url: env.updaterUrl, token: env.updaterToken }),
     unsupportedReason: env.selfUpdateDisabled
@@ -237,7 +238,7 @@ export async function createApp(
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
       version,
-      revision: env.gitSha ?? bootCommit,
+      revision,
     },
   });
   const rpc = new RPCHandler(router);
@@ -285,7 +286,7 @@ export async function createApp(
       composio: Boolean(stack.composio),
       jobs: jobKind,
       realtime: realtime.describe().id,
-      revision: env.gitSha ?? bootCommit,
+      revision,
     }),
   );
 

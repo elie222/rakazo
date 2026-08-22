@@ -19,7 +19,7 @@ import {
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 
 function buildVersion(): string {
-  const manifest = path.resolve(import.meta.dirname, "package.json");
+  const manifest = path.resolve(import.meta.dirname, "../..", "package.json");
   const parsed = JSON.parse(readFileSync(manifest, "utf8")) as { version?: string };
   return parsed.version ?? "0.0.0";
 }
@@ -31,7 +31,6 @@ function buildVersion(): string {
  */
 function buildRevision(fallbackEnv: Record<string, string>): string {
   const declared = (process.env.GIT_SHA ?? fallbackEnv.GIT_SHA ?? "").trim();
-  if (declared !== "") return declared;
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: path.resolve(import.meta.dirname, "../.."),
@@ -39,7 +38,7 @@ function buildRevision(fallbackEnv: Record<string, string>): string {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
-    return "";
+    return declared;
   }
 }
 

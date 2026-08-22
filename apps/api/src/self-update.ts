@@ -1,25 +1,26 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
-import type {
-  ServerUpdateCheck,
-  ServerUpdateRun,
-  ServerUpdateSource,
-  ServerUpdateStatus,
+import {
+  type ServerUpdateCheck,
+  type ServerUpdateRun,
+  ServerUpdateRunSchema,
+  type ServerUpdateSource,
+  type ServerUpdateStatus,
 } from "@rakazo/contracts";
 import {
-  chooseUpdateStrategy,
   DEFAULT_UPDATE_BRANCH,
   DEFAULT_UPDATE_REMOTE,
   decideUpdateAvailability,
   detectRestartSupervisor,
+  isGitCommit,
   isOfficialRepoUrl,
   normalizeRepoUrl,
   normalizeUpdateBranch,
   OFFICIAL_REPO_URL,
   parseGitStatusPorcelain,
   repoIdentity,
-  resolveExecutionMode,
   restartSupervisorAdvice,
   updateSteps,
 } from "@rakazo/core";
@@ -35,7 +36,6 @@ const MAX_STEP_OUTPUT = 8_000;
 const STEP_TIMEOUT_MS: Record<string, number> = {
   remote: 30_000,
   fetch: 180_000,
-  checkout: 60_000,
   merge: 60_000,
   install: 900_000,
   generate: 300_000,
@@ -43,6 +43,40 @@ const STEP_TIMEOUT_MS: Record<string, number> = {
   migrate: 300_000,
 };
 const DEFAULT_TIMEOUT_MS = 120_000;
+const LEASE_MARGIN_MS = 60_000;
+const SIDECAR_LEASE_MS = 46 * 60_000;
+
+type ExecutionMode = "sidecar" | "checkout" | "unavailable";
+
+function selectExecutionMode(input: {
+  hasUpdater: boolean;
+  hasCheckout: boolean;
+  disabled: boolean;
+}): { mode: ExecutionMode; reason: string | null } {
+  if (input.disabled) {
+    return { mode: "unavailable", reason: "Self-update is switched off for this deployment." };
+  }
+  if (input.hasUpdater) return { mode: "sidecar", reason: null };
+  if (input.hasCheckout) return { mode: "checkout", reason: null };
+  return {
+    mode: "unavailable",
+    reason: "This deployment has neither an updater sidecar nor a git checkout.",
+  };
+}
+
+function sidecarStrategy(source: ServerUpdateSource) {
+  return source.official
+    ? {
+        strategy: "pull" as const,
+        reason:
+          "Official releases are published as images, so the update is a download and restart.",
+      }
+    : {
+        strategy: "build" as const,
+        reason:
+          "A fork has no published images, so the server builds this update itself. Expect minutes, not seconds.",
+      };
+}
 
 export interface CommandResult {
   ok: boolean;
@@ -150,7 +184,7 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
   const exit = options.exit ?? (() => process.exit(0));
   const supervisor = detectRestartSupervisor(env as Record<string, string | undefined>);
   const updater = options.updater ?? null;
-  const execution = resolveExecutionMode({
+  const execution = selectExecutionMode({
     hasUpdater: updater !== null,
     hasCheckout: options.repoRoot !== null,
     disabled: options.disabled === true,
@@ -214,7 +248,8 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
     });
     if (!settings?.updateLastRun) return null;
     try {
-      return JSON.parse(settings.updateLastRun) as ServerUpdateRun;
+      const parsed = ServerUpdateRunSchema.safeParse(JSON.parse(settings.updateLastRun));
+      return parsed.success ? parsed.data : null;
     } catch {
       return null;
     }
@@ -229,9 +264,62 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
     });
   }
 
+  async function acquireLease(timeoutMs: number): Promise<string> {
+    const now = new Date();
+    const leaseId = randomUUID();
+    const claimed = await options.prisma.deploymentSettings.updateMany({
+      where: {
+        id: "default",
+        OR: [{ updateLeaseExpiresAt: null }, { updateLeaseExpiresAt: { lte: now } }],
+      },
+      data: {
+        updateLeaseId: leaseId,
+        updateLeaseExpiresAt: new Date(now.getTime() + timeoutMs + LEASE_MARGIN_MS),
+      },
+    });
+    if (claimed.count !== 1) throw new SelfUpdateRefused("An update is already running.");
+    return leaseId;
+  }
+
+  async function refreshLease(leaseId: string, timeoutMs: number): Promise<void> {
+    const refreshed = await options.prisma.deploymentSettings.updateMany({
+      where: { id: "default", updateLeaseId: leaseId },
+      data: { updateLeaseExpiresAt: new Date(Date.now() + timeoutMs + LEASE_MARGIN_MS) },
+    });
+    if (refreshed.count !== 1) {
+      throw new SelfUpdateRefused("The update lease was lost; no more commands were run.");
+    }
+  }
+
+  async function releaseLease(leaseId: string): Promise<void> {
+    await options.prisma.deploymentSettings.updateMany({
+      where: { id: "default", updateLeaseId: leaseId },
+      data: { updateLeaseId: null, updateLeaseExpiresAt: null },
+    });
+  }
+
+  async function hasActiveLease(): Promise<boolean> {
+    const settings = await options.prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { updateLeaseId: true, updateLeaseExpiresAt: true },
+    });
+    return Boolean(
+      settings?.updateLeaseId &&
+        settings.updateLeaseExpiresAt &&
+        settings.updateLeaseExpiresAt.getTime() > Date.now(),
+    );
+  }
+
   async function readCheckout() {
     if (options.repoRoot === null) {
-      return { commit: null, branch: null, remoteUrl: null, dirty: false, dirtyPaths: [] };
+      return {
+        commit: null,
+        branch: null,
+        remoteUrl: null,
+        dirty: false,
+        dirtyPaths: [],
+        reason: unsupportedMessage(),
+      };
     }
     const [head, branch, remote, status] = await Promise.all([
       git(["rev-parse", "HEAD"]),
@@ -246,14 +334,20 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
       remoteUrl: remote.ok ? remote.output.trim() : null,
       dirty: status.ok ? !porcelain.clean : false,
       dirtyPaths: porcelain.changed,
+      reason: !head.ok
+        ? `Could not read the checkout commit: ${head.output}`
+        : !status.ok
+          ? `Could not read the checkout status: ${status.output}`
+          : null,
     };
   }
 
   async function status(): Promise<ServerUpdateStatus> {
-    const [source, lastRun, sidecar] = await Promise.all([
+    const [source, lastRun, sidecar, leased] = await Promise.all([
       readSource(),
       readLastRun(),
       execution.mode === "sidecar" ? updaterState() : Promise.resolve(null),
+      hasActiveLease(),
     ]);
     const checkout =
       execution.mode === "sidecar"
@@ -263,12 +357,11 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
             remoteUrl: null,
             dirty: false,
             dirtyPaths: [],
+            reason: null,
           })
         : await readCheckout();
     const strategy =
-      execution.mode === "sidecar"
-        ? chooseUpdateStrategy(source)
-        : { strategy: null, reason: null };
+      execution.mode === "sidecar" ? sidecarStrategy(source) : { strategy: null, reason: null };
     const unreachable =
       execution.mode === "sidecar" && sidecar === null
         ? "The updater sidecar is not answering. Check that the `updater` service is running in the same Compose project."
@@ -295,7 +388,7 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
       officialRepoUrl: OFFICIAL_REPO_URL,
       restartSupervisor: supervisor.kind,
       restartAdvice: restartAdviceFor(execution.mode, supervisor),
-      running: running || sidecar?.running === true,
+      running: running || leased || sidecar?.running === true,
       lastRun,
     };
   }
@@ -305,23 +398,76 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
     if ("error" in url) throw new SelfUpdateRefused(url.error);
     const branch = normalizeUpdateBranch(input.branch);
     if ("error" in branch) throw new SelfUpdateRefused(branch.error);
-    await options.prisma.deploymentSettings.upsert({
-      where: { id: "default" },
-      create: { id: "default", updateRepoUrl: url.url, updateBranch: branch.branch },
-      update: { updateRepoUrl: url.url, updateBranch: branch.branch },
+    const now = new Date();
+    const changed = await options.prisma.deploymentSettings.updateMany({
+      where: {
+        id: "default",
+        OR: [{ updateLeaseExpiresAt: null }, { updateLeaseExpiresAt: { lte: now } }],
+      },
+      data: { updateRepoUrl: url.url, updateBranch: branch.branch },
     });
+    if (changed.count !== 1) {
+      throw new SelfUpdateRefused("Wait for the running update before changing its source.");
+    }
     return status();
   }
 
   async function check(): Promise<ServerUpdateCheck> {
     const empty = { reason: null, changed: [], commit: null, targetCommit: null, behindBy: 0 };
-    if (execution.mode === "sidecar") return checkThroughUpdater(empty);
     if (execution.mode === "unavailable" || options.repoRoot === null) {
-      return { ...empty, status: "unavailable", reason: unsupportedMessage() };
+      if (execution.mode !== "sidecar") {
+        return { ...empty, status: "unavailable", reason: unsupportedMessage() };
+      }
     }
-    const source = await readSource();
+    // A fetch updates git metadata (including FETCH_HEAD), so checks share the same deployment-wide
+    // lease as apply. This prevents two API replicas, or a check racing an apply, from operating on
+    // the checkout at the same time.
+    const leaseId = await acquireLease(STEP_TIMEOUT_MS.fetch ?? DEFAULT_TIMEOUT_MS);
+    try {
+      if (execution.mode === "sidecar") return await checkThroughUpdater(empty);
+      const source = await readSource();
+      return await checkCheckout(source, empty);
+    } finally {
+      await releaseLease(leaseId).catch(() => undefined);
+    }
+  }
+
+  async function checkCheckout(
+    source: ServerUpdateSource,
+    empty: {
+      reason: null;
+      changed: never[];
+      commit: null;
+      targetCommit: null;
+      behindBy: number;
+    } = { reason: null, changed: [], commit: null, targetCommit: null, behindBy: 0 },
+  ): Promise<ServerUpdateCheck> {
     const checkout = await readCheckout();
-    const fetched = await git(["fetch", "--prune", DEFAULT_UPDATE_REMOTE, source.branch], "fetch");
+    if (checkout.reason) {
+      return {
+        ...empty,
+        status: "unavailable",
+        reason: checkout.reason,
+        commit: checkout.commit,
+      };
+    }
+    if (checkout.dirty) {
+      return {
+        ...empty,
+        status: "dirty",
+        changed: checkout.dirtyPaths,
+        commit: checkout.commit,
+        reason:
+          "The checkout has uncommitted changes to tracked files. Commit, stash, or discard them before updating.",
+      };
+    }
+    const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
+    const repository =
+      currentIdentity === repoIdentity(source.repoUrl) ? DEFAULT_UPDATE_REMOTE : source.repoUrl;
+    const fetched = await git(
+      ["fetch", "--no-tags", "--prune", repository, source.branch],
+      "fetch",
+    );
     if (!fetched.ok) {
       return {
         ...empty,
@@ -330,31 +476,38 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
         commit: checkout.commit,
       };
     }
-    const target = await git(["rev-parse", `${DEFAULT_UPDATE_REMOTE}/${source.branch}`]);
-    const counts = await git([
-      "rev-list",
-      "--count",
-      `HEAD..${DEFAULT_UPDATE_REMOTE}/${source.branch}`,
-    ]);
+    const target = await git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"]);
+    const targetCommit = target.ok ? target.output.trim() : "";
+    if (!isGitCommit(targetCommit)) {
+      return {
+        ...empty,
+        status: "unavailable",
+        reason: "The selected branch did not resolve to a full git commit digest.",
+        commit: checkout.commit,
+      };
+    }
+    const ancestor = await git(["merge-base", "--is-ancestor", "HEAD", targetCommit]);
+    if (!ancestor.ok) {
+      return {
+        ...empty,
+        status: "unavailable",
+        reason:
+          "The selected commit is not a fast-forward from this checkout. Choose a branch that contains the running commit; self-update never rewrites local history.",
+        commit: checkout.commit,
+        targetCommit,
+      };
+    }
+    const counts = await git(["rev-list", "--count", `HEAD..${targetCommit}`]);
     const decision = decideUpdateAvailability({
       commit: checkout.commit ?? undefined,
-      targetCommit: target.ok ? target.output.trim() : undefined,
+      targetCommit,
       behindBy: counts.ok ? Number.parseInt(counts.output.trim(), 10) || 0 : 0,
       status: { clean: !checkout.dirty, changed: checkout.dirtyPaths },
     });
     if (decision.status === "unavailable") {
       return { ...empty, status: "unavailable", reason: decision.reason };
     }
-    if (decision.status === "dirty") {
-      return {
-        ...empty,
-        status: "dirty",
-        changed: decision.changed,
-        commit: checkout.commit,
-        reason:
-          "The checkout has uncommitted changes to tracked files. Commit, stash, or discard them before updating.",
-      };
-    }
+    if (decision.status === "dirty") throw new Error("Dirty checkout escaped preflight.");
     if (decision.status === "up-to-date") {
       return { ...empty, status: "up-to-date", commit: decision.commit };
     }
@@ -410,19 +563,32 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
   }
 
   async function apply(): Promise<ServerUpdateRun> {
-    if (execution.mode === "sidecar") {
-      const source = await readSource();
-      const record = await throughUpdater((client) => client.apply(source));
-      await saveLastRun(record).catch(() => undefined);
-      return record;
+    if (execution.mode === "unavailable") throw new SelfUpdateRefused(unsupportedMessage());
+    const leaseId = await acquireLease(
+      execution.mode === "sidecar"
+        ? SIDECAR_LEASE_MS
+        : (STEP_TIMEOUT_MS.fetch ?? DEFAULT_TIMEOUT_MS),
+    );
+    running = true;
+    try {
+      if (execution.mode === "sidecar") {
+        const source = await readSource();
+        const record = await throughUpdater((client) => client.apply(source));
+        await saveLastRun(record);
+        return record;
+      }
+      if (options.repoRoot === null) throw new SelfUpdateRefused(unsupportedMessage());
+      return await applyCheckout(leaseId);
+    } finally {
+      running = false;
+      await releaseLease(leaseId).catch(() => undefined);
     }
-    if (execution.mode === "unavailable" || options.repoRoot === null) {
-      throw new SelfUpdateRefused(unsupportedMessage());
-    }
-    if (running) throw new SelfUpdateRefused("An update is already running.");
+  }
 
+  async function applyCheckout(leaseId: string): Promise<ServerUpdateRun> {
+    if (options.repoRoot === null) throw new SelfUpdateRefused(unsupportedMessage());
     const source = await readSource();
-    const preflight = await check();
+    const preflight = await checkCheckout(source);
     if (preflight.status === "unavailable" || preflight.status === "dirty") {
       throw new SelfUpdateRefused(preflight.reason ?? "This deployment cannot be updated.");
     }
@@ -449,15 +615,24 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
       return record;
     }
 
-    running = true;
     const checkout = await readCheckout();
+    if (
+      checkout.reason ||
+      checkout.dirty ||
+      checkout.commit !== preflight.commit ||
+      preflight.targetCommit === null
+    ) {
+      throw new SelfUpdateRefused(
+        "The checkout changed during preflight. No update commands were run; check again.",
+      );
+    }
     const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
     const steps = updateSteps({
       remoteUrl: source.repoUrl,
       branch: source.branch,
+      targetCommit: preflight.targetCommit,
       repointRemote: currentIdentity !== repoIdentity(source.repoUrl),
     });
-
     const record: ServerUpdateRun = {
       startedAt,
       finishedAt: null,
@@ -475,36 +650,37 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
       steps: [],
     };
 
-    try {
-      for (const step of steps) {
-        const result = await run(step.command, step.args, {
-          cwd: options.repoRoot,
-          timeoutMs: STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS,
-        });
-        record.steps.push({
-          id: step.id,
-          label: step.label,
-          ok: result.ok,
-          exitCode: result.exitCode,
-          output: result.output,
-        });
-        if (!result.ok) {
-          record.error = `${step.label} failed.`;
-          break;
-        }
-      }
-      const head = await git(["rev-parse", "HEAD"]);
-      record.toCommit = head.ok ? head.output.trim() : null;
-      record.ok = record.error === null;
-      if (record.ok && supervisor.kind !== "none") record.restart = "supervised";
-      if (!record.ok) {
-        record.restartAdvice = `${record.error} The checkout may be partly updated. Read the step output, fix the cause, then run the update again. Nothing was restarted.`;
-      }
-      record.finishedAt = new Date().toISOString();
-      await saveLastRun(record).catch(() => undefined);
-    } finally {
-      running = false;
+    // Persist before the first mutation and after every step. A process killed half way through
+    // leaves a durable unfinished record instead of making the previous success look current.
+    await saveLastRun(record);
+    for (const step of steps) {
+      const timeoutMs = STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS;
+      await refreshLease(leaseId, timeoutMs);
+      const result = await run(step.command, step.args, { cwd: options.repoRoot, timeoutMs });
+      record.steps.push({
+        id: step.id,
+        label: step.label,
+        ok: result.ok,
+        exitCode: result.exitCode,
+        output: result.output,
+      });
+      if (!result.ok) record.error = `${step.label} failed.`;
+      await saveLastRun(record);
+      if (!result.ok) break;
     }
+
+    const head = await git(["rev-parse", "HEAD"]);
+    record.toCommit = head.ok && isGitCommit(head.output.trim()) ? head.output.trim() : null;
+    if (record.error === null && record.toCommit !== preflight.targetCommit) {
+      record.error = "The checkout did not finish on the commit selected by preflight.";
+    }
+    record.ok = record.error === null;
+    if (record.ok && supervisor.kind !== "none") record.restart = "supervised";
+    if (!record.ok) {
+      record.restartAdvice = `${record.error} The checkout may be partly updated. Read the step output, fix the cause, then run the update again. Nothing was restarted.`;
+    }
+    record.finishedAt = new Date().toISOString();
+    await saveLastRun(record);
 
     if (record.restart === "supervised") {
       // Answer the caller before the process goes away, otherwise the operator watches the socket
@@ -520,9 +696,16 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
         "Rollback needs the updater sidecar, which redeploys the previously running image tag. On a source checkout, `git checkout` the previous commit and restart instead.",
       );
     }
-    const record = await throughUpdater((client) => client.rollback());
-    await saveLastRun(record).catch(() => undefined);
-    return record;
+    const leaseId = await acquireLease(SIDECAR_LEASE_MS);
+    running = true;
+    try {
+      const record = await throughUpdater((client) => client.rollback());
+      await saveLastRun(record);
+      return record;
+    } finally {
+      running = false;
+      await releaseLease(leaseId).catch(() => undefined);
+    }
   }
 
   return { status, setSource, check, apply, rollback };
@@ -533,7 +716,7 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
  * recreates the containers itself, so supervisor detection is not part of the answer at all.
  */
 function restartAdviceFor(
-  mode: ReturnType<typeof resolveExecutionMode>["mode"],
+  mode: ExecutionMode,
   supervisor: ReturnType<typeof detectRestartSupervisor>,
 ): string {
   if (mode === "sidecar") {

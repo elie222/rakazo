@@ -42,14 +42,24 @@ export function resolveSupervisorToken(env: NodeJS.ProcessEnv = process.env): st
 }
 
 /**
- * The updater sidecar holds the Docker socket and, unlike the sandbox supervisor, acts on a
- * user-supplied repository URL. It gets its own token so revoking update access does not mean
- * rebuilding sandboxing, while still needing no configuration in a default deployment.
+ * The updater sidecar holds the Docker socket, which is root-equivalent on the host. Its bearer
+ * credential must therefore be independent from the cookie-signing and sandbox credentials: a
+ * leak at one boundary must not unlock either of the others.
  */
 export function resolveUpdaterToken(env: NodeJS.ProcessEnv = process.env): string {
-  const token = env.RAKAZO_UPDATER_TOKEN;
-  if (token) return token;
-  return resolveAuthSecret(env);
+  const token = env.RAKAZO_UPDATER_TOKEN?.trim();
+  if (!token) {
+    throw new Error("Set RAKAZO_UPDATER_TOKEN to a dedicated random updater credential.");
+  }
+  if (token === env.BETTER_AUTH_SECRET || token === env.SANDBOX_SUPERVISOR_TOKEN) {
+    throw new Error(
+      "RAKAZO_UPDATER_TOKEN must differ from BETTER_AUTH_SECRET and SANDBOX_SUPERVISOR_TOKEN.",
+    );
+  }
+  if (!isDevSecretAllowed(env) && token.length < 32) {
+    throw new Error("RAKAZO_UPDATER_TOKEN must be at least 32 characters outside local tests.");
+  }
+  return token;
 }
 
 /**

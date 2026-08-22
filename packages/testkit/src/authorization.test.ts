@@ -584,6 +584,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
         ownerUserId: ownerActor.userId,
         signupsEnabled: true,
         signupAllowlist: "",
+        updateRepoUrl: null,
+        updateBranch: null,
       },
     });
 

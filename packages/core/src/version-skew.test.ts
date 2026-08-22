@@ -14,14 +14,17 @@ describe("compareVersions", () => {
     expect(compareVersions("v1.2", "1.2.0")).toBe(0);
   });
 
-  it("ignores prerelease and build metadata", () => {
-    expect(compareVersions("1.2.3-rc.1", "1.2.3")).toBe(0);
+  it("orders prereleases and ignores build metadata", () => {
+    expect(compareVersions("1.2.3-rc.1", "1.2.3")).toBe(-1);
+    expect(compareVersions("1.2.3-rc.2", "1.2.3-rc.10")).toBe(-1);
+    expect(compareVersions("1.2.3-alpha", "1.2.3-beta")).toBe(-1);
     expect(compareVersions("1.2.3+abc", "1.2.3")).toBe(0);
   });
 
   it("treats unparseable versions as incomparable", () => {
     expect(isComparableVersion("nightly")).toBe(false);
     expect(isComparableVersion("1.2.3.4")).toBe(false);
+    expect(isComparableVersion("1.2.3-01")).toBe(false);
     expect(isComparableVersion("0.1.0")).toBe(true);
     expect(compareVersions("nightly", "0.1.0")).toBe(0);
   });

@@ -6,6 +6,7 @@ export const DEFAULT_UPDATE_REMOTE = "origin";
 const SCP_LIKE = /^(?<user>[A-Za-z0-9._-]+)@(?<host>[A-Za-z0-9._-]+):(?<path>[^:]+)$/;
 const SAFE_PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const BRANCH_REJECT = /[\s~^:?*[\\]/;
+const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
 
 /** Whitespace and control bytes are how a second argument gets smuggled into a command. */
 function hasUnsafeCharacter(value: string): boolean {
@@ -50,7 +51,12 @@ export function normalizeRepoUrl(input: string): RepoUrlResult {
     return { error: "Only https:// and ssh:// git remotes are allowed." };
   }
   if (url.hostname === "") return { error: "That URL has no host." };
-  if (url.password !== "") return { error: "Do not put a password in the repository URL." };
+  if (url.password !== "" || (url.protocol === "https:" && url.username !== "")) {
+    return { error: "Do not put credentials in the repository URL." };
+  }
+  if (url.protocol === "ssh:" && url.username !== "" && !SAFE_PATH_SEGMENT.test(url.username)) {
+    return { error: "That SSH username has unsupported characters." };
+  }
   if (url.search !== "" || url.hash !== "") {
     return { error: "A repository URL cannot carry a query string or fragment." };
   }
@@ -65,7 +71,12 @@ export function normalizeRepoUrl(input: string): RepoUrlResult {
 function normalizeRepoPath(raw: string): string | null {
   const segments = raw.split("/").filter((segment) => segment !== "");
   if (segments.length < 2) return null;
-  if (segments.some((segment) => !SAFE_PATH_SEGMENT.test(segment) || segment === "..")) return null;
+  if (
+    segments.some(
+      (segment) => !SAFE_PATH_SEGMENT.test(segment) || segment === "." || segment === "..",
+    )
+  )
+    return null;
   return segments.join("/");
 }
 
@@ -113,10 +124,22 @@ export function normalizeUpdateBranch(input: string): BranchResult {
   if (branch.includes("..") || branch.includes("@{")) {
     return { error: "That branch name has characters git rejects." };
   }
-  if (branch.startsWith("/") || branch.endsWith("/") || branch.endsWith(".lock")) {
+  if (
+    branch === "@" ||
+    branch.endsWith(".") ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.includes("//") ||
+    branch.split("/").some((component) => component.startsWith(".")) ||
+    branch.split("/").some((component) => component.endsWith(".lock"))
+  ) {
     return { error: "That branch name has characters git rejects." };
   }
   return { branch };
+}
+
+export function isGitCommit(value: string): boolean {
+  return COMMIT.test(value.trim());
 }
 
 export interface PorcelainStatus {
@@ -146,6 +169,8 @@ export interface UpdatePlanInput {
   remote?: string;
   remoteUrl: string;
   branch: string;
+  /** Immutable commit selected by preflight; a later branch movement must not change the update. */
+  targetCommit: string;
   /** Set when the checkout currently points at a different remote and has to be re-pointed. */
   repointRemote?: boolean;
 }
@@ -156,6 +181,7 @@ export interface UpdatePlanInput {
  * and the merge is fast-forward only so local commits fail the update instead of being discarded.
  */
 export function updateSteps(input: UpdatePlanInput): UpdateStep[] {
+  if (!isGitCommit(input.targetCommit)) throw new Error("An update needs a full commit digest.");
   const remote = input.remote ?? DEFAULT_UPDATE_REMOTE;
   const steps: UpdateStep[] = [];
   if (input.repointRemote === true) {
@@ -169,27 +195,21 @@ export function updateSteps(input: UpdatePlanInput): UpdateStep[] {
   steps.push(
     {
       id: "fetch",
-      label: "Fetch the latest commits",
+      label: "Fetch the selected branch",
       command: "git",
-      args: ["fetch", "--prune", remote, input.branch],
-    },
-    {
-      id: "checkout",
-      label: `Check out ${input.branch}`,
-      command: "git",
-      args: ["checkout", input.branch],
+      args: ["fetch", "--no-tags", "--prune", remote, input.branch],
     },
     {
       id: "merge",
-      label: "Fast-forward to the fetched commit",
+      label: "Fast-forward to the checked commit",
       command: "git",
-      args: ["merge", "--ff-only", `${remote}/${input.branch}`],
+      args: ["merge", "--ff-only", input.targetCommit],
     },
     {
       id: "install",
       label: "Install dependencies",
       command: "pnpm",
-      args: ["install", "--frozen-lockfile=false"],
+      args: ["install", "--frozen-lockfile"],
     },
     {
       id: "generate",

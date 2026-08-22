@@ -1,4 +1,8 @@
-import type { ServerUpdateRun, ServerUpdateStrategy } from "@rakazo/contracts";
+import {
+  type ServerUpdateRun,
+  ServerUpdateRunSchema,
+  type ServerUpdateStrategy,
+} from "@rakazo/contracts";
 
 /** The sidecar declined to act and said why; the caller should surface the reason verbatim. */
 export class UpdaterRefused extends Error {}
@@ -108,16 +112,20 @@ export function createUpdaterClient(options: UpdaterClientOptions): UpdaterClien
         body: request,
         timeoutMs: options.readTimeoutMs ?? READ_TIMEOUT_MS,
       }),
-    apply: (request) =>
-      call<ServerUpdateRun>("/apply", {
-        method: "POST",
-        body: request,
-        timeoutMs: options.applyTimeoutMs ?? APPLY_TIMEOUT_MS,
-      }),
-    rollback: () =>
-      call<ServerUpdateRun>("/rollback", {
-        method: "POST",
-        timeoutMs: options.applyTimeoutMs ?? APPLY_TIMEOUT_MS,
-      }),
+    apply: async (request) =>
+      ServerUpdateRunSchema.parse(
+        await call<unknown>("/apply", {
+          method: "POST",
+          body: request,
+          timeoutMs: options.applyTimeoutMs ?? APPLY_TIMEOUT_MS,
+        }),
+      ),
+    rollback: async () =>
+      ServerUpdateRunSchema.parse(
+        await call<unknown>("/rollback", {
+          method: "POST",
+          timeoutMs: options.applyTimeoutMs ?? APPLY_TIMEOUT_MS,
+        }),
+      ),
   };
 }

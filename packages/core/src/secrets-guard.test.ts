@@ -60,11 +60,10 @@ describe("secrets-guard", () => {
     ).toBe("supervisor-only");
   });
 
-  it("gives the updater its own token without requiring one to be configured", () => {
-    expect(resolveUpdaterToken({ NODE_ENV: "test", BETTER_AUTH_SECRET: "custom-auth" })).toBe(
-      "custom-auth",
-    );
-    // Revoking update authority must not mean rebuilding sandbox access, so the tokens are separate.
+  it("requires the updater to use a dedicated token", () => {
+    expect(() =>
+      resolveUpdaterToken({ NODE_ENV: "test", BETTER_AUTH_SECRET: "custom-auth" }),
+    ).toThrow(/RAKAZO_UPDATER_TOKEN/);
     expect(
       resolveUpdaterToken({
         NODE_ENV: "test",
@@ -73,13 +72,26 @@ describe("secrets-guard", () => {
         BETTER_AUTH_SECRET: "custom-auth",
       }),
     ).toBe("updater-only");
-    expect(
+    expect(() =>
       resolveUpdaterToken({
         NODE_ENV: "test",
-        SANDBOX_SUPERVISOR_TOKEN: "supervisor-only",
+        RAKAZO_UPDATER_TOKEN: "custom-auth",
         BETTER_AUTH_SECRET: "custom-auth",
       }),
-    ).toBe("custom-auth");
+    ).toThrow(/must differ/);
+    expect(() =>
+      resolveUpdaterToken({
+        NODE_ENV: "test",
+        RAKAZO_UPDATER_TOKEN: "supervisor-only",
+        SANDBOX_SUPERVISOR_TOKEN: "supervisor-only",
+      }),
+    ).toThrow(/must differ/);
+    expect(() =>
+      resolveUpdaterToken({
+        NODE_ENV: "production",
+        RAKAZO_UPDATER_TOKEN: "too-short",
+      }),
+    ).toThrow(/at least 32 characters/);
   });
 
   it("compares bearer tokens without leaking a length or a prefix match", () => {

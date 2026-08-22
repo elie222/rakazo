@@ -17,29 +17,58 @@ export interface VersionSkew {
 }
 
 const NUMERIC = /^\d+$/;
+const VERSION =
+  /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
-/** Compares the release part of two semver strings; prerelease and build metadata are ignored. */
+/** Semver ordering with optional minor/patch shorthand; build metadata does not affect precedence. */
 export function compareVersions(a: string, b: string): number {
-  const left = releaseParts(a);
-  const right = releaseParts(b);
+  const left = parseVersion(a);
+  const right = parseVersion(b);
   if (left === null || right === null) return 0;
   for (let index = 0; index < 3; index += 1) {
-    const diff = (left[index] ?? 0) - (right[index] ?? 0);
-    if (diff !== 0) return diff < 0 ? -1 : 1;
+    const leftPart = left.release[index] ?? 0n;
+    const rightPart = right.release[index] ?? 0n;
+    if (leftPart !== rightPart) return leftPart < rightPart ? -1 : 1;
+  }
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+    if (left.prerelease.length === right.prerelease.length) return 0;
+    return left.prerelease.length === 0 ? 1 : -1;
+  }
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left.prerelease[index];
+    const rightPart = right.prerelease[index];
+    if (leftPart === undefined || rightPart === undefined) {
+      if (leftPart === rightPart) return 0;
+      return leftPart === undefined ? -1 : 1;
+    }
+    if (leftPart === rightPart) continue;
+    const leftNumeric = NUMERIC.test(leftPart);
+    const rightNumeric = NUMERIC.test(rightPart);
+    if (leftNumeric && rightNumeric) return BigInt(leftPart) < BigInt(rightPart) ? -1 : 1;
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return leftPart < rightPart ? -1 : 1;
   }
   return 0;
 }
 
-function releaseParts(value: string): number[] | null {
-  const release = value.trim().replace(/^v/, "").split(/[-+]/, 1)[0] ?? "";
-  const parts = release.split(".");
-  if (parts.length === 0 || parts.length > 3) return null;
-  if (!parts.every((part) => NUMERIC.test(part))) return null;
-  return parts.map((part) => Number(part));
+function parseVersion(
+  value: string,
+): { release: [bigint, bigint, bigint]; prerelease: string[] } | null {
+  const match = VERSION.exec(value.trim());
+  if (!match) return null;
+  const prerelease = match[4]?.split(".") ?? [];
+  if (prerelease.some((part) => NUMERIC.test(part) && part.length > 1 && part.startsWith("0"))) {
+    return null;
+  }
+  return {
+    release: [BigInt(match[1] ?? "0"), BigInt(match[2] ?? "0"), BigInt(match[3] ?? "0")],
+    prerelease,
+  };
 }
 
 export function isComparableVersion(value: string): boolean {
-  return releaseParts(value) !== null;
+  return parseVersion(value) !== null;
 }
 
 /**
@@ -85,8 +114,8 @@ export function versionSkewNotice(skew: VersionSkew, client: ClientKind): SkewNo
 
   if (client === "browser") {
     return {
-      title: "This tab is running an older build",
-      detail: `The server is on ${describeBuild(skew.serverVersion, skew.serverRevision)} and this tab loaded ${describeBuild(skew.clientVersion, skew.clientRevision)}. Reload to pick up the matching app. Everything keeps working until you do.`,
+      title: "This tab and server are on different builds",
+      detail: `The server is on ${describeBuild(skew.serverVersion, skew.serverRevision)} and this tab loaded ${describeBuild(skew.clientVersion, skew.clientRevision)}. Reload once to pick up the current web app. If this notice remains, the deployment is still finishing its update. Everything keeps working until then.`,
       action: "reload",
     };
   }

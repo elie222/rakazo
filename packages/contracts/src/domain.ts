@@ -330,18 +330,18 @@ export const DeploymentSettingsSchema = z.object({
 });
 
 export const ServerUpdateSourceSchema = z.object({
-  repoUrl: z.string(),
-  branch: z.string(),
+  repoUrl: z.string().max(400),
+  branch: z.string().max(200),
   official: z.boolean(),
 });
 export type ServerUpdateSource = z.infer<typeof ServerUpdateSourceSchema>;
 
 export const ServerUpdateStepSchema = z.object({
-  id: z.string(),
-  label: z.string(),
+  id: z.string().max(40),
+  label: z.string().max(200),
   ok: z.boolean(),
   exitCode: z.number().int().nullable(),
-  output: z.string(),
+  output: z.string().max(8_001),
 });
 
 /** How an update reaches new code: published images, a build on the server, or a git checkout. */
@@ -353,16 +353,16 @@ export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailabl
 export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
 
 export const ServerUpdateRunSchema = z.object({
-  startedAt: z.string(),
-  finishedAt: z.string().nullable(),
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
   ok: z.boolean(),
   fromCommit: z.string().nullable(),
   toCommit: z.string().nullable(),
   fromTag: z.string().nullable(),
   toTag: z.string().nullable(),
   strategy: ServerUpdateStrategySchema.nullable(),
-  repoUrl: z.string(),
-  branch: z.string(),
+  repoUrl: z.string().max(400),
+  branch: z.string().max(200),
   /**
    * `recreated` means the updater sidecar replaced the containers and no restart is owed.
    * `supervised` means the process exited and its supervisor is bringing it back.
@@ -406,7 +406,7 @@ export const ServerUpdateCheckSchema = z.object({
   changed: z.array(z.string()),
   commit: z.string().nullable(),
   targetCommit: z.string().nullable(),
-  behindBy: z.number().int(),
+  behindBy: z.number().int().nonnegative(),
 });
 export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
