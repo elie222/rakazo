@@ -163,17 +163,21 @@ export function createUpdaterApp(
   });
 
   app.get("/state", async (c) => {
-    const tags = readTagState(await readEnvFile());
-    const checkout = await readCheckout();
-    return c.json({
-      deployDir: config.deployDir,
-      composeFile: config.composeFile,
-      image: config.image,
-      imageRef: imageRef(config.image, tags.currentTag),
-      running,
-      ...tags,
-      checkout,
-    });
+    try {
+      const tags = readTagState(await readEnvFile());
+      const checkout = await readCheckout();
+      return c.json({
+        deployDir: config.deployDir,
+        composeFile: config.composeFile,
+        image: config.image,
+        imageRef: imageRef(config.image, tags.currentTag),
+        running,
+        ...tags,
+        checkout,
+      });
+    } catch (error) {
+      return refusal(c, error);
+    }
   });
 
   app.post("/plan", async (c) => {
