@@ -139,6 +139,24 @@ describeIntegration("run executor lifecycle", () => {
       data: { runId: seeded.run.id, fence: 4, status: "running" },
     });
     const events = createThreadEvents(handles.prisma);
+    await events.append({
+      workspaceId: seeded.me.workspaceId,
+      threadId: seeded.thread.id,
+      botId: seeded.bot.id,
+      runId: seeded.run.id,
+      type: "thread.progress",
+      payload: { text: "temporary" },
+    });
+    await events.append({
+      workspaceId: seeded.me.workspaceId,
+      threadId: seeded.thread.id,
+      botId: seeded.bot.id,
+      runId: seeded.run.id,
+      type: "thread.reasoning",
+      payload: {
+        steps: [{ id: "status", kind: "status", title: "Working", status: "running" }],
+      },
+    });
     const input = {
       workspaceId: seeded.me.workspaceId,
       threadId: seeded.thread.id,
@@ -172,6 +190,14 @@ describeIntegration("run executor lifecycle", () => {
     expect(storedAttempt.status).toBe("completed");
     expect(task.status).toBe("completed");
     expect(messages).toHaveLength(1);
+    expect(
+      await handles.prisma.event.count({
+        where: {
+          runId: seeded.run.id,
+          type: { in: ["thread.progress", "thread.reasoning"] },
+        },
+      }),
+    ).toBe(0);
     expect(terminalEvents.map((event) => event.type)).toEqual([
       "thread.message.created",
       "run.completed",

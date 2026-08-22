@@ -162,6 +162,88 @@ describe("thread event reduction", () => {
     expect(next?.messages[1]?.blocks).toEqual([completedBlock]);
   });
 
+  it("streams a live reasoning trace ahead of answer progress", () => {
+    const initial = snapshot([message("progress:run-1", [{ kind: "progress", text: "Draft" }])]);
+
+    const first = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.reasoning",
+        seq: 6,
+        payload: {
+          steps: [
+            { id: "status", kind: "status", title: "Starting", status: "running" },
+            { id: "think", kind: "think", title: "Thinking", detail: "Let me", status: "running" },
+          ],
+        },
+      }),
+    );
+    const second = reduceThreadSnapshot(
+      first,
+      event({
+        type: "thread.reasoning",
+        seq: 7,
+        payload: {
+          steps: [
+            { id: "status", kind: "status", title: "Starting", status: "done" },
+            {
+              id: "think",
+              kind: "think",
+              title: "Thought",
+              detail: "Let me check",
+              status: "done",
+            },
+            { id: "tool-1", kind: "tool", title: "Running a command", status: "running" },
+          ],
+        },
+      }),
+    );
+
+    expect(isThreadSnapshotEvent(event({ type: "thread.reasoning" }))).toBe(true);
+    expect(second?.messages.map((item) => item.id)).toEqual(["reasoning:run-1", "progress:run-1"]);
+    expect(second?.messages[0]?.blocks[0]).toMatchObject({
+      kind: "reasoning",
+      steps: [
+        expect.objectContaining({ id: "status", status: "done" }),
+        expect.objectContaining({ id: "think", title: "Thought", detail: "Let me check" }),
+        expect.objectContaining({ id: "tool-1", title: "Running a command", status: "running" }),
+      ],
+    });
+  });
+
+  it("drops the live reasoning trace when the durable reply arrives", () => {
+    const initial = snapshot([
+      message("reasoning:run-1", [
+        {
+          kind: "reasoning",
+          steps: [{ id: "status", kind: "status", title: "Starting", status: "running" }],
+        },
+      ]),
+      message("progress:run-1", [{ kind: "progress", text: "Draft" }]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: {
+          messageId: "durable",
+          role: "bot",
+          blocks: [
+            {
+              kind: "reasoning",
+              steps: [{ id: "status", kind: "status", title: "Starting", status: "done" }],
+            },
+            { kind: "text", text: "Done" },
+          ],
+        },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["durable"]);
+  });
+
   it("clears durable and transient history when another client clears the thread", () => {
     const initial = snapshot(
       [

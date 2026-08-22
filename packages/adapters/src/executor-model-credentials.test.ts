@@ -43,6 +43,7 @@ describe("gateway model credential resolution", () => {
       "user-1",
       "workspace-1",
       { id: "credential-1", secretId: "fallback-secret", provider: "gateway:test" },
+      "gateway:test",
       "gemini-test-model",
     );
 
@@ -61,6 +62,7 @@ describe("gateway model credential resolution", () => {
       "user-1",
       "workspace-1",
       { id: "credential-1", secretId: "fallback-secret", provider: "gateway:test" },
+      "gateway:test",
       "gemini-test-model",
     );
 
@@ -72,7 +74,7 @@ describe("gateway model credential resolution", () => {
     const deps = credentialDeps(null);
 
     await expect(
-      resolveModelKey(deps, "user-1", "workspace-1", null, "gpt-test-model"),
+      resolveModelKey(deps, "user-1", "workspace-1", null, "openrouter", "gpt-test-model"),
     ).resolves.toEqual({ apiKey: "fake-deployment-key", redact: [] });
   });
 });

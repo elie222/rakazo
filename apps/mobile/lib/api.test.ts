@@ -214,6 +214,33 @@ describe("mobile thread event reduction", () => {
     ]);
   });
 
+  it("streams a live reasoning trace ahead of answer progress", () => {
+    const first = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { delta: "Draft" },
+    });
+    const second = applyMobileThreadEvent(first, {
+      type: "thread.reasoning",
+      runId: "run-1",
+      payload: {
+        steps: [
+          { id: "status", kind: "status", title: "Starting", status: "running" },
+          { id: "tool-1", kind: "tool", title: "Running a command", status: "running" },
+        ],
+      },
+    });
+
+    expect(second?.messages.map((item) => item.id)).toEqual(["reasoning:run-1", "progress:run-1"]);
+    expect(second?.messages[0]?.blocks[0]).toMatchObject({
+      kind: "reasoning",
+      steps: [
+        expect.objectContaining({ title: "Starting" }),
+        expect.objectContaining({ title: "Running a command" }),
+      ],
+    });
+  });
+
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
     const initial = snapshot([
       mobileMessage("message-1", [{ kind: "text", text: "old" }]),

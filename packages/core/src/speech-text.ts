@@ -198,6 +198,12 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
     .map((block) => {
       if (block.kind === "text" || block.kind === "progress" || block.kind === "meta")
         return block.text;
+      if (block.kind === "reasoning") {
+        return block.steps
+          .filter((step) => step.kind !== "think")
+          .map((step) => step.title)
+          .join(". ");
+      }
       if (block.kind === "ask") return block.text;
       if (block.kind === "computer") return block.text;
       if (block.kind === "subagent") {

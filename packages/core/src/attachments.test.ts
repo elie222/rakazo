@@ -42,6 +42,18 @@ describe("attachment helpers", () => {
           name: "brief.pdf",
           size: 99,
         },
+        {
+          kind: "reasoning",
+          steps: [
+            {
+              id: "tool-1",
+              kind: "tool",
+              title: "Read private command",
+              detail: "fake-sensitive-tool-argument",
+              status: "done",
+            },
+          ],
+        },
       ]),
     ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
   });

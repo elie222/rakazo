@@ -61,19 +61,29 @@ export const appContract = {
     connect: oc
       .input(
         z.object({
-          provider: z.string(),
-          apiKey: z.string().min(8),
-          label: z.string().optional(),
-          modelId: z.string().optional(),
+          provider: z.string().min(1).max(120),
+          apiKey: z.string().max(4000).optional().default(""),
+          label: z.string().max(200).optional(),
+          modelId: z.string().max(200).optional(),
+          baseUrl: z.string().max(500).optional(),
+          availableModels: z.array(z.string().min(1).max(200)).max(200).optional(),
         }),
       )
       .output(ModelCredentialSchema),
+    probe: oc
+      .input(
+        z.object({
+          baseUrl: z.string().min(1).max(500),
+          apiKey: z.string().max(4000).optional(),
+        }),
+      )
+      .output(z.object({ models: z.array(z.string()) })),
     beginOAuth: oc
       .input(
         z.object({
-          provider: z.string(),
-          label: z.string().optional(),
-          modelId: z.string().optional(),
+          provider: z.string().min(1).max(120),
+          label: z.string().max(200).optional(),
+          modelId: z.string().max(200).optional(),
         }),
       )
       .output(
@@ -98,7 +108,9 @@ export const appContract = {
       .input(z.object({ loginId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
     setDefault: oc
-      .input(z.object({ provider: z.string(), modelId: z.string() }))
+      .input(
+        z.object({ provider: z.string().min(1).max(120), modelId: z.string().min(1).max(200) }),
+      )
       .output(z.object({ ok: z.literal(true) })),
     addKey: oc
       .input(

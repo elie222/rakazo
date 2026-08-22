@@ -1,9 +1,12 @@
 import { createServer } from "node:http";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertOpenAICompatibleBaseUrlAllowed,
+  createOpenAICompatibleFetch,
   fetchOpenAICompatibleModels,
   GATEWAY_PROVIDER_PREFIX,
   isGatewayProvider,
+  isGloballyRoutableAddress,
   labelForDiscoveredModels,
   normalizeOpenAICompatibleBaseUrl,
   parseAvailableModels,
@@ -11,6 +14,21 @@ import {
   serializeAvailableModels,
   unionAvailableModels,
 } from "./openai-compatible.js";
+
+const servers: ReturnType<typeof createServer>[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    servers
+      .splice(0)
+      .map(
+        (server) =>
+          new Promise<void>((resolve, reject) =>
+            server.close((error) => (error ? reject(error) : resolve())),
+          ),
+      ),
+  );
+});
 
 describe("openai-compatible gateways", () => {
   it("normalizes hostnames, trailing slashes, and missing protocols", () => {
@@ -24,80 +42,81 @@ describe("openai-compatible gateways", () => {
 
   it("rejects non-http URLs", () => {
     expect(() => normalizeOpenAICompatibleBaseUrl("ftp://example.com")).toThrow(/http/);
-    expect(() => normalizeOpenAICompatibleBaseUrl("https://user:pass@example.com/v1")).toThrow(
+    expect(() => normalizeOpenAICompatibleBaseUrl("http://user:pass@example.com/v1")).toThrow(
       /credentials/,
     );
   });
 
-  it("blocks private-network model probes unless deployment-owner access is explicit", async () => {
-    let requests = 0;
-    const server = createServer((_request, response) => {
-      requests += 1;
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ data: [{ id: "local-model" }] }));
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    const port = typeof address === "object" && address ? address.port : 0;
-    const baseUrl = `http://127.0.0.1:${port}/v1`;
-    try {
-      await expect(fetchOpenAICompatibleModels(baseUrl, "fake-probe-key")).rejects.toThrow(
-        /deployment-owner/,
-      );
-      expect(requests).toBe(0);
-      await expect(
-        fetchOpenAICompatibleModels(baseUrl, "fake-probe-key", undefined, {
-          allowPrivateNetwork: true,
-        }),
-      ).resolves.toEqual(["local-model"]);
-      expect(requests).toBe(1);
-    } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
+  it("classifies private, metadata, documentation, and public addresses", () => {
+    expect(isGloballyRoutableAddress("127.0.0.1")).toBe(false);
+    expect(isGloballyRoutableAddress("169.254.169.254")).toBe(false);
+    expect(isGloballyRoutableAddress("203.0.113.4")).toBe(false);
+    expect(isGloballyRoutableAddress("8.8.8.8")).toBe(true);
+    expect(isGloballyRoutableAddress("::1")).toBe(false);
+    expect(isGloballyRoutableAddress("2606:4700:4700::1111")).toBe(true);
   });
 
-  it("does not forward an API key across model-discovery origins", async () => {
-    let forwardedAuthorization = "";
-    const destination = createServer((request, response) => {
-      forwardedAuthorization = String(request.headers.authorization ?? "");
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ data: [{ id: "redirected-model" }] }));
+  it("allows owner loopback endpoints but blocks them for other users and always blocks metadata", async () => {
+    await expect(
+      assertOpenAICompatibleBaseUrlAllowed("http://127.0.0.1:11434/v1", {
+        allowPrivateNetwork: true,
+      }),
+    ).resolves.toBe("http://127.0.0.1:11434/v1");
+    await expect(assertOpenAICompatibleBaseUrlAllowed("http://127.0.0.1:11434/v1")).rejects.toThrow(
+      /private or local/,
+    );
+    await expect(
+      assertOpenAICompatibleBaseUrlAllowed("http://169.254.169.254/v1", {
+        allowPrivateNetwork: true,
+      }),
+    ).rejects.toThrow(/prohibited/);
+    await expect(
+      assertOpenAICompatibleBaseUrlAllowed("http://10.0.0.8/v1", {
+        allowPrivateNetwork: true,
+        hasCredentials: true,
+      }),
+    ).rejects.toThrow(/credentials require HTTPS/);
+  });
+
+  it("lists models from a bounded local fake gateway without requiring a key", async () => {
+    const server = createServer((request, response) => {
+      expect(request.url).toBe("/v1/models");
+      expect(request.headers.authorization).toBeUndefined();
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "fake-model" }, { id: "fake-model" }] }));
     });
-    await new Promise<void>((resolve) => destination.listen(0, "127.0.0.1", resolve));
-    const destinationAddress = destination.address();
-    const destinationPort =
-      typeof destinationAddress === "object" && destinationAddress ? destinationAddress.port : 0;
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    await expect(
+      fetchOpenAICompatibleModels(`${baseUrl}/v1`, undefined, undefined, {
+        allowPrivateNetwork: true,
+      }),
+    ).resolves.toEqual(["fake-model"]);
+  });
+
+  it("removes credentials before following a cross-origin redirect", async () => {
+    let redirectedAuthorization: string | undefined;
+    const destination = createServer((request, response) => {
+      redirectedAuthorization = request.headers.authorization;
+      response.end("ok");
+    });
+    servers.push(destination);
+    const destinationUrl = await listen(destination);
     const source = createServer((_request, response) => {
-      response.writeHead(302, {
-        location: `http://127.0.0.1:${destinationPort}/v1/models`,
-      });
+      response.statusCode = 307;
+      response.setHeader("location", destinationUrl);
       response.end();
     });
-    await new Promise<void>((resolve) => source.listen(0, "127.0.0.1", resolve));
-    const sourceAddress = source.address();
-    const sourcePort = typeof sourceAddress === "object" && sourceAddress ? sourceAddress.port : 0;
-    try {
-      await expect(
-        fetchOpenAICompatibleModels(
-          `http://127.0.0.1:${sourcePort}/v1`,
-          "fake-origin-key",
-          undefined,
-          { allowPrivateNetwork: true },
-        ),
-      ).resolves.toEqual(["redirected-model"]);
-      expect(forwardedAuthorization).toBe("");
-    } finally {
-      await Promise.all(
-        [source, destination].map(
-          (server) =>
-            new Promise<void>((resolve, reject) =>
-              server.close((error) => (error ? reject(error) : resolve())),
-            ),
-        ),
-      );
-    }
+    servers.push(source);
+    const sourceUrl = await listen(source);
+
+    const response = await createOpenAICompatibleFetch({ allowPrivateNetwork: true })(sourceUrl, {
+      headers: { authorization: "Bearer fake-gateway-key" },
+    });
+
+    expect(await response.text()).toBe("ok");
+    expect(redirectedAuthorization).toBeUndefined();
   });
 
   it("round-trips model lists and recognizes gateway provider ids", () => {
@@ -144,3 +163,15 @@ describe("openai-compatible gateways", () => {
     expect(labelForDiscoveredModels(["gemini-2.5-pro", "gpt-4o"])).toBe("API key");
   });
 });
+
+function listen(server: ReturnType<typeof createServer>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      const address = server.address();
+      if (!address || typeof address === "string") return reject(new Error("Missing test port"));
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}

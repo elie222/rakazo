@@ -121,7 +121,10 @@ async function cancelActiveRuns(
     data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
   });
   await deps.prisma.event.deleteMany({
-    where: { type: "thread.progress", runId: { in: activeRuns.map((run) => run.id) } },
+    where: {
+      type: { in: ["thread.progress", "thread.reasoning"] },
+      runId: { in: activeRuns.map((run) => run.id) },
+    },
   });
 }
 

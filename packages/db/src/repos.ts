@@ -30,6 +30,8 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    modelProvider?: string | null;
+    modelId?: string | null;
   },
   preview = "",
   status = "idle",
@@ -59,6 +61,8 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    modelProvider: bot.modelProvider ?? null,
+    modelId: bot.modelId ?? null,
   };
 }
 
@@ -185,6 +189,8 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
+        modelProvider?: string | null;
+        modelId?: string | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -233,6 +239,8 @@ export function createRepos(prisma: PrismaClient) {
             parentBotId: input.parentBotId ?? null,
             computerId: teamComputer.id,
             spawnKey: input.spawnKey,
+            modelProvider: input.modelProvider ?? null,
+            modelId: input.modelId ?? null,
           },
         });
         const thread = await tx.thread.create({

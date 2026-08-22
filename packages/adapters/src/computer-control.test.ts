@@ -56,7 +56,7 @@ describe("computer control leases", () => {
       name: "computer.control-expire",
       payload: { computerId: "computer-id", leaseId: "lease-1" },
       availableAt: expiresAt,
-      replaceKey: "computer.control-expire:computer-id",
+      replaceKey: "computer.control-expire:computer-id:lease-1",
     });
     expect(harness.setScreenControl).not.toHaveBeenCalled();
   });

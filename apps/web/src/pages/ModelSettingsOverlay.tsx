@@ -127,8 +127,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const isCustom = Boolean(selected?.custom);
+  const isCustomTemplate = selected?.provider === "openai-compatible";
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
-  const acceptsKey = selected?.auth !== "oauth";
+  const acceptsKey = selected?.auth !== "oauth" || isCustom;
   const deviceSignIn = selected?.signIn === "device-code";
   const busy = pending !== null || oauthPending;
 
@@ -450,20 +452,94 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
             {selected ? (
               <>
-                <div className="block text-[13.5px] text-[#85858A]">
-                  <span>Model</span>
-                  <ModelPicker
-                    options={modelsForProvider}
-                    value={selected.id}
-                    onChange={(nextModelId) => {
-                      cancelOAuthAttempt();
-                      setModelId(nextModelId);
-                      setError(null);
-                      setNotice(null);
-                    }}
-                  />
-                </div>
-                <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                {isCustom ? (
+                  <div className="space-y-4">
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Name
+                      <input
+                        value={endpointLabel}
+                        onChange={(event) => setEndpointLabel(event.target.value)}
+                        placeholder="Office vLLM"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Base URL
+                      <input
+                        value={baseUrl}
+                        onChange={(event) => setBaseUrl(event.target.value)}
+                        placeholder="https://api.example.com/v1"
+                        autoComplete="off"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <p className="text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="block min-w-[220px] flex-1 text-[13.5px] text-[#85858A]">
+                        <label htmlFor="custom-endpoint-model">Model id</label>
+                        {probedModels.length ||
+                        (!isCustomTemplate && modelsForProvider.length > 1) ? (
+                          <select
+                            id="custom-endpoint-model"
+                            value={modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          >
+                            {[
+                              ...new Set([
+                                ...probedModels,
+                                ...modelsForProvider.map((entry) => entry.id),
+                                modelId,
+                              ]),
+                            ]
+                              .filter(Boolean)
+                              .map((id) => (
+                                <option key={id} value={id}>
+                                  {id}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            id="custom-endpoint-model"
+                            value={isCustomTemplate && modelId === "custom" ? "" : modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            placeholder="llama3.1"
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          />
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                        onClick={() => void probeModels()}
+                      >
+                        {pending === "probe" ? "Fetching…" : "Fetch models"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="block text-[13.5px] text-[#85858A]">
+                      <span>Model</span>
+                      <ModelPicker
+                        options={modelsForProvider}
+                        value={selected.id}
+                        onChange={(nextModelId) => {
+                          cancelOAuthAttempt();
+                          setModelId(nextModelId);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
+                      {selected.billing}
+                    </p>
+                  </>
+                )}
 
                 <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
@@ -626,7 +702,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ? "Replace API key"
                         : deviceSignIn
                           ? "Or connect an API key"
-                          : "API key"}
+                          : isCustom
+                            ? "API key (optional)"
+                            : "API key"}
                       <input
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
@@ -640,7 +718,12 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={busy || apiKey.trim().length < 8}
+                      disabled={
+                        busy ||
+                        (isCustom
+                          ? !(baseUrl.trim() || selected.baseUrl)
+                          : apiKey.trim().length < 8)
+                      }
                       onClick={() => void connectKey()}
                       className="mt-3"
                     >

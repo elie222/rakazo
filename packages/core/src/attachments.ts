@@ -90,6 +90,9 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
       if (block.kind === "text") return block.text;
+      // Reasoning is user-visible trace data, not conversation input. Replaying
+      // it would leak internal thinking and tool arguments into later prompts.
+      if (block.kind === "reasoning") return "";
       if (block.kind === "image") return `[image: ${block.name}]`;
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;

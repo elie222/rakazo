@@ -47,6 +47,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       `deployment-owner-fixture-${stamp}@rakazo.test`,
       "Deployment Owner Fixture",
     );
+    const deploymentOwner = await rpc<Actor>(app, deploymentOwnerCookie, "me");
+    await handles.prisma.deploymentSettings.update({
+      where: { id: "default" },
+      data: { ownerUserId: deploymentOwner.userId },
+    });
   });
 
   afterAll(async () => {
@@ -775,7 +780,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         apiKey: "fake-private-probe-key",
       });
       expect(probe.status).toBeGreaterThanOrEqual(400);
-      expect(await probe.text()).toMatch(/private.network|deployment.owner/i);
+      expect(await probe.text()).toMatch(/private|local|deployment.owner/i);
 
       const connect = await raw(app, cookie, "models/connect", {
         provider: "openai-compatible",
@@ -785,7 +790,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         baseUrl,
       });
       expect(connect.status).toBeGreaterThanOrEqual(400);
-      expect(await connect.text()).toMatch(/private.network|deployment.owner/i);
+      expect(await connect.text()).toMatch(/private|local|deployment.owner/i);
       expect(requests).toBe(0);
     } finally {
       await new Promise<void>((resolve, reject) =>
