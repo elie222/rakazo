@@ -264,7 +264,7 @@ export default function Thread() {
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {
                 markReadIfVisible();
               }
-              if (event.type === "run.completed") {
+              if (event.type === "run.completed" || event.type === "run.failed") {
                 void refresh().catch(() => undefined);
               }
             },

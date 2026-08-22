@@ -135,5 +135,8 @@ describe("openai-compatible gateways", () => {
     expect(errorFromOpenAICompatibleBody("upstream refused the stream", 502)).toBe(
       "502: upstream refused the stream",
     );
+    expect(errorFromOpenAICompatibleBody('{"choices":[{"message":{"content":""}}]}', 200)).toBe(
+      "The gateway returned an empty reply",
+    );
   });
 });

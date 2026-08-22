@@ -9,6 +9,7 @@ const fakeAgentState = vi.hoisted(() => ({
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: undefined, messages: [] };
+    private subscriber?: (event: Record<string, unknown>) => void;
     private readonly tool: {
       execute: (toolCallId: string, params: unknown) => Promise<unknown>;
     };
@@ -30,10 +31,19 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       this.tool = tool;
     }
 
-    subscribe(_listener: unknown) {}
+    subscribe(listener: (event: Record<string, unknown>) => void) {
+      this.subscriber = listener;
+    }
 
     async prompt() {
       fakeAgentState.result = await this.tool.execute("observe-1", {});
+      this.subscriber?.({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "I can continue with the available tools." }],
+        },
+      });
     }
 
     async waitForIdle() {}

@@ -178,6 +178,66 @@ describeIntegration("run executor lifecycle", () => {
     ]);
   });
 
+  it("persists one visible error before the failed-run event under concurrent finalization", async () => {
+    const seeded = await seedRun("failed-terminal-fence", "exercise the fake gateway", {
+      status: "running",
+      leaseOwner: "failed-terminal-worker",
+      leaseFence: 5,
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+      startedAt: new Date(),
+    });
+    const attempt = await handles.prisma.attempt.create({
+      data: { runId: seeded.run.id, fence: 5, status: "running" },
+    });
+    const events = createThreadEvents(handles.prisma);
+    const input = {
+      workspaceId: seeded.me.workspaceId,
+      threadId: seeded.thread.id,
+      botId: seeded.bot.id,
+      runId: seeded.run.id,
+      taskId: seeded.task.id,
+      attemptId: attempt.id,
+      leaseOwner: "failed-terminal-worker",
+      leaseFence: 5,
+      outcome: "failed" as const,
+      error: "Fake gateway unavailable",
+    };
+
+    const results = await Promise.all([events.finalizeRun(input), events.finalizeRun(input)]);
+
+    expect(results.sort()).toEqual([false, true]);
+    const [run, storedAttempt, task, messages, terminalEvents] = await Promise.all([
+      handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      handles.prisma.attempt.findUniqueOrThrow({ where: { id: attempt.id } }),
+      handles.prisma.task.findUniqueOrThrow({ where: { id: seeded.task.id } }),
+      handles.prisma.message.findMany({ where: { runId: seeded.run.id } }),
+      handles.prisma.event.findMany({
+        where: {
+          runId: seeded.run.id,
+          type: { in: ["thread.message.created", "run.failed"] },
+        },
+        orderBy: { seq: "asc" },
+      }),
+    ]);
+    expect(run).toMatchObject({
+      status: "failed",
+      error: "Fake gateway unavailable",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    });
+    expect(storedAttempt).toMatchObject({
+      status: "failed",
+      error: "Fake gateway unavailable",
+    });
+    expect(task.status).toBe("failed");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.blocks).toEqual([{ kind: "text", text: "Fake gateway unavailable" }]);
+    expect(terminalEvents.map((event) => event.type)).toEqual([
+      "thread.message.created",
+      "run.failed",
+    ]);
+  });
+
   it("rolls back every terminal write when the atomic commit fails", async () => {
     const seeded = await seedRun("terminal-rollback", "do not partially finish", {
       status: "running",

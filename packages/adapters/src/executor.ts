@@ -946,6 +946,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
                 pendingProgress = "";
               }
+            } else if (event.type === "error") {
+              throw new Error(event.message);
             } else if (event.type === "progress") {
               await deps.events.append({
                 workspaceId: run.workspaceId,

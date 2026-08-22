@@ -50,10 +50,14 @@ export class PiAgentRuntime implements AgentRuntime {
   async *run(request: AgentRunRequest, context: AdapterContext): AsyncIterable<AgentRuntimeEvent> {
     const controller = new AbortController();
     running.set(request.runId, controller);
-    const signal = context.signal ?? controller.signal;
+    const signal = AbortSignal.any([controller.signal, context.signal]);
     const queue = createQueue();
 
     const work = (async () => {
+      let agent: Agent | undefined;
+      let onAbort: (() => void) | undefined;
+      let streamed = "";
+      let sawToolExecution = false;
       try {
         const provider =
           request.model.provider === "scripted" ? "openrouter" : request.model.provider;
@@ -64,8 +68,11 @@ export class PiAgentRuntime implements AgentRuntime {
         const models = modelsForRequest(request, provider);
         const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
         if (!model) {
-          queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
-          queue.push({ type: "done" });
+          pushRunError(
+            queue,
+            `Unknown model ${provider}/${modelId}`,
+            Boolean(request.model.baseUrl),
+          );
           return;
         }
 
@@ -88,7 +95,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const tools = toAgentTools(toolDefs, host);
         const history = toHistory(request.history, request.prompt);
 
-        const agent = new Agent({
+        agent = new Agent({
           streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
           getApiKey: async () => apiKey,
           transformContext: async (messages) => pruneComputerScreenshotContext(messages),
@@ -109,14 +116,16 @@ export class PiAgentRuntime implements AgentRuntime {
           queue.push({ type: "done", text: "stopped" });
           return;
         }
-        const onAbort = () => {
-          agent.abort();
+        onAbort = () => {
+          agent?.abort();
           for (const nested of nestedAgents) nested.abort();
         };
         signal.addEventListener("abort", onAbort);
 
-        let streamed = "";
         agent.subscribe((event) => {
+          if (event.type === "tool_execution_start") {
+            sawToolExecution = true;
+          }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
@@ -154,6 +163,7 @@ export class PiAgentRuntime implements AgentRuntime {
         await agent.prompt(request.prompt, images?.length ? images : undefined);
         await agent.waitForIdle();
         signal.removeEventListener("abort", onAbort);
+        onAbort = undefined;
 
         const error = agent.state.errorMessage;
         if (error && !isMissingFinishReasonError(error)) {
@@ -162,16 +172,18 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         if (!streamed) {
           try {
+            const existing = assistantText(agent.state.messages.at(-1));
             const recovered =
-              (await recoverGatewayReply(request, signal)) ||
-              assistantText(agent.state.messages.at(-1));
+              existing || (sawToolExecution ? "" : await recoverGatewayReply(request, signal));
             if (recovered) {
               queue.push({ type: "text", text: recovered });
               streamed = recovered;
             } else {
               pushRunError(
                 queue,
-                error || "The gateway returned an empty reply",
+                sawToolExecution
+                  ? "The model returned no final reply after running tools"
+                  : error || "The gateway returned an empty reply",
                 Boolean(request.model.baseUrl),
               );
               return;
@@ -188,7 +200,15 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        if (isMissingFinishReasonError(message) && request.model.baseUrl) {
+        if (isMissingFinishReasonError(message)) {
+          const existing = streamed || assistantText(agent?.state.messages.at(-1));
+          if (existing) {
+            if (!streamed) queue.push({ type: "text", text: existing });
+            queue.push({ type: "done", text: existing });
+            return;
+          }
+        }
+        if (isMissingFinishReasonError(message) && request.model.baseUrl && !sawToolExecution) {
           try {
             const recovered = await recoverGatewayReply(request, signal);
             if (recovered) {
@@ -205,8 +225,15 @@ export class PiAgentRuntime implements AgentRuntime {
             return;
           }
         }
-        pushRunError(queue, message, Boolean(request.model.baseUrl));
+        pushRunError(
+          queue,
+          isMissingFinishReasonError(message) && sawToolExecution
+            ? "The model returned no final reply after running tools"
+            : message,
+          Boolean(request.model.baseUrl),
+        );
       } finally {
+        if (onAbort) signal.removeEventListener("abort", onAbort);
         queue.close();
       }
     })();
@@ -724,10 +751,9 @@ function pushRunError(
     },
   });
   queue.push({
-    type: "text",
-    text: message,
+    type: "error",
+    message,
   });
-  queue.push({ type: "done", text: message });
 }
 
 async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal): Promise<string> {

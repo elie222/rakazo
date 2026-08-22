@@ -248,7 +248,7 @@ const MAX_GATEWAY_ERROR_CHARS = 4000;
 
 export function errorFromOpenAICompatibleBody(raw: string, status?: number): string {
   const trimmed = raw.trim();
-  const extracted = extractGatewayErrorMessage(trimmed) || trimmed;
+  const extracted = extractGatewayErrorMessage(trimmed) || (isJson(trimmed) ? "" : trimmed);
   const clipped =
     extracted.length > MAX_GATEWAY_ERROR_CHARS
       ? `${extracted.slice(0, MAX_GATEWAY_ERROR_CHARS)}…`
@@ -258,6 +258,16 @@ export function errorFromOpenAICompatibleBody(raw: string, status?: number): str
     return /^\d{3}\b/.test(clipped) ? clipped : `${status}: ${clipped}`;
   }
   return clipped || "The gateway returned an empty reply";
+}
+
+function isJson(value: string): boolean {
+  if (!value) return false;
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function extractGatewayErrorMessage(raw: string): string {

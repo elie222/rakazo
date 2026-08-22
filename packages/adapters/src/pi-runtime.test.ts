@@ -30,6 +30,7 @@ describe("Pi agent runtime", () => {
       },
     )) {
       if (event.type === "text") events.push(event.text);
+      if (event.type === "error") events.push(event.message);
     }
     expect(events.join(" ")).toMatch(/Unknown model/i);
   });
