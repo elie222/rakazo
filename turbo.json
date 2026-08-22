@@ -10,6 +10,7 @@
         "BETTER_AUTH_SECRET",
         "DATABASE_URL",
         "ENCRYPTION_KEY",
+        "GIT_SHA",
         "PUBLIC_POSTHOG_HOST",
         "PUBLIC_POSTHOG_KEY"
       ],
