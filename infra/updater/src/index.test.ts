@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ServerUpdateRun } from "@rakazo/contracts";
@@ -108,7 +108,8 @@ describe("updater HTTP surface", () => {
   });
 
   it("refuses a fork build when the deployment has no checkout to build from", async () => {
-    const response = await app.request("/apply", {
+    const fixture = await deployment();
+    const response = await createUpdaterApp(fixture.config).request("/apply", {
       method: "POST",
       headers: authorized,
       body: JSON.stringify({ repoUrl: "https://github.com/someone/rakazo", branch: "main" }),
@@ -119,21 +120,34 @@ describe("updater HTTP surface", () => {
   });
 
   it("refuses a rollback when no previous tag was recorded", async () => {
-    const response = await app.request("/rollback", { method: "POST", headers: authorized });
+    const fixture = await deployment("RAKAZO_IMAGE_TAG=v1.0.0\n");
+    const response = await createUpdaterApp(fixture.config).request("/rollback", {
+      method: "POST",
+      headers: authorized,
+    });
     expect(response.status).toBe(400);
     const payload = (await response.json()) as { error: string };
     expect(payload.error).toMatch(/nothing to roll back/);
   });
 
   it("reports the deployment it manages without touching Docker", async () => {
-    const response = await app.request("/state", { headers: authorized });
+    const fixture = await deployment();
+    const response = await createUpdaterApp(fixture.config).request("/state", {
+      headers: authorized,
+    });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      deployDir: "/rakazo-updater-tests-no-such-directory",
-      currentTag: "local",
-      previousTag: null,
+      deployDir: fixture.deployDir,
+      currentTag: "v1.0.0",
+      previousTag: "v0.9.0",
       checkout: { present: false },
     });
+  });
+
+  it("fails closed when the deployment environment cannot be read", async () => {
+    const response = await app.request("/state", { headers: authorized });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/\.env/) });
   });
 });
 
@@ -235,6 +249,49 @@ describe("updater orchestration", () => {
     expect(calls.find((args) => args.includes("up"))).toEqual(
       expect.arrayContaining(["--pull", "never"]),
     );
+  });
+
+  it("preserves the environment owner and surrounding values with mode 0600", async () => {
+    const fixture = await deployment("FAKE_SETTING=kept\nRAKAZO_IMAGE_TAG=v1.0.0\n");
+    const envFile = path.join(fixture.deployDir, ".env");
+    await chmod(envFile, 0o644);
+    const before = await lstat(envFile);
+    const run: UpdaterCommandRunner = async (command) =>
+      command === "git" ? ok(`${targetCommit}\trefs/tags/v1.1.0\n`) : ok();
+    const response = await request(createUpdaterApp(fixture.config, { run }), "/apply", {
+      repoUrl: "https://github.com/elie222/rakazo",
+      branch: "main",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
+    const after = await lstat(envFile);
+    expect({ uid: after.uid, gid: after.gid, mode: after.mode & 0o777 }).toEqual({
+      uid: before.uid,
+      gid: before.gid,
+      mode: 0o600,
+    });
+    expect(await readFile(envFile, "utf8")).toMatch(/FAKE_SETTING=kept/);
+  });
+
+  it("refuses to replace a symlinked deployment environment", async () => {
+    const fixture = await deployment();
+    const envFile = path.join(fixture.deployDir, ".env");
+    const target = path.join(fixture.deployDir, "fake-target");
+    await writeFile(target, "RAKAZO_IMAGE_TAG=v1.0.0\n");
+    await rm(envFile);
+    await symlink(target, envFile);
+    const run: UpdaterCommandRunner = async (command) =>
+      command === "git" ? ok(`${targetCommit}\trefs/tags/v1.1.0\n`) : ok();
+    const response = await request(createUpdaterApp(fixture.config, { run }), "/apply", {
+      repoUrl: "https://github.com/elie222/rakazo",
+      branch: "main",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/persist/),
+    });
+    expect(await readFile(target, "utf8")).toBe("RAKAZO_IMAGE_TAG=v1.0.0\n");
   });
 
   it("fails closed when it cannot verify checkout cleanliness", async () => {

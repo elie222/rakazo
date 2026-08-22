@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { access, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, lstat, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -260,15 +261,39 @@ export function createUpdaterApp(
     }
   }
 
-  function readEnvFile() {
-    return readFile(config.envFile, "utf8").catch(() => "");
+  async function readEnvFile() {
+    try {
+      return await readFile(config.envFile, "utf8");
+    } catch (error) {
+      throw new UpdateRefused(
+        `Could not read the deployment environment file at ${config.envFile}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async function writeEnvAssignments(assignments: Record<string, string>) {
-    const contents = upsertEnvAssignments(await readEnvFile(), assignments);
-    const temporary = `${config.envFile}.rakazo-update`;
-    await writeFile(temporary, contents, { encoding: "utf8", mode: 0o600 });
-    await rename(temporary, config.envFile);
+    const [current, metadata] = await Promise.all([readEnvFile(), lstat(config.envFile)]);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new UpdateRefused("The deployment environment must be a regular, non-symlink file.");
+    }
+    const contents = upsertEnvAssignments(current, assignments);
+    const temporary = `${config.envFile}.rakazo-update-${randomUUID()}`;
+    let temporaryFile: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      temporaryFile = await open(temporary, "wx", 0o600);
+      await temporaryFile.writeFile(contents, { encoding: "utf8" });
+      if (metadata.uid !== process.getuid() || metadata.gid !== process.getgid()) {
+        await temporaryFile.chown(metadata.uid, metadata.gid);
+      }
+      await temporaryFile.sync();
+      await temporaryFile.close();
+      temporaryFile = null;
+      await rename(temporary, config.envFile);
+    } catch (error) {
+      await temporaryFile?.close().catch(() => undefined);
+      await unlink(temporary).catch(() => undefined);
+      throw error;
+    }
   }
 
   function git(args: string[], stepId = "read") {
