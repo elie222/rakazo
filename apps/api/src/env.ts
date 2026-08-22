@@ -2,6 +2,7 @@ import {
   resolveAuthSecret,
   resolveEncryptionKey,
   resolveSupervisorToken,
+  resolveUpdaterToken,
 } from "@rakazo/core";
 
 export interface AppEnv {
@@ -32,6 +33,10 @@ export interface AppEnv {
   wakeupDriver: string;
   port: number;
   gitSha: string | undefined;
+  selfUpdateDisabled: boolean;
+  /** Set only in Compose deployments; unset means the checkout engine or nothing at all. */
+  updaterUrl: string | undefined;
+  updaterToken: string;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -64,6 +69,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    selfUpdateDisabled: optional(source.RAKAZO_SELF_UPDATE) === "0",
+    updaterUrl: optional(source.RAKAZO_UPDATER_URL),
+    updaterToken: resolveUpdaterToken(source),
   };
 }
 

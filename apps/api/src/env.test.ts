@@ -93,4 +93,23 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 
+  it("only turns off self-update for an explicit RAKAZO_SELF_UPDATE=0", () => {
+    expect(loadEnv(base).selfUpdateDisabled).toBe(false);
+    expect(loadEnv({ ...base, RAKAZO_SELF_UPDATE: "1" }).selfUpdateDisabled).toBe(false);
+    expect(loadEnv({ ...base, RAKAZO_SELF_UPDATE: " 0 " }).selfUpdateDisabled).toBe(true);
+  });
+
+  it("has no updater until Compose points it at one", () => {
+    expect(loadEnv(base).updaterUrl).toBeUndefined();
+    expect(loadEnv({ ...base, RAKAZO_UPDATER_URL: " http://updater:7092 " }).updaterUrl).toBe(
+      "http://updater:7092",
+    );
+  });
+
+  it("derives the updater token from the auth secret unless one is set", () => {
+    expect(loadEnv(base).updaterToken).toBe(loadEnv(base).authSecret);
+    expect(loadEnv({ ...base, RAKAZO_UPDATER_TOKEN: "updater-only" }).updaterToken).toBe(
+      "updater-only",
+    );
+  });
 });

@@ -33,6 +33,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { createSelfUpdateService, resolveRepoRoot } from "./self-update.js";
+import { createUpdaterClient } from "./updater-client.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
 /** Read from package.json so the version a client compares against cannot drift from the release. */
@@ -195,7 +197,24 @@ export async function createApp(
   reconciler?.start();
 
   const version = serverVersion();
-  const bootCommit = env.gitSha ?? (await readHeadCommit(process.cwd()));
+  const repoRoot = env.selfUpdateDisabled ? null : await resolveRepoRoot(process.cwd());
+  const bootCommit = repoRoot === null ? null : await readHeadCommit(repoRoot);
+  const selfUpdate = createSelfUpdateService({
+    prisma,
+    version,
+    revision: env.gitSha ?? bootCommit,
+    repoRoot,
+    disabled: env.selfUpdateDisabled,
+    updater:
+      env.selfUpdateDisabled || !env.updaterUrl
+        ? null
+        : createUpdaterClient({ url: env.updaterUrl, token: env.updaterToken }),
+    unsupportedReason: env.selfUpdateDisabled
+      ? "Self-update is turned off on this deployment (RAKAZO_SELF_UPDATE=0)."
+      : repoRoot === null
+        ? "This deployment has no updater sidecar and does not run from a git checkout, so it cannot update itself. Add the `updater` service from infra/compose/docker-compose.prod.yml."
+        : null,
+  });
 
   const router = createRouter({
     prisma,
@@ -209,6 +228,7 @@ export async function createApp(
     oauthLogins,
     composio: stack.composio,
     artifacts,
+    selfUpdate,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,

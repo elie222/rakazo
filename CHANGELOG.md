@@ -9,7 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Voice mode: speak replies, hold-to-talk dictation, and half-duplex calls. Speech sits behind a `VoiceProvider` interface (ElevenLabs, OpenAI, Cartesia) so the product is not tied to one vendor. Keys stay on the server.
-- Electron first-run: Docker (default) or this Mac. This Mac runs the bot shell as you, with working directories under your home folder. macOS does not show its own permission dialog; the consent is Rakazo's. The choice is owner-only and is refused when `SANDBOX_PROVIDER` is not `docker` (so E2B and test fakes cannot enable it).
+- Owner-only in-app server updates. Compose deployments run published GHCR images and update through an `updater` sidecar that pulls the new tag and recreates the API, worker, and web containers together, so the three never disagree about which version they are; the previous tag is retained for a one-click rollback. A fork can be tracked instead, which builds on the server. Source checkouts still update in place and hand the restart to their supervisor.
+- Desktop auto-update through GitHub releases, and a dismissible warning when the desktop app and the server it connects to are on different versions. Version mismatch never blocks the app.
 - GitHub Copilot and SuperGrok / X Premium sign-in via Pi device-code OAuth (`openai-codex`, `github-copilot`, `xai`). Claude Pro is still omitted because Pi's Claude login uses a localhost callback that does not work from the web app.
 - Spawn peer bots (each with its own thread and computer) and short-lived in-thread subagents.
 - ChatGPT Plus or Pro sign-in for model access.

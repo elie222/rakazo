@@ -24,6 +24,9 @@ import {
   ModelCatalogEntrySchema,
   ModelCredentialSchema,
   RoutineSchema,
+  ServerUpdateCheckSchema,
+  ServerUpdateRunSchema,
+  ServerUpdateStatusSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -63,6 +66,25 @@ export const appContract = {
         }),
       )
       .output(DeploymentSettingsSchema),
+  },
+  /**
+   * Deployment-owner only: moves the server onto new code, either by recreating containers from
+   * published images or by updating a git checkout in place.
+   */
+  serverUpdate: {
+    status: oc.output(ServerUpdateStatusSchema),
+    setSource: oc
+      .input(
+        z.object({
+          repoUrl: z.string().max(400),
+          branch: z.string().max(200),
+        }),
+      )
+      .output(ServerUpdateStatusSchema),
+    check: oc.output(ServerUpdateCheckSchema),
+    apply: oc.output(ServerUpdateRunSchema),
+    /** Redeploys the image tag that was running before the last update. */
+    rollback: oc.output(ServerUpdateRunSchema),
   },
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),

@@ -40,3 +40,37 @@ export function resolveSupervisorToken(env: NodeJS.ProcessEnv = process.env): st
   if (token) return token;
   return resolveAuthSecret(env);
 }
+
+/**
+ * The updater sidecar holds the Docker socket and, unlike the sandbox supervisor, acts on a
+ * user-supplied repository URL. It gets its own token so revoking update access does not mean
+ * rebuilding sandboxing, while still needing no configuration in a default deployment.
+ */
+export function resolveUpdaterToken(env: NodeJS.ProcessEnv = process.env): string {
+  const token = env.RAKAZO_UPDATER_TOKEN;
+  if (token) return token;
+  return resolveAuthSecret(env);
+}
+
+/**
+ * Constant-time bearer comparison, shared by every privileged sidecar.
+ *
+ * Deliberately not `node:crypto`'s `timingSafeEqual`: this module is reachable from the web bundle
+ * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build with
+ * `"timingSafeEqual" is not exported by "__vite-browser-external"`, which takes the whole
+ * application image down with it. The XOR accumulation below inspects every byte no matter where
+ * the first difference falls, which is the property that mattered. Length is compared first, as it
+ * was before — a length mismatch is already observable from the response.
+ */
+export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
+  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const encoder = new TextEncoder();
+  const actual = encoder.encode(expectedToken);
+  const candidate = encoder.encode(supplied);
+  if (actual.length !== candidate.length) return false;
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) {
+    difference |= (actual[index] ?? 0) ^ (candidate[index] ?? 0);
+  }
+  return difference === 0;
+}

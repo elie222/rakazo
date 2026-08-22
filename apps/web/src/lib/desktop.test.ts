@@ -13,8 +13,23 @@ function desktop(platform: string): RakazoDesktop {
       toggleMaximize: async () => undefined,
       state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
     },
+    update: {
+      state: async () => updateState,
+      check: async () => updateState,
+      download: async () => updateState,
+      install: async () => updateState,
+    },
   };
 }
+
+const updateState = {
+  phase: "idle" as const,
+  currentVersion: "0.1.0",
+  availableVersion: null,
+  percent: null,
+  message: null,
+  checkedAt: null,
+};
 
 describe("window chrome", () => {
   it("does not paint fake traffic lights in the browser", () => {

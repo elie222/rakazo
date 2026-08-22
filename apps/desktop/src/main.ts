@@ -1,8 +1,16 @@
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
+import type { DesktopReachability, DesktopSetup, DesktopUpdateState } from "@rakazo/contracts";
 import { app, BrowserWindow, ipcMain, net, session } from "electron";
+import {
+  initialUpdateState,
+  LAUNCH_CHECK_DELAY_MS,
+  reduceUpdateState,
+  shouldCheck,
+  type UpdaterEvent,
+  updaterSupport,
+} from "./auto-update.js";
 import {
   bundledRendererCandidates,
   contentType,
@@ -32,6 +40,15 @@ let quitting = false;
 let warmWindowTimer: NodeJS.Timeout | undefined;
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
 
+const updaterEnvironment = {
+  packaged: app.isPackaged,
+  version: app.getVersion(),
+  disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
+};
+let updateState: DesktopUpdateState = initialUpdateState(updaterEnvironment);
+let lastUpdateCheck = 0;
+let updaterWired = false;
+
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
@@ -46,6 +63,95 @@ function markOnce(name: string) {
 
 function windowFrom(event: Electron.IpcMainInvokeEvent) {
   return BrowserWindow.fromWebContents(event.sender);
+}
+
+interface ElectronAutoUpdater {
+  autoDownload: boolean;
+  autoInstallOnAppQuit: boolean;
+  on: (event: string, listener: (payload: never) => void) => unknown;
+  checkForUpdates: () => Promise<unknown>;
+  downloadUpdate: () => Promise<unknown>;
+  quitAndInstall: () => void;
+}
+
+/** The updater reports failures on an event, not a rejection, so the caller's intent is kept here. */
+let updateCheckWasRequested = false;
+
+function pushUpdateEvent(event: UpdaterEvent) {
+  updateState = reduceUpdateState(updateState, event, new Date().toISOString());
+}
+
+/**
+ * Loaded on demand: an unpackaged run has no `app-update.yml`, and importing the updater there
+ * only produces a failure the developer cannot act on.
+ */
+async function loadAutoUpdater(): Promise<ElectronAutoUpdater | null> {
+  if (!updaterSupport(updaterEnvironment).supported) return null;
+  let updater: ElectronAutoUpdater;
+  try {
+    const module = await import("electron-updater");
+    updater = (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
+  } catch (error) {
+    pushUpdateEvent({ type: "failed", error, userInitiated: false });
+    return null;
+  }
+  if (!updaterWired) {
+    updaterWired = true;
+    updater.autoDownload = false;
+    updater.autoInstallOnAppQuit = true;
+    updater.on("checking-for-update", () => pushUpdateEvent({ type: "check-start" }));
+    updater.on("update-available", (info: { version: string }) =>
+      pushUpdateEvent({ type: "available", version: info.version }),
+    );
+    updater.on("update-not-available", () => pushUpdateEvent({ type: "not-available" }));
+    updater.on("download-progress", (progress: { percent: number }) =>
+      pushUpdateEvent({ type: "progress", percent: progress.percent }),
+    );
+    updater.on("update-downloaded", (info: { version: string }) =>
+      pushUpdateEvent({ type: "downloaded", version: info.version }),
+    );
+    updater.on("error", (error: Error) =>
+      pushUpdateEvent({ type: "failed", error, userInitiated: updateCheckWasRequested }),
+    );
+  }
+  return updater;
+}
+
+async function checkForDesktopUpdate(userInitiated: boolean) {
+  const now = Date.now();
+  if (!shouldCheck(updateState, now, lastUpdateCheck)) return updateState;
+  const updater = await loadAutoUpdater();
+  if (updater === null) return updateState;
+  lastUpdateCheck = now;
+  updateCheckWasRequested = userInitiated;
+  try {
+    await updater.checkForUpdates();
+  } catch (error) {
+    pushUpdateEvent({ type: "failed", error, userInitiated });
+  }
+  return updateState;
+}
+
+async function downloadDesktopUpdate() {
+  if (updateState.phase !== "available") return updateState;
+  const updater = await loadAutoUpdater();
+  if (updater === null) return updateState;
+  pushUpdateEvent({ type: "download-start" });
+  try {
+    await updater.downloadUpdate();
+  } catch (error) {
+    pushUpdateEvent({ type: "failed", error, userInitiated: true });
+  }
+  return updateState;
+}
+
+async function installDesktopUpdate() {
+  if (updateState.phase !== "ready") return updateState;
+  const updater = await loadAutoUpdater();
+  if (updater === null) return updateState;
+  quitting = true;
+  updater.quitAndInstall();
+  return updateState;
 }
 
 function developmentIcon() {
@@ -247,6 +353,10 @@ app.whenReady().then(async () => {
       fullScreen: win?.isFullScreen() ?? false,
     };
   });
+  ipcMain.handle("desktop.update.state", () => updateState);
+  ipcMain.handle("desktop.update.check", () => checkForDesktopUpdate(true));
+  ipcMain.handle("desktop.update.download", () => downloadDesktopUpdate());
+  ipcMain.handle("desktop.update.install", () => installDesktopUpdate());
   ipcMain.handle("desktop.setup.state", (event) => {
     if (!fromSetupWindow(event)) return null;
     return {
@@ -283,6 +393,7 @@ app.whenReady().then(async () => {
   } else {
     await installBundledRenderer(currentTargetUrl);
     createWindow(currentTargetUrl);
+    setTimeout(() => void checkForDesktopUpdate(false), LAUNCH_CHECK_DELAY_MS).unref();
   }
 
   app.on("activate", () => {

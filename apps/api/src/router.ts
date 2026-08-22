@@ -105,6 +105,7 @@ import {
 } from "./artifacts.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
+import { SelfUpdateRefused, type SelfUpdateService } from "./self-update.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
@@ -146,6 +147,7 @@ export interface RouterDeps {
   oauthLogins: PiOAuthLogins;
   composio?: ComposioProvider;
   artifacts: ArtifactStore;
+  selfUpdate: SelfUpdateService;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -221,6 +223,28 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         return deploymentDto(deps.prisma);
+      }),
+    },
+    serverUpdate: {
+      status: authed.serverUpdate.status.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return deps.selfUpdate.status();
+      }),
+      setSource: authed.serverUpdate.setSource.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.setSource(input));
+      }),
+      check: authed.serverUpdate.check.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.check());
+      }),
+      apply: authed.serverUpdate.apply.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.apply());
+      }),
+      rollback: authed.serverUpdate.rollback.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.rollback());
       }),
     },
     models: {
@@ -2157,6 +2181,18 @@ async function deploymentDto(prisma: PrismaClient) {
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
   };
+}
+
+/** A refused update is operator error, not a server fault, so it reads as a message not a 500. */
+async function asBadRequest<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof SelfUpdateRefused) {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    throw error;
+  }
 }
 
 async function persistModelCredential(
