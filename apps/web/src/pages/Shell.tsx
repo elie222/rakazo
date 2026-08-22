@@ -2,10 +2,13 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
   BotSection,
+  Channel,
   ComputerMode,
   ComputerStatus,
-  Me,
+  ModelCatalogEntry,
+  ModelCredential,
   ProductEvent,
+  ReasoningStep,
   Routine,
   SearchHit,
   TaughtSkill,
@@ -22,21 +25,33 @@ import {
 import {
   abortableDelay,
   attachmentsForBot,
+  createPendingUserMessageId,
   cronFromPreset,
   defaultCronPreset,
+  formatChatTimestamp,
   formatCron,
+  formatInboxTime,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  matchingAskOption,
+  parseAskOptions,
+  pendingUserMessageTextKey,
   presetFromCron,
+  shouldShowChatTimestamp,
   speechFromBlocks,
+  visibleReasoningSteps,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
+  Bot as BotIcon,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Cpu,
   Gauge,
+  Hash,
   LogOut,
   Mic,
   Monitor,
@@ -44,6 +59,7 @@ import {
   Phone,
   Plus,
   Puzzle,
+  RefreshCw,
   Settings,
   Square,
   Volume2,
@@ -53,6 +69,7 @@ import {
   type Dispatch,
   lazy,
   memo,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
   Suspense,
@@ -68,6 +85,7 @@ import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
+import { VersionNotice } from "../components/VersionNotice";
 import { decodeArtifactBase64, openArtifact } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
@@ -87,7 +105,8 @@ import {
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
 import type { ContextMenuPosition } from "./BotContextMenu";
-import { HostComputerPrompt } from "./HostComputerPrompt";
+import { ChannelView } from "./ChannelView";
+import { NewChannelDialog } from "./NewChannelDialog";
 import { WindowChrome } from "./WindowChrome";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
@@ -103,8 +122,14 @@ const PluginsOverlay = lazy(() =>
 const RoutineSchedule = lazy(() =>
   import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
 );
+const ServerUpdateOverlay = lazy(() =>
+  import("./ServerUpdateOverlay").then((module) => ({ default: module.ServerUpdateOverlay })),
+);
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
+);
+const BotChannelOverlay = lazy(() =>
+  import("./BotChannelOverlay").then((module) => ({ default: module.BotChannelOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 
@@ -120,14 +145,18 @@ type PendingAttachment = {
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
 export function ShellPage() {
-  const { botId } = useParams();
+  const { botId, channelId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const session = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -146,6 +175,7 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [serverUpdateOpen, setServerUpdateOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -163,7 +193,6 @@ export function ShellPage() {
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
-  const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -175,18 +204,19 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [channelPeer, setChannelPeer] = useState<{ botId: string; peerBotId: string } | null>(null);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
     runs: number;
   } | null>(null);
+  const [deploymentOwner, setDeploymentOwner] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
   const routineRunPending = useRef(false);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
-  const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
     botId: string;
@@ -202,6 +232,9 @@ export function ShellPage() {
   const autoSpokenBotId = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
+  const botWorking = Boolean(
+    snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
+  );
   const activePendingAttachments = useMemo(
     () => attachmentsForBot(pendingAttachments, active?.id),
     [active?.id, pendingAttachments],
@@ -211,6 +244,8 @@ export function ShellPage() {
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const routeBotId = useRef<string | undefined>(botId);
   routeBotId.current = botId;
+  const routeChannelId = useRef<string | undefined>(channelId);
+  routeChannelId.current = channelId;
   const activeBotId = useRef<string | undefined>(active?.id);
   activeBotId.current = active?.id;
   const screenRequest = useRef(0);
@@ -274,17 +309,19 @@ export function ShellPage() {
       navigate("/onboarding", { replace: true });
       return;
     }
+    // A channel route carries no bot id, so the fallback below would navigate out of it.
+    if (routeChannelId.current) return;
     const currentBotId = routeBotId.current;
     if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
       navigate(list[0] ? `/app/${list[0].id}` : "/app", { replace: true });
     }
   }
 
+  const refreshChannels = useCallback(async () => {
+    setChannels(await rpc.channels.list());
+  }, []);
+
   async function refreshThread(id: string) {
-    const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
     const pin = pinnedAroundRef.current;
     const keepPin = pin?.botId === id;
@@ -315,12 +352,6 @@ export function ShellPage() {
     setRoutinesBotId(id);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
-    if (!keepPin && stickToEnd) {
-      window.requestAnimationFrame(() => {
-        const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
-      });
-    }
     return snap;
   }
 
@@ -368,7 +399,6 @@ export function ShellPage() {
     void takeInitialBootstrap(botId)
       .then((bootstrap) => {
         if (cancelled) return;
-        setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
@@ -386,6 +416,7 @@ export function ShellPage() {
           navigate("/onboarding", { replace: true });
           return;
         }
+        if (routeChannelId.current) return;
         const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
         if (selectedBotId && selectedBotId !== botId) {
           navigate(`/app/${selectedBotId}`, { replace: true });
@@ -393,14 +424,17 @@ export function ShellPage() {
       })
       .catch(() => {
         if (cancelled) return;
-        setBootstrapMe(null);
         void refreshBots(true);
       });
+    void refreshChannels().catch(() => undefined);
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
       if (document.visibilityState !== "visible") return;
       window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void refreshBots().catch(() => undefined), 50);
+      refreshTimer = window.setTimeout(() => {
+        void refreshBots().catch(() => undefined);
+        void refreshChannels().catch(() => undefined);
+      }, 50);
     };
     window.addEventListener("focus", refreshVisibleBots);
     document.addEventListener("visibilitychange", refreshVisibleBots);
@@ -461,7 +495,9 @@ export function ShellPage() {
   ]);
 
   useEffect(() => {
-    if (!active) return;
+    // A channel route still keeps a fallback bot in `active`; reading its thread would
+    // silently clear that bot's unread badge while the user is looking at the channel.
+    if (!active || channelId) return;
     // Opening a bot clears the manual unread flag so it can auto-read again.
     manuallyUnread.current.delete(active.id);
     const markVisibleBotRead = () => {
@@ -474,7 +510,12 @@ export function ShellPage() {
       window.removeEventListener("focus", markVisibleBotRead);
       document.removeEventListener("visibilitychange", markVisibleBotRead);
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, channelId, markBotReadIfVisible]);
+
+  // The side panel is entirely about the active bot, so opening a channel must close it.
+  useEffect(() => {
+    if (channelId) setPanel(null);
+  }, [channelId]);
 
   useEffect(() => {
     if (!active) return;
@@ -516,6 +557,7 @@ export function ShellPage() {
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
               event.type === "run.completed" ||
+              event.type === "run.failed" ||
               event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
@@ -527,7 +569,11 @@ export function ShellPage() {
               }
               if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
-            if (event.type === "run.completed" || event.type === "skill.teaching.stopped") {
+            if (
+              event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "skill.teaching.stopped"
+            ) {
               void refreshThread(active.id).catch(() => undefined);
             } else if (isComputerStatusEvent(event)) {
               void refreshComputerScreen(active.id).catch(() => undefined);
@@ -547,10 +593,24 @@ export function ShellPage() {
     };
   }, [active?.id, markBotReadIfVisible, searchParams]);
 
+  const hiddenBots = useMemo(() => bots.filter((b) => b.hidden), [bots]);
+  const filteredChannels = useMemo(
+    () => channels.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())),
+    [channels, query],
+  );
   const filtered = useMemo(
-    () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
+    () =>
+      bots
+        .filter((b) => !b.hidden)
+        .filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
     [bots, query],
   );
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   const sidebarGroups = useMemo(
     () => groupBotsForSidebar(filtered, botSections),
     [botSections, filtered],
@@ -679,16 +739,6 @@ export function ShellPage() {
     }
   }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
 
-  useLayoutEffect(() => {
-    if (!active || snapshot?.botId !== active.id) return;
-    if (initiallyScrolledThread.current === snapshot.threadId) return;
-    if (pinnedAroundRef.current?.botId === active.id) return;
-    const element = messageScroll.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    initiallyScrolledThread.current = snapshot.threadId;
-  }, [active, snapshot?.botId, snapshot?.threadId]);
-
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const answerMessage = useCallback(async (message: ThreadMessage, text: string) => {
@@ -747,6 +797,27 @@ export function ShellPage() {
       const attachments = attachmentsForBot(pendingAttachments, id);
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return;
+      const pendingId = createPendingUserMessageId();
+      pinnedAroundRef.current = null;
+      if (trimmed) {
+        setSnapshot((current) => {
+          if (!current || current.botId !== id) return current;
+          return {
+            ...current,
+            messages: [
+              ...current.messages.filter((message) => message.id !== pendingId),
+              {
+                id: pendingId,
+                threadId: current.threadId,
+                seq: (current.messages.at(-1)?.seq ?? 0) + 1,
+                role: "user",
+                blocks: [{ kind: "text", text: trimmed }],
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+      }
       setSending(true);
       setSendError(null);
       try {
@@ -773,9 +844,16 @@ export function ShellPage() {
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
         if (activeBotId.current === id) setAttachmentNotice(null);
-        await refreshThreadRef.current(id);
       } catch (error) {
         if (activeBotId.current === id) {
+          setSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  messages: current.messages.filter((message) => message.id !== pendingId),
+                }
+              : current,
+          );
           setSendError(error instanceof Error ? error.message : "Failed to send message");
         }
       } finally {
@@ -985,20 +1063,13 @@ export function ShellPage() {
       data-ready={shellReady}
       className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
     >
-      {bootstrapMe !== undefined ? (
-        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
-      ) : null}
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
-          <button
-            type="button"
-            onClick={() => setPanel("create")}
-            className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
-            title="New bot"
-          >
-            +
-          </button>
+          <CreateMenu
+            onNewBot={() => setPanel("create")}
+            onNewChannel={() => setNewChannelOpen(true)}
+          />
         </div>
         <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[#202023] bg-[#141416] px-3 py-2 text-[14px] text-[#6C6C70]">
           <span>⌕</span>
@@ -1010,6 +1081,44 @@ export function ShellPage() {
           />
         </div>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+          {filteredChannels.length > 0 ? (
+            <div data-sidebar-group="channels">
+              <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-[#6C6C70]">
+                Channels
+              </div>
+              {filteredChannels.map((channel) => (
+                <button
+                  key={channel.id}
+                  type="button"
+                  onClick={() => navigate(`/channel/${channel.id}`)}
+                  className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-left"
+                  style={{
+                    background: channelId === channel.id ? "#161618" : "transparent",
+                  }}
+                >
+                  <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+                    <Hash size={17} strokeWidth={1.9} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[15px] font-medium text-[#ECECEE]">
+                        {channel.name}
+                      </span>
+                      <span className="shrink-0 text-[12.5px] text-[#6C6C70]">
+                        {formatInboxTime(channel.updatedAt)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                      {channel.preview ||
+                        (channel.members.length
+                          ? channel.members.map((member) => member.name).join(", ")
+                          : "No bots yet")}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {showWorkspaceSearch ? (
             <WorkspaceSearchResults
               hits={searchHits}
@@ -1038,7 +1147,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-left"
                     style={{
-                      background: active?.id === bot.id ? "#161618" : "transparent",
+                      background: !channelId && active?.id === bot.id ? "#161618" : "transparent",
                     }}
                   >
                     <BotAvatar color={bot.color} size={38} />
@@ -1053,8 +1162,13 @@ export function ShellPage() {
                           {bot.unread ? <span className="sr-only"> (unread)</span> : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? "" : bot.status}
-                          {bot.unread ? (
+                          {formatInboxTime(bot.updatedAt)}
+                          {bot.status === "waiting_input" || bot.status === "waiting_takeover" ? (
+                            <span
+                              aria-hidden="true"
+                              className="inline-block h-2 w-2 rounded-full bg-[#F5A03C]"
+                            />
+                          ) : bot.unread ? (
                             <span
                               aria-hidden="true"
                               className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
@@ -1064,10 +1178,16 @@ export function ShellPage() {
                       </div>
                       <div
                         className={`mt-0.5 truncate text-[13.5px] ${
-                          bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                          bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                            ? "font-medium text-[#F5A03C]"
+                            : bot.unread
+                              ? "font-medium text-[#C9C9CE]"
+                              : "text-[#85858A]"
                         }`}
                       >
-                        {bot.preview || bot.title}
+                        {bot.status === "waiting_input" || bot.status === "waiting_takeover"
+                          ? `Waiting for you: ${bot.preview || "needs a decision"}`
+                          : bot.preview || bot.title}
                       </div>
                     </div>
                   </button>
@@ -1109,6 +1229,44 @@ export function ShellPage() {
                         className="text-[12.5px] text-[#FF5364]"
                       >
                         Delete
+                      </button>
+                    </div>
+                  ))
+                : null}
+            </div>
+          ) : null}
+          {hiddenBots.length > 0 && !showWorkspaceSearch ? (
+            <div className="mt-2 border-t border-[#202023] pt-2">
+              <button
+                type="button"
+                aria-expanded={hiddenOpen}
+                onClick={() => setHiddenOpen((open) => !open)}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+              >
+                <span>Hidden</span>
+                <span>{hiddenBots.length}</span>
+              </button>
+              {hiddenOpen
+                ? hiddenBots.map((bot) => (
+                    <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <BotAvatar color={bot.color} size={28} />
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/${bot.id}`)}
+                        className="min-w-0 flex-1 truncate text-left text-[14px] text-[#A8A8AD] hover:text-white"
+                      >
+                        {bot.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.bots
+                            .update({ botId: bot.id, hidden: false })
+                            .then(() => refreshBots())
+                        }
+                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                      >
+                        Unhide
                       </button>
                     </div>
                   ))
@@ -1166,6 +1324,21 @@ export function ShellPage() {
                   {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
                 </p>
               ) : null}
+              {deploymentOwner ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setServerUpdateOpen(true);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                >
+                  <RefreshCw size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
+                  <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
+                    Server updates
+                  </span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void authClient.signOut().then(() => navigate("/"))}
@@ -1178,7 +1351,19 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              setMenuOpen((open) => {
+                const next = !open;
+                if (next) {
+                  void rpc.usage.summary().then(setUsage);
+                  void rpc
+                    .me()
+                    .then((me) => setDeploymentOwner(me.isDeploymentOwner))
+                    .catch(() => undefined);
+                }
+                return next;
+              });
+            }}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
@@ -1189,101 +1374,133 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
-        <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
-          <button
-            type="button"
-            data-testid="bot-settings-trigger"
-            onClick={() => setPanel("settings")}
-            className="flex min-w-0 items-center gap-3"
-          >
-            {active ? <BotAvatar color={active.color} size={26} /> : null}
-            <span className="min-w-0">
-              <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
-                {active?.name ?? "Select a bot"}
-              </span>
-            </span>
-          </button>
-          <div className="flex items-center gap-1">
-            {active ? (
-              <button
-                type="button"
-                title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
-                aria-label="Call"
-                onClick={() => {
-                  if (!voiceStatus?.ready) {
-                    setVoiceOpen(true);
-                    return;
-                  }
-                  setCallOpen(true);
-                }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
-              >
-                <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
-              </button>
-            ) : null}
+      {channelId ? (
+        <ChannelView
+          channelId={channelId}
+          bots={bots}
+          onChannelChanged={() => void refreshChannels().catch(() => undefined)}
+          onDeleted={() => {
+            void refreshChannels().catch(() => undefined);
+            navigate(bots[0] ? `/app/${bots[0].id}` : "/app", { replace: true });
+          }}
+        />
+      ) : (
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
+          <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
             <button
               type="button"
-              title="Agent computer"
-              onClick={() => setPanel((p) => (p === "computer" ? null : "computer"))}
-              className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-              style={{ background: panel ? "#1B1B1E" : "transparent" }}
+              data-testid="bot-settings-trigger"
+              onClick={() => setPanel("settings")}
+              className="flex min-w-0 items-center gap-3"
             >
-              <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
+              {active ? <BotAvatar color={active.color} size={26} thinking={botWorking} /> : null}
+              <span className="min-w-0">
+                <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
+                  {active?.name ?? "Select a bot"}
+                </span>
+              </span>
             </button>
+            <div className="flex items-center gap-1">
+              {active ? (
+                <button
+                  type="button"
+                  title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
+                  aria-label="Call"
+                  onClick={() => {
+                    if (!voiceStatus?.ready) {
+                      setVoiceOpen(true);
+                      return;
+                    }
+                    setCallOpen(true);
+                  }}
+                  className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                  style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
+                >
+                  <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                title="Agent computer"
+                onClick={() => setPanel((p) => (p === "computer" ? null : "computer"))}
+                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                style={{ background: panel ? "#1B1B1E" : "transparent" }}
+              >
+                <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
+              </button>
+            </div>
           </div>
-        </div>
-        <Transcript
-          scrollRef={messageScroll}
-          botId={active?.id ?? ""}
-          messages={snapshot?.messages ?? []}
-          olderCursor={snapshot?.olderCursor ?? null}
-          loadingOlder={loadingOlder}
-          answerableAskMessageId={answerableAskMessageId}
-          running={Boolean(
-            snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
-          )}
-          onLoadOlder={loadOlder}
-          onOpenBot={openBot}
-          onAnswer={answerMessage}
-          onRefresh={refreshActiveThread}
-          onAddRoutine={addSkillRoutine}
-          voiceReady={Boolean(voiceStatus?.ready)}
-          speakingMessageId={speakingMessageId}
-          onSpeak={speakMessage}
-        />
-        {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
-            Teaching in progress — stop teaching before sending a new message.
-          </div>
-        ) : null}
-        <Composer
-          activeName={active?.name}
-          running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
-          disabled={Boolean(recordingSkill)}
-          pendingAttachments={activePendingAttachments}
-          attachmentNotice={attachmentNotice}
-          sendError={sendError}
-          dictationError={dictationError}
-          sending={sending}
-          fileInputRef={fileInputRef}
-          onAttachmentPick={onAttachmentPick}
-          onRemoveAttachment={removeAttachment}
-          onSend={sendMessage}
-          onStop={stopRun}
-          dictating={dictating}
-          transcribe={Boolean(voiceStatus?.transcribe)}
-          onDictateStart={(onFinal) => {
-            void dictation.listen({
-              mode: "hold",
-              transcribe: Boolean(voiceStatus?.transcribe),
-              onFinal,
-            });
-          }}
-          onDictateStop={() => dictation.submitHold()}
-        />
-      </main>
+          <Transcript
+            scrollRef={messageScroll}
+            botId={active?.id ?? ""}
+            messages={snapshot?.messages ?? []}
+            olderCursor={snapshot?.olderCursor ?? null}
+            loadingOlder={loadingOlder}
+            answerableAskMessageId={answerableAskMessageId}
+            running={botWorking}
+            followOutput={
+              !loadingOlder &&
+              !(
+                pinnedAroundRef.current &&
+                active &&
+                pinnedAroundRef.current.botId === active.id &&
+                pinnedAroundRef.current.threadId === snapshot?.threadId
+              )
+            }
+            onLoadOlder={loadOlder}
+            onOpenBot={openBot}
+            onAnswer={answerMessage}
+            onRefresh={refreshActiveThread}
+            onAddRoutine={addSkillRoutine}
+            voiceReady={Boolean(voiceStatus?.ready)}
+            speakingMessageId={speakingMessageId}
+            onSpeak={speakMessage}
+            onOpenChannel={(peerBotId) => {
+              if (!active) return;
+              setChannelPeer({ botId: active.id, peerBotId });
+            }}
+          />
+          {recordingSkill ? (
+            <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+              Teaching in progress — stop teaching before sending a new message.
+            </div>
+          ) : null}
+          <Composer
+            activeName={active?.name}
+            running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
+            disabled={Boolean(recordingSkill)}
+            pendingAttachments={activePendingAttachments}
+            attachmentNotice={attachmentNotice}
+            sendError={sendError}
+            dictationError={dictationError}
+            sending={sending}
+            fileInputRef={fileInputRef}
+            onAttachmentPick={onAttachmentPick}
+            onRemoveAttachment={removeAttachment}
+            onSend={sendMessage}
+            onStop={stopRun}
+            dictating={dictating}
+            transcribe={Boolean(voiceStatus?.transcribe)}
+            onDictateStart={(onFinal) => {
+              void dictation.listen({
+                mode: "hold",
+                transcribe: Boolean(voiceStatus?.transcribe),
+                onFinal,
+              });
+            }}
+            onDictateStop={() => dictation.submitHold()}
+          />
+          {channelPeer ? (
+            <Suspense fallback={null}>
+              <BotChannelOverlay
+                botId={channelPeer.botId}
+                peerBotId={channelPeer.peerBotId}
+                onClose={() => setChannelPeer(null)}
+              />
+            </Suspense>
+          ) : null}
+        </main>
+      )}
 
       <aside
         data-testid="side-panel"
@@ -1634,9 +1851,24 @@ export function ShellPage() {
                 navigate(`/app/${bot.id}`);
               });
             }}
+            onCopyConversationId={() => {
+              setBotMenu(null);
+              void navigator.clipboard
+                .writeText(contextBot.threadId)
+                .then(() => setToast("Conversation ID copied"))
+                .catch(() => setToast("Could not copy the conversation ID"));
+            }}
             onClear={() => {
               setClearTarget(contextBot);
               setBotMenu(null);
+            }}
+            onToggleHidden={() => {
+              const hidden = !contextBot.hidden;
+              setBotMenu(null);
+              void rpc.bots.update({ botId: contextBot.id, hidden }).then(async () => {
+                await refreshBots();
+                setToast(hidden ? `${contextBot.name} hidden from the sidebar` : null);
+              });
             }}
             onArchive={() => {
               setBotMenu(null);
@@ -1648,6 +1880,17 @@ export function ShellPage() {
             }}
           />
         ) : null}
+
+        {toast ? (
+          <div
+            role="status"
+            className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[#343438] bg-[#1A1A1D] px-4 py-2 text-[13px] text-[#ECECEE] shadow-[0_18px_40px_rgba(0,0,0,.5)]"
+          >
+            {toast}
+          </div>
+        ) : null}
+
+        <VersionNotice />
 
         {deleteTarget ? (
           <DeleteBotDialog
@@ -1670,6 +1913,19 @@ export function ShellPage() {
               await rpc.botSections.create({ botId: newSectionBot.id, name });
               setNewSectionBot(null);
               await refreshBots();
+            }}
+          />
+        ) : null}
+
+        {newChannelOpen ? (
+          <NewChannelDialog
+            bots={bots}
+            onCancel={() => setNewChannelOpen(false)}
+            onConfirm={async ({ name, botIds }) => {
+              const channel = await rpc.channels.create({ name, botIds });
+              setNewChannelOpen(false);
+              await refreshChannels();
+              navigate(`/channel/${channel.id}`);
             }}
           />
         ) : null}
@@ -1715,6 +1971,9 @@ export function ShellPage() {
 
       <Suspense fallback={null}>
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
+        {serverUpdateOpen ? (
+          <ServerUpdateOverlay onClose={() => setServerUpdateOpen(false)} />
+        ) : null}
         {voiceOpen ? (
           <VoiceSettingsOverlay
             onClose={() => {
@@ -1846,6 +2105,105 @@ export function ShellPage() {
   );
 }
 
+function CreateMenu({
+  onNewBot,
+  onNewChannel,
+}: {
+  onNewBot: () => void;
+  onNewChannel: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={container} className="app-no-drag relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="New"
+        title="New"
+        onClick={() => setOpen((current) => !current)}
+        className="text-[21px] leading-none text-[#7A7A80] hover:text-[#C9C9CE]"
+      >
+        +
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Create"
+          className="absolute right-0 top-8 z-40 w-[208px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
+        >
+          <CreateMenuItem
+            icon={<BotIcon size={18} strokeWidth={1.8} />}
+            label="New Bot"
+            onSelect={() => {
+              setOpen(false);
+              onNewBot();
+            }}
+          />
+          <CreateMenuItem
+            icon={<Hash size={18} strokeWidth={1.8} />}
+            label="New Channel"
+            onSelect={() => {
+              setOpen(false);
+              onNewChannel();
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CreateMenuItem({
+  icon,
+  label,
+  onSelect,
+}: {
+  icon: ReactNode;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-left text-[15px] text-[#ECECEE] outline-none hover:bg-[#29292D] focus-visible:bg-[#29292D]"
+    >
+      <span className="grid h-5 w-5 shrink-0 place-items-center text-[#9A9AA0]">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+const STICK_TO_BOTTOM_PX = 96;
+
+function isNearTranscriptEnd(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= STICK_TO_BOTTOM_PX;
+}
+
+function scrollTranscriptToEnd(element: HTMLElement): void {
+  element.scrollTop = element.scrollHeight;
+}
+
 const Transcript = memo(function Transcript({
   scrollRef,
   botId,
@@ -1854,6 +2212,7 @@ const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskMessageId,
   running,
+  followOutput,
   onLoadOlder,
   onOpenBot,
   onAnswer,
@@ -1862,6 +2221,7 @@ const Transcript = memo(function Transcript({
   voiceReady,
   speakingMessageId,
   onSpeak,
+  onOpenChannel,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   botId: string;
@@ -1870,6 +2230,7 @@ const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskMessageId: string | null;
   running: boolean;
+  followOutput: boolean;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -1878,48 +2239,130 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
+  onOpenChannel: (peerBotId: string) => void;
 }) {
+  const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const followOutputRef = useRef(followOutput);
+  followOutputRef.current = followOutput;
+  const lastBotId = useRef(botId);
+  const setStickToBottom = (next: boolean) => {
+    stickToBottom.current = next;
+    setShowJump((current) => {
+      const jump = !next;
+      return current === jump ? current : jump;
+    });
+  };
+  useLayoutEffect(() => {
+    const switchedBot = enterState.current.botId !== botId;
+    const next = collectEnteringUserMessageIds(botId, messages, enterState.current);
+    if (switchedBot) {
+      setEnteringIds(new Set());
+      return;
+    }
+    if (next.size > 0) setEnteringIds(next);
+  }, [botId, messages]);
+  useLayoutEffect(() => {
+    if (lastBotId.current !== botId) {
+      setStickToBottom(true);
+      lastBotId.current = botId;
+    }
+    if (loadingOlder) {
+      setStickToBottom(false);
+      return;
+    }
+    if (messages.at(-1)?.id.startsWith("pending:")) setStickToBottom(true);
+    const element = scrollRef.current;
+    if (!element || !followOutput || !stickToBottom.current) return;
+    scrollTranscriptToEnd(element);
+  }, [botId, followOutput, loadingOlder, messages, running, scrollRef]);
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || !content) return;
+    const onScroll = () => {
+      setStickToBottom(isNearTranscriptEnd(element));
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) setStickToBottom(false);
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    element.addEventListener("wheel", onWheel, { passive: true });
+    const observer = new ResizeObserver(() => {
+      if (!followOutputRef.current || !stickToBottom.current) return;
+      scrollTranscriptToEnd(element);
+    });
+    observer.observe(content);
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      element.removeEventListener("wheel", onWheel);
+      observer.disconnect();
+    };
+  }, [botId, scrollRef]);
+  const hasLiveReasoning = messages.some((message) => message.id.startsWith("reasoning:"));
   return (
-    <div
-      ref={scrollRef}
-      data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6"
-    >
-      {olderCursor != null ? (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        data-testid="transcript"
+        className="rk-transcript rk-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
+      >
+        <div ref={contentRef} className="mx-auto flex w-full max-w-[720px] flex-col gap-4">
+          {olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void onLoadOlder()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </button>
+          ) : null}
+          {messages.map((message, index) => (
+            <div key={message.id}>
+              {shouldShowChatTimestamp(messages[index - 1]?.createdAt, message.createdAt) ? (
+                <ChatTimestamp iso={message.createdAt} />
+              ) : null}
+              <div
+                data-message-id={message.id}
+                className={enteringIds.has(message.id) ? "rk-drop-in" : undefined}
+              >
+                <MessageView
+                  botId={botId}
+                  message={message}
+                  canAnswer={message.id === answerableAskMessageId}
+                  onOpenBot={onOpenBot}
+                  onAnswer={onAnswer}
+                  onRefresh={onRefresh}
+                  onAddRoutine={onAddRoutine}
+                  voiceReady={voiceReady}
+                  speaking={speakingMessageId === message.id}
+                  onSpeak={() => onSpeak(message)}
+                  onOpenChannel={onOpenChannel}
+                />
+              </div>
+            </div>
+          ))}
+          {running && !hasLiveReasoning ? <BotWorkingStatus /> : null}
+        </div>
+      </div>
+      {showJump ? (
         <button
           type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
+          aria-label="Jump to latest"
+          data-testid="jump-to-latest"
+          onClick={() => {
+            setStickToBottom(true);
+            const element = scrollRef.current;
+            if (element) scrollTranscriptToEnd(element);
+          }}
+          className="rk-jump-latest absolute bottom-3 left-1/2 z-10 grid h-9 w-9 place-items-center rounded-full border border-[#2A2A2F] bg-[#1A1A1D] text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] hover:bg-[#222226]"
         >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
+          <ChevronDown size={18} strokeWidth={2} />
         </button>
-      ) : null}
-      {messages.map((message) => (
-        <div key={message.id} data-message-id={message.id}>
-          <MessageView
-            botId={botId}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onAnswer={onAnswer}
-            onRefresh={onRefresh}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running ? (
-        <div className="flex justify-start">
-          <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
-            style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
-          >
-            working…
-          </div>
-        </div>
       ) : null}
     </div>
   );
@@ -1973,122 +2416,123 @@ const Composer = memo(function Composer({
   }
 
   return (
-    <div className="px-6 pb-6 pt-3">
-      {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
-          {sendError ?? dictationError}
-        </div>
-      ) : null}
-      {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
-          {attachmentNotice}
-        </div>
-      ) : null}
-      {pendingAttachments.length ? (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {pendingAttachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
-            >
-              {attachment.previewUrl ? (
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.file.name}
-                  className="h-8 w-8 rounded object-cover"
-                />
-              ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
-              )}
-              <span className="max-w-[180px] truncate">{attachment.file.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${attachment.file.name}`}
-                onClick={() => onRemoveAttachment(attachment)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+    <div className="px-4 pb-6 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-[720px]">
+        {sendError || dictationError ? (
+          <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+            {sendError ?? dictationError}
+          </div>
+        ) : null}
+        {attachmentNotice ? (
+          <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+            {attachmentNotice}
+          </div>
+        ) : null}
+        {pendingAttachments.length ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {pendingAttachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
               >
-                <X size={13} strokeWidth={2} />
-              </button>
-            </div>
-          ))}
+                {attachment.previewUrl ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.file.name}
+                    className="h-8 w-8 rounded object-cover"
+                  />
+                ) : (
+                  <Paperclip size={14} strokeWidth={1.8} />
+                )}
+                <span className="max-w-[180px] truncate">{attachment.file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.file.name}`}
+                  onClick={() => onRemoveAttachment(attachment)}
+                  className="text-[#85858A] hover:text-[#ECECEE]"
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2 pl-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACHMENT_ACCEPT}
+            className="hidden"
+            onChange={(event) => void onAttachmentPick(event.target.files)}
+          />
+          <button
+            type="button"
+            aria-label="Attach file"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full text-[#9A9AA0] hover:bg-[#1B1B1E] disabled:opacity-40"
+          >
+            <Plus size={18} strokeWidth={1.8} />
+          </button>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            disabled={disabled}
+            placeholder={activeName ? `Message ${activeName}` : "Message…"}
+            className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
+          />
+          {running ? (
+            <button
+              type="button"
+              aria-label="Stop"
+              onClick={() => void onStop()}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+            >
+              <Square size={12} strokeWidth={0} fill="currentColor" />
+            </button>
+          ) : canSend ? (
+            <button
+              type="button"
+              aria-label="Send"
+              disabled={sending || disabled}
+              onClick={send}
+              className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
+            >
+              <ArrowUp size={18} strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={dictating ? "Stop dictation" : "Dictate"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onMouseUp={onDictateStop}
+              onMouseLeave={() => {
+                if (dictating) onDictateStop();
+              }}
+              onTouchStart={(event) => {
+                event.preventDefault();
+                onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
+              }}
+              onTouchEnd={onDictateStop}
+              className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full ${
+                dictating ? "bg-[rgba(48,162,75,.16)] text-[#4ECB71]" : "text-[#9A9AA0]"
+              }`}
+              title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+            >
+              <Mic size={16} strokeWidth={1.8} />
+            </button>
+          )}
         </div>
-      ) : null}
-      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ATTACHMENT_ACCEPT}
-          className="hidden"
-          onChange={(event) => void onAttachmentPick(event.target.files)}
-        />
-        <button
-          type="button"
-          aria-label="Attach file"
-          disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
-        >
-          <Plus size={17} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          aria-label={dictating ? "Stop dictation" : "Dictate"}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onMouseUp={onDictateStop}
-          onMouseLeave={() => {
-            if (dictating) onDictateStop();
-          }}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
-            dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
-              : "border-[#26262A] text-[#9A9AA0]"
-          }`}
-          title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
-        >
-          <Mic size={16} strokeWidth={1.8} />
-        </button>
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          disabled={disabled}
-          placeholder={activeName ? `Message ${activeName}` : "Message…"}
-          className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
-        />
-        {running ? (
-          <button
-            type="button"
-            aria-label="Stop"
-            onClick={() => void onStop()}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-          >
-            <Square size={12} strokeWidth={0} fill="currentColor" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label="Send"
-            disabled={sending || !canSend || disabled}
-            onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
-          >
-            <ArrowUp size={18} strokeWidth={2} />
-          </button>
-        )}
       </div>
     </div>
   );
@@ -2130,6 +2574,7 @@ const MessageView = memo(function MessageView({
   voiceReady,
   speaking,
   onSpeak,
+  onOpenChannel,
 }: {
   botId: string;
   canAnswer: boolean;
@@ -2141,18 +2586,15 @@ const MessageView = memo(function MessageView({
   voiceReady: boolean;
   speaking: boolean;
   onSpeak: () => void;
+  onOpenChannel: (peerBotId: string) => void;
 }) {
   return (
     <>
       {message.blocks.map((block, i) => {
         if (block.kind === "meta") {
           return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
-            >
-              <span className="text-[#E65707]">◷</span>
-              <span>{block.text}</span>
+            <div key={i} className="px-1 py-0.5 text-[13px] leading-[1.45] text-[#6C6C70]">
+              {block.text}
             </div>
           );
         }
@@ -2164,6 +2606,9 @@ const MessageView = memo(function MessageView({
               </div>
             </div>
           );
+        }
+        if (block.kind === "reasoning") {
+          return <ReasoningTrace key={i} steps={block.steps} />;
         }
         if (block.kind === "subagent") {
           const running = block.status === "running";
@@ -2199,6 +2644,11 @@ const MessageView = memo(function MessageView({
                 </div>
               ) : null}
             </div>
+          );
+        }
+        if (block.kind === "bot_message") {
+          return (
+            <BotMessageChip key={i} block={block} onOpen={() => onOpenChannel(block.peerBotId)} />
           );
         }
         if (block.kind === "child_bot") {
@@ -2271,7 +2721,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text" && message.role === "user") {
           return (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]">
+              <div className="max-w-[70%] rounded-[18px] bg-[#2F2F33] px-[16px] py-[10px] text-[15.5px] leading-[1.5] text-[#ECECEE]">
                 {block.text}
               </div>
             </div>
@@ -2280,7 +2730,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+              <div className="max-w-[80%] rounded-[18px] bg-[#1A1A1D] px-[16px] py-[10px] text-[15.5px] leading-[1.55] text-[#DFDFE2]">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
                 {voiceReady ? (
                   <button
@@ -2317,6 +2767,22 @@ const MessageView = memo(function MessageView({
             <AskCard
               key={i}
               block={block}
+              canAnswer={canAnswer}
+              onAnswer={(text) => onAnswer(message, text)}
+            />
+          );
+        }
+        if (block.kind === "choice") {
+          return (
+            <AskCard
+              key={i}
+              block={{
+                kind: "ask",
+                text: block.question,
+                detail: block.subtitle,
+                status: canAnswer ? "pending" : "answered",
+                actions: block.options.map((option) => ({ id: option.id, label: option.label })),
+              }}
               canAnswer={canAnswer}
               onAnswer={(text) => onAnswer(message, text)}
             />
@@ -2364,9 +2830,17 @@ function AskCard({
   canAnswer: boolean;
   onAnswer: (text: string) => Promise<void>;
 }) {
+  const parsed = parseAskOptions({
+    text: block.text,
+    detail: block.detail,
+    actions: block.actions,
+  });
+  const picked = matchingAskOption(parsed.options, block.answer);
   const [editing, setEditing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const pending = block.status !== "answered" && canAnswer;
 
   async function submitAnswer(value: string) {
     const text = value.trim();
@@ -2379,21 +2853,78 @@ function AskCard({
     }
   }
 
-  return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
-        <ChatMarkdown>{block.text}</ChatMarkdown>
+  if (block.status === "answered") {
+    return (
+      <div className="w-[min(420px,90%)] rounded-[20px] bg-[#151517] px-5 py-[18px]">
+        <p className="text-[16px] font-medium text-[#C9C9CE]">{parsed.question}</p>
+        {picked ? (
+          <div className="mt-3.5 flex items-center gap-3.5 rounded-[13px] border border-[#232326] px-4 py-3.5">
+            <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+              {picked.letter}
+            </span>
+            <span className="text-[15.5px] text-[#ECECEE]">{picked.label}</span>
+            <span className="ml-auto text-[#4ECB71]">✓</span>
+          </div>
+        ) : (
+          <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
+            {block.answer ? `Answered: ${block.answer}` : "Answered"}
+          </div>
+        )}
       </div>
-      {block.detail ? (
-        <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
-          {block.detail}
-        </pre>
-      ) : null}
-      {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {block.answer ? `Answered: ${block.answer}` : "Answered"}
+    );
+  }
+
+  if (dismissed && pending) {
+    return (
+      <button
+        type="button"
+        onClick={() => setDismissed(false)}
+        className="text-left text-[14.5px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        {parsed.question}
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-[min(420px,90%)] rounded-[20px] bg-[#1A1A1D] px-5 py-[18px]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[17px] font-medium leading-[1.35] text-[#F1F1F2]">{parsed.question}</p>
+          {block.detail && !parsed.options.length ? (
+            <p className="mt-1 text-[14.5px] text-[#8E8EA0]">{block.detail}</p>
+          ) : null}
         </div>
-      ) : !canAnswer ? (
+        {pending ? (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setDismissed(true)}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-[#6C6C70] hover:bg-[#222226] hover:text-[#C9C9CE]"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+      {parsed.options.length > 0 && pending ? (
+        <div className="mt-3.5 overflow-hidden rounded-[13px] border border-[#232326]">
+          {parsed.options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={submitting}
+              onClick={() => void submitAnswer(option.label)}
+              className="flex w-full items-center gap-3.5 border-b border-[#202023] px-4 py-3.5 text-left text-[15.5px] text-[#ECECEE] last:border-b-0 hover:bg-[#222226] disabled:opacity-50"
+            >
+              <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                {option.letter}
+              </span>
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {!pending ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">No longer active</div>
       ) : editing ? (
         <form
@@ -2407,7 +2938,7 @@ function AskCard({
             aria-label="Answer"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Type your answer"
+            placeholder="Type your own answer"
             className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
           <div className="flex gap-2">
@@ -2431,6 +2962,15 @@ function AskCard({
             </button>
           </div>
         </form>
+      ) : parsed.options.length ? (
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => setEditing(true)}
+          className="mt-3 text-[13.5px] text-[#8E8EA0] hover:text-[#C9C9CE] disabled:opacity-50"
+        >
+          Type your own answer
+        </button>
       ) : (
         <div className="mt-3.5 flex gap-2">
           <button
@@ -2482,6 +3022,11 @@ function ComputerModePicker({
           </button>
         ))}
       </div>
+      <p className="mt-2 text-[13px] leading-[1.5] text-[#6C6C70]">
+        {value === "team"
+          ? "Shares one computer with your other Team bots, so they share browser logins and installed tools. Each bot still gets its own screen and can work at the same time as the others."
+          : "Gets a computer of its own. Nothing is shared, so this bot signs in to sites separately from your other bots."}
+      </p>
     </div>
   );
 }
@@ -2552,6 +3097,152 @@ function CreateBotForm({
   );
 }
 
+function collectEnteringUserMessageIds(
+  botId: string,
+  messages: ThreadMessage[],
+  state: { botId: string; seen: Set<string>; primed: boolean },
+) {
+  if (state.botId !== botId) {
+    state.botId = botId;
+    state.seen = new Set(messages.map((message) => message.id));
+    state.primed = messages.length > 0;
+    return new Set<string>();
+  }
+  if (!state.primed) {
+    if (!messages.length) return new Set<string>();
+    for (const message of messages) state.seen.add(message.id);
+    state.primed = true;
+    return new Set<string>();
+  }
+  const recent = new Set(messages.slice(-4).map((message) => message.id));
+  const entering = new Set<string>();
+  for (const message of messages) {
+    const text = userMessagePlainText(message);
+    const pendingKey = pendingUserMessageTextKey(text);
+    if (
+      !state.seen.has(message.id) &&
+      message.role === "user" &&
+      recent.has(message.id) &&
+      !message.blocks.some((block) => block.kind === "bot_message")
+    ) {
+      const replacingPending = !message.id.startsWith("pending:") && state.seen.has(pendingKey);
+      if (!replacingPending) entering.add(message.id);
+    }
+    state.seen.add(message.id);
+    if (message.role === "user") {
+      if (message.id.startsWith("pending:")) state.seen.add(pendingKey);
+      else state.seen.delete(pendingKey);
+    }
+  }
+  return entering;
+}
+
+function userMessagePlainText(message: ThreadMessage): string {
+  return message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n");
+}
+
+function ChatTimestamp({ iso }: { iso: string }) {
+  const label = formatChatTimestamp(iso);
+  if (!label) return null;
+  return (
+    <div className="py-1.5 text-center text-[12.5px] text-[#6C6C70]" data-testid="chat-timestamp">
+      {label}
+    </div>
+  );
+}
+
+function BotMessageChip({
+  block,
+  onOpen,
+}: {
+  block: Extract<ThreadMessage["blocks"][number], { kind: "bot_message" }>;
+  onOpen: () => void;
+}) {
+  if (block.direction === "out") {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center gap-1.5 py-0.5 text-[14px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Messaged</span>
+        <BotAvatar color={block.peerColor} size={18} />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-center justify-center gap-1.5 py-1 text-[13px] text-[#8E8EA0] hover:text-[#C9C9CE]"
+      >
+        <span>Message from</span>
+        <BotAvatar color={block.peerColor} size={18} />
+        <span className="font-medium text-[#C9C9CE]">{block.peerName}</span>
+      </button>
+      <div className="flex justify-start">
+        <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+          {block.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotWorkingStatus() {
+  return (
+    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
+      <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
+      <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+    </div>
+  );
+}
+
+function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
+  const running = steps.some((step) => step.status === "running");
+  const visible = visibleReasoningSteps(steps);
+  if (!steps.length) return null;
+  return (
+    <details className="rk-thought w-[min(560px,100%)]">
+      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          size={16}
+          strokeWidth={2}
+          className="rk-thought-caret shrink-0 text-[#8E8EA0]"
+        />
+        {running ? (
+          <span className="rk-working-text text-[15px] font-medium">Thinking</span>
+        ) : (
+          <span className="text-[15px] font-medium text-[#B4B4B8]">Thought</span>
+        )}
+      </summary>
+      {visible.length ? (
+        <div className="rk-thought-body ml-[7px] mt-2 space-y-2.5 border-l border-[#3A3A40] pl-3.5">
+          {visible.map((step) => (
+            <div key={step.id} className="text-[14px] leading-[1.55] text-[#8E8EA0]">
+              {step.kind === "tool" || !step.detail ? (
+                <div className={step.status === "running" ? "text-[#D0D0D4]" : undefined}>
+                  {step.title}
+                </div>
+              ) : null}
+              {step.detail ? (
+                <pre className="rk-scroll max-h-72 overflow-y-auto whitespace-pre-wrap break-words font-sans text-[14px] leading-[1.55] text-[#8E8EA0]">
+                  {step.detail}
+                  {running && step.status === "running" ? (
+                    <span className="rk-thought-cursor">▍</span>
+                  ) : null}
+                </pre>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
 function BotSettings({
   bot,
   onSave,
@@ -2567,6 +3258,8 @@ function BotSettings({
     computerMode: ComputerMode;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelProvider?: string | null;
+    modelId?: string | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -2578,6 +3271,10 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
+  const [modelProvider, setModelProvider] = useState(bot.modelProvider ?? "");
+  const [modelId, setModelId] = useState(bot.modelId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2586,7 +3283,31 @@ function BotSettings({
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void Promise.all([rpc.models.list(), rpc.models.credentials()])
+      .then(([nextCatalog, nextCredentials]) => {
+        setCatalog(nextCatalog);
+        setCredentials(nextCredentials);
+      })
+      .catch(() => undefined);
   }, []);
+
+  const connectedProviders = useMemo(() => {
+    const ids = new Set(credentials.map((entry) => entry.provider));
+    if (bot.modelProvider) ids.add(bot.modelProvider);
+    const grouped = new Map<string, ModelCatalogEntry[]>();
+    for (const entry of catalog) {
+      if (!ids.has(entry.provider)) continue;
+      const entries = grouped.get(entry.provider) ?? [];
+      entries.push(entry);
+      grouped.set(entry.provider, entries);
+    }
+    return [...grouped].map(([id, entries]) => ({
+      id,
+      name: entries[0]?.providerName ?? credentials.find((row) => row.provider === id)?.label ?? id,
+      entries,
+    }));
+  }, [bot.modelProvider, catalog, credentials]);
+  const modelsForProvider = catalog.filter((entry) => entry.provider === modelProvider);
 
   return (
     <div data-testid="bot-settings">
@@ -2618,6 +3339,52 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Inference
+        <select
+          value={modelProvider}
+          onChange={(event) => {
+            const nextProvider = event.target.value;
+            setModelProvider(nextProvider);
+            setModelId(
+              catalog.find((entry) => entry.provider === nextProvider)?.id ?? bot.modelId ?? "",
+            );
+          }}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        >
+          <option value="">Workspace default</option>
+          {connectedProviders.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {modelProvider ? (
+        <label className="mt-4 block text-[14px] text-[#85858A]">
+          Model
+          <select
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          >
+            {modelsForProvider.length ? (
+              modelsForProvider.map((entry) => (
+                <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))
+            ) : (
+              <option value={modelId || ""}>{modelId || "Choose a model"}</option>
+            )}
+          </select>
+        </label>
+      ) : (
+        <p className="mt-2 text-[13px] text-[#6C6C70]">
+          Uses the workspace default from Models. Connect a custom endpoint there to add another
+          provider.
+        </p>
+      )}
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
         <input
@@ -2660,6 +3427,8 @@ function BotSettings({
               computerMode,
               autoSpeak,
               voiceId: voiceId || null,
+              modelProvider: modelProvider || null,
+              modelId: modelProvider ? modelId || null : null,
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));

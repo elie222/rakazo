@@ -14,11 +14,13 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 ## Features
 
 - Persistent bots with their own conversations, memory, routines, and history
-- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, or Cartesia key
+- Live reasoning traces while a bot runs (thinking, tools, and status — not a generic “working…” spinner)
 - Shared Team Computers and isolated Private computers
 - Browser, terminal, file, and graphical desktop access
 - Bots that can delegate to peer bots or short-lived subagents
-- Bring-your-own model credentials through Pi
+- Bring-your-own model credentials through Pi, including OpenAI-compatible base URLs and multiple API keys per custom endpoint. Rakazo discovers which models each key can run and picks the matching key automatically.
+- Multiple inference providers, with a model chosen per bot
+- Voice mode: speak replies, dictate, and call a bot. Bring your own ElevenLabs, OpenAI, or Cartesia key
 - Optional app integrations through Composio
 - Docker, E2B, Daytona, and trusted local-computer support
 
@@ -76,6 +78,14 @@ With the development stack running, launch Electron with:
 ```bash
 pnpm --filter @rakazo/desktop dev
 ```
+
+The desktop app is a client: it never runs a Rakazo server itself. On first run it asks whether the
+server is local (this computer, `http://127.0.0.1:5173`) or remote (an address you or your team
+already runs). Either way the app checks that the address answers before saving it, and later
+launches go straight to that instance. To run a server locally, follow the quick start above.
+
+Set `RAKAZO_WEB_URL` to point the shell somewhere else without changing the saved instance, or
+`RAKAZO_FORCE_SETUP=1` to run setup again.
 
 Mobile build and release instructions live in [docs/mobile-release.md](./docs/mobile-release.md).
 

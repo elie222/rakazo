@@ -105,6 +105,8 @@ model Organization {
   notificationPreferences NotificationPreference[]
   computers   Computer[]
   externalEffects ExternalEffect[]
+  botChannels BotChannel[]
+  channels    Channel[]
 
   @@unique([slug])
   @@map("organization")
@@ -149,7 +151,9 @@ model DeploymentSettings {
   defaultModelProvider           String?
   defaultModelId                 String?
   deploymentModelCredentialCipher String?
-  computerHost                   String?
+  updateRepoUrl                  String?
+  updateBranch                   String?
+  updateLastRun                  String?
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 
@@ -166,11 +170,30 @@ model UserModelCredential {
   secretId     String
   isDefault    Boolean  @default(false)
   defaultModel String?
+  baseUrl      String?
+  availableModels String @default("")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  keys         UserModelCredentialKey[]
 
   @@index([userId, workspaceId])
   @@map("user_model_credentials")
+}
+
+model UserModelCredentialKey {
+  id           String   @id @default(cuid())
+  credentialId String
+  credential   UserModelCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  secretId     String
+  label        String   @default("API key")
+  isActive     Boolean  @default(false)
+  availableModels String @default("")
+  probedAt     DateTime?
+  probeError   String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([credentialId, createdAt, id])
+  @@map("user_model_credential_keys")
 }
 
 model UserVoiceCredential {
@@ -201,6 +224,7 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  hidden         Boolean  @default(false)
   sectionId      String?
   section        BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt     DateTime?
@@ -216,6 +240,8 @@ model Bot {
   computerSwitching Boolean @default(false)
   voiceId        String?
   autoSpeak      Boolean  @default(false)
+  modelProvider  String?
+  modelId        String?
   routines       Routine[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
@@ -225,6 +251,8 @@ model Bot {
   usageRecords   UsageRecord[]
   tasks          Task[]
   runs           Run[]
+  channelMemberships ChannelMember[]
+  channelMessages ChannelMessage[] @relation("ChannelMessageAuthor")
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -663,4 +691,80 @@ model Secret {
 
   @@index([userId, workspaceId])
   @@map("secrets")
+}
+
+model BotChannel {
+  id          String              @id @default(cuid())
+  workspaceId String
+  workspace   Organization        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botAId      String
+  botBId      String
+  createdAt   DateTime            @default(now())
+  messages    BotChannelMessage[]
+
+  @@unique([workspaceId, botAId, botBId])
+  @@index([workspaceId])
+  @@map("bot_channels")
+}
+
+model BotChannelMessage {
+  id          String     @id @default(cuid())
+  channelId   String
+  channel     BotChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  fromBotId   String
+  toBotId     String
+  text        String
+  sourceRunId String?
+  createdAt   DateTime   @default(now())
+
+  @@index([channelId, createdAt])
+  @@map("bot_channel_messages")
+}
+
+/// A named room the user and any number of bots share. Distinct from BotChannel, which is
+/// the implicit one-to-one transcript created when two bots message each other.
+model Channel {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  members     ChannelMember[]
+  messages    ChannelMessage[]
+
+  @@unique([workspaceId, userId, name])
+  @@index([workspaceId, userId, updatedAt])
+  @@map("channels")
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  botId     String
+  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([channelId, botId])
+  @@index([botId])
+  @@map("channel_members")
+}
+
+model ChannelMessage {
+  id          String   @id @default(cuid())
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  /// "user" or "bot"; authorBotId is set only for bot authors.
+  authorType  String
+  authorBotId String?
+  authorBot   Bot?     @relation("ChannelMessageAuthor", fields: [authorBotId], references: [id], onDelete: SetNull)
+  userId      String?
+  text        String
+  sourceRunId String?
+  createdAt   DateTime @default(now())
+
+  @@index([channelId, createdAt])
+  @@map("channel_messages")
 }

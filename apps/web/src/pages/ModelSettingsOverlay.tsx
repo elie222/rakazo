@@ -23,6 +23,12 @@ type OAuthNotice = {
   userCode: string;
 };
 
+function formatKeyCoverage(models: string[] | undefined) {
+  if (!models?.length) return "Not probed yet. Refresh coverage after you add keys.";
+  if (models.length <= 8) return models.join(", ");
+  return `${models.slice(0, 8).join(", ")} +${models.length - 8} more`;
+}
+
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
@@ -31,9 +37,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [keyLabel, setKeyLabel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [endpointLabel, setEndpointLabel] = useState("Custom endpoint");
+  const [probedModels, setProbedModels] = useState<string[]>([]);
   const [oauth, setOauth] = useState<OAuthNotice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<
+    "connect" | "default" | "probe" | "key" | "refresh" | null
+  >(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -115,8 +127,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const isCustom = Boolean(selected?.custom);
+  const isCustomTemplate = selected?.provider === "openai-compatible";
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
-  const acceptsKey = selected?.auth !== "oauth";
+  const acceptsKey = selected?.auth !== "oauth" || isCustom;
   const deviceSignIn = selected?.signIn === "device-code";
   const busy = pending !== null || oauthPending;
 
@@ -126,6 +140,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setKeyLabel("");
+    setBaseUrl(catalog.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "");
+    setEndpointLabel(
+      catalog.find((entry) => entry.provider === nextProvider)?.providerName ?? "Custom endpoint",
+    );
+    setProbedModels(
+      credentials.find((entry) => entry.provider === nextProvider)?.availableModels ?? [],
+    );
     setError(null);
     setNotice(null);
   }
@@ -147,7 +169,42 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function connectKey() {
-    if (!selected || !apiKey.trim()) return;
+    if (!selected) return;
+    if (isCustom) {
+      const url = baseUrl.trim() || selected.baseUrl;
+      if (!url) {
+        setError("Enter a base URL for this endpoint.");
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      setPending("connect");
+      try {
+        const connected = await rpc.models.connect({
+          provider: selected.provider,
+          apiKey: credential ? "" : apiKey.trim(),
+          modelId: modelId.trim() || selected.id,
+          label: endpointLabel.trim() || selected.providerName || "Custom endpoint",
+          baseUrl: url,
+          availableModels: probedModels.length
+            ? probedModels
+            : modelId.trim()
+              ? [modelId.trim()]
+              : undefined,
+        });
+        setApiKey("");
+        await refresh();
+        setProvider(connected.provider);
+        setModelId(connected.defaultModel ?? modelId);
+        setNotice(`Connected ${connected.label}.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not connect this endpoint");
+      } finally {
+        setPending(null);
+      }
+      return;
+    }
+    if (!apiKey.trim()) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -163,6 +220,102 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setNotice(`Connected and using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect this provider");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function probeModels() {
+    const url = baseUrl.trim() || selected?.baseUrl;
+    if (!url) {
+      setError("Enter a base URL to list models.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setPending("probe");
+    try {
+      const result = await rpc.models.probe({
+        baseUrl: url,
+        apiKey: apiKey.trim() || undefined,
+      });
+      setProbedModels(result.models);
+      if (!result.models.includes(modelId) && result.models[0]) setModelId(result.models[0]);
+      setNotice(`Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not list models");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function addEndpointKey() {
+    if (!selected || !apiKey.trim()) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      const updated = await rpc.models.addKey({
+        provider: selected.provider,
+        apiKey: apiKey.trim(),
+        label: keyLabel.trim() || undefined,
+      });
+      setApiKey("");
+      setKeyLabel("");
+      setProbedModels(updated.availableModels ?? []);
+      await refresh();
+      setNotice("Saved that key. Rakazo will use it for the models it can access.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function refreshEndpointKeys() {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("refresh");
+    try {
+      const updated = await rpc.models.refreshKeys({ provider: selected.provider });
+      setProbedModels(updated.availableModels ?? []);
+      await refresh();
+      setNotice("Updated which models each API key can use.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh API keys");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function activateEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc.models.setActiveKey({ provider: selected.provider, keyId });
+      await refresh();
+      setNotice("This key is now used for the endpoint.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch API key");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function removeEndpointKey(keyId: string) {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    setPending("key");
+    try {
+      await rpc.models.removeKey({ provider: selected.provider, keyId });
+      await refresh();
+      setNotice("Removed that API key.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove API key");
     } finally {
       setPending(null);
     }
@@ -298,20 +451,94 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
             {selected ? (
               <>
-                <div className="block text-[13.5px] text-[#85858A]">
-                  <span>Model</span>
-                  <ModelPicker
-                    options={modelsForProvider}
-                    value={selected.id}
-                    onChange={(nextModelId) => {
-                      cancelOAuthAttempt();
-                      setModelId(nextModelId);
-                      setError(null);
-                      setNotice(null);
-                    }}
-                  />
-                </div>
-                <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                {isCustom ? (
+                  <div className="space-y-4">
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Name
+                      <input
+                        value={endpointLabel}
+                        onChange={(event) => setEndpointLabel(event.target.value)}
+                        placeholder="Office vLLM"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <label className="block text-[13.5px] text-[#85858A]">
+                      Base URL
+                      <input
+                        value={baseUrl}
+                        onChange={(event) => setBaseUrl(event.target.value)}
+                        placeholder="https://api.example.com/v1"
+                        autoComplete="off"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <p className="text-[13px] leading-[1.5] text-[#85858A]">{selected.billing}</p>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="block min-w-[220px] flex-1 text-[13.5px] text-[#85858A]">
+                        <label htmlFor="custom-endpoint-model">Model id</label>
+                        {probedModels.length ||
+                        (!isCustomTemplate && modelsForProvider.length > 1) ? (
+                          <select
+                            id="custom-endpoint-model"
+                            value={modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          >
+                            {[
+                              ...new Set([
+                                ...probedModels,
+                                ...modelsForProvider.map((entry) => entry.id),
+                                modelId,
+                              ]),
+                            ]
+                              .filter(Boolean)
+                              .map((id) => (
+                                <option key={id} value={id}>
+                                  {id}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            id="custom-endpoint-model"
+                            value={isCustomTemplate && modelId === "custom" ? "" : modelId}
+                            onChange={(event) => setModelId(event.target.value)}
+                            placeholder="llama3.1"
+                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          />
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                        onClick={() => void probeModels()}
+                      >
+                        {pending === "probe" ? "Fetching…" : "Fetch models"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="block text-[13.5px] text-[#85858A]">
+                      <span>Model</span>
+                      <ModelPicker
+                        options={modelsForProvider}
+                        value={selected.id}
+                        onChange={(nextModelId) => {
+                          cancelOAuthAttempt();
+                          setModelId(nextModelId);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
+                      {selected.billing}
+                    </p>
+                  </>
+                )}
 
                 <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
@@ -322,10 +549,116 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="mt-1 text-[13px] text-[#85858A]">
                     {credential
-                      ? "Your key or subscription token is stored securely and is never shown here."
-                      : "Connect this provider to use it as your personal model."}
+                      ? isCustom
+                        ? credential.baseUrl || "Custom OpenAI-compatible endpoint."
+                        : "Your key or subscription token is stored securely and is never shown here."
+                      : isCustom
+                        ? "Paste any OpenAI-compatible base URL. Extra API keys live under Advanced — Rakazo matches each key to the models it can run."
+                        : "Connect this provider to use it as your personal model."}
                   </div>
                 </div>
+
+                {isCustom && credential ? (
+                  <details className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13.5px] text-[#ECECEE] [&::-webkit-details-marker]:hidden">
+                      <span className="font-medium">Advanced</span>
+                      <span className="text-[12px] text-[#6C6C70]">
+                        {credential.keys.length
+                          ? `${credential.keys.length} API key${credential.keys.length === 1 ? "" : "s"}`
+                          : "API keys"}
+                      </span>
+                    </summary>
+                    <p className="mt-3 text-[13px] leading-[1.5] text-[#85858A]">
+                      Save every provider key here. Rakazo asks the endpoint which models each key
+                      can access, then uses that key automatically — Gemini keys for Gemini models,
+                      and so on. You do not assign keys yourself.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !credential.keys.length}
+                      onClick={() => void refreshEndpointKeys()}
+                      className="mt-3"
+                    >
+                      {pending === "refresh" ? "Refreshing…" : "Refresh model coverage"}
+                    </Button>
+                    {credential.keys.length ? (
+                      <ul className="mt-3 space-y-2">
+                        {credential.keys.map((key) => (
+                          <li key={key.id} className="rounded-[10px] bg-[#101012] px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-[14px] text-[#ECECEE]">
+                                {key.label}
+                              </span>
+                              {key.isActive ? (
+                                <span className="text-[12px] text-[#4ECB71]">Fallback</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void activateEndpointKey(key.id)}
+                                  className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                                >
+                                  Fallback
+                                </button>
+                              )}
+                              {credential.keys.length > 1 ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void removeEndpointKey(key.id)}
+                                  className="text-[12px] text-[#E65707]"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-[12px] leading-[1.45] text-[#85858A]">
+                              {key.probeError
+                                ? key.probeError
+                                : formatKeyCoverage(key.availableModels)}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-[13px] text-[#85858A]">
+                        No keys yet. Local servers can run without one.
+                      </p>
+                    )}
+                    <label className="mt-4 block text-[13.5px] text-[#85858A]">
+                      Key label
+                      <input
+                        value={keyLabel}
+                        onChange={(event) => setKeyLabel(event.target.value)}
+                        placeholder="Optional"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <label className="mt-3 block text-[13.5px] text-[#85858A]">
+                      Add API key
+                      <input
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder="sk-…"
+                        type="password"
+                        autoComplete="off"
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !apiKey.trim()}
+                      onClick={() => void addEndpointKey()}
+                      className="mt-3"
+                    >
+                      {pending === "key" ? "Adding…" : "Add API key"}
+                    </Button>
+                  </details>
+                ) : null}
 
                 {deviceSignIn ? (
                   <div className="mt-5">
@@ -361,14 +694,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : null}
 
-                {acceptsKey ? (
+                {acceptsKey && !(isCustom && credential) ? (
                   <div className="mt-5">
                     <label className="block text-[13.5px] text-[#85858A]">
                       {credential
                         ? "Replace API key"
                         : deviceSignIn
                           ? "Or connect an API key"
-                          : "API key"}
+                          : isCustom
+                            ? "API key (optional)"
+                            : "API key"}
                       <input
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
@@ -382,15 +717,36 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={busy || apiKey.trim().length < 8}
+                      disabled={
+                        busy ||
+                        (isCustom
+                          ? !(baseUrl.trim() || selected.baseUrl)
+                          : apiKey.trim().length < 8)
+                      }
                       onClick={() => void connectKey()}
                       className="mt-3"
                     >
                       {pending === "connect"
                         ? "Saving…"
-                        : credential
-                          ? "Replace API key"
-                          : "Connect API key"}
+                        : isCustom
+                          ? "Connect endpoint"
+                          : credential
+                            ? "Replace API key"
+                            : "Connect API key"}
+                    </Button>
+                  </div>
+                ) : null}
+
+                {isCustom && credential ? (
+                  <div className="mt-5">
+                    <Button
+                      type="button"
+                      variant="pill"
+                      size="sm"
+                      disabled={busy || !(baseUrl.trim() || selected.baseUrl)}
+                      onClick={() => void connectKey()}
+                    >
+                      {pending === "connect" ? "Saving…" : "Save endpoint"}
                     </Button>
                   </div>
                 ) : null}

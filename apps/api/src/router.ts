@@ -21,18 +21,35 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
+  createChannel,
   createVoiceProvider,
+  customEndpointCatalogEntry,
   deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
+  fetchOpenAICompatibleModels,
+  gatewayCatalogEntries,
+  getChannel,
   hasActiveComputerControl,
+  isGatewayProvider,
   isSupermemoryEnabled,
+  labelForDiscoveredModels,
+  listChannels,
   listPiCatalog,
+  loadBotChannel,
+  mintGatewayProviderId,
+  normalizeOpenAICompatibleBaseUrl,
+  OPENAI_COMPATIBLE_PROVIDER,
   type PiOAuthLogins,
+  parseAvailableModels,
+  parseModelSecret,
+  postUserChannelMessage,
   provisionComputer,
   releaseComputerExecutionLease,
+  removeChannel,
+  renameChannel,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -40,18 +57,24 @@ import {
   scheduleComputerSleep,
   screenLeaseIdForRun,
   scriptedCatalogEntry,
+  serializeAvailableModels,
   serializeModelSecret,
+  setChannelMembers,
   supermemoryContainerTag,
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
+  tryFetchOpenAICompatibleModels,
+  unionAvailableModels,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import {
   type Actor,
   appContract,
+  type Bot,
   type ComputerStatus,
   type Me,
+  type ModelCredential,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
@@ -82,6 +105,7 @@ import {
 } from "./artifacts.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
+import { SelfUpdateRefused, type SelfUpdateService } from "./self-update.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
@@ -123,6 +147,7 @@ export interface RouterDeps {
   oauthLogins: PiOAuthLogins;
   composio?: ComposioProvider;
   artifacts: ArtifactStore;
+  selfUpdate: SelfUpdateService;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -131,6 +156,8 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    version: string;
+    revision: string | null;
   };
 }
 
@@ -152,7 +179,11 @@ export function createRouter(deps: RouterDeps) {
   });
 
   return os.router({
-    health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
+    health: os.health.handler(async () => ({
+      ok: true as const,
+      version: deps.env.version,
+      revision: deps.env.revision,
+    })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
@@ -174,16 +205,10 @@ export function createRouter(deps: RouterDeps) {
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+        return deploymentDto(deps.prisma);
       }),
       update: authed.deployment.update.handler(async ({ context, input }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        if (input.computerHost === "this-mac" && deps.env.sandboxProvider !== "docker") {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "This Mac mode is only available when SANDBOX_PROVIDER=docker on a personal local app.",
-          });
-        }
         await deps.prisma.deploymentSettings.upsert({
           where: { id: "default" },
           create: {
@@ -191,33 +216,105 @@ export function createRouter(deps: RouterDeps) {
             ownerUserId: context.actor.userId,
             signupsEnabled: input.signupsEnabled ?? true,
             signupAllowlist: (input.signupAllowlist ?? []).join(","),
-            computerHost: input.computerHost ?? undefined,
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
             ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
-            ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });
-        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+        return deploymentDto(deps.prisma);
+      }),
+    },
+    serverUpdate: {
+      status: authed.serverUpdate.status.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return deps.selfUpdate.status();
+      }),
+      setSource: authed.serverUpdate.setSource.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.setSource(input));
+      }),
+      check: authed.serverUpdate.check.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.check());
+      }),
+      apply: authed.serverUpdate.apply.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.apply());
+      }),
+      rollback: authed.serverUpdate.rollback.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.rollback());
       }),
     },
     models: {
-      list: authed.models.list.handler(async () => [...listPiCatalog(), scriptedCatalogEntry]),
-      credentials: authed.models.credentials.handler(async ({ context }) => {
+      list: authed.models.list.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        return rows.map((row) => ({
-          id: row.id,
-          provider: row.provider,
-          label: row.label,
-          hasKey: true,
-          isDefault: row.isDefault,
-        }));
+        return [
+          customEndpointCatalogEntry,
+          ...listPiCatalog(),
+          scriptedCatalogEntry,
+          ...gatewayCatalogEntries(
+            rows.map((row) => ({
+              provider: row.provider,
+              label: row.label,
+              baseUrl: row.baseUrl,
+              defaultModel: row.defaultModel,
+              availableModels: parseAvailableModels(row.availableModels),
+            })),
+          ),
+        ];
+      }),
+      credentials: authed.models.credentials.handler(async ({ context }) => {
+        const rows = await deps.prisma.userModelCredential.findMany({
+          where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        return rows.map((row) => credentialDto(row));
+      }),
+      probe: authed.models.probe.handler(async ({ input, context }) => {
+        throwIfAborted(context.signal);
+        try {
+          return {
+            models: await fetchOpenAICompatibleModels(input.baseUrl, input.apiKey, context.signal),
+          };
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Could not list models",
+          });
+        }
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        if (input.baseUrl) {
+          let baseUrl: string;
+          try {
+            baseUrl = normalizeOpenAICompatibleBaseUrl(input.baseUrl);
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Invalid base URL",
+            });
+          }
+          const provider =
+            isGatewayProvider(input.provider) && input.provider !== OPENAI_COMPATIBLE_PROVIDER
+              ? input.provider
+              : mintGatewayProviderId();
+          return persistModelCredential(deps, context.actor, {
+            provider,
+            plaintext: input.apiKey,
+            label: input.label ?? "Custom endpoint",
+            modelId: input.modelId,
+            baseUrl,
+            availableModels: input.availableModels,
+            signal: context.signal,
+          });
+        }
+        if (input.apiKey.trim().length < 8) {
+          throw new ORPCError("BAD_REQUEST", { message: "API key is too short" });
+        }
         return persistModelCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
@@ -304,6 +401,36 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      addKey: authed.models.addKey.handler(async ({ context, input }) => {
+        const credential = await findWorkspaceModelCredential(
+          deps.prisma,
+          context.actor,
+          input.provider,
+        );
+        if (!credential || !isGatewayProvider(credential.provider) || !credential.baseUrl) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Connect a custom endpoint before adding API keys.",
+          });
+        }
+        return persistModelCredential(deps, context.actor, {
+          provider: credential.provider,
+          plaintext: input.apiKey,
+          label: credential.label,
+          keyLabel: input.label,
+          appendKey: true,
+          setDefault: false,
+          signal: context.signal,
+        });
+      }),
+      removeKey: authed.models.removeKey.handler(async ({ context, input }) =>
+        removeModelCredentialKey(deps, context.actor, input.provider, input.keyId),
+      ),
+      setActiveKey: authed.models.setActiveKey.handler(async ({ context, input }) =>
+        setActiveModelCredentialKey(deps, context.actor, input.provider, input.keyId),
+      ),
+      refreshKeys: authed.models.refreshKeys.handler(async ({ context, input }) =>
+        refreshGatewayKeyCoverage(deps, context.actor, input.provider, context.signal),
+      ),
     },
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
@@ -315,9 +442,11 @@ export function createRouter(deps: RouterDeps) {
         if (!found) throw new IsolationError();
         return found;
       }),
-      create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
-      ),
+      create: authed.bots.create.handler(async ({ context, input }) => {
+        const bot = await repos.createBot(context.actor, input);
+        await openOnboardingQuestion(deps, context.actor, bot);
+        return bot;
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         return repos.createBot(context.actor, {
@@ -328,6 +457,8 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
         });
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
@@ -353,9 +484,12 @@ export function createRouter(deps: RouterDeps) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             pinned: input.pinned,
+            hidden: input.hidden,
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -526,11 +660,15 @@ export function createRouter(deps: RouterDeps) {
           linkMessageToRun: true,
         });
         const runId = sent.runId!;
+        // A user message supersedes the opening question a new bot parks in `waiting_input`:
+        // the message says what to take on, so the question is answered by being ignored. Left
+        // active it would outlive this run and become the thread's current run again once this
+        // one finishes, showing the bot as forever waiting and holding its computer awake.
         await deps.prisma.run.updateMany({
           where: {
             botId: bot.id,
-            status: "queued",
             id: { not: runId },
+            OR: [{ status: "queued" }, { status: "waiting_input", trigger: "onboarding" }],
           },
           data: { status: "cancelled", completedAt: new Date() },
         });
@@ -644,6 +782,39 @@ export function createRouter(deps: RouterDeps) {
         await setThreadUnread(deps.prisma, context.actor, input.botId, true);
         return { ok: true as const };
       }),
+      channel: authed.threads.channel.handler(async ({ context, input }) => {
+        const channel = await loadBotChannel(deps.prisma, {
+          workspaceId: context.actor.workspaceId,
+          userId: context.actor.userId,
+          botId: input.botId,
+          peerBotId: input.peerBotId,
+        });
+        if ("error" in channel) {
+          throw new ORPCError("NOT_FOUND", { message: channel.error });
+        }
+        return channel;
+      }),
+    },
+    channels: {
+      list: authed.channels.list.handler(({ context }) => listChannels(deps.prisma, context.actor)),
+      create: authed.channels.create.handler(({ context, input }) =>
+        createChannel(deps.prisma, context.actor, input),
+      ),
+      get: authed.channels.get.handler(({ context, input }) =>
+        getChannel(deps.prisma, context.actor, input.channelId),
+      ),
+      rename: authed.channels.rename.handler(({ context, input }) =>
+        renameChannel(deps.prisma, context.actor, input),
+      ),
+      setMembers: authed.channels.setMembers.handler(({ context, input }) =>
+        setChannelMembers(deps.prisma, context.actor, input),
+      ),
+      post: authed.channels.post.handler(({ context, input }) =>
+        postUserChannelMessage({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input),
+      ),
+      remove: authed.channels.remove.handler(({ context, input }) =>
+        removeChannel(deps.prisma, context.actor, input.channelId),
+      ),
     },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -1748,7 +1919,7 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
         where: {
           threadId: bot.thread.id,
           runId: run.id,
-          type: { in: ["thread.progress", "thread.subagent"] },
+          type: { in: ["thread.progress", "thread.subagent", "thread.reasoning"] },
         },
         orderBy: { seq: "asc" },
       })
@@ -1756,7 +1927,8 @@ async function snapshot(deps: RouterDeps, actor: Actor, botId: string): Promise<
   const projected = projectMessages(liveEvents);
   const persisted = messagePage.messages;
   const live = projected.filter((message) => {
-    if (message.blocks.some((block) => block.kind === "progress")) return true;
+    if (message.blocks.some((block) => block.kind === "progress" || block.kind === "reasoning"))
+      return true;
     if (!message.id.startsWith("subagent:")) return false;
     return !persisted.some((row) =>
       row.blocks.some(
@@ -1808,9 +1980,66 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     needsModel: !cred && !hasDeployment,
     defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
     defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
-    canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
+}
+
+function credentialDto(row: {
+  id: string;
+  provider: string;
+  label: string;
+  isDefault: boolean;
+  defaultModel: string | null;
+  baseUrl: string | null;
+  availableModels: string;
+  keys?: Array<{
+    id: string;
+    label: string;
+    isActive: boolean;
+    createdAt: Date;
+    availableModels?: string;
+    probedAt?: Date | null;
+    probeError?: string;
+  }>;
+}): ModelCredential {
+  const keys = (row.keys ?? []).map((key) => ({
+    id: key.id,
+    label: key.label,
+    isActive: key.isActive,
+    createdAt: key.createdAt.toISOString(),
+    availableModels: parseAvailableModels(key.availableModels),
+    probedAt: key.probedAt?.toISOString() ?? null,
+    probeError: key.probeError || undefined,
+  }));
+  return {
+    id: row.id,
+    provider: row.provider,
+    label: row.label,
+    hasKey: keys.length > 0,
+    isDefault: row.isDefault,
+    defaultModel: row.defaultModel,
+    baseUrl: row.baseUrl,
+    availableModels: parseAvailableModels(row.availableModels),
+    keys,
+  };
+}
+
+const credentialKeyInclude = {
+  keys: { orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] },
+};
+
+async function loadCredentialDto(prisma: PrismaClient, id: string): Promise<ModelCredential> {
+  const row = await prisma.userModelCredential.findUniqueOrThrow({
+    where: { id },
+    include: credentialKeyInclude,
+  });
+  return credentialDto(row);
+}
+
+function findWorkspaceModelCredential(prisma: PrismaClient, actor: Actor, provider: string) {
+  return prisma.userModelCredential.findFirst({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+  });
 }
 
 async function computerStatus(
@@ -1892,7 +2121,55 @@ function toComputerStatus(
   };
 }
 
-async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
+const ONBOARDING_OPTIONS = [
+  { id: "gap", label: "Something the others don't cover" },
+  { id: "recurring", label: "A specific recurring job" },
+  { id: "overflow", label: "General help / overflow" },
+  { id: "unsure", label: "Not sure yet — help me figure it out" },
+];
+
+/**
+ * A freshly created bot opens with a question instead of an empty thread, so the first thing
+ * the user does is tell it what it is for. The answer becomes the run's task prompt.
+ */
+async function openOnboardingQuestion(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
+  const [user, peers] = await Promise.all([
+    deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
+    deps.prisma.bot.count({
+      where: {
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        archivedAt: null,
+        id: { not: bot.id },
+      },
+    }),
+  ]);
+  const firstName = (user?.name ?? "").trim().split(/\s+/)[0] ?? "";
+  const greeting = firstName ? `Hey ${firstName} — good to meet you.` : "Good to meet you.";
+  const crew =
+    peers > 0
+      ? `You already have ${peers} other ${peers === 1 ? "bot" : "bots"} set up. What do you want me focused on?`
+      : "What do you want me focused on?";
+  await deps.events.openBotQuestion({
+    workspaceId: actor.workspaceId,
+    threadId: bot.threadId,
+    botId: bot.id,
+    userId: actor.userId,
+    prompt: "Work out what to focus on and get started.",
+    blocks: [
+      { kind: "text", text: `${greeting} ${crew}` },
+      {
+        kind: "ask",
+        text: "What should I take on?",
+        detail: "Pick what fits, or type your own.",
+        status: "pending",
+        actions: ONBOARDING_OPTIONS,
+      },
+    ],
+  });
+}
+
+async function deploymentDto(prisma: PrismaClient) {
   const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
   return {
     ownerUserId: settings?.ownerUserId ?? null,
@@ -1903,19 +2180,19 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
     hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
-    computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
-    canChooseHostComputer: sandboxProvider === "docker",
   };
 }
 
-function computerHostFor(
-  stored: string | null | undefined,
-  sandboxProvider: string,
-): "docker" | "this-mac" | null {
-  if (sandboxProvider === "desktop") return "this-mac";
-  if (sandboxProvider !== "docker") return null;
-  if (stored === "this-mac" || stored === "docker") return stored;
-  return null;
+/** A refused update is operator error, not a server fault, so it reads as a message not a 500. */
+async function asBadRequest<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof SelfUpdateRefused) {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    throw error;
+  }
 }
 
 async function persistModelCredential(
@@ -1925,12 +2202,52 @@ async function persistModelCredential(
     provider: string;
     plaintext: string;
     label?: string;
+    keyLabel?: string;
     modelId?: string;
+    baseUrl?: string;
+    availableModels?: string[];
+    appendKey?: boolean;
+    setDefault?: boolean;
     signal?: AbortSignal;
   },
 ) {
   throwIfAborted(input.signal);
-  const stored = await deps.secrets.put(input.plaintext, {
+  const plaintext = input.plaintext.trim();
+  const appendKey = Boolean(input.appendKey || (input.baseUrl && plaintext));
+  const makeDefault = input.setDefault !== false;
+  const existing = await findWorkspaceModelCredential(deps.prisma, actor, input.provider);
+  if (!plaintext && existing && !appendKey) {
+    const updated = await withSerializableRetry(() =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          throwIfAborted(input.signal);
+          if (makeDefault) {
+            await tx.userModelCredential.updateMany({
+              where: { userId: actor.userId, workspaceId: actor.workspaceId },
+              data: { isDefault: false },
+            });
+          }
+          return tx.userModelCredential.update({
+            where: { id: existing.id },
+            data: {
+              label: input.label ?? existing.label,
+              isDefault: makeDefault ? true : existing.isDefault,
+              defaultModel: input.modelId || existing.defaultModel || deps.env.defaultModel,
+              baseUrl: input.baseUrl ?? existing.baseUrl,
+              availableModels:
+                input.availableModels !== undefined
+                  ? serializeAvailableModels(input.availableModels)
+                  : existing.availableModels,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
+    return loadCredentialDto(deps.prisma, updated.id);
+  }
+
+  const stored = await deps.secrets.put(plaintext, {
     operationId: "cred",
     traceId: "cred",
     workspaceId: actor.workspaceId,
@@ -1942,13 +2259,14 @@ async function persistModelCredential(
     deps.prisma.$transaction(
       async (tx) => {
         throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
+        const current = await tx.userModelCredential.findFirst({
           where: {
             userId: actor.userId,
             workspaceId: actor.workspaceId,
             provider: input.provider,
           },
           orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
         });
         throwIfAborted(input.signal);
         const secret = await tx.secret.create({
@@ -1961,12 +2279,14 @@ async function persistModelCredential(
           },
         });
         throwIfAborted(input.signal);
-        await tx.userModelCredential.updateMany({
-          where: { userId: actor.userId, workspaceId: actor.workspaceId },
-          data: { isDefault: false },
-        });
+        if (makeDefault) {
+          await tx.userModelCredential.updateMany({
+            where: { userId: actor.userId, workspaceId: actor.workspaceId },
+            data: { isDefault: false },
+          });
+        }
         throwIfAborted(input.signal);
-        if (!existing) {
+        if (!current) {
           const created = await tx.userModelCredential.create({
             data: {
               userId: actor.userId,
@@ -1975,42 +2295,302 @@ async function persistModelCredential(
               label: input.label ?? input.provider,
               secretId: secret.id,
               isDefault: true,
-              defaultModel: input.modelId ?? deps.env.defaultModel,
+              defaultModel: input.modelId || deps.env.defaultModel,
+              baseUrl: input.baseUrl,
+              availableModels: serializeAvailableModels(input.availableModels ?? []),
             },
           });
+          if (plaintext) {
+            await tx.userModelCredentialKey.create({
+              data: {
+                credentialId: created.id,
+                secretId: secret.id,
+                label: input.keyLabel ?? "API key",
+                isActive: true,
+              },
+            });
+          }
           throwIfAborted(input.signal);
           return created;
         }
+
+        if (appendKey && isGatewayProvider(current.provider)) {
+          const previousSecretId = current.secretId;
+          if (current.keys.length) {
+            await tx.userModelCredentialKey.updateMany({
+              where: { credentialId: current.id },
+              data: { isActive: false },
+            });
+          }
+          await tx.userModelCredentialKey.create({
+            data: {
+              credentialId: current.id,
+              secretId: secret.id,
+              label: input.keyLabel ?? "API key",
+              isActive: true,
+            },
+          });
+          const updated = await tx.userModelCredential.update({
+            where: { id: current.id },
+            data: {
+              label: input.label ?? current.label,
+              secretId: secret.id,
+              isDefault: makeDefault ? true : current.isDefault,
+              defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
+              baseUrl: input.baseUrl ?? current.baseUrl,
+              availableModels:
+                input.availableModels !== undefined
+                  ? serializeAvailableModels(input.availableModels)
+                  : current.availableModels,
+            },
+          });
+          await deleteSecretIfUnused(tx, previousSecretId);
+          return updated;
+        }
+
+        await tx.userModelCredentialKey.deleteMany({ where: { credentialId: current.id } });
+        if (plaintext) {
+          await tx.userModelCredentialKey.create({
+            data: {
+              credentialId: current.id,
+              secretId: secret.id,
+              label: input.keyLabel ?? "API key",
+              isActive: true,
+            },
+          });
+        }
         const updated = await tx.userModelCredential.update({
-          where: { id: existing.id },
+          where: { id: current.id },
           data: {
             label: input.label ?? input.provider,
             secretId: secret.id,
-            isDefault: true,
-            defaultModel: input.modelId ?? deps.env.defaultModel,
+            isDefault: makeDefault ? true : current.isDefault,
+            defaultModel: input.modelId || current.defaultModel || deps.env.defaultModel,
+            baseUrl: input.baseUrl ?? current.baseUrl,
+            availableModels:
+              input.availableModels !== undefined
+                ? serializeAvailableModels(input.availableModels)
+                : current.availableModels,
           },
         });
         throwIfAborted(input.signal);
-        const sharedSecret = await tx.userModelCredential.count({
-          where: { id: { not: existing.id }, secretId: existing.secretId },
-        });
+        await deleteSecretIfUnused(tx, current.secretId);
         throwIfAborted(input.signal);
-        if (sharedSecret === 0) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-          throwIfAborted(input.signal);
-        }
         return updated;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return {
-    id: cred.id,
-    provider: cred.provider,
-    label: cred.label,
-    hasKey: true,
-    isDefault: true,
-  };
+  const dto = await loadCredentialDto(deps.prisma, cred.id);
+  if (plaintext && isGatewayProvider(dto.provider) && dto.baseUrl) {
+    return discoverModelsForActiveGatewayKey(deps, dto, plaintext, input.keyLabel, input.signal);
+  }
+  return dto;
+}
+
+async function removeModelCredentialKey(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  keyId: string,
+) {
+  const updatedId = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const credential = await tx.userModelCredential.findFirst({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        if (!credential || !isGatewayProvider(credential.provider)) {
+          throw new ORPCError("NOT_FOUND", { message: "Custom endpoint not found." });
+        }
+        const key = credential.keys.find((entry) => entry.id === keyId);
+        if (!key) throw new ORPCError("NOT_FOUND", { message: "API key not found." });
+        if (credential.keys.length < 2) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Keep at least one API key, or connect the endpoint without a key.",
+          });
+        }
+        await tx.userModelCredentialKey.delete({ where: { id: key.id } });
+        const remaining = credential.keys.filter((entry) => entry.id !== key.id);
+        const nextActive = remaining.find((entry) => entry.isActive) ?? remaining.at(-1)!;
+        await tx.userModelCredentialKey.updateMany({
+          where: { credentialId: credential.id },
+          data: { isActive: false },
+        });
+        await tx.userModelCredentialKey.update({
+          where: { id: nextActive.id },
+          data: { isActive: true },
+        });
+        await tx.userModelCredential.update({
+          where: { id: credential.id },
+          data: {
+            secretId: nextActive.secretId,
+            availableModels: serializeAvailableModels(unionAvailableModels(remaining)),
+          },
+        });
+        await deleteSecretIfUnused(tx, key.secretId);
+        return credential.id;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  return loadCredentialDto(deps.prisma, updatedId);
+}
+
+async function setActiveModelCredentialKey(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  keyId: string,
+) {
+  const updatedId = await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const credential = await tx.userModelCredential.findFirst({
+          where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+          orderBy: newestModelCredentialOrder,
+          include: credentialKeyInclude,
+        });
+        if (!credential || !isGatewayProvider(credential.provider)) {
+          throw new ORPCError("NOT_FOUND", { message: "Custom endpoint not found." });
+        }
+        const key = credential.keys.find((entry) => entry.id === keyId);
+        if (!key) throw new ORPCError("NOT_FOUND", { message: "API key not found." });
+        await tx.userModelCredentialKey.updateMany({
+          where: { credentialId: credential.id },
+          data: { isActive: false },
+        });
+        await tx.userModelCredentialKey.update({
+          where: { id: key.id },
+          data: { isActive: true },
+        });
+        await tx.userModelCredential.update({
+          where: { id: credential.id },
+          data: { secretId: key.secretId },
+        });
+        return credential.id;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  return loadCredentialDto(deps.prisma, updatedId);
+}
+
+async function discoverModelsForActiveGatewayKey(
+  deps: RouterDeps,
+  credential: ModelCredential,
+  plaintext: string,
+  requestedLabel: string | undefined,
+  signal?: AbortSignal,
+) {
+  if (!credential.baseUrl) return credential;
+  throwIfAborted(signal);
+  const discovered = await tryFetchOpenAICompatibleModels(credential.baseUrl, plaintext, signal);
+  const row = await deps.prisma.userModelCredential.findUnique({
+    where: { id: credential.id },
+    include: credentialKeyInclude,
+  });
+  const active = row?.keys.find((key) => key.isActive) ?? row?.keys.at(-1);
+  if (!row || !active) return credential;
+  const nextLabel =
+    requestedLabel?.trim() ||
+    (active.label && active.label !== "API key"
+      ? active.label
+      : labelForDiscoveredModels(discovered.models, active.label || "API key"));
+  await deps.prisma.userModelCredentialKey.update({
+    where: { id: active.id },
+    data: {
+      availableModels: serializeAvailableModels(discovered.models),
+      probedAt: new Date(),
+      probeError: discovered.error,
+      label: nextLabel,
+    },
+  });
+  await recomputeCredentialAvailableModels(deps.prisma, row.id, row.availableModels);
+  return loadCredentialDto(deps.prisma, row.id);
+}
+
+async function refreshGatewayKeyCoverage(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  signal?: AbortSignal,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+    include: credentialKeyInclude,
+  });
+  if (!credential || !isGatewayProvider(credential.provider) || !credential.baseUrl) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Connect a custom endpoint before refreshing API keys.",
+    });
+  }
+  throwIfAborted(signal);
+  for (const key of credential.keys) {
+    throwIfAborted(signal);
+    const secret = await deps.prisma.secret.findUnique({ where: { id: key.secretId } });
+    if (!secret) {
+      await deps.prisma.userModelCredentialKey.update({
+        where: { id: key.id },
+        data: {
+          availableModels: "",
+          probedAt: new Date(),
+          probeError: "API key is missing.",
+        },
+      });
+      continue;
+    }
+    const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext));
+    const apiKey = parsed.kind === "api_key" ? parsed.key : "";
+    const discovered = apiKey
+      ? await tryFetchOpenAICompatibleModels(credential.baseUrl, apiKey, signal)
+      : { models: [] as string[], error: "This key cannot list models." };
+    const nextLabel =
+      key.label && key.label !== "API key"
+        ? key.label
+        : labelForDiscoveredModels(discovered.models, key.label || "API key");
+    await deps.prisma.userModelCredentialKey.update({
+      where: { id: key.id },
+      data: {
+        availableModels: serializeAvailableModels(discovered.models),
+        probedAt: new Date(),
+        probeError: discovered.error,
+        label: nextLabel,
+      },
+    });
+  }
+  await recomputeCredentialAvailableModels(deps.prisma, credential.id, credential.availableModels);
+  return loadCredentialDto(deps.prisma, credential.id);
+}
+
+async function recomputeCredentialAvailableModels(
+  prisma: PrismaClient,
+  credentialId: string,
+  fallbackSerialized?: string,
+) {
+  const keys = await prisma.userModelCredentialKey.findMany({
+    where: { credentialId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const fromKeys = unionAvailableModels(keys);
+  const next = fromKeys.length ? fromKeys : parseAvailableModels(fallbackSerialized);
+  await prisma.userModelCredential.update({
+    where: { id: credentialId },
+    data: { availableModels: serializeAvailableModels(next) },
+  });
+}
+
+async function deleteSecretIfUnused(tx: Prisma.TransactionClient, secretId: string) {
+  const [credentials, keys] = await Promise.all([
+    tx.userModelCredential.count({ where: { secretId } }),
+    tx.userModelCredentialKey.count({ where: { secretId } }),
+  ]);
+  if (credentials === 0 && keys === 0) {
+    await tx.secret.deleteMany({ where: { id: secretId } });
+  }
 }
 
 function throwIfAborted(signal?: AbortSignal) {

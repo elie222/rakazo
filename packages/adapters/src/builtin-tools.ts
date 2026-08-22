@@ -189,6 +189,36 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "message_bot",
+    description:
+      "Send a short message to another bot in this workspace by name. They see it in their thread and can reply. Use this to hand off work or ask a teammate. Do not use this to create a bot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Exact name of the other bot." },
+        text: { type: "string", description: "Short message to send." },
+        bot_id: {
+          type: "string",
+          description: "Optional bot id when two bots share a name.",
+        },
+      },
+      required: ["name", "text"],
+    },
+  },
+  {
+    name: "post_to_channel",
+    description:
+      "Post a message to a channel you belong to. Use this to answer when you were mentioned in a channel. Everyone in the channel sees it, so keep it short and speak only for yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        channel_id: { type: "string", description: "Id of the channel to post in." },
+        text: { type: "string", description: "Short message to post." },
+      },
+      required: ["channel_id", "text"],
+    },
+  },
+  {
     name: "archive_bot",
     description:
       "Archive a bot this bot created. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you, bots the user created, or bots another bot created.",

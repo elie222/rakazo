@@ -14,7 +14,9 @@ export function BotContextMenu({
   onToggleUnread,
   onEdit,
   onDuplicate,
+  onCopyConversationId,
   onClear,
+  onToggleHidden,
   onArchive,
   onDelete,
 }: {
@@ -28,7 +30,9 @@ export function BotContextMenu({
   onToggleUnread: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  onCopyConversationId: () => void;
   onClear: () => void;
+  onToggleHidden: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }) {
@@ -45,7 +49,7 @@ export function BotContextMenu({
   }, [onClose]);
 
   const menuWidth = 264;
-  const menuHeight = 390;
+  const menuHeight = 478;
   const margin = 8;
   const left = Math.min(position.x, window.innerWidth - menuWidth - margin);
   const top = Math.min(position.y, window.innerHeight - menuHeight - margin);
@@ -95,8 +99,18 @@ export function BotContextMenu({
         <div className="my-1 border-t border-[#343438]" />
         <MenuItem icon={<EditIcon />} label="Edit Profile" onSelect={onEdit} />
         <MenuItem icon={<DuplicateIcon />} label="Duplicate" onSelect={onDuplicate} />
+        <MenuItem
+          icon={<CopyIcon />}
+          label="Copy conversation ID"
+          onSelect={onCopyConversationId}
+        />
         <div className="my-1 border-t border-[#343438]" />
         <MenuItem icon={<ClearIcon />} label="Clear conversation" onSelect={onClear} />
+        <MenuItem
+          icon={<HiddenIcon hidden={bot.hidden} />}
+          label={bot.hidden ? "Show in sidebar" : "Hide from sidebar"}
+          onSelect={onToggleHidden}
+        />
         <MenuItem icon={<ArchiveIcon />} label="Archive" onSelect={onArchive} />
         <MenuItem icon={<TrashIcon />} label="Delete" tone="danger" onSelect={onDelete} />
       </div>
@@ -240,6 +254,32 @@ function DuplicateIcon() {
     <svg {...iconProps}>
       <rect x="8" y="8" width="12" height="12" rx="2" />
       <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </svg>
+  );
+}
+
+function HiddenIcon({ hidden }: { hidden: boolean }) {
+  if (hidden) {
+    return (
+      <svg {...iconProps}>
+        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...iconProps}>
+      <path d="M3 3l18 18M10.6 6.2A9.9 9.9 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.2 3.9M6.2 8.1A16.7 16.7 0 0 0 2 12s3.6 6 10 6a9.7 9.7 0 0 0 3.6-.7" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
     </svg>
   );
 }

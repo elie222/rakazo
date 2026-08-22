@@ -318,7 +318,10 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
       accessibilityLabel={label}
       accessibilityHint="Long press to pin or move to a section"
       onPress={() =>
-        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+        router.push({
+          pathname: "/thread",
+          params: { botId: bot.id, name: bot.name, color: bot.color },
+        })
       }
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
@@ -340,15 +343,31 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
           </View>
           <View style={styles.rowMeta}>
             {time ? <Text style={styles.time}>{time}</Text> : null}
-            {bot.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+            {bot.status === "waiting_input" || bot.status === "waiting_takeover" ? (
+              <View
+                accessibilityElementsHidden
+                style={[styles.unreadDot, { backgroundColor: "#F5A03C" }]}
+              />
+            ) : bot.unread ? (
+              <View accessibilityElementsHidden style={styles.unreadDot} />
+            ) : null}
           </View>
         </View>
         <Text
-          style={[styles.preview, bot.unread && styles.unreadPreview]}
+          style={[
+            styles.preview,
+            bot.unread && styles.unreadPreview,
+            (bot.status === "waiting_input" || bot.status === "waiting_takeover") && {
+              color: "#F5A03C",
+              fontWeight: "600",
+            },
+          ]}
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          {preview}
+          {bot.status === "waiting_input" || bot.status === "waiting_takeover"
+            ? `Waiting for you: ${preview}`
+            : preview}
         </Text>
       </View>
     </Pressable>

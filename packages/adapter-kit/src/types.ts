@@ -1,4 +1,4 @@
-import type { SandboxKind } from "@rakazo/contracts";
+import type { ReasoningStep, SandboxKind } from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -251,6 +251,7 @@ export interface AgentRunRequest {
     provider: string;
     id: string;
     apiKey?: string;
+    baseUrl?: string;
     /** In-process OAuth credential from the encrypted store for this run. */
     oauth?: {
       credential: AgentModelOAuthCredential;
@@ -279,7 +280,14 @@ export interface ScriptedTurn {
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
   | { type: "progress"; text: string }
-  | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
+  | { type: "reasoning"; step: ReasoningStep }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      executionId: string;
+      status?: "running" | "done";
+    }
   | { type: "ask"; text: string; detail?: string }
   | { type: "takeover"; reason: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }

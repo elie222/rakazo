@@ -13,7 +13,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import type { MessageBlock, ReasoningStep, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -26,18 +26,24 @@ import {
   nextCronDate,
   nextFence,
   promptInvokesSkill,
+  reasoningToolDetail,
+  reasoningToolTitle,
   redactSecrets,
   sandboxCommandTimeoutMs,
+  upsertReasoningStep,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import {
   createThreadMessage,
   findDefaultModelCredential,
+  newestModelCredentialOrder,
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { messageBot } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { postBotChannelMessage } from "./channels.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -75,6 +81,7 @@ import {
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import { isGatewayProvider, secretIdForGatewayModel } from "./openai-compatible.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -105,6 +112,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
+const STREAM_FLUSH_MS = 32;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -339,32 +347,64 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
-        const [bot, thread, messages, task, storedConnections, credential, settings, savedSkills] =
-          await Promise.all([
-            deps.prisma.bot.findUniqueOrThrow({
-              where: { id: run.botId },
-              include: { computer: true },
-            }),
-            deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
-            deps.prisma.message.findMany({
-              where: { threadId: run.threadId },
-              orderBy: { seq: "desc" },
-              take: LEGACY_HISTORY_WINDOW_SIZE,
-              select: { role: true, runId: true, blocks: true },
-            }),
-            deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
-            deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId },
-              select: { id: true, provider: true, displayName: true, status: true },
-            }),
-            findDefaultModelCredential(deps.prisma, run),
-            deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deps.prisma.taughtSkill.findMany({
-              where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
-            }),
-          ]);
+        const [
+          bot,
+          thread,
+          messages,
+          task,
+          storedConnections,
+          defaultCredential,
+          settings,
+          savedSkills,
+          teammates,
+        ] = await Promise.all([
+          deps.prisma.bot.findUniqueOrThrow({
+            where: { id: run.botId },
+            include: { computer: true },
+          }),
+          deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
+          deps.prisma.message.findMany({
+            where: { threadId: run.threadId },
+            orderBy: { seq: "desc" },
+            take: LEGACY_HISTORY_WINDOW_SIZE,
+            select: { role: true, runId: true, blocks: true },
+          }),
+          deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
+          deps.prisma.connection.findMany({
+            where: { userId: run.userId, workspaceId: run.workspaceId },
+            select: { id: true, provider: true, displayName: true, status: true },
+          }),
+          findDefaultModelCredential(deps.prisma, run),
+          deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+          deps.prisma.taughtSkill.findMany({
+            where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+          }),
+          deps.prisma.bot.findMany({
+            where: {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              archivedAt: null,
+              id: { not: run.botId },
+            },
+            select: { name: true, title: true },
+            orderBy: { name: "asc" },
+            take: 40,
+          }),
+        ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        let credential = defaultCredential;
+        if (bot.modelProvider) {
+          const specific = await deps.prisma.userModelCredential.findFirst({
+            where: {
+              userId: run.userId,
+              workspaceId: run.workspaceId,
+              provider: bot.modelProvider,
+            },
+            orderBy: newestModelCredentialOrder,
+          });
+          if (specific) credential = specific;
+        }
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(storedConnections)) {
           const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
@@ -438,11 +478,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             recallSucceeded,
           }),
         );
+        const resolvedModelId =
+          bot.modelId ?? credential?.defaultModel ?? settings?.defaultModelId ?? "scripted";
         const resolved = await resolveModelKey(
           deps,
           run.userId,
           run.workspaceId,
           credential,
+          resolvedModelId,
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
@@ -472,19 +515,42 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
         ];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
-          : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+          ? "You have a real computer. Observe before you click. Use the desktop, files, and shell instead of describing what you would do."
+          : "You have a persistent sandbox filesystem and shell. Use them instead of describing what you would do.";
         const workspaceInstruction =
           computerMode === "team"
-            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
-            : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+            ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative paths start there. Shared work goes in shared/.`
+            : "This entire computer workspace is your private home. Relative paths start at its root.";
+        const teammatesLine = teammates.length
+          ? `Teammates: ${teammates
+              .map((row) => (row.title.trim() ? `${row.name} (${row.title})` : row.name))
+              .join(
+                "; ",
+              )}. If one of them owns the next step, message_bot them. Don't wait to be asked, and don't make the user relay.`
+          : "No other bots in this workspace yet. spawn_bot creates one.";
 
         let assembled = "";
         let pendingProgress = "";
         let lastProgressAt = 0;
+        let lastReasoningAt = 0;
+        let reasoningSteps: ReasoningStep[] = [];
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
+        const publishReasoning = async (force = false) => {
+          if (!reasoningSteps.length) return;
+          const now = Date.now();
+          if (!force && now - lastReasoningAt < STREAM_FLUSH_MS) return;
+          lastReasoningAt = now;
+          await deps.events.append({
+            workspaceId: run.workspaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            type: "thread.reasoning",
+            runId,
+            payload: { steps: reasoningSteps },
+          });
+        };
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted
           ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
@@ -776,6 +842,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             return spawned;
           }
+          if (name === "message_bot") {
+            const delivered = await messageBot(deps, {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              fromBotId: bot.id,
+              fromBotName: bot.name,
+              fromBotColor: bot.color,
+              fromThreadId: thread.id,
+              sourceRunId: runId,
+              name: String(args.name ?? ""),
+              text: String(args.text ?? ""),
+              botId: args.bot_id
+                ? String(args.bot_id)
+                : args.botId
+                  ? String(args.botId)
+                  : undefined,
+            });
+            return finish(delivered);
+          }
+          if (name === "post_to_channel") {
+            const posted = await postBotChannelMessage(deps.prisma, {
+              workspaceId: run.workspaceId,
+              channelId: String(args.channel_id ?? args.channelId ?? ""),
+              botId: bot.id,
+              text: String(args.text ?? ""),
+              sourceRunId: runId,
+            });
+            return finish(posted);
+          }
           if (name === "archive_bot" || name === "delete_bot") {
             const archived = await archiveSpawnedBot(
               deps,
@@ -871,6 +966,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             )}\n\n${taskPrompt}`
           : taskPrompt;
 
+        reasoningSteps = upsertReasoningStep(reasoningSteps, {
+          id: "status",
+          kind: "status",
+          title: "Starting",
+          status: "running",
+        });
+        await publishReasoning(true);
+
         try {
           for await (const event of deps.runtime.run(
             {
@@ -879,18 +982,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
               runId,
               prompt,
               instructions: [
-                bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                [
+                  `You are ${bot.name}${bot.title.trim() ? `, ${bot.title.trim()}` : ""}.`,
+                  bot.instructions.trim() || bot.description.trim() || undefined,
+                  "Operate like a true agent: terse, concrete, no filler. Do the work. Don't recap the ask. Don't preview a plan. After tools, report the outcome in one or two lines.",
+                ]
+                  .filter((line): line is string => Boolean(line))
+                  .join("\n"),
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 recalledMemory ? redactSecrets(recalledMemory, runSecrets) : undefined,
-                `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
-                workspaceInstruction,
-                "A bot and a subagent are different. Never use both for the same request.",
-                "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-                "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
-                "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+                `${computerInstruction} ${workspaceInstruction} remember for durable facts. request_takeover for protected input. destination_write only for connected destination records.`,
+                teammatesLine,
+                "message_bot sends a short note to another bot. spawn_bot creates a lasting bot. run_subagent is a throwaway helper this turn only. Don't mix them. archive_bot only archives a bot you created; confirm_name must match.",
                 pluginLine,
                 taughtSkillsLine,
-                "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
+                "Never print secrets. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
@@ -898,9 +1004,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentTurnImages,
               tools,
               model: {
-                provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
-                id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                provider:
+                  bot.modelProvider ??
+                  credential?.provider ??
+                  settings?.defaultModelProvider ??
+                  "scripted",
+                id: resolvedModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
+                baseUrl: credential?.baseUrl ?? undefined,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
@@ -934,7 +1045,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               assembled += event.text;
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
-              if (!scripted && pendingProgress && now - lastProgressAt >= 250) {
+              if (!scripted && pendingProgress && now - lastProgressAt >= STREAM_FLUSH_MS) {
                 lastProgressAt = now;
                 await deps.events.append({
                   workspaceId: run.workspaceId,
@@ -955,6 +1066,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { text: redactSecrets(event.text, runSecrets) },
               });
+            } else if (event.type === "reasoning") {
+              const step = {
+                ...event.step,
+                title: redactSecrets(event.step.title, runSecrets),
+                detail: event.step.detail
+                  ? redactSecrets(event.step.detail, runSecrets)
+                  : undefined,
+              };
+              reasoningSteps = upsertReasoningStep(reasoningSteps, step);
+              await publishReasoning(event.step.status === "done");
             } else if (event.type === "ask") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
               const safeText = redactSecrets(event.text, runSecrets);
@@ -1042,6 +1163,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runId,
                 payload: { name: event.name, executionId: event.executionId },
               });
+              reasoningSteps = upsertReasoningStep(reasoningSteps, {
+                id: event.executionId,
+                kind: "tool",
+                title: reasoningToolTitle(event.name, event.args),
+                detail: reasoningToolDetail(event.name, event.args),
+                status: event.status === "done" ? "done" : "running",
+              });
+              await publishReasoning(event.status === "done");
               if (scripted) await applyTool(event.name, event.args, event.executionId);
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);
@@ -1092,6 +1221,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             } else if (event.type === "done") {
               assembled = assembled || event.text || assembled;
+              reasoningSteps = reasoningSteps.map((step) =>
+                step.status === "running" ? { ...step, status: "done" as const } : step,
+              );
+              await publishReasoning(true);
             }
           }
 
@@ -1132,11 +1265,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
           terminalCheckpointComplete = true;
 
-          const text = redactSecrets(assembled || "done.", runSecrets);
+          const assembledText = assembled.trim();
+          if (!assembledText) {
+            throw new Error("The model returned no text");
+          }
+          const text = redactSecrets(assembledText, runSecrets);
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+          const completedBlocks: MessageBlock[] = [];
+          if (reasoningSteps.length) {
+            completedBlocks.push({
+              kind: "reasoning",
+              steps: reasoningSteps.map((step) =>
+                step.status === "running" ? { ...step, status: "done" as const } : step,
+              ),
+            });
+          }
+          completedBlocks.push({ kind: "text", text });
           const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
@@ -1147,7 +1294,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseOwner: workerId,
             leaseFence: fence,
             outcome: "completed",
-            blocks: [{ kind: "text", text }],
+            blocks: completedBlocks,
           });
           if (!completed) return;
           if (bot.notifyOnFinish) {
@@ -1340,7 +1487,9 @@ async function requeueComputerRun(
 }
 
 async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
-  await deps.prisma.event.deleteMany({ where: { runId, type: "thread.progress" } });
+  await deps.prisma.event.deleteMany({
+    where: { runId, type: { in: ["thread.progress", "thread.reasoning"] } },
+  });
 }
 
 async function publishMessage(
@@ -1448,7 +1597,8 @@ async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
   workspaceId: string,
-  credential: { secretId: string; provider: string } | null,
+  credential: { id: string; secretId: string; provider: string } | null,
+  modelId: string | undefined,
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
@@ -1457,8 +1607,16 @@ async function resolveModelKey(
   redact: string[];
 }> {
   if (credential && deps.secretStore) {
-    return withModelCredentialLock(credential.secretId, async () => {
-      const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
+    let secretId = credential.secretId;
+    if (isGatewayProvider(credential.provider)) {
+      const row = await deps.prisma.userModelCredential.findUnique({
+        where: { id: credential.id },
+        include: { keys: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+      });
+      if (row) secretId = secretIdForGatewayModel(row, modelId);
+    }
+    return withModelCredentialLock(secretId, async () => {
+      const row = await deps.prisma.secret.findUnique({ where: { id: secretId } });
       if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
       const plaintext = deps.secretStore!.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -1484,9 +1642,9 @@ async function resolveModelKey(
         oauth,
         persistOAuth: oauth
           ? async (next) => {
-              await withModelCredentialLock(credential.secretId, async () => {
+              await withModelCredentialLock(secretId, async () => {
                 const currentRow = await deps.prisma.secret.findUnique({
-                  where: { id: credential.secretId },
+                  where: { id: secretId },
                 });
                 if (!currentRow) return;
                 const current = parseModelSecret(deps.secretStore!.load(currentRow.ciphertext));

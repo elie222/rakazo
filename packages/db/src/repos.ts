@@ -21,6 +21,7 @@ function mapBot(
     color: string;
     notifyOnFinish: boolean;
     pinned: boolean;
+    hidden: boolean;
     sectionId: string | null;
     archivedAt: Date | null;
     parentBotId: string | null;
@@ -30,6 +31,8 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    modelProvider?: string | null;
+    modelId?: string | null;
   },
   preview = "",
   status = "idle",
@@ -47,6 +50,7 @@ function mapBot(
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,
+    hidden: bot.hidden,
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: bot.thread.unread,
@@ -59,6 +63,8 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    modelProvider: bot.modelProvider ?? null,
+    modelId: bot.modelId ?? null,
   };
 }
 
@@ -185,6 +191,8 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
+        modelProvider?: string | null;
+        modelId?: string | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -209,10 +217,7 @@ export function createRepos(prisma: PrismaClient) {
         });
         if (!parent) throw new IsolationError();
       }
-      const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-      const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
-      const kind =
-        envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
+      const kind = process.env.SANDBOX_PROVIDER ?? "docker";
       const bot = await prisma.$transaction(async (tx) => {
         const teamComputer = await ensureComputerRecord(tx, {
           mode: "team",
@@ -233,6 +238,8 @@ export function createRepos(prisma: PrismaClient) {
             parentBotId: input.parentBotId ?? null,
             computerId: teamComputer.id,
             spawnKey: input.spawnKey,
+            modelProvider: input.modelProvider ?? null,
+            modelId: input.modelId ?? null,
           },
         });
         const thread = await tx.thread.create({

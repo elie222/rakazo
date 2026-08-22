@@ -6,10 +6,13 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  isEphemeralThreadMessageId,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
+  reasoningMessageId,
+  reasoningStepsFromPayload,
   subagentBlockFromPayload,
 } from "@rakazo/core";
 
@@ -40,6 +43,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
   return (
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
+    event.type === "thread.reasoning" ||
     event.type === "thread.subagent" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
@@ -81,6 +85,22 @@ export function reduceThreadSnapshot(
     const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
     return { ...prev, cursor: event.seq, messages: [...without, streaming] };
   }
+  if (event.type === "thread.reasoning") {
+    const next: ThreadMessage = {
+      id: reasoningMessageId(event),
+      threadId: event.threadId,
+      seq: event.seq,
+      role: "bot",
+      blocks: [{ kind: "reasoning", steps: reasoningStepsFromPayload(event.payload) }],
+      runId: event.runId,
+      createdAt: event.createdAt,
+    };
+    const without = prev.messages.filter(
+      (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+    );
+    const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
+    return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
+  }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(event.payload);
     const next: ThreadMessage = {
@@ -116,7 +136,7 @@ export function reduceThreadSnapshot(
     const without = prev.messages.filter(
       (message) =>
         message.id !== next.id &&
-        !message.id.startsWith("progress:") &&
+        !isEphemeralThreadMessageId(message.id) &&
         !replacedSubagent(message, replacedSubagentIds),
     );
     return { ...prev, cursor: event.seq, messages: [...without, next] };

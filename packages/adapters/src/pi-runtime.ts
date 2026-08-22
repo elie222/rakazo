@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { type Api, type Model, type Models, Type } from "@earendil-works/pi-ai";
+import { type Api, type Model, type Models, type MutableModels, Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   AdapterContext,
@@ -9,11 +9,16 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import type { ReasoningStep } from "@rakazo/contracts";
+import { reasoningToolDetail, reasoningToolTitle } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import {
+  attachOpenAICompatibleProvider,
+  completeOpenAICompatibleChat,
+} from "./openai-compatible.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 
 const running = new Map<string, AbortController>();
-const catalogModels = builtinModels();
 const MAX_PARALLEL_SUBAGENTS = 4;
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
@@ -50,7 +55,9 @@ export class PiAgentRuntime implements AgentRuntime {
             ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
             : request.model.id;
         const models = modelsForRequest(request, provider);
-        const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        const model =
+          models.getModel(provider, modelId) ??
+          (request.model.baseUrl ? undefined : models.getModel("openrouter", modelId));
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
           queue.push({ type: "done" });
@@ -84,10 +91,10 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
-                : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
+                ? "You are a concise operator with a real computer. Act. Don't narrate."
+                : "You are a concise operator with a sandbox filesystem and shell. Act. Don't narrate."),
             model,
-            thinkingLevel: "off",
+            thinkingLevel: model.reasoning ? "medium" : "off",
             tools,
             messages: history,
           },
@@ -104,7 +111,75 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.addEventListener("abort", onAbort);
 
         let streamed = "";
+        let thinking = "";
+        let lastThinkPush = 0;
+        const toolArgs = new Map<string, Record<string, unknown>>();
+        const emitReasoning = (step: ReasoningStep) => {
+          queue.push({ type: "reasoning", step });
+        };
+        emitReasoning({
+          id: "status",
+          kind: "status",
+          title: "Working through the request",
+          status: "running",
+        });
         agent.subscribe((event) => {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_delta"
+          ) {
+            const delta = event.assistantMessageEvent.delta;
+            if (delta) {
+              thinking += delta;
+              const now = Date.now();
+              if (now - lastThinkPush >= 24) {
+                lastThinkPush = now;
+                emitReasoning({
+                  id: "think",
+                  kind: "think",
+                  title: "Thinking",
+                  detail: thinking.slice(-4000),
+                  status: "running",
+                });
+              }
+            }
+          }
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "thinking_end"
+          ) {
+            const content = event.assistantMessageEvent.content || thinking;
+            if (content) {
+              thinking = content;
+              emitReasoning({
+                id: "think",
+                kind: "think",
+                title: "Thought",
+                detail: content.slice(-8000),
+                status: "done",
+              });
+            }
+          }
+          if (event.type === "tool_execution_start") {
+            toolArgs.set(event.toolCallId, event.args ?? {});
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, event.args ?? {}),
+              detail: reasoningToolDetail(event.toolName, event.args ?? {}),
+              status: "running",
+            });
+          }
+          if (event.type === "tool_execution_end") {
+            const args = toolArgs.get(event.toolCallId) ?? {};
+            emitReasoning({
+              id: event.toolCallId,
+              kind: "tool",
+              title: reasoningToolTitle(event.toolName, args),
+              detail: event.isError ? "failed" : "done",
+              status: "done",
+            });
+          }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
@@ -133,7 +208,6 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         });
 
-        queue.push({ type: "progress", text: "working…" });
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
@@ -144,21 +218,62 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.removeEventListener("abort", onAbort);
 
         const error = agent.state.errorMessage;
-        if (error) {
-          queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
-          queue.push({ type: "done", text: sanitizeError(error) });
+        if (error && !isMissingFinishReasonError(error)) {
+          pushRunError(queue, error, Boolean(request.model.baseUrl));
           return;
         }
         if (!streamed) {
-          const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
-          queue.push({ type: "text", text: fallback });
-          streamed = fallback;
+          try {
+            const recovered =
+              (await recoverGatewayReply(request, signal)) ||
+              assistantText(agent.state.messages.at(-1));
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              streamed = recovered;
+            } else {
+              pushRunError(
+                queue,
+                error || "The gateway returned an empty reply",
+                Boolean(request.model.baseUrl),
+              );
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              Boolean(request.model.baseUrl),
+            );
+            return;
+          }
         }
+        emitReasoning({
+          id: "status",
+          kind: "status",
+          title: "Finished",
+          status: "done",
+        });
         queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        queue.push({ type: "text", text: `I hit a problem: ${message}` });
-        queue.push({ type: "done", text: message });
+        if (isMissingFinishReasonError(message) && request.model.baseUrl) {
+          try {
+            const recovered = await recoverGatewayReply(request, signal);
+            if (recovered) {
+              queue.push({ type: "text", text: recovered });
+              queue.push({ type: "done", text: recovered });
+              return;
+            }
+          } catch (recoveryError) {
+            pushRunError(
+              queue,
+              recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              true,
+            );
+            return;
+          }
+        }
+        pushRunError(queue, message, Boolean(request.model.baseUrl));
       } finally {
         queue.close();
       }
@@ -173,18 +288,29 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function modelsForRequest(request: AgentRunRequest, provider: string): Models {
+function modelsForRequest(
+  request: AgentRunRequest,
+  provider: string,
+): ReturnType<typeof builtinModels> {
   const oauth = request.model.oauth;
-  if (!oauth) return catalogModels;
-
-  const persist = oauth.persist;
-  return builtinModels({
-    credentials: new PiRuntimeCredentialStore(
+  const models = oauth
+    ? builtinModels({
+        credentials: new PiRuntimeCredentialStore(
+          provider,
+          toOAuthCredential(oauth.credential),
+          oauth.persist ? (next) => oauth.persist!(next) : undefined,
+        ),
+      })
+    : builtinModels();
+  if (request.model.baseUrl) {
+    attachOpenAICompatibleProvider(models as MutableModels, {
       provider,
-      toOAuthCredential(oauth.credential),
-      persist ? (next) => persist(next) : undefined,
-    ),
-  });
+      baseUrl: request.model.baseUrl,
+      modelId: request.model.id,
+      apiKey: request.model.apiKey,
+    });
+  }
+  return models;
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
@@ -328,6 +454,13 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           title: raw.title ? String(raw.title) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
+        };
+      }
+      if (tool.name === "message_bot") {
+        return {
+          name: String(raw.name ?? ""),
+          text: String(raw.text ?? ""),
+          bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
         };
       }
       if (tool.name === "archive_bot" || tool.name === "delete_bot") {
@@ -485,7 +618,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     await nested.waitForIdle();
     host.signal.removeEventListener("abort", onAbort);
     const error = nested.state.errorMessage;
-    if (error) {
+    if (error && !isMissingFinishReasonError(error)) {
       const message = sanitizeError(error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
@@ -547,6 +680,13 @@ function parametersFor(tool: ConnectorTool) {
       title: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
+    });
+  }
+  if (tool.name === "message_bot") {
+    return Type.Object({
+      name: Type.String(),
+      text: Type.String(),
+      bot_id: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "archive_bot" || tool.name === "delete_bot") {
@@ -652,6 +792,62 @@ function summarizeToolResult(result: unknown) {
   } catch {
     return "ok";
   }
+}
+
+export function isMissingFinishReasonError(error: string): boolean {
+  return /stream ended without finish_reason/i.test(error);
+}
+
+function pushRunError(
+  queue: { push(event: AgentRuntimeEvent): void },
+  error: string,
+  fromGateway: boolean,
+) {
+  const message = sanitizeError(error);
+  queue.push({
+    type: "reasoning",
+    step: {
+      id: "status",
+      kind: "status",
+      title: fromGateway ? "Gateway error" : "Failed",
+      detail: message,
+      status: "done",
+    },
+  });
+  queue.push({
+    type: "text",
+    text: message,
+  });
+  queue.push({ type: "done", text: message });
+}
+
+async function recoverGatewayReply(request: AgentRunRequest, signal: AbortSignal): Promise<string> {
+  if (!request.model.baseUrl) return "";
+  return completeOpenAICompatibleChat({
+    baseUrl: request.model.baseUrl,
+    apiKey: request.model.apiKey,
+    modelId: request.model.id,
+    messages: gatewayChatMessages(request),
+    signal,
+  });
+}
+
+function gatewayChatMessages(
+  request: AgentRunRequest,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  if (request.instructions?.trim()) {
+    messages.push({ role: "system", content: request.instructions });
+  }
+  for (const item of request.history) {
+    if (item.role === "user" || item.role === "assistant") {
+      messages.push({ role: item.role, content: item.content });
+    }
+  }
+  if (messages.at(-1)?.role !== "user" || messages.at(-1)?.content !== request.prompt) {
+    messages.push({ role: "user", content: request.prompt });
+  }
+  return messages;
 }
 
 function assistantText(message: unknown): string {

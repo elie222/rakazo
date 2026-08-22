@@ -6,6 +6,7 @@ export const ProductEventType = z.enum([
   "thread.cleared",
   "thread.message.updated",
   "thread.progress",
+  "thread.reasoning",
   "thread.artifact",
   "thread.ask",
   "thread.choice",
@@ -42,6 +43,15 @@ export type ProductEventType = z.infer<typeof ProductEventType>;
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
 
+export const ReasoningStepSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["status", "think", "tool"]),
+  title: z.string(),
+  detail: z.string().optional(),
+  status: z.enum(["running", "done"]),
+});
+export type ReasoningStep = z.infer<typeof ReasoningStepSchema>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -77,6 +87,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("meta"), text: z.string() }),
   z.object({ kind: z.literal("progress"), text: z.string() }),
   z.object({
+    kind: z.literal("reasoning"),
+    steps: z.array(ReasoningStepSchema),
+  }),
+  z.object({
     kind: z.literal("subagent"),
     agentId: z.string(),
     name: z.string(),
@@ -91,6 +105,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     name: z.string(),
     title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
+  }),
+  z.object({
+    kind: z.literal("bot_message"),
+    direction: z.enum(["in", "out"]),
+    channelId: z.string(),
+    peerBotId: z.string(),
+    peerName: z.string(),
+    peerColor: z.string(),
+    text: z.string(),
   }),
   z.object({
     kind: z.literal("skill_draft"),

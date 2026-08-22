@@ -6,6 +6,7 @@ export type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 export { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 
 export function providerHint(entry: ModelCatalogEntry) {
+  if (entry.custom) return entry.baseUrl ? hostFromUrl(entry.baseUrl) : "Base URL";
   if (entry.signIn === "device-code") {
     if (entry.provider === "openai-codex") return "ChatGPT Plus/Pro";
     if (entry.provider === "github-copilot") return "Copilot";
@@ -20,4 +21,12 @@ export async function waitForModelOAuth(loginId: string, signal?: AbortSignal) {
   return waitForModelOAuthCompletion(() => rpc.models.completeOAuth({ loginId }, { signal }), {
     signal,
   });
+}
+
+function hostFromUrl(value: string): string {
+  try {
+    return new URL(value).host || "Base URL";
+  } catch {
+    return "Base URL";
+  }
 }

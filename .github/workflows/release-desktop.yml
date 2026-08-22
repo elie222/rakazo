@@ -1,0 +1,46 @@
+name: release-desktop
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.os }} installers
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build and publish
+        # electron-builder writes latest.yml / latest-mac.yml next to the installers; that file is
+        # the feed electron-updater reads, so a release without it cannot be picked up by clients.
+        run: pnpm --filter @rakazo/desktop run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The bundled renderer is static assets; the secrets it would otherwise demand only
+          # matter to the server the app connects to, so the build uses the dev placeholders.
+          RAKAZO_ALLOW_DEV_SECRETS: "1"
+          # Signing is what makes an update installable without a security prompt. Leave these
+          # unset and the job still publishes, but macOS and Windows clients will refuse the update.
+          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

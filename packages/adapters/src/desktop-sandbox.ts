@@ -1,6 +1,16 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -23,6 +33,8 @@ import {
   normalizeWorkspacePath,
   placeholderObservation,
 } from "./computer-support.js";
+
+const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
 interface DesktopBox {
   ref: ComputerRef;
@@ -203,7 +215,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
     await mkdir(path.dirname(target), { recursive: true });
     const handle = await open(
       target,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | O_NOFOLLOW,
       file.executable ? 0o700 : 0o600,
     );
     try {
@@ -288,7 +300,12 @@ async function localWorkspaceTarget(home: string, relative: string, mustExist: b
     const resolvedParent = await realpath(parent);
     if (!allowedPath(resolvedParent, [home]))
       throw new Error("Path escapes the computer workspace");
-    return path.join(resolvedParent, path.basename(candidate));
+    const target = path.join(resolvedParent, path.basename(candidate));
+    // lstat-then-open is not atomic on Windows (Node does not expose FILE_FLAG_OPEN_REPARSE_POINT).
+    // Linux still has atomic O_NOFOLLOW.
+    const existing = await lstat(target).catch(() => null);
+    if (existing?.isSymbolicLink()) throw new Error("Path escapes the computer workspace");
+    return target;
   }
   const resolved = await realpath(candidate);
   if (!allowedPath(resolved, [home])) throw new Error("Path escapes the computer workspace");
