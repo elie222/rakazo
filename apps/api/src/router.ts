@@ -2033,12 +2033,18 @@ async function persistModelCredential(
   throwIfAborted(input.signal);
   const plaintext = input.plaintext.trim();
   const existing = await findWorkspaceModelCredential(deps.prisma, actor, input.provider);
-  const baseUrl =
-    input.baseUrl && input.baseUrl !== existing?.baseUrl
-      ? await assertOpenAICompatibleEndpointAllowed(input.baseUrl, {
-          allowPrivateNetwork: actor.isDeploymentOwner,
-        })
-      : input.baseUrl;
+  let baseUrl = input.baseUrl;
+  if (baseUrl && baseUrl !== existing?.baseUrl) {
+    try {
+      baseUrl = await assertOpenAICompatibleEndpointAllowed(baseUrl, {
+        allowPrivateNetwork: actor.isDeploymentOwner,
+      });
+    } catch (error) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error instanceof Error ? error.message : "Invalid base URL",
+      });
+    }
+  }
   const appendKey = Boolean(input.appendKey || (baseUrl && plaintext));
   const makeDefault = input.setDefault !== false;
   if (!plaintext && existing && !appendKey) {
