@@ -75,6 +75,7 @@ import {
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import { isGatewayProvider, secretIdForGatewayModel } from "./openai-compatible.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -438,11 +439,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             recallSucceeded,
           }),
         );
+        const resolvedModelId =
+          bot.modelId ?? credential?.defaultModel ?? settings?.defaultModelId ?? "scripted";
         const resolved = await resolveModelKey(
           deps,
           run.userId,
           run.workspaceId,
           credential,
+          resolvedModelId,
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
@@ -898,8 +902,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentTurnImages,
               tools,
               model: {
-                provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
-                id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                provider:
+                  bot.modelProvider ??
+                  credential?.provider ??
+                  settings?.defaultModelProvider ??
+                  "scripted",
+                id: resolvedModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
@@ -1448,7 +1456,8 @@ async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
   workspaceId: string,
-  credential: { secretId: string; provider: string } | null,
+  credential: { id: string; secretId: string; provider: string } | null,
+  modelId: string | undefined,
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
@@ -1457,8 +1466,16 @@ async function resolveModelKey(
   redact: string[];
 }> {
   if (credential && deps.secretStore) {
-    return withModelCredentialLock(credential.secretId, async () => {
-      const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
+    let secretId = credential.secretId;
+    if (isGatewayProvider(credential.provider)) {
+      const row = await deps.prisma.userModelCredential.findUnique({
+        where: { id: credential.id },
+        include: { keys: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+      });
+      if (row) secretId = secretIdForGatewayModel(row, modelId);
+    }
+    return withModelCredentialLock(secretId, async () => {
+      const row = await deps.prisma.secret.findUnique({ where: { id: secretId } });
       if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
       const plaintext = deps.secretStore!.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -1484,9 +1501,9 @@ async function resolveModelKey(
         oauth,
         persistOAuth: oauth
           ? async (next) => {
-              await withModelCredentialLock(credential.secretId, async () => {
+              await withModelCredentialLock(secretId, async () => {
                 const currentRow = await deps.prisma.secret.findUnique({
-                  where: { id: credential.secretId },
+                  where: { id: secretId },
                 });
                 if (!currentRow) return;
                 const current = parseModelSecret(deps.secretStore!.load(currentRow.ciphertext));

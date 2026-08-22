@@ -18,7 +18,7 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 - Shared Team Computers and isolated Private computers
 - Browser, terminal, file, and graphical desktop access
 - Bots that can delegate to peer bots or short-lived subagents
-- Bring-your-own model credentials through Pi
+- Bring-your-own model credentials through Pi, including OpenAI-compatible base URLs and multiple API keys per custom endpoint. Rakazo discovers which models each key can run and picks the matching key automatically.
 - Optional app integrations through Composio
 - Docker, E2B, Daytona, and trusted local-computer support
 
