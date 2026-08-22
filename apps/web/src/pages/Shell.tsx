@@ -2,9 +2,9 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
   BotSection,
+  Channel,
   ComputerMode,
   ComputerStatus,
-  Me,
   ModelCatalogEntry,
   ModelCredential,
   ProductEvent,
@@ -45,11 +45,13 @@ import {
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
   ArrowUp,
+  Bot as BotIcon,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cpu,
   Gauge,
+  Hash,
   LogOut,
   Mic,
   Monitor,
@@ -66,6 +68,7 @@ import {
   type Dispatch,
   lazy,
   memo,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
   Suspense,
@@ -100,7 +103,8 @@ import {
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
 import type { ContextMenuPosition } from "./BotContextMenu";
-import { HostComputerPrompt } from "./HostComputerPrompt";
+import { ChannelView } from "./ChannelView";
+import { NewChannelDialog } from "./NewChannelDialog";
 import { WindowChrome } from "./WindowChrome";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
@@ -136,14 +140,18 @@ type PendingAttachment = {
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
 export function ShellPage() {
-  const { botId } = useParams();
+  const { botId, channelId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const session = authClient.useSession();
   const [bots, setBots] = useState<Bot[]>([]);
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -179,7 +187,6 @@ export function ShellPage() {
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
-  const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -230,6 +237,8 @@ export function ShellPage() {
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const routeBotId = useRef<string | undefined>(botId);
   routeBotId.current = botId;
+  const routeChannelId = useRef<string | undefined>(channelId);
+  routeChannelId.current = channelId;
   const activeBotId = useRef<string | undefined>(active?.id);
   activeBotId.current = active?.id;
   const screenRequest = useRef(0);
@@ -293,11 +302,17 @@ export function ShellPage() {
       navigate("/onboarding", { replace: true });
       return;
     }
+    // A channel route carries no bot id, so the fallback below would navigate out of it.
+    if (routeChannelId.current) return;
     const currentBotId = routeBotId.current;
     if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
       navigate(list[0] ? `/app/${list[0].id}` : "/app", { replace: true });
     }
   }
+
+  const refreshChannels = useCallback(async () => {
+    setChannels(await rpc.channels.list());
+  }, []);
 
   async function refreshThread(id: string) {
     markOnce("rk:renderer:thread-request-start");
@@ -377,7 +392,6 @@ export function ShellPage() {
     void takeInitialBootstrap(botId)
       .then((bootstrap) => {
         if (cancelled) return;
-        setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
@@ -395,6 +409,7 @@ export function ShellPage() {
           navigate("/onboarding", { replace: true });
           return;
         }
+        if (routeChannelId.current) return;
         const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
         if (selectedBotId && selectedBotId !== botId) {
           navigate(`/app/${selectedBotId}`, { replace: true });
@@ -402,14 +417,17 @@ export function ShellPage() {
       })
       .catch(() => {
         if (cancelled) return;
-        setBootstrapMe(null);
         void refreshBots(true);
       });
+    void refreshChannels().catch(() => undefined);
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
       if (document.visibilityState !== "visible") return;
       window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void refreshBots().catch(() => undefined), 50);
+      refreshTimer = window.setTimeout(() => {
+        void refreshBots().catch(() => undefined);
+        void refreshChannels().catch(() => undefined);
+      }, 50);
     };
     window.addEventListener("focus", refreshVisibleBots);
     document.addEventListener("visibilitychange", refreshVisibleBots);
@@ -470,7 +488,9 @@ export function ShellPage() {
   ]);
 
   useEffect(() => {
-    if (!active) return;
+    // A channel route still keeps a fallback bot in `active`; reading its thread would
+    // silently clear that bot's unread badge while the user is looking at the channel.
+    if (!active || channelId) return;
     // Opening a bot clears the manual unread flag so it can auto-read again.
     manuallyUnread.current.delete(active.id);
     const markVisibleBotRead = () => {
@@ -483,7 +503,12 @@ export function ShellPage() {
       window.removeEventListener("focus", markVisibleBotRead);
       document.removeEventListener("visibilitychange", markVisibleBotRead);
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, channelId, markBotReadIfVisible]);
+
+  // The side panel is entirely about the active bot, so opening a channel must close it.
+  useEffect(() => {
+    if (channelId) setPanel(null);
+  }, [channelId]);
 
   useEffect(() => {
     if (!active) return;
@@ -561,10 +586,24 @@ export function ShellPage() {
     };
   }, [active?.id, markBotReadIfVisible, searchParams]);
 
+  const hiddenBots = useMemo(() => bots.filter((b) => b.hidden), [bots]);
+  const filteredChannels = useMemo(
+    () => channels.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())),
+    [channels, query],
+  );
   const filtered = useMemo(
-    () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
+    () =>
+      bots
+        .filter((b) => !b.hidden)
+        .filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
     [bots, query],
   );
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   const sidebarGroups = useMemo(
     () => groupBotsForSidebar(filtered, botSections),
     [botSections, filtered],
@@ -1017,20 +1056,13 @@ export function ShellPage() {
       data-ready={shellReady}
       className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
     >
-      {bootstrapMe !== undefined ? (
-        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
-      ) : null}
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
-          <button
-            type="button"
-            onClick={() => setPanel("create")}
-            className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
-            title="New bot"
-          >
-            +
-          </button>
+          <CreateMenu
+            onNewBot={() => setPanel("create")}
+            onNewChannel={() => setNewChannelOpen(true)}
+          />
         </div>
         <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[#202023] bg-[#141416] px-3 py-2 text-[14px] text-[#6C6C70]">
           <span>⌕</span>
@@ -1042,6 +1074,44 @@ export function ShellPage() {
           />
         </div>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+          {filteredChannels.length > 0 ? (
+            <div data-sidebar-group="channels">
+              <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-[#6C6C70]">
+                Channels
+              </div>
+              {filteredChannels.map((channel) => (
+                <button
+                  key={channel.id}
+                  type="button"
+                  onClick={() => navigate(`/channel/${channel.id}`)}
+                  className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-left"
+                  style={{
+                    background: channelId === channel.id ? "#161618" : "transparent",
+                  }}
+                >
+                  <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+                    <Hash size={17} strokeWidth={1.9} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[15px] font-medium text-[#ECECEE]">
+                        {channel.name}
+                      </span>
+                      <span className="shrink-0 text-[12.5px] text-[#6C6C70]">
+                        {formatInboxTime(channel.updatedAt)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                      {channel.preview ||
+                        (channel.members.length
+                          ? channel.members.map((member) => member.name).join(", ")
+                          : "No bots yet")}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {showWorkspaceSearch ? (
             <WorkspaceSearchResults
               hits={searchHits}
@@ -1070,7 +1140,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-left"
                     style={{
-                      background: active?.id === bot.id ? "#161618" : "transparent",
+                      background: !channelId && active?.id === bot.id ? "#161618" : "transparent",
                     }}
                   >
                     <BotAvatar color={bot.color} size={38} />
@@ -1158,6 +1228,44 @@ export function ShellPage() {
                 : null}
             </div>
           ) : null}
+          {hiddenBots.length > 0 && !showWorkspaceSearch ? (
+            <div className="mt-2 border-t border-[#202023] pt-2">
+              <button
+                type="button"
+                aria-expanded={hiddenOpen}
+                onClick={() => setHiddenOpen((open) => !open)}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+              >
+                <span>Hidden</span>
+                <span>{hiddenBots.length}</span>
+              </button>
+              {hiddenOpen
+                ? hiddenBots.map((bot) => (
+                    <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <BotAvatar color={bot.color} size={28} />
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/${bot.id}`)}
+                        className="min-w-0 flex-1 truncate text-left text-[14px] text-[#A8A8AD] hover:text-white"
+                      >
+                        {bot.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.bots
+                            .update({ botId: bot.id, hidden: false })
+                            .then(() => refreshBots())
+                        }
+                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                      >
+                        Unhide
+                      </button>
+                    </div>
+                  ))
+                : null}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -1224,7 +1332,9 @@ export function ShellPage() {
             onClick={() => {
               setMenuOpen((open) => {
                 const next = !open;
-                if (next) void rpc.usage.summary().then(setUsage);
+                if (next) {
+                  void rpc.usage.summary().then(setUsage);
+                }
                 return next;
               });
             }}
@@ -1238,121 +1348,133 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
-        <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
-          <button
-            type="button"
-            data-testid="bot-settings-trigger"
-            onClick={() => setPanel("settings")}
-            className="flex min-w-0 items-center gap-3"
-          >
-            {active ? <BotAvatar color={active.color} size={26} thinking={botWorking} /> : null}
-            <span className="min-w-0">
-              <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
-                {active?.name ?? "Select a bot"}
-              </span>
-            </span>
-          </button>
-          <div className="flex items-center gap-1">
-            {active ? (
-              <button
-                type="button"
-                title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
-                aria-label="Call"
-                onClick={() => {
-                  if (!voiceStatus?.ready) {
-                    setVoiceOpen(true);
-                    return;
-                  }
-                  setCallOpen(true);
-                }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
-              >
-                <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
-              </button>
-            ) : null}
+      {channelId ? (
+        <ChannelView
+          channelId={channelId}
+          bots={bots}
+          onChannelChanged={() => void refreshChannels().catch(() => undefined)}
+          onDeleted={() => {
+            void refreshChannels().catch(() => undefined);
+            navigate(bots[0] ? `/app/${bots[0].id}` : "/app", { replace: true });
+          }}
+        />
+      ) : (
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#0D0D0E]">
+          <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
             <button
               type="button"
-              title="Agent computer"
-              onClick={() => setPanel((p) => (p === "computer" ? null : "computer"))}
-              className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-              style={{ background: panel ? "#1B1B1E" : "transparent" }}
+              data-testid="bot-settings-trigger"
+              onClick={() => setPanel("settings")}
+              className="flex min-w-0 items-center gap-3"
             >
-              <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
+              {active ? <BotAvatar color={active.color} size={26} thinking={botWorking} /> : null}
+              <span className="min-w-0">
+                <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
+                  {active?.name ?? "Select a bot"}
+                </span>
+              </span>
             </button>
+            <div className="flex items-center gap-1">
+              {active ? (
+                <button
+                  type="button"
+                  title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
+                  aria-label="Call"
+                  onClick={() => {
+                    if (!voiceStatus?.ready) {
+                      setVoiceOpen(true);
+                      return;
+                    }
+                    setCallOpen(true);
+                  }}
+                  className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                  style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
+                >
+                  <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                title="Agent computer"
+                onClick={() => setPanel((p) => (p === "computer" ? null : "computer"))}
+                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                style={{ background: panel ? "#1B1B1E" : "transparent" }}
+              >
+                <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
+              </button>
+            </div>
           </div>
-        </div>
-        <Transcript
-          scrollRef={messageScroll}
-          botId={active?.id ?? ""}
-          messages={snapshot?.messages ?? []}
-          olderCursor={snapshot?.olderCursor ?? null}
-          loadingOlder={loadingOlder}
-          answerableAskMessageId={answerableAskMessageId}
-          running={botWorking}
-          followOutput={
-            !loadingOlder &&
-            !(
-              pinnedAroundRef.current &&
-              active &&
-              pinnedAroundRef.current.botId === active.id &&
-              pinnedAroundRef.current.threadId === snapshot?.threadId
-            )
-          }
-          onLoadOlder={loadOlder}
-          onOpenBot={openBot}
-          onAnswer={answerMessage}
-          onRefresh={refreshActiveThread}
-          onAddRoutine={addSkillRoutine}
-          voiceReady={Boolean(voiceStatus?.ready)}
-          speakingMessageId={speakingMessageId}
-          onSpeak={speakMessage}
-          onOpenChannel={(peerBotId) => {
-            if (!active) return;
-            setChannelPeer({ botId: active.id, peerBotId });
-          }}
-        />
-        {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
-            Teaching in progress — stop teaching before sending a new message.
-          </div>
-        ) : null}
-        <Composer
-          activeName={active?.name}
-          running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
-          disabled={Boolean(recordingSkill)}
-          pendingAttachments={activePendingAttachments}
-          attachmentNotice={attachmentNotice}
-          sendError={sendError}
-          dictationError={dictationError}
-          sending={sending}
-          fileInputRef={fileInputRef}
-          onAttachmentPick={onAttachmentPick}
-          onRemoveAttachment={removeAttachment}
-          onSend={sendMessage}
-          onStop={stopRun}
-          dictating={dictating}
-          transcribe={Boolean(voiceStatus?.transcribe)}
-          onDictateStart={(onFinal) => {
-            void dictation.listen({
-              mode: "hold",
-              transcribe: Boolean(voiceStatus?.transcribe),
-              onFinal,
-            });
-          }}
-          onDictateStop={() => dictation.submitHold()}
-        />
-        {channelPeer ? (
-          <Suspense fallback={null}>
-            <BotChannelOverlay
-              botId={channelPeer.botId}
-              peerBotId={channelPeer.peerBotId}
-              onClose={() => setChannelPeer(null)}
-            />
-          </Suspense>
-        ) : null}
-      </main>
+          <Transcript
+            scrollRef={messageScroll}
+            botId={active?.id ?? ""}
+            messages={snapshot?.messages ?? []}
+            olderCursor={snapshot?.olderCursor ?? null}
+            loadingOlder={loadingOlder}
+            answerableAskMessageId={answerableAskMessageId}
+            running={botWorking}
+            followOutput={
+              !loadingOlder &&
+              !(
+                pinnedAroundRef.current &&
+                active &&
+                pinnedAroundRef.current.botId === active.id &&
+                pinnedAroundRef.current.threadId === snapshot?.threadId
+              )
+            }
+            onLoadOlder={loadOlder}
+            onOpenBot={openBot}
+            onAnswer={answerMessage}
+            onRefresh={refreshActiveThread}
+            onAddRoutine={addSkillRoutine}
+            voiceReady={Boolean(voiceStatus?.ready)}
+            speakingMessageId={speakingMessageId}
+            onSpeak={speakMessage}
+            onOpenChannel={(peerBotId) => {
+              if (!active) return;
+              setChannelPeer({ botId: active.id, peerBotId });
+            }}
+          />
+          {recordingSkill ? (
+            <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+              Teaching in progress — stop teaching before sending a new message.
+            </div>
+          ) : null}
+          <Composer
+            activeName={active?.name}
+            running={Boolean(snapshot?.run && isActive(snapshot.run.status))}
+            disabled={Boolean(recordingSkill)}
+            pendingAttachments={activePendingAttachments}
+            attachmentNotice={attachmentNotice}
+            sendError={sendError}
+            dictationError={dictationError}
+            sending={sending}
+            fileInputRef={fileInputRef}
+            onAttachmentPick={onAttachmentPick}
+            onRemoveAttachment={removeAttachment}
+            onSend={sendMessage}
+            onStop={stopRun}
+            dictating={dictating}
+            transcribe={Boolean(voiceStatus?.transcribe)}
+            onDictateStart={(onFinal) => {
+              void dictation.listen({
+                mode: "hold",
+                transcribe: Boolean(voiceStatus?.transcribe),
+                onFinal,
+              });
+            }}
+            onDictateStop={() => dictation.submitHold()}
+          />
+          {channelPeer ? (
+            <Suspense fallback={null}>
+              <BotChannelOverlay
+                botId={channelPeer.botId}
+                peerBotId={channelPeer.peerBotId}
+                onClose={() => setChannelPeer(null)}
+              />
+            </Suspense>
+          ) : null}
+        </main>
+      )}
 
       <aside
         data-testid="side-panel"
@@ -1703,9 +1825,24 @@ export function ShellPage() {
                 navigate(`/app/${bot.id}`);
               });
             }}
+            onCopyConversationId={() => {
+              setBotMenu(null);
+              void navigator.clipboard
+                .writeText(contextBot.threadId)
+                .then(() => setToast("Conversation ID copied"))
+                .catch(() => setToast("Could not copy the conversation ID"));
+            }}
             onClear={() => {
               setClearTarget(contextBot);
               setBotMenu(null);
+            }}
+            onToggleHidden={() => {
+              const hidden = !contextBot.hidden;
+              setBotMenu(null);
+              void rpc.bots.update({ botId: contextBot.id, hidden }).then(async () => {
+                await refreshBots();
+                setToast(hidden ? `${contextBot.name} hidden from the sidebar` : null);
+              });
             }}
             onArchive={() => {
               setBotMenu(null);
@@ -1716,6 +1853,15 @@ export function ShellPage() {
               setBotMenu(null);
             }}
           />
+        ) : null}
+
+        {toast ? (
+          <div
+            role="status"
+            className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[#343438] bg-[#1A1A1D] px-4 py-2 text-[13px] text-[#ECECEE] shadow-[0_18px_40px_rgba(0,0,0,.5)]"
+          >
+            {toast}
+          </div>
         ) : null}
 
         {deleteTarget ? (
@@ -1739,6 +1885,19 @@ export function ShellPage() {
               await rpc.botSections.create({ botId: newSectionBot.id, name });
               setNewSectionBot(null);
               await refreshBots();
+            }}
+          />
+        ) : null}
+
+        {newChannelOpen ? (
+          <NewChannelDialog
+            bots={bots}
+            onCancel={() => setNewChannelOpen(false)}
+            onConfirm={async ({ name, botIds }) => {
+              const channel = await rpc.channels.create({ name, botIds });
+              setNewChannelOpen(false);
+              await refreshChannels();
+              navigate(`/channel/${channel.id}`);
             }}
           />
         ) : null}
@@ -1912,6 +2071,95 @@ export function ShellPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function CreateMenu({
+  onNewBot,
+  onNewChannel,
+}: {
+  onNewBot: () => void;
+  onNewChannel: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={container} className="app-no-drag relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="New"
+        title="New"
+        onClick={() => setOpen((current) => !current)}
+        className="text-[21px] leading-none text-[#7A7A80] hover:text-[#C9C9CE]"
+      >
+        +
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Create"
+          className="absolute right-0 top-8 z-40 w-[208px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
+        >
+          <CreateMenuItem
+            icon={<BotIcon size={18} strokeWidth={1.8} />}
+            label="New Bot"
+            onSelect={() => {
+              setOpen(false);
+              onNewBot();
+            }}
+          />
+          <CreateMenuItem
+            icon={<Hash size={18} strokeWidth={1.8} />}
+            label="New Channel"
+            onSelect={() => {
+              setOpen(false);
+              onNewChannel();
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CreateMenuItem({
+  icon,
+  label,
+  onSelect,
+}: {
+  icon: ReactNode;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-left text-[15px] text-[#ECECEE] outline-none hover:bg-[#29292D] focus-visible:bg-[#29292D]"
+    >
+      <span className="grid h-5 w-5 shrink-0 place-items-center text-[#9A9AA0]">{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -2743,6 +2991,11 @@ function ComputerModePicker({
           </button>
         ))}
       </div>
+      <p className="mt-2 text-[13px] leading-[1.5] text-[#6C6C70]">
+        {value === "team"
+          ? "Shares one computer with your other Team bots, so they share browser logins and installed tools. Each bot still gets its own screen and can work at the same time as the others."
+          : "Gets a computer of its own. Nothing is shared, so this bot signs in to sites separately from your other bots."}
+      </p>
     </div>
   );
 }

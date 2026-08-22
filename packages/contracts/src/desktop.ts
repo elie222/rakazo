@@ -8,8 +8,11 @@ export interface RakazoDesktop {
   };
 }
 
-/** How the desktop app was pointed at a Rakazo server during first-run setup. */
-export type DesktopInstanceMode = "new" | "existing";
+/**
+ * Where the Rakazo server lives relative to this desktop app. The app is a client
+ * and never runs a server itself; `local` only means the server is on this machine.
+ */
+export type DesktopInstanceMode = "local" | "remote";
 
 export interface DesktopSetup {
   mode: DesktopInstanceMode;

@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
@@ -39,12 +38,7 @@ export function assertRequestIdentity(
   }
 }
 
-export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
-  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-  const actual = Buffer.from(expectedToken);
-  const candidate = Buffer.from(supplied);
-  return actual.length === candidate.length && timingSafeEqual(actual, candidate);
-}
+export { hasValidBearerToken } from "@rakazo/core";
 
 export function toSandboxInput(input: {
   kind: "key" | "pointer" | "clipboard";

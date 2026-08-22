@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { JobPublisher, RealtimeFanout, SandboxProvider } from "@rakazo/adapter-kit";
 import {
@@ -32,6 +34,17 @@ import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
+
+/** Read from package.json so the version a client compares against cannot drift from the release. */
+function serverVersion(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const manifest = require("../package.json") as { version?: string };
+    return manifest.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 export interface AppHandles {
   app: Hono;
@@ -72,10 +85,12 @@ export async function createApp(
         })
       : new InMemoryRealtimeFanout());
   const events = createThreadEvents(prisma, realtime);
-  await prisma.deploymentSettings.upsert({
-    where: { id: "default" },
-    create: { id: "default" },
-    update: {},
+  // More than one process boots against the same database — api and worker start together — so
+  // this has to tolerate losing the race for the singleton row. An upsert with nothing to update
+  // reads then inserts and fails the loser on the unique constraint; this leaves any row alone.
+  await prisma.deploymentSettings.createMany({
+    data: { id: "default" },
+    skipDuplicates: true,
   });
 
   const jobKind = env.wakeupDriver;
@@ -91,7 +106,6 @@ export async function createApp(
     boxApiKey: env.boxApiKey,
     boxApiUrl: env.boxApiUrl,
     dataDir: env.dataDir,
-    prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const oauthLogins = new PiOAuthLogins();
@@ -180,6 +194,9 @@ export async function createApp(
   const reconciler = inMemoryJobs ? createJobReconciler({ prisma, jobs }) : undefined;
   reconciler?.start();
 
+  const version = serverVersion();
+  const bootCommit = env.gitSha ?? (await readHeadCommit(process.cwd()));
+
   const router = createRouter({
     prisma,
     events,
@@ -200,6 +217,8 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      version,
+      revision: env.gitSha ?? bootCommit,
     },
   });
   const rpc = new RPCHandler(router);
@@ -241,12 +260,13 @@ export async function createApp(
   app.get("/health", (c) =>
     c.json({
       ok: true,
+      version,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
       composio: Boolean(stack.composio),
       jobs: jobKind,
       realtime: realtime.describe().id,
-      revision: env.gitSha ?? null,
+      revision: env.gitSha ?? bootCommit,
     }),
   );
 
@@ -268,6 +288,18 @@ export async function createApp(
       await created.pool?.end().catch(() => undefined);
     },
   };
+}
+
+/** The commit the running code came from, which is what a client compares itself against. */
+async function readHeadCommit(repoRoot: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["rev-parse", "HEAD"],
+      { cwd: repoRoot, timeout: 10_000, windowsHide: true, shell: false },
+      (error, stdout) => resolve(error ? null : stdout.trim() || null),
+    );
+  });
 }
 
 function isTrustedOrigin(origin: string, env: AppEnv) {

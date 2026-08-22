@@ -46,13 +46,13 @@ describe("server address normalization", () => {
 
 describe("saved setup", () => {
   it("round-trips through the on-disk format", () => {
-    const setup = { mode: "existing", serverUrl: "https://rakazo.example.com" } as const;
+    const setup = { mode: "remote", serverUrl: "https://rakazo.example.com" } as const;
     expect(parseStoredSetup(serializeSetup(setup))).toEqual(setup);
   });
 
   it("normalizes the address it reads back", () => {
-    expect(parseStoredSetup('{"mode":"new","serverUrl":"127.0.0.1:5173/"}')).toEqual({
-      mode: "new",
+    expect(parseStoredSetup('{"mode":"local","serverUrl":"127.0.0.1:5173/"}')).toEqual({
+      mode: "local",
       serverUrl: "http://127.0.0.1:5173",
     });
   });
@@ -61,20 +61,20 @@ describe("saved setup", () => {
     ["not json", "{oops"],
     ["a non-object", '"nope"'],
     ["an unknown mode", '{"mode":"other","serverUrl":"http://127.0.0.1:5173"}'],
-    ["a missing address", '{"mode":"new"}'],
-    ["an unusable address", '{"mode":"new","serverUrl":"ftp://example.com"}'],
+    ["a missing address", '{"mode":"local"}'],
+    ["an unusable address", '{"mode":"local","serverUrl":"ftp://example.com"}'],
   ])("discards %s so setup runs again", (_label, raw) => {
     expect(parseStoredSetup(raw)).toBeNull();
   });
 
   it("rejects an untrusted payload that is not a setup", () => {
     expect(parseSetupInput(null)).toBeNull();
-    expect(parseSetupInput({ mode: "new", serverUrl: 5173 })).toBeNull();
+    expect(parseSetupInput({ mode: "local", serverUrl: 5173 })).toBeNull();
   });
 });
 
 describe("startup target", () => {
-  const saved = { mode: "existing", serverUrl: "https://rakazo.example.com" } as const;
+  const saved = { mode: "remote", serverUrl: "https://rakazo.example.com" } as const;
 
   it("runs setup on a first launch", () => {
     expect(resolveStartupTarget({})).toEqual({ kind: "setup" });
@@ -106,7 +106,7 @@ describe("startup target", () => {
   });
 
   it("re-runs setup when the saved address is unusable", () => {
-    expect(resolveStartupTarget({ saved: { mode: "new", serverUrl: "nope://x" } })).toEqual({
+    expect(resolveStartupTarget({ saved: { mode: "local", serverUrl: "nope://x" } })).toEqual({
       kind: "setup",
     });
   });

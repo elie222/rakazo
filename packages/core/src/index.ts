@@ -2,6 +2,7 @@ export * from "./ask-options.js";
 export * from "./async.js";
 export * from "./attachments.js";
 export * from "./bot-sections.js";
+export * from "./channel-mentions.js";
 export * from "./chat-time.js";
 export * from "./cron.js";
 export * from "./events.js";

@@ -47,7 +47,6 @@ async function main() {
     boxApiKey: process.env.BOX_API_KEY,
     boxApiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
     dataDir,
-    prisma,
   });
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY));
   const connector = stack.destination;

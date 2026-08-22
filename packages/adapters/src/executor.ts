@@ -43,6 +43,7 @@ import {
 } from "@rakazo/db";
 import { messageBot } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { postBotChannelMessage } from "./channels.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -859,6 +860,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : undefined,
             });
             return finish(delivered);
+          }
+          if (name === "post_to_channel") {
+            const posted = await postBotChannelMessage(deps.prisma, {
+              workspaceId: run.workspaceId,
+              channelId: String(args.channel_id ?? args.channelId ?? ""),
+              botId: bot.id,
+              text: String(args.text ?? ""),
+              sourceRunId: runId,
+            });
+            return finish(posted);
           }
           if (name === "archive_bot" || name === "delete_bot") {
             const archived = await archiveSpawnedBot(
