@@ -112,8 +112,9 @@ SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
-# Absolute path of this checkout on the host. Required: the updater sidecar is bind-mounted at
-# exactly this path so Compose derives the same project name and bind mounts that you do.
+# Absolute path of this checkout as the Docker daemon sees it. Required: the updater sidecar is
+# bind-mounted at exactly this path so Compose resolves the same bind mounts inside the container
+# that it does from your shell. See "The deploy directory must be one path" below.
 RAKAZO_DEPLOY_DIR=/srv/rakazo
 RAKAZO_IMAGE_TAG=local
 ```
@@ -289,6 +290,35 @@ these itself rather than trusting that the API already did, because it is a sepa
 
 Understand what **Advanced** is: the server will run whatever code that repository contains. Point
 it at a fork you control, never one you found.
+
+### The deploy directory must be one path
+
+`RAKAZO_DEPLOY_DIR` is bind-mounted into the updater at the same path it is read from
+(`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. When the
+updater runs `docker compose --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
+the Compose CLI *inside* the container expands this file's relative bind mounts — `../../.env`,
+`./Caddyfile.prod` — against that path and hands the results to the daemon. The daemon has to be
+able to resolve the same strings, or it silently creates empty directories where your `.env` and
+Caddyfile should be.
+
+The value therefore has to be the path **the daemon** sees, which is not always the path your shell
+sees:
+
+- **Linux.** The daemon shares the host filesystem, so the checkout path is the answer:
+  `RAKAZO_DEPLOY_DIR=/srv/rakazo`. This is the supported production layout.
+- **Docker Desktop (Windows/macOS).** The daemon runs in a VM that mounts your drive somewhere else.
+  On Windows, `C:` appears at `/run/desktop/mnt/host/c`, so a checkout at `C:\Users\you\rakazo` is
+  `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`. Verify it before deploying:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
+```
+
+  That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows
+  path is rejected by the daemon (`mount denied: … too many colons`, because the drive letter's
+  colon collides with the bind-mount separator), and `/mnt/c/...` fails *silently* — the container
+  starts, the mount is an empty directory, and the updater simply reports no checkout.
 
 ### The updater's privileges
 
