@@ -213,8 +213,10 @@ describe("compose argv construction", () => {
     expect(composeUpArgv(target).args).toContain("--wait");
     expect(composeUpArgv(target).args).toContain("--wait-timeout");
     expect(composeUpArgv(target).args).toContain("never");
+    expect(composeUpArgv(target).args).toContain("--no-build");
     expect(composeUpArgv(target).args).not.toContain("--build");
     expect(composeUpArgv(target, { build: true }).args).toContain("--build");
+    expect(composeUpArgv(target, { build: true }).args).not.toContain("--no-build");
   });
 
   it("never recreates the updater, which is the process running the update", () => {

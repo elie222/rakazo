@@ -212,6 +212,8 @@ describe("updater orchestration", () => {
     const composeUp = calls.filter(({ args }) => args.includes("up"));
     expect(composeUp).toHaveLength(2);
     expect(composeUp[0]?.args).toEqual(expect.arrayContaining(["--wait", "--pull", "never"]));
+    expect(composeUp[0]?.args).toContain("--no-build");
+    expect(composeUp[1]?.args).toContain("--no-build");
     expect(composeUp[0]?.env?.RAKAZO_IMAGE_TAG).toBe(`sha-${targetCommit}`);
     expect(composeUp[1]?.env?.RAKAZO_IMAGE_TAG).toBe("v1.0.0");
     expect(await readFile(path.join(fixture.deployDir, ".env"), "utf8")).toContain(

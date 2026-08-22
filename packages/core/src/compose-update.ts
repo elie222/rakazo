@@ -324,7 +324,7 @@ export function composeUpArgv(
     "--pull",
     "never",
   ];
-  if (options.build === true) args.push("--build");
+  args.push(options.build === true ? "--build" : "--no-build");
   args.push(...(options.services ?? RECREATED_SERVICES));
   return { command: "docker", args };
 }

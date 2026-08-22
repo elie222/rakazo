@@ -418,11 +418,13 @@ export function createUpdaterApp(
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
-      if (targetTag === tags.currentTag) return upToDateRecord(request, targetTag, "pull");
+      if (targetTag === tags.currentTag) {
+        return upToDateRecord(request, targetTag, "pull", targetCommit);
+      }
     } else {
       const remoteHead = await resolveRemoteHead(request);
       if (upToDateForBuild(tags.currentTag, checkout.commit, remoteHead)) {
-        return upToDateRecord(request, tags.currentTag, "build");
+        return upToDateRecord(request, tags.currentTag, "build", checkout.commit);
       }
     }
 
@@ -640,14 +642,15 @@ export function createUpdaterApp(
     request: { repoUrl: string; branch: string },
     tag: string,
     strategy: "pull" | "build",
+    commit: string | null,
   ): ServerUpdateRun {
     const now = new Date().toISOString();
     return {
       startedAt: now,
       finishedAt: now,
       ok: true,
-      fromCommit: null,
-      toCommit: null,
+      fromCommit: commit,
+      toCommit: commit,
       fromTag: tag,
       toTag: tag,
       strategy,
