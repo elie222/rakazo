@@ -5,6 +5,7 @@ import type {
   Me,
   ModelCatalogEntry,
   ModelCredential,
+  ReasoningStep,
 } from "@rakazo/contracts";
 import {
   isEphemeralThreadMessageId,
@@ -196,13 +197,7 @@ export type MobileMessage = {
     peerName?: string;
     peerColor?: string;
     channelId?: string;
-    steps?: Array<{
-      id: string;
-      kind: string;
-      title: string;
-      detail?: string;
-      status: string;
-    }>;
+    steps?: ReasoningStep[];
   }>;
 };
 

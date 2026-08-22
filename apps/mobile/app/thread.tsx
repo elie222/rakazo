@@ -1,4 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import type { ReasoningStep } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForBot,
@@ -755,34 +756,12 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
-function ReasoningCard({
-  steps,
-}: {
-  steps: Array<{
-    id?: string;
-    kind?: "status" | "think" | "tool";
-    title?: string;
-    detail?: string;
-    status?: "running" | "done";
-  }>;
-}) {
+function ReasoningCard({ steps }: { steps: ReasoningStep[] }) {
   const running = steps.some((step) => step.status === "running");
   const [open, setOpen] = useState(false);
   const rotation = useRef(new Animated.Value(0)).current;
   const visible = visibleReasoningSteps(
-    steps.flatMap((step, index) => {
-      if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") return [];
-      if (step.status !== "running" && step.status !== "done") return [];
-      return [
-        {
-          id: step.id || String(index),
-          kind: step.kind,
-          title: step.title ?? "",
-          detail: step.detail,
-          status: step.status,
-        },
-      ];
-    }),
+    steps.map((step, index) => ({ ...step, id: step.id || String(index) })),
   );
   useEffect(() => {
     Animated.timing(rotation, {
