@@ -3,6 +3,7 @@ import {
   isEphemeralThreadMessageId,
   reasoningMessageId,
   reasoningToolTitle,
+  shouldReplaceTransientMessageId,
   upsertReasoningStep,
   visibleReasoningSteps,
 } from "./reasoning.js";
@@ -13,6 +14,14 @@ describe("reasoning helpers", () => {
     expect(isEphemeralThreadMessageId("reasoning:run-1")).toBe(true);
     expect(isEphemeralThreadMessageId("pending:abc")).toBe(true);
     expect(isEphemeralThreadMessageId("m-1")).toBe(false);
+  });
+
+  it("reconciles only the pending message named by the durable event nonce", () => {
+    expect(shouldReplaceTransientMessageId("pending:first", "pending:first")).toBe(true);
+    expect(shouldReplaceTransientMessageId("pending:second", "pending:first")).toBe(false);
+    expect(shouldReplaceTransientMessageId("pending:first")).toBe(false);
+    expect(shouldReplaceTransientMessageId("progress:run-1")).toBe(true);
+    expect(shouldReplaceTransientMessageId("reasoning:run-1")).toBe(true);
   });
 
   it("upserts reasoning steps by id", () => {

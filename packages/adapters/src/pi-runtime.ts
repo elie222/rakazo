@@ -121,7 +121,7 @@ export class PiAgentRuntime implements AgentRuntime {
             if (delta) {
               thinking += delta;
               const now = Date.now();
-              if (now - lastThinkPush >= 24) {
+              if (now - lastThinkPush >= 80) {
                 lastThinkPush = now;
                 emitReasoning({
                   id: "think",

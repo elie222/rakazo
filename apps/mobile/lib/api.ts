@@ -5,12 +5,14 @@ import type {
   Me,
   ModelCatalogEntry,
   ModelCredential,
+  ReasoningStep,
 } from "@rakazo/contracts";
 import {
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
+  shouldReplaceTransientMessageId,
   type ThreadHistory,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
@@ -187,6 +189,7 @@ export type MobileMessage = {
     artifactId?: string;
     mimeType?: string;
     size?: number;
+    steps?: ReasoningStep[];
   }>;
 };
 
@@ -358,13 +361,15 @@ export function applyMobileThreadEvent(
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
     };
+    const clientNonce =
+      typeof event.payload?.clientNonce === "string" ? event.payload.clientNonce : undefined;
     return {
       ...prev,
       messages: [
         ...prev.messages.filter(
           (message) =>
             message.id !== next.id &&
-            !message.id.startsWith("progress:") &&
+            !shouldReplaceTransientMessageId(message.id, clientNonce) &&
             !(
               message.id.startsWith("subagent:") &&
               next.blocks.some(

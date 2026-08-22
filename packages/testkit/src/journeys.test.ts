@@ -1080,6 +1080,32 @@ describeJourneys("required product journeys", () => {
     });
     expect(file.content).toContain("nonce-ok");
     expect(file.content).not.toContain("nonce-dup");
+
+    const concurrentNonce = `concurrent-nonce-${stamp}`;
+    const [concurrentFirst, concurrentSecond] = await Promise.all([
+      rpc<{ runId: string }>(app, cookie, "threads/send", {
+        botId: bot.id,
+        text: "write concurrent-nonce-ok to notes/concurrent.txt",
+        clientNonce: concurrentNonce,
+      }),
+      rpc<{ runId: string }>(app, cookie, "threads/send", {
+        botId: bot.id,
+        text: "write concurrent-nonce-ok to notes/concurrent.txt",
+        clientNonce: concurrentNonce,
+      }),
+    ]);
+    expect(concurrentSecond.runId).toBe(concurrentFirst.runId);
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+    expect(
+      await prisma.run.count({
+        where: { botId: bot.id, clientNonce: concurrentNonce },
+      }),
+    ).toBe(1);
   });
 
   it("16: routine test-run and plugin connect/revoke", async () => {

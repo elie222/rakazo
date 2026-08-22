@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, View } from "react-native";
+import { useReducedMotion } from "../lib/use-reduced-motion";
 
 export function BotAvatar({
   color,
@@ -16,9 +17,10 @@ export function BotAvatar({
   const gap = Math.max(4, Math.round(size * 0.13));
   const bob = useRef(new Animated.Value(0)).current;
   const blink = useRef(new Animated.Value(1)).current;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!thinking) {
+    if (!thinking || reducedMotion) {
       bob.setValue(0);
       blink.setValue(1);
       return;
@@ -38,10 +40,12 @@ export function BotAvatar({
     );
     motion.start();
     return () => motion.stop();
-  }, [thinking, bob, blink]);
+  }, [thinking, reducedMotion, bob, blink]);
 
   return (
     <Animated.View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={{
         width: size,
         height: size,

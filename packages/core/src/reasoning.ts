@@ -14,6 +14,11 @@ export function isEphemeralThreadMessageId(id: string): boolean {
   return id.startsWith("progress:") || id.startsWith("reasoning:") || isPendingUserMessageId(id);
 }
 
+export function shouldReplaceTransientMessageId(id: string, clientNonce?: string): boolean {
+  if (isPendingUserMessageId(id)) return Boolean(clientNonce) && id === clientNonce;
+  return id.startsWith("progress:") || id.startsWith("reasoning:");
+}
+
 export function pendingUserMessageTextKey(text: string): string {
   return `pending-text:${text}`;
 }

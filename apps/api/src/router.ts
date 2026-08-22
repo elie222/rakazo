@@ -499,7 +499,12 @@ export function createRouter(deps: RouterDeps) {
         await assertTeachingSendAllowed(deps.prisma, context.actor.workspaceId, bot.id);
         if (input.clientNonce) {
           const dup = await deps.prisma.run.findFirst({
-            where: { workspaceId: context.actor.workspaceId, clientNonce: input.clientNonce },
+            where: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              botId: bot.id,
+              clientNonce: input.clientNonce,
+            },
           });
           if (dup) return { taskId: dup.taskId, runId: dup.id, seq: 0 };
         }
@@ -514,17 +519,33 @@ export function createRouter(deps: RouterDeps) {
         // One transaction for message, run, and event: serialized against clearThread by the
         // thread-row lock, so a concurrent clear either sees the committed run and cancels it
         // or strictly precedes the whole send.
-        const sent = await deps.events.sendUserMessage({
-          workspaceId: context.actor.workspaceId,
-          threadId: bot.thread.id,
-          botId: bot.id,
-          userId: context.actor.userId,
-          blocks,
-          prompt,
-          trigger: "user",
-          clientNonce: input.clientNonce,
-          linkMessageToRun: true,
-        });
+        let sent: Awaited<ReturnType<typeof deps.events.sendUserMessage>>;
+        try {
+          sent = await deps.events.sendUserMessage({
+            workspaceId: context.actor.workspaceId,
+            threadId: bot.thread.id,
+            botId: bot.id,
+            userId: context.actor.userId,
+            blocks,
+            prompt,
+            trigger: "user",
+            clientNonce: input.clientNonce,
+            linkMessageToRun: true,
+          });
+        } catch (error) {
+          const dup = input.clientNonce
+            ? await deps.prisma.run.findFirst({
+                where: {
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                  botId: bot.id,
+                  clientNonce: input.clientNonce,
+                },
+              })
+            : null;
+          if (dup) return { taskId: dup.taskId, runId: dup.id, seq: 0 };
+          throw error;
+        }
         const runId = sent.runId!;
         await deps.prisma.run.updateMany({
           where: {

@@ -241,6 +241,27 @@ describe("mobile thread event reduction", () => {
     expect(next?.messages[1]?.blocks).toEqual([completed]);
   });
 
+  it("reconciles only the optimistic message named by the durable client nonce", () => {
+    const initial = snapshot([
+      mobileMessage("pending:first", [{ kind: "text", text: "first" }]),
+      mobileMessage("pending:second", [{ kind: "text", text: "second" }]),
+      mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
+    ]);
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.message.created",
+      seq: 9,
+      payload: {
+        messageId: "message-first",
+        role: "user",
+        blocks: [{ kind: "text", text: "first" }],
+        clientNonce: "pending:first",
+      },
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["pending:second", "message-first"]);
+  });
+
   it("clears loaded history and active state when another client clears the thread", () => {
     const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "old" }])], 1);
     initial.run = { status: "running" };

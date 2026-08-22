@@ -269,7 +269,12 @@ export async function sendUserMessage(
       botId: input.botId,
       type: "thread.message.created",
       runId: run?.id,
-      payload: { messageId: message.id, role: "user", blocks: input.blocks },
+      payload: {
+        messageId: message.id,
+        role: "user",
+        blocks: input.blocks,
+        ...(input.clientNonce ? { clientNonce: input.clientNonce } : {}),
+      },
     });
     return { message, task, run, event };
   });

@@ -10,6 +10,7 @@ import {
   prependThreadHistoryPage,
   progressMessageId,
   progressMessageText,
+  shouldReplaceTransientMessageId,
   subagentBlockFromPayload,
 } from "@rakazo/core";
 
@@ -113,10 +114,12 @@ export function reduceThreadSnapshot(
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
+    const clientNonce =
+      typeof event.payload.clientNonce === "string" ? event.payload.clientNonce : undefined;
     const without = prev.messages.filter(
       (message) =>
         message.id !== next.id &&
-        !message.id.startsWith("progress:") &&
+        !shouldReplaceTransientMessageId(message.id, clientNonce) &&
         !replacedSubagent(message, replacedSubagentIds),
     );
     return { ...prev, cursor: event.seq, messages: [...without, next] };

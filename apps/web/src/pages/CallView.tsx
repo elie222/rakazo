@@ -20,7 +20,7 @@ export function CallView({
   botName: string;
   transcribe: boolean;
   snapshot: ThreadSnapshot | null;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string) => Promise<boolean>;
   onFollowUp: (text: string) => Promise<void>;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onClose: () => void;
@@ -88,7 +88,7 @@ export function CallView({
       } else if (current?.run && ["running", "queued", "leased"].includes(current.run.status)) {
         await onFollowUp(text);
       } else {
-        await onSend(text);
+        if (!(await onSend(text))) throw new Error("Could not send that");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send that");

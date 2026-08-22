@@ -162,6 +162,30 @@ describe("thread event reduction", () => {
     expect(next?.messages[1]?.blocks).toEqual([completedBlock]);
   });
 
+  it("reconciles only the optimistic message named by the durable client nonce", () => {
+    const initial = snapshot([
+      message("pending:first", [{ kind: "text", text: "first" }]),
+      message("pending:second", [{ kind: "text", text: "second" }]),
+      message("progress:run-1", [{ kind: "progress", text: "draft" }]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: {
+          messageId: "message-first",
+          role: "user",
+          blocks: [{ kind: "text", text: "first" }],
+          clientNonce: "pending:first",
+        },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["pending:second", "message-first"]);
+  });
+
   it("clears durable and transient history when another client clears the thread", () => {
     const initial = snapshot(
       [

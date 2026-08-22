@@ -402,7 +402,11 @@ describe("sendUserMessage", () => {
     });
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: "thread.message.created", runId: "run-1" }),
+        data: expect.objectContaining({
+          type: "thread.message.created",
+          runId: "run-1",
+          payload: expect.objectContaining({ clientNonce: "nonce-1" }),
+        }),
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 8 }));

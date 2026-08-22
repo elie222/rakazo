@@ -1,4 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import type { ReasoningStep } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForBot,
@@ -19,6 +20,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -39,17 +41,29 @@ import {
   pickFromLibrary,
   takePhoto,
 } from "../lib/pick-attachments";
+import { useReducedMotion } from "../lib/use-reduced-motion";
 import { playMpeg, speakUtterance } from "../lib/voice";
 
 type PendingAttachment = PickedAttachment & { botId: string };
 
+type PendingSendAttempt = {
+  botId: string;
+  text: string;
+  attachmentIds: string[];
+  clientNonce: string;
+  artifactIds: Map<string, string>;
+};
+
+const FALLBACK_BOT_COLOR = "#9B5CF6";
+
 export default function Thread() {
   const navigation = useNavigation();
   const router = useRouter();
-  const { botId, name, messageId } = useLocalSearchParams<{
+  const { botId, name, messageId, color } = useLocalSearchParams<{
     botId?: string;
     name?: string;
     messageId?: string;
+    color?: string;
   }>();
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
@@ -64,6 +78,7 @@ export default function Thread() {
   } | null>(null);
   const jumpScrollTarget = useRef<string | null>(null);
   const enterState = useRef({ botId: "", seen: new Set<string>(), primed: false });
+  const retrySend = useRef<PendingSendAttempt | null>(null);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
@@ -71,12 +86,15 @@ export default function Thread() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendingBotId, setSendingBotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [enteringIds, setEnteringIds] = useState<Set<string>>(() => new Set());
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
   const botWorking = Boolean(
-    snap?.run && ["running", "queued", "leased"].includes(snap.run.status),
+    (snap?.run && ["running", "queued", "leased"].includes(snap.run.status)) ||
+      sendingBotId === botId ||
+      snap?.messages.some((message) => message.id.startsWith("pending:")),
   );
   const hasLiveReasoning = (snap?.messages ?? []).some((message) =>
     message.id.startsWith("reasoning:"),
@@ -96,13 +114,21 @@ export default function Thread() {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: name || "Thread",
+      headerTitle: () => (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <BotAvatar color={color || FALLBACK_BOT_COLOR} size={26} thinking={botWorking} />
+          <Text style={{ color: "#ECECEE", fontSize: 17, fontWeight: "600" }} numberOfLines={1}>
+            {name || "Thread"}
+          </Text>
+        </View>
+      ),
       headerRight: () => (
         <Pressable accessibilityLabel="Bot actions" hitSlop={8} onPress={showBotActions}>
           <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color="#ECECEE" />
         </Pressable>
       ),
     });
-  }, [botId, name, navigation]);
+  }, [botId, botWorking, color, name, navigation]);
 
   function leaveBot() {
     router.dismissAll();
@@ -299,7 +325,11 @@ export default function Thread() {
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {
                 markReadIfVisible();
               }
-              if (event.type === "run.completed") {
+              if (
+                event.type === "run.completed" ||
+                event.type === "run.failed" ||
+                event.type === "run.cancelled"
+              ) {
                 void refresh().catch(() => undefined);
               }
             },
@@ -339,7 +369,23 @@ export default function Thread() {
     const attachments = attachmentsForBot(pendingAttachments, targetBotId);
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
-    const pendingId = createPendingUserMessageId();
+    const attachmentIds = attachments.map((attachment) => attachment.id);
+    const previousAttempt = retrySend.current;
+    const attempt =
+      previousAttempt &&
+      previousAttempt.botId === targetBotId &&
+      previousAttempt.text === text &&
+      sameStringList(previousAttempt.attachmentIds, attachmentIds)
+        ? previousAttempt
+        : {
+            botId: targetBotId,
+            text,
+            attachmentIds,
+            clientNonce: createPendingUserMessageId(),
+            artifactIds: new Map<string, string>(),
+          };
+    retrySend.current = attempt;
+    const pendingId = attempt.clientNonce;
     if (text) {
       setDraft("");
       setSnap((current) => {
@@ -354,23 +400,33 @@ export default function Thread() {
       });
     }
     setSending(true);
+    setSendingBotId(targetBotId);
     setError(null);
     try {
       const artifactIds: string[] = [];
       for (const pending of attachments) {
+        const existingArtifactId = attempt.artifactIds.get(pending.id);
+        if (existingArtifactId) {
+          artifactIds.push(existingArtifactId);
+          continue;
+        }
         const artifact = await rpc<{ id: string }>("artifacts/create", {
           botId: targetBotId,
           name: pending.name,
           mimeType: pending.mimeType,
           contentBase64: pending.contentBase64,
         });
+        attempt.artifactIds.set(pending.id, artifact.id);
         artifactIds.push(artifact.id);
       }
       await rpc("threads/send", {
         botId: targetBotId,
         text: text || undefined,
         artifactIds: artifactIds.length ? artifactIds : undefined,
+        clientNonce: attempt.clientNonce,
       });
+      if (activeBotId.current === targetBotId) await refresh();
+      if (retrySend.current === attempt) retrySend.current = null;
       setPendingAttachments((current) =>
         current.filter((attachment) => attachment.botId !== targetBotId),
       );
@@ -393,6 +449,7 @@ export default function Thread() {
       }
     } finally {
       setSending(false);
+      setSendingBotId((current) => (current === targetBotId ? null : current));
     }
   }
 
@@ -649,8 +706,12 @@ function userMessagePlainText(message: MobileMessage): string {
 
 function DropInMessage({ active, children }: { active: boolean; children: ReactNode }) {
   const progress = useRef(new Animated.Value(active ? 0 : 1)).current;
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
-    if (!active) return;
+    if (!active || reducedMotion) {
+      progress.setValue(1);
+      return;
+    }
     progress.setValue(0);
     Animated.spring(progress, {
       toValue: 1,
@@ -658,8 +719,8 @@ function DropInMessage({ active, children }: { active: boolean; children: ReactN
       tension: 148,
       useNativeDriver: true,
     }).start();
-  }, [active, progress]);
-  if (!active) return <>{children}</>;
+  }, [active, progress, reducedMotion]);
+  if (!active || reducedMotion) return <>{children}</>;
   return (
     <Animated.View
       style={{
@@ -681,13 +742,18 @@ function DropInMessage({ active, children }: { active: boolean; children: ReactN
 
 function WorkingShimmerText({ text }: { text: string }) {
   const shine = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
+    if (reducedMotion) return;
     const loop = Animated.loop(
       Animated.timing(shine, { toValue: 1, duration: 980, useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
-  }, [shine]);
+  }, [reducedMotion, shine]);
+  if (reducedMotion) {
+    return <Text style={{ color: "#A8A8AD", fontSize: 15, fontWeight: "600" }}>{text}</Text>;
+  }
   const opacity = shine.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [0.42, 1, 0.42],
@@ -701,7 +767,12 @@ function WorkingShimmerText({ text }: { text: string }) {
 
 function BotWorkingStatus() {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+    <View
+      accessible
+      accessibilityLabel="Bot is thinking"
+      accessibilityLiveRegion="polite"
+      style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}
+    >
       <NativeSymbol ios="chevron.right" android="chevron-forward" size={14} color="#8E8EA0" />
       <WorkingShimmerText text="Thinking" />
     </View>
@@ -721,48 +792,32 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
-function ReasoningCard({
-  steps,
-}: {
-  steps: Array<{
-    id?: string;
-    kind?: "status" | "think" | "tool";
-    title?: string;
-    detail?: string;
-    status?: "running" | "done";
-  }>;
-}) {
+function ReasoningCard({ steps }: { steps: ReasoningStep[] }) {
   const running = steps.some((step) => step.status === "running");
   const [open, setOpen] = useState(running);
   const rotation = useRef(new Animated.Value(running ? 1 : 0)).current;
-  const visible = visibleReasoningSteps(
-    steps.flatMap((step, index) => {
-      if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") return [];
-      if (step.status !== "running" && step.status !== "done") return [];
-      return [
-        {
-          id: step.id || String(index),
-          kind: step.kind,
-          title: step.title ?? "",
-          detail: step.detail,
-          status: step.status,
-        },
-      ];
-    }),
-  );
+  const reducedMotion = useReducedMotion();
+  const visible = visibleReasoningSteps(steps);
   useEffect(() => {
     setOpen(running);
   }, [running]);
   useEffect(() => {
+    if (reducedMotion) {
+      rotation.setValue(open ? 1 : 0);
+      return;
+    }
     Animated.timing(rotation, {
       toValue: open ? 1 : 0,
       duration: 180,
       useNativeDriver: true,
     }).start();
-  }, [open, rotation]);
+  }, [open, reducedMotion, rotation]);
   return (
     <View>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={running ? "Thinking details" : "Thought details"}
+        accessibilityState={{ expanded: open }}
         onPress={() => setOpen((current) => !current)}
         style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 2 }}
       >
@@ -834,9 +889,38 @@ function MessageBubble({
   onOpenBot: (botId: string, name: string) => void;
   onSpeak?: () => void;
 }) {
+  const reasoning = message.blocks.find((block) => block.kind === "reasoning");
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );
+  if (reasoning?.steps?.length && !special) {
+    const textBlocks = message.blocks.filter(
+      (block) => (block.kind === "text" || block.kind === "progress") && block.text,
+    );
+    return (
+      <View style={{ gap: 8, maxWidth: "90%" }}>
+        <ReasoningCard steps={reasoning.steps} />
+        {textBlocks.length ? (
+          <View style={{ backgroundColor: "#1A1A1D", padding: 12, borderRadius: 20 }}>
+            <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+              {textBlocks.map((block) => block.text).join("\n")}
+            </ChatMarkdown>
+            {onSpeak ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Speak this reply"
+                onPress={onSpeak}
+                hitSlop={8}
+                style={{ marginTop: 8 }}
+              >
+                <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
   if (special?.kind === "subagent") {
     const running = special.status === "running";
     const failed = special.status === "failed";
@@ -1022,7 +1106,13 @@ function MessageBubble({
             {blockText(message)}
           </ChatMarkdown>
           {onSpeak ? (
-            <Pressable onPress={onSpeak} hitSlop={8} style={{ marginTop: 8 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Speak this reply"
+              onPress={onSpeak}
+              hitSlop={8}
+              style={{ marginTop: 8 }}
+            >
               <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
             </Pressable>
           ) : null}
@@ -1030,4 +1120,8 @@ function MessageBubble({
       )}
     </View>
   );
+}
+
+function sameStringList(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
 }

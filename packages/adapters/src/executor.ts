@@ -105,7 +105,9 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-const STREAM_FLUSH_MS = 32;
+// Keep streaming responsive without turning fast token/thought streams into one durable event
+// write per token. At 80 ms, each active run emits at most about 12 batched updates per second.
+const STREAM_FLUSH_MS = 80;
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",

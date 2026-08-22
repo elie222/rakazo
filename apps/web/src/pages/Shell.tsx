@@ -6,6 +6,7 @@ import type {
   ComputerStatus,
   Me,
   ProductEvent,
+  ReasoningStep,
   Routine,
   SearchHit,
   TaughtSkill,
@@ -29,6 +30,7 @@ import {
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  isPendingUserMessageId,
   pendingUserMessageTextKey,
   presetFromCron,
   speechFromBlocks,
@@ -121,6 +123,14 @@ type PendingAttachment = {
   previewUrl?: string;
 };
 
+type PendingSendAttempt = {
+  botId: string;
+  text: string;
+  attachmentIds: string[];
+  clientNonce: string;
+  artifactIds: Map<string, string>;
+};
+
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
 export function ShellPage() {
@@ -138,6 +148,7 @@ export function ShellPage() {
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [sendingBotId, setSendingBotId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -203,10 +214,13 @@ export function ShellPage() {
   computerVisible.current = panel === "computer" || computerOpen;
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
+  const retrySend = useRef<PendingSendAttempt | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
   const botWorking = Boolean(
-    snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status),
+    (snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status)) ||
+      (active && sendingBotId === active.id) ||
+      snapshot?.messages.some((message) => isPendingUserMessageId(message.id)),
   );
   const activePendingAttachments = useMemo(
     () => attachmentsForBot(pendingAttachments, active?.id),
@@ -729,11 +743,27 @@ export function ShellPage() {
   const sendMessage = useCallback(
     async (text: string) => {
       const id = activeBotId.current;
-      if (!id || sending) return;
+      if (!id || sending) return false;
       const attachments = attachmentsForBot(pendingAttachments, id);
       const trimmed = text.trim();
-      if (!trimmed && attachments.length === 0) return;
-      const pendingId = createPendingUserMessageId();
+      if (!trimmed && attachments.length === 0) return false;
+      const attachmentIds = attachments.map((attachment) => attachment.id);
+      const previousAttempt = retrySend.current;
+      const attempt =
+        previousAttempt &&
+        previousAttempt.botId === id &&
+        previousAttempt.text === trimmed &&
+        sameStringList(previousAttempt.attachmentIds, attachmentIds)
+          ? previousAttempt
+          : {
+              botId: id,
+              text: trimmed,
+              attachmentIds,
+              clientNonce: createPendingUserMessageId(),
+              artifactIds: new Map<string, string>(),
+            };
+      retrySend.current = attempt;
+      const pendingId = attempt.clientNonce;
       pinnedAroundRef.current = null;
       if (trimmed) {
         setSnapshot((current) => {
@@ -755,10 +785,16 @@ export function ShellPage() {
         });
       }
       setSending(true);
+      setSendingBotId(id);
       setSendError(null);
       try {
         const artifactIds: string[] = [];
         for (const pending of attachments) {
+          const existingArtifactId = attempt.artifactIds.get(pending.id);
+          if (existingArtifactId) {
+            artifactIds.push(existingArtifactId);
+            continue;
+          }
           const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
           if (!mimeType) {
             throw new Error(`Unsupported file type: ${pending.file.name}`);
@@ -770,16 +806,21 @@ export function ShellPage() {
             mimeType,
             contentBase64,
           });
+          attempt.artifactIds.set(pending.id, artifact.id);
           artifactIds.push(artifact.id);
         }
         await rpc.threads.send({
           botId: id,
           text: trimmed || undefined,
           artifactIds: artifactIds.length ? artifactIds : undefined,
+          clientNonce: attempt.clientNonce,
         });
+        await refreshThreadRef.current(id);
+        if (retrySend.current === attempt) retrySend.current = null;
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) => current.filter((attachment) => attachment.botId !== id));
         if (activeBotId.current === id) setAttachmentNotice(null);
+        return true;
       } catch (error) {
         if (activeBotId.current === id) {
           setSnapshot((current) =>
@@ -792,8 +833,10 @@ export function ShellPage() {
           );
           setSendError(error instanceof Error ? error.message : "Failed to send message");
         }
+        return false;
       } finally {
         setSending(false);
+        setSendingBotId((current) => (current === id ? null : current));
       }
     },
     [pendingAttachments, sending],
@@ -2039,7 +2082,7 @@ const Composer = memo(function Composer({
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | null) => void | Promise<void>;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string) => Promise<boolean>;
   onStop: () => Promise<void>;
   dictating: boolean;
   transcribe: boolean;
@@ -2049,11 +2092,13 @@ const Composer = memo(function Composer({
   const [draft, setDraft] = useState("");
   const canSend = draft.trim().length > 0 || pendingAttachments.length > 0;
 
-  function send() {
+  async function send() {
     if (!canSend || sending || disabled) return;
     const text = draft;
     setDraft("");
-    void onSend(text);
+    if (!(await onSend(text))) {
+      setDraft((current) => current || text);
+    }
   }
 
   return (
@@ -2146,7 +2191,7 @@ const Composer = memo(function Composer({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              send();
+              void send();
             }
           }}
           disabled={disabled}
@@ -2170,7 +2215,7 @@ const Composer = memo(function Composer({
             type="button"
             aria-label="Send"
             disabled={sending || !canSend || disabled}
-            onClick={send}
+            onClick={() => void send()}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
           >
             <ArrowUp size={18} strokeWidth={2} />
@@ -2251,6 +2296,9 @@ const MessageView = memo(function MessageView({
               </div>
             </div>
           );
+        }
+        if (block.kind === "reasoning") {
+          return <ReasoningTrace key={i} steps={block.steps} />;
         }
         if (block.kind === "subagent") {
           const running = block.status === "running";
@@ -2680,7 +2728,12 @@ function userMessagePlainText(message: ThreadMessage): string {
 
 function BotWorkingStatus() {
   return (
-    <div className="rk-thought flex items-center gap-1.5 py-0.5" data-testid="bot-working">
+    <div
+      className="rk-thought flex items-center gap-1.5 py-0.5"
+      data-testid="bot-working"
+      role="status"
+      aria-live="polite"
+    >
       <ChevronRight size={16} strokeWidth={2} className="rk-thought-caret text-[#8E8EA0]" />
       <span className="rk-working-text text-[15px] font-medium">Thinking</span>
     </div>
@@ -2699,7 +2752,7 @@ function ReasoningTrace({ steps }: { steps: ReasoningStep[] }) {
   if (!steps.length) return null;
   return (
     <details ref={detailsRef} className="rk-thought w-[min(560px,100%)]">
-      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+      <summary className="rk-thought-summary flex cursor-pointer list-none items-center gap-1.5 rounded-sm [&::-webkit-details-marker]:hidden">
         <ChevronRight
           size={16}
           strokeWidth={2}
@@ -3350,6 +3403,10 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
+}
+
+function sameStringList(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
 }
 
 function formatBytes(size: number) {
