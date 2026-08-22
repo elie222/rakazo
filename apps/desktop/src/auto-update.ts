@@ -235,6 +235,9 @@ export class DesktopUpdateController {
 
   private push(event: UpdaterEvent) {
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
+    if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
+      this.checkWasRequested = false;
+    }
   }
 
   private async updater(): Promise<ElectronAutoUpdater | null> {

@@ -30,11 +30,15 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("attestations: write");
     expect(workflow).toContain("actions/attest-build-provenance@");
     expect(workflow).not.toContain("--publish always");
+    expect(workflow).toContain("DESKTOP_MAC_CSC_LINK");
+    expect(workflow).toContain("DESKTOP_WIN_CSC_LINK");
+    expect(workflow).not.toMatch(/secrets\.DESKTOP_CSC_(?:LINK|KEY_PASSWORD)/);
   });
 
   it("publishes only a complete stable, upgrade-only feed", () => {
     expect(workflow).toContain("^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$");
     expect(workflow).toContain("must be newer than published release");
+    expect(workflow).toContain("group: release-desktop-stable");
     expect(workflow).toContain("latest.yml");
     expect(workflow).toContain("latest-mac.yml");
     expect(workflow).toContain("latest-linux.yml");

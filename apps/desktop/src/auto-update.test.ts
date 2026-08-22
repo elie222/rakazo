@@ -259,6 +259,31 @@ describe("DesktopUpdateController", () => {
     await first;
   });
 
+  it("does not treat later background failures as user-requested", async () => {
+    let now = 1_000;
+    let fake: ReturnType<typeof fakeUpdater>;
+    fake = fakeUpdater({
+      checkForUpdates: vi.fn(async () => {
+        fake.emit("checking-for-update");
+        if (fake.updater.checkForUpdates.mock.calls.length === 1) {
+          fake.emit("update-not-available");
+        } else {
+          fake.emit("error", new Error("getaddrinfo ENOTFOUND github.com"));
+        }
+      }),
+    });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+      now: () => now,
+      iso: () => NOW,
+    });
+
+    await controller.check(true);
+    now += MIN_CHECK_INTERVAL_MS;
+    await controller.check(false);
+
+    expect(controller.state()).toMatchObject({ phase: "idle", message: null });
+  });
+
   it("runs installation at most once", async () => {
     let fake: ReturnType<typeof fakeUpdater>;
     fake = fakeUpdater({

@@ -9,7 +9,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-desktop-${{ github.ref }}
+  # Stable releases must validate and publish serially. Per-tag concurrency would let an older
+  # release validate before a newer one publishes, then overwrite GitHub's "latest" pointer.
+  group: release-desktop-stable
   cancel-in-progress: false
 
 jobs:
@@ -117,8 +119,8 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -132,8 +134,8 @@ jobs:
       - name: Package signed and notarized universal macOS app
         if: runner.os == 'macOS'
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -155,8 +157,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           test -n "$WIN_CSC_LINK"
@@ -164,8 +166,8 @@ jobs:
       - name: Package signed x64 Windows app
         if: runner.os == 'Windows'
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
         run: >-
           pnpm --filter @rakazo/desktop exec electron-builder
           --win --x64 --publish never -c.forceCodeSigning=true
@@ -174,11 +176,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $installer = Get-ChildItem "apps/desktop/out/*.exe" | Select-Object -First 1
-          if (-not $installer) { throw "Windows installer was not created." }
-          $signature = Get-AuthenticodeSignature $installer.FullName
-          if ($signature.Status -ne "Valid") {
-            throw "Windows installer signature is $($signature.Status)."
+          $executables = @(
+            Get-ChildItem "apps/desktop/out/*.exe"
+            Get-ChildItem "apps/desktop/out/win-unpacked/*.exe"
+          )
+          if ($executables.Count -lt 2) { throw "Windows installer or application was not created." }
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($executable.Name) signature is $($signature.Status)."
+            }
           }
           $config = "apps/desktop/out/win-unpacked/resources/app-update.yml"
           if (-not (Select-String -Path $config -Pattern '^publisherName:' -Quiet)) {
