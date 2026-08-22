@@ -3,9 +3,9 @@
 
   const form = document.getElementById("setup");
   const localUrl = document.getElementById("local-url");
-  const serverUrl = document.getElementById("server-url");
-  const panelNew = document.getElementById("panel-new");
-  const panelExisting = document.getElementById("panel-existing");
+  const remoteUrl = document.getElementById("remote-url");
+  const panelLocal = document.getElementById("panel-local");
+  const panelRemote = document.getElementById("panel-remote");
   const status = document.getElementById("status");
   const checkButton = document.getElementById("check");
   const continueButton = document.getElementById("continue");
@@ -13,11 +13,11 @@
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
-    return checked === null ? "new" : checked.value;
+    return checked === null ? "local" : checked.value;
   }
 
   function activeField() {
-    return selectedMode() === "new" ? localUrl : serverUrl;
+    return selectedMode() === "local" ? localUrl : remoteUrl;
   }
 
   function setStatus(message, tone) {
@@ -32,9 +32,9 @@
   }
 
   function syncPanels() {
-    const mode = selectedMode();
-    panelNew.hidden = mode !== "new";
-    panelExisting.hidden = mode === "new";
+    const local = selectedMode() === "local";
+    panelLocal.hidden = !local;
+    panelRemote.hidden = local;
     setStatus("");
   }
 
@@ -99,7 +99,7 @@
     if (state.saved !== null) {
       const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
       if (modeInput !== null) modeInput.checked = true;
-      if (state.saved.mode === "existing") serverUrl.value = state.saved.serverUrl;
+      if (state.saved.mode === "remote") remoteUrl.value = state.saved.serverUrl;
       else localUrl.value = state.saved.serverUrl;
     }
     syncPanels();

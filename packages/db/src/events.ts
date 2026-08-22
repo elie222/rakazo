@@ -31,6 +31,7 @@ export interface ThreadEvents {
   finalizeComputerControlRelease(input: FinalizeComputerControlReleaseInput): Promise<boolean>;
   finalizeRun(input: FinalizeRunInput): Promise<boolean>;
   notify(threadId: string, seq: number): Promise<void>;
+  openBotQuestion(input: OpenBotQuestionInput): Promise<OpenBotQuestionResult>;
   pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
@@ -81,6 +82,21 @@ export interface PauseRunForInput {
   blocks: MessageBlock[];
 }
 
+export interface OpenBotQuestionInput {
+  workspaceId: string;
+  threadId: string;
+  botId: string;
+  userId: string;
+  /** Task prompt used only if the question is never answered; answering replaces it. */
+  prompt: string;
+  blocks: MessageBlock[];
+}
+
+export interface OpenBotQuestionResult {
+  runId: string;
+  messageId: string;
+}
+
 export interface AnswerRunInput {
   workspaceId: string;
   threadId: string;
@@ -124,6 +140,7 @@ export function createThreadEvents(
       finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime),
     notify: (threadId, seq) => notifyRealtime(realtime, threadId, seq),
+    openBotQuestion: (input) => openBotQuestion(prisma, input, realtime),
     pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
     sendUserMessage: (input) => sendUserMessage(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
@@ -344,6 +361,66 @@ export async function answerRunInput(
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return true;
+}
+
+/**
+ * Open a question the bot asks before it has done any work, as when a bot is first created.
+ * The run is parked in `waiting_input` with no attempt, so answering it goes through the same
+ * `answerRunInput` path as a mid-run question and the answer becomes the run's task prompt.
+ */
+export async function openBotQuestion(
+  prisma: PrismaClient,
+  input: OpenBotQuestionInput,
+  realtime?: RealtimeFanout,
+): Promise<OpenBotQuestionResult> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const task = await tx.task.create({
+      data: {
+        workspaceId: input.workspaceId,
+        botId: input.botId,
+        threadId: input.threadId,
+        userId: input.userId,
+        prompt: input.prompt,
+        status: "queued",
+      },
+    });
+    const run = await tx.run.create({
+      data: {
+        workspaceId: input.workspaceId,
+        botId: input.botId,
+        threadId: input.threadId,
+        taskId: task.id,
+        userId: input.userId,
+        status: "waiting_input",
+        trigger: "onboarding",
+      },
+    });
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "bot",
+      blocks: input.blocks,
+      runId: run.id,
+    });
+    await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      runId: run.id,
+      payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+    });
+    const waiting = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "run.waiting_input",
+      runId: run.id,
+      payload: {},
+    });
+    return { runId: run.id, messageId: message.id, threadId: waiting.threadId, seq: waiting.seq };
+  });
+  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return { runId: committed.runId, messageId: committed.messageId };
 }
 
 export async function pauseRunForInput(

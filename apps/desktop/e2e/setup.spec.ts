@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
 
-const APP_MARKER = "Existing Rakazo instance ready";
+const APP_MARKER = "Remote Rakazo instance ready";
 
 let server: Server;
 let serverUrl: string;
@@ -66,35 +66,35 @@ function launch(extraEnv: Record<string, string> = {}) {
   });
 }
 
-test("first run asks whether to create a new instance or connect to an existing one", async () => {
+test("first run asks whether the server is local or remote", async () => {
   app = await launch();
   const setup = await app.firstWindow();
 
   await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
-  await expect(setup.getByText("Set up a new instance")).toBeVisible();
-  await expect(setup.getByText("Connect to an existing instance")).toBeVisible();
+  await expect(setup.getByText("Connect to a local instance")).toBeVisible();
+  await expect(setup.getByText("Connect to a remote instance")).toBeVisible();
 
-  // A new instance is the default and points at the local development stack.
-  await expect(setup.getByRole("radio", { name: /Set up a new instance/ })).toBeChecked();
+  // A local server is the default and points at the local development stack.
+  await expect(setup.getByRole("radio", { name: /Connect to a local instance/ })).toBeChecked();
   await expect(setup.locator("#local-url")).toHaveValue("http://127.0.0.1:5173");
-  await expect(setup.locator("#panel-existing")).toBeHidden();
+  await expect(setup.locator("#panel-remote")).toBeHidden();
 
-  await setup.screenshot({ path: "e2e/screenshots/01-setup-new-instance.png" });
+  await setup.screenshot({ path: "e2e/screenshots/01-setup-local-instance.png" });
 });
 
-test("connecting to an existing instance verifies, saves, and opens it", async () => {
+test("connecting to a remote instance verifies, saves, and opens it", async () => {
   app = await launch();
   const setup = await app.firstWindow();
 
-  await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
-  await expect(setup.locator("#panel-new")).toBeHidden();
+  await setup.getByRole("radio", { name: /Connect to a remote instance/ }).check();
+  await expect(setup.locator("#panel-local")).toBeHidden();
 
-  await setup.locator("#server-url").fill(serverUrl);
+  await setup.locator("#remote-url").fill(serverUrl);
   await setup.getByRole("button", { name: "Check connection" }).click();
   await expect(setup.locator("#status")).toHaveText(`Rakazo answered at ${serverUrl}.`);
   await expect(setup.locator("#status")).toHaveAttribute("data-tone", "ok");
 
-  await setup.screenshot({ path: "e2e/screenshots/02-setup-existing-verified.png" });
+  await setup.screenshot({ path: "e2e/screenshots/02-setup-remote-verified.png" });
 
   const appWindow = await Promise.all([
     app.waitForEvent("window"),
@@ -105,14 +105,14 @@ test("connecting to an existing instance verifies, saves, and opens it", async (
   await appWindow.screenshot({ path: "e2e/screenshots/03-connected-instance.png" });
 
   const saved = JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
-  expect(saved).toEqual({ mode: "existing", serverUrl });
+  expect(saved).toEqual({ mode: "remote", serverUrl });
 });
 
 test("a verified instance is remembered so setup does not run again", async () => {
   app = await launch();
   const setup = await app.firstWindow();
-  await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
-  await setup.locator("#server-url").fill(serverUrl);
+  await setup.getByRole("radio", { name: /Connect to a remote instance/ }).check();
+  await setup.locator("#remote-url").fill(serverUrl);
   const firstRun = await Promise.all([
     app.waitForEvent("window"),
     setup.getByRole("button", { name: "Continue" }).click(),
@@ -130,8 +130,8 @@ test("an unreachable address is reported instead of being saved", async () => {
   app = await launch();
   const setup = await app.firstWindow();
 
-  await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
-  await setup.locator("#server-url").fill(closedUrl);
+  await setup.getByRole("radio", { name: /Connect to a remote instance/ }).check();
+  await setup.locator("#remote-url").fill(closedUrl);
   await setup.getByRole("button", { name: "Check connection" }).click();
 
   await expect(setup.locator("#status")).toHaveAttribute("data-tone", "error");
@@ -143,8 +143,8 @@ test("a malformed address is rejected before anything is written", async () => {
   app = await launch();
   const setup = await app.firstWindow();
 
-  await setup.getByRole("radio", { name: /Connect to an existing instance/ }).check();
-  await setup.locator("#server-url").fill("not a server");
+  await setup.getByRole("radio", { name: /Connect to a remote instance/ }).check();
+  await setup.locator("#remote-url").fill("not a server");
   await setup.getByRole("button", { name: "Continue" }).click();
 
   await expect(setup.locator("#status")).toHaveText("Enter a valid http:// or https:// address.");

@@ -15,6 +15,7 @@ export const BotSchema = z.object({
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
+  hidden: z.boolean(),
   sectionId: Id.nullable(),
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
@@ -63,6 +64,7 @@ export const UpdateBotInput = z.object({
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
   pinned: z.boolean().optional(),
+  hidden: z.boolean().optional(),
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
@@ -292,6 +294,39 @@ export const BotChannelSchema = z.object({
 });
 export type BotChannel = z.infer<typeof BotChannelSchema>;
 
+export const ChannelMemberSchema = z.object({
+  botId: Id,
+  name: z.string(),
+  color: z.string(),
+});
+export type ChannelMember = z.infer<typeof ChannelMemberSchema>;
+
+export const ChannelMessageSchema = z.object({
+  id: Id,
+  authorType: z.enum(["user", "bot"]),
+  authorBotId: Id.nullable(),
+  authorName: z.string(),
+  authorColor: z.string().nullable(),
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type ChannelMessage = z.infer<typeof ChannelMessageSchema>;
+
+export const ChannelSchema = z.object({
+  id: Id,
+  name: z.string(),
+  members: z.array(ChannelMemberSchema),
+  preview: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Channel = z.infer<typeof ChannelSchema>;
+
+export const ChannelDetailSchema = ChannelSchema.extend({
+  messages: z.array(ChannelMessageSchema),
+});
+export type ChannelDetail = z.infer<typeof ChannelDetailSchema>;
+
 export const ModelCredentialKeySchema = z.object({
   id: Id,
   label: z.string(),
@@ -372,9 +407,88 @@ export const DeploymentSettingsSchema = z.object({
   hasDeploymentModelCredential: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
-  computerHost: z.enum(["docker", "this-mac"]).nullable(),
-  canChooseHostComputer: z.boolean(),
 });
+
+export const ServerUpdateSourceSchema = z.object({
+  repoUrl: z.string(),
+  branch: z.string(),
+  official: z.boolean(),
+});
+export type ServerUpdateSource = z.infer<typeof ServerUpdateSourceSchema>;
+
+export const ServerUpdateStepSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  ok: z.boolean(),
+  exitCode: z.number().int().nullable(),
+  output: z.string(),
+});
+
+/** How an update reaches new code: published images, a build on the server, or a git checkout. */
+export const ServerUpdateStrategySchema = z.enum(["pull", "build", "checkout"]);
+export type ServerUpdateStrategy = z.infer<typeof ServerUpdateStrategySchema>;
+
+/** `sidecar` is the Compose deployment; `checkout` is a supervised source install. */
+export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailable"]);
+export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
+
+export const ServerUpdateRunSchema = z.object({
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  ok: z.boolean(),
+  fromCommit: z.string().nullable(),
+  toCommit: z.string().nullable(),
+  fromTag: z.string().nullable(),
+  toTag: z.string().nullable(),
+  strategy: ServerUpdateStrategySchema.nullable(),
+  repoUrl: z.string(),
+  branch: z.string(),
+  /**
+   * `recreated` means the updater sidecar replaced the containers and no restart is owed.
+   * `supervised` means the process exited and its supervisor is bringing it back.
+   */
+  restart: z.enum(["recreated", "supervised", "manual", "not-required"]),
+  restartAdvice: z.string(),
+  error: z.string().nullable(),
+  steps: z.array(ServerUpdateStepSchema),
+});
+export type ServerUpdateRun = z.infer<typeof ServerUpdateRunSchema>;
+
+export const ServerUpdateStatusSchema = z.object({
+  supported: z.boolean(),
+  unsupportedReason: z.string().nullable(),
+  mode: ServerUpdateModeSchema,
+  strategy: ServerUpdateStrategySchema.nullable(),
+  strategyNote: z.string().nullable(),
+  version: z.string(),
+  revision: z.string().nullable(),
+  commit: z.string().nullable(),
+  branch: z.string().nullable(),
+  remoteUrl: z.string().nullable(),
+  dirty: z.boolean(),
+  dirtyPaths: z.array(z.string()),
+  image: z.string().nullable(),
+  imageTag: z.string().nullable(),
+  previousImageTag: z.string().nullable(),
+  canRollback: z.boolean(),
+  source: ServerUpdateSourceSchema,
+  officialRepoUrl: z.string(),
+  restartSupervisor: z.enum(["systemd", "pm2", "declared", "none"]),
+  restartAdvice: z.string(),
+  running: z.boolean(),
+  lastRun: ServerUpdateRunSchema.nullable(),
+});
+export type ServerUpdateStatus = z.infer<typeof ServerUpdateStatusSchema>;
+
+export const ServerUpdateCheckSchema = z.object({
+  status: z.enum(["unavailable", "dirty", "up-to-date", "available"]),
+  reason: z.string().nullable(),
+  changed: z.array(z.string()),
+  commit: z.string().nullable(),
+  targetCommit: z.string().nullable(),
+  behindBy: z.number().int(),
+});
+export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
 export const MeSchema = z.object({
   userId: Id,
@@ -385,8 +499,6 @@ export const MeSchema = z.object({
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
-  computerHost: z.enum(["docker", "this-mac"]).nullable(),
-  canChooseHostComputer: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

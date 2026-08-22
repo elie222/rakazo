@@ -20,18 +20,18 @@ describe("setup store", () => {
   });
 
   it("keeps the chosen instance across launches", async () => {
-    await writeSetup(userData, { mode: "existing", serverUrl: "https://rakazo.example.com" });
+    await writeSetup(userData, { mode: "remote", serverUrl: "https://rakazo.example.com" });
     await expect(readSetup(userData)).resolves.toEqual({
-      mode: "existing",
+      mode: "remote",
       serverUrl: "https://rakazo.example.com",
     });
   });
 
   it("creates the user data directory when it does not exist yet", async () => {
     const nested = path.join(userData, "nested", "profile");
-    await writeSetup(nested, { mode: "new", serverUrl: "http://127.0.0.1:5173" });
+    await writeSetup(nested, { mode: "local", serverUrl: "http://127.0.0.1:5173" });
     await expect(readSetup(nested)).resolves.toEqual({
-      mode: "new",
+      mode: "local",
       serverUrl: "http://127.0.0.1:5173",
     });
   });
@@ -42,7 +42,7 @@ describe("setup store", () => {
   });
 
   it("forgets the instance after clearing", async () => {
-    await writeSetup(userData, { mode: "new", serverUrl: "http://127.0.0.1:5173" });
+    await writeSetup(userData, { mode: "local", serverUrl: "http://127.0.0.1:5173" });
     await clearSetup(userData);
     await expect(readSetup(userData)).resolves.toBeNull();
   });

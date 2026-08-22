@@ -21,6 +21,7 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
+  createChannel,
   createVoiceProvider,
   customEndpointCatalogEntry,
   deleteSupermemoryContainer,
@@ -30,10 +31,12 @@ import {
   expireComputerControl,
   fetchOpenAICompatibleModels,
   gatewayCatalogEntries,
+  getChannel,
   hasActiveComputerControl,
   isGatewayProvider,
   isSupermemoryEnabled,
   labelForDiscoveredModels,
+  listChannels,
   listPiCatalog,
   loadBotChannel,
   mintGatewayProviderId,
@@ -42,8 +45,11 @@ import {
   type PiOAuthLogins,
   parseAvailableModels,
   parseModelSecret,
+  postUserChannelMessage,
   provisionComputer,
   releaseComputerExecutionLease,
+  removeChannel,
+  renameChannel,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -53,6 +59,7 @@ import {
   scriptedCatalogEntry,
   serializeAvailableModels,
   serializeModelSecret,
+  setChannelMembers,
   supermemoryContainerTag,
   takeoverLeaseMs,
   toComputerRef,
@@ -64,6 +71,7 @@ import type { Auth } from "@rakazo/auth";
 import {
   type Actor,
   appContract,
+  type Bot,
   type ComputerStatus,
   type Me,
   type ModelCredential,
@@ -97,6 +105,7 @@ import {
 } from "./artifacts.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
+import { SelfUpdateRefused, type SelfUpdateService } from "./self-update.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
@@ -138,6 +147,7 @@ export interface RouterDeps {
   oauthLogins: PiOAuthLogins;
   composio?: ComposioProvider;
   artifacts: ArtifactStore;
+  selfUpdate: SelfUpdateService;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -146,6 +156,8 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    version: string;
+    revision: string | null;
   };
 }
 
@@ -167,7 +179,11 @@ export function createRouter(deps: RouterDeps) {
   });
 
   return os.router({
-    health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
+    health: os.health.handler(async () => ({
+      ok: true as const,
+      version: deps.env.version,
+      revision: deps.env.revision,
+    })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
@@ -189,16 +205,10 @@ export function createRouter(deps: RouterDeps) {
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+        return deploymentDto(deps.prisma);
       }),
       update: authed.deployment.update.handler(async ({ context, input }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        if (input.computerHost === "this-mac" && deps.env.sandboxProvider !== "docker") {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "This Mac mode is only available when SANDBOX_PROVIDER=docker on a personal local app.",
-          });
-        }
         await deps.prisma.deploymentSettings.upsert({
           where: { id: "default" },
           create: {
@@ -206,15 +216,35 @@ export function createRouter(deps: RouterDeps) {
             ownerUserId: context.actor.userId,
             signupsEnabled: input.signupsEnabled ?? true,
             signupAllowlist: (input.signupAllowlist ?? []).join(","),
-            computerHost: input.computerHost ?? undefined,
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
             ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
-            ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });
-        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+        return deploymentDto(deps.prisma);
+      }),
+    },
+    serverUpdate: {
+      status: authed.serverUpdate.status.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return deps.selfUpdate.status();
+      }),
+      setSource: authed.serverUpdate.setSource.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.setSource(input));
+      }),
+      check: authed.serverUpdate.check.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.check());
+      }),
+      apply: authed.serverUpdate.apply.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.apply());
+      }),
+      rollback: authed.serverUpdate.rollback.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return asBadRequest(() => deps.selfUpdate.rollback());
       }),
     },
     models: {
@@ -412,9 +442,11 @@ export function createRouter(deps: RouterDeps) {
         if (!found) throw new IsolationError();
         return found;
       }),
-      create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
-      ),
+      create: authed.bots.create.handler(async ({ context, input }) => {
+        const bot = await repos.createBot(context.actor, input);
+        await openOnboardingQuestion(deps, context.actor, bot);
+        return bot;
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         return repos.createBot(context.actor, {
@@ -452,6 +484,7 @@ export function createRouter(deps: RouterDeps) {
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             pinned: input.pinned,
+            hidden: input.hidden,
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
@@ -757,6 +790,27 @@ export function createRouter(deps: RouterDeps) {
         }
         return channel;
       }),
+    },
+    channels: {
+      list: authed.channels.list.handler(({ context }) => listChannels(deps.prisma, context.actor)),
+      create: authed.channels.create.handler(({ context, input }) =>
+        createChannel(deps.prisma, context.actor, input),
+      ),
+      get: authed.channels.get.handler(({ context, input }) =>
+        getChannel(deps.prisma, context.actor, input.channelId),
+      ),
+      rename: authed.channels.rename.handler(({ context, input }) =>
+        renameChannel(deps.prisma, context.actor, input),
+      ),
+      setMembers: authed.channels.setMembers.handler(({ context, input }) =>
+        setChannelMembers(deps.prisma, context.actor, input),
+      ),
+      post: authed.channels.post.handler(({ context, input }) =>
+        postUserChannelMessage({ prisma: deps.prisma, jobs: deps.jobs }, context.actor, input),
+      ),
+      remove: authed.channels.remove.handler(({ context, input }) =>
+        removeChannel(deps.prisma, context.actor, input.channelId),
+      ),
     },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
@@ -1922,8 +1976,6 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     needsModel: !cred && !hasDeployment,
     defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
     defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
-    canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
 }
 
@@ -2065,7 +2117,55 @@ function toComputerStatus(
   };
 }
 
-async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
+const ONBOARDING_OPTIONS = [
+  { id: "gap", label: "Something the others don't cover" },
+  { id: "recurring", label: "A specific recurring job" },
+  { id: "overflow", label: "General help / overflow" },
+  { id: "unsure", label: "Not sure yet — help me figure it out" },
+];
+
+/**
+ * A freshly created bot opens with a question instead of an empty thread, so the first thing
+ * the user does is tell it what it is for. The answer becomes the run's task prompt.
+ */
+async function openOnboardingQuestion(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
+  const [user, peers] = await Promise.all([
+    deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
+    deps.prisma.bot.count({
+      where: {
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        archivedAt: null,
+        id: { not: bot.id },
+      },
+    }),
+  ]);
+  const firstName = (user?.name ?? "").trim().split(/\s+/)[0] ?? "";
+  const greeting = firstName ? `Hey ${firstName} — good to meet you.` : "Good to meet you.";
+  const crew =
+    peers > 0
+      ? `You already have ${peers} other ${peers === 1 ? "bot" : "bots"} set up. What do you want me focused on?`
+      : "What do you want me focused on?";
+  await deps.events.openBotQuestion({
+    workspaceId: actor.workspaceId,
+    threadId: bot.threadId,
+    botId: bot.id,
+    userId: actor.userId,
+    prompt: "Work out what to focus on and get started.",
+    blocks: [
+      { kind: "text", text: `${greeting} ${crew}` },
+      {
+        kind: "ask",
+        text: "What should I take on?",
+        detail: "Pick what fits, or type your own.",
+        status: "pending",
+        actions: ONBOARDING_OPTIONS,
+      },
+    ],
+  });
+}
+
+async function deploymentDto(prisma: PrismaClient) {
   const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
   return {
     ownerUserId: settings?.ownerUserId ?? null,
@@ -2076,19 +2176,19 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
     hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
-    computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
-    canChooseHostComputer: sandboxProvider === "docker",
   };
 }
 
-function computerHostFor(
-  stored: string | null | undefined,
-  sandboxProvider: string,
-): "docker" | "this-mac" | null {
-  if (sandboxProvider === "desktop") return "this-mac";
-  if (sandboxProvider !== "docker") return null;
-  if (stored === "this-mac" || stored === "docker") return stored;
-  return null;
+/** A refused update is operator error, not a server fault, so it reads as a message not a 500. */
+async function asBadRequest<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof SelfUpdateRefused) {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    throw error;
+  }
 }
 
 async function persistModelCredential(

@@ -40,7 +40,7 @@ export function parseSetupInput(value: unknown): DesktopSetup | null {
   if (typeof value !== "object" || value === null) return null;
 
   const { mode, serverUrl } = value as Record<string, unknown>;
-  if (mode !== "new" && mode !== "existing") return null;
+  if (mode !== "local" && mode !== "remote") return null;
   if (typeof serverUrl !== "string") return null;
 
   const normalized = normalizeServerUrl(serverUrl);

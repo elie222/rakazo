@@ -26,40 +26,40 @@
         <fieldset class="choices">
           <legend class="sr-only">Instance</legend>
 
-          <label class="choice" for="mode-new">
-            <input id="mode-new" type="radio" name="mode" value="new" checked />
+          <label class="choice" for="mode-local">
+            <input id="mode-local" type="radio" name="mode" value="local" checked />
             <span class="choice-body">
-              <span class="choice-title">Set up a new instance</span>
+              <span class="choice-title">Connect to a local instance</span>
               <span class="choice-note">
-                Use a Rakazo stack running on this computer. Best if you are self-hosting locally.
+                Use a Rakazo server running on this computer.
               </span>
             </span>
           </label>
 
-          <label class="choice" for="mode-existing">
-            <input id="mode-existing" type="radio" name="mode" value="existing" />
+          <label class="choice" for="mode-remote">
+            <input id="mode-remote" type="radio" name="mode" value="remote" />
             <span class="choice-body">
-              <span class="choice-title">Connect to an existing instance</span>
+              <span class="choice-title">Connect to a remote instance</span>
               <span class="choice-note">
-                Point at a Rakazo server you or your team already runs.
+                Point at a Rakazo server you or your team already runs elsewhere.
               </span>
             </span>
           </label>
         </fieldset>
 
-        <section id="panel-new" class="panel">
+        <section id="panel-local" class="panel">
           <label class="field-label" for="local-url">Local server address</label>
           <input id="local-url" class="field" type="text" spellcheck="false" autocomplete="off" />
           <p class="hint">
-            Not running yet? Start the stack from your Rakazo checkout with
+            No server yet? Start the stack from your Rakazo checkout with
             <code>pnpm dev</code>, then check again.
           </p>
         </section>
 
-        <section id="panel-existing" class="panel" hidden>
-          <label class="field-label" for="server-url">Server address</label>
+        <section id="panel-remote" class="panel" hidden>
+          <label class="field-label" for="remote-url">Server address</label>
           <input
-            id="server-url"
+            id="remote-url"
             class="field"
             type="text"
             spellcheck="false"

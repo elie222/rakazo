@@ -20,6 +20,8 @@ Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do no
 
 The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
 
+The development Compose file has no `updater` service, so in-app updates here use the git-checkout engine against your working tree. The updater sidecar is a production concern; see [Upgrade](#upgrade).
+
 On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
 
 ```env
@@ -49,13 +51,13 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 
 ## Choosing a computer provider
 
-The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
+The Electron desktop app is a client of the same API and never decides where bots run. The provider is fixed by the operator at deploy time through `SANDBOX_PROVIDER`; a connected client cannot change it. Docker and E2B still apply.
 
 - **Docker** is the default for local use and the quickest self-hosted setup. Workspace bots share a persistent Team Computer by default; Private computers are optional. Keep the supervisor private, as the included Compose file does.
 - **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
 - **Daytona** provides the same remote-computer contract through Daytona sandboxes. Configure `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET`.
 - **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. A Box currently exposes one shared desktop, so concurrent Team bots can still use shell and files but only one can use graphical tools at a time.
-- **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
+- **Desktop provider** runs commands directly on the API/worker host under the service account, with working directories allowed anywhere under that account's home folder. There is no container boundary, so it is opt-in only through `SANDBOX_PROVIDER=desktop` and cannot be turned on from the app. Do not use it on a public or shared service.
 - **Fake** is only an emulator for verification.
 
 ## Backup
@@ -110,18 +112,24 @@ SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
-GIT_SHA=
+# Absolute path of this checkout on the host. Required: the updater sidecar is bind-mounted at
+# exactly this path so Compose derives the same project name and bind mounts that you do.
+RAKAZO_DEPLOY_DIR=/srv/rakazo
+RAKAZO_IMAGE_TAG=latest
 ```
 
-4. Start the stack and verify its public health endpoint. Set `GIT_SHA` to the commit you are
-   deploying so `GET /health` can prove which revision is live:
+4. Start the stack and verify its public health endpoint:
 
 ```bash
-GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --build
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d
 curl --fail https://app.example.com/health
 ```
 
-The JSON includes `"revision"` matching that commit (or `null` if `GIT_SHA` was omitted).
+The published images carry the commit they were built from, so `GET /health` reports it as
+`"revision"` with nothing for you to set. Leave `GIT_SHA` unset: it is a build argument, and a value
+in `.env` would override what the image already knows. To build from source instead of pulling, add
+`--build` and pass `GIT_SHA=$(git rev-parse HEAD)` on the command line.
 
 The root `.env` is excluded from both Git and the Docker build context. The database, application data,
 and Caddy certificates live in named Docker volumes.
@@ -140,7 +148,137 @@ substitute for an encrypted off-host backup or provider snapshot.
 
 ## Upgrade
 
-Pull the new source, rebuild with `GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --filter @rakazo/db migrate` if you are not using the production Compose file, then restart API and worker. Product contracts stay compatible across cloud and self-hosted. `GET /health` should then report that commit as `"revision"`.
+Compose deployments run published images from GHCR and upgrade by moving a tag:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d api worker web
+```
+
+`up -d` replaces the API, worker, and web containers together, so the three never disagree about
+which version they are. The API's start command runs `prisma migrate deploy` before it serves, which
+means migrations happen inside the new container, after the old one has stopped — the old process is
+never left talking to a new schema.
+
+The updater sidecar has its own image and tag so that an update never recreates the container
+performing it. Move it deliberately:
+`docker compose … pull updater && docker compose … up -d updater`.
+
+Source checkouts (not Compose) still upgrade the old way: pull, rebuild with
+`GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --filter @rakazo/db migrate`, then restart API and worker.
+Product contracts stay compatible across cloud and self-hosted.
+
+### Published images and tags
+
+Two images are published to GHCR by `.github/workflows/publish-server-image.yml`:
+
+| Image | Contents |
+| --- | --- |
+| `ghcr.io/elie222/rakazo/app` | api, worker, and web — one image, three commands |
+| `ghcr.io/elie222/rakazo/updater` | the updater sidecar, plus the Docker CLI |
+
+| Tag | Published on | Moves? |
+| --- | --- | --- |
+| `vX.Y.Z`, `vX.Y` | release tags | no / on patch releases |
+| `latest` | release tags | yes, to the newest release |
+| `sha-<commit>` | pushes to main | never |
+| `edge` | pushes to main | yes, to the newest main build |
+
+Pin `RAKAZO_IMAGE_TAG` to a release tag in production. Every tag is retained, so the tag a
+deployment ran yesterday is still pullable today — which is what makes rollback a redeploy rather
+than a rebuild. `sha-<commit>` is the immutable identity: the commit in a tag is the commit
+`GET /health` reports as `"revision"`, because the workflow bakes it into the image.
+
+### In-app self-update
+
+The deployment owner gets **Server updates** in the account menu. Nobody else can see or call it;
+the RPCs are gated on the same `ownerUserId` check as the rest of the deployment settings. There are
+two engines, and the overlay tells you which one is in play.
+
+**Compose deployments use the updater sidecar.** The API cannot update itself — its image has no
+`.git`, and nothing inside the container would restart it — so the work happens in a separate
+`updater` container that outlives the recreate. The API asks it over the Compose network at
+`http://updater:7092` with a shared bearer token, and the sidecar does the rest:
+
+- *Official repository:* resolves the newest release tag with `git ls-remote --tags`, pins
+  `RAKAZO_IMAGE_TAG` in your `.env`, keeps the outgoing tag in `RAKAZO_IMAGE_TAG_PREVIOUS`, then
+  `docker compose pull` and `up -d`. No build on your machine — a download and a restart.
+- *Fork (Advanced):* a fork has no published images, so the sidecar fast-forwards the checkout in
+  `RAKAZO_DEPLOY_DIR` and runs `up -d --build`. This builds on the server and takes **minutes rather
+  than seconds**. It needs `RAKAZO_DEPLOY_DIR` to be a git checkout of your fork; the UI says so
+  plainly, and refuses rather than guessing.
+
+If any step fails, the sidecar puts the tag back before returning, so a failed update never leaves
+the deployment pinned to an image the host does not have. **Roll back** redeploys
+`RAKAZO_IMAGE_TAG_PREVIOUS`. It does not reverse migrations: if the newer version added one, roll
+forward again or restore from a backup.
+
+What the sidecar deliberately does not do: it never recreates itself, never touches Postgres or
+Caddy, and never runs migrations itself — that ordering belongs to the API's own start command,
+where it is correct by construction.
+
+**Source checkouts use the in-process engine and need a supervisor.** It runs `git fetch`,
+`git checkout`, `git merge --ff-only`, `pnpm install`, `prisma generate`, the web build, and
+`prisma migrate`, then exits so that something outside the process starts it again on the new code.
+It refuses to exit when it cannot tell that anything will, because a server that exits into nothing
+is worse than a server that is out of date. systemd (`INVOCATION_ID`) and pm2 (`pm_id`) are detected
+automatically; anything else has to be declared:
+
+```env
+RAKAZO_UPDATE_RESTART_SUPERVISOR=docker   # source checkouts only; Compose does not need this
+RAKAZO_SELF_UPDATE=0                      # turn the feature off entirely, either engine
+```
+
+`RAKAZO_UPDATE_RESTART_SUPERVISOR` is not needed on a Compose deployment: the sidecar performs the
+restart, so there is nothing for a supervisor to be asked about. The overlay stops mentioning
+supervisors entirely once the sidecar is answering.
+
+Both engines share the same guards. Only `https://` and `ssh://` git remotes are accepted; URLs
+carrying credentials, query strings, traversal, leading dashes, or control bytes are refused; every
+value reaches git as its own argument with no shell involved; merges are fast-forward only, so a
+checkout carrying local commits fails the update instead of losing them; and a checkout with
+uncommitted changes to tracked files is refused before anything runs. The sidecar re-runs all of
+these itself rather than trusting that the API already did, because it is a separate trust boundary.
+
+Understand what **Advanced** is: the server will run whatever code that repository contains. Point
+it at a fork you control, never one you found.
+
+### The updater's privileges
+
+The updater holds the Docker socket, which is root-equivalent on the host. It is scoped as narrowly
+as that allows:
+
+- No `ports`, so nothing is published on the host.
+- Only on the `app` network. Caddy is on `edge`, so there is no route to the updater from the
+  internet and it cannot be reached through the reverse proxy.
+- Every route except `/health` requires the shared bearer token, compared in constant time.
+- The Docker CLI lives only in the updater image. The api, worker, and web containers keep
+  `cap_drop: ALL` and no socket.
+
+Set `RAKAZO_UPDATER_TOKEN` to a random value if you want update authority separate from
+`BETTER_AUTH_SECRET`, which it otherwise derives from. Set `RAKAZO_SELF_UPDATE=0` and drop the
+`updater` service if you would rather not have the capability at all.
+
+### Desktop auto-update
+
+The Electron app is installed separately from the server, so it can drift. It checks the repository's
+GitHub releases shortly after launch and on demand, downloads on request, and installs on restart. A
+fork with no published releases, or a machine that is offline, is treated as "no updates available"
+rather than an error.
+
+Publishing releases requires the `release-desktop` workflow (tag `v*`) and, for macOS and Windows
+clients to accept an update at all, code-signing credentials in `DESKTOP_CSC_LINK`,
+`DESKTOP_CSC_KEY_PASSWORD`, and the Apple notarization secrets. A fork also has to change
+`build.publish.owner` / `build.publish.repo` in `apps/desktop/package.json` and rebuild, because that
+is what is baked into the installed app's update feed. Set `RAKAZO_DISABLE_AUTO_UPDATE=1` to turn it off.
+
+### Version matching
+
+`GET /health` and the `health` RPC report the server's `version` and `revision`. The web build stamps
+its own version and commit at build time and compares. A mismatch is a **warning, never a block** —
+the app stays fully usable. A browser tab is offered a reload, because its assets come from the
+server. The desktop app is told which side is behind, because it serves its own bundled copy of the
+web UI and a reload cannot fix it.
 
 ## What “Rakazo Cloud” still needs
 
