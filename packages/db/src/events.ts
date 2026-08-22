@@ -531,21 +531,23 @@ export async function finalizeRun(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed" && input.publishMessage !== false) {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        role: "bot",
-        blocks: input.blocks,
-        runId: input.runId,
-      });
-      await appendEventInTransaction(tx, {
-        workspaceId: input.workspaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-      });
+    if (input.outcome === "completed") {
+      if (input.publishMessage !== false) {
+        const message = await createThreadMessageInTransaction(tx, {
+          threadId: input.threadId,
+          role: "bot",
+          blocks: input.blocks,
+          runId: input.runId,
+        });
+        await appendEventInTransaction(tx, {
+          workspaceId: input.workspaceId,
+          threadId: input.threadId,
+          botId: input.botId,
+          type: "thread.message.created",
+          runId: input.runId,
+          payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+        });
+      }
     }
     const lastEvent = await appendEventInTransaction(tx, {
       workspaceId: input.workspaceId,
