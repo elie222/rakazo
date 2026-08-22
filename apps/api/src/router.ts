@@ -64,12 +64,14 @@ import {
   projectMessages,
 } from "@rakazo/core";
 import {
+  createBotInTransaction,
   createRepos,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   IsolationError,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
+  openBotQuestionInTransaction,
   Prisma,
   type PrismaClient,
   parseComputerMode,
@@ -357,9 +359,17 @@ export function createRouter(deps: RouterDeps) {
         return found;
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
-        const bot = await repos.createBot(context.actor, input);
-        await openOnboardingQuestion(deps, context.actor, bot);
-        return bot;
+        const committed = await deps.prisma.$transaction(async (tx) => {
+          const bot = await createBotInTransaction(tx, context.actor, input);
+          const question = await openOnboardingQuestionInTransaction(tx, context.actor, bot);
+          return { bot, question };
+        });
+        // A new thread cannot have a subscriber yet. A failed wake must not turn a committed
+        // creation into an apparent failure that the client retries as a duplicate bot.
+        await deps.events
+          .notify(committed.question.threadId, committed.question.seq)
+          .catch(() => undefined);
+        return committed.bot;
       }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
@@ -568,20 +578,9 @@ export function createRouter(deps: RouterDeps) {
           trigger: "user",
           clientNonce: input.clientNonce,
           linkMessageToRun: true,
+          supersedeOnboarding: true,
         });
         const runId = sent.runId!;
-        // A user message supersedes the opening question a new bot parks in `waiting_input`:
-        // the message says what to take on, so the question is answered by being ignored. Left
-        // active it would outlive this run and become the thread's current run again once this
-        // one finishes, showing the bot as forever waiting and holding its computer awake.
-        await deps.prisma.run.updateMany({
-          where: {
-            botId: bot.id,
-            id: { not: runId },
-            OR: [{ status: "queued" }, { status: "waiting_input", trigger: "onboarding" }],
-          },
-          data: { status: "cancelled", completedAt: new Date() },
-        });
         await deps.jobs.enqueue(runContinueJob(runId));
         return { taskId: sent.taskId!, runId, seq: sent.seq };
       }),
@@ -1966,10 +1965,14 @@ const ONBOARDING_OPTIONS = [
  * A freshly created bot opens with a question instead of an empty thread, so the first thing
  * the user does is tell it what it is for. The answer becomes the run's task prompt.
  */
-async function openOnboardingQuestion(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
+async function openOnboardingQuestionInTransaction(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  bot: Bot,
+) {
   const [user, peers] = await Promise.all([
-    deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
-    deps.prisma.bot.count({
+    tx.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
+    tx.bot.count({
       where: {
         workspaceId: actor.workspaceId,
         userId: actor.userId,
@@ -1984,7 +1987,7 @@ async function openOnboardingQuestion(deps: RouterDeps, actor: Actor, bot: Bot):
     peers > 0
       ? `You already have ${peers} other ${peers === 1 ? "bot" : "bots"} set up. What do you want me focused on?`
       : "What do you want me focused on?";
-  await deps.events.openBotQuestion({
+  return openBotQuestionInTransaction(tx, {
     workspaceId: actor.workspaceId,
     threadId: bot.threadId,
     botId: bot.id,

@@ -12,6 +12,15 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const bot = sidebar.getByRole("button", { name: /^Chief/ });
 
   await bot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Hide from sidebar", exact: true }).click();
+  await expect(bot).toHaveCount(0);
+  await sidebar.getByRole("button", { name: "Hidden 1", exact: true }).click();
+  await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Unhide", exact: true }).click();
+  await expect(sidebar.getByRole("button", { name: "Unhide", exact: true })).toHaveCount(0);
+  await expect(bot).toBeVisible();
+
+  await bot.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
   await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toContainText("Chief");
   await captureScreenshot(page, testInfo, "pinned-bots");

@@ -5,7 +5,7 @@ import {
   type BotSection,
   type MessageBlock,
 } from "@rakazo/contracts";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
@@ -61,6 +61,23 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+  };
+}
+
+export interface CreateBotInput {
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  notifyOnFinish: boolean;
+  color?: string;
+  parentBotId?: string | null;
+  computerMode?: ComputerMode;
+  spawnKey?: string;
+  initialMessage?: {
+    role: "user" | "bot" | "system";
+    blocks: MessageBlock[];
+    runId?: string;
   };
 }
 
@@ -175,111 +192,8 @@ export function createRepos(prisma: PrismaClient) {
       return bot;
     },
 
-    async createBot(
-      actor: Actor,
-      input: {
-        name: string;
-        title: string;
-        description: string;
-        instructions: string;
-        notifyOnFinish: boolean;
-        color?: string;
-        parentBotId?: string | null;
-        computerMode?: ComputerMode;
-        spawnKey?: string;
-        initialMessage?: {
-          role: "user" | "bot" | "system";
-          blocks: MessageBlock[];
-          runId?: string;
-        };
-      },
-    ): Promise<Bot> {
-      let color = input.color;
-      if (color === undefined) {
-        const count = await prisma.bot.count({
-          where: { workspaceId: actor.workspaceId, userId: actor.userId },
-        });
-        color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
-      }
-      if (input.parentBotId) {
-        const parent = await prisma.bot.findFirst({
-          where: {
-            id: input.parentBotId,
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-          },
-        });
-        if (!parent) throw new IsolationError();
-      }
-      const kind = process.env.SANDBOX_PROVIDER ?? "docker";
-      const bot = await prisma.$transaction(async (tx) => {
-        const teamComputer = await ensureComputerRecord(tx, {
-          mode: "team",
-          workspaceId: actor.workspaceId,
-          userId: actor.userId,
-          kind,
-        });
-        const created = await tx.bot.create({
-          data: {
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            name: input.name,
-            title: input.title,
-            description: input.description,
-            instructions: input.instructions,
-            notifyOnFinish: input.notifyOnFinish,
-            color,
-            parentBotId: input.parentBotId ?? null,
-            computerId: teamComputer.id,
-            spawnKey: input.spawnKey,
-          },
-        });
-        const thread = await tx.thread.create({
-          data: {
-            workspaceId: actor.workspaceId,
-            botId: created.id,
-            userId: actor.userId,
-          },
-        });
-        if (input.initialMessage) {
-          await createThreadMessageInTransaction(tx, {
-            threadId: thread.id,
-            ...input.initialMessage,
-          });
-        }
-        if (input.computerMode === "dedicated") {
-          const dedicated = await ensureComputerRecord(tx, {
-            mode: "dedicated",
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            botId: created.id,
-            kind,
-          });
-          await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
-        }
-        await tx.browserProfile.create({
-          data: {
-            workspaceId: actor.workspaceId,
-            botId: created.id,
-            userId: actor.userId,
-          },
-        });
-        await tx.memoryDocument.create({
-          data: {
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            botId: created.id,
-            scope: "bot",
-            path: "MEMORY.md",
-            content: `# ${input.name}\n\n`,
-          },
-        });
-        return tx.bot.findFirstOrThrow({
-          where: { id: created.id },
-          include: { thread: true, computer: true },
-        });
-      });
-      return mapBot(bot);
+    async createBot(actor: Actor, input: CreateBotInput): Promise<Bot> {
+      return prisma.$transaction((tx) => createBotInTransaction(tx, actor, input));
     },
 
     async setBotComputer(actor: Actor, botId: string, mode: ComputerMode): Promise<Bot> {
@@ -303,4 +217,95 @@ export function createRepos(prisma: PrismaClient) {
       return mapBot(updated);
     },
   };
+}
+
+export async function createBotInTransaction(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  input: CreateBotInput,
+): Promise<Bot> {
+  let color = input.color;
+  if (color === undefined) {
+    const count = await tx.bot.count({
+      where: { workspaceId: actor.workspaceId, userId: actor.userId },
+    });
+    color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
+  }
+  if (input.parentBotId) {
+    const parent = await tx.bot.findFirst({
+      where: {
+        id: input.parentBotId,
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+      },
+    });
+    if (!parent) throw new IsolationError();
+  }
+  const kind = process.env.SANDBOX_PROVIDER ?? "docker";
+  const teamComputer = await ensureComputerRecord(tx, {
+    mode: "team",
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    kind,
+  });
+  const created = await tx.bot.create({
+    data: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      name: input.name,
+      title: input.title,
+      description: input.description,
+      instructions: input.instructions,
+      notifyOnFinish: input.notifyOnFinish,
+      color,
+      parentBotId: input.parentBotId ?? null,
+      computerId: teamComputer.id,
+      spawnKey: input.spawnKey,
+    },
+  });
+  const thread = await tx.thread.create({
+    data: {
+      workspaceId: actor.workspaceId,
+      botId: created.id,
+      userId: actor.userId,
+    },
+  });
+  if (input.initialMessage) {
+    await createThreadMessageInTransaction(tx, {
+      threadId: thread.id,
+      ...input.initialMessage,
+    });
+  }
+  if (input.computerMode === "dedicated") {
+    const dedicated = await ensureComputerRecord(tx, {
+      mode: "dedicated",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      botId: created.id,
+      kind,
+    });
+    await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
+  }
+  await tx.browserProfile.create({
+    data: {
+      workspaceId: actor.workspaceId,
+      botId: created.id,
+      userId: actor.userId,
+    },
+  });
+  await tx.memoryDocument.create({
+    data: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      botId: created.id,
+      scope: "bot",
+      path: "MEMORY.md",
+      content: `# ${input.name}\n\n`,
+    },
+  });
+  const bot = await tx.bot.findFirstOrThrow({
+    where: { id: created.id },
+    include: { thread: true, computer: true },
+  });
+  return mapBot(bot);
 }

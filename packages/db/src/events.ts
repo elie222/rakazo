@@ -98,6 +98,11 @@ export interface OpenBotQuestionResult {
   messageId: string;
 }
 
+export interface OpenBotQuestionCommit extends OpenBotQuestionResult {
+  threadId: string;
+  seq: number;
+}
+
 export interface AnswerRunInput {
   workspaceId: string;
   threadId: string;
@@ -119,6 +124,8 @@ export interface SendUserMessageInput {
   /** Skip task/run creation when the bot already has active work (follow-up behavior). */
   onlyIfIdle?: boolean;
   linkMessageToRun?: boolean;
+  /** Cancel only the parked first-run question as part of the same serialized send. */
+  supersedeOnboarding?: boolean;
 }
 
 export interface SendUserMessageResult {
@@ -300,6 +307,30 @@ export async function sendUserMessage(
       if (input.linkMessageToRun) {
         await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
       }
+      if (input.supersedeOnboarding) {
+        const onboarding = await tx.run.findMany({
+          where: {
+            workspaceId: input.workspaceId,
+            threadId: input.threadId,
+            botId: input.botId,
+            id: { not: run.id },
+            trigger: "onboarding",
+            status: { in: ["waiting_input", "queued"] },
+          },
+          select: { id: true, taskId: true },
+        });
+        if (onboarding.length > 0) {
+          const now = new Date();
+          await tx.run.updateMany({
+            where: { id: { in: onboarding.map(({ id }) => id) } },
+            data: { status: "cancelled", completedAt: now },
+          });
+          await tx.task.updateMany({
+            where: { id: { in: onboarding.map(({ taskId }) => taskId) } },
+            data: { status: "cancelled" },
+          });
+        }
+      }
     }
     const event = await appendEventInTransaction(tx, {
       workspaceId: input.workspaceId,
@@ -394,54 +425,61 @@ export async function openBotQuestion(
   input: OpenBotQuestionInput,
   realtime?: RealtimeFanout,
 ): Promise<OpenBotQuestionResult> {
-  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const task = await tx.task.create({
-      data: {
-        workspaceId: input.workspaceId,
-        botId: input.botId,
-        threadId: input.threadId,
-        userId: input.userId,
-        prompt: input.prompt,
-        status: "queued",
-      },
-    });
-    const run = await tx.run.create({
-      data: {
-        workspaceId: input.workspaceId,
-        botId: input.botId,
-        threadId: input.threadId,
-        taskId: task.id,
-        userId: input.userId,
-        status: "waiting_input",
-        trigger: "onboarding",
-      },
-    });
-    const message = await createThreadMessageInTransaction(tx, {
-      threadId: input.threadId,
-      role: "bot",
-      blocks: input.blocks,
-      runId: run.id,
-    });
-    await appendEventInTransaction(tx, {
-      workspaceId: input.workspaceId,
-      threadId: input.threadId,
-      botId: input.botId,
-      type: "thread.message.created",
-      runId: run.id,
-      payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-    });
-    const waiting = await appendEventInTransaction(tx, {
-      workspaceId: input.workspaceId,
-      threadId: input.threadId,
-      botId: input.botId,
-      type: "run.waiting_input",
-      runId: run.id,
-      payload: {},
-    });
-    return { runId: run.id, messageId: message.id, threadId: waiting.threadId, seq: waiting.seq };
-  });
+  const committed = await prisma.$transaction((tx: Prisma.TransactionClient) =>
+    openBotQuestionInTransaction(tx, input),
+  );
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return { runId: committed.runId, messageId: committed.messageId };
+}
+
+export async function openBotQuestionInTransaction(
+  tx: Prisma.TransactionClient,
+  input: OpenBotQuestionInput,
+): Promise<OpenBotQuestionCommit> {
+  const task = await tx.task.create({
+    data: {
+      workspaceId: input.workspaceId,
+      botId: input.botId,
+      threadId: input.threadId,
+      userId: input.userId,
+      prompt: input.prompt,
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      workspaceId: input.workspaceId,
+      botId: input.botId,
+      threadId: input.threadId,
+      taskId: task.id,
+      userId: input.userId,
+      status: "waiting_input",
+      trigger: "onboarding",
+    },
+  });
+  const message = await createThreadMessageInTransaction(tx, {
+    threadId: input.threadId,
+    role: "bot",
+    blocks: input.blocks,
+    runId: run.id,
+  });
+  await appendEventInTransaction(tx, {
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    type: "thread.message.created",
+    runId: run.id,
+    payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+  });
+  const waiting = await appendEventInTransaction(tx, {
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    type: "run.waiting_input",
+    runId: run.id,
+    payload: {},
+  });
+  return { runId: run.id, messageId: message.id, threadId: waiting.threadId, seq: waiting.seq };
 }
 
 export async function pauseRunForInput(

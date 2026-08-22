@@ -23,7 +23,13 @@ import {
   type MobileMe,
   rpc,
 } from "../lib/api";
-import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
+import {
+  botTag,
+  filterBots,
+  formatThreadTime,
+  partitionBotsByVisibility,
+  userInitials,
+} from "../lib/inbox";
 import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
@@ -35,7 +41,8 @@ const FALLBACK_COLOR = "#9B5CF6";
 type InboxItem =
   | { type: "bot"; bot: MobileBot }
   | { type: "search"; hit: SearchHit }
-  | { type: "heading"; key: string; title: string };
+  | { type: "heading"; key: string; title: string }
+  | { type: "hidden-toggle"; count: number };
 
 export default function Home() {
   const [bots, setBots] = useState<MobileBot[]>([]);
@@ -50,6 +57,7 @@ export default function Home() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -122,16 +130,26 @@ export default function Home() {
     };
   }, [query, searching]);
 
-  const visible = useMemo(() => filterBots(bots, query), [bots, query]);
+  const partitioned = useMemo(() => partitionBotsByVisibility(bots), [bots]);
+  const visible = useMemo(
+    () => filterBots(partitioned.visible, query),
+    [partitioned.visible, query],
+  );
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
       return searchHits.map((hit) => ({ type: "search", hit }));
     }
-    return groupBotsForSidebar(visible, botSections).flatMap((group) => [
+    const grouped: InboxItem[] = groupBotsForSidebar(visible, botSections).flatMap((group) => [
       ...(group.title ? [{ type: "heading" as const, key: group.key, title: group.title }] : []),
       ...group.bots.map((bot) => ({ type: "bot" as const, bot })),
     ]);
-  }, [botSections, query, searching, searchHits, visible]);
+    if (partitioned.hidden.length === 0) return grouped;
+    grouped.push({ type: "hidden-toggle", count: partitioned.hidden.length });
+    if (hiddenOpen) {
+      grouped.push(...partitioned.hidden.map((bot) => ({ type: "bot" as const, bot })));
+    }
+    return grouped;
+  }, [botSections, hiddenOpen, partitioned.hidden, query, searching, searchHits, visible]);
   const initials = userInitials(me?.name ?? "");
   const organizeBot = bots.find((bot) => bot.id === organizeBotId) ?? null;
   const insets = useSafeAreaInsets();
@@ -194,6 +212,7 @@ export default function Home() {
         keyExtractor={(item) => {
           if (item.type === "heading") return `heading-${item.key}`;
           if (item.type === "bot") return item.bot.id;
+          if (item.type === "hidden-toggle") return "hidden-toggle";
           const hit = item.hit;
           return `${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
         }}
@@ -235,6 +254,12 @@ export default function Home() {
             />
           ) : item.type === "heading" ? (
             <Text style={styles.sectionHeading}>{item.title}</Text>
+          ) : item.type === "hidden-toggle" ? (
+            <HiddenToggle
+              count={item.count}
+              open={hiddenOpen}
+              onPress={() => setHiddenOpen((open) => !open)}
+            />
           ) : (
             <BotRow bot={item.bot} onLongPress={() => setOrganizeBotId(item.bot.id)} />
           )
@@ -256,6 +281,36 @@ export default function Home() {
         />
       ) : null}
     </View>
+  );
+}
+
+function HiddenToggle({
+  count,
+  open,
+  onPress,
+}: {
+  count: number;
+  open: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Hidden bots, ${count}`}
+      accessibilityState={{ expanded: open }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.hiddenToggle, pressed && styles.rowPressed]}
+    >
+      <NativeSymbol ios="eye.slash" android="eye-off-outline" size={16} />
+      <Text style={styles.hiddenToggleLabel}>Hidden</Text>
+      <Text style={styles.hiddenToggleCount}>{count}</Text>
+      <NativeSymbol
+        ios={open ? "chevron.up" : "chevron.down"}
+        android={open ? "chevron-up" : "chevron-down"}
+        size={15}
+        color={native.secondaryLabel}
+      />
+    </Pressable>
   );
 }
 
@@ -316,7 +371,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
   return (
     <Pressable
       accessibilityLabel={label}
-      accessibilityHint="Long press to pin or move to a section"
+      accessibilityHint="Long press to pin, hide, or move to a section"
       onPress={() =>
         router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
       }
@@ -420,6 +475,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 6,
+  },
+  hiddenToggle: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    marginTop: 10,
+  },
+  hiddenToggleLabel: {
+    flex: 1,
+    color: native.secondaryLabel,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  hiddenToggleCount: {
+    color: native.secondaryLabel,
+    fontSize: 14,
   },
   empty: {
     color: native.secondaryLabel,

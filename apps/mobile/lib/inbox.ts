@@ -10,6 +10,13 @@ export function filterBots(bots: MobileBot[], query: string) {
   );
 }
 
+export function partitionBotsByVisibility(bots: MobileBot[]) {
+  return {
+    visible: bots.filter((bot) => !bot.hidden),
+    hidden: bots.filter((bot) => bot.hidden),
+  };
+}
+
 export function botTag(title: string, name: string, maxLength = 22) {
   const tag = title.trim();
   if (!tag || tag.toLowerCase() === name.trim().toLowerCase()) return "";

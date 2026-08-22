@@ -147,6 +147,7 @@ export type MobileBot = Pick<
   | "title"
   | "color"
   | "pinned"
+  | "hidden"
   | "sectionId"
   | "archivedAt"
   | "unread"
@@ -170,6 +171,7 @@ export type MobileMessage = {
   id: string;
   threadId?: string;
   seq?: number;
+  runId?: string;
   role: "user" | "bot" | "system";
   blocks: Array<{
     kind: string;
@@ -181,6 +183,8 @@ export type MobileMessage = {
     progress?: string;
     result?: string;
     answer?: string;
+    detail?: string;
+    actions?: Array<{ id: string; label: string }>;
     botId?: string;
     title?: string;
     agentId?: string;

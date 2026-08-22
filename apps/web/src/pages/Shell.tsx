@@ -4,7 +4,6 @@ import type {
   BotSection,
   ComputerMode,
   ComputerStatus,
-  Me,
   ProductEvent,
   Routine,
   SearchHit,
@@ -164,7 +163,6 @@ export function ShellPage() {
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
-  const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -369,7 +367,6 @@ export function ShellPage() {
     void takeInitialBootstrap(botId)
       .then((bootstrap) => {
         if (cancelled) return;
-        setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
@@ -394,7 +391,6 @@ export function ShellPage() {
       })
       .catch(() => {
         if (cancelled) return;
-        setBootstrapMe(null);
         void refreshBots(true);
       });
     let refreshTimer: number | undefined;
@@ -1151,6 +1147,7 @@ export function ShellPage() {
                           void rpc.bots
                             .update({ botId: bot.id, hidden: false })
                             .then(() => refreshBots())
+                            .catch(() => setToast(`Could not show ${bot.name} in the sidebar`))
                         }
                         className="text-[12.5px] text-[#C9C9CE] hover:text-white"
                       >
@@ -1694,10 +1691,19 @@ export function ShellPage() {
             onToggleHidden={() => {
               const hidden = !contextBot.hidden;
               setBotMenu(null);
-              void rpc.bots.update({ botId: contextBot.id, hidden }).then(async () => {
-                await refreshBots();
-                setToast(hidden ? `${contextBot.name} hidden from the sidebar` : null);
-              });
+              void rpc.bots
+                .update({ botId: contextBot.id, hidden })
+                .then(async () => {
+                  await refreshBots();
+                  setToast(hidden ? `${contextBot.name} hidden from the sidebar` : null);
+                })
+                .catch(() =>
+                  setToast(
+                    hidden
+                      ? `Could not hide ${contextBot.name}`
+                      : `Could not show ${contextBot.name} in the sidebar`,
+                  ),
+                );
             }}
             onArchive={() => {
               setBotMenu(null);
@@ -2504,6 +2510,28 @@ function AskCard({
             </button>
           </div>
         </form>
+      ) : block.actions?.length ? (
+        <div className="mt-3.5 flex flex-wrap gap-2">
+          {block.actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              disabled={submitting}
+              onClick={() => void submitAnswer(action.label)}
+              className="rounded-[11px] border border-[#303035] bg-[#1A1A1D] px-[14px] py-2 text-left text-[14px] text-[#ECECEE] hover:border-[#66666D] disabled:opacity-50"
+            >
+              {action.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => setEditing(true)}
+            className="rounded-[11px] border border-[#26262A] px-[14px] py-2 text-[14px] text-[#C9C9CE] disabled:opacity-50"
+          >
+            Something else
+          </button>
+        </div>
       ) : (
         <div className="mt-3.5 flex gap-2">
           <button

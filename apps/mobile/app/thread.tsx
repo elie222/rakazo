@@ -54,6 +54,7 @@ export default function Thread() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [answeringMessageId, setAnsweringMessageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
@@ -339,6 +340,25 @@ export default function Thread() {
     }
   }
 
+  async function answerQuestion(message: MobileMessage, answer: string) {
+    if (!botId || !message.runId || answeringMessageId) return;
+    setAnsweringMessageId(message.id);
+    setError(null);
+    try {
+      await rpc("threads/answer", {
+        botId,
+        runId: message.runId,
+        messageId: message.id,
+        answer,
+      });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not answer question");
+    } finally {
+      setAnsweringMessageId(null);
+    }
+  }
+
   function showAttachMenu() {
     Alert.alert("Attach", undefined, [
       { text: "Photo library", onPress: () => void addAttachments(pickFromLibrary) },
@@ -426,6 +446,8 @@ export default function Thread() {
               onOpenBot={(id, botName) =>
                 router.push({ pathname: "/thread", params: { botId: id, name: botName } })
               }
+              answering={answeringMessageId === message.id}
+              onAnswer={message.runId ? (answer) => answerQuestion(message, answer) : undefined}
               onSpeak={
                 message.role === "bot"
                   ? () =>
@@ -564,11 +586,15 @@ function MessageBubble({
   botId,
   message,
   onOpenBot,
+  answering,
+  onAnswer,
   onSpeak,
 }: {
   botId: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
+  answering: boolean;
+  onAnswer?: (answer: string) => Promise<void>;
   onSpeak?: () => void;
 }) {
   const special = message.blocks.find(
@@ -650,6 +676,10 @@ function MessageBubble({
         </Text>
       </Pressable>
     );
+  }
+  const ask = message.blocks.find((block) => block.kind === "ask");
+  if (ask) {
+    return <MobileAskCard block={ask} answering={answering} onAnswer={onAnswer} />;
   }
   const attachments = message.blocks.filter(
     (block) => block.kind === "image" || block.kind === "file",
@@ -764,6 +794,158 @@ function MessageBubble({
             </Pressable>
           ) : null}
         </>
+      )}
+    </View>
+  );
+}
+
+function MobileAskCard({
+  block,
+  answering,
+  onAnswer,
+}: {
+  block: MobileMessage["blocks"][number];
+  answering: boolean;
+  onAnswer?: (answer: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const canAnswer = block.status !== "answered" && Boolean(onAnswer);
+
+  return (
+    <View
+      style={{
+        width: "90%",
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: "#242428",
+        backgroundColor: "#141417",
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        gap: 10,
+      }}
+    >
+      <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 22 }}>{block.text}</Text>
+      {block.detail ? <Text style={{ color: "#85858A", fontSize: 13 }}>{block.detail}</Text> : null}
+      {block.status === "answered" ? (
+        <Text style={{ color: "#4ECB71", fontSize: 13.5 }}>
+          {block.answer ? `Answered: ${block.answer}` : "Answered"}
+        </Text>
+      ) : !canAnswer ? (
+        <Text style={{ color: "#85858A", fontSize: 13.5 }}>No longer active</Text>
+      ) : editing ? (
+        <View style={{ gap: 8 }}>
+          <TextInput
+            autoFocus
+            value={answer}
+            onChangeText={setAnswer}
+            placeholder="Type your answer"
+            placeholderTextColor="#6C6C70"
+            style={{
+              minHeight: 42,
+              borderRadius: 11,
+              borderWidth: 1,
+              borderColor: "#303035",
+              backgroundColor: "#0E0E10",
+              color: "#ECECEE",
+              paddingHorizontal: 12,
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable
+              disabled={!answer.trim() || answering}
+              onPress={() => void onAnswer?.(answer.trim())}
+              style={{
+                borderRadius: 11,
+                backgroundColor: "#F1F1EF",
+                paddingHorizontal: 15,
+                paddingVertical: 10,
+                opacity: !answer.trim() || answering ? 0.5 : 1,
+              }}
+            >
+              <Text style={{ color: "#17171A", fontSize: 14.5 }}>Send answer</Text>
+            </Pressable>
+            <Pressable
+              disabled={answering}
+              onPress={() => {
+                setAnswer("");
+                setEditing(false);
+              }}
+              style={{
+                borderRadius: 11,
+                borderWidth: 1,
+                borderColor: "#26262A",
+                paddingHorizontal: 15,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#C9C9CE", fontSize: 14.5 }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : block.actions?.length ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {block.actions.map((action) => (
+            <Pressable
+              key={action.id}
+              disabled={answering}
+              onPress={() => void onAnswer?.(action.label)}
+              style={{
+                borderRadius: 11,
+                borderWidth: 1,
+                borderColor: "#303035",
+                backgroundColor: "#1A1A1D",
+                paddingHorizontal: 13,
+                paddingVertical: 9,
+                opacity: answering ? 0.5 : 1,
+              }}
+            >
+              <Text style={{ color: "#ECECEE", fontSize: 14 }}>{action.label}</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            disabled={answering}
+            onPress={() => setEditing(true)}
+            style={{
+              borderRadius: 11,
+              borderWidth: 1,
+              borderColor: "#26262A",
+              paddingHorizontal: 13,
+              paddingVertical: 9,
+            }}
+          >
+            <Text style={{ color: "#C9C9CE", fontSize: 14 }}>Something else</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Pressable
+            disabled={answering}
+            onPress={() => void onAnswer?.("approved")}
+            style={{
+              borderRadius: 11,
+              backgroundColor: "#F1F1EF",
+              paddingHorizontal: 15,
+              paddingVertical: 10,
+              opacity: answering ? 0.5 : 1,
+            }}
+          >
+            <Text style={{ color: "#17171A", fontSize: 14.5 }}>Send it</Text>
+          </Pressable>
+          <Pressable
+            disabled={answering}
+            onPress={() => setEditing(true)}
+            style={{
+              borderRadius: 11,
+              borderWidth: 1,
+              borderColor: "#26262A",
+              paddingHorizontal: 15,
+              paddingVertical: 10,
+            }}
+          >
+            <Text style={{ color: "#C9C9CE", fontSize: 14.5 }}>Edit first</Text>
+          </Pressable>
+        </View>
       )}
     </View>
   );

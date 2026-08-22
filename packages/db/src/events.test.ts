@@ -458,6 +458,72 @@ describe("sendUserMessage", () => {
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(tx.message.update).not.toHaveBeenCalled();
   });
+
+  it("supersedes only onboarding work and cancels its task in the serialized send", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      task: {
+        create: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      run: {
+        create: vi.fn().mockResolvedValue({ id: "run-1" }),
+        findMany: vi.fn().mockResolvedValue([{ id: "onboarding-1", taskId: "onboarding-task" }]),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+          runId: "run-1",
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await sendUserMessage(prisma, {
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      blocks: [{ kind: "text", text: "start here instead" }],
+      prompt: "start here instead",
+      trigger: "user",
+      supersedeOnboarding: true,
+    });
+
+    expect(tx.run.findMany).toHaveBeenCalledWith({
+      where: {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        id: { not: "run-1" },
+        trigger: "onboarding",
+        status: { in: ["waiting_input", "queued"] },
+      },
+      select: { id: true, taskId: true },
+    });
+    expect(tx.run.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["onboarding-1"] } },
+      data: { status: "cancelled", completedAt: expect.any(Date) },
+    });
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["onboarding-task"] } },
+      data: { status: "cancelled" },
+    });
+  });
 });
 
 describe("clearThread", () => {

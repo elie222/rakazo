@@ -1467,6 +1467,29 @@ describeJourneys("required product journeys", () => {
     ]);
     expect(snap.run?.status).toBe("waiting_input");
 
+    // Direct text is another valid way to answer the opening question. Concurrent sends must
+    // supersede only onboarding; neither newly queued user run may cancel the other.
+    const sent = await Promise.all(
+      ["Take the first task", "Also keep the second task"].map((text, index) =>
+        rpc<{ runId: string }>(app, cookie, "threads/send", {
+          botId: first.id,
+          text,
+          clientNonce: `onboarding-concurrent-${stamp}-${index}`,
+        }),
+      ),
+    );
+    const userRuns = await prisma.run.findMany({
+      where: { id: { in: sent.map(({ runId }) => runId) } },
+      select: { id: true, status: true },
+    });
+    expect(userRuns).toHaveLength(2);
+    expect(userRuns.every(({ status }) => status !== "cancelled")).toBe(true);
+    const onboarding = await prisma.run.findFirstOrThrow({
+      where: { botId: first.id, trigger: "onboarding" },
+      select: { status: true, task: { select: { status: true } } },
+    });
+    expect(onboarding).toEqual({ status: "cancelled", task: { status: "cancelled" } });
+
     // The greeting counts the crew that already exists, so the second bot is told about the first.
     const second = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Second",
@@ -1498,6 +1521,11 @@ describeJourneys("required product journeys", () => {
     expect(
       (await rpc<Bot[]>(app, cookie, "bots/list")).find((row) => row.id === bot.id)?.hidden,
     ).toBe(true);
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).hidden).toBe(true);
+
+    const other = await signup(app, `hidden-other-j-${stamp}@rakazo.test`, "Other User");
+    const crossUser = await raw(app, other, "bots/update", { botId: bot.id, hidden: false });
+    expect(crossUser.status).toBeGreaterThanOrEqual(400);
     expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).hidden).toBe(true);
 
     expect(

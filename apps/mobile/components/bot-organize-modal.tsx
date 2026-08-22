@@ -6,6 +6,7 @@ import { NativeSymbol } from "./native-symbol";
 
 export type BotOrganizationUpdate = {
   pinned?: boolean;
+  hidden?: boolean;
   sectionId?: string | null;
 };
 
@@ -63,6 +64,20 @@ export function BotOrganizeModal({
               size={18}
             />
             <Text style={styles.actionLabel}>{bot.pinned ? "Unpin" : "Pin"}</Text>
+          </Pressable>
+          <Pressable
+            disabled={saving}
+            onPress={() => void save(() => onUpdate({ hidden: !bot.hidden }))}
+            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+          >
+            <NativeSymbol
+              ios={bot.hidden ? "eye" : "eye.slash"}
+              android={bot.hidden ? "eye-outline" : "eye-off-outline"}
+              size={18}
+            />
+            <Text style={styles.actionLabel}>
+              {bot.hidden ? "Show in inbox" : "Hide from inbox"}
+            </Text>
           </Pressable>
           <Text style={styles.sectionLabel}>Move to</Text>
           <ScrollView style={styles.sectionOptions} keyboardShouldPersistTaps="handled">

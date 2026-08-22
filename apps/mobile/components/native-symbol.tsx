@@ -1,6 +1,7 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { SymbolView } from "expo-symbols";
 import type { ComponentProps } from "react";
+import type { ColorValue } from "react-native";
 
 export function NativeSymbol({
   ios,
@@ -11,7 +12,7 @@ export function NativeSymbol({
   ios: string;
   android: ComponentProps<typeof Ionicons>["name"];
   size?: number;
-  color?: string;
+  color?: ColorValue;
 }) {
   return (
     <SymbolView

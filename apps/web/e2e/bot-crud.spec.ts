@@ -23,6 +23,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
 
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
+  await expect(page.getByText("What should I take on?", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "A specific recurring job" })).toBeVisible();
+  await page.getByRole("button", { name: "A specific recurring job" }).click();
+  await expect(page.getByText("Answered: A specific recurring job", { exact: true })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));

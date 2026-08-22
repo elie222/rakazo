@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { botTag, filterBots, formatThreadTime, userInitials } from "./inbox.js";
+import {
+  botTag,
+  filterBots,
+  formatThreadTime,
+  partitionBotsByVisibility,
+  userInitials,
+} from "./inbox.js";
 
 const now = new Date(2026, 7, 13, 21, 53, 0);
 
@@ -35,6 +41,18 @@ describe("filterBots", () => {
     expect(filterBots(bots, "seo").map((item) => item.id)).toEqual(["seo"]);
     expect(filterBots(bots, "zero").map((item) => item.id)).toEqual(["inbox"]);
     expect(filterBots(bots, "PIXEL").map((item) => item.id)).toEqual(["seo"]);
+  });
+});
+
+describe("partitionBotsByVisibility", () => {
+  it("keeps hidden bots out of the main inbox without making them unreachable", () => {
+    const visible = bot("visible", "Visible", "", "");
+    const hidden = { ...bot("hidden", "Hidden", "", ""), hidden: true };
+
+    expect(partitionBotsByVisibility([visible, hidden])).toEqual({
+      visible: [visible],
+      hidden: [hidden],
+    });
   });
 });
 
@@ -75,6 +93,7 @@ function bot(id: string, name: string, title: string, preview: string) {
     preview,
     color: "#9B5CF6",
     pinned: false,
+    hidden: false,
     sectionId: null,
     archivedAt: null,
     unread: false,
