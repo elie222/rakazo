@@ -75,6 +75,7 @@ function fakePrisma(initial: Partial<Row> = {}) {
 function recorder(overrides: Record<string, CommandResult> = {}) {
   const calls: Array<{ command: string; args: string[] }> = [];
   let currentHead = HEAD;
+  let currentRemote = "https://github.com/elie222/rakazo.git";
   const runner: CommandRunner = async (command, args) => {
     calls.push({ command, args });
     const key = [command, ...args].join(" ");
@@ -82,7 +83,11 @@ function recorder(overrides: Record<string, CommandResult> = {}) {
     if (override) return override[1];
     if (key === "git rev-parse HEAD") return ok(currentHead);
     if (key.startsWith("git rev-parse --abbrev-ref")) return ok("main");
-    if (key.startsWith("git remote get-url")) return ok("https://github.com/elie222/rakazo.git");
+    if (key.startsWith("git remote get-url")) return ok(currentRemote);
+    if (key.startsWith("git remote set-url")) {
+      currentRemote = args.at(-1) ?? currentRemote;
+      return ok("");
+    }
     if (key.startsWith("git rev-parse --verify FETCH_HEAD")) return ok(TARGET);
     if (key.startsWith("git merge --ff-only")) {
       currentHead = args.at(-1) ?? currentHead;
@@ -390,6 +395,41 @@ describe("apply", () => {
     const { runner, calls } = recorder({ "git rev-parse --verify FETCH_HEAD": ok(HEAD) });
     const record = await service({ runner }).apply();
     expect(record).toMatchObject({ ok: true, restart: "not-required", steps: [] });
+    expect(calls.some((call) => call.command === "pnpm")).toBe(false);
+  });
+
+  it("repoints origin when a newly selected repository already has the running commit", async () => {
+    const selected = "https://github.com/me/rakazo.git";
+    const { prisma } = fakePrisma({ updateRepoUrl: selected });
+    const { runner, calls } = recorder({ "git rev-parse --verify FETCH_HEAD": ok(HEAD) });
+    const record = await service({ prisma, runner }).apply();
+    expect(record).toMatchObject({
+      ok: true,
+      restart: "not-required",
+      steps: [{ id: "remote", ok: true }],
+    });
+    expect(calls.find((call) => call.args[1] === "set-url")?.args).toEqual([
+      "remote",
+      "set-url",
+      "origin",
+      selected,
+    ]);
+    expect(calls.some((call) => call.command === "pnpm")).toBe(false);
+  });
+
+  it("reports a failed equal-commit repoint without running code or database changes", async () => {
+    const { prisma } = fakePrisma({ updateRepoUrl: "https://github.com/me/rakazo.git" });
+    const { runner, calls } = recorder({
+      "git rev-parse --verify FETCH_HEAD": ok(HEAD),
+      "git remote set-url": { ok: false, exitCode: 2, output: "fake remote failure" },
+    });
+    const record = await service({ prisma, runner }).apply();
+    expect(record).toMatchObject({
+      ok: false,
+      restart: "not-required",
+      error: "Point origin at the selected repository failed.",
+    });
+    expect(record.restartAdvice).toContain("No code or database changes were made");
     expect(calls.some((call) => call.command === "pnpm")).toBe(false);
   });
 

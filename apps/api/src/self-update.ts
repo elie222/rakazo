@@ -593,12 +593,20 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
       throw new SelfUpdateRefused(preflight.reason ?? "This deployment cannot be updated.");
     }
 
+    const checkout = await readCheckout();
+    if (checkout.reason || checkout.dirty || checkout.commit !== preflight.commit) {
+      throw new SelfUpdateRefused(
+        "The checkout changed during preflight. No update commands were run; check again.",
+      );
+    }
+    const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
+    const repointRemote = currentIdentity !== repoIdentity(source.repoUrl);
     const startedAt = new Date().toISOString();
     if (preflight.status === "up-to-date") {
       const record: ServerUpdateRun = {
         startedAt,
-        finishedAt: new Date().toISOString(),
-        ok: true,
+        finishedAt: repointRemote ? null : new Date().toISOString(),
+        ok: !repointRemote,
         fromCommit: preflight.commit,
         toCommit: preflight.commit,
         fromTag: null,
@@ -607,31 +615,46 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
         repoUrl: source.repoUrl,
         branch: source.branch,
         restart: "not-required",
-        restartAdvice: "Already on the latest commit; nothing was changed.",
+        restartAdvice: "Already on the latest commit; no code or database changes were required.",
         error: null,
         steps: [],
       };
       await saveLastRun(record);
+      if (repointRemote) {
+        const timeoutMs = STEP_TIMEOUT_MS.remote ?? DEFAULT_TIMEOUT_MS;
+        await refreshLease(leaseId, timeoutMs);
+        const result = await run(
+          "git",
+          ["remote", "set-url", DEFAULT_UPDATE_REMOTE, source.repoUrl],
+          { cwd: options.repoRoot, timeoutMs },
+        );
+        const label = "Point origin at the selected repository";
+        record.steps.push({
+          id: "remote",
+          label,
+          ok: result.ok,
+          exitCode: result.exitCode,
+          output: result.output,
+        });
+        record.ok = result.ok;
+        record.error = result.ok ? null : `${label} failed.`;
+        record.restartAdvice = result.ok
+          ? "Already on the latest commit; origin now tracks the selected repository. No restart was required."
+          : `${record.error} No code or database changes were made; nothing was restarted.`;
+        record.finishedAt = new Date().toISOString();
+        await saveLastRun(record);
+      }
       return record;
     }
-
-    const checkout = await readCheckout();
-    if (
-      checkout.reason ||
-      checkout.dirty ||
-      checkout.commit !== preflight.commit ||
-      preflight.targetCommit === null
-    ) {
-      throw new SelfUpdateRefused(
-        "The checkout changed during preflight. No update commands were run; check again.",
-      );
+    if (preflight.targetCommit === null) {
+      throw new SelfUpdateRefused("The selected repository did not return an update commit.");
     }
-    const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
+
     const steps = updateSteps({
       remoteUrl: source.repoUrl,
       branch: source.branch,
       targetCommit: preflight.targetCommit,
-      repointRemote: currentIdentity !== repoIdentity(source.repoUrl),
+      repointRemote,
     });
     const record: ServerUpdateRun = {
       startedAt,
