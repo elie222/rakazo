@@ -194,6 +194,12 @@ body,
   outline: none;
 }
 
+.rk-thought-summary:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid #8e8ea0;
+  outline-offset: 4px;
+}
+
 .rk-thought-caret {
   display: block;
   transform-origin: center;

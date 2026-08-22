@@ -4,6 +4,8 @@ import {
   attachmentsForBot,
   createPendingUserMessageId,
   formatChatTimestamp,
+  matchingAskOption,
+  parseAskOptions,
   pendingUserMessageTextKey,
   shouldShowChatTimestamp,
   visibleReasoningSteps,
@@ -15,6 +17,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
   blockText,
+  latestMobileAnswerableAskMessageId,
   type MobileMessage,
   type MobileMessagePage,
   type MobileSnapshot,
@@ -65,6 +68,7 @@ export default function Thread() {
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
+  const answerableAskMessageId = latestMobileAnswerableAskMessageId(snap);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -347,6 +351,18 @@ export default function Thread() {
     }
   }
 
+  async function answerMessage(message: MobileMessage, answer: string) {
+    const targetBotId = botId;
+    if (!targetBotId || !message.runId) throw new Error("This decision is no longer active");
+    await rpc("threads/answer", {
+      botId: targetBotId,
+      runId: message.runId,
+      messageId: message.id,
+      answer,
+    });
+    if (activeBotId.current === targetBotId) await refresh();
+  }
+
   function showAttachMenu() {
     Alert.alert("Attach", undefined, [
       { text: "Photo library", onPress: () => void addAttachments(pickFromLibrary) },
@@ -446,6 +462,8 @@ export default function Thread() {
                 <MessageBubble
                   botId={botId ?? ""}
                   message={message}
+                  canAnswer={message.id === answerableAskMessageId}
+                  onAnswer={(answer) => answerMessage(message, answer)}
                   onOpenBot={(id, botName) =>
                     router.push({ pathname: "/thread", params: { botId: id, name: botName } })
                   }
@@ -591,30 +609,34 @@ function ReasoningCard({
 }: {
   steps: Array<{
     id?: string;
-    kind?: "status" | "think" | "tool";
+    kind?: string;
     title?: string;
     detail?: string;
-    status?: "running" | "done";
+    status?: string;
   }>;
 }) {
   const running = steps.some((step) => step.status === "running");
   const [open, setOpen] = useState(false);
   const rotation = useRef(new Animated.Value(0)).current;
-  const visible = visibleReasoningSteps(
-    steps.flatMap((step, index) => {
-      if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") return [];
-      if (step.status !== "running" && step.status !== "done") return [];
-      return [
-        {
-          id: step.id || String(index),
-          kind: step.kind,
-          title: step.title ?? "",
-          detail: step.detail,
-          status: step.status,
-        },
-      ];
-    }),
-  );
+  const normalized: Array<{
+    id: string;
+    kind: "status" | "think" | "tool";
+    title: string;
+    detail?: string;
+    status: "running" | "done";
+  }> = [];
+  for (const [index, step] of steps.entries()) {
+    if (step.kind !== "status" && step.kind !== "think" && step.kind !== "tool") continue;
+    if (step.status !== "running" && step.status !== "done") continue;
+    normalized.push({
+      id: step.id || String(index),
+      kind: step.kind,
+      title: step.title ?? "",
+      detail: step.detail,
+      status: step.status,
+    });
+  }
+  const visible = visibleReasoningSteps(normalized);
   useEffect(() => {
     Animated.timing(rotation, {
       toValue: open ? 1 : 0,
@@ -625,6 +647,9 @@ function ReasoningCard({
   return (
     <View>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={running ? "Thinking details" : "Thought details"}
+        accessibilityState={{ expanded: open }}
         onPress={() => setOpen((current) => !current)}
         style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 2 }}
       >
@@ -685,17 +710,323 @@ function ReasoningCard({
   );
 }
 
+type MobileDecisionBlock = {
+  text: string;
+  detail?: string;
+  status?: string;
+  answer?: string;
+  actions?: Array<{ id: string; label: string }>;
+};
+
+function MobileDecisionCard({
+  block,
+  canAnswer,
+  onAnswer,
+}: {
+  block: MobileDecisionBlock;
+  canAnswer: boolean;
+  onAnswer: (answer: string) => Promise<void>;
+}) {
+  const parsed = parseAskOptions(block);
+  const picked = matchingAskOption(parsed.options, block.answer);
+  const [editing, setEditing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const pending = block.status !== "answered" && canAnswer;
+
+  async function submit(value: string) {
+    const text = value.trim();
+    if (!text || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onAnswer(text);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Could not send your answer");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  if (block.status === "answered") {
+    return (
+      <View
+        style={{
+          width: "90%",
+          borderRadius: 20,
+          backgroundColor: "#151517",
+          paddingHorizontal: 18,
+          paddingVertical: 16,
+        }}
+      >
+        <Text style={{ color: "#C9C9CE", fontSize: 16, fontWeight: "600" }}>{parsed.question}</Text>
+        <View
+          style={{
+            marginTop: 12,
+            borderRadius: 13,
+            borderWidth: picked ? 1 : 0,
+            borderColor: "#232326",
+            paddingHorizontal: picked ? 14 : 0,
+            paddingVertical: picked ? 12 : 0,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          {picked ? (
+            <>
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 6,
+                  backgroundColor: "#232327",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#9A9AA0", fontSize: 12.5 }}>{picked.letter}</Text>
+              </View>
+              <Text style={{ flex: 1, color: "#ECECEE", fontSize: 15.5 }}>{picked.label}</Text>
+              <Text style={{ color: "#4ECB71", fontSize: 16 }}>✓</Text>
+            </>
+          ) : (
+            <Text style={{ color: "#4ECB71", fontSize: 13.5, fontWeight: "600" }}>
+              {block.answer ? `Answered: ${block.answer}` : "Answered"}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  if (dismissed && pending) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Expand decision: ${parsed.question}`}
+        onPress={() => setDismissed(false)}
+      >
+        <Text style={{ color: "#8E8EA0", fontSize: 14.5 }}>{parsed.question}</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        width: "90%",
+        borderRadius: 20,
+        backgroundColor: "#1A1A1D",
+        paddingHorizontal: 18,
+        paddingVertical: 16,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: "#F1F1F2", fontSize: 17, fontWeight: "600", lineHeight: 23 }}>
+            {parsed.question}
+          </Text>
+          {block.detail && !parsed.options.length ? (
+            <Text style={{ color: "#8E8EA0", fontSize: 14.5, marginTop: 4 }}>{block.detail}</Text>
+          ) : null}
+        </View>
+        {pending ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Collapse decision"
+            hitSlop={8}
+            onPress={() => setDismissed(true)}
+          >
+            <NativeSymbol ios="xmark" android="close" size={14} color="#6C6C70" />
+          </Pressable>
+        ) : null}
+      </View>
+      {submitError ? (
+        <Text accessibilityRole="alert" style={{ color: "#F1A8A8", fontSize: 13.5, marginTop: 10 }}>
+          {submitError} Try again.
+        </Text>
+      ) : null}
+      {parsed.options.length > 0 && pending ? (
+        <View style={{ marginTop: 14, borderWidth: 1, borderColor: "#232326", borderRadius: 13 }}>
+          {parsed.options.map((option, index) => (
+            <Pressable
+              key={`${option.id}:${index}`}
+              accessibilityRole="button"
+              accessibilityLabel={option.label}
+              accessibilityState={{ disabled: submitting }}
+              disabled={submitting}
+              onPress={() => void submit(option.label)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 13,
+                borderBottomWidth: index === parsed.options.length - 1 ? 0 : 1,
+                borderBottomColor: "#202023",
+                opacity: submitting ? 0.5 : 1,
+              }}
+            >
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 6,
+                  backgroundColor: "#232327",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#9A9AA0", fontSize: 12.5 }}>{option.letter}</Text>
+              </View>
+              <Text style={{ color: "#ECECEE", fontSize: 15.5 }}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {!pending ? (
+        <Text style={{ color: "#85858A", fontSize: 13.5, fontWeight: "600", marginTop: 12 }}>
+          No longer active
+        </Text>
+      ) : editing ? (
+        <View style={{ marginTop: 14, gap: 8 }}>
+          <TextInput
+            accessibilityLabel="Answer"
+            value={answer}
+            onChangeText={setAnswer}
+            placeholder="Type your own answer"
+            placeholderTextColor="#6C6C70"
+            editable={!submitting}
+            returnKeyType="send"
+            onSubmitEditing={() => void submit(answer)}
+            style={{
+              borderRadius: 11,
+              borderWidth: 1,
+              borderColor: "#303035",
+              backgroundColor: "#0E0E10",
+              color: "#ECECEE",
+              paddingHorizontal: 13,
+              paddingVertical: 11,
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <DecisionButton
+              label={submitting ? "Sending…" : "Send answer"}
+              primary
+              disabled={!answer.trim() || submitting}
+              onPress={() => void submit(answer)}
+            />
+            <DecisionButton
+              label="Cancel"
+              disabled={submitting}
+              onPress={() => {
+                setAnswer("");
+                setEditing(false);
+              }}
+            />
+          </View>
+        </View>
+      ) : parsed.options.length ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setEditing(true)}
+          style={{ marginTop: 12 }}
+        >
+          <Text style={{ color: "#8E8EA0", fontSize: 13.5 }}>Type your own answer</Text>
+        </Pressable>
+      ) : (
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
+          <DecisionButton
+            label={submitting ? "Sending…" : "Send it"}
+            primary
+            disabled={submitting}
+            onPress={() => void submit("approved")}
+          />
+          <DecisionButton
+            label="Edit first"
+            disabled={submitting}
+            onPress={() => setEditing(true)}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function DecisionButton({
+  label,
+  primary = false,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  primary?: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        borderRadius: 11,
+        borderWidth: primary ? 0 : 1,
+        borderColor: "#26262A",
+        backgroundColor: primary ? "#F1F1EF" : "transparent",
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Text style={{ color: primary ? "#17171A" : "#C9C9CE", fontSize: 14.5, fontWeight: "600" }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function MessageBubble({
   botId,
   message,
   onOpenBot,
+  canAnswer,
+  onAnswer,
   onSpeak,
 }: {
   botId: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
+  canAnswer: boolean;
+  onAnswer: (answer: string) => Promise<void>;
   onSpeak?: () => void;
 }) {
+  const decision = message.blocks.find((block) => block.kind === "ask" || block.kind === "choice");
+  if (decision) {
+    const block: MobileDecisionBlock =
+      decision.kind === "choice"
+        ? {
+            text: decision.question ?? "Need a decision",
+            detail: decision.subtitle,
+            actions: decision.options?.map((option) => ({ id: option.id, label: option.label })),
+          }
+        : {
+            text: decision.text ?? "Need a decision",
+            detail: decision.detail,
+            status: decision.status,
+            answer: decision.answer,
+            actions: decision.actions,
+          };
+    return <MobileDecisionCard block={block} canAnswer={canAnswer} onAnswer={onAnswer} />;
+  }
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );
@@ -942,6 +1273,7 @@ function MobileBotChannel({
   peerBotId: string;
   onClose: () => void;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
   const [error, setError] = useState<string | null>(null);
   const [channel, setChannel] = useState<{
     left: { id: string; name: string; color: string };
@@ -967,6 +1299,8 @@ function MobileBotChannel({
   }, [botId, peerBotId]);
   return (
     <View
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
       style={{
         position: "absolute",
         top: 0,
@@ -1001,11 +1335,20 @@ function MobileBotChannel({
         ) : (
           <Text style={{ color: "#85858A", fontSize: 16 }}>Opening chat…</Text>
         )}
-        <Pressable onPress={onClose} hitSlop={8}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close chat"
+          onPress={onClose}
+          hitSlop={8}
+        >
           <NativeSymbol ios="xmark" android="close" size={18} color="#C9C9CE" />
         </Pressable>
       </View>
-      <ScrollView style={{ flex: 1, marginTop: 16 }}>
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1, marginTop: 16 }}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+      >
         {error ? <Text style={{ color: "#85858A" }}>{error}</Text> : null}
         {channel && channel.messages.length === 0 && !error ? (
           <Text style={{ color: "#6C6C70", textAlign: "center", marginTop: 48 }}>
@@ -1063,6 +1406,8 @@ function MobileBotChannel({
           <Text style={{ color: "#85858A", fontSize: 13.5 }}>This chat is view-only</Text>
         </View>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close chat"
           onPress={onClose}
           style={{
             backgroundColor: "#F1F1EF",

@@ -22,6 +22,30 @@ describe("parseAskOptions", () => {
     });
   });
 
+  it("does not mistake an explicit A-or-B question for an option line", () => {
+    expect(
+      parseAskOptions({
+        text: "A or B?",
+        actions: [
+          { id: "a", label: "Choose A" },
+          { id: "b", label: "Choose B" },
+        ],
+      }).question,
+    ).toBe("A or B?");
+  });
+
+  it("removes duplicated option lines when explicit actions are provided", () => {
+    expect(
+      parseAskOptions({
+        text: "Choose a region\nA. US\nB. EU",
+        actions: [
+          { id: "us", label: "US" },
+          { id: "eu", label: "EU" },
+        ],
+      }).question,
+    ).toBe("Choose a region");
+  });
+
   it("parses lettered options out of the ask text", () => {
     const parsed = parseAskOptions({
       text: "Let him pay at pickup?\nA Yes, pay at pickup\nB No, pay first\nC I'll handle him.",
@@ -45,20 +69,37 @@ describe("parseAskOptions", () => {
       options: [],
     });
   });
+
+  it("does not repeat a question duplicated in the detail", () => {
+    expect(
+      parseAskOptions({
+        text: "Which region should I use?",
+        detail: "Which region should I use?\nA. US\nB. EU",
+      }),
+    ).toEqual({
+      question: "Which region should I use?",
+      options: [
+        { id: "A", letter: "A", label: "US" },
+        { id: "B", letter: "B", label: "EU" },
+      ],
+    });
+  });
 });
 
 describe("matchingAskOption", () => {
   const options = parseAskOptions({
     text: "Ship it?",
     actions: [
-      { id: "a", label: "Send it" },
-      { id: "b", label: "Edit first" },
+      { id: "send", label: "Send it" },
+      { id: "edit", label: "Edit first" },
     ],
   }).options;
 
-  it("matches the label, letter, or combined answer", () => {
-    expect(matchingAskOption(options, "Send it")?.letter).toBe("A");
+  it("matches the id, label, letter, punctuation, or combined answer", () => {
     expect(matchingAskOption(options, "b")?.label).toBe("Edit first");
-    expect(matchingAskOption(options, "A Send it")?.id).toBe("a");
+    expect(matchingAskOption(options, "send")?.label).toBe("Send it");
+    expect(matchingAskOption(options, "Send it")?.letter).toBe("A");
+    expect(matchingAskOption(options, "B.")?.label).toBe("Edit first");
+    expect(matchingAskOption(options, "A Send it")?.id).toBe("send");
   });
 });

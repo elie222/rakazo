@@ -170,6 +170,7 @@ export type MobileMessage = {
   id: string;
   threadId?: string;
   seq?: number;
+  runId?: string;
   createdAt?: string;
   role: "user" | "bot" | "system";
   blocks: Array<{
@@ -182,6 +183,11 @@ export type MobileMessage = {
     progress?: string;
     result?: string;
     answer?: string;
+    detail?: string;
+    question?: string;
+    subtitle?: string;
+    actions?: Array<{ id: string; label: string }>;
+    options?: Array<{ id: string; letter?: string; label: string }>;
     botId?: string;
     title?: string;
     agentId?: string;
@@ -197,7 +203,7 @@ export type MobileSnapshot = {
   cursor?: number;
   messages: MobileMessage[];
   olderCursor: number | null;
-  run: { status: string } | null;
+  run: { id?: string; status: string } | null;
   computer: {
     state: string;
     controlHolder: string;
@@ -245,9 +251,11 @@ export function blockText(message: MobileMessage) {
 
 type ThreadEvent = {
   id?: string;
+  threadId?: string;
   type: string;
   seq?: number;
   runId?: string;
+  createdAt?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -304,8 +312,13 @@ export function applyMobileThreadEvent(
     return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
   }
   if (event.type === "run.waiting_input") {
-    if (!prev.run || prev.run.status === "waiting_input") return prev;
-    return { ...prev, run: { ...prev.run, status: "waiting_input" } };
+    if (
+      !prev.run ||
+      (prev.run.id && prev.run.id !== event.runId) ||
+      prev.run.status === "waiting_input"
+    )
+      return prev;
+    return { ...prev, cursor: event.seq, run: { ...prev.run, status: "waiting_input" } };
   }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);
@@ -317,6 +330,7 @@ export function applyMobileThreadEvent(
       id: progressId,
       role: "bot",
       blocks: [{ kind: "progress", text }],
+      ...messageCreatedAt(previous, event),
     };
     return {
       ...prev,
@@ -328,8 +342,10 @@ export function applyMobileThreadEvent(
   }
   if (event.type === "thread.subagent") {
     const agentId = String(event.payload?.agentId ?? event.id ?? "live");
+    const messageId = `subagent:${agentId}`;
+    const previous = prev.messages.find((message) => message.id === messageId);
     const streaming: MobileMessage = {
-      id: `subagent:${agentId}`,
+      id: messageId,
       role: "bot",
       blocks: [
         {
@@ -342,6 +358,7 @@ export function applyMobileThreadEvent(
           result: event.payload?.result ? String(event.payload.result) : undefined,
         },
       ],
+      ...messageCreatedAt(previous, event),
     };
     return {
       ...prev,
@@ -354,10 +371,16 @@ export function applyMobileThreadEvent(
     };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
+    const messageId = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
+    const previous = prev.messages.find((message) => message.id === messageId);
     const next: MobileMessage = {
-      id: String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`),
+      id: messageId,
+      threadId: previous?.threadId ?? event.threadId,
+      seq: previous?.seq ?? event.seq,
+      runId: event.runId ?? previous?.runId,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
+      ...messageCreatedAt(previous, event),
     };
     return {
       ...prev,
@@ -378,6 +401,30 @@ export function applyMobileThreadEvent(
     };
   }
   return prev;
+}
+
+export function latestMobileAnswerableAskMessageId(snapshot: MobileSnapshot | null): string | null {
+  if (!snapshot) return null;
+  const run = snapshot.run;
+  if (!run?.id || run.status !== "waiting_input") return null;
+  for (let index = snapshot.messages.length - 1; index >= 0; index -= 1) {
+    const message = snapshot.messages[index];
+    if (message?.runId !== run.id) continue;
+    if (message.blocks.some(isPendingDecisionBlock)) return message.id;
+  }
+  return null;
+}
+
+function isPendingDecisionBlock(block: MobileMessage["blocks"][number]): boolean {
+  return (block.kind === "ask" || block.kind === "choice") && block.status !== "answered";
+}
+
+function messageCreatedAt(
+  previous: MobileMessage | undefined,
+  event: ThreadEvent,
+): Partial<Pick<MobileMessage, "createdAt">> {
+  const createdAt = previous?.createdAt ?? event.createdAt;
+  return createdAt ? { createdAt } : {};
 }
 
 export {

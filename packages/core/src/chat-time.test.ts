@@ -27,6 +27,19 @@ describe("formatChatTimestamp", () => {
   it("returns nothing for an invalid timestamp", () => {
     expect(formatChatTimestamp("not-a-date", now)).toBe("");
   });
+
+  it("does not label future calendar days as today", () => {
+    expect(formatChatTimestamp(local(now, -1, 9, 0), now)).toBe("Aug 22, 9:00 AM");
+  });
+
+  it("uses calendar days across daylight-saving transitions", () => {
+    const afterSpringTransition = new Date(2026, 2, 9, 12, 0, 0);
+    const previousDay = new Date(afterSpringTransition);
+    previousDay.setDate(previousDay.getDate() - 1);
+    expect(formatChatTimestamp(previousDay.toISOString(), afterSpringTransition)).toContain(
+      "Yesterday",
+    );
+  });
 });
 
 describe("formatInboxTime", () => {
@@ -35,6 +48,7 @@ describe("formatInboxTime", () => {
     expect(formatInboxTime(local(now, 1, 10, 0), now)).toBe("Yesterday");
     expect(formatInboxTime(local(now, 2, 10, 0), now)).toBe("Wednesday");
     expect(formatInboxTime(local(now, 20, 9, 0), now)).toBe("Aug 1");
+    expect(formatInboxTime(local(now, -1, 9, 0), now)).toBe("Aug 22");
   });
 });
 

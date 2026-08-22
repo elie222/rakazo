@@ -2492,15 +2492,22 @@ function AskCard({
   const [dismissed, setDismissed] = useState(false);
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const pending = block.status !== "answered" && canAnswer;
 
   async function submitAnswer(value: string) {
     const text = value.trim();
-    if (!text || submitting) return;
+    if (!text || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await onAnswer(text);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Could not send your answer");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -2550,7 +2557,7 @@ function AskCard({
         {pending ? (
           <button
             type="button"
-            aria-label="Dismiss"
+            aria-label="Collapse decision"
             onClick={() => setDismissed(true)}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-[#6C6C70] hover:bg-[#222226] hover:text-[#C9C9CE]"
           >
@@ -2558,11 +2565,16 @@ function AskCard({
           </button>
         ) : null}
       </div>
+      {submitError ? (
+        <p role="alert" className="mt-3 text-[13.5px] text-[#F1A8A8]">
+          {submitError} Try again.
+        </p>
+      ) : null}
       {parsed.options.length > 0 && pending ? (
         <div className="mt-3.5 overflow-hidden rounded-[13px] border border-[#232326]">
-          {parsed.options.map((option) => (
+          {parsed.options.map((option, index) => (
             <button
-              key={option.id}
+              key={`${option.id}:${index}`}
               type="button"
               disabled={submitting}
               onClick={() => void submitAnswer(option.label)}

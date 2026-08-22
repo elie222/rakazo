@@ -14,9 +14,9 @@ export function formatChatTimestamp(iso: string, now = new Date()): string {
   if (!date) return "";
   const clock = formatClock(date);
   const dayDiff = calendarDayDiff(date, now);
-  if (dayDiff <= 0) return `Today ${clock}`;
+  if (dayDiff === 0) return `Today ${clock}`;
   if (dayDiff === 1) return `Yesterday ${clock}`;
-  if (dayDiff < 7) {
+  if (dayDiff > 1 && dayDiff < 7) {
     return `${weekday(date)} ${clock}`;
   }
   return `${shortDate(date)}, ${clock}`;
@@ -26,9 +26,9 @@ export function formatInboxTime(iso: string, now = new Date()): string {
   const date = parseIso(iso);
   if (!date) return "";
   const dayDiff = calendarDayDiff(date, now);
-  if (dayDiff <= 0) return formatClock(date);
+  if (dayDiff === 0) return formatClock(date);
   if (dayDiff === 1) return "Yesterday";
-  if (dayDiff < 7) return weekday(date);
+  if (dayDiff > 1 && dayDiff < 7) return weekday(date);
   return shortDate(date);
 }
 
@@ -48,9 +48,9 @@ function parseIso(iso: string): Date | null {
 }
 
 function calendarDayDiff(then: Date, now: Date): number {
-  const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
-  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  return Math.round((startOfNow - startOfThen) / DAY_MS);
+  const thenDay = Date.UTC(then.getFullYear(), then.getMonth(), then.getDate());
+  const nowDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return (nowDay - thenDay) / DAY_MS;
 }
 
 function weekday(date: Date): string {

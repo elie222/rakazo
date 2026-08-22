@@ -12,7 +12,7 @@ export function parseAskOptions(input: {
   const textLines = splitLines(input.text);
   if (input.actions?.length) {
     return {
-      question: questionFromLines(textLines) || "Need a decision",
+      question: questionWithExplicitActions(textLines) || "Need a decision",
       options: input.actions.map((action, index) => ({
         id: action.id,
         letter: letterAt(index),
@@ -23,7 +23,11 @@ export function parseAskOptions(input: {
 
   const options: AskOption[] = [];
   const questionLines: string[] = [];
-  for (const line of [...textLines, ...splitLines(input.detail)]) {
+  const lines = [
+    ...textLines.map((line) => ({ line, belongsToQuestion: true })),
+    ...splitLines(input.detail).map((line) => ({ line, belongsToQuestion: false })),
+  ];
+  for (const { line, belongsToQuestion } of lines) {
     const fromQuestion = questionLines.length > 0 || options.length > 0;
     const punctuated = line.match(PUNCTUATED_OPTION);
     const loose = fromQuestion ? line.match(LOOSE_OPTION) : null;
@@ -37,7 +41,7 @@ export function parseAskOptions(input: {
       });
       continue;
     }
-    if (!options.length && textLines.includes(line)) questionLines.push(line);
+    if (!options.length && belongsToQuestion) questionLines.push(line);
   }
 
   return {
@@ -51,9 +55,14 @@ export function matchingAskOption(
   answer: string | undefined,
 ): AskOption | undefined {
   if (!answer) return undefined;
-  const needle = answer.trim().toLowerCase();
+  const needle = answer
+    .trim()
+    .toLowerCase()
+    .replace(/^([a-z]|[1-9]\d*)[.):]\s*/, "$1 ")
+    .trim();
   return options.find(
     (option) =>
+      option.id.toLowerCase() === needle ||
       option.label.toLowerCase() === needle ||
       option.letter.toLowerCase() === needle ||
       `${option.letter} ${option.label}`.toLowerCase() === needle,
@@ -71,8 +80,11 @@ function splitLines(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function questionFromLines(lines: string[]): string {
-  return lines
-    .filter((line) => !PUNCTUATED_OPTION.test(line) && !LOOSE_OPTION.test(line))
-    .join(" ");
+function questionWithExplicitActions(lines: string[]): string {
+  const [first, ...rest] = lines;
+  if (!first) return "";
+  return [
+    first,
+    ...rest.filter((line) => !PUNCTUATED_OPTION.test(line) && !LOOSE_OPTION.test(line)),
+  ].join(" ");
 }

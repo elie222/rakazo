@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMobileThreadEvent,
+  latestMobileAnswerableAskMessageId,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
@@ -201,17 +202,58 @@ describe("mobile thread event reduction", () => {
     const first = applyMobileThreadEvent(snapshot(), {
       type: "thread.progress",
       runId: "run-1",
+      createdAt: "2026-08-21T10:00:00.000Z",
       payload: { delta: "Hel" },
     });
     const second = applyMobileThreadEvent(first, {
       type: "thread.progress",
       runId: "run-1",
+      createdAt: "2026-08-21T10:00:05.000Z",
       payload: { delta: "lo" },
     });
 
     expect(second?.messages).toEqual([
-      { id: "progress:run-1", role: "bot", blocks: [{ kind: "progress", text: "Hello" }] },
+      {
+        id: "progress:run-1",
+        role: "bot",
+        blocks: [{ kind: "progress", text: "Hello" }],
+        createdAt: "2026-08-21T10:00:00.000Z",
+      },
     ]);
+  });
+
+  it("keeps event timestamps on live and updated durable messages", () => {
+    const created = applyMobileThreadEvent(snapshot(), {
+      id: "event-1",
+      type: "thread.message.created",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 10,
+      createdAt: "2026-08-21T10:00:00.000Z",
+      payload: { messageId: "message-1", role: "bot", blocks: [{ kind: "text", text: "Hi" }] },
+    });
+    const updated = applyMobileThreadEvent(created, {
+      id: "event-2",
+      type: "thread.message.updated",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 11,
+      createdAt: "2026-08-21T10:05:00.000Z",
+      payload: {
+        messageId: "message-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Hi again" }],
+      },
+    });
+
+    expect(updated?.messages[0]).toMatchObject({
+      id: "message-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 10,
+      createdAt: "2026-08-21T10:00:00.000Z",
+      blocks: [{ kind: "text", text: "Hi again" }],
+    });
   });
 
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
@@ -251,15 +293,19 @@ describe("mobile thread event reduction", () => {
   });
 
   it("applies the durable waiting-input run transition", () => {
-    const initial: MobileSnapshot = { ...snapshot(), run: { status: "running" } };
+    const initial: MobileSnapshot = { ...snapshot(), run: { id: "run-1", status: "running" } };
     const waiting = applyMobileThreadEvent(initial, {
       type: "run.waiting_input",
       runId: "run-1",
+      seq: 12,
     });
 
-    expect(waiting?.run?.status).toBe("waiting_input");
+    expect(waiting).toMatchObject({ cursor: 12, run: { id: "run-1", status: "waiting_input" } });
     expect(applyMobileThreadEvent(waiting, { type: "run.waiting_input", runId: "run-1" })).toBe(
       waiting,
+    );
+    expect(applyMobileThreadEvent(initial, { type: "run.waiting_input", runId: "other-run" })).toBe(
+      initial,
     );
   });
 
@@ -267,6 +313,36 @@ describe("mobile thread event reduction", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
     expect(applyMobileThreadEvent(null, { type: "thread.progress" })).toBeNull();
+  });
+});
+
+describe("mobile pending decisions", () => {
+  it("finds only the latest pending decision for the waiting run", () => {
+    const current = snapshot([
+      {
+        ...mobileMessage("old", [{ kind: "ask", text: "Old?", status: "pending" }]),
+        runId: "run-0",
+      },
+      {
+        ...mobileMessage("answered", [
+          { kind: "ask", text: "Done?", status: "answered", answer: "yes" },
+        ]),
+        runId: "run-1",
+      },
+      {
+        ...mobileMessage("pending", [{ kind: "choice", question: "Choose", status: "pending" }]),
+        runId: "run-1",
+      },
+    ]);
+    current.run = { id: "run-1", status: "waiting_input" };
+
+    expect(latestMobileAnswerableAskMessageId(current)).toBe("pending");
+    expect(
+      latestMobileAnswerableAskMessageId({
+        ...current,
+        run: { id: "run-1", status: "running" },
+      }),
+    ).toBeNull();
   });
 });
 
