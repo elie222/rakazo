@@ -44,6 +44,7 @@ import {
   Phone,
   Plus,
   Puzzle,
+  RefreshCw,
   Settings,
   Square,
   Volume2,
@@ -68,6 +69,7 @@ import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
+import { VersionNotice } from "../components/VersionNotice";
 import { decodeArtifactBase64, openArtifact } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
@@ -102,6 +104,9 @@ const PluginsOverlay = lazy(() =>
 );
 const RoutineSchedule = lazy(() =>
   import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
+);
+const ServerUpdateOverlay = lazy(() =>
+  import("./ServerUpdateOverlay").then((module) => ({ default: module.ServerUpdateOverlay })),
 );
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
@@ -146,6 +151,7 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [serverUpdateOpen, setServerUpdateOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -180,6 +186,7 @@ export function ShellPage() {
     outputTokens: number;
     runs: number;
   } | null>(null);
+  const [deploymentOwner, setDeploymentOwner] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
   const routineRunPending = useRef(false);
@@ -1166,6 +1173,21 @@ export function ShellPage() {
                   {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
                 </p>
               ) : null}
+              {deploymentOwner ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setServerUpdateOpen(true);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                >
+                  <RefreshCw size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
+                  <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
+                    Server updates
+                  </span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void authClient.signOut().then(() => navigate("/"))}
@@ -1178,7 +1200,19 @@ export function ShellPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              setMenuOpen((open) => {
+                const next = !open;
+                if (next) {
+                  void rpc.usage.summary().then(setUsage);
+                  void rpc
+                    .me()
+                    .then((me) => setDeploymentOwner(me.isDeploymentOwner))
+                    .catch(() => undefined);
+                }
+                return next;
+              });
+            }}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
@@ -1649,6 +1683,17 @@ export function ShellPage() {
           />
         ) : null}
 
+        {toast ? (
+          <div
+            role="status"
+            className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[#343438] bg-[#1A1A1D] px-4 py-2 text-[13px] text-[#ECECEE] shadow-[0_18px_40px_rgba(0,0,0,.5)]"
+          >
+            {toast}
+          </div>
+        ) : null}
+
+        <VersionNotice />
+
         {deleteTarget ? (
           <DeleteBotDialog
             bot={deleteTarget}
@@ -1715,6 +1760,9 @@ export function ShellPage() {
 
       <Suspense fallback={null}>
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
+        {serverUpdateOpen ? (
+          <ServerUpdateOverlay onClose={() => setServerUpdateOpen(false)} />
+        ) : null}
         {voiceOpen ? (
           <VoiceSettingsOverlay
             onClose={() => {

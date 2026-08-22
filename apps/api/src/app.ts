@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { JobPublisher, RealtimeFanout, SandboxProvider } from "@rakazo/adapter-kit";
 import {
@@ -31,7 +33,20 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { createSelfUpdateService, resolveRepoRoot } from "./self-update.js";
+import { createUpdaterClient } from "./updater-client.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
+
+/** Read from package.json so the version a client compares against cannot drift from the release. */
+function serverVersion(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const manifest = require("../package.json") as { version?: string };
+    return manifest.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 export interface AppHandles {
   app: Hono;
@@ -180,6 +195,26 @@ export async function createApp(
   const reconciler = inMemoryJobs ? createJobReconciler({ prisma, jobs }) : undefined;
   reconciler?.start();
 
+  const version = serverVersion();
+  const repoRoot = env.selfUpdateDisabled ? null : await resolveRepoRoot(process.cwd());
+  const bootCommit = repoRoot === null ? null : await readHeadCommit(repoRoot);
+  const selfUpdate = createSelfUpdateService({
+    prisma,
+    version,
+    revision: env.gitSha ?? bootCommit,
+    repoRoot,
+    disabled: env.selfUpdateDisabled,
+    updater:
+      env.selfUpdateDisabled || !env.updaterUrl
+        ? null
+        : createUpdaterClient({ url: env.updaterUrl, token: env.updaterToken }),
+    unsupportedReason: env.selfUpdateDisabled
+      ? "Self-update is turned off on this deployment (RAKAZO_SELF_UPDATE=0)."
+      : repoRoot === null
+        ? "This deployment has no updater sidecar and does not run from a git checkout, so it cannot update itself. Add the `updater` service from infra/compose/docker-compose.prod.yml."
+        : null,
+  });
+
   const router = createRouter({
     prisma,
     events,
@@ -192,6 +227,7 @@ export async function createApp(
     oauthLogins,
     composio: stack.composio,
     artifacts,
+    selfUpdate,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,
@@ -200,6 +236,8 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      version,
+      revision: env.gitSha ?? bootCommit,
     },
   });
   const rpc = new RPCHandler(router);
@@ -241,12 +279,13 @@ export async function createApp(
   app.get("/health", (c) =>
     c.json({
       ok: true,
+      version,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
       composio: Boolean(stack.composio),
       jobs: jobKind,
       realtime: realtime.describe().id,
-      revision: env.gitSha ?? null,
+      revision: env.gitSha ?? bootCommit,
     }),
   );
 
@@ -268,6 +307,18 @@ export async function createApp(
       await created.pool?.end().catch(() => undefined);
     },
   };
+}
+
+/** The commit the running code came from, which is what a client compares itself against. */
+async function readHeadCommit(repoRoot: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["rev-parse", "HEAD"],
+      { cwd: repoRoot, timeout: 10_000, windowsHide: true, shell: false },
+      (error, stdout) => resolve(error ? null : stdout.trim() || null),
+    );
+  });
 }
 
 function isTrustedOrigin(origin: string, env: AppEnv) {

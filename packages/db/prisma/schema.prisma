@@ -149,7 +149,9 @@ model DeploymentSettings {
   defaultModelProvider           String?
   defaultModelId                 String?
   deploymentModelCredentialCipher String?
-  computerHost                   String?
+  updateRepoUrl                  String?
+  updateBranch                   String?
+  updateLastRun                  String?
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 

@@ -21,6 +21,9 @@ import {
   ModelCatalogEntrySchema,
   ModelCredentialSchema,
   RoutineSchema,
+  ServerUpdateCheckSchema,
+  ServerUpdateRunSchema,
+  ServerUpdateStatusSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -40,7 +43,14 @@ import { SearchQueryOutputSchema } from "./search.js";
 const botId = z.object({ botId: Id });
 
 export const appContract = {
-  health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
+  /** Unauthenticated so any client can cheaply learn which build it is talking to. */
+  health: oc.output(
+    z.object({
+      ok: z.literal(true),
+      version: z.string(),
+      revision: z.string().nullable(),
+    }),
+  ),
   me: oc.output(MeSchema),
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {
@@ -54,6 +64,25 @@ export const appContract = {
         }),
       )
       .output(DeploymentSettingsSchema),
+  },
+  /**
+   * Deployment-owner only: moves the server onto new code, either by recreating containers from
+   * published images or by updating a git checkout in place.
+   */
+  serverUpdate: {
+    status: oc.output(ServerUpdateStatusSchema),
+    setSource: oc
+      .input(
+        z.object({
+          repoUrl: z.string().max(400),
+          branch: z.string().max(200),
+        }),
+      )
+      .output(ServerUpdateStatusSchema),
+    check: oc.output(ServerUpdateCheckSchema),
+    apply: oc.output(ServerUpdateRunSchema),
+    /** Redeploys the image tag that was running before the last update. */
+    rollback: oc.output(ServerUpdateRunSchema),
   },
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),

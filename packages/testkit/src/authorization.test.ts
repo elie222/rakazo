@@ -52,6 +52,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["me"],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
+      ["serverUpdate/status"],
+      ["serverUpdate/check"],
+      ["serverUpdate/apply"],
+      ["serverUpdate/rollback"],
+      ["serverUpdate/setSource", { repoUrl: "https://github.com/elie222/rakazo", branch: "main" }],
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
@@ -593,6 +598,24 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
+
+    // Self-update is code execution on the host, so it follows the same owner-only gate.
+    await rpc(app, owner, "serverUpdate/status");
+    for (const procedure of [
+      "serverUpdate/status",
+      "serverUpdate/check",
+      "serverUpdate/apply",
+      "serverUpdate/rollback",
+    ]) {
+      await expectDenied(app, other, procedure, {});
+    }
+    await expectDenied(app, other, "serverUpdate/setSource", {
+      repoUrl: "https://github.com/attacker/rakazo",
+      branch: "main",
+    });
+    expect(
+      await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
+    ).toMatchObject({ updateRepoUrl: null });
   });
 });
 

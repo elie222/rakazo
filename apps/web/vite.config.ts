@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -15,6 +17,31 @@ import {
 } from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
+
+function buildVersion(): string {
+  const manifest = path.resolve(import.meta.dirname, "package.json");
+  const parsed = JSON.parse(readFileSync(manifest, "utf8")) as { version?: string };
+  return parsed.version ?? "0.0.0";
+}
+
+/**
+ * Stamped into the bundle so a loaded tab can tell whether it is still the build the server is
+ * serving. A source-checkout deployment rebuilds without GIT_SHA, so fall back to the commit on
+ * disk rather than shipping an unknown revision that can never be compared.
+ */
+function buildRevision(fallbackEnv: Record<string, string>): string {
+  const declared = (process.env.GIT_SHA ?? fallbackEnv.GIT_SHA ?? "").trim();
+  if (declared !== "") return declared;
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: path.resolve(import.meta.dirname, "../.."),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
   server.middlewares.use((req, res, next) => {
@@ -123,6 +150,10 @@ export default defineConfig(({ mode }) => {
   });
   const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   return {
+    define: {
+      __RAKAZO_VERSION__: JSON.stringify(buildVersion()),
+      __RAKAZO_REVISION__: JSON.stringify(buildRevision(rootEnv)),
+    },
     plugins: [
       react(),
       tailwindcss(),
