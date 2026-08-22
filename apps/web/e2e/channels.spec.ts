@@ -41,7 +41,11 @@ test("named channels persist membership, mentions, replies, and renames", async 
 
   await composer.fill("@Chief please summarize the plan");
   await composer.press("Enter");
-  await expect(page.getByText("@Chief please summarize the plan", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByTestId("channel-transcript")
+      .getByText("@Chief please summarize the plan", { exact: true }),
+  ).toBeVisible();
   await expect
     .poll(
       async () => {
