@@ -5,6 +5,8 @@ export interface CreateThreadMessageInput {
   threadId: string;
   role: "user" | "bot" | "system";
   blocks: MessageBlock[];
+  botId?: string;
+  replyToMessageId?: string;
   runId?: string;
 }
 
@@ -33,6 +35,8 @@ export async function createThreadMessageInTransaction(
       seq: thread.nextMessageSeq - 1,
       role: input.role,
       blocks: input.blocks as Prisma.InputJsonValue,
+      botId: input.botId,
+      replyToMessageId: input.replyToMessageId,
       runId: input.runId,
     },
   });

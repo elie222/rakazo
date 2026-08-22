@@ -256,6 +256,25 @@ describe("thread event reduction", () => {
     expect(next?.messages).toHaveLength(1);
     expect(next?.messages[0]?.blocks[0]).toMatchObject({ status: "answered", answer: "Paris" });
   });
+
+  it("preserves botId on durable bot messages", () => {
+    const initial = snapshot([]);
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        botId: "bot-researcher",
+        payload: {
+          messageId: "msg-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "on it." }],
+        },
+      }),
+    );
+
+    expect(next?.messages[0]?.botId).toBe("bot-researcher");
+  });
 });
 
 describe("computer event reduction", () => {

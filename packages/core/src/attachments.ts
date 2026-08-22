@@ -138,6 +138,14 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+export function attachmentsForThread<T extends { threadKey: string }>(
+  attachments: readonly T[],
+  threadKey: string | undefined,
+): T[] {
+  if (!threadKey) return [];
+  return attachments.filter((attachment) => attachment.threadKey === threadKey);
+}
+
 export function attachmentsForBot<T extends { botId: string }>(
   attachments: readonly T[],
   botId: string | undefined,

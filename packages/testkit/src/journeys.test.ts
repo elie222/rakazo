@@ -56,6 +56,52 @@ describeJourneys("required product journeys", () => {
     };
   }
 
+  async function sendGroupAndWait(
+    app: App,
+    cookie: string,
+    groupId: string,
+    text: string,
+    waitForBotId?: string,
+  ) {
+    const { runIds, runId } = await rpc<{ runId: string; runIds?: string[] }>(
+      app,
+      cookie,
+      "threads/send",
+      {
+        groupId,
+        text,
+      },
+    );
+    let targets = runIds ?? [runId];
+    if (waitForBotId) {
+      const runs = await prisma.run.findMany({
+        where: { id: { in: targets }, botId: waitForBotId },
+        select: { id: true },
+      });
+      targets = runs.map((run) => run.id);
+      if (targets.length === 0) {
+        throw new Error(`no run scheduled for bot ${waitForBotId}`);
+      }
+    }
+    for (const runId of targets) {
+      let terminal: { status: string; error: string | null } | null = null;
+      await waitForDatabase(async () => {
+        terminal = await prisma.run.findUnique({
+          where: { id: runId },
+          select: { status: true, error: true },
+        });
+        return Boolean(terminal && ["completed", "failed", "cancelled"].includes(terminal.status));
+      });
+      if (!terminal) throw new Error(`run ${runId} was not found after completion`);
+      if (terminal.status !== "completed") {
+        throw new Error(
+          `run ${runId} ended ${terminal.status}: ${terminal.error ?? "unknown error"}`,
+        );
+      }
+    }
+    return rpc<Snap>(app, cookie, "threads/get", { groupId });
+  }
+
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
     const handles = await createApp({
@@ -1140,6 +1186,84 @@ describeJourneys("required product journeys", () => {
         (row) => row.id === started.connectionId,
       )?.status,
     ).toBe("revoked");
+  });
+
+  it("54: group chats share one transcript with mentions and handoffs", async () => {
+    const ada = await signup(app, `ada-g-${stamp}@rakazo.test`, "Ada Groups");
+    const botA = await rpc<Bot>(app, ada, "bots/create", {
+      name: "BotA",
+      title: "Researcher",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botB = await rpc<Bot>(app, ada, "bots/create", {
+      name: "BotB",
+      title: "Writer",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botC = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Writer",
+      title: "Editor",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string; threadId: string; members: Array<{ botId: string }> }>(
+      app,
+      ada,
+      "groups/create",
+      { name: "Research squad", botIds: [botA.id, botB.id, botC.id] },
+    );
+    const listed = await rpc<Array<{ id: string }>>(app, ada, "groups/list");
+    expect(listed.some((row) => row.id === group.id)).toBe(true);
+    expect((await rpc<Bot[]>(app, ada, "bots/list")).map((b) => b.id)).toEqual(
+      expect.arrayContaining([botA.id, botB.id, botC.id]),
+    );
+
+    await sendGroupAndWait(app, ada, group.id, "@BotA gather sources. @BotB summarize.");
+    const mentioned = await rpc<Snap & { threadId: string }>(app, ada, "threads/get", {
+      groupId: group.id,
+    });
+    expect(new Set(mentioned.messages.map((m) => m.seq)).size).toBeGreaterThan(0);
+    const runsAfterMention = await prisma.run.findMany({
+      where: { threadId: group.threadId, botId: { in: [botA.id, botB.id] } },
+      orderBy: { createdAt: "desc" },
+      take: 4,
+    });
+    expect(runsAfterMention.some((run) => run.botId === botA.id)).toBe(true);
+    expect(runsAfterMention.some((run) => run.botId === botB.id)).toBe(true);
+
+    const countUserRuns = async (botId: string) =>
+      prisma.run.count({
+        where: { threadId: group.threadId, trigger: "user", botId },
+      });
+    const botABefore = await countUserRuns(botA.id);
+    const botBBefore = await countUserRuns(botB.id);
+    const botCBefore = await countUserRuns(botC.id);
+    await sendGroupAndWait(app, ada, group.id, "hello team", botA.id);
+    expect(await countUserRuns(botA.id)).toBe(botABefore + 1);
+    expect(await countUserRuns(botB.id)).toBe(botBBefore);
+    expect(await countUserRuns(botC.id)).toBe(botCBefore);
+
+    await sendGroupAndWait(app, ada, group.id, "@BotA hand this to Writer for the draft", botA.id);
+    const handoffSnap = await rpc<Snap>(app, ada, "threads/get", { groupId: group.id });
+    expect(
+      handoffSnap.messages.some((message) =>
+        (message.blocks as Array<{ kind?: string }>).some((block) => block.kind === "handoff"),
+      ),
+    ).toBe(true);
+
+    await rpc(app, ada, "groups/update", {
+      groupId: group.id,
+      botIds: [botA.id, botB.id],
+    });
+    await rpc(app, ada, "groups/remove", { groupId: group.id });
+    expect((await rpc<Bot[]>(app, ada, "bots/list")).map((b) => b.id)).toEqual(
+      expect.arrayContaining([botA.id, botB.id, botC.id]),
+    );
   });
 
   it("17: teach a task end to end", async () => {

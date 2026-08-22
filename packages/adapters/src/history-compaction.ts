@@ -78,6 +78,7 @@ export interface CompactHistoryDeps {
 
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
+  if (!thread.botId) return;
   const { fromSeqExclusive, take } = nextCompactionBatchRange(
     thread.historyCompactedUpToSeq,
     COMPACTION_BATCH_SIZE,

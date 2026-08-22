@@ -357,6 +357,15 @@ export async function destroyBot(
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
   await deps.prisma.$transaction(async (tx) => {
+    const undersizedGroups = await tx.chatGroup.findMany({
+      where: { members: { some: { botId: bot.id } } },
+      include: { _count: { select: { members: true } } },
+    });
+    for (const group of undersizedGroups) {
+      if (group._count.members <= 2) {
+        await tx.chatGroup.delete({ where: { id: group.id } });
+      }
+    }
     await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
     await tx.computer.updateMany({
       where: {

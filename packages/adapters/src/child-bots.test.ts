@@ -153,6 +153,10 @@ describe("destroyBot", () => {
     const removeArtifact = vi.fn().mockResolvedValue(undefined);
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
+        chatGroup: {
+          findMany: vi.fn().mockResolvedValue([]),
+          delete: vi.fn().mockResolvedValue(undefined),
+        },
         computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         computer: { updateMany: releaseComputers },
         $executeRaw: executeRaw,
@@ -214,6 +218,51 @@ describe("destroyBot", () => {
     });
     expect(deleteBot).toHaveBeenCalledWith({ where: { id: "bot-1" } });
     expect(removeArtifact).toHaveBeenCalledWith("stored-artifact", context);
+  });
+
+  it("dissolves two-member groups before deleting the bot", async () => {
+    const deleteGroup = vi.fn().mockResolvedValue(undefined);
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
+      callback({
+        chatGroup: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "group-1", _count: { members: 2 } },
+            { id: "group-2", _count: { members: 3 } },
+          ]),
+          delete: deleteGroup,
+        },
+        computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        $executeRaw: vi.fn(),
+        botDeletion: { create: vi.fn() },
+        bot: { delete: vi.fn() },
+      }),
+    );
+    const prisma = {
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      artifact: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+
+    await destroyBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+      },
+      { id: "bot-1", workspaceId: "workspace-1", name: "Researcher", archivedAt: null },
+      context,
+      { deleteMemories: true },
+    );
+
+    expect(deleteGroup).toHaveBeenCalledOnce();
+    expect(deleteGroup).toHaveBeenCalledWith({ where: { id: "group-1" } });
   });
 
   it("surfaces transaction failures instead of reporting deletion success", async () => {

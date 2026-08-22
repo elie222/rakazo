@@ -75,6 +75,7 @@ export function reduceThreadSnapshot(
       seq: event.seq,
       role: "bot",
       blocks: [{ kind: "progress", text }],
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
@@ -89,6 +90,7 @@ export function reduceThreadSnapshot(
       seq: event.seq,
       role: "bot",
       blocks: [block],
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
@@ -107,6 +109,7 @@ export function reduceThreadSnapshot(
       seq: event.seq,
       role,
       blocks,
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };

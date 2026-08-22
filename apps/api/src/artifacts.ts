@@ -143,6 +143,51 @@ export async function resolveSendAttachments(
   return { blocks, artifacts: ordered };
 }
 
+export async function resolveGroupSendAttachments(
+  deps: { prisma: PrismaClient },
+  actor: Actor,
+  memberBotIds: string[],
+  artifactIds: string[] | undefined,
+) {
+  const ids = [...new Set(artifactIds ?? [])];
+  if (ids.length > ATTACHMENT_MAX_COUNT) {
+    throw new AttachmentValidationError(`At most ${ATTACHMENT_MAX_COUNT} attachments per message`);
+  }
+  if (!ids.length) {
+    return {
+      blocks: [] as ReturnType<typeof messageBlockForArtifact>[],
+      artifacts: [] as Array<{
+        id: string;
+        name: string;
+        mimeType: string;
+        size: number;
+        storageKey: string;
+      }>,
+    };
+  }
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: ids },
+      botId: { in: memberBotIds },
+      workspaceId: actor.workspaceId,
+    },
+  });
+  if (rows.length !== ids.length) throw new IsolationError();
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered = ids.map((id) => byId.get(id)!);
+  const blocks = ordered.map((row) =>
+    messageBlockForArtifact({
+      id: row.id,
+      name: row.name,
+      mimeType: row.mimeType,
+      size: row.size,
+    }),
+  );
+  return { blocks, artifacts: ordered };
+}
+
 export function buildUserMessageBlocks(
   text: string | undefined,
   attachmentBlocks: ReturnType<typeof messageBlockForArtifact>[],
