@@ -1,3 +1,4 @@
+import { isLocalImageTag } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COMPOSE_FILE,
@@ -80,13 +81,22 @@ describe("readTagState", () => {
     expect(readTagState(contents)).toEqual({ currentTag: "v1.1.0", previousTag: "v1.0.0" });
   });
 
-  it("falls back to latest when nothing is pinned yet", () => {
-    expect(readTagState("")).toEqual({ currentTag: "latest", previousTag: null });
+  it("falls back to the locally built tag when nothing is pinned yet", () => {
+    expect(readTagState("")).toEqual({ currentTag: "local", previousTag: null });
   });
 
   it("ignores values in the file that are not usable tags", () => {
     const contents = "RAKAZO_IMAGE_TAG=-rm\nRAKAZO_IMAGE_TAG_PREVIOUS=$(id)\n";
-    expect(readTagState(contents)).toEqual({ currentTag: "latest", previousTag: null });
+    expect(readTagState(contents)).toEqual({ currentTag: "local", previousTag: null });
+  });
+
+  /**
+   * The fallback has to be a tag no registry serves. A deployment that has never been pinned has
+   * only ever built its images locally, so a fallback of `latest` would send both a first
+   * `docker compose up` and a rollback to a registry that may have nothing under that name.
+   */
+  it("falls back to a tag that is local-only, so nothing tries to pull it", () => {
+    expect(isLocalImageTag(readTagState("").currentTag)).toBe(true);
   });
 });
 

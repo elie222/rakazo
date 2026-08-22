@@ -91,7 +91,7 @@ describe("updater HTTP surface", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       deployDir: "/rakazo-updater-tests-no-such-directory",
-      currentTag: "latest",
+      currentTag: "local",
       previousTag: null,
       checkout: { present: false },
     });
