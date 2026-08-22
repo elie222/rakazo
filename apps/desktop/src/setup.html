@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
+    />
+    <title>Set up Rakazo</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <span class="titlebar-name">Rakazo</span>
+      <button id="quit" class="titlebar-quit" type="button" title="Quit Rakazo">Quit</button>
+    </header>
+
+    <main class="shell">
+      <h1 class="heading">Welcome to Rakazo</h1>
+      <p class="subheading">
+        Rakazo runs on a server that hosts your bots, memory, and computers. Choose how this desktop
+        app should connect.
+      </p>
+
+      <form id="setup" class="card" novalidate>
+        <fieldset class="choices">
+          <legend class="sr-only">Instance</legend>
+
+          <label class="choice" for="mode-local">
+            <input id="mode-local" type="radio" name="mode" value="local" checked />
+            <span class="choice-body">
+              <span class="choice-title">Connect to a local instance</span>
+              <span class="choice-note">
+                Use a Rakazo server running on this computer.
+              </span>
+            </span>
+          </label>
+
+          <label class="choice" for="mode-remote">
+            <input id="mode-remote" type="radio" name="mode" value="remote" />
+            <span class="choice-body">
+              <span class="choice-title">Connect to a remote instance</span>
+              <span class="choice-note">
+                Point at a Rakazo server you or your team already runs elsewhere.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <section id="panel-local" class="panel">
+          <label class="field-label" for="local-url">Local server address</label>
+          <input id="local-url" class="field" type="text" spellcheck="false" autocomplete="off" />
+          <p class="hint">
+            No server yet? Start the stack from your Rakazo checkout with
+            <code>pnpm dev</code>, then check again.
+          </p>
+        </section>
+
+        <section id="panel-remote" class="panel" hidden>
+          <label class="field-label" for="remote-url">Server address</label>
+          <input
+            id="remote-url"
+            class="field"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="https://rakazo.example.com"
+          />
+          <p class="hint">Use the address you open Rakazo with in a browser.</p>
+        </section>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="actions">
+          <button id="check" class="button button-secondary" type="button">Check connection</button>
+          <button id="continue" class="button button-primary" type="submit">Continue</button>
+        </div>
+      </form>
+
+      <p class="footnote">You can change this later by reconnecting from the app.</p>
+    </main>
+
+    <script src="setup.js"></script>
+  </body>
+</html>

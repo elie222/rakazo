@@ -72,10 +72,12 @@ export async function createApp(
         })
       : new InMemoryRealtimeFanout());
   const events = createThreadEvents(prisma, realtime);
-  await prisma.deploymentSettings.upsert({
-    where: { id: "default" },
-    create: { id: "default" },
-    update: {},
+  // More than one process boots against the same database — api and worker start together — so
+  // this has to tolerate losing the race for the singleton row. An upsert with nothing to update
+  // reads then inserts and fails the loser on the unique constraint; this leaves any row alone.
+  await prisma.deploymentSettings.createMany({
+    data: { id: "default" },
+    skipDuplicates: true,
   });
 
   const jobKind = env.wakeupDriver;
@@ -91,7 +93,6 @@ export async function createApp(
     boxApiKey: env.boxApiKey,
     boxApiUrl: env.boxApiUrl,
     dataDir: env.dataDir,
-    prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const oauthLogins = new PiOAuthLogins();

@@ -15,6 +15,7 @@ export const BotSchema = z.object({
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
+  hidden: z.boolean(),
   sectionId: Id.nullable(),
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
@@ -59,6 +60,7 @@ export const UpdateBotInput = z.object({
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
   pinned: z.boolean().optional(),
+  hidden: z.boolean().optional(),
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
@@ -235,7 +237,16 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill"]),
+  trigger: z.enum([
+    "user",
+    "routine",
+    "resume",
+    "follow_up",
+    "spawn",
+    "skill",
+    "bot_message",
+    "onboarding",
+  ]),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -325,8 +336,6 @@ export const DeploymentSettingsSchema = z.object({
   hasDeploymentModelCredential: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
-  computerHost: z.enum(["docker", "this-mac"]).nullable(),
-  canChooseHostComputer: z.boolean(),
 });
 
 export const MeSchema = z.object({
@@ -338,8 +347,6 @@ export const MeSchema = z.object({
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
-  computerHost: z.enum(["docker", "this-mac"]).nullable(),
-  canChooseHostComputer: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

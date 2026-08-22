@@ -87,7 +87,6 @@ import {
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
 import type { ContextMenuPosition } from "./BotContextMenu";
-import { HostComputerPrompt } from "./HostComputerPrompt";
 import { WindowChrome } from "./WindowChrome";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
@@ -128,6 +127,8 @@ export function ShellPage() {
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -547,10 +548,20 @@ export function ShellPage() {
     };
   }, [active?.id, markBotReadIfVisible, searchParams]);
 
+  const hiddenBots = useMemo(() => bots.filter((b) => b.hidden), [bots]);
   const filtered = useMemo(
-    () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
+    () =>
+      bots
+        .filter((b) => !b.hidden)
+        .filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
     [bots, query],
   );
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   const sidebarGroups = useMemo(
     () => groupBotsForSidebar(filtered, botSections),
     [botSections, filtered],
@@ -985,9 +996,6 @@ export function ShellPage() {
       data-ready={shellReady}
       className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
     >
-      {bootstrapMe !== undefined ? (
-        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
-      ) : null}
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
@@ -1109,6 +1117,44 @@ export function ShellPage() {
                         className="text-[12.5px] text-[#FF5364]"
                       >
                         Delete
+                      </button>
+                    </div>
+                  ))
+                : null}
+            </div>
+          ) : null}
+          {hiddenBots.length > 0 && !showWorkspaceSearch ? (
+            <div className="mt-2 border-t border-[#202023] pt-2">
+              <button
+                type="button"
+                aria-expanded={hiddenOpen}
+                onClick={() => setHiddenOpen((open) => !open)}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+              >
+                <span>Hidden</span>
+                <span>{hiddenBots.length}</span>
+              </button>
+              {hiddenOpen
+                ? hiddenBots.map((bot) => (
+                    <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <BotAvatar color={bot.color} size={28} />
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/${bot.id}`)}
+                        className="min-w-0 flex-1 truncate text-left text-[14px] text-[#A8A8AD] hover:text-white"
+                      >
+                        {bot.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.bots
+                            .update({ botId: bot.id, hidden: false })
+                            .then(() => refreshBots())
+                        }
+                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                      >
+                        Unhide
                       </button>
                     </div>
                   ))
@@ -1634,9 +1680,24 @@ export function ShellPage() {
                 navigate(`/app/${bot.id}`);
               });
             }}
+            onCopyConversationId={() => {
+              setBotMenu(null);
+              void navigator.clipboard
+                .writeText(contextBot.threadId)
+                .then(() => setToast("Conversation ID copied"))
+                .catch(() => setToast("Could not copy the conversation ID"));
+            }}
             onClear={() => {
               setClearTarget(contextBot);
               setBotMenu(null);
+            }}
+            onToggleHidden={() => {
+              const hidden = !contextBot.hidden;
+              setBotMenu(null);
+              void rpc.bots.update({ botId: contextBot.id, hidden }).then(async () => {
+                await refreshBots();
+                setToast(hidden ? `${contextBot.name} hidden from the sidebar` : null);
+              });
             }}
             onArchive={() => {
               setBotMenu(null);
@@ -1647,6 +1708,15 @@ export function ShellPage() {
               setBotMenu(null);
             }}
           />
+        ) : null}
+
+        {toast ? (
+          <div
+            role="status"
+            className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[#343438] bg-[#1A1A1D] px-4 py-2 text-[13px] text-[#ECECEE] shadow-[0_18px_40px_rgba(0,0,0,.5)]"
+          >
+            {toast}
+          </div>
         ) : null}
 
         {deleteTarget ? (

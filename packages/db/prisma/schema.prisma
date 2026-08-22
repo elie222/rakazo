@@ -149,7 +149,6 @@ model DeploymentSettings {
   defaultModelProvider           String?
   defaultModelId                 String?
   deploymentModelCredentialCipher String?
-  computerHost                   String?
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 
@@ -201,6 +200,7 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  hidden         Boolean  @default(false)
   sectionId      String?
   section        BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt     DateTime?

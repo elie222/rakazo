@@ -632,6 +632,13 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: false,
     });
     const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    // Creating a bot opens its first question, so the thread already holds rows before this
+    // test writes anything. What matters here is that 40 concurrent writes still allocate a
+    // gapless cursor, whatever the thread started with.
+    const [eventsBefore, messagesBefore] = await Promise.all([
+      prisma.event.count({ where: { threadId: thread.id } }),
+      prisma.message.count({ where: { threadId: thread.id } }),
+    ]);
 
     await Promise.all(
       Array.from({ length: 40 }, (_, index) =>
@@ -658,8 +665,12 @@ describeJourneys("required product journeys", () => {
       prisma.event.findMany({ where: { threadId: thread.id }, orderBy: { seq: "asc" } }),
       prisma.message.findMany({ where: { threadId: thread.id }, orderBy: { seq: "asc" } }),
     ]);
-    expect(events.map((row) => row.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i));
-    expect(messages.map((row) => row.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i));
+    expect(events.map((row) => row.seq)).toEqual(
+      Array.from({ length: eventsBefore + 40 }, (_, i) => i),
+    );
+    expect(messages.map((row) => row.seq)).toEqual(
+      Array.from({ length: messagesBefore + 40 }, (_, i) => i),
+    );
   });
 
   it("6: fake, managed-sandbox emulator, and desktop executor run the same graphical task", async () => {
@@ -964,18 +975,17 @@ describeJourneys("required product journeys", () => {
     expect(docs).toMatch(/Restore/);
   });
 
-  it("14: this-mac is refused unless the sandbox is docker", async () => {
+  it("14: a client cannot choose where bots run", async () => {
     const cookie = await signup(app, `host-j-${stamp}@rakazo.test`, "Host");
     const me = await rpc<Me>(app, cookie, "me");
-    expect(me.canChooseHostComputer).toBe(false);
     await prisma.deploymentSettings.update({
       where: { id: "default" },
       data: { ownerUserId: me.userId },
     });
     const res = await raw(app, cookie, "deployment/update", { computerHost: "this-mac" });
-    const text = await res.text();
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(text).toMatch(/This Mac mode is only available/i);
+    expect(res.status).toBeLessThan(400);
+    const settings = await rpc<Record<string, unknown>>(app, cookie, "deployment/get");
+    expect(settings).not.toHaveProperty("computerHost");
   });
 
   it("15: ask, answer, stop, follow-up, and clientNonce stay consistent", async () => {
@@ -1003,8 +1013,10 @@ describeJourneys("required product journeys", () => {
       (snap) => snap.run?.status === "waiting_input",
     );
     expect(JSON.stringify(waiting.messages)).toMatch(/which city/i);
-    const askMessage = waiting.messages.find((message) =>
-      message.blocks.some((block) => block.kind === "ask"),
+    // A new bot's opening question is an ask too, so match the ask this run produced.
+    const askMessage = waiting.messages.find(
+      (message) =>
+        message.runId === asked.runId && message.blocks.some((block) => block.kind === "ask"),
     );
     expect(askMessage).toBeTruthy();
     await rpc(app, cookie, "threads/answer", {
@@ -1105,12 +1117,15 @@ describeJourneys("required product journeys", () => {
       routineId: routine.id,
     });
     expect(tested.runId).toBeTruthy();
-    await waitFor(
-      app,
-      ada,
-      bot.id,
-      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
-    );
+    // This bot's opening question is still unanswered, so it stays parked in `waiting_input` and
+    // the thread never goes idle. Wait on the run the routine started instead.
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findUnique({
+        where: { id: tested.runId },
+        select: { status: true },
+      });
+      return Boolean(run && ["completed", "failed", "cancelled"].includes(run.status));
+    });
     const file = await rpc<{ content: string }>(app, ada, "computer/readFile", {
       botId: bot.id,
       path: "notes/result.txt",
@@ -1258,9 +1273,75 @@ describeJourneys("required product journeys", () => {
       else process.env.TEACH_RECORDING_TTL_MS = previousTtl;
     }
   });
+
+  it("19: a new bot opens by asking what it should take on", async () => {
+    const cookie = await signup(app, `onboard-j-${stamp}@rakazo.test`, "Ada Onboard");
+    const first = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Fresh",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    const snap = await waitFor(app, cookie, first.id, (s) => s.messages.length > 0);
+    const blocks = snap.messages.flatMap((message) => message.blocks) as Array<{
+      kind: string;
+      text?: string;
+      actions?: Array<{ id: string; label: string }>;
+    }>;
+    const greeting = blocks.find((block) => block.kind === "text");
+    expect(greeting?.text).toContain("Ada");
+    const ask = blocks.find((block) => block.kind === "ask");
+    expect(ask?.text).toBe("What should I take on?");
+    expect(ask?.actions?.map((action) => action.id)).toEqual([
+      "gap",
+      "recurring",
+      "overflow",
+      "unsure",
+    ]);
+    expect(snap.run?.status).toBe("waiting_input");
+
+    // The greeting counts the crew that already exists, so the second bot is told about the first.
+    const second = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Second",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const secondSnap = await waitFor(app, cookie, second.id, (s) => s.messages.length > 0);
+    const secondText = JSON.stringify(secondSnap.messages);
+    expect(secondText).toContain("1 other bot");
+  });
+
+  it("21: hiding a bot is a per-user flag that survives a reload", async () => {
+    const cookie = await signup(app, `hidden-j-${stamp}@rakazo.test`, "Ada Hidden");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Quiet",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    expect(bot.hidden).toBe(false);
+
+    expect(
+      (await rpc<Bot>(app, cookie, "bots/update", { botId: bot.id, hidden: true })).hidden,
+    ).toBe(true);
+    // Hidden bots stay reachable; only the sidebar filters them out.
+    expect(
+      (await rpc<Bot[]>(app, cookie, "bots/list")).find((row) => row.id === bot.id)?.hidden,
+    ).toBe(true);
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).hidden).toBe(true);
+
+    expect(
+      (await rpc<Bot>(app, cookie, "bots/update", { botId: bot.id, hidden: false })).hidden,
+    ).toBe(false);
+  });
 });
 
-type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };
+type Me = { workspaceId: string; userId: string };
 type Bot = {
   id: string;
   name: string;
@@ -1270,6 +1351,7 @@ type Bot = {
   notifyOnFinish: boolean;
   color: string;
   pinned: boolean;
+  hidden: boolean;
   sectionId: string | null;
   unread: boolean;
   computerMode: "team" | "dedicated";
