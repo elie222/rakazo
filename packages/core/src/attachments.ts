@@ -94,6 +94,11 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
+      if (block.kind === "bot_message") {
+        return block.direction === "out"
+          ? `Messaged ${block.peerName}: ${block.text}`
+          : `Message from ${block.peerName}: ${block.text}`;
+      }
       if ("text" in block && typeof block.text === "string") return block.text;
       return "";
     })

@@ -5,6 +5,7 @@ import {
   AppBootstrapSchema,
   ArtifactSchema,
   ArtifactWithContentSchema,
+  BotChannelSchema,
   BotSchema,
   BotSectionSchema,
   CapabilityInstallSchema,
@@ -172,6 +173,7 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
     markRead: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     markUnread: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    channel: oc.input(z.object({ botId: Id, peerBotId: Id })).output(BotChannelSchema),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),

@@ -187,6 +187,18 @@ export type MobileMessage = {
     artifactId?: string;
     mimeType?: string;
     size?: number;
+    direction?: "in" | "out";
+    peerBotId?: string;
+    peerName?: string;
+    peerColor?: string;
+    channelId?: string;
+    steps?: Array<{
+      id: string;
+      kind: string;
+      title: string;
+      detail?: string;
+      status: string;
+    }>;
   }>;
 };
 
@@ -231,6 +243,11 @@ export function blockText(message: MobileMessage) {
       }
       if (block.kind === "child_bot") {
         return `${block.status === "archived" ? "Archived" : block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+      }
+      if (block.kind === "bot_message") {
+        return block.direction === "out"
+          ? `Messaged ${block.peerName ?? "bot"}`
+          : `Message from ${block.peerName ?? "bot"}: ${block.text ?? ""}`;
       }
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
