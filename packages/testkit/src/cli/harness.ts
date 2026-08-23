@@ -101,15 +101,29 @@ async function main() {
       return;
     }
 
-    const [{ ComposioEmulator }, { createApp }] = await Promise.all([
-      import("@rakazo/adapters"),
-      import("../../../../apps/api/src/app.ts"),
-    ]);
+    const [{ ComposioEmulator, PipedreamConnector, ThirdPartyConnectorEmulator }, { createApp }] =
+      await Promise.all([import("@rakazo/adapters"), import("../../../../apps/api/src/app.ts")]);
     const { serve } = await import("@hono/node-server");
+    const thirdParties = new ThirdPartyConnectorEmulator();
+    const pipedream = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: process.env.ENCRYPTION_KEY,
+      },
+      { fetch: thirdParties.fetch, resolveHostname: thirdParties.resolveHostname },
+    );
     const handles = await createApp({
       databaseUrl,
       prisma: undefined,
       composio: new ComposioEmulator(),
+      pipedream,
+      remoteConnectors: {
+        fetch: thirdParties.fetch,
+        resolveHostname: thirdParties.resolveHostname,
+      },
     });
     let activeRequests = 0;
     const requestWaiters = new Set<() => void>();

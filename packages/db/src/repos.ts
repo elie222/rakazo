@@ -24,6 +24,7 @@ function mapBot(
     sectionId: string | null;
     archivedAt: Date | null;
     parentBotId: string | null;
+    memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string; unread: boolean } | null;
@@ -51,6 +52,7 @@ function mapBot(
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: bot.thread.unread,
     parentBotId: bot.parentBotId,
+    memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
     preview,
     status,

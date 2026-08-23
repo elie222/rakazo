@@ -6,40 +6,48 @@ import type {
   OAuthCredential,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { ModelOAuthBegin, ModelOAuthSignInMode } from "@rakazo/contracts";
+import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
 export const XAI_OAUTH_PROVIDER = "xai";
-export const DEVICE_CODE_SIGN_IN = "device-code" as const;
+export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 
-export const DEVICE_CODE_PROVIDERS: Record<
+export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
   string,
-  { loginLabel: string; hint: string; billing: string }
+  { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string }
 > = {
   [CHATGPT_OAUTH_PROVIDER]: {
+    mode: "device-code",
     loginLabel: "Sign in with ChatGPT Plus/Pro",
     hint: "ChatGPT Plus/Pro",
     billing:
       "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
   },
   [COPILOT_OAUTH_PROVIDER]: {
+    mode: "device-code",
     loginLabel: "Sign in with GitHub Copilot",
     hint: "Copilot",
     billing: "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
   },
   [XAI_OAUTH_PROVIDER]: {
+    mode: "device-code",
     loginLabel: "Sign in with SuperGrok or X Premium",
     hint: "SuperGrok / key",
     billing: "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
   },
+  [ANTHROPIC_OAUTH_PROVIDER]: {
+    mode: "auth-url",
+    loginLabel: "Sign in with Claude Pro/Max",
+    hint: "Claude Pro/Max / key",
+    billing:
+      "Sign in with Claude Pro or Max, or paste an Anthropic API key. Uses your Anthropic subscription. Rakazo does not pay.",
+  },
 };
 
-export function isDeviceCodeProvider(providerId: string): boolean {
-  return providerId in DEVICE_CODE_PROVIDERS;
-}
-
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
-const DEVICE_CODE_WAIT_MS = 30_000;
+const SIGN_IN_START_WAIT_MS = 30_000;
 
 export type StoredModelSecret =
   | { kind: "api_key"; key: string }
@@ -64,13 +72,10 @@ export type PiOAuthFinish<T> =
   | { status: "connected"; value: T }
   | { status: "error"; error: string };
 
-export type PiOAuthBegin = {
-  loginId: string;
-  provider: string;
-  verificationUri: string;
-  userCode: string;
-  expiresInSeconds: number;
-};
+export type PiOAuthBegin = ModelOAuthBegin;
+
+type WithoutLogin<T> = T extends unknown ? Omit<T, "loginId" | "provider"> : never;
+type PiOAuthStarted = WithoutLogin<PiOAuthBegin>;
 
 type LoginFn = (
   providerId: string,
@@ -93,6 +98,10 @@ type Session = {
   credential?: OAuthCredential;
   error?: string;
   finishing?: Promise<void>;
+  // auth-url flows: resolves the runtime's "paste the redirect URL" prompt.
+  submitCode?: (input: string) => void;
+  codeSubmitted?: boolean;
+  expiresTimer?: ReturnType<typeof setTimeout>;
 };
 
 function isOAuthCredential(value: Credential): value is OAuthCredential {
@@ -194,9 +203,9 @@ export class PiOAuthLogins {
     label?: string;
     signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
-    if (!isDeviceCodeProvider(input.provider)) {
+    if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
       throw new Error(
-        "In-app subscription sign-in is only available for ChatGPT Plus/Pro, GitHub Copilot, and SuperGrok.",
+        "In-app subscription sign-in is only available for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and SuperGrok.",
       );
     }
     if (input.signal?.aborted) {
@@ -223,11 +232,7 @@ export class PiOAuthLogins {
         state: "pending",
       };
 
-      const device = deferred<{
-        userCode: string;
-        verificationUri: string;
-        expiresInSeconds: number;
-      }>();
+      const signInStarted = deferred<PiOAuthStarted>();
 
       const done = this.loginFn(input.provider, "oauth", {
         signal: abort.signal,
@@ -239,16 +244,54 @@ export class PiOAuthLogins {
             }
             return option.id;
           }
+          if (prompt.type === "manual_code") {
+            return new Promise<string>((resolve, reject) => {
+              const signals = [abort.signal, prompt.signal].filter(
+                (signal): signal is AbortSignal => signal !== undefined,
+              );
+              const removeAbortListeners = () => {
+                for (const signal of signals) signal.removeEventListener("abort", onAbort);
+              };
+              const onAbort = (event: Event) => {
+                removeAbortListeners();
+                session.submitCode = undefined;
+                const signal = event.currentTarget as AbortSignal;
+                reject(signal.reason ?? new Error("Sign-in cancelled."));
+              };
+              session.submitCode = (code) => {
+                removeAbortListeners();
+                session.submitCode = undefined;
+                resolve(code);
+              };
+              const aborted = signals.find((signal) => signal.aborted);
+              if (aborted) {
+                removeAbortListeners();
+                session.submitCode = undefined;
+                reject(aborted.reason ?? new Error("Sign-in cancelled."));
+              } else {
+                for (const signal of signals)
+                  signal.addEventListener("abort", onAbort, { once: true });
+              }
+            });
+          }
           // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
           if (prompt.type === "text") return "";
           throw new Error("Unexpected subscription login prompt.");
         },
         notify(event) {
           if (event.type === "device_code") {
-            device.resolve({
+            signInStarted.resolve({
+              mode: "device-code",
               userCode: event.userCode,
-              verificationUri: event.verificationUri,
+              verificationUri: httpsAuthorizationUrl(event.verificationUri),
               expiresInSeconds: event.expiresInSeconds ?? 15 * 60,
+            });
+          }
+          if (event.type === "auth_url") {
+            signInStarted.resolve({
+              mode: "auth-url",
+              verificationUri: httpsAuthorizationUrl(event.url),
+              expiresInSeconds: 15 * 60,
             });
           }
         },
@@ -263,7 +306,7 @@ export class PiOAuthLogins {
         })
         .catch((error) => {
           session.error = error instanceof Error ? error.message : "Subscription sign-in failed.";
-          device.reject(error instanceof Error ? error : new Error(session.error));
+          signInStarted.reject(error instanceof Error ? error : new Error(session.error));
           throw error;
         });
 
@@ -272,26 +315,30 @@ export class PiOAuthLogins {
       void done.catch(() => undefined);
       this.pending.set(loginId, session);
       this.activeByScope.set(scope, session);
-      return { abort, abortFromRequest, device: device.promise, loginId, session };
+      return { abort, abortFromRequest, signInStarted: signInStarted.promise, loginId, session };
     });
 
-    const { abort, abortFromRequest, device, loginId, session } = prepared;
+    const { abort, abortFromRequest, signInStarted, loginId, session } = prepared;
 
     try {
       const started = await Promise.race([
-        device,
-        sleep(DEVICE_CODE_WAIT_MS).then(() => {
+        signInStarted,
+        sleep(SIGN_IN_START_WAIT_MS).then(() => {
           throw new Error("Subscription sign-in did not start. Try again.");
         }),
       ]);
       input.signal?.removeEventListener("abort", abortFromRequest);
       if (abort.signal.aborted) throw abort.signal.reason ?? new Error("Sign-in cancelled.");
+      session.expiresTimer = setTimeout(() => {
+        if (session.state === "finalizing") return;
+        session.abort.abort(new Error("Sign-in expired."));
+        this.removeSession(session);
+      }, started.expiresInSeconds * 1000);
+      session.expiresTimer.unref?.();
       return {
         loginId,
         provider: input.provider,
-        verificationUri: started.verificationUri,
-        userCode: started.userCode,
-        expiresInSeconds: started.expiresInSeconds,
+        ...started,
       };
     } catch (error) {
       input.signal?.removeEventListener("abort", abortFromRequest);
@@ -299,6 +346,28 @@ export class PiOAuthLogins {
       this.removeSession(session);
       throw error;
     }
+  }
+
+  submit(
+    loginId: string,
+    actor: { userId: string; workspaceId: string },
+    code: string,
+  ): { ok: true } {
+    const session = this.pending.get(loginId);
+    if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
+      throw new Error("Sign-in session not found. Start sign-in again.");
+    }
+    if (session.error) throw new Error(session.error);
+    const normalizedCode = code.trim();
+    if (!normalizedCode) throw new Error("Paste an authorization code or callback URL.");
+    const resolve = session.submitCode;
+    if (session.codeSubmitted) return { ok: true };
+    if (!resolve) {
+      throw new Error("This sign-in is not waiting for a pasted code.");
+    }
+    session.codeSubmitted = true;
+    resolve(normalizedCode);
+    return { ok: true };
   }
 
   complete(loginId: string, actor: { userId: string; workspaceId: string }): PiOAuthComplete {
@@ -423,6 +492,8 @@ export class PiOAuthLogins {
   }
 
   private removeSession(session: Session): void {
+    if (session.expiresTimer) clearTimeout(session.expiresTimer);
+    session.expiresTimer = undefined;
     if (this.pending.get(session.id) === session) this.pending.delete(session.id);
     if (this.activeByScope.get(session.scope) === session) {
       this.activeByScope.delete(session.scope);
@@ -441,6 +512,9 @@ function defaultLogin(
   type: "oauth",
   interaction: AuthInteraction,
 ): Promise<Credential> {
+  if (providerId === ANTHROPIC_OAUTH_PROVIDER) {
+    return createManualAnthropicOAuthLogin()(interaction);
+  }
   return builtinModels().login(providerId, type, interaction);
 }
 
@@ -460,6 +534,12 @@ function sleep(ms: number): Promise<void> {
 
 function oauthScopeKey(userId: string, workspaceId: string, provider: string): string {
   return JSON.stringify([userId, workspaceId, provider]);
+}
+
+function httpsAuthorizationUrl(input: string): string {
+  const url = new URL(input);
+  if (url.protocol !== "https:") throw new Error("Authorization URL must use HTTPS.");
+  return url.toString();
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

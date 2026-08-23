@@ -1,9 +1,9 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { ModelOAuthSignInMode } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
-import { DEVICE_CODE_PROVIDERS, DEVICE_CODE_SIGN_IN, isDeviceCodeProvider } from "./pi-oauth.js";
+import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
-export type PiCatalogSignIn = typeof DEVICE_CODE_SIGN_IN;
 
 export type PiCatalogEntry = {
   provider: string;
@@ -13,8 +13,9 @@ export type PiCatalogEntry = {
   billing: string;
   auth: PiCatalogAuth;
   oauthLabel?: string;
+  authHint?: string;
   subscription: boolean;
-  signIn?: PiCatalogSignIn;
+  signIn?: ModelOAuthSignInMode;
 };
 
 export function listPiCatalog(): PiCatalogEntry[] {
@@ -31,11 +32,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const apiKey = Boolean(provider.auth.apiKey);
     const oauth = Boolean(provider.auth.oauth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
-    const device = DEVICE_CODE_PROVIDERS[provider.id];
+    const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[provider.id];
     const oauthLabel =
-      device?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
+      signInMeta?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
     const subscription = Boolean(provider.auth.oauth?.isSubscription);
-    const signIn = isDeviceCodeProvider(provider.id) ? DEVICE_CODE_SIGN_IN : undefined;
     const billing = catalogBilling(provider.id, provider.name, {
       apiKey,
       oauth,
@@ -49,8 +49,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
         billing,
         auth,
         oauthLabel,
+        authHint: signInMeta?.hint,
         subscription,
-        signIn,
+        signIn: signInMeta?.mode,
       });
     }
   }
@@ -62,8 +63,8 @@ function catalogBilling(
   name: string,
   opts: { apiKey: boolean; oauth: boolean },
 ) {
-  const device = DEVICE_CODE_PROVIDERS[providerId];
-  if (device) return device.billing;
+  const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[providerId];
+  if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
     return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
   }

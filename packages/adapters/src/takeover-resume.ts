@@ -1,12 +1,5 @@
 export type TakeoverResumeCheckpoint = "takeover" | "takeover-skipped";
 
-export function takeoverReleaseReasonFromPayload(payload: unknown): unknown {
-  if (payload && typeof payload === "object" && "reason" in payload) {
-    return (payload as { reason?: unknown }).reason;
-  }
-  return undefined;
-}
-
 export function takeoverResumeFromRelease(reason: unknown): {
   checkpoint: TakeoverResumeCheckpoint;
   promptNote: string;

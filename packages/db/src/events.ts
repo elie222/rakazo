@@ -54,7 +54,7 @@ export interface FinalizeComputerControlReleaseInput {
   workspaceId: string;
   computerId: string;
   botId: string;
-  runId?: string;
+  runId: string | null;
   leaseId: string;
   holder: "bot" | "none";
   reason: "done" | "expired" | "released" | "skipped";
@@ -523,7 +523,7 @@ export async function finalizeComputerControlRelease(
           },
         })
       : { count: 0 };
-    const runId = resumed.count === 1 ? input.runId! : null;
+    const runId = resumed.count === 1 ? input.runId : null;
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, workspaceId: input.workspaceId },

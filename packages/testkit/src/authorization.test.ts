@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ComposioEmulator } from "@rakazo/adapters";
 import type { appContract } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
@@ -38,6 +39,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
+      composio: new ComposioEmulator(),
     });
     app = handles.app;
   });
@@ -56,6 +58,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
+      ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
@@ -391,7 +394,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.connection.findUniqueOrThrow({
         where: { id: ownerConnection.connectionId },
       }),
-    ).toMatchObject({ status: "pending", userId: ownerActor.userId });
+    ).toMatchObject({ status: "connected", userId: ownerActor.userId });
 
     const ownerBotAfter = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: ownerBot.id },

@@ -94,15 +94,9 @@ describe("computer control leases", () => {
 
   it("resumes the run holding the takeover lease instead of a newer waiting run", async () => {
     const harness = controlHarness({ controlRunId: "run-holding-takeover" });
-    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.id === "run-holding-takeover" ? { id: "run-holding-takeover" } : { id: "newer-run" },
-    );
 
     await expireComputerControl(harness.deps, "computer-id", "lease-1");
 
-    expect(harness.prisma.run.findFirst).toHaveBeenCalledWith({
-      where: { id: "run-holding-takeover", botId: "bot", status: "waiting_takeover" },
-    });
     expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
       expect.objectContaining({ runId: "run-holding-takeover" }),
     );
@@ -113,13 +107,9 @@ describe("computer control leases", () => {
       controlRunId: "run-holding-takeover",
       executionRunId: "newer-run",
     });
-    harness.prisma.run.findFirst.mockResolvedValue({ id: "run-holding-takeover" });
 
     await expireComputerControl(harness.deps, "computer-id", "lease-1");
 
-    expect(harness.prisma.run.findFirst).toHaveBeenCalledWith({
-      where: { id: "run-holding-takeover", botId: "bot", status: "waiting_takeover" },
-    });
     expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
       expect.objectContaining({ runId: "run-holding-takeover" }),
     );
@@ -245,7 +235,8 @@ function controlHarness(
     controlHolder: "user",
     controlLeaseId: options.controlLeaseId ?? "lease-1",
     controlBotId: "bot",
-    controlRunId: options.controlRunId ?? options.waitingRunId ?? options.executionRunId ?? null,
+    controlRunId: options.controlRunId ?? options.waitingRunId ?? null,
+    executionRunId: options.executionRunId ?? null,
     controlLeaseExpiresAt:
       options.controlLeaseExpiresAt === undefined
         ? new Date("2026-01-01T00:00:00.000Z")
@@ -265,16 +256,6 @@ function controlHarness(
         computer,
       }),
     },
-    computerExecutionLease: {
-      findUnique: vi.fn().mockResolvedValue(
-        options.executionRunId ? { runId: options.executionRunId } : null,
-      ),
-    },
-    run: {
-      findFirst: vi.fn().mockResolvedValue(
-        options.waitingRunId ? { id: options.waitingRunId } : null,
-      ),
-    },
   };
   const setScreenControl = vi.fn(async () => {
     if (options.revokeError) throw options.revokeError;
@@ -284,7 +265,7 @@ function controlHarness(
   if (options.enqueueError) enqueue.mockRejectedValueOnce(options.enqueueError);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
   const finalizeComputerControlRelease = vi.fn().mockResolvedValue({
-    runId: options.waitingRunId ?? options.executionRunId ?? null,
+    runId: options.controlRunId ?? options.waitingRunId ?? null,
   });
   if (options.finalizeError) {
     finalizeComputerControlRelease.mockRejectedValueOnce(options.finalizeError);

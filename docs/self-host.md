@@ -159,8 +159,6 @@ Pull the new source, rebuild with `GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --f
 
 ## What “Rakazo Cloud” still needs
 
-`apps/www` (Astro, `output: "static"`, `site: https://rakazo.com`) can go live today on Vercel, Cloudflare Pages, or any static host. The waitlist link is `mailto:hello@rakazo.com`. That is the marketing site, not the product.
-
 The product cannot be “pushed live” as a Vercel serverless app. Graphile Worker, Postgres `LISTEN`, Pi runs, and Docker computers need durable processes and a sandbox host.
 
 To run a hosted product (same codebase):

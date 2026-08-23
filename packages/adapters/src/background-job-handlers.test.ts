@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
+import type { EncryptedSecretStore } from "./secrets.js";
 
 vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => undefined) }));
 
@@ -17,6 +18,8 @@ describe("createBackgroundJobHandlers", () => {
     const prisma = {} as unknown as PrismaClient;
     const runtime = {} as unknown as AgentRuntime;
     const jobs = {} as unknown as JobPublisher;
+    const secretStore = {} as unknown as EncryptedSecretStore;
+    const memoryProviders = { resolve: vi.fn(async () => null) };
     const resolveModel = vi.fn();
     const handlers = createBackgroundJobHandlers({
       executor: { resolveModel } as unknown as ReturnType<typeof createRunExecutor>,
@@ -27,13 +30,22 @@ describe("createBackgroundJobHandlers", () => {
       events: {} as unknown as ThreadEvents,
       workerId: "worker-1",
       runtime,
+      secretStore,
+      memoryProviders,
       deploymentModelKey: "openrouter-key",
     });
 
     await handlers["history.compact"]({ threadId: "thread-1" });
 
     expect(compactHistory).toHaveBeenCalledWith(
-      { prisma, runtime, jobs, deploymentModelKey: "openrouter-key", resolveModel },
+      {
+        prisma,
+        runtime,
+        jobs,
+        memoryProviders,
+        deploymentModelKey: "openrouter-key",
+        resolveModel,
+      },
       "thread-1",
     );
   });

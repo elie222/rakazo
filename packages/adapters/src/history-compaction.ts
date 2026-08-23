@@ -3,13 +3,10 @@ import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  deleteSupermemoryContainer as defaultDeleteSupermemoryContainer,
-  saveSupermemoryMemory as defaultSaveSupermemoryMemory,
-  isSupermemoryEnabled,
-  MAX_RECALLED_MEMORIES,
-  supermemoryContainerTag,
-} from "./supermemory-client.js";
+import type {
+  ConfiguredMemoryProvider,
+  MemoryProviderResolver,
+} from "./memory-provider-factory.js";
 
 /**
  * Sentinel for "nothing compacted yet". Message `seq` is 0-based, so an exclusive lower bound of
@@ -40,6 +37,8 @@ export const COMPACTION_BATCH_SIZE = 50;
 export const HISTORY_WINDOW_SIZE = 50;
 export const LEGACY_HISTORY_WINDOW_SIZE = 200;
 export const MAX_COMPACTED_SUMMARY_CHARS = 20_000;
+/** How many semantic memories can be injected into one run. */
+export const MAX_RECALLED_MEMORIES = 5;
 
 export type CompactedHistoryMessage = {
   seq: number;
@@ -88,11 +87,11 @@ export function formatCompactedSummary(summary: string, historyCompactedUpToSeq:
 }
 
 export function historyWindowSize(options: {
-  supermemoryEnabled: boolean;
+  semanticMemoryEnabled: boolean;
   compacted: boolean;
   recallSucceeded: boolean;
 }): number {
-  return options.supermemoryEnabled && options.compacted && options.recallSucceeded
+  return options.semanticMemoryEnabled && options.compacted && options.recallSucceeded
     ? HISTORY_WINDOW_SIZE
     : LEGACY_HISTORY_WINDOW_SIZE;
 }
@@ -123,13 +122,12 @@ export interface CompactHistoryDeps {
   prisma: PrismaClient;
   runtime: AgentRuntime;
   jobs: JobPublisher;
+  memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   resolveModel?: (scope: {
     userId: string;
     workspaceId: string;
   }) => Promise<AgentRunRequest["model"]>;
-  saveSupermemoryMemory?: typeof defaultSaveSupermemoryMemory;
-  deleteSupermemoryContainer?: typeof defaultDeleteSupermemoryContainer;
 }
 
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
@@ -240,7 +238,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // Match normal run model selection when the executor provides its resolver, including the
   // thread owner's encrypted credential. Direct callers retain the deployment fallback below.
   // "scripted" means nothing at all is configured: ScriptedAgentRuntime answers by echoing canned
-  // text keyed off the prompt, so summarizing with it would save nonsense to Supermemory and
+  // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const model = deps.resolveModel
     ? await deps.resolveModel({ userId: thread.userId, workspaceId: thread.workspaceId })
@@ -307,12 +305,6 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     return;
   }
 
-  const save =
-    deps.saveSupermemoryMemory ??
-    (isSupermemoryEnabled(process.env.SUPERMEMORY_API_KEY)
-      ? defaultSaveSupermemoryMemory
-      : undefined);
-  const containerTag = supermemoryContainerTag(thread.botId, previousGeneration);
   const lastSeq = batch[batch.length - 1]!.seq;
   const advanced = await deps.prisma.thread.updateMany({
     where: {
@@ -329,12 +321,36 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
 
   // Local compaction is first-party behavior and must not depend on an optional external store.
   // Saving only after the compare-and-set also prevents losing workers from creating duplicates.
+  let semanticMemory: ConfiguredMemoryProvider | null = null;
+  try {
+    semanticMemory = await deps.memoryProviders.resolve(thread.workspaceId);
+  } catch (error) {
+    console.error("Failed to load semantic memory provider for history compaction", error);
+  }
   let externalSaveAttempted = false;
-  if (save) {
+  const memoryContext = {
+    operationId: `history-compact:${threadId}`,
+    traceId: `history-compact:${threadId}`,
+    workspaceId: thread.workspaceId,
+    userId: thread.userId,
+    botId: thread.botId,
+    signal: new AbortController().signal,
+  };
+  if (semanticMemory) {
     externalSaveAttempted = true;
     try {
-      const result = await save(summary, containerTag);
-      if (!result.ok) console.error(`Failed to save compacted memory: ${result.error}`);
+      const result = await semanticMemory.provider.save(
+        {
+          content: summary,
+          scope: "isolated",
+          botId: thread.botId,
+          source: { kind: "history", generation: previousGeneration },
+        },
+        memoryContext,
+      );
+      if (!result.ok) {
+        console.error(`Failed to save compacted semantic memory: ${result.error}`);
+      }
     } catch (error) {
       console.error("Failed to save compacted memory", error);
     }
@@ -351,19 +367,27 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
 
   // A clear can commit and purge while the network save above is still in flight. Purge the old
   // generation again so that the late save cannot leave cleared conversation data behind.
-  if (externalSaveAttempted && latest.historyCompactionGeneration !== previousGeneration) {
-    const remove = deps.deleteSupermemoryContainer ?? defaultDeleteSupermemoryContainer;
-    const removed = await remove(containerTag);
-    if (!removed.ok) {
-      console.error(
-        `history.compact could not purge stale Supermemory container ${containerTag}: ${removed.error}`,
+  if (
+    externalSaveAttempted &&
+    semanticMemory &&
+    latest.historyCompactionGeneration !== previousGeneration
+  ) {
+    try {
+      const removed = await semanticMemory.provider.purgeHistory(
+        { botId: thread.botId, generations: [previousGeneration] },
+        memoryContext,
       );
+      if (!removed.ok) {
+        console.error(`history.compact could not purge stale semantic memory: ${removed.error}`);
+      }
+    } catch (error) {
+      console.error("history.compact could not purge stale semantic memory", error);
     }
   }
 
   // Drain a pre-existing backlog at queue speed rather than one batch per completed run, which
-  // for a thread that accumulated thousands of messages before Supermemory was enabled would
-  // otherwise leave most of that history in neither the verbatim window nor Supermemory.
+  // for a thread that accumulated thousands of messages before semantic memory was enabled would
+  // otherwise leave most of that history in neither the verbatim window nor the external store.
   if (
     shouldEnqueueCompaction(
       latest.nextMessageSeq,

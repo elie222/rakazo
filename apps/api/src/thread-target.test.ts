@@ -2,7 +2,73 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { stopThreadRuns, type ThreadTarget } from "./thread-target.js";
+import { stopThreadRuns, type ThreadTarget, threadSnapshot } from "./thread-target.js";
+
+describe("threadSnapshot", () => {
+  it("reloads tool-only live messages for an active run", async () => {
+    const run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "running",
+      trigger: "user",
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const findManyEvents = vi.fn().mockResolvedValue([
+      {
+        id: "event-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+        createdAt: new Date("2026-08-23T00:00:00.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue({ seq: 4 }),
+        findMany: findManyEvents,
+      },
+      run: { findFirst: vi.fn().mockResolvedValue(run) },
+    } as unknown as PrismaClient;
+    const target = {
+      kind: "bot",
+      botId: "bot-1",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+
+    const snapshot = await threadSnapshot({ prisma }, target);
+
+    expect(findManyEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
+        }),
+      }),
+    );
+    expect(snapshot.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        botId: "bot-1",
+        blocks: [
+          {
+            kind: "steps",
+            steps: [{ label: "Slack find channels", count: 1 }],
+          },
+        ],
+      }),
+    ]);
+  });
+});
 
 describe("stopThreadRuns", () => {
   it("releases every active group member screen immediately", async () => {

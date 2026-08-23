@@ -189,6 +189,7 @@ describe("finalizeComputerControlRelease", () => {
         workspaceId: "workspace-1",
         computerId: "computer-1",
         botId: "deleted-bot",
+        runId: null,
         leaseId: "lease-1",
         holder: "none",
         reason: "expired",

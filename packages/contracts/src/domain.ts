@@ -5,6 +5,9 @@ import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
+export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
+export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -19,6 +22,7 @@ export const BotSchema = z.object({
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
+  memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
   preview: z.string(),
   status: z.string(),
@@ -106,6 +110,7 @@ export const UpdateBotInput = z.object({
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
   pinned: z.boolean().optional(),
+  memoryScope: MemoryScopeSchema.nullable().optional(),
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
@@ -206,6 +211,7 @@ export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
 export const ConnectionSchema = z.object({
   id: Id,
+  connectorId: z.string(),
   provider: z.string(),
   displayName: z.string(),
   status: z.enum(["pending", "connected", "revoked", "error"]),
@@ -215,6 +221,7 @@ export const ConnectionSchema = z.object({
 export type Connection = z.infer<typeof ConnectionSchema>;
 
 export const ConnectionCatalogItemSchema = z.object({
+  connectorId: z.string(),
   slug: z.string(),
   name: z.string(),
   logo: z.string().nullable(),
@@ -225,11 +232,12 @@ export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
 export const CapabilityInstallSchema = z.object({
   id: Id,
-  kind: z.enum(["skill", "plugin", "mcp", "connection"]),
+  kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
   name: z.string(),
   source: z.string(),
   version: z.string().nullable(),
   digest: z.string().nullable(),
+  secretConfigured: z.boolean(),
   config: z.record(z.string(), z.unknown()),
   createdAt: z.string(),
 });
@@ -269,6 +277,7 @@ export const ComputerStatusSchema = z.object({
   state: z.enum(["stopped", "booting", "running", "suspended", "error"]),
   controlHolder: z.enum(["bot", "user", "none"]),
   controlBotId: Id.nullable(),
+  takeoverRequested: z.boolean(),
   screenAvailable: z.boolean(),
   screenWidth: z.number().int().positive(),
   screenHeight: z.number().int().positive(),
@@ -276,6 +285,9 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
+
+export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
+export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 
 export const RunSchema = z.object({
   id: Id,
@@ -323,6 +335,36 @@ export const ModelCredentialSchema = z.object({
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
+export const ModelOAuthSignInModeSchema = z.enum(["device-code", "auth-url"]);
+export type ModelOAuthSignInMode = z.infer<typeof ModelOAuthSignInModeSchema>;
+
+const ModelOAuthBeginBaseSchema = z.object({
+  loginId: z.string(),
+  provider: z.string(),
+  verificationUri: z
+    .string()
+    .url()
+    .refine((value) => value.startsWith("https://"), "Expected an HTTPS authorization URL"),
+  expiresInSeconds: z.number().int().positive(),
+});
+
+export const ModelOAuthBeginSchema = z.discriminatedUnion("mode", [
+  ModelOAuthBeginBaseSchema.extend({
+    mode: z.literal("device-code"),
+    userCode: z.string().min(1),
+  }),
+  ModelOAuthBeginBaseSchema.extend({ mode: z.literal("auth-url") }),
+]);
+export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
+
+export const WorkspaceMemoryConfigSchema = z.object({
+  provider: z.string(),
+  settings: z.record(z.string(), z.string()),
+  defaultMemoryScope: MemoryScopeSchema,
+  updatedAt: z.string(),
+});
+export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   provider: z.string(),
   providerName: z.string().optional(),
@@ -331,8 +373,9 @@ export const ModelCatalogEntrySchema = z.object({
   billing: z.string(),
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
   oauthLabel: z.string().optional(),
+  authHint: z.string().optional(),
   subscription: z.boolean().optional(),
-  signIn: z.enum(["device-code"]).optional(),
+  signIn: ModelOAuthSignInModeSchema.optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 

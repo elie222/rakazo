@@ -9,6 +9,7 @@ export function toComputerStatus(
     scope: string;
     controlHolder: string;
     controlBotId?: string | null;
+    controlRunId?: string | null;
     homeRevision: string;
   } | null,
 ): ComputerStatus {
@@ -30,6 +31,7 @@ export function toComputerStatus(
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
     controlBotId: computer?.controlBotId ?? null,
+    takeoverRequested: Boolean(computer?.controlRunId),
     screenAvailable: state === "running" || state === "booting",
     screenWidth: screen.width,
     screenHeight: screen.height,

@@ -60,17 +60,6 @@ export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new
   return new Date(Math.max(now.getTime() + takeoverLeaseMs(), teachingExpiresAt.getTime()));
 }
 
-export async function findWaitingTakeoverRun(
-  prisma: PrismaClient,
-  botId: string,
-  runId: string | null,
-) {
-  if (!runId) return null;
-  return prisma.run.findFirst({
-    where: { id: runId, botId, status: "waiting_takeover" },
-  });
-}
-
 export async function extendActiveComputerControl(
   prisma: PrismaClient,
   jobs: JobPublisher,
@@ -153,12 +142,11 @@ export async function expireComputerControl(
     await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
   }
 
-  const waiting = await findWaitingTakeoverRun(deps.prisma, botId, computer.controlRunId);
   const released = await deps.events.finalizeComputerControlRelease({
     workspaceId: computer.workspaceId,
     computerId: computer.id,
     botId,
-    runId: waiting?.id,
+    runId: computer.controlRunId,
     leaseId,
     holder: "none",
     reason: "expired",

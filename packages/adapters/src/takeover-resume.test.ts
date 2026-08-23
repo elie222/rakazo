@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { takeoverReleaseReasonFromPayload, takeoverResumeFromRelease } from "./takeover-resume.js";
+import { takeoverResumeFromRelease } from "./takeover-resume.js";
 
 describe("takeoverResumeFromRelease", () => {
   it("tells the bot the login finished after I'm done or a plain release", () => {
@@ -19,11 +19,5 @@ describe("takeoverResumeFromRelease", () => {
 
   it("treats an expired takeover like a skip", () => {
     expect(takeoverResumeFromRelease("expired").checkpoint).toBe("takeover-skipped");
-  });
-
-  it("reads reason from a released event payload", () => {
-    expect(takeoverReleaseReasonFromPayload({ holder: "bot", reason: "skipped" })).toBe("skipped");
-    expect(takeoverReleaseReasonFromPayload({ holder: "bot" })).toBeUndefined();
-    expect(takeoverReleaseReasonFromPayload(null)).toBeUndefined();
   });
 });

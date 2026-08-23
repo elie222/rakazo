@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  ComposioEmulator,
   DesktopSandboxProvider,
   FakeSandboxProvider,
   handoffToGroupBot,
@@ -118,6 +119,7 @@ describeJourneys("required product journeys", () => {
       dataDir,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
+      composio: new ComposioEmulator(),
     });
     app = handles.app;
     stop = handles.stop;
@@ -542,6 +544,8 @@ describeJourneys("required product journeys", () => {
       bot.id,
       (snap) => snap.run?.status === "waiting_takeover",
     );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
     await rpc(app, cookie, "computer/release", { botId: bot.id, reason: "skipped" });
     const done = await waitFor(
       app,

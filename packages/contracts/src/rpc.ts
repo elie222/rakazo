@@ -9,6 +9,7 @@ import {
   BotSectionSchema,
   CapabilityInstallSchema,
   ComputerModeSchema,
+  ComputerReleaseReasonSchema,
   ComputerStatusSchema,
   ConnectionCatalogItemSchema,
   ConnectionSchema,
@@ -21,9 +22,11 @@ import {
   GroupDetailSchema,
   GroupSchema,
   MemoryDocumentSchema,
+  MemoryScopeSchema,
   MeSchema,
   ModelCatalogEntrySchema,
   ModelCredentialSchema,
+  ModelOAuthBeginSchema,
   RoutineSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
@@ -37,6 +40,7 @@ import {
   VoiceCredentialSchema,
   VoiceInfoSchema,
   VoiceStatusSchema,
+  WorkspaceMemoryConfigSchema,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
@@ -119,14 +123,10 @@ export const appContract = {
           modelId: z.string().optional(),
         }),
       )
-      .output(
-        z.object({
-          loginId: z.string(),
-          verificationUri: z.string().url(),
-          userCode: z.string(),
-          expiresInSeconds: z.number().int(),
-        }),
-      ),
+      .output(ModelOAuthBeginSchema),
+    submitOAuthCode: oc
+      .input(z.object({ loginId: z.string(), code: z.string().trim().min(1).max(8_192) }))
+      .output(z.object({ ok: z.literal(true) })),
     completeOAuth: oc
       .input(z.object({ loginId: z.string() }))
       .output(
@@ -223,7 +223,7 @@ export const appContract = {
       .input(
         z.object({
           botId: Id,
-          reason: z.enum(["done", "skipped"]).optional(),
+          reason: ComputerReleaseReasonSchema.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -255,6 +255,21 @@ export const appContract = {
       .input(z.object({ documentId: Id, content: z.string() }))
       .output(MemoryDocumentSchema),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
+    providerConfig: oc.output(WorkspaceMemoryConfigSchema.nullable()),
+    connectProvider: oc
+      .input(
+        z.object({
+          provider: z.string().min(1),
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()),
+          defaultMemoryScope: MemoryScopeSchema.default("isolated"),
+        }),
+      )
+      .output(WorkspaceMemoryConfigSchema),
+    setDefaultScope: oc
+      .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
+      .output(WorkspaceMemoryConfigSchema),
+    disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {
     list: oc.input(botId).output(z.array(RoutineSchema)),
@@ -308,10 +323,11 @@ export const appContract = {
     install: oc
       .input(
         z.object({
-          kind: z.enum(["skill", "plugin", "mcp"]),
-          name: z.string(),
-          source: z.string(),
+          kind: z.enum(["skill", "plugin", "mcp", "api"]),
+          name: z.string().min(1).max(120),
+          source: z.string().min(1).max(2048),
           config: z.record(z.string(), z.unknown()).default({}),
+          credential: z.string().max(16_384).optional(),
         }),
       )
       .output(CapabilityInstallSchema),
@@ -319,11 +335,17 @@ export const appContract = {
   },
   connections: {
     catalog: oc
-      .input(z.object({ query: z.string().optional() }))
+      .input(z.object({ query: z.string().optional(), connectorId: z.string().optional() }))
       .output(z.array(ConnectionCatalogItemSchema)),
     list: oc.output(z.array(ConnectionSchema)),
     begin: oc
-      .input(z.object({ provider: z.string(), displayName: z.string() }))
+      .input(
+        z.object({
+          connectorId: z.string().default("composio"),
+          provider: z.string(),
+          displayName: z.string(),
+        }),
+      )
       .output(z.object({ connectionId: Id, authorizationUrl: z.string().nullable() })),
     complete: oc
       .input(z.object({ connectionId: Id, code: z.string().optional() }))

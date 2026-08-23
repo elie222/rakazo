@@ -4,6 +4,7 @@ import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
   type ModelCatalogEntry,
+  type ModelOAuthBegin,
   providerHint,
   waitForModelOAuth,
 } from "../lib/model-auth";
@@ -46,13 +47,12 @@ export function OnboardingPage() {
   const [description, setDescription] = useState("");
   const [answers, setAnswers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [oauth, setOauth] = useState<{
-    verificationUri: string;
-    userCode: string;
-  } | null>(null);
+  const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
+  const [pasteCode, setPasteCode] = useState("");
   const [oauthPending, setOauthPending] = useState(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
+  const oauthCodeSubmittingRef = useRef(false);
 
   function cancelOAuthAttempt(resetState = true) {
     const loginId = oauthLoginIdRef.current;
@@ -115,7 +115,7 @@ export function OnboardingPage() {
   );
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const deviceSignIn = selected?.signIn === "device-code";
+  const subscriptionSignIn = selected?.signIn !== undefined;
   const acceptsKey = selected?.auth !== "oauth";
   const signInLabel = selected?.oauthLabel ?? "Sign in";
 
@@ -136,11 +136,22 @@ export function OnboardingPage() {
     }
   }
 
-  async function startDeviceSignIn() {
+  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
+    await waitForModelOAuth(loginId, controller.signal);
+    if (controller.signal.aborted) return;
+    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    oauthLoginIdRef.current = null;
+    setOauth(null);
+    setStep("bot");
+  }
+
+  async function startSubscriptionSignIn() {
     setError(null);
     setOauthPending(true);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
+    let waitingForCode = false;
     try {
       const started = await rpc.models.beginOAuth(
         {
@@ -152,18 +163,11 @@ export function OnboardingPage() {
       );
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
-      setOauth({
-        verificationUri: started.verificationUri,
-        userCode: started.userCode,
-      });
+      setPasteCode("");
+      setOauth(started);
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      await waitForModelOAuth(started.loginId, controller.signal);
-      if (controller.signal.aborted) return;
-      await rpc.models.finishOAuth({ loginId: started.loginId }, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      oauthLoginIdRef.current = null;
-      setOauth(null);
-      setStep("bot");
+      waitingForCode = started.mode === "auth-url";
+      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -172,7 +176,45 @@ export function OnboardingPage() {
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      if (!waitingForCode) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
+    }
+  }
+
+  async function submitOAuthCode() {
+    if (oauth?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
+    const controller = oauthAbortRef.current;
+    const code = pasteCode.trim();
+    if (!controller || !code) return;
+    oauthCodeSubmittingRef.current = true;
+    setPasteCode("");
+    setError(null);
+    let submitted = false;
+    let retryable = false;
+    try {
+      await rpc.models.submitOAuthCode(
+        { loginId: oauth.loginId, code },
+        { signal: controller.signal },
+      );
+      submitted = true;
+      await finishSubscriptionSignIn(oauth.loginId, controller);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (submitted) {
+        oauthLoginIdRef.current = null;
+        setOauth(null);
+        void rpc.models.cancelOAuth({ loginId: oauth.loginId }).catch(() => undefined);
+      } else {
+        retryable = true;
+        setPasteCode(code);
+      }
+      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+    } finally {
+      oauthCodeSubmittingRef.current = false;
+      if (!retryable) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
     }
   }
 
@@ -250,31 +292,70 @@ export function OnboardingPage() {
               </select>
             </label>
             <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
-            {deviceSignIn ? (
+            {subscriptionSignIn ? (
               <div className="mt-4">
                 {oauth ? (
                   <div className="rounded-[11px] border border-[#26262A] px-3.5 py-3">
-                    <p className="text-sm text-[#85858A]">
-                      Enter this code at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#ECECEE] underline"
-                      >
-                        {oauth.verificationUri.replace(/^https:\/\//, "")}
-                      </a>
-                    </p>
-                    <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
-                      {oauth.userCode}
-                    </p>
-                    <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                    {oauth.mode === "auth-url" ? (
+                      <>
+                        <p className="text-sm text-[#85858A]">
+                          Finish signing in at{" "}
+                          <a
+                            href={oauth.verificationUri}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#ECECEE] underline"
+                          >
+                            {new URL(oauth.verificationUri).hostname}
+                          </a>
+                          . The final page may not load; paste its URL or code here.
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            value={pasteCode}
+                            onChange={(e) => setPasteCode(e.target.value)}
+                            aria-label="Authorization code or callback URL"
+                            autoComplete="off"
+                            spellCheck={false}
+                            placeholder="http://localhost:53692/callback?code=…"
+                            className="w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-2.5 text-[13px] text-[#ECECEE]"
+                          />
+                          <button
+                            type="button"
+                            disabled={!pasteCode.trim()}
+                            onClick={() => void submitOAuthCode()}
+                            className="rounded-[11px] bg-[#F1F1EF] px-4 py-2.5 text-[#17171A] disabled:opacity-40"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-[#85858A]">
+                          Enter this code at{" "}
+                          <a
+                            href={oauth.verificationUri}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#ECECEE] underline"
+                          >
+                            {oauth.verificationUri.replace(/^https:\/\//, "")}
+                          </a>
+                        </p>
+                        <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
+                          {oauth.userCode}
+                        </p>
+                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <button
                     type="button"
                     disabled={oauthPending}
-                    onClick={() => void startDeviceSignIn()}
+                    onClick={() => void startSubscriptionSignIn()}
                     className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
                   >
                     {oauthPending ? "Starting…" : signInLabel}
@@ -284,7 +365,7 @@ export function OnboardingPage() {
             ) : null}
             {acceptsKey ? (
               <label className="mt-4 block text-sm text-[#85858A]">
-                {deviceSignIn ? "Or paste an API key" : "API key"}
+                {subscriptionSignIn ? "Or paste an API key" : "API key"}
                 <input
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
@@ -294,7 +375,7 @@ export function OnboardingPage() {
                   className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                 />
               </label>
-            ) : deviceSignIn ? null : (
+            ) : subscriptionSignIn ? null : (
               <p className="mt-4 text-sm text-[#85858A]">
                 This provider cannot paste a key here. Skip if this deployment already has
                 credentials.

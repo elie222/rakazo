@@ -3,6 +3,7 @@ import type {
   Bot,
   BotSection,
   ComputerMode,
+  ComputerReleaseReason,
   ComputerStatus,
   Group,
   Me,
@@ -14,6 +15,7 @@ import type {
   ThreadSnapshot,
   VoiceInfo,
   VoiceStatus,
+  WorkspaceMemoryConfig,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
@@ -30,6 +32,7 @@ import {
   hasMentionToken,
   inferAttachmentMimeType,
   isActive,
+  isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
   speechFromBlocks,
@@ -107,6 +110,11 @@ const ModelSettingsOverlay = lazy(() =>
 const PluginsOverlay = lazy(() =>
   import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
+const MemorySettingsOverlay = lazy(() =>
+  import("./MemorySettingsOverlay").then((module) => ({
+    default: module.MemorySettingsOverlay,
+  })),
+);
 const RoutineSchedule = lazy(() =>
   import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
 );
@@ -162,6 +170,11 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
+  const [memoryProviderConfig, setMemoryProviderConfig] = useState<
+    WorkspaceMemoryConfig | null | undefined
+  >(undefined);
+  const memoryProviderConfigRevision = useRef(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -440,6 +453,19 @@ export function ShellPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const providerConfigRevision = memoryProviderConfigRevision.current;
+    void rpc.memory
+      .providerConfig()
+      .then((providerConfig) => {
+        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
+          setMemoryProviderConfig(providerConfig);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
+          setMemoryProviderConfig(null);
+        }
+      });
     void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
       .then(([bootstrap, groupList]) => {
         if (cancelled) return;
@@ -597,7 +623,7 @@ export function ShellPage() {
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
-              event.type === "run.completed" ||
+              isRunTerminalEvent(event) ||
               event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
@@ -609,7 +635,7 @@ export function ShellPage() {
               }
               if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
-            if (event.type === "run.completed" || event.type === "skill.teaching.stopped") {
+            if (isRunTerminalEvent(event) || event.type === "skill.teaching.stopped") {
               void refreshThread(active.id).catch(() => undefined);
             } else if (isComputerStatusEvent(event)) {
               void refreshComputerScreen(active.id).catch(() => undefined);
@@ -678,7 +704,7 @@ export function ShellPage() {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
             }
-            if (event.type === "run.completed") {
+            if (isRunTerminalEvent(event)) {
               void refreshGroupThread(groupId).catch(() => undefined);
             }
           }
@@ -1184,10 +1210,10 @@ export function ShellPage() {
     setComputerOpen(true);
   }
 
-  async function releaseComputer() {
+  async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
     setComputerOpen(false);
-    await rpc.computer.release({ botId: active.id }).catch(() => undefined);
+    await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
   }
 
@@ -1428,7 +1454,7 @@ export function ShellPage() {
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">Plugins</span>
+          <span className="text-[14.5px] text-[#C9C9CE]">Integrations</span>
         </button>
         <div className="relative">
           {menuOpen ? (
@@ -1443,6 +1469,17 @@ export function ShellPage() {
               >
                 <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
                 <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Models</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMemorySettingsOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">◇</span>
+                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Memory</span>
               </button>
               <button
                 type="button"
@@ -1701,14 +1738,10 @@ export function ShellPage() {
                           : computerLabel(computer?.mode, active.name)}
                   </span>
                   {hasControl ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void releaseComputer()}
-                    >
-                      Release
-                    </Button>
+                    <ComputerReleaseActions
+                      takeoverRequested={computer?.takeoverRequested ?? false}
+                      onRelease={releaseComputer}
+                    />
                   ) : (
                     <Button
                       type="button"
@@ -1811,6 +1844,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -2106,6 +2140,19 @@ export function ShellPage() {
         ) : null}
       </Suspense>
 
+      <Suspense fallback={null}>
+        {memorySettingsOpen ? (
+          <MemorySettingsOverlay
+            onClose={() => setMemorySettingsOpen(false)}
+            config={memoryProviderConfig}
+            onConfigChange={(config) => {
+              memoryProviderConfigRevision.current += 1;
+              setMemoryProviderConfig(config);
+            }}
+          />
+        ) : null}
+      </Suspense>
+
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
           <div className="text-[19px] font-medium text-[#F1F1F2]">
@@ -2142,14 +2189,10 @@ export function ShellPage() {
               {recordingSkill ? (
                 <TeachStopButton busy={teachBusy} onStop={stopTeaching} />
               ) : hasControl ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void releaseComputer()}
-                >
-                  Release
-                </Button>
+                <ComputerReleaseActions
+                  takeoverRequested={computer?.takeoverRequested ?? false}
+                  onRelease={releaseComputer}
+                />
               ) : (
                 <Button
                   type="button"
@@ -2298,10 +2341,18 @@ const Transcript = memo(function Transcript({
           />
         </div>
       ))}
-      {running ? (
+      {running &&
+      !messages.some(
+        (message) =>
+          message.id.startsWith("progress:") &&
+          message.blocks[0]?.kind === "progress" &&
+          message.blocks[0].text,
+      ) ? (
         <div className="flex justify-start">
+          {/* Box metrics match the progress bubble exactly so swapping between
+              them never changes height or text position. */}
           <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
+            className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#85858A]"
             style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
           >
             working…
@@ -2593,6 +2644,68 @@ function applyThreadEvent(
   }
 }
 
+function ComputerReleaseActions({
+  takeoverRequested,
+  onRelease,
+}: {
+  takeoverRequested: boolean;
+  onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
+}) {
+  if (!takeoverRequested) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
+        Release
+      </Button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
+        Skip
+      </Button>
+      <Button type="button" size="sm" onClick={() => void onRelease("done")}>
+        I’m done
+      </Button>
+    </div>
+  );
+}
+
+function ToolSteps({
+  steps,
+  currentIndex,
+}: {
+  steps: Extract<ThreadMessage["blocks"][number], { kind: "steps" }>["steps"];
+  currentIndex?: number;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {steps.map((step, index) => {
+        const isCurrent = index === currentIndex;
+        return (
+          <div key={index} className="flex items-center gap-2">
+            <span
+              className="text-[13px]"
+              style={{
+                color: isCurrent ? "#F5A03C" : "#4ECB71",
+                animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+              }}
+            >
+              {isCurrent ? "◷" : "✓"}
+            </span>
+            <span
+              className="truncate text-[14px]"
+              style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
+            >
+              {step.label}
+              {step.count > 1 ? ` ×${step.count}` : ""}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
@@ -2622,7 +2735,14 @@ const MessageView = memo(function MessageView({
   speaking: boolean;
   onSpeak: () => void;
 }) {
-  return (
+  const isNarration =
+    message.role === "bot" &&
+    message.blocks.length > 0 &&
+    message.blocks.every(
+      (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
+    );
+  const isLive = message.id.startsWith("progress:");
+  const messageContext = (
     <>
       {speakerName ? (
         <div className="mb-1 text-[12.5px] font-medium text-[#85858A]">{speakerName}</div>
@@ -2632,6 +2752,52 @@ const MessageView = memo(function MessageView({
           {previewMessageText(replyPreview)}
         </div>
       ) : null}
+    </>
+  );
+  if (isNarration) {
+    return (
+      <>
+        {messageContext}
+        <div className="flex justify-start">
+          <div className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+            {message.blocks.map((block, i) => {
+              if (block.kind === "steps") {
+                const isCurrentBlock = isLive && i === message.blocks.length - 1;
+                return (
+                  <ToolSteps
+                    key={i}
+                    steps={block.steps}
+                    currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
+                  />
+                );
+              }
+              if (block.kind === "text" || block.kind === "progress") {
+                return (
+                  <div key={i}>
+                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                  </div>
+                );
+              }
+              return null;
+            })}
+            {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
+              <button
+                type="button"
+                aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                onClick={onSpeak}
+                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+              >
+                {speaking ? "Stop" : "Speak"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      {messageContext}
       {message.blocks.map((block, i) => {
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? "bot";
@@ -2664,6 +2830,18 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex justify-start">
               <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
+              </div>
+            </div>
+          );
+        }
+        if (block.kind === "steps") {
+          return (
+            <div key={i} className="flex justify-start">
+              <div className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3">
+                <ToolSteps
+                  steps={block.steps}
+                  currentIndex={isLive ? block.steps.length - 1 : undefined}
+                />
               </div>
             </div>
           );
@@ -2738,6 +2916,13 @@ const MessageView = memo(function MessageView({
                   : block.title || "Opened its own thread. Tap to switch."}
               </div>
             </button>
+          );
+        }
+        if (block.kind === "chart") {
+          return (
+            <div key={i} className="flex justify-start">
+              <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+            </div>
           );
         }
         if (block.kind === "image") {
@@ -3056,17 +3241,20 @@ function CreateBotForm({
 
 function BotSettings({
   bot,
+  memoryProviderConfigured,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
+  memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
     title?: string;
     description?: string;
     instructions?: string;
     computerMode: ComputerMode;
+    memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
   }) => Promise<void>;
@@ -3077,6 +3265,7 @@ function BotSettings({
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
+  const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -3121,6 +3310,34 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      {memoryProviderConfigured ? (
+        <div className="mt-4 text-[14px] text-[#85858A]">
+          Memory scope
+          <div className="mt-2 flex gap-2">
+            {(
+              [
+                { value: null, label: "Inherit default" },
+                { value: "isolated" as const, label: "Isolated" },
+                { value: "shared" as const, label: "Shared" },
+              ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
+            ).map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                aria-pressed={memoryScope === option.value}
+                onClick={() => setMemoryScope(option.value)}
+                className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
+                  memoryScope === option.value
+                    ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
+                    : "border-[#26262A] text-[#85858A]"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
         <input
           type="checkbox"
@@ -3160,6 +3377,7 @@ function BotSettings({
               description,
               instructions: description,
               computerMode,
+              memoryScope,
               autoSpeak,
               voiceId: voiceId || null,
             })
@@ -3567,6 +3785,155 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+}
+
+function ChartCanvas({
+  spec,
+  data,
+  width,
+  height,
+}: {
+  spec: Record<string, unknown>;
+  data: unknown[];
+  width: number;
+  height?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{
+    title?: string;
+    swatches: { label: string; color: string }[];
+  }>({ swatches: [] });
+  useEffect(() => {
+    let cancelled = false;
+    // Plot loads lazily so threads without charts never pay for the library.
+    void (async () => {
+      try {
+        const { buildPlotParts } = await import("@rakazo/core/plot");
+        if (cancelled || !ref.current) return;
+        // Hover inspection by default: give the first mark a tooltip unless
+        // the spec already asks for one somewhere.
+        const marks = Array.isArray((spec as { marks?: unknown[] }).marks)
+          ? ((spec as { marks: { options?: Record<string, unknown> }[] }).marks ?? [])
+          : [];
+        const hasTip = marks.some((mark) => mark.options && "tip" in mark.options);
+        const liveSpec = hasTip
+          ? spec
+          : {
+              ...spec,
+              marks: marks.map((mark, index) =>
+                index === 0 ? { ...mark, options: { ...(mark.options ?? {}), tip: true } } : mark,
+              ),
+            };
+        const parts = buildPlotParts(liveSpec as never, data, document, { width, height });
+        setMeta({ title: parts.title, swatches: parts.swatches });
+        setError(null);
+        ref.current.replaceChildren(parts.plotted);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not render chart");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [spec, data, width, height]);
+  if (error)
+    return <div className="text-[13px] text-[#F3A2AA]">Chart failed to render: {error}</div>;
+  return (
+    <div className="text-[#C9C9CE]">
+      {meta.title ? (
+        <div className="mb-1 text-[14.5px] font-semibold text-[#ECECEE]">{meta.title}</div>
+      ) : null}
+      {meta.swatches.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
+          {meta.swatches.map((swatch) => (
+            <span
+              key={swatch.label}
+              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
+            >
+              <span
+                className="h-[10px] w-[10px] rounded-[3px]"
+                style={{ background: swatch.color }}
+              />
+              {swatch.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div ref={ref} className="[&_svg]:max-w-full" />
+    </div>
+  );
+}
+
+function ChartBlockView({
+  name,
+  spec,
+  data,
+}: {
+  name: string;
+  spec: Record<string, unknown>;
+  data: unknown[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+  return (
+    <>
+      <div className="group relative max-w-[74%] rounded-[20px] bg-[#17171A] p-4">
+        <ChartCanvas spec={spec} data={data} width={520} />
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="absolute right-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+        >
+          Expand
+        </button>
+      </div>
+      {expanded ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,4,5,.78)] p-8">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Close expanded chart"
+            onClick={() => setExpanded(false)}
+            className="absolute inset-0 cursor-default"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Expanded chart: ${name}`}
+            className="relative max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[#2A2A31] bg-[#141416] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[13px] text-[#85858A]">{name}</span>
+              <button
+                type="button"
+                aria-label="Close chart"
+                onClick={() => setExpanded(false)}
+                className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
+              >
+                ✕
+              </button>
+            </div>
+            <ChartCanvas
+              spec={spec}
+              data={data}
+              width={Math.min(1240, Math.floor(window.innerWidth * 0.88))}
+              height={Math.floor(window.innerHeight * 0.66)}
+            />
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function ArtifactImage({

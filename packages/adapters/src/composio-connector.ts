@@ -2,9 +2,11 @@ import { Composio } from "@composio/core";
 import type {
   AdapterContext,
   ConnectorCall,
+  ConnectorCatalogItem,
   ConnectorEvent,
   ConnectorProvider,
   ConnectorTool,
+  ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
   composioToolkitDirectory,
@@ -63,31 +65,17 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-export interface ComposioCatalogItem {
-  slug: string;
-  name: string;
-  logo: string | null;
-  connected: boolean;
-  noAuth: boolean;
-}
+export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
 
-export interface ComposioProvider extends ConnectorProvider {
-  catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]>;
+export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
   listConnectedSlugs(userId: string): Promise<string[]>;
-  connectionReady(userId: string, slug: string): Promise<boolean>;
-  begin(
-    request: { provider: string; redirectUrl: string },
-    context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }>;
-  complete(
-    request: { state: string; code?: string },
-    context: AdapterContext,
-  ): Promise<{ connectionRef: string }>;
-  revoke(connectionRef: string, context: AdapterContext): Promise<void>;
 }
 
-export function filterCatalog(items: ComposioCatalogItem[], query: string): ComposioCatalogItem[] {
+export function filterCatalog<T extends Pick<ComposioCatalogItem, "name" | "slug">>(
+  items: T[],
+  query: string,
+): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
   return items.filter(
@@ -227,12 +215,14 @@ export class ComposioConnector implements ComposioProvider {
     return session;
   }
 
-  async catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]> {
+  async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
     const [directory, connected] = await Promise.all([
       this.directory(),
-      this.listConnectedSlugs(userId),
+      this.listConnectedSlugs(context.userId),
     ]);
-    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
+    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "").map(
+      (item) => ({ ...item, connectorId: "composio" }),
+    );
   }
 
   async warmDirectory(): Promise<void> {
@@ -262,8 +252,12 @@ export class ComposioConnector implements ComposioProvider {
     return connected.map((toolkit) => toolkit.slug);
   }
 
+  async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
+    return this.listConnectedSlugs(context.userId);
+  }
+
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const toolkits = context.connectedProviders ?? [];
+    const toolkits = connectedComposioExternalIds(context);
     if (toolkits.length === 0) return [];
     const session = await this.sessionForExecute(context.userId, toolkits);
     const raw = await session.tools();
@@ -274,7 +268,7 @@ export class ComposioConnector implements ComposioProvider {
     try {
       const session = await this.sessionForExecute(
         context.userId,
-        context.connectedProviders ?? [],
+        connectedComposioExternalIds(context),
       );
       const result = await session.execute(call.tool, call.args ?? {});
       if (result.error) {
@@ -318,8 +312,8 @@ export class ComposioConnector implements ComposioProvider {
     }
   }
 
-  async connectionReady(userId: string, slug: string): Promise<boolean> {
-    const session = await this.sessionFor(userId);
+  async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
+    const session = await this.sessionFor(context.userId);
     const page = await session.toolkits({ search: slug, limit: 50 });
     const match = page.items.find((item) => item.slug === slug);
     if (!match) return false;
@@ -350,47 +344,124 @@ export class ComposioConnector implements ComposioProvider {
   }
 }
 
-export class CompositeConnector implements ConnectorProvider {
+export class ConnectorRegistry implements ConnectorProvider {
+  private readonly providers = new Map<string, ConnectorProvider>();
+
   constructor(
     readonly destination: DestinationEmulator,
-    readonly composio?: ComposioProvider,
-  ) {}
+    providers: ConnectorProvider[],
+  ) {
+    this.providers.set("destination", destination);
+    for (const provider of providers) {
+      const id = provider.describe().id;
+      if (this.providers.has(id)) throw new Error(`Duplicate connector id ${id}`);
+      this.providers.set(id, provider);
+    }
+  }
+
+  managedProviders(): ManagedConnectorProvider[] {
+    return [...this.providers.values()].filter(isManagedConnectorProvider);
+  }
+
+  managed(id: string): ManagedConnectorProvider | undefined {
+    const provider = this.providers.get(id);
+    return provider && isManagedConnectorProvider(provider) ? provider : undefined;
+  }
 
   describe() {
-    return this.composio?.describe() ?? this.destination.describe();
+    return {
+      id: "connector-registry",
+      contractVersion: "1",
+      adapterVersion: "0.1.0",
+      capabilities: { discover: true, oauth: true, secretsBrokered: true },
+    };
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const dest = await this.destination.discoverTools(context);
-    if (!this.composio) return dest;
-    try {
-      const extra = await this.composio.discoverTools(context);
-      const destNames = new Set(dest.map((tool) => tool.name));
-      return [...dest, ...extra.filter((tool) => !destNames.has(tool.name))];
-    } catch {
-      return dest;
+    const discovered: ConnectorTool[] = [];
+    const used = new Set<string>();
+    const providerTools = await Promise.all(
+      [...this.providers].map(async ([connectorId, provider]) => {
+        try {
+          return [connectorId, await provider.discoverTools(context)] as const;
+        } catch {
+          return [connectorId, []] as const;
+        }
+      }),
+    );
+    for (const [connectorId, tools] of providerTools) {
+      for (const tool of tools) {
+        let name = tool.name;
+        if (used.has(name)) name = `${connectorId}.${name}`;
+        let suffix = 2;
+        while (used.has(name)) {
+          name = `${connectorId}.${tool.name}.${suffix}`;
+          suffix += 1;
+        }
+        used.add(name);
+        discovered.push({
+          ...tool,
+          name,
+          route: tool.route ?? { connectorId, toolName: tool.name },
+        });
+      }
     }
+    return discovered;
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    if (call.tool === "destination.write" || !this.composio) {
-      yield* this.destination.execute(call, context);
+    const connectorId =
+      call.route?.connectorId ?? (call.tool === "destination.write" ? "destination" : "composio");
+    const provider = this.providers.get(connectorId);
+    if (!provider) {
+      yield { type: "error", message: `unknown connector ${connectorId}` };
       return;
     }
-    yield* this.composio.execute(call, context);
+    yield* provider.execute({ ...call, tool: call.route?.toolName ?? call.tool }, context);
   }
+}
+
+/** @deprecated Use ConnectorRegistry. */
+export const CompositeConnector = ConnectorRegistry;
+
+function isManagedConnectorProvider(
+  provider: ConnectorProvider,
+): provider is ManagedConnectorProvider {
+  const candidate = provider as Partial<ManagedConnectorProvider>;
+  return (
+    typeof candidate.catalog === "function" &&
+    typeof candidate.begin === "function" &&
+    typeof candidate.complete === "function" &&
+    typeof candidate.connectionReady === "function" &&
+    typeof candidate.listConnectedExternalIds === "function" &&
+    typeof candidate.revoke === "function"
+  );
+}
+
+function connectedComposioExternalIds(context: AdapterContext): string[] {
+  return (
+    context.connectedConnections
+      ?.filter((connection) => connection.connectorId === "composio")
+      .map((connection) => connection.externalId) ??
+    context.connectedProviders ??
+    []
+  );
 }
 
 export function createConnectorStack(
   composioEnabled: boolean,
   composioOverride?: ComposioProvider,
+  additionalProviders: ConnectorProvider[] = [],
 ) {
   const destination = new DestinationEmulator();
   const composio = composioOverride ?? (composioEnabled ? new ComposioConnector() : undefined);
   return {
     destination,
     composio,
-    connector: new CompositeConnector(destination, composio),
+    connector: new ConnectorRegistry(destination, [
+      ...(composio ? [composio] : []),
+      ...additionalProviders,
+    ]),
   };
 }
 

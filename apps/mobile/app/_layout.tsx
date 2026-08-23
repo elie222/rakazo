@@ -31,6 +31,7 @@ export default function Layout() {
             <Stack.Screen name="account" options={{ title: "Account" }} />
             <Stack.Screen name="models" options={{ title: "Models" }} />
             <Stack.Screen name="voice" options={{ title: "Voice" }} />
+            <Stack.Screen name="integrations" options={{ title: "Integrations" }} />
             <Stack.Screen
               name="new"
               options={{
