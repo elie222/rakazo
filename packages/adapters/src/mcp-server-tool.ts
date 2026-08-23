@@ -1,7 +1,7 @@
 /** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
  * the executor wires the parsed result into Prisma + the secret store. */
 
-import { type McpTransport, McpTransportSchema } from "@rakazo/contracts";
+import { McpRemoteEndpointSchema, type McpTransport, McpTransportSchema } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import { toStringRecord } from "./memory-provider-factory.js";
 
@@ -38,12 +38,7 @@ export function parseMcpServerToolArgs(
   let endpoint: string | undefined;
   if (transport !== "stdio") {
     endpoint = typeof args.endpoint === "string" ? args.endpoint.trim() : "";
-    try {
-      const url = new URL(endpoint);
-      if (url.protocol !== "https:" || url.username || url.password || url.hash) return undefined;
-    } catch {
-      return undefined;
-    }
+    if (!McpRemoteEndpointSchema.safeParse(endpoint).success) return undefined;
   }
 
   const command =

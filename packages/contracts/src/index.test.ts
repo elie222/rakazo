@@ -87,6 +87,21 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it("rejects non-HTTPS MCP endpoints before storage", () => {
+    const base = {
+      slug: "demo",
+      name: "Demo",
+      transport: "streamable_http" as const,
+      headers: {},
+    };
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://127.0.0.1:3000/mcp" }).success,
+    ).toBe(false);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "https://mcp.example.test/mcp" }).success,
+    ).toBe(true);
+  });
+
   it("rejects oversized chart data wherever it is embedded", () => {
     const rows = Array.from({ length: 5_001 }, (_, index) => index);
 

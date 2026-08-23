@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
-import { McpHeadersSchema, McpTransportSchema } from "./mcp.js";
+import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -258,13 +258,13 @@ const McpServerBaseInput = z.object({
 export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("streamable_http"),
-    endpoint: z.string().url(),
+    endpoint: McpRemoteEndpointSchema,
     headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
   }),
   McpServerBaseInput.extend({
     transport: z.literal("sse"),
-    endpoint: z.string().url(),
+    endpoint: McpRemoteEndpointSchema,
     headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
   }),

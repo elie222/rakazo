@@ -1023,9 +1023,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 signal: new AbortController().signal,
               });
             }
+            const oauthLikely = needsOAuthProbe(parsed);
             let serverRow: McpServer;
+            let approvalEventSeq: number | undefined;
             try {
-              serverRow = await deps.prisma.$transaction(async (tx) => {
+              const created = await deps.prisma.$transaction(async (tx) => {
                 if (storedCredential) {
                   await tx.secret.create({
                     data: {
@@ -1037,7 +1039,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     },
                   });
                 }
-                return tx.mcpServer.create({
+                const server = await tx.mcpServer.create({
                   data: {
                     workspaceId: run.workspaceId,
                     userId: run.userId,
@@ -1056,7 +1058,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     enabled: true,
                   },
                 });
+                if (!parsed.assignToSelf) return { server };
+                const blocks: MessageBlock[] = [
+                  {
+                    kind: "mcp_approval",
+                    name: server.name,
+                    serverId: server.id,
+                    transport: parsed.transport,
+                    endpoint: parsed.endpoint ?? null,
+                    needsOAuth: oauthLikely,
+                  },
+                ];
+                const committed = await persistMessageInTransaction(tx, run, "bot", blocks);
+                return { server, eventSeq: committed.eventSeq };
               });
+              serverRow = created.server;
+              approvalEventSeq = created.eventSeq;
             } catch (error) {
               if (
                 typeof error === "object" &&
@@ -1070,18 +1087,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               throw error;
             }
-            const oauthLikely = needsOAuthProbe(parsed);
-            if (parsed.assignToSelf) {
-              await publishMessage(deps, run, "bot", [
-                {
-                  kind: "mcp_approval",
-                  name: serverRow.name,
-                  serverId: serverRow.id,
-                  transport: parsed.transport,
-                  endpoint: parsed.endpoint ?? null,
-                  needsOAuth: oauthLikely,
-                },
-              ]);
+            if (approvalEventSeq !== undefined) {
+              await deps.events.notify(run.threadId, approvalEventSeq).catch((error) => {
+                console.error("MCP approval realtime notification", error);
+              });
             }
             return finish({
               ok: true,
@@ -1836,28 +1845,37 @@ async function publishMessage(
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
 ) {
-  const committed = await deps.prisma.$transaction(async (tx) => {
-    const message = await createThreadMessageInTransaction(tx, {
-      threadId: run.threadId,
-      role,
-      blocks,
-      botId: run.botId,
-      runId: run.id,
-    });
-    const event = await appendEventInTransaction(tx, {
-      workspaceId: run.workspaceId,
-      threadId: run.threadId,
-      botId: run.botId,
-      type: "thread.message.created",
-      runId: run.id,
-      payload: { messageId: message.id, role, blocks },
-    });
-    return { message, eventSeq: event.seq };
-  });
+  const committed = await deps.prisma.$transaction((tx) =>
+    persistMessageInTransaction(tx, run, role, blocks),
+  );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     console.error("thread message realtime notification", error);
   });
   return committed.message;
+}
+
+async function persistMessageInTransaction(
+  tx: Prisma.TransactionClient,
+  run: { id: string; workspaceId: string; threadId: string; botId: string },
+  role: "user" | "bot" | "system",
+  blocks: MessageBlock[],
+) {
+  const message = await createThreadMessageInTransaction(tx, {
+    threadId: run.threadId,
+    role,
+    blocks,
+    botId: run.botId,
+    runId: run.id,
+  });
+  const event = await appendEventInTransaction(tx, {
+    workspaceId: run.workspaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    type: "thread.message.created",
+    runId: run.id,
+    payload: { messageId: message.id, role, blocks },
+  });
+  return { message, eventSeq: event.seq };
 }
 
 async function recordEffect(

@@ -254,7 +254,13 @@ export class McpOAuthBroker {
     });
     if (!server?.endpoint) throw new Error("MCP server endpoint is required for OAuth");
     await this.sweepExpiredPending();
-    if (this.pending.size >= MAX_PENDING_SESSIONS) {
+    let actorPending = 0;
+    for (const pending of this.pending.values()) {
+      if (pending.workspaceId === input.workspaceId && pending.userId === input.userId) {
+        actorPending += 1;
+      }
+    }
+    if (actorPending >= MAX_PENDING_SESSIONS) {
       throw new Error("Too many pending MCP authorization attempts; wait and try again");
     }
     const activeCount = await this.prisma.mcpOAuthSession.count({
