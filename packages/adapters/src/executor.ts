@@ -290,8 +290,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     botId: run.botId,
                     runId: run.id,
                     type: "computer.takeover.released",
+                    // Keep the release that resumed this waiting interval. A later
+                    // re-takeover must not replace its reason before this run starts.
+                    createdAt: { gte: run.updatedAt },
                   },
-                  orderBy: [{ createdAt: "desc" }, { seq: "desc" }],
+                  orderBy: [{ createdAt: "asc" }, { seq: "asc" }],
                   select: { payload: true },
                 })
               )?.payload,
