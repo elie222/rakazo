@@ -31,6 +31,8 @@ test("model settings connect, replace, and cancel provider authentication", asyn
       body: JSON.stringify({
         json: {
           loginId: "fake-login",
+          provider: "openai-codex",
+          mode: "device-code",
           verificationUri: "https://example.com/device",
           userCode: "TEST-CODE",
           expiresInSeconds: 900,

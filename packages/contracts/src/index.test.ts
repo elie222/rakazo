@@ -4,6 +4,7 @@ import {
   CreateBotInput,
   CreateGroupInput,
   MessageBlock,
+  ModelOAuthBeginSchema,
   ProductEventType,
   UpdateGroupInput,
 } from "./index.js";
@@ -25,6 +26,28 @@ describe("contracts", () => {
     );
     expect(
       UpdateGroupInput.safeParse({ groupId: "group-1", botIds: ["bot-1", "bot-1"] }).success,
+    ).toBe(false);
+  });
+
+  it("keeps model OAuth start results mode-specific", () => {
+    const shared = {
+      loginId: "login-1",
+      provider: "anthropic",
+      verificationUri: "https://example.com/authorize",
+      expiresInSeconds: 900,
+    };
+    expect(ModelOAuthBeginSchema.safeParse({ ...shared, mode: "auth-url" }).success).toBe(true);
+    expect(ModelOAuthBeginSchema.safeParse({ ...shared, mode: "device-code" }).success).toBe(false);
+    expect(
+      ModelOAuthBeginSchema.safeParse({ ...shared, mode: "device-code", userCode: "ABCD-1234" })
+        .success,
+    ).toBe(true);
+    expect(
+      ModelOAuthBeginSchema.safeParse({
+        ...shared,
+        mode: "auth-url",
+        verificationUri: "javascript:alert(1)",
+      }).success,
     ).toBe(false);
   });
 

@@ -28,6 +28,7 @@ import {
   MeSchema,
   ModelCatalogEntrySchema,
   ModelCredentialSchema,
+  ModelOAuthBeginSchema,
   RoutineSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
@@ -124,14 +125,10 @@ export const appContract = {
           modelId: z.string().optional(),
         }),
       )
-      .output(
-        z.object({
-          loginId: z.string(),
-          verificationUri: z.string().url(),
-          userCode: z.string(),
-          expiresInSeconds: z.number().int(),
-        }),
-      ),
+      .output(ModelOAuthBeginSchema),
+    submitOAuthCode: oc
+      .input(z.object({ loginId: z.string(), code: z.string().trim().min(1).max(8_192) }))
+      .output(z.object({ ok: z.literal(true) })),
     completeOAuth: oc
       .input(z.object({ loginId: z.string() }))
       .output(

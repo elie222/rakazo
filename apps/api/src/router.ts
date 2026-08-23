@@ -397,6 +397,9 @@ export function createRouter(deps: RouterDeps) {
           signal: context.signal,
         });
       }),
+      submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
+        return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
+      }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, {
           userId: context.actor.userId,
