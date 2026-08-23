@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHART_CATALOG,
   PLOT_TOOL_GUIDE,
+  type PlotSpec,
   parsePlotData,
   renderPlotSpecToSvg,
   searchChartCatalog,
@@ -33,6 +34,17 @@ describe("render_plot", () => {
     expect(svg).toContain("Culmen shape by species");
     for (const species of ["Adelie", "Chinstrap", "Gentoo"]) expect(svg).toContain(species);
     expect(svg).toContain("circle");
+  });
+
+  it("does not mutate caller-owned scale options", () => {
+    const color = Object.freeze({ legend: true });
+    const spec: PlotSpec = {
+      color,
+      marks: [{ type: "dot", options: { x: "length", y: "depth", stroke: "species" } }],
+    };
+
+    expect(() => renderPlotSpecToSvg(spec, penguinish, dom())).not.toThrow();
+    expect(color.legend).toBe(true);
   });
 
   it("supports transforms: binned histogram and grouped stacked bars", () => {
@@ -90,7 +102,15 @@ describe("render_plot", () => {
       ),
     ).toThrow(/Unsupported transform "eval"/);
     expect(supportedPlotNames().marks).toContain("dot");
+    expect(supportedPlotNames().marks).not.toContain("image");
     expect(supportedPlotNames().transforms).toContain("binX");
+    expect(() =>
+      renderPlotSpecToSvg(
+        { marks: [{ type: "image", options: { src: "https://example.test/pixel.png" } }] },
+        [{ x: 1, y: 1 }],
+        dom(),
+      ),
+    ).toThrow(/Unsupported mark type "image"/);
   });
 
   it("rejects empty data and channel names that match no column", () => {
@@ -125,6 +145,20 @@ describe("render_plot", () => {
     expect(svg).toContain("Q3");
   });
 
+  it("preserves numeric-looking category labels", () => {
+    const svg = renderPlotSpecToSvg(
+      { marks: [{ type: "barY", options: { x: "code", y: "sales" } }] },
+      [
+        { code: "007", sales: "120" },
+        { code: "1e5", sales: "185" },
+      ],
+      dom(),
+    );
+
+    expect(svg).toContain("007");
+    expect(svg).toContain("1e5");
+  });
+
   it("parses data given as CSV text lines", () => {
     const svg = renderPlotSpecToSvg(
       { marks: [{ type: "barY", options: { x: "quarter", y: "sales" } }] },
@@ -149,6 +183,21 @@ describe("render_plot", () => {
     );
     expect(svg).toContain("rect");
     expect(svg).toContain("Q2");
+  });
+
+  it("rejects oversized data across top-level, spec, and per-mark arrays", () => {
+    const rows = Array.from({ length: 2_501 }, (_, x) => ({ x }));
+
+    expect(() =>
+      renderPlotSpecToSvg(
+        {
+          data: rows,
+          marks: [{ type: "dot", data: rows, options: { x: "x" } }],
+        },
+        undefined,
+        dom(),
+      ),
+    ).toThrow(/5,000-row limit/);
   });
 
   it("parses csv with automatic typing and json row arrays", () => {

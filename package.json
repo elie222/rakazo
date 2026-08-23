@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "turbo dev --filter=@rakazo/api --filter=@rakazo/worker --filter=@rakazo/web --filter=@rakazo/sandbox-supervisor",

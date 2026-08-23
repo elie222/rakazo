@@ -129,8 +129,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   async validateResourceURL(_serverUrl: string | URL, resource?: string): Promise<URL | undefined> {
     if (!resource) return undefined;
     try {
-      validateUrl(resource);
-      return new URL(resource);
+      return validateUrl(resource);
     } catch {
       return undefined;
     }

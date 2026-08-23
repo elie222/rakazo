@@ -1,6 +1,11 @@
-import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { createThreadMessage, IsolationError, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import type { ComposioProvider } from "@rakazo/adapters";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
+import {
+  createThreadMessage,
+  IsolationError,
+  type PrismaClient,
+  type ThreadEvents,
+} from "@rakazo/db";
 
 /**
  * First-run conversational onboarding, seeded deterministically into the bot's
@@ -8,7 +13,7 @@ import type { ComposioProvider } from "@rakazo/adapters";
  * user authorizes inline. No model tokens are spent.
  */
 
-export type OnboardingDeps = {
+type OnboardingDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;
   composio?: Pick<ComposioProvider, "catalog">;
@@ -24,15 +29,43 @@ type FocusOption = {
   apps: string[];
 };
 
-export const FOCUS_OPTIONS: FocusOption[] = [
-  { id: "day", letter: "A", label: "Day-to-day work", title: "Chief of Staff", persona: "Sarah",
-    summary: "Slack, calendar, and email", apps: ["slack", "gmail", "googlecalendar"] },
-  { id: "inbox", letter: "B", label: "Inbox & email", title: "Inbox Manager", persona: "Maya",
-    summary: "email and calendar", apps: ["gmail", "googlecalendar", "slack"] },
-  { id: "research", letter: "C", label: "Research & writing", title: "Research Partner", persona: "Alex",
-    summary: "the web, notes, and docs", apps: ["hackernews", "notion", "googledocs"] },
-  { id: "everything", letter: "D", label: "A bit of everything", title: "Chief of Staff", persona: "June",
-    summary: "Slack, calendar, and email", apps: ["slack", "gmail", "googlecalendar"] },
+const FOCUS_OPTIONS: FocusOption[] = [
+  {
+    id: "day",
+    letter: "A",
+    label: "Day-to-day work",
+    title: "Chief of Staff",
+    persona: "Sarah",
+    summary: "Slack, calendar, and email",
+    apps: ["slack", "gmail", "googlecalendar"],
+  },
+  {
+    id: "inbox",
+    letter: "B",
+    label: "Inbox & email",
+    title: "Inbox Manager",
+    persona: "Maya",
+    summary: "email and calendar",
+    apps: ["gmail", "googlecalendar", "slack"],
+  },
+  {
+    id: "research",
+    letter: "C",
+    label: "Research & writing",
+    title: "Research Partner",
+    persona: "Alex",
+    summary: "the web, notes, and docs",
+    apps: ["hackernews", "notion", "googledocs"],
+  },
+  {
+    id: "everything",
+    letter: "D",
+    label: "A bit of everything",
+    title: "Chief of Staff",
+    persona: "June",
+    summary: "Slack, calendar, and email",
+    apps: ["slack", "gmail", "googlecalendar"],
+  },
 ];
 
 const APP_DESCRIPTIONS: Record<string, string> = {
@@ -89,11 +122,18 @@ async function updateBlocks(
   });
 }
 
-export async function startOnboarding(deps: OnboardingDeps, actor: Actor, botId: string): Promise<void> {
+export async function startOnboarding(
+  deps: OnboardingDeps,
+  actor: Actor,
+  botId: string,
+): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const existing = await deps.prisma.message.count({ where: { threadId: thread.id } });
   if (existing > 0) return;
-  const user = await deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } });
+  const user = await deps.prisma.user.findUnique({
+    where: { id: actor.userId },
+    select: { name: true },
+  });
   const firstName = (user?.name ?? "there").split(/\s+/)[0];
   const target = { workspaceId: actor.workspaceId, botId: bot.id, threadId: thread.id };
   await post(deps, target, [
@@ -124,9 +164,7 @@ export async function chooseFocus(
     orderBy: { createdAt: "asc" },
   });
   const pending = recent.find((message) =>
-    (message.blocks as MessageBlock[]).some(
-      (block) => block.kind === "choice" && !block.answerId,
-    ),
+    (message.blocks as MessageBlock[]).some((block) => block.kind === "choice" && !block.answerId),
   );
   if (pending) {
     const blocks = (pending.blocks as MessageBlock[]).map((block) =>
@@ -135,7 +173,10 @@ export async function chooseFocus(
     await updateBlocks(deps, target, pending.id, blocks);
   }
 
-  await deps.prisma.bot.update({ where: { id: bot.id }, data: { name: option.title, title: option.title } });
+  await deps.prisma.bot.update({
+    where: { id: bot.id },
+    data: { name: option.title, title: option.title },
+  });
   await post(deps, target, [{ kind: "meta", text: `Renamed to ${option.title}` }]);
   await post(deps, target, [
     {
@@ -146,7 +187,18 @@ export async function chooseFocus(
   await deps.prisma.bot.update({ where: { id: bot.id }, data: { name: option.persona } });
   await post(deps, target, [{ kind: "meta", text: `Renamed to ${option.persona}` }]);
 
-  const catalog = deps.composio ? await deps.composio.catalog(actor.userId).catch(() => []) : [];
+  const catalog = deps.composio
+    ? await deps.composio
+        .catalog({
+          operationId: "onboarding.choose",
+          traceId: "onboarding.choose",
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          botId: bot.id,
+          signal: new AbortController().signal,
+        })
+        .catch(() => [])
+    : [];
   const bySlug = new Map(catalog.map((entry) => [entry.slug, entry]));
   const cards: MessageBlock[] = option.apps.map((slug) => {
     const entry = bySlug.get(slug);
@@ -171,7 +223,10 @@ export async function chooseFocus(
   ]);
   await post(deps, target, cards);
   await post(deps, target, [
-    { kind: "text", text: `Hit those ${cards.length === 1 ? "one" : cards.length === 2 ? "two" : "three"} and I’ll start pulling the picture.` },
+    {
+      kind: "text",
+      text: `Hit those ${cards.length === 1 ? "one" : cards.length === 2 ? "two" : "three"} and I’ll start pulling the picture.`,
+    },
   ]);
 }
 
@@ -186,7 +241,15 @@ export async function markAppConnected(
   const messages = await deps.prisma.message.findMany({ where: { threadId: thread.id } });
   for (const message of messages) {
     const blocks = message.blocks as MessageBlock[];
-    if (!blocks.some((block) => block.kind === "app_connect" && block.provider === provider)) continue;
+    if (
+      !blocks.some(
+        (block) =>
+          block.kind === "app_connect" &&
+          block.provider === provider &&
+          block.status !== "connected",
+      )
+    )
+      continue;
     const next = blocks.map((block) =>
       block.kind === "app_connect" && block.provider === provider
         ? { ...block, status: "connected" as const }

@@ -446,6 +446,9 @@ importers:
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@24.13.3)
+      undici:
+        specifier: ^7.22.0
+        version: 7.29.0
       zod:
         specifier: ^4.1.5
         version: 4.4.3

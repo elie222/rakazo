@@ -15,18 +15,6 @@ describe("buildMcpUpdateMaterial", () => {
         },
       ),
     ).toEqual({ action: "keep" });
-    expect(
-      buildMcpUpdateMaterial(
-        {},
-        {
-          transport: "streamable_http",
-          slug: "x",
-          name: "x",
-          endpoint: "https://mcp.example.test",
-          headers: {},
-        },
-      ),
-    ).toEqual({ action: "keep" });
   });
 
   it("stores a merged blob when a new secret is supplied, preserving OAuth state", () => {

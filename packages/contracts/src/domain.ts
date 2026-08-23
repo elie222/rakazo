@@ -5,6 +5,9 @@ import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 
+export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
+export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -19,6 +22,7 @@ export const BotSchema = z.object({
   archivedAt: z.string().nullable(),
   unread: z.boolean(),
   parentBotId: Id.nullable(),
+  memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
   preview: z.string(),
   status: z.string(),
@@ -29,6 +33,53 @@ export const BotSchema = z.object({
   autoSpeak: z.boolean(),
 });
 export type Bot = z.infer<typeof BotSchema>;
+
+export const GroupMemberSchema = z.object({
+  botId: Id,
+  name: z.string(),
+  color: z.string(),
+});
+export type GroupMember = z.infer<typeof GroupMemberSchema>;
+
+export const GROUP_MEMBER_MIN = 2;
+export const GROUP_MEMBER_MAX = 6;
+
+export const GroupSchema = z.object({
+  id: Id,
+  workspaceId: Id,
+  name: z.string(),
+  members: z.array(GroupMemberSchema),
+  threadId: Id,
+  preview: z.string(),
+  unread: z.boolean(),
+  updatedAt: z.string(),
+  createdAt: z.string(),
+});
+export type Group = z.infer<typeof GroupSchema>;
+
+const GroupBotIds = z
+  .array(Id)
+  .min(GROUP_MEMBER_MIN)
+  .max(GROUP_MEMBER_MAX)
+  .refine((ids) => new Set(ids).size === ids.length, { error: "botIds must be distinct" });
+
+export const CreateGroupInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  botIds: GroupBotIds,
+});
+export type CreateGroupInput = z.infer<typeof CreateGroupInput>;
+
+export const UpdateGroupInput = z.object({
+  groupId: Id,
+  name: z.string().trim().min(1).max(80).optional(),
+  botIds: GroupBotIds.optional(),
+});
+export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
+
+export const GroupDetailSchema = GroupSchema.extend({
+  messages: z.array(ThreadMessageSchema).optional(),
+});
+export type GroupDetail = z.infer<typeof GroupDetailSchema>;
 
 export const BotSectionSchema = z.object({
   id: Id,
@@ -59,6 +110,7 @@ export const UpdateBotInput = z.object({
   notifyOnFinish: z.boolean().optional(),
   color: z.string().optional(),
   pinned: z.boolean().optional(),
+  memoryScope: MemoryScopeSchema.nullable().optional(),
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
@@ -159,6 +211,7 @@ export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
 export const ConnectionSchema = z.object({
   id: Id,
+  connectorId: z.string(),
   provider: z.string(),
   displayName: z.string(),
   status: z.enum(["pending", "connected", "revoked", "error"]),
@@ -168,6 +221,7 @@ export const ConnectionSchema = z.object({
 export type Connection = z.infer<typeof ConnectionSchema>;
 
 export const ConnectionCatalogItemSchema = z.object({
+  connectorId: z.string(),
   slug: z.string(),
   name: z.string(),
   logo: z.string().nullable(),
@@ -178,11 +232,12 @@ export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
 export const CapabilityInstallSchema = z.object({
   id: Id,
-  kind: z.enum(["skill", "plugin", "mcp", "connection"]),
+  kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
   name: z.string(),
   source: z.string(),
   version: z.string().nullable(),
   digest: z.string().nullable(),
+  secretConfigured: z.boolean(),
   config: z.record(z.string(), z.unknown()),
   createdAt: z.string(),
 });
@@ -264,7 +319,8 @@ export type BotMcpServer = z.infer<typeof BotMcpServerSchema>;
 
 export const ArtifactSchema = z.object({
   id: Id,
-  botId: Id,
+  botId: Id.nullable(),
+  groupId: Id.nullable(),
   runId: Id.nullable(),
   name: z.string(),
   mimeType: z.string(),
@@ -326,13 +382,17 @@ export const ThreadMessagePageSchema = z.object({
 export type ThreadMessagePage = z.infer<typeof ThreadMessagePageSchema>;
 
 export const ThreadSnapshotSchema = z.object({
-  botId: Id,
   threadId: Id,
   cursor: z.number().int().min(-1),
   messages: z.array(ThreadMessageSchema),
   olderCursor: z.number().int().nonnegative().nullable(),
+  botId: Id.optional(),
+  groupId: Id.optional(),
+  groupName: z.string().optional(),
+  members: z.array(GroupMemberSchema).optional(),
   run: RunSchema.nullable(),
-  computer: ComputerStatusSchema,
+  activeRuns: z.array(RunSchema).optional(),
+  computer: ComputerStatusSchema.optional(),
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 
@@ -345,6 +405,14 @@ export const ModelCredentialSchema = z.object({
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
+export const WorkspaceMemoryConfigSchema = z.object({
+  provider: z.string(),
+  settings: z.record(z.string(), z.string()),
+  defaultMemoryScope: MemoryScopeSchema,
+  updatedAt: z.string(),
+});
+export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   provider: z.string(),
   providerName: z.string().optional(),
@@ -353,6 +421,7 @@ export const ModelCatalogEntrySchema = z.object({
   billing: z.string(),
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
   oauthLabel: z.string().optional(),
+  authHint: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: z.enum(["device-code"]).optional(),
 });

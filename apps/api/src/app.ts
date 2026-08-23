@@ -1,8 +1,14 @@
 import { rm } from "node:fs/promises";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { JobPublisher, RealtimeFanout, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  ManagedConnectorProvider,
+  RealtimeFanout,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import {
   type ComposioProvider,
+  type ConnectorRegistry,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -15,16 +21,22 @@ import {
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
+  InstalledConnectorProvider,
   isComposioEnabled,
+  isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
   PiAgentRuntime,
   PiOAuthLogins,
+  PipedreamConnector,
   PostgresRealtimeFanout,
+  pipedreamConfigFromEnv,
   pushTokenPath,
+  type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -42,6 +54,7 @@ export interface AppHandles {
   sandbox: SandboxProvider;
   connector: DestinationEmulator;
   composio?: ComposioProvider;
+  connectors: ConnectorRegistry;
   executor: ReturnType<typeof createRunExecutor>;
   stop: () => Promise<void>;
 }
@@ -51,12 +64,16 @@ export async function createApp(
     prisma?: PrismaClient;
     realtime?: RealtimeFanout;
     composio?: ComposioProvider;
+    pipedream?: ManagedConnectorProvider;
+    remoteConnectors?: RemoteConnectorDependencies;
   } = {},
 ): Promise<AppHandles> {
   const {
     prisma: prismaOverride,
     realtime: realtimeOverride,
     composio: composioOverride,
+    pipedream: pipedreamOverride,
+    remoteConnectors,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -97,6 +114,7 @@ export async function createApp(
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const mcpOAuth = new McpOAuthBroker(prisma, secrets);
+  const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
   const artifacts = new LocalArtifactStore(env.dataDir);
@@ -113,10 +131,20 @@ export async function createApp(
     },
     mcpOAuth,
   );
-  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, mcp);
+  const pipedreamConfig = pipedreamConfigFromEnv(env);
+  const pipedream =
+    pipedreamOverride ??
+    (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
+  const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
+  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
+    installed,
+    ...(pipedream ? [pipedream] : []),
+    mcp,
+  ]);
   const connector = stack.destination;
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);
+  void pipedream?.warmDirectory?.().catch(() => undefined);
   const runtime =
     env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
@@ -165,6 +193,7 @@ export async function createApp(
     runtime,
     sandbox,
     memory,
+    memoryProviders,
     home,
     artifacts,
     connector: stack.connector,
@@ -187,6 +216,8 @@ export async function createApp(
     events,
     workerId: "api",
     runtime,
+    secretStore: secrets,
+    memoryProviders,
     deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
@@ -202,11 +233,14 @@ export async function createApp(
     jobs,
     sandbox,
     memory,
+    memoryProviders,
     home,
     secrets,
     oauthLogins,
     mcpOAuth,
     composio: stack.composio,
+    connectors: stack.connector,
+    remoteConnectors,
     artifacts,
     dataDir: env.dataDir,
     env: {
@@ -260,6 +294,7 @@ export async function createApp(
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
       composio: Boolean(stack.composio),
+      pipedream: Boolean(pipedream),
       jobs: jobKind,
       realtime: realtime.describe().id,
       revision: env.gitSha ?? null,
@@ -273,6 +308,7 @@ export async function createApp(
     sandbox,
     connector,
     composio: stack.composio,
+    connectors: stack.connector,
     executor,
     stop: async () => {
       oauthLogins.abortAll();

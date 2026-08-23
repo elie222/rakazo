@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import * as Plot from "@observablehq/plot";
+import { MAX_CHART_DATA_ROWS } from "@rakazo/contracts";
 import { autoType, csvParse, tsvParse } from "d3-dsv";
 
 /**
@@ -70,7 +71,6 @@ const DATA_MARKS = {
   dotX: Plot.dotX,
   dotY: Plot.dotY,
   hull: Plot.hull,
-  image: Plot.image,
   line: Plot.line,
   lineX: Plot.lineX,
   lineY: Plot.lineY,
@@ -143,6 +143,20 @@ export function supportedPlotNames(): { marks: string[]; transforms: string[] } 
   };
 }
 
+/** Bound all row arrays carried by a plot, including per-mark overrides. */
+export function assertPlotDataWithinLimits(spec: PlotSpec, data: unknown[] | undefined): void {
+  const marks = Array.isArray(spec.marks) ? spec.marks : [];
+  const sources = [data, spec.data, ...marks.map((mark) => mark.data)].filter(
+    (rows): rows is unknown[] => Array.isArray(rows),
+  );
+  const rowCount = sources.reduce((total, rows) => total + rows.length, 0);
+  if (rowCount > MAX_CHART_DATA_ROWS) {
+    throw new Error(
+      `Plot data exceeds the ${MAX_CHART_DATA_ROWS.toLocaleString("en-US")}-row limit across top-level, spec, and mark data.`,
+    );
+  }
+}
+
 // Channels where a string must name a column; a typo otherwise renders an
 // empty chart with no error, which strands the calling model.
 const COLUMN_CHANNELS = ["x", "y", "x1", "x2", "y1", "y2", "fx", "fy"] as const;
@@ -176,7 +190,7 @@ function normalizeRows(rows: unknown[]): unknown[] {
     rows.every((row) => typeof row === "string") &&
     (rows[0] as string).includes(",")
   ) {
-    return csvParse(rows.join("\n"), autoType);
+    return parsePlotData("data.csv", rows.join("\n"));
   }
   return coerceNumericStrings(rows);
 }
@@ -188,16 +202,23 @@ function coerceNumericStrings(rows: unknown[]): unknown[] {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
-      out[key] =
-        typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))
-          ? Number(value)
-          : value;
+      out[key] = typeof value === "string" && isPlainNumber(value) ? Number(value) : value;
     }
     return out;
   });
 }
 
-function buildMark(mark: PlotMarkSpec, sharedData: unknown[] | undefined): Plot.Markish {
+function isPlainNumber(value: string): boolean {
+  const trimmed = value.trim();
+  const parsed = Number(trimmed);
+  return trimmed !== "" && Number.isFinite(parsed) && String(parsed) === trimmed;
+}
+
+function buildMark(
+  mark: PlotMarkSpec,
+  sharedData: unknown[] | undefined,
+  normalizeData: (rows: unknown[]) => unknown[],
+): Plot.Markish {
   const options = { ...(mark.options ?? {}) };
   const dataless = DATALESS_MARKS[mark.type];
   if (dataless) return dataless(options);
@@ -212,7 +233,7 @@ function buildMark(mark: PlotMarkSpec, sharedData: unknown[] | undefined): Plot.
   if (Array.isArray(rawData) && rawData.length === 0) {
     throw new Error(`Mark "${mark.type}" received an empty data array; pass the rows in "data".`);
   }
-  const data = normalizeRows(rawData);
+  const data = normalizeData(rawData);
   assertChannelsMatchColumns(mark, data);
   let finalOptions: Record<string, unknown> = options;
   if (mark.transform) {
@@ -268,21 +289,35 @@ export function buildPlotParts(
   if (!Array.isArray(spec.marks) || spec.marks.length === 0) {
     throw new Error("The spec needs a non-empty marks array.");
   }
+  assertPlotDataWithinLimits(spec, data);
   const { title, marks, data: nestedData, ...plotOptions } = spec;
   const sharedData = data ?? (Array.isArray(nestedData) ? nestedData : undefined);
+  const normalizedData = new WeakMap<unknown[], unknown[]>();
+  const normalizeData = (rows: unknown[]) => {
+    const cached = normalizedData.get(rows);
+    if (cached) return cached;
+    const normalized = normalizeRows(rows);
+    normalizedData.set(rows, normalized);
+    return normalized;
+  };
+  const sanitizedPlotOptions = { ...plotOptions } as Record<string, unknown>;
   for (const scale of ["color", "x", "y", "fx", "fy", "r", "opacity", "symbol"] as const) {
-    const options = plotOptions[scale];
+    const options = sanitizedPlotOptions[scale];
     // Plot renders legends/titles as HTML <figure> wrappers, which cannot
     // rasterize to a standalone image; title and swatches are composed by the
     // caller instead.
-    if (options && typeof options === "object") delete (options as { legend?: unknown }).legend;
+    if (options && typeof options === "object") {
+      const scaleOptions = { ...(options as Record<string, unknown>) };
+      delete scaleOptions.legend;
+      sanitizedPlotOptions[scale] = scaleOptions;
+    }
   }
   const plotted = Plot.plot({
     document,
-    ...(plotOptions as Plot.PlotOptions),
+    ...(sanitizedPlotOptions as Plot.PlotOptions),
     ...(overrides.width ? { width: overrides.width } : {}),
     ...(overrides.height ? { height: overrides.height } : {}),
-    marks: marks.map((mark) => buildMark(mark, sharedData)),
+    marks: marks.map((mark) => buildMark(mark, sharedData, normalizeData)),
   });
   const svg = plotted.tagName === "svg" ? plotted : plotted.querySelector("svg");
   if (!svg) throw new Error("Plot did not produce an SVG element");

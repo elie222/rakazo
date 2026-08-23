@@ -1,18 +1,26 @@
-import type { Bot, McpServer } from "@rakazo/contracts";
+import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { connectMcpOauth, isNoOauthNeededError, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
-type Transport = "streamable_http" | "sse" | "stdio";
-type Assignment = { serverId: string; allowAllTools: boolean; allowedTools: string[] };
+function oauthStatusText(server: McpServer): string {
+  if (server.oauthStatus === "connected") return "OAuth connected";
+  if (server.oauthStatus === "reconnect") return "Authorization expired — reconnect required";
+  return server.hasSecret ? "Encrypted static credential saved" : "No credential saved";
+}
+
+function oauthActionLabel(server: McpServer, pending: boolean): string {
+  if (pending) return "Connecting…";
+  return server.oauthStatus === "none" ? "Connect OAuth" : "Reconnect OAuth";
+}
 
 export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
-  const [botAssignments, setBotAssignments] = useState<Record<string, Assignment[]>>({});
+  const [botAssignments, setBotAssignments] = useState<Record<string, BotMcpServer[]>>({});
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
-  const [transport, setTransport] = useState<Transport>("streamable_http");
+  const [transport, setTransport] = useState<McpTransport>("streamable_http");
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [secret, setSecret] = useState("");
@@ -33,16 +41,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     setServers(nextServers);
     setBots(activeBots);
     setBotAssignments(
-      Object.fromEntries(
-        activeBots.map((bot, index) => [
-          bot.id,
-          (assignmentLists[index] ?? []).map((entry) => ({
-            serverId: entry.serverId,
-            allowAllTools: entry.allowAllTools,
-            allowedTools: entry.allowedTools,
-          })),
-        ]),
-      ),
+      Object.fromEntries(activeBots.map((bot, index) => [bot.id, assignmentLists[index] ?? []])),
     );
   }
 
@@ -175,8 +174,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       ? current.filter((entry) => entry.serverId !== server.id)
       : [...current, { serverId: server.id, allowAllTools: true, allowedTools: [] }];
     try {
-      await rpc.mcp.assignments.replace({ botId, assignments: next });
-      setBotAssignments((map) => ({ ...map, [botId]: next }));
+      const updated = await rpc.mcp.assignments.replace({ botId, assignments: next });
+      setBotAssignments((map) => ({ ...map, [botId]: updated }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update agent access");
     }
@@ -232,6 +231,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </header>
+        {error ? (
+          <p className="mx-8 mt-5 rounded-xl border border-[#6A2C37] bg-[#2A151A] p-3 text-xs text-[#F3A2AA]">
+            {error}
+          </p>
+        ) : null}
         <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
           <div className="rounded-2xl border border-[#292930] bg-[#101012] p-5">
             <h2 className="text-[15px] font-medium text-[#ECECEE]">Add a server</h2>
@@ -333,7 +337,6 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 />
               </div>
             ) : null}
-            {error ? <p className="mt-4 text-xs text-[#F07178]">{error}</p> : null}
             <button
               type="button"
               disabled={saving}
@@ -377,11 +380,6 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <h2 className="text-[15px] font-medium text-[#ECECEE]">Configured servers</h2>
-              {error ? (
-                <p className="mt-2 rounded-xl border border-[#6A2C37] bg-[#2A151A] p-3 text-xs text-[#F3A2AA]">
-                  {error}
-                </p>
-              ) : null}
               <div className="mt-3 space-y-2">
                 {servers.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F]">
@@ -405,13 +403,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       <p
                         className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-[#F0A15A]" : "text-[#6E778A]"}`}
                       >
-                        {server.oauthStatus === "connected"
-                          ? "OAuth connected"
-                          : server.oauthStatus === "reconnect"
-                            ? "Authorization expired — reconnect required"
-                            : server.hasSecret
-                              ? "Encrypted static credential saved"
-                              : "No credential saved"}
+                        {oauthStatusText(server)}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] text-[#77777F]">Agents:</span>
@@ -441,11 +433,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                               onClick={() => void connectOAuth(server)}
                               className="rounded-lg bg-[#7785FF] px-3 py-2 text-xs font-semibold text-[#090A12] disabled:opacity-50"
                             >
-                              {oauthPending === server.id
-                                ? "Connecting…"
-                                : server.oauthStatus === "none"
-                                  ? "Connect OAuth"
-                                  : "Reconnect OAuth"}
+                              {oauthActionLabel(server, oauthPending === server.id)}
                             </button>
                             {server.oauthStatus !== "none" ? (
                               <button

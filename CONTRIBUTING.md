@@ -21,7 +21,7 @@ pnpm dev
 
 | Command | When to run |
 | --- | --- |
-| `pnpm test` | Default. Units, properties, and in-process contracts. Scripted runtime, fake sandbox, in-memory wakeup — no live Composio or OpenRouter. |
+| `pnpm test` | Default. Units, properties, and in-process contracts. Scripted runtime, fake sandbox, in-memory wakeup — no live connector or model-provider calls. |
 | `pnpm test:integration` | Postgres via Testcontainers: product journeys, authorization, executor lifecycle, Graphile / LISTEN/NOTIFY. Needs Docker. |
 | `pnpm test:e2e` | Playwright against the emulated API. Needs Docker. |
 | `pnpm test:topology` | Local product-path smoke: Docker computer + Graphile worker recovery. Needs Docker. Not PR CI. |
@@ -40,7 +40,10 @@ CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload
 
 The product path is **Pi + Docker + Graphile**. Emulator settings (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) are for tests only.
 
-**Plugins** integrate via [Composio](https://composio.dev/) (optional `COMPOSIO_API_KEY`). Rakazo does not ship a Git- or MCP-based plugin marketplace.
+**Integrations** can use [Composio](https://composio.dev/) or Pipedream Connect as optional managed
+app catalogs. Users can also install HTTPS MCP servers (including Treg) and bounded OpenAPI tool
+sources. Connector tests must stay deterministic and offline. Never put connector credentials in
+capability config, fixtures, logs, or snapshots; use the encrypted secret store and fake placeholders.
 
 ## Pull requests
 

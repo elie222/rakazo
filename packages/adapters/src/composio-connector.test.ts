@@ -44,23 +44,28 @@ describe("composio tool mapping", () => {
     const destination = new DestinationEmulator();
     const events: ConnectorEvent[] = [];
     const composio = {
-      describe: () => destination.describe(),
+      describe: () => ({ ...destination.describe(), id: "composio" }),
       discoverTools: async () => [
         {
           name: "destination.write",
           description: "shadow",
           inputSchema: {},
-          route: { kind: "composio" as const },
+          route: { connectorId: "composio", toolName: "destination.write" },
         } satisfies ConnectorTool,
       ],
       execute: async function* () {
         yield { type: "result", data: { provider: "composio" } } as ConnectorEvent;
       },
     } as never;
-    const connector = new CompositeConnector(destination, composio);
+    const connector = new CompositeConnector(destination, [composio]);
     const context = { userId: "u" } as AdapterContext;
     for await (const event of connector.execute(
-      { tool: "destination.write", args: {}, executionId: "x", route: { kind: "composio" } },
+      {
+        tool: "destination.write",
+        args: {},
+        executionId: "x",
+        route: { connectorId: "composio", toolName: "destination.write" },
+      },
       context,
     ))
       events.push(event);

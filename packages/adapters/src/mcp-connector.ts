@@ -10,11 +10,13 @@ import type { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
-type SessionEntry = { session: McpSession; serverId: string; revision: number };
+type SessionEntry = { session: McpSession; revision: number };
+type PendingSession = { revision: number; promise: Promise<McpSession> };
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 export class McpConnector implements ConnectorProvider {
   private readonly sessions = new Map<string, SessionEntry>();
+  private readonly connecting = new Map<string, PendingSession>();
   constructor(
     private readonly prisma: PrismaClient,
     private readonly secrets: EncryptedSecretStore,
@@ -42,41 +44,43 @@ export class McpConnector implements ConnectorProvider {
       },
       include: { server: true },
     });
-    const tools: ConnectorTool[] = [];
-    for (const assignment of assignments) {
-      try {
-        const session = await this.sessionFor(assignment.server, context);
-        const listed = await session.listTools({ signal: context.signal });
-        for (const tool of listed.tools ?? []) {
-          if (
-            !assignment.allowAllTools &&
-            !(assignment.allowedTools as unknown[]).includes(tool.name)
-          )
-            continue;
-          tools.push({
-            name: `mcp__${assignment.server.slug}__${tool.name}`,
-            description: tool.description ?? tool.name,
-            inputSchema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<
-              string,
-              unknown
-            >,
-            route: { kind: "mcp", serverId: assignment.serverId, remoteName: tool.name },
-          });
+    const groups = await Promise.all(
+      assignments.map(async (assignment): Promise<ConnectorTool[]> => {
+        try {
+          const session = await this.sessionFor(assignment.server, context);
+          const listed = await session.listTools({ signal: context.signal });
+          return listed.tools
+            .filter(
+              (tool) =>
+                assignment.allowAllTools ||
+                (assignment.allowedTools as unknown[]).includes(tool.name),
+            )
+            .map((tool) => ({
+              name: `mcp__${assignment.server.slug}__${tool.name}`,
+              description: tool.description ?? tool.name,
+              inputSchema: tool.inputSchema as Record<string, unknown>,
+              route: {
+                connectorId: "mcp",
+                resourceId: assignment.serverId,
+                toolName: tool.name,
+              },
+            }));
+        } catch (error) {
+          // A single unavailable server must not hide tools from other connectors.
+          console.error(
+            `mcp discovery failed for server ${assignment.server.slug}:`,
+            error instanceof Error ? error.message : error,
+          );
+          await this.evict(assignment.server.id);
+          return [];
         }
-      } catch (error) {
-        // A single unavailable server must not hide tools from other connectors.
-        console.error(
-          `mcp discovery failed for server ${assignment.server.slug}:`,
-          error instanceof Error ? error.message : error,
-        );
-        await this.evict(assignment.server.id);
-      }
-    }
-    return tools;
+      }),
+    );
+    return groups.flat();
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    if (call.route?.kind !== "mcp") {
+    if (call.route?.connectorId !== "mcp" || !call.route.resourceId) {
       yield { type: "error", message: `MCP route required for ${call.tool}` };
       return;
     }
@@ -87,7 +91,7 @@ export class McpConnector implements ConnectorProvider {
     const assignment = await this.prisma.botMcpServer.findFirst({
       where: {
         botId: context.botId,
-        serverId: call.route.serverId,
+        serverId: call.route.resourceId,
         workspaceId: context.workspaceId,
         userId: context.userId,
         server: { enabled: true },
@@ -97,14 +101,14 @@ export class McpConnector implements ConnectorProvider {
     if (
       !assignment ||
       (!assignment.allowAllTools &&
-        !(assignment.allowedTools as unknown[]).includes(call.route.remoteName))
+        !(assignment.allowedTools as unknown[]).includes(call.route.toolName))
     ) {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
     try {
       const result = await (await this.sessionFor(assignment.server, context)).callTool(
-        call.route.remoteName,
+        call.route.toolName,
         call.args,
         { signal: context.signal },
       );
@@ -117,8 +121,10 @@ export class McpConnector implements ConnectorProvider {
   }
 
   async close(): Promise<void> {
+    await Promise.allSettled([...this.connecting.values()].map(({ promise }) => promise));
     await Promise.all([...this.sessions.values()].map(({ session }) => session.close()));
     this.sessions.clear();
+    this.connecting.clear();
   }
 
   private async evict(serverId: string): Promise<void> {
@@ -132,55 +138,81 @@ export class McpConnector implements ConnectorProvider {
     const sessionKey = String(server.id);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) return existing.session;
-    if (existing) {
-      await existing.session.close();
-      this.sessions.delete(sessionKey);
+    const pending = this.connecting.get(sessionKey);
+    if (pending?.revision === server.revision) return pending.promise;
+    if (pending) {
+      await pending.promise.catch(() => undefined);
+      await this.evict(server.id);
+      return this.sessionFor(server, context);
     }
+    if (existing) await this.evict(server.id);
+
+    const promise = this.connectSession(server, context).then((session) => {
+      this.sessions.set(sessionKey, { session, revision: server.revision });
+      return session;
+    });
+    this.connecting.set(sessionKey, { revision: server.revision, promise });
+    try {
+      return await promise;
+    } finally {
+      if (this.connecting.get(sessionKey)?.promise === promise) this.connecting.delete(sessionKey);
+    }
+  }
+
+  private async connectSession(server: McpServer, context: AdapterContext): Promise<McpSession> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
-    const secret = server.secretId
-      ? await this.prisma.secret.findFirst({
-          where: { id: server.secretId, workspaceId: context.workspaceId, userId: context.userId },
-        })
-      : null;
-    const material = secret
-      ? (JSON.parse(this.secrets.load(secret.ciphertext)) as {
-          secret?: string;
-          env?: Record<string, string>;
-          headers?: Record<string, string>;
-        })
-      : {};
-    const args = Array.isArray(server.args) ? server.args.map(String) : [];
-    const env = { ...(material.env ?? {}) };
-    if (server.transport === "stdio") {
-      if (!this.options.stdioEnabled) throw new Error("MCP stdio is disabled");
-      await session.connectStdio({
-        command: String(server.command ?? ""),
-        args,
-        env,
-        allowedCommands: this.options.allowedCommands ?? [],
-      });
-    } else {
-      if (!server.endpoint) throw new Error("MCP endpoint is required");
-      const authProvider = this.oauth ? await this.oauth.providerFor(server, context) : undefined;
-      const staticToken = material.secret
-        ? material.secret.startsWith("Bearer ")
-          ? material.secret
-          : `Bearer ${material.secret}`
-        : undefined;
-      const headers = {
-        ...(material.headers ?? {}),
-        ...(staticToken ? { Authorization: staticToken } : {}),
-      };
-      await session.connectRemote({
-        url: server.endpoint,
-        transport: server.transport === "sse" ? "sse" : "streamable-http",
-        allowLegacySse: server.transport === "sse",
-        headerPolicy: { headers },
-        fallbackToSse: false,
-        authProvider,
-      });
+    try {
+      const secret = server.secretId
+        ? await this.prisma.secret.findFirst({
+            where: {
+              id: server.secretId,
+              workspaceId: context.workspaceId,
+              userId: context.userId,
+            },
+          })
+        : null;
+      const material = secret
+        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as {
+            secret?: string;
+            env?: Record<string, string>;
+            headers?: Record<string, string>;
+          })
+        : {};
+      const args = Array.isArray(server.args) ? server.args.map(String) : [];
+      const env = { ...(material.env ?? {}) };
+      if (server.transport === "stdio") {
+        if (!this.options.stdioEnabled) throw new Error("MCP stdio is disabled");
+        await session.connectStdio({
+          command: String(server.command ?? ""),
+          args,
+          env,
+          allowedCommands: this.options.allowedCommands ?? [],
+        });
+      } else {
+        if (!server.endpoint) throw new Error("MCP endpoint is required");
+        const authProvider = this.oauth ? await this.oauth.providerFor(server, context) : undefined;
+        const staticToken = material.secret
+          ? material.secret.startsWith("Bearer ")
+            ? material.secret
+            : `Bearer ${material.secret}`
+          : undefined;
+        const headers = {
+          ...(material.headers ?? {}),
+          ...(staticToken ? { Authorization: staticToken } : {}),
+        };
+        await session.connectRemote({
+          url: server.endpoint,
+          transport: server.transport === "sse" ? "sse" : "streamable-http",
+          allowLegacySse: server.transport === "sse",
+          headerPolicy: { headers },
+          fallbackToSse: false,
+          authProvider,
+        });
+      }
+      return session;
+    } catch (error) {
+      await session.close().catch(() => undefined);
+      throw error;
     }
-    this.sessions.set(sessionKey, { session, serverId: server.id, revision: server.revision });
-    return session;
   }
 }

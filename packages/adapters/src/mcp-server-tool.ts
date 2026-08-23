@@ -1,7 +1,9 @@
 /** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
  * the executor wires the parsed result into Prisma + the secret store. */
 
-const TRANSPORTS = new Set(["streamable_http", "sse", "stdio"]);
+import { type McpTransport, McpTransportSchema } from "@rakazo/contracts";
+import { toStringRecord } from "./memory-provider-factory.js";
+
 const MAX_ENV_ENTRIES = 32;
 const MAX_ARGS = 64;
 
@@ -9,7 +11,7 @@ export type ParsedMcpServerArgs = {
   slug: string;
   name: string;
   description: string;
-  transport: "streamable_http" | "sse" | "stdio";
+  transport: McpTransport;
   endpoint?: string;
   command?: string;
   args: string[];
@@ -30,15 +32,6 @@ export function deriveMcpSlug(name: string): string {
   return slug;
 }
 
-function stringRecord(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const out: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof entry === "string") out[key] = entry;
-  }
-  return out;
-}
-
 /** Returns undefined for anything that would fail server-side validation,
  * so the model gets a single actionable error instead of a partial create. */
 export function parseMcpServerToolArgs(
@@ -46,8 +39,9 @@ export function parseMcpServerToolArgs(
 ): ParsedMcpServerArgs | undefined {
   const name = typeof args.name === "string" ? args.name.trim().slice(0, 120) : "";
   if (!name) return undefined;
-  const transport = args.transport as ParsedMcpServerArgs["transport"];
-  if (!TRANSPORTS.has(transport)) return undefined;
+  const parsedTransport = McpTransportSchema.safeParse(args.transport);
+  if (!parsedTransport.success) return undefined;
+  const transport = parsedTransport.data;
 
   let endpoint: string | undefined;
   if (transport !== "stdio") {
@@ -77,8 +71,8 @@ export function parseMcpServerToolArgs(
     toolArgs = args.args.split(/\s+/).filter(Boolean).slice(0, MAX_ARGS);
   }
 
-  const env = stringRecord(args.env) ?? {};
-  const headers = stringRecord(args.headers) ?? {};
+  const env = toStringRecord(args.env);
+  const headers = toStringRecord(args.headers);
   if (Object.keys(env).length > MAX_ENV_ENTRIES || Object.keys(headers).length > MAX_ENV_ENTRIES) {
     return undefined;
   }

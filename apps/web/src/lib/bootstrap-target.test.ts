@@ -12,6 +12,7 @@ describe("initial bootstrap target", () => {
     expect(initialBootstrapTarget("/app/research%20bot", false)).toEqual({
       botId: "research bot",
     });
+    expect(initialBootstrapTarget("/app/g/group-1", false)).toEqual({ botId: undefined });
   });
 
   it("does not prime unrelated routes", () => {

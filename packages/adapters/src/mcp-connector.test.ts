@@ -81,7 +81,7 @@ describe("MCP connector session cache", () => {
     const call = {
       tool: "mcp__demo__echo",
       args: {},
-      route: { kind: "mcp", serverId: "server-1", remoteName: "echo" },
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "echo" },
     } as never;
 
     const tools = await connector.discoverTools(context);

@@ -1,4 +1,5 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { DEVICE_CODE_PROVIDERS, DEVICE_CODE_SIGN_IN, isDeviceCodeProvider } from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
@@ -12,6 +13,7 @@ export type PiCatalogEntry = {
   billing: string;
   auth: PiCatalogAuth;
   oauthLabel?: string;
+  authHint?: string;
   subscription: boolean;
   signIn?: PiCatalogSignIn;
 };
@@ -24,7 +26,7 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = builtinModels();
+  const models = registerLocalProvider(builtinModels());
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -48,6 +50,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         billing,
         auth,
         oauthLabel,
+        authHint: device?.hint,
         subscription,
         signIn,
       });
@@ -63,6 +66,9 @@ function catalogBilling(
 ) {
   const device = DEVICE_CODE_PROVIDERS[providerId];
   if (device) return device.billing;
+  if (providerId === LOCAL_PROVIDER_ID) {
+    return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+  }
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
   }
