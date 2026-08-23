@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ComposioEmulator } from "@rakazo/adapters";
 import type { appContract } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
@@ -38,6 +39,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
+      composio: new ComposioEmulator(),
     });
     app = handles.app;
   });
@@ -69,10 +71,19 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["groups/create", { name: "Nope", botIds: ["missing-a", "missing-b"] }],
+      ["groups/list"],
+      ["groups/get", { groupId: "missing-group" }],
+      ["groups/update", { groupId: "missing-group", name: "Nope" }],
+      ["groups/remove", { groupId: "missing-group" }],
+      ["botSections/list"],
+      ["botSections/create", { botId: "missing-bot", name: "Planning" }],
       ["threads/get", { botId: "missing-bot" }],
+      ["threads/get", { groupId: "missing-group" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      ["threads/send", { groupId: "missing-group", text: "Nope" }],
       ["threads/stop", { botId: "missing-bot" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
@@ -105,6 +116,22 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
       ["routines/remove", { routineId: "missing-routine" }],
       ["routines/testRun", { routineId: "missing-routine" }],
+      ["skills/list", { botId: "missing-bot" }],
+      ["skills/get", { skillId: "missing-skill" }],
+      ["skills/start", { botId: "missing-bot", goal: "Demonstrate export" }],
+      [
+        "skills/appendEvent",
+        {
+          skillId: "missing-skill",
+          event: { at: new Date().toISOString(), kind: "key", key: "a" },
+        },
+      ],
+      ["skills/snapshot", { skillId: "missing-skill" }],
+      ["skills/stop", { skillId: "missing-skill" }],
+      ["skills/updateDraft", { skillId: "missing-skill", playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: "missing-skill" }],
+      ["skills/testRun", { skillId: "missing-skill" }],
+      ["skills/remove", { skillId: "missing-skill" }],
       ["capabilities/list"],
       ["capabilities/install", capabilityInput("Unauthenticated")],
       ["capabilities/remove", { id: "missing-capability" }],
@@ -159,6 +186,18 @@ describeWithDatabase("API authorization and resource isolation", () => {
       "routines/create",
       routineInput(ownerBot.id),
     );
+    const ownerSkill = await handles.prisma.taughtSkill.create({
+      data: {
+        workspaceId: ownerActor.workspaceId,
+        botId: ownerBot.id,
+        userId: ownerActor.userId,
+        name: "Owner Skill",
+        goal: "Owner-only skill",
+        status: "saved",
+        playbook: skillPlaybookInput(),
+        recording: { events: [], snapshots: [] },
+      },
+    });
     const ownerCapability = await rpc<{ id: string }>(
       app,
       owner,
@@ -255,6 +294,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
+      ["skills/list", { botId: ownerBot.id }],
+      ["skills/start", { botId: ownerBot.id, goal: "Intruder demo" }],
       ["artifacts/list", { botId: ownerBot.id }],
       [
         "artifacts/create",
@@ -273,6 +314,28 @@ describeWithDatabase("API authorization and resource isolation", () => {
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
     );
 
+    const ownerBot2 = await rpc<Bot>(app, owner, "bots/create", botInput("Owner Bot Two"));
+    const ownerGroup = await rpc<{ id: string }>(app, owner, "groups/create", {
+      name: "Owner Group",
+      botIds: [ownerBot.id, ownerBot2.id],
+    });
+    const groupCalls: Array<[string, unknown]> = [
+      ["groups/get", { groupId: ownerGroup.id }],
+      ["groups/update", { groupId: ownerGroup.id, name: "Stolen Group" }],
+      ["groups/remove", { groupId: ownerGroup.id }],
+      ["threads/get", { groupId: ownerGroup.id }],
+      ["threads/messages", { groupId: ownerGroup.id, before: 1 }],
+      ["threads/subscribe", { groupId: ownerGroup.id, cursor: -1 }],
+      ["threads/send", { groupId: ownerGroup.id, text: "intruder group message" }],
+      ["threads/stop", { groupId: ownerGroup.id }],
+      ["threads/followUp", { groupId: ownerGroup.id, text: "intruder follow-up" }],
+      ["threads/markRead", { groupId: ownerGroup.id }],
+      ["threads/markUnread", { groupId: ownerGroup.id }],
+    ];
+    await Promise.all(
+      groupCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
+    );
+
     // A caller cannot pair their own bot with another workspace's run ID.
     await expectDenied(app, intruder, "threads/answer", {
       botId: intruderBot.id,
@@ -285,6 +348,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      ["skills/get", { skillId: ownerSkill.id }],
+      [
+        "skills/appendEvent",
+        { skillId: ownerSkill.id, event: { at: new Date().toISOString(), kind: "key", key: "x" } },
+      ],
+      ["skills/snapshot", { skillId: ownerSkill.id }],
+      ["skills/stop", { skillId: ownerSkill.id }],
+      ["skills/updateDraft", { skillId: ownerSkill.id, playbook: skillPlaybookInput() }],
+      ["skills/save", { skillId: ownerSkill.id }],
+      ["skills/testRun", { skillId: ownerSkill.id }],
+      ["skills/remove", { skillId: ownerSkill.id }],
       ["memory/update", { documentId: ownerMemory.id, content: "stolen" }],
       ["connections/complete", { connectionId: ownerConnection.connectionId }],
     ] satisfies Array<[string, unknown]>;
@@ -319,7 +393,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.connection.findUniqueOrThrow({
         where: { id: ownerConnection.connectionId },
       }),
-    ).toMatchObject({ status: "pending", userId: ownerActor.userId });
+    ).toMatchObject({ status: "connected", userId: ownerActor.userId });
 
     const ownerBotAfter = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: ownerBot.id },
@@ -572,6 +646,18 @@ function routineInput(botId: string) {
     timezone: "UTC",
     notify: false,
     active: false,
+  };
+}
+
+function skillPlaybookInput() {
+  return {
+    whenToUse: "When needed",
+    inputs: ["example"],
+    steps: ["Do the thing"],
+    howToCheck: "Verify result",
+    whatToReturn: "Summary",
+    approvalBoundaries: "Ask first",
+    failureHandling: "Stop and ask",
   };
 }
 

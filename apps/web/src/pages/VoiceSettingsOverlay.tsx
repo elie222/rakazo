@@ -65,7 +65,6 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
         provider: selected.id,
         apiKey: apiKey.trim(),
         voiceId: voiceId || undefined,
-        label: selected.name,
       });
       setApiKey("");
       await refresh(selected.id);
@@ -201,7 +200,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                     Personal credential
                   </div>
                   <div className="mt-1 text-[15px] text-[#ECECEE]">
-                    {credential ? `Connected · ${credential.label}` : "Not connected"}
+                    {credential ? `Connected · ${selected.name}` : "Not connected"}
                   </div>
                   <div className="mt-1 text-[13px] text-[#85858A]">
                     Keys stay on the server. The app only learns whether a provider is configured.
@@ -212,6 +211,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                   API key
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={credential ? "Paste a replacement key" : "Paste your API key"}

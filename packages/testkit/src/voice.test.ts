@@ -55,7 +55,7 @@ describeVoice("voice credentials and speech HTTP", () => {
       app,
       cookie,
       "voice/connect",
-      { provider: "scripted", apiKey: "fake-scripted-voice-key", label: "Scripted" },
+      { provider: "scripted", apiKey: "fake-scripted-voice-key" },
     );
     expect(connected.hasKey).toBe(true);
     expect(connected.provider).toBe("scripted");

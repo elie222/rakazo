@@ -1,4 +1,10 @@
-import { type Actor, BOT_COLORS, type Bot, type MessageBlock } from "@rakazo/contracts";
+import {
+  type Actor,
+  BOT_COLORS,
+  type Bot,
+  type BotSection,
+  type MessageBlock,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
@@ -15,8 +21,10 @@ function mapBot(
     color: string;
     notifyOnFinish: boolean;
     pinned: boolean;
+    sectionId: string | null;
     archivedAt: Date | null;
     parentBotId: string | null;
+    memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string; unread: boolean } | null;
@@ -40,9 +48,11 @@ function mapBot(
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,
+    sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
     unread: bot.thread.unread,
     parentBotId: bot.parentBotId,
+    memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
     preview,
     status,
@@ -56,6 +66,67 @@ function mapBot(
 
 export function createRepos(prisma: PrismaClient) {
   return {
+    async listBotSections(actor: Actor): Promise<BotSection[]> {
+      const sections = await prisma.botSection.findMany({
+        where: { workspaceId: actor.workspaceId, userId: actor.userId },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      });
+      return sections.map((section) => ({
+        id: section.id,
+        name: section.name,
+        position: section.position,
+        createdAt: section.createdAt.toISOString(),
+        updatedAt: section.updatedAt.toISOString(),
+      }));
+    },
+
+    async createBotSection(actor: Actor, input: { botId: string; name: string }) {
+      const { name } = input;
+      return prisma.$transaction(async (tx) => {
+        const bot = await tx.bot.findFirst({
+          where: {
+            id: input.botId,
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            archivedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!bot) throw new IsolationError();
+
+        const aggregate = await tx.botSection.aggregate({
+          where: { workspaceId: actor.workspaceId, userId: actor.userId },
+          _max: { position: true },
+        });
+        await tx.botSection.createMany({
+          data: {
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            name,
+            position: (aggregate._max.position ?? -1) + 1,
+          },
+          skipDuplicates: true,
+        });
+        const section = await tx.botSection.findUniqueOrThrow({
+          where: {
+            workspaceId_userId_name: {
+              workspaceId: actor.workspaceId,
+              userId: actor.userId,
+              name,
+            },
+          },
+        });
+        await tx.bot.update({ where: { id: bot.id }, data: { sectionId: section.id } });
+        return {
+          id: section.id,
+          name: section.name,
+          position: section.position,
+          createdAt: section.createdAt.toISOString(),
+          updatedAt: section.updatedAt.toISOString(),
+        } satisfies BotSection;
+      });
+    },
+
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
       const bots = await prisma.bot.findMany({
         where: {

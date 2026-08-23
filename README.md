@@ -19,7 +19,7 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 - Browser, terminal, file, and graphical desktop access
 - Bots that can delegate to peer bots or short-lived subagents
 - Bring-your-own model credentials through Pi
-- Optional app integrations through Composio
+- App integrations through Composio or Pipedream Connect, plus user-installed Treg, remote MCP, and OpenAPI tool sources
 - Docker, E2B, Daytona, and trusted local-computer support
 
 ## Demo
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Graphile Worker
 - Pi
 - Docker, E2B, and Daytona
-- Composio
+- Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
 ## Quick start
 
@@ -51,6 +51,16 @@ cp .env.example .env
 
 Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` in `.env` to independent, long random values. You can
 also set `OPENROUTER_API_KEY`, or connect a supported model provider during onboarding.
+
+Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
+`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
+Connect. Users can add an HTTPS MCP server, Treg endpoint, or OpenAPI JSON document from
+**Integrations** without enabling either managed catalog. Connector credentials are encrypted on the
+server and are never returned by the API.
+
+Treg is usage-metered. Self-hosters supply their own Treg token; operators embedding Treg in a
+hosted product should review [Treg's integration terms](https://treg.to/integrate.md), which require
+a written agreement for hosted resale.
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d

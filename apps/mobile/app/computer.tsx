@@ -9,6 +9,7 @@ import {
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import {
   COMPUTER_HEARTBEAT_MS,
@@ -239,6 +240,22 @@ export default function Computer() {
         disabled={switching}
         onChange={(mode) => void setComputerMode(mode)}
       />
+      <View
+        style={{
+          marginTop: 18,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: "#232326",
+          padding: 14,
+          gap: 8,
+        }}
+      >
+        <Text style={{ color: "#85858A", fontSize: 14 }}>Teach a task</Text>
+        <Text style={{ color: "#6C6C70", fontSize: 13.5, lineHeight: 20 }}>
+          Recording a live demonstration needs desktop or web with the full computer view. You can
+          still ask this bot to run saved skills from chat.
+        </Text>
+      </View>
 
       <Modal
         visible={booting || computerOpen}
@@ -371,7 +388,7 @@ export default function Computer() {
                       justifyContent: "center",
                     }}
                   >
-                    <Text style={{ color: "#85858A", fontSize: 16 }}>✕</Text>
+                    <NativeSymbol ios="xmark" android="close" size={16} color="#85858A" />
                   </Pressable>
                 </View>
               </SafeAreaView>

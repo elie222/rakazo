@@ -96,6 +96,18 @@ input {
   font: inherit;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 button {
   cursor: pointer;
 }
@@ -572,6 +584,170 @@ button {
   gap: 12px;
   margin-top: auto;
   padding-top: 26px;
+}
+
+.waitlist-form {
+  position: relative;
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.waitlist-form > input {
+  min-width: 0;
+  height: 42px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 13px;
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+}
+
+.waitlist-form > input::placeholder {
+  color: var(--muted);
+}
+
+.waitlist-form > input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-soft-2);
+}
+
+.waitlist-form button:disabled {
+  cursor: default;
+  opacity: 0.7;
+  transform: none;
+}
+
+.waitlist-form__trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.waitlist-form__status {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.waitlist-form__status.is-success {
+  color: var(--success);
+}
+
+.waitlist-form__status.is-error {
+  color: #b42318;
+}
+
+.get-started-dialog {
+  width: min(520px, calc(100% - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 24px;
+  background: var(--surface);
+  padding: 0;
+  color: var(--body);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.2);
+}
+
+.get-started-dialog::backdrop {
+  background: rgba(20, 20, 22, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.get-started-dialog__panel {
+  position: relative;
+  padding: 38px;
+}
+
+.get-started-dialog__close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+.get-started-dialog__close:hover,
+.get-started-dialog__close:focus-visible {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.get-started-dialog__close svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.get-started-dialog h2 {
+  max-width: 390px;
+  margin: 0;
+  color: var(--ink);
+  font-family: Aeonik, Geist, ui-sans-serif, system-ui, sans-serif;
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.get-started-dialog__copy {
+  margin: 14px 0 0;
+  color: var(--muted-2);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.get-started-dialog__form {
+  margin-top: 26px;
+}
+
+.get-started-dialog__success-mark {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  border-radius: 14px;
+  background: #edf9ef;
+  color: var(--success);
+}
+
+.get-started-dialog__success-mark svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.get-started-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
 }
 
 .comparison-kicker {
@@ -2016,6 +2192,18 @@ button {
   .comparison-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .waitlist-form {
+    grid-template-columns: 1fr;
+  }
+
+  .get-started-dialog__panel {
+    padding: 32px 24px 24px;
+  }
+
+  .get-started-dialog__actions {
+    flex-direction: column;
   }
 
   .button,

@@ -14,8 +14,8 @@ import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
 import {
   findDefaultVoiceCredential,
+  findVoiceCredential,
   IsolationError,
-  newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
 } from "@rakazo/db";
@@ -59,14 +59,12 @@ export function toVoiceStatus(cred: { provider: string; voiceId: string } | null
 export function toVoiceCredential(row: {
   id: string;
   provider: string;
-  label: string;
   isDefault: boolean;
   voiceId: string;
 }): VoiceCredential {
   return {
     id: row.id,
     provider: row.provider,
-    label: row.label,
     hasKey: true,
     isDefault: row.isDefault,
     voiceId: row.voiceId,
@@ -80,10 +78,7 @@ export async function loadDefaultVoiceCredential(deps: VoiceDeps, actor: Actor) 
 
 export async function loadVoiceCredential(deps: VoiceDeps, actor: Actor, provider?: string) {
   const cred = provider
-    ? await deps.prisma.userVoiceCredential.findFirst({
-        where: { userId: actor.userId, workspaceId: actor.workspaceId, provider },
-        orderBy: newestVoiceCredentialOrder,
-      })
+    ? await findVoiceCredential(deps.prisma, actor, provider)
     : await findDefaultVoiceCredential(deps.prisma, actor);
   if (!cred) return null;
   const secret = await deps.prisma.secret.findFirst({
@@ -120,7 +115,6 @@ export async function persistVoiceCredential(
   input: {
     provider: string;
     plaintext: string;
-    label?: string;
     voiceId?: string;
     signal?: AbortSignal;
   },
@@ -142,13 +136,14 @@ export async function persistVoiceCredential(
   const cred = await withSerializableRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
-        const existing = await tx.userVoiceCredential.findFirst({
+        const existing = await tx.userVoiceCredential.findUnique({
           where: {
-            userId: actor.userId,
-            workspaceId: actor.workspaceId,
-            provider: input.provider,
+            userId_workspaceId_provider: {
+              userId: actor.userId,
+              workspaceId: actor.workspaceId,
+              provider: input.provider,
+            },
           },
-          orderBy: newestVoiceCredentialOrder,
         });
         const secret = await tx.secret.create({
           data: {
@@ -169,7 +164,6 @@ export async function persistVoiceCredential(
               userId: actor.userId,
               workspaceId: actor.workspaceId,
               provider: input.provider,
-              label: input.label ?? catalogEntry(input.provider)?.name ?? input.provider,
               secretId: secret.id,
               isDefault: true,
               voiceId,
@@ -179,7 +173,6 @@ export async function persistVoiceCredential(
         const updated = await tx.userVoiceCredential.update({
           where: { id: existing.id },
           data: {
-            label: input.label ?? catalogEntry(input.provider)?.name ?? input.provider,
             secretId: secret.id,
             isDefault: true,
             voiceId: voiceId || existing.voiceId,

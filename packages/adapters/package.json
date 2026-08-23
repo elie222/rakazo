@@ -17,12 +17,14 @@
     "@e2b/desktop": "^2.3.1",
     "@earendil-works/pi-agent-core": "^0.84.1",
     "@earendil-works/pi-ai": "^0.84.1",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "graphile-worker": "^0.17.3",
     "pg": "^8.16.3",
+    "undici": "^7.22.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
