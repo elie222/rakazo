@@ -12,6 +12,7 @@ import type {
   NotificationMessage,
   NotificationProvider,
   SandboxProvider,
+  SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
 import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
@@ -46,8 +47,6 @@ import {
   findDefaultModelCredential,
   type PrismaClient,
   parseComputerMode,
-  supermemoryContainerTagsFor,
-  supermemoryRecallContainerTagsFor,
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -87,10 +86,12 @@ import {
   HISTORY_WINDOW_SIZE,
   historyWindowSize,
   LEGACY_HISTORY_WINDOW_SIZE,
+  MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
+import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -101,10 +102,6 @@ import {
 } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
-import {
-  saveSupermemoryMemoryToContainers,
-  searchSupermemoryContainers,
-} from "./supermemory-client.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
@@ -140,6 +137,7 @@ export interface ExecutorDeps {
   runtime: AgentRuntime;
   sandbox: SandboxProvider;
   memory: MemoryStore;
+  memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   artifacts?: ArtifactStore;
   connector?: ConnectorProvider;
@@ -398,7 +396,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           storedConnections,
           credential,
           settings,
-          memoryConfig,
+          configuredMemory,
           savedSkills,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
@@ -419,10 +417,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }),
           findDefaultModelCredential(deps.prisma, run),
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-          deps.prisma.workspaceMemoryConfig.findUnique({
-            where: { workspaceId: run.workspaceId },
-            include: { secret: true },
-          }),
+          deps.memoryProviders.resolve(run.workspaceId),
           deps.prisma.taughtSkill.findMany({
             where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
           }),
@@ -454,27 +449,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           signal: runAbortController.signal,
           connectedProviders: connectedPlugins.map((row) => row.provider),
         };
-        const memoryScope = memoryConfig
-          ? effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope)
+        const memoryScope = configuredMemory
+          ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
           : null;
-        const supermemory =
-          memoryConfig && memoryScope
-            ? {
-                baseUrl: memoryConfig.baseUrl,
-                apiKey: deps.secretStore.load(memoryConfig.secret.ciphertext),
-                recallContainerTags: supermemoryRecallContainerTagsFor(
-                  memoryScope,
-                  bot.id,
-                  run.workspaceId,
-                  thread.historyCompactionGeneration,
-                ),
-                saveContainerTags: supermemoryContainerTagsFor(
-                  memoryScope,
-                  bot.id,
-                  run.workspaceId,
-                ),
-              }
-            : null;
+        const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
 
         await deps.events.append({
           workspaceId: run.workspaceId,
@@ -485,7 +463,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           payload: { trigger: run.trigger },
         });
 
-        const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
+        const discoveredPromise = deps.connector
+          ? deps.connector.discoverTools(context)
+          : Promise.resolve([]);
         const visibleMessages = [...messages].reverse().map((m) => ({
           seq: m.seq,
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
@@ -511,28 +491,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
-        const currentTurnImages = await loadCurrentTurnImages(deps, turnBlocks, context);
-        const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
-        const supermemoryEnabled = Boolean(supermemory);
+        const recallPromise =
+          semanticMemory && memoryScope && thread.historyCompactedUpToSeq != null
+            ? semanticMemory.recall(
+                {
+                  query: task.prompt,
+                  scope: memoryScope,
+                  botId: bot.id,
+                  historyGeneration: thread.historyCompactionGeneration,
+                  limit: MAX_RECALLED_MEMORIES,
+                },
+                context,
+              )
+            : Promise.resolve(null);
+        const [discovered, currentTurnImages, memoryContext, recalled] = await Promise.all([
+          discoveredPromise,
+          loadCurrentTurnImages(deps, turnBlocks, context),
+          loadAgentMemoryContext(deps.memory, bot.id, context),
+          recallPromise,
+        ]);
+        const semanticMemoryEnabled = Boolean(semanticMemory);
         let recalledMemory = "";
         let recallSucceeded = false;
-        if (supermemory && thread.historyCompactedUpToSeq != null) {
-          const recalled = await searchSupermemoryContainers(
-            task.prompt,
-            supermemory.recallContainerTags,
-            supermemory,
-          );
-          if (recalled.ok && recalled.results.length > 0) {
+        if (recalled) {
+          if (recalled.ok && recalled.value.length > 0) {
             recallSucceeded = true;
-            recalledMemory = formatRecalledMemory(recalled.results);
+            recalledMemory = formatRecalledMemory(recalled.value);
           } else if (!recalled.ok) {
-            console.error("supermemory recall failed", recalled.error);
+            console.error("semantic memory recall failed", recalled.error);
           }
         }
         if (!compactedHistory.usedLocalSummary) {
           history = history.slice(
             -historyWindowSize({
-              supermemoryEnabled: supermemoryEnabled && !thread.historyCompactionSummary,
+              semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
               compacted: thread.historyCompactedUpToSeq != null,
               recallSucceeded,
             }),
@@ -570,7 +562,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? builtinAgentTools
             : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name))
         ).filter((tool) => thread.groupId || tool.name !== "handoff_to_bot");
-        const builtins = selectMemoryTools(availableBuiltins, Boolean(memoryConfig));
+        const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const tools = [
           ...builtins,
           ...discovered.filter(
@@ -876,18 +868,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish({ ok: true });
           }
           if (name === "recall_memory") {
-            return searchSupermemoryContainers(
-              String(args.query ?? ""),
-              supermemory!.recallContainerTags,
-              supermemory!,
+            return semanticMemory!.recall(
+              {
+                query: String(args.query ?? ""),
+                scope: memoryScope!,
+                botId: bot.id,
+                ...(thread.historyCompactedUpToSeq == null
+                  ? {}
+                  : { historyGeneration: thread.historyCompactionGeneration }),
+                limit: MAX_RECALLED_MEMORIES,
+              },
+              context,
             );
           }
           if (name === "save_memory") {
             return finish(
-              await saveSupermemoryMemoryToContainers(
-                String(args.content ?? ""),
-                supermemory!.saveContainerTags,
-                supermemory!,
+              await semanticMemory!.save(
+                {
+                  content: String(args.content ?? ""),
+                  scope: memoryScope!,
+                  botId: bot.id,
+                  source: { kind: "durable" },
+                },
+                context,
               ),
             );
           }

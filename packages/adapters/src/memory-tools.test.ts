@@ -9,12 +9,12 @@ function tool(name: string): ConnectorTool {
 const allThree = [tool("remember"), tool("recall_memory"), tool("save_memory"), tool("shell")];
 
 describe("selectMemoryTools", () => {
-  it("keeps native remember and drops Supermemory tools when unconfigured", () => {
+  it("keeps native remember and drops semantic memory tools when unconfigured", () => {
     const names = selectMemoryTools(allThree, false).map((t) => t.name);
     expect(names).toEqual(["remember", "shell"]);
   });
 
-  it("keeps Supermemory tools and drops native remember when configured", () => {
+  it("keeps semantic memory tools and drops native remember when configured", () => {
     const names = selectMemoryTools(allThree, true).map((t) => t.name);
     expect(names).toEqual(["recall_memory", "save_memory", "shell"]);
   });

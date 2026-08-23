@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { persistSupermemoryConfig } from "./router.js";
+import { persistMemoryProviderConfig } from "./router.js";
 
 const actor = { userId: "user-1", workspaceId: "ws-1", email: "a@b.com", isDeploymentOwner: false };
 
 function makeDeps(
   overrides: {
     existing?: { id: string; secretId: string } | null;
-    upsertResult?: { mode: string; baseUrl: string; defaultMemoryScope: string; updatedAt: Date };
+    upsertResult?: {
+      provider: string;
+      settings: Record<string, string>;
+      defaultMemoryScope: string;
+      updatedAt: Date;
+    };
     workspaceOwner?: boolean;
   } = {},
 ) {
@@ -15,8 +20,8 @@ function makeDeps(
   const findUnique = vi.fn().mockResolvedValue(overrides.existing ?? null);
   const upsert = vi.fn().mockResolvedValue(
     overrides.upsertResult ?? {
-      mode: "cloud",
-      baseUrl: "https://api.supermemory.ai",
+      provider: "supermemory",
+      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
       defaultMemoryScope: "isolated",
       updatedAt: new Date("2026-08-19T00:00:00.000Z"),
     },
@@ -48,18 +53,23 @@ function makeDeps(
   };
 }
 
-describe("persistSupermemoryConfig", () => {
+function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
+  return {
+    provider: "supermemory",
+    settings: { mode, ...(baseUrl ? { baseUrl } : {}) },
+    credentials: { apiKey: "sm_test_key_12345" },
+    defaultMemoryScope: "isolated" as const,
+  };
+}
+
+describe("persistMemoryProviderConfig", () => {
   it("rejects non-owners before probing or writing workspace configuration", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const { deps, upsert } = makeDeps({ workspaceOwner: false });
 
     await expect(
-      persistSupermemoryConfig(deps as never, actor, {
-        mode: "cloud",
-        apiKey: "sm_test_key_12345",
-        defaultMemoryScope: "isolated",
-      }),
+      persistMemoryProviderConfig(deps as never, actor, connectionInput("cloud")),
     ).rejects.toThrow();
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -70,11 +80,7 @@ describe("persistSupermemoryConfig", () => {
   it("rejects local mode without a baseUrl, without touching the database", async () => {
     const { deps, upsert } = makeDeps();
     await expect(
-      persistSupermemoryConfig(deps as never, actor, {
-        mode: "local",
-        apiKey: "sm_test_key_12345",
-        defaultMemoryScope: "isolated",
-      }),
+      persistMemoryProviderConfig(deps as never, actor, connectionInput("local")),
     ).rejects.toThrow(/baseUrl/);
     expect(upsert).not.toHaveBeenCalled();
   });
@@ -84,12 +90,11 @@ describe("persistSupermemoryConfig", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { deps, upsert } = makeDeps();
     await expect(
-      persistSupermemoryConfig(deps as never, actor, {
-        mode: "local",
-        apiKey: "sm_test_key_12345",
-        baseUrl: "http://169.254.169.254/latest/meta-data/",
-        defaultMemoryScope: "isolated",
-      }),
+      persistMemoryProviderConfig(
+        deps as never,
+        actor,
+        connectionInput("local", "http://169.254.169.254/latest/meta-data/"),
+      ),
     ).rejects.toThrow(/loopback/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
@@ -100,11 +105,9 @@ describe("persistSupermemoryConfig", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
     const { deps, upsert } = makeDeps();
     await expect(
-      persistSupermemoryConfig(deps as never, actor, {
-        mode: "local",
-        apiKey: "sm_bad_key",
-        baseUrl: "http://localhost:6767",
-        defaultMemoryScope: "isolated",
+      persistMemoryProviderConfig(deps as never, actor, {
+        ...connectionInput("local", "http://localhost:6767"),
+        credentials: { apiKey: "sm_bad_key" },
       }),
     ).rejects.toThrow();
     expect(upsert).not.toHaveBeenCalled();
@@ -116,12 +119,11 @@ describe("persistSupermemoryConfig", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { deps, upsert } = makeDeps();
 
-    await persistSupermemoryConfig(deps as never, actor, {
-      mode: "local",
-      apiKey: "sm_test_key_12345",
-      baseUrl: "http://[::1]:6767",
-      defaultMemoryScope: "isolated",
-    });
+    await persistMemoryProviderConfig(
+      deps as never,
+      actor,
+      connectionInput("local", "http://[::1]:6767"),
+    );
 
     expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/v3/container-tags/list");
     expect(upsert).toHaveBeenCalled();
@@ -131,20 +133,23 @@ describe("persistSupermemoryConfig", () => {
   it("connects cloud mode, defaulting the base URL, and returns the serialized config", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
     const { deps, upsert, transaction } = makeDeps();
-    const result = await persistSupermemoryConfig(deps as never, actor, {
-      mode: "cloud",
-      apiKey: "sm_test_key_12345",
-      defaultMemoryScope: "isolated",
-    });
+    const result = await persistMemoryProviderConfig(
+      deps as never,
+      actor,
+      connectionInput("cloud"),
+    );
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { workspaceId: "ws-1" },
-        create: expect.objectContaining({ mode: "cloud", baseUrl: "https://api.supermemory.ai" }),
+        create: expect.objectContaining({
+          provider: "supermemory",
+          settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+        }),
       }),
     );
     expect(result).toEqual({
-      mode: "cloud",
-      baseUrl: "https://api.supermemory.ai",
+      provider: "supermemory",
+      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
       defaultMemoryScope: "isolated",
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
@@ -157,10 +162,9 @@ describe("persistSupermemoryConfig", () => {
     const { deps, secretDeleteMany } = makeDeps({
       existing: { id: "cfg-1", secretId: "secret-old" },
     });
-    await persistSupermemoryConfig(deps as never, actor, {
-      mode: "cloud",
-      apiKey: "sm_new_key_12345",
-      defaultMemoryScope: "isolated",
+    await persistMemoryProviderConfig(deps as never, actor, {
+      ...connectionInput("cloud"),
+      credentials: { apiKey: "sm_new_key_12345" },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
     vi.unstubAllGlobals();

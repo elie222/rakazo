@@ -14,6 +14,7 @@ import type {
   ThreadSnapshot,
   VoiceInfo,
   VoiceStatus,
+  WorkspaceMemoryConfig,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
@@ -108,9 +109,9 @@ const ModelSettingsOverlay = lazy(() =>
 const PluginsOverlay = lazy(() =>
   import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
-const SupermemorySettingsOverlay = lazy(() =>
-  import("./SupermemorySettingsOverlay").then((module) => ({
-    default: module.SupermemorySettingsOverlay,
+const MemorySettingsOverlay = lazy(() =>
+  import("./MemorySettingsOverlay").then((module) => ({
+    default: module.MemorySettingsOverlay,
   })),
 );
 const RoutineSchedule = lazy(() =>
@@ -168,8 +169,10 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
-  const [supermemorySettingsOpen, setSupermemorySettingsOpen] = useState(false);
-  const [supermemoryConfigVersion, setSupermemoryConfigVersion] = useState(0);
+  const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
+  const [memoryProviderConfig, setMemoryProviderConfig] = useState<WorkspaceMemoryConfig | null>(
+    null,
+  );
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -448,14 +451,19 @@ export function ShellPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
-      .then(([bootstrap, groupList]) => {
+    void Promise.all([
+      takeInitialBootstrap(botId),
+      rpc.groups.list(),
+      rpc.memory.providerConfig().catch(() => null),
+    ])
+      .then(([bootstrap, groupList, providerConfig]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
         setGroups(groupList);
+        setMemoryProviderConfig(providerConfig);
         setInitialBotsLoaded(true);
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
@@ -1456,7 +1464,7 @@ export function ShellPage() {
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
-                  setSupermemorySettingsOpen(true);
+                  setMemorySettingsOpen(true);
                 }}
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
@@ -1830,7 +1838,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
-                supermemoryConfigVersion={supermemoryConfigVersion}
+                memoryProviderConfigured={memoryProviderConfig !== null}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -2127,10 +2135,11 @@ export function ShellPage() {
       </Suspense>
 
       <Suspense fallback={null}>
-        {supermemorySettingsOpen ? (
-          <SupermemorySettingsOverlay
-            onClose={() => setSupermemorySettingsOpen(false)}
-            onConfigChange={() => setSupermemoryConfigVersion((version) => version + 1)}
+        {memorySettingsOpen ? (
+          <MemorySettingsOverlay
+            onClose={() => setMemorySettingsOpen(false)}
+            config={memoryProviderConfig}
+            onConfigChange={setMemoryProviderConfig}
           />
         ) : null}
       </Suspense>
@@ -3186,13 +3195,13 @@ function CreateBotForm({
 
 function BotSettings({
   bot,
-  supermemoryConfigVersion,
+  memoryProviderConfigured,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
-  supermemoryConfigVersion: number;
+  memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
     title?: string;
@@ -3211,27 +3220,11 @@ function BotSettings({
   const [description, setDescription] = useState(bot.description);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
-  const [supermemoryConnected, setSupermemoryConnected] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let current = true;
-    void rpc.memory
-      .supermemoryConfig()
-      .then((config) => {
-        if (current) setSupermemoryConnected(config !== null);
-      })
-      .catch(() => {
-        if (current) setSupermemoryConnected(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [supermemoryConfigVersion]);
 
   useEffect(() => {
     void rpc.voice
@@ -3271,7 +3264,7 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-      {supermemoryConnected ? (
+      {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
           Memory scope
           <div className="mt-2 flex gap-2">

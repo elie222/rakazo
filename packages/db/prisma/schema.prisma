@@ -709,8 +709,8 @@ model WorkspaceMemoryConfig {
   workspaceId        String   @unique
   workspace          Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId             String
-  mode               String
-  baseUrl            String
+  provider           String
+  settings           Json
   secretId           String   @unique
   secret             Secret   @relation(fields: [secretId], references: [id], onDelete: Cascade)
   defaultMemoryScope String   @default("isolated")

@@ -250,18 +250,18 @@ export const appContract = {
       .input(z.object({ documentId: Id, content: z.string() }))
       .output(MemoryDocumentSchema),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
-    supermemoryConfig: oc.output(WorkspaceMemoryConfigSchema.nullable()),
-    connectSupermemory: oc
+    providerConfig: oc.output(WorkspaceMemoryConfigSchema.nullable()),
+    connectProvider: oc
       .input(
         z.object({
-          mode: z.enum(["cloud", "local"]),
-          apiKey: z.string().min(8),
-          baseUrl: z.string().url().optional(),
+          provider: z.string().min(1),
+          settings: z.record(z.string(), z.string()),
+          credentials: z.record(z.string(), z.string()),
           defaultMemoryScope: MemoryScopeSchema.default("isolated"),
         }),
       )
       .output(WorkspaceMemoryConfigSchema),
-    disconnectSupermemory: oc.output(z.object({ ok: z.literal(true) })),
+    disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {
     list: oc.input(botId).output(z.array(RoutineSchema)),

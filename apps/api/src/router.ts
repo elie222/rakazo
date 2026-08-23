@@ -22,16 +22,16 @@ import {
   type ComputerExecutionLease,
   checkpointAndRecordComputerWorkspace,
   createVoiceProvider,
-  deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
   hasActiveComputerControl,
   listPiCatalog,
+  type MemoryProviderResolver,
   type PiOAuthLogins,
   planLiveConnectionSync,
-  probeSupermemory,
+  prepareMemoryProviderConnection,
   provisionComputer,
   releaseComputerExecutionLease,
   resolveBotWorkspacePath,
@@ -64,7 +64,6 @@ import {
   Prisma,
   type PrismaClient,
   parseComputerMode,
-  supermemoryHistoryContainerTagsForClear,
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -162,6 +161,7 @@ export interface RouterDeps {
   jobs: JobPublisher;
   sandbox: SandboxProvider;
   memory: MemoryStore;
+  memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
   oauthLogins: PiOAuthLogins;
@@ -609,38 +609,39 @@ export function createRouter(deps: RouterDeps) {
           threadId: bot.thread.id,
           botId: bot.id,
         });
-        await Promise.all(
-          cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
-        );
-        const memoryConfig = await deps.prisma.workspaceMemoryConfig.findUnique({
-          where: { workspaceId: context.actor.workspaceId },
-          include: { secret: true },
-        });
+        const [configuredMemory] = await Promise.all([
+          deps.memoryProviders.resolve(context.actor.workspaceId).catch((error) => {
+            console.error("semantic memory resolution after thread clear failed", error);
+            return null;
+          }),
+          Promise.all(
+            cancelledRunIds.map((runId) =>
+              deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+            ),
+          ),
+        ]);
         // Durable memories remain in their workspace/private containers. Clear only removes
         // conversation-derived summaries from the previous generation; including the new
         // generation also covers a compaction job that began just after the clear committed.
-        if (memoryConfig) {
+        if (configuredMemory) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
           try {
-            const connection = {
-              baseUrl: memoryConfig.baseUrl,
-              apiKey: deps.secrets.load(memoryConfig.secret.ciphertext),
-            };
-            const tags = supermemoryHistoryContainerTagsForClear(
-              bot.id,
-              historyCompactionGeneration,
+            const purged = await configuredMemory.provider.purgeHistory(
+              {
+                botId: bot.id,
+                generations: [
+                  Math.max(0, historyCompactionGeneration - 1),
+                  historyCompactionGeneration,
+                ],
+              },
+              computerContext(context.actor, bot.id, `thread-clear:${bot.thread.id}`),
             );
-            await Promise.all(
-              tags.map(async (tag) => {
-                const purged = await deleteSupermemoryContainer(tag, connection);
-                if (!purged.ok) {
-                  console.error("supermemory purge after thread clear failed", purged.error);
-                }
-              }),
-            );
+            if (!purged.ok) {
+              console.error("semantic memory purge after thread clear failed", purged.error);
+            }
           } catch (error) {
-            console.error("supermemory purge after thread clear failed", error);
+            console.error("semantic memory purge after thread clear failed", error);
           }
         }
         return { ok: true as const };
@@ -1274,14 +1275,14 @@ export function createRouter(deps: RouterDeps) {
         });
         return docs.map((d) => `# ${d.path}\n\n${d.content}`).join("\n\n");
       }),
-      supermemoryConfig: authed.memory.supermemoryConfig.handler(async ({ context }) => {
+      providerConfig: authed.memory.providerConfig.handler(async ({ context }) => {
         const config = await findWorkspaceMemoryConfig(deps.prisma, context.actor.workspaceId);
         return config ? serializeWorkspaceMemoryConfig(config) : null;
       }),
-      connectSupermemory: authed.memory.connectSupermemory.handler(async ({ context, input }) =>
-        persistSupermemoryConfig(deps, context.actor, input),
+      connectProvider: authed.memory.connectProvider.handler(async ({ context, input }) =>
+        persistMemoryProviderConfig(deps, context.actor, input),
       ),
-      disconnectSupermemory: authed.memory.disconnectSupermemory.handler(async ({ context }) => {
+      disconnectProvider: authed.memory.disconnectProvider.handler(async ({ context }) => {
         await requireWorkspaceOwner(deps.prisma, context.actor);
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
@@ -2083,22 +2084,6 @@ async function persistModelCredential(
   };
 }
 
-const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";
-const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
-
-// "Local" mode means a Supermemory instance on this host. Keeping the probe on loopback prevents
-// this integration from reaching private network services or cloud metadata endpoints.
-function isLoopbackBaseUrl(url: string): boolean {
-  try {
-    const hostname = new URL(url).hostname;
-    const normalizedHostname =
-      hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
-    return LOOPBACK_HOSTNAMES.has(normalizedHostname);
-  } catch {
-    return false;
-  }
-}
-
 async function requireWorkspaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
   const owner = await prisma.member.findFirst({
     where: {
@@ -2111,33 +2096,25 @@ async function requireWorkspaceOwner(prisma: PrismaClient, actor: Actor): Promis
   if (!owner) throw new ORPCError("FORBIDDEN");
 }
 
-export async function persistSupermemoryConfig(
+export async function persistMemoryProviderConfig(
   deps: RouterDeps,
   actor: Actor,
   input: {
-    mode: "cloud" | "local";
-    apiKey: string;
-    baseUrl?: string;
+    provider: string;
+    settings: Record<string, string>;
+    credentials: Record<string, string>;
     defaultMemoryScope: "isolated" | "shared";
   },
 ) {
   await requireWorkspaceOwner(deps.prisma, actor);
-  if (input.mode === "local" && !input.baseUrl) {
-    throw new ORPCError("BAD_REQUEST", { message: "baseUrl is required for local mode" });
-  }
-  const baseUrl = input.mode === "cloud" ? SUPERMEMORY_CLOUD_BASE_URL : input.baseUrl!;
-  if (input.mode === "local" && !isLoopbackBaseUrl(baseUrl)) {
+  const prepared = await prepareMemoryProviderConnection(input).catch((error: unknown) => {
     throw new ORPCError("BAD_REQUEST", {
-      message: "Local mode requires a loopback address (localhost, 127.0.0.1, or ::1).",
+      message: error instanceof Error ? error.message : "Memory provider connection failed",
     });
-  }
-  const probe = await probeSupermemory({ baseUrl, apiKey: input.apiKey });
-  if (!probe.ok) {
-    throw new ORPCError("BAD_REQUEST", { message: probe.error });
-  }
-  const stored = await deps.secrets.put(input.apiKey, {
-    operationId: "supermemory-config",
-    traceId: "supermemory-config",
+  });
+  const stored = await deps.secrets.put(JSON.stringify(prepared.credentials), {
+    operationId: "memory-provider-config",
+    traceId: "memory-provider-config",
     workspaceId: actor.workspaceId,
     userId: actor.userId,
     signal: new AbortController().signal,
@@ -2151,7 +2128,7 @@ export async function persistSupermemoryConfig(
             id: stored.id,
             userId: actor.userId,
             workspaceId: actor.workspaceId,
-            kind: "supermemory",
+            kind: "memory-provider",
             ciphertext: stored.ciphertext,
           },
         });
@@ -2160,15 +2137,15 @@ export async function persistSupermemoryConfig(
           create: {
             workspaceId: actor.workspaceId,
             userId: actor.userId,
-            mode: input.mode,
-            baseUrl,
+            provider: prepared.provider,
+            settings: prepared.settings,
             secretId: secret.id,
             defaultMemoryScope: input.defaultMemoryScope,
           },
           update: {
             userId: actor.userId,
-            mode: input.mode,
-            baseUrl,
+            provider: prepared.provider,
+            settings: prepared.settings,
             secretId: secret.id,
             defaultMemoryScope: input.defaultMemoryScope,
           },
@@ -2185,14 +2162,21 @@ export async function persistSupermemoryConfig(
 }
 
 function serializeWorkspaceMemoryConfig(config: {
-  mode: string;
-  baseUrl: string;
+  provider: string;
+  settings: unknown;
   defaultMemoryScope: string;
   updatedAt: Date;
 }) {
   return {
-    mode: config.mode as "cloud" | "local",
-    baseUrl: config.baseUrl,
+    provider: config.provider,
+    settings:
+      config.settings && typeof config.settings === "object" && !Array.isArray(config.settings)
+        ? Object.fromEntries(
+            Object.entries(config.settings).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          )
+        : {},
     defaultMemoryScope: config.defaultMemoryScope as "isolated" | "shared",
     updatedAt: config.updatedAt.toISOString(),
   };

@@ -1,61 +1,49 @@
 import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { rpc } from "../lib/rpc";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
 
 export function SupermemorySettingsOverlay({
   onClose,
+  config,
   onConfigChange,
 }: {
   onClose: () => void;
-  onConfigChange: () => void;
+  config: WorkspaceMemoryConfig | null;
+  onConfigChange: (config: WorkspaceMemoryConfig | null) => void;
 }) {
-  const [config, setConfig] = useState<WorkspaceMemoryConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<"cloud" | "local">("cloud");
+  const configuredMode = config?.settings.mode === "local" ? "local" : "cloud";
+  const [mode, setMode] = useState<"cloud" | "local">(configuredMode);
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
-  const [defaultScope, setDefaultScope] = useState<"isolated" | "shared">("isolated");
+  const [baseUrl, setBaseUrl] = useState(
+    configuredMode === "local"
+      ? (config?.settings.baseUrl ?? DEFAULT_LOCAL_BASE_URL)
+      : DEFAULT_LOCAL_BASE_URL,
+  );
+  const [defaultScope, setDefaultScope] = useState<"isolated" | "shared">(
+    config?.defaultMemoryScope ?? "isolated",
+  );
   const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function applyConfig(next: WorkspaceMemoryConfig | null) {
-    setConfig(next);
-    if (next) {
-      setMode(next.mode);
-      setBaseUrl(next.mode === "local" ? next.baseUrl : DEFAULT_LOCAL_BASE_URL);
-      setDefaultScope(next.defaultMemoryScope);
-    }
-  }
-
-  async function refresh() {
-    applyConfig(await rpc.memory.supermemoryConfig());
-  }
-
-  useEffect(() => {
-    void refresh()
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not load memory settings"),
-      )
-      .finally(() => setLoading(false));
-  }, []);
-
   async function connect() {
-    if (loading || !apiKey.trim()) return;
+    if (!apiKey.trim()) return;
     setError(null);
     setPending("connect");
     try {
-      const next = await rpc.memory.connectSupermemory({
-        mode,
-        apiKey: apiKey.trim(),
-        baseUrl: mode === "local" ? baseUrl.trim() : undefined,
+      const next = await rpc.memory.connectProvider({
+        provider: "supermemory",
+        settings: {
+          mode,
+          ...(mode === "local" ? { baseUrl: baseUrl.trim() } : {}),
+        },
+        credentials: { apiKey: apiKey.trim() },
         defaultMemoryScope: defaultScope,
       });
       setApiKey("");
-      applyConfig(next);
-      onConfigChange();
+      onConfigChange(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect Supermemory");
     } finally {
@@ -67,9 +55,8 @@ export function SupermemorySettingsOverlay({
     setError(null);
     setPending("disconnect");
     try {
-      await rpc.memory.disconnectSupermemory();
-      setConfig(null);
-      onConfigChange();
+      await rpc.memory.disconnectProvider();
+      onConfigChange(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not disconnect Supermemory");
     } finally {
@@ -86,7 +73,7 @@ export function SupermemorySettingsOverlay({
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Memory</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {loading ? "Loading…" : "Connect Supermemory to replace native MEMORY.md memory."}
+              Connect Supermemory to add semantic recall alongside native MEMORY.md memory.
             </p>
           </div>
           <button
@@ -109,7 +96,9 @@ export function SupermemorySettingsOverlay({
                 Connected
               </div>
               <div className="mt-1 text-[15px] text-[#ECECEE]">
-                {config.mode === "cloud" ? "Supermemory Cloud" : `Local · ${config.baseUrl}`}
+                {config.settings.mode === "cloud"
+                  ? "Supermemory Cloud"
+                  : `Local · ${config.settings.baseUrl}`}
               </div>
               <div className="mt-1 text-[13px] text-[#85858A]">
                 Default scope: {config.defaultMemoryScope}
@@ -194,12 +183,7 @@ export function SupermemorySettingsOverlay({
                 type="button"
                 variant="pill"
                 size="sm"
-                disabled={
-                  loading ||
-                  busy ||
-                  apiKey.trim().length < 8 ||
-                  (mode === "local" && !baseUrl.trim())
-                }
+                disabled={busy || apiKey.trim().length < 8 || (mode === "local" && !baseUrl.trim())}
                 onClick={() => void connect()}
                 className="mt-5"
               >

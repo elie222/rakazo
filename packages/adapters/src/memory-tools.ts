@@ -1,12 +1,12 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 
-const SUPERMEMORY_TOOL_NAMES = new Set(["recall_memory", "save_memory"]);
+const SEMANTIC_MEMORY_TOOL_NAMES = new Set(["recall_memory", "save_memory"]);
 
 export function selectMemoryTools(
   tools: ConnectorTool[],
-  supermemoryConfigured: boolean,
+  semanticMemoryConfigured: boolean,
 ): ConnectorTool[] {
-  return supermemoryConfigured
+  return semanticMemoryConfigured
     ? tools.filter((tool) => tool.name !== "remember")
-    : tools.filter((tool) => !SUPERMEMORY_TOOL_NAMES.has(tool.name));
+    : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }

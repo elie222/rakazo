@@ -234,6 +234,46 @@ export interface MemoryCapabilities {
   markdownPortable: boolean;
 }
 
+export type DurableMemoryScope = "isolated" | "shared";
+
+export interface SemanticMemoryCapabilities {
+  recall: boolean;
+  save: boolean;
+  purgeHistory: boolean;
+  sharedScope: boolean;
+}
+
+export interface SemanticMemoryResult {
+  memory: string;
+  score: number;
+  updatedAt?: string;
+}
+
+export type SemanticMemoryResponse<T = void> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
+
+export interface SemanticMemoryRecallRequest {
+  query: string;
+  scope: DurableMemoryScope;
+  botId: string;
+  /** Omit until a thread has compacted history; the provider can then skip that namespace. */
+  historyGeneration?: number;
+  limit: number;
+}
+
+export interface SemanticMemorySaveRequest {
+  content: string;
+  scope: DurableMemoryScope;
+  botId: string;
+  source: { kind: "durable" } | { kind: "history"; generation: number };
+}
+
+export interface SemanticMemoryPurgeHistoryRequest {
+  botId: string;
+  generations: number[];
+}
+
 export interface AgentRunRequest {
   botId: string;
   threadId: string;

@@ -329,8 +329,8 @@ export const ModelCredentialSchema = z.object({
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
 export const WorkspaceMemoryConfigSchema = z.object({
-  mode: z.enum(["cloud", "local"]),
-  baseUrl: z.string(),
+  provider: z.string(),
+  settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
 });
