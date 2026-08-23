@@ -117,6 +117,18 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
+  const channelId = /post_to_channel using channel_id "([^"]+)"/i.exec(prompt)?.[1];
+  if (channelId) {
+    return [
+      {
+        assistant: "I’m on it.",
+        toolCalls: [
+          { name: "post_to_channel", args: { channel_id: channelId, text: "I’m on it." } },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (
     resumeFromCheckpoint === "takeover" ||
     lower.includes("completed sign-in") ||

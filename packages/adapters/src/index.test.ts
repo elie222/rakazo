@@ -53,6 +53,24 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.ask?.text.toLowerCase().includes("city"))).toBe(true);
   });
 
+  it("posts channel wakeups back through the channel tool", () => {
+    const script = inferScript(
+      'You were mentioned in #planning. Reply with post_to_channel using channel_id "channel-1".',
+    );
+    expect(script).toEqual([
+      {
+        assistant: "I’m on it.",
+        toolCalls: [
+          {
+            name: "post_to_channel",
+            args: { channel_id: "channel-1", text: "I’m on it." },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
+
   it("stops hang work when aborted", async () => {
     const runtime = new ScriptedAgentRuntime();
     const ctx = {
