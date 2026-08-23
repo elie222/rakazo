@@ -37,6 +37,11 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await panel.getByRole("button", { name: "Researcher" }).click();
   await panel.getByRole("button", { name: "Research Writer" }).click();
   await captureScreenshot(page, testInfo, "group-creation");
+  await page.route("**/rpc/groups/create", async (route) => route.abort("failed"));
+  await page.getByRole("button", { name: "Create group", exact: true }).click();
+  await expect(panel.getByRole("alert")).toHaveText("Failed to fetch");
+  await expect(page.getByRole("button", { name: "Create group", exact: true })).toBeEnabled();
+  await page.unroute("**/rpc/groups/create");
   await page.getByRole("button", { name: "Create group", exact: true }).click();
   await page.waitForURL(/\/app\/g\/[^/]+$/);
   const groupUrl = page.url();
@@ -61,6 +66,11 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(groupName).toHaveValue("Review team");
   await sidebar.getByRole("button", { name: /Draft team/ }).click();
   await expect(groupName).toHaveValue("Draft team");
+  await page.route("**/rpc/groups/update", async (route) => route.abort("failed"));
+  await desktopSettings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(desktopSettings.getByRole("alert")).toHaveText("Failed to fetch");
+  await expect(desktopSettings.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  await page.unroute("**/rpc/groups/update");
   await desktopSettings.getByRole("button", { name: "Save", exact: true }).click();
 
   await page.getByPlaceholder("Message Draft team").fill("@Researcher unfinished draft");

@@ -9,6 +9,7 @@ const fakeAgentState = vi.hoisted(() => ({
     contextWindow?: number;
     maxTokens?: number;
   }>,
+  failPrompt: false,
 }));
 
 type FakeAgentTool = {
@@ -35,6 +36,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
 
     subscribe(_listener: unknown) {}
     async prompt() {
+      if (fakeAgentState.failPrompt) throw new Error("prompt failed");
       const runSubagent = this.tools.find((tool) => tool.name === "run_subagent");
       await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
     }
@@ -62,7 +64,11 @@ vi.mock("./pi-local-provider.js", () => ({
 
 import { PiAgentRuntime } from "./pi-runtime.js";
 
-async function runWithModel(modelId: string, provider = "test") {
+async function runWithModel(
+  modelId: string,
+  provider = "test",
+  signal = new AbortController().signal,
+) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
     {
@@ -81,7 +87,7 @@ async function runWithModel(modelId: string, provider = "test") {
       traceId: "1",
       workspaceId: "w",
       userId: "u",
-      signal: new AbortController().signal,
+      signal,
     },
   )) {
     // Exhaust the runtime event stream so the run completes.
@@ -93,6 +99,7 @@ describe("Pi agent thinking level", () => {
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
     fakeAgentState.models = [];
+    fakeAgentState.failPrompt = false;
     vi.unstubAllEnvs();
   });
 
@@ -126,5 +133,15 @@ describe("Pi agent thinking level", () => {
     await runWithModel("scripted", "scripted");
 
     expect(fakeAgentState.models[0]?.id).toBe("stealth/ox-alpha");
+  });
+
+  it("removes the abort listener when prompting fails", async () => {
+    const controller = new AbortController();
+    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    fakeAgentState.failPrompt = true;
+
+    await runWithModel("plain-model", "test", controller.signal);
+
+    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });

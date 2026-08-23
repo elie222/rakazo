@@ -186,9 +186,12 @@ export class PiAgentRuntime implements AgentRuntime {
           data: Buffer.from(image.data).toString("base64"),
           mimeType: image.mimeType,
         }));
-        await agent.prompt(request.prompt, images?.length ? images : undefined);
-        await agent.waitForIdle();
-        signal.removeEventListener("abort", onAbort);
+        try {
+          await agent.prompt(request.prompt, images?.length ? images : undefined);
+          await agent.waitForIdle();
+        } finally {
+          signal.removeEventListener("abort", onAbort);
+        }
 
         const error = agent.state.errorMessage;
         if (error) {

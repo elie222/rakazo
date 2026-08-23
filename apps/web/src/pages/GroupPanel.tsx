@@ -67,19 +67,39 @@ export function CreateGroupForm({
 }: {
   bots: Bot[];
   onCancel: () => void;
-  onCreate: (input: { name: string; botIds: string[] }) => void;
+  onCreate: (input: { name: string; botIds: string[] }) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    if (submitting || !validSelection(name, selected)) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onCreate({ name: name.trim(), botIds: selected });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create group");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <span className="text-[13.5px] text-[#85858A]">New group</span>
-        <button type="button" onClick={onCancel}>
+        <button type="button" aria-label="Cancel new group" onClick={onCancel}>
           ✕
         </button>
       </div>
+      {error ? (
+        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+          {error}
+        </p>
+      ) : null}
       <label className="block text-[14px] text-[#85858A]">
         Name
         <input
@@ -100,10 +120,10 @@ export function CreateGroupForm({
       />
       <Button
         className="mt-5 w-full"
-        disabled={!validSelection(name, selected)}
-        onClick={() => onCreate({ name: name.trim(), botIds: selected })}
+        disabled={submitting || !validSelection(name, selected)}
+        onClick={() => void create()}
       >
-        Create group
+        {submitting ? "Creating…" : "Create group"}
       </Button>
     </div>
   );
@@ -117,17 +137,49 @@ export function GroupSettings({
 }: {
   group: Group;
   bots: Bot[];
-  onSave: (input: { name?: string; botIds?: string[] }) => void;
-  onRemove: () => void;
+  onSave: (input: { name?: string; botIds?: string[] }) => Promise<void>;
+  onRemove: () => Promise<void>;
 }) {
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
+  const [pending, setPending] = useState<"save" | "remove" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function mutate(kind: "save" | "remove", action: () => Promise<void>) {
+    if (pending) return;
+    setPending(kind);
+    setError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not ${kind} group`);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function save() {
+    return onSave({
+      name: name.trim() !== group.name ? name.trim() : undefined,
+      botIds: sameMembers(
+        selected,
+        group.members.map((member) => member.botId),
+      )
+        ? undefined
+        : selected,
+    });
+  }
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <span className="text-[13.5px] text-[#85858A]">Group settings</span>
       </div>
+      {error ? (
+        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+          {error}
+        </p>
+      ) : null}
       <label className="block text-[14px] text-[#85858A]">
         Name
         <input
@@ -147,27 +199,18 @@ export function GroupSettings({
       />
       <Button
         className="mt-5 w-full"
-        disabled={!validSelection(name, selected)}
-        onClick={() =>
-          onSave({
-            name: name.trim() !== group.name ? name.trim() : undefined,
-            botIds: sameMembers(
-              selected,
-              group.members.map((member) => member.botId),
-            )
-              ? undefined
-              : selected,
-          })
-        }
+        disabled={pending !== null || !validSelection(name, selected)}
+        onClick={() => void mutate("save", save)}
       >
-        Save
+        {pending === "save" ? "Saving…" : "Save"}
       </Button>
       <button
         type="button"
-        onClick={onRemove}
-        className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B]"
+        disabled={pending !== null}
+        onClick={() => void mutate("remove", onRemove)}
+        className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B] disabled:opacity-40"
       >
-        Delete group
+        {pending === "remove" ? "Deleting…" : "Delete group"}
       </button>
     </div>
   );

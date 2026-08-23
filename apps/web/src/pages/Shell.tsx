@@ -1081,9 +1081,12 @@ export function ShellPage() {
 
   async function createGroup(input: { name: string; botIds: string[] }) {
     const group = await rpc.groups.create(input);
-    setPanel(null);
-    await refreshBots();
+    setGroups((current) =>
+      current.some((item) => item.id === group.id) ? current : [group, ...current],
+    );
     navigate(`/app/g/${group.id}`);
+    setPanel(null);
+    await refreshBots().catch(() => undefined);
   }
 
   async function createBot(input: {
@@ -1831,7 +1834,7 @@ export function ShellPage() {
               <CreateGroupForm
                 bots={bots}
                 onCancel={() => setPanel(null)}
-                onCreate={(input) => void createGroup(input)}
+                onCreate={(input) => createGroup(input)}
               />
             ) : null}
             {panel === "group-settings" && activeGroup ? (
@@ -1840,15 +1843,22 @@ export function ShellPage() {
                 group={activeGroup}
                 bots={bots}
                 onSave={async (input) => {
-                  await rpc.groups.update({ groupId: activeGroup.id, ...input });
-                  await refreshBots();
-                  await refreshGroupThread(activeGroup.id);
+                  const updated = await rpc.groups.update({ groupId: activeGroup.id, ...input });
+                  setGroups((current) =>
+                    current.map((group) => (group.id === updated.id ? updated : group)),
+                  );
                   setPanel(null);
+                  await Promise.all([refreshBots(), refreshGroupThread(activeGroup.id)]).catch(
+                    () => undefined,
+                  );
                 }}
                 onRemove={async () => {
                   await rpc.groups.remove({ groupId: activeGroup.id });
+                  const remainingGroups = groups.filter((group) => group.id !== activeGroup.id);
+                  setGroups(remainingGroups);
                   setPanel(null);
-                  await refreshBots();
+                  navigate(firstThreadRoute(bots, remainingGroups), { replace: true });
+                  await refreshBots().catch(() => undefined);
                 }}
               />
             ) : null}
@@ -3210,7 +3220,7 @@ function CreateBotForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
           {error}
         </p>
       ) : null}

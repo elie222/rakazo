@@ -24,7 +24,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "26-new-bot-form");
   await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
   await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByTestId("create-bot-error")).toHaveText("Failed to fetch");
   await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "26a-new-bot-error");
   await page.unroute("**/rpc/bots/create");
