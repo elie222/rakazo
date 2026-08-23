@@ -25,6 +25,7 @@ import {
   deleteSupermemoryContainer,
   destroyBot,
   displayBotWorkspacePath,
+  enqueueTakeoverContinuation,
   type EncryptedSecretStore,
   expireComputerControl,
   findWaitingTakeoverRun,
@@ -1028,7 +1029,7 @@ export function createRouter(deps: RouterDeps) {
         // The lease-specific key makes this cancellation safe after a replacement takeover.
         await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
 
-        if (released.runId) await deps.jobs.enqueue(runContinueJob(released.runId));
+        await enqueueTakeoverContinuation(deps.jobs, released.runId);
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };
       }),

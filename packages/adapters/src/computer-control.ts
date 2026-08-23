@@ -43,6 +43,19 @@ export function scheduleComputerControlExpiry(
   return jobs.enqueue(computerControlExpireJob(computerId, leaseId, expiresAt));
 }
 
+export async function enqueueTakeoverContinuation(
+  jobs: JobPublisher,
+  runId: string | null,
+): Promise<void> {
+  if (!runId) return;
+  try {
+    await jobs.enqueue(runContinueJob(runId));
+  } catch (error) {
+    // The release is durable; reconciliation will retry this queued run.
+    console.error("takeover continuation enqueue", error);
+  }
+}
+
 export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
   return new Date(Math.max(now.getTime() + takeoverLeaseMs(), teachingExpiresAt.getTime()));
 }
@@ -159,6 +172,6 @@ export async function expireComputerControl(
     holder: "none",
     reason: "expired",
   });
-  if (released && released.runId) await deps.jobs.enqueue(runContinueJob(released.runId));
+  await enqueueTakeoverContinuation(deps.jobs, released ? released.runId : null);
   return Boolean(released);
 }

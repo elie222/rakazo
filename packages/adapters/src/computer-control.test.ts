@@ -108,6 +108,17 @@ describe("computer control leases", () => {
     );
   });
 
+  it("leaves a released run recoverable when its immediate continuation enqueue fails", async () => {
+    const enqueueError = new Error("job broker unavailable");
+    const harness = controlHarness({ waitingRunId: "run-1", enqueueError });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
+
+    expect(logError).toHaveBeenCalledWith("takeover continuation enqueue", enqueueError);
+    logError.mockRestore();
+  });
+
   it("keeps the denied lease retryable when provider revocation fails", async () => {
     const harness = controlHarness({
       revokeError: new Error("provider unavailable"),
@@ -202,6 +213,7 @@ function controlHarness(
     controlLeaseExpiresAt?: Date | null;
     revokeError?: Error;
     finalizeError?: Error;
+    enqueueError?: Error;
     waitingRunId?: string;
     executionRunId?: string;
   } = {},
@@ -250,6 +262,7 @@ function controlHarness(
   });
   const sandbox = { setScreenControl };
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
+  if (options.enqueueError) enqueue.mockRejectedValueOnce(options.enqueueError);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
   const finalizeComputerControlRelease = vi.fn().mockResolvedValue({
     runId: options.waitingRunId ?? options.executionRunId ?? null,
