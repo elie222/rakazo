@@ -2664,46 +2664,7 @@ const MessageView = memo(function MessageView({
     message.blocks.every(
       (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
     );
-  if (isNarration) {
-    const isLive = message.id.startsWith("progress:");
-    return (
-      <div className="flex justify-start">
-        <div className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
-          {message.blocks.map((block, i) => {
-            if (block.kind === "steps") {
-              const isCurrentBlock = isLive && i === message.blocks.length - 1;
-              return (
-                <ToolSteps
-                  key={i}
-                  steps={block.steps}
-                  currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
-                />
-              );
-            }
-            if (block.kind === "text" || block.kind === "progress") {
-              return (
-                <div key={i}>
-                  <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
-                </div>
-              );
-            }
-            return null;
-          })}
-          {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-            <button
-              type="button"
-              aria-label={speaking ? "Stop speaking" : "Speak this reply"}
-              onClick={onSpeak}
-              className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
-            >
-              {speaking ? "Stop" : "Speak"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-  return (
+  const messageContext = (
     <>
       {speakerName ? (
         <div className="mb-1 text-[12.5px] font-medium text-[#85858A]">{speakerName}</div>
@@ -2713,6 +2674,53 @@ const MessageView = memo(function MessageView({
           {previewMessageText(replyPreview)}
         </div>
       ) : null}
+    </>
+  );
+  if (isNarration) {
+    const isLive = message.id.startsWith("progress:");
+    return (
+      <>
+        {messageContext}
+        <div className="flex justify-start">
+          <div className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+            {message.blocks.map((block, i) => {
+              if (block.kind === "steps") {
+                const isCurrentBlock = isLive && i === message.blocks.length - 1;
+                return (
+                  <ToolSteps
+                    key={i}
+                    steps={block.steps}
+                    currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
+                  />
+                );
+              }
+              if (block.kind === "text" || block.kind === "progress") {
+                return (
+                  <div key={i}>
+                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                  </div>
+                );
+              }
+              return null;
+            })}
+            {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
+              <button
+                type="button"
+                aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                onClick={onSpeak}
+                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+              >
+                {speaking ? "Stop" : "Speak"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      {messageContext}
       {message.blocks.map((block, i) => {
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? "bot";
