@@ -230,7 +230,7 @@ export async function threadSnapshot(
           where: {
             threadId: target.threadId,
             runId: run.id,
-            type: { in: ["thread.progress", "thread.subagent"] },
+            type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
           },
           orderBy: { seq: "asc" },
         })
@@ -267,7 +267,7 @@ export async function threadSnapshot(
           where: {
             threadId: target.threadId,
             runId: { in: activeRuns.map((run) => run.id) },
-            type: { in: ["thread.progress", "thread.subagent"] },
+            type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
           },
           orderBy: { seq: "asc" },
         })
@@ -290,7 +290,9 @@ function messagesWithLiveEvents(
   liveEvents: Parameters<typeof projectMessages>[0],
 ) {
   const live = projectMessages(liveEvents).filter((message) => {
-    if (message.blocks.some((block) => block.kind === "progress")) return true;
+    if (message.blocks.some((block) => block.kind === "progress" || block.kind === "steps")) {
+      return true;
+    }
     if (!message.id.startsWith("subagent:")) return false;
     return !persisted.some((row) =>
       row.blocks.some(

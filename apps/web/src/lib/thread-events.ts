@@ -6,12 +6,29 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
-  progressMessageText,
+  reduceLiveMessageBlocks,
   subagentBlockFromPayload,
 } from "@rakazo/core";
+
+function takeLiveMessage(
+  messages: readonly ThreadMessage[],
+  liveId: string,
+): { previous: ThreadMessage | undefined; remaining: ThreadMessage[] } {
+  let previous: ThreadMessage | undefined;
+  const remaining: ThreadMessage[] = [];
+  for (const message of messages) {
+    if (message.id === liveId) {
+      previous = message;
+    } else if (!message.id.startsWith("progress:") || message.runId) {
+      remaining.push(message);
+    }
+  }
+  return { previous, remaining };
+}
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
@@ -47,9 +64,11 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
-    event.type === "run.waiting_input"
+    event.type === "run.waiting_input" ||
+    isRunTerminalEvent(event)
   );
 }
 
@@ -87,23 +106,53 @@ export function reduceThreadSnapshot(
         : prev.activeRuns,
     };
   }
+  if (isRunTerminalEvent(event)) {
+    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
+      activeRuns,
+    };
+  }
   if (event.type === "thread.progress") {
-    const progressId = progressMessageId(event);
-    const previous = prev.messages.find((message) => message.id === progressId);
-    const previousText = previous?.blocks[0]?.kind === "progress" ? previous.blocks[0].text : "";
-    const text = progressMessageText(event.payload, previousText);
+    const liveId = progressMessageId(event);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
+    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
+      type: "progress",
+      payload: event.payload,
+    });
     const streaming: ThreadMessage = {
-      id: progressId,
+      id: liveId,
       threadId: event.threadId,
       seq: event.seq,
       role: "bot",
-      blocks: [{ kind: "progress", text }],
+      blocks,
       botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
-    const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
-    return { ...prev, cursor: event.seq, messages: [...without, streaming] };
+    return { ...prev, cursor: event.seq, messages: [...remaining, streaming] };
+  }
+  if (event.type === "agent.tool.called") {
+    const liveId = progressMessageId(event);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
+    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
+      type: "tool",
+      name: String(event.payload.name ?? ""),
+    });
+    const next: ThreadMessage = {
+      id: liveId,
+      threadId: event.threadId,
+      seq: event.seq,
+      role: "bot",
+      blocks,
+      botId: event.botId,
+      runId: event.runId,
+      createdAt: event.createdAt,
+    };
+    return { ...prev, cursor: event.seq, messages: [...remaining, next] };
   }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(event.payload);
@@ -117,11 +166,17 @@ export function reduceThreadSnapshot(
       runId: event.runId,
       createdAt: event.createdAt,
     };
-    const without = prev.messages.filter(
-      (message) => message.id !== next.id && !message.id.startsWith("progress:"),
-    );
-    const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
-    return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
+    const without: ThreadMessage[] = [];
+    const kept: ThreadMessage[] = [];
+    for (const message of prev.messages) {
+      if (message.id === next.id) continue;
+      if (message.id.startsWith("progress:")) {
+        if (message.runId) kept.push(message);
+      } else {
+        without.push(message);
+      }
+    }
+    return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
@@ -139,11 +194,10 @@ export function reduceThreadSnapshot(
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
-    const without = prev.messages.filter(
-      (message) =>
-        message.id !== next.id &&
-        !message.id.startsWith("progress:") &&
-        !replacedSubagent(message, replacedSubagentIds),
+    const liveId = progressMessageId(event);
+    const { remaining } = takeLiveMessage(prev.messages, liveId);
+    const without = remaining.filter(
+      (message) => message.id !== next.id && !replacedSubagent(message, replacedSubagentIds),
     );
     return { ...prev, cursor: event.seq, messages: [...without, next] };
   }

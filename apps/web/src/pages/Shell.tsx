@@ -30,6 +30,7 @@ import {
   hasMentionToken,
   inferAttachmentMimeType,
   isActive,
+  isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
   speechFromBlocks,
@@ -604,7 +605,7 @@ export function ShellPage() {
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
-              event.type === "run.completed" ||
+              isRunTerminalEvent(event) ||
               event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
@@ -616,7 +617,7 @@ export function ShellPage() {
               }
               if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
-            if (event.type === "run.completed" || event.type === "skill.teaching.stopped") {
+            if (isRunTerminalEvent(event) || event.type === "skill.teaching.stopped") {
               void refreshThread(active.id).catch(() => undefined);
             } else if (isComputerStatusEvent(event)) {
               void refreshComputerScreen(active.id).catch(() => undefined);
@@ -685,7 +686,7 @@ export function ShellPage() {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
             }
-            if (event.type === "run.completed") {
+            if (isRunTerminalEvent(event)) {
               void refreshGroupThread(groupId).catch(() => undefined);
             }
           }
@@ -2621,6 +2622,42 @@ function applyThreadEvent(
   }
 }
 
+function ToolSteps({
+  steps,
+  currentIndex,
+}: {
+  steps: Extract<ThreadMessage["blocks"][number], { kind: "steps" }>["steps"];
+  currentIndex?: number;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {steps.map((step, index) => {
+        const isCurrent = index === currentIndex;
+        return (
+          <div key={index} className="flex items-center gap-2">
+            <span
+              className="text-[13px]"
+              style={{
+                color: isCurrent ? "#F5A03C" : "#4ECB71",
+                animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+              }}
+            >
+              {isCurrent ? "◷" : "✓"}
+            </span>
+            <span
+              className="truncate text-[14px]"
+              style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
+            >
+              {step.label}
+              {step.count > 1 ? ` ×${step.count}` : ""}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
@@ -2650,7 +2687,14 @@ const MessageView = memo(function MessageView({
   speaking: boolean;
   onSpeak: () => void;
 }) {
-  return (
+  const isNarration =
+    message.role === "bot" &&
+    message.blocks.length > 0 &&
+    message.blocks.every(
+      (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
+    );
+  const isLive = message.id.startsWith("progress:");
+  const messageContext = (
     <>
       {speakerName ? (
         <div className="mb-1 text-[12.5px] font-medium text-[#85858A]">{speakerName}</div>
@@ -2660,6 +2704,52 @@ const MessageView = memo(function MessageView({
           {previewMessageText(replyPreview)}
         </div>
       ) : null}
+    </>
+  );
+  if (isNarration) {
+    return (
+      <>
+        {messageContext}
+        <div className="flex justify-start">
+          <div className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+            {message.blocks.map((block, i) => {
+              if (block.kind === "steps") {
+                const isCurrentBlock = isLive && i === message.blocks.length - 1;
+                return (
+                  <ToolSteps
+                    key={i}
+                    steps={block.steps}
+                    currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
+                  />
+                );
+              }
+              if (block.kind === "text" || block.kind === "progress") {
+                return (
+                  <div key={i}>
+                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                  </div>
+                );
+              }
+              return null;
+            })}
+            {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
+              <button
+                type="button"
+                aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                onClick={onSpeak}
+                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+              >
+                {speaking ? "Stop" : "Speak"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      {messageContext}
       {message.blocks.map((block, i) => {
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? "bot";
@@ -2692,6 +2782,18 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex justify-start">
               <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
+              </div>
+            </div>
+          );
+        }
+        if (block.kind === "steps") {
+          return (
+            <div key={i} className="flex justify-start">
+              <div className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3">
+                <ToolSteps
+                  steps={block.steps}
+                  currentIndex={isLive ? block.steps.length - 1 : undefined}
+                />
               </div>
             </div>
           );

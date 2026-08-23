@@ -80,19 +80,27 @@ describe("thread event reduction", () => {
   });
 
   it("updates a live subagent in place while preserving streamed answer progress", () => {
-    const initial = snapshot([
-      message("subagent:research", [
+    const activeRun = threadRun("run-1");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        message("subagent:research", [
+          {
+            kind: "subagent",
+            agentId: "research",
+            name: "Research",
+            task: "Find sources",
+            status: "running",
+            progress: "Starting",
+          },
+        ]),
         {
-          kind: "subagent",
-          agentId: "research",
-          name: "Research",
-          task: "Find sources",
-          status: "running",
-          progress: "Starting",
+          ...message("progress:run-1", [{ kind: "progress", text: "Draft" }]),
+          runId: activeRun.id,
         },
       ]),
-      message("progress:run-1", [{ kind: "progress", text: "Draft" }]),
-    ]);
+      run: activeRun,
+      activeRuns: undefined,
+    };
 
     const next = reduceThreadSnapshot(
       initial,
@@ -193,11 +201,39 @@ describe("thread event reduction", () => {
     expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
   });
 
-  it("routes live clear events through the snapshot reducer", () => {
+  it("routes clear and terminal events through the snapshot reducer", () => {
     expect(
       isThreadSnapshotEvent(event({ type: "thread.cleared", seq: 12, runId: undefined })),
     ).toBe(true);
-    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(false);
+    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(true);
+  });
+
+  it("clears only the terminal run's live progress", () => {
+    const runA = threadRun("run-a", "bot-a");
+    const runB = threadRun("run-b", "bot-b");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        {
+          ...message("progress:run-a", [{ kind: "progress", text: "A" }]),
+          runId: runA.id,
+        },
+        {
+          ...message("progress:run-b", [{ kind: "progress", text: "B" }]),
+          runId: runB.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+    const failed = event({ type: "run.failed", seq: 10, runId: runA.id });
+
+    const next = reduceThreadSnapshot(initial, failed);
+
+    expect(isThreadSnapshotEvent(failed)).toBe(true);
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
+    expect(next?.run).toEqual(runB);
+    expect(next?.activeRuns).toEqual([runB]);
+    expect(next?.cursor).toBe(10);
   });
 
   it("applies the durable waiting-input run transition without a refresh", () => {
@@ -228,6 +264,370 @@ describe("thread event reduction", () => {
     expect(
       reduceThreadSnapshot(waiting, event({ type: "run.waiting_input", seq: 7, runId: "run-1" })),
     ).toBe(waiting);
+  });
+
+  it("accumulates tool-call steps and collapses repeats into a count", () => {
+    const initial = snapshot([]);
+
+    const first = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "agent.tool.called",
+        seq: 4,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const second = reduceThreadSnapshot(
+      first,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+    const third = reduceThreadSnapshot(
+      second,
+      event({
+        type: "agent.tool.called",
+        seq: 6,
+        runId: "run-1",
+        payload: { name: "SLACK_FETCH_CONVERSATION_HISTORY" },
+      }),
+    );
+
+    expect(third?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Slack find channels", count: 1 },
+              { label: "Slack fetch conversation history", count: 2 },
+            ],
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("holds a tool call that lands mid-sentence until the sentence completes", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+
+    // Still mid-sentence — the tool call stays hidden, folded into the streaming text instead.
+    expect(afterTool?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          {
+            kind: "progress",
+            text: "Let me check Slack ",
+            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          },
+        ],
+      }),
+    ]);
+
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "for a broad search.", streaming: true },
+      }),
+    );
+
+    // The sentence just finished — the completed sentence and the held-back tool call appear
+    // together, in that order.
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Slack for a broad search." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
+  it("survives a React StrictMode replay of the same event without double-counting", () => {
+    // StrictMode invokes a setState updater twice per event in development to catch impure
+    // updaters — reduceThreadSnapshot(prev, event) must return the same result both times
+    // rather than mutating its pending-tool-call bookkeeping a second time.
+    const initial = snapshot([]);
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check ", streaming: true },
+      }),
+    );
+    const toolEvent = event({
+      type: "agent.tool.called",
+      seq: 5,
+      runId: "run-1",
+      payload: { name: "SLACK_FIND_CHANNELS" },
+    });
+
+    // The tool call lands mid-sentence, so it's held back rather than flushed immediately —
+    // exactly the state a naive module-level mutation would double-push on replay.
+    const first = reduceThreadSnapshot(afterNarration, toolEvent);
+    const replay = reduceThreadSnapshot(afterNarration, toolEvent);
+    expect(replay).toEqual(first);
+
+    const sentenceEnd = reduceThreadSnapshot(
+      first,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Done.", streaming: true },
+      }),
+    );
+
+    // A single tool call, not two — StrictMode's replay must not have pushed it twice.
+    expect(sentenceEnd?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          { kind: "text", text: "Let me check Done." },
+          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+        ],
+      }),
+    ]);
+  });
+
+  it("keeps deferring a tool call across several sentence-less deltas", () => {
+    const initial = snapshot([]);
+
+    const afterNarration = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Let me check Slack ", streaming: true },
+      }),
+    );
+    const afterTool = reduceThreadSnapshot(
+      afterNarration,
+      event({
+        type: "agent.tool.called",
+        seq: 5,
+        runId: "run-1",
+        payload: { name: "SLACK_FIND_CHANNELS" },
+      }),
+    );
+    const afterMore = reduceThreadSnapshot(
+      afterTool,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "Found it, now sanding", streaming: true },
+      }),
+    );
+
+    // No sentence terminator has streamed in yet, so the tool call is still hidden and
+    // everything so far renders as one continuous progress block.
+    expect(afterMore?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [
+          {
+            kind: "progress",
+            text: "Let me check Slack Found it, now sanding",
+            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("restores pending tool calls from a refreshed snapshot", () => {
+    const refreshed = snapshot([
+      message("progress:run-1", [
+        {
+          kind: "progress",
+          text: "Let me check Slack ",
+          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        },
+      ]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      refreshed,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "now.", streaming: true },
+      }),
+    );
+
+    expect(next?.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "Let me check Slack now." },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+    ]);
+  });
+
+  it("does not leak pending tool calls after clearing a thread", () => {
+    const withPending = snapshot([
+      message("progress:run-1", [
+        {
+          kind: "progress",
+          text: "Old unfinished narration ",
+          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        },
+      ]),
+    ]);
+    const cleared = reduceThreadSnapshot(
+      withPending,
+      event({ type: "thread.cleared", seq: 7, runId: undefined }),
+    );
+    const next = reduceThreadSnapshot(
+      cleared,
+      event({ type: "thread.progress", seq: 8, runId: "run-1", payload: { text: "Fresh." } }),
+    );
+
+    expect(next?.messages[0]?.blocks).toEqual([{ kind: "progress", text: "Fresh." }]);
+  });
+
+  it("preserves another active group run while updating live progress", () => {
+    const runA = {
+      id: "run-a",
+      botId: "bot-a",
+      threadId: "thread-1",
+      taskId: "task-a",
+      status: "running" as const,
+      trigger: "user" as const,
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const otherLive = {
+      ...message("progress:run-b", [{ kind: "progress" as const, text: "Other bot" }]),
+      botId: "bot-b",
+      runId: "run-b",
+    };
+    // The snapshot can lag behind the event stream when another group run starts.
+    const initial = { ...snapshot([otherLive]), activeRuns: [runA] };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 8,
+        runId: "run-a",
+        botId: "bot-a",
+        payload: { text: "Current bot" },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b", "progress:run-a"]);
+    expect(next?.messages.map((item) => item.botId)).toEqual(["bot-b", "bot-a"]);
+  });
+
+  it("preserves live progress from a legacy run-only snapshot", () => {
+    const legacyRun = threadRun("run-legacy", "bot-legacy");
+    const legacyLive = {
+      ...message("progress:run-legacy", [{ kind: "progress" as const, text: "Still working" }]),
+      botId: legacyRun.botId,
+      runId: legacyRun.id,
+    };
+    const initial: ThreadSnapshot = {
+      ...snapshot([legacyLive]),
+      run: legacyRun,
+      activeRuns: undefined,
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({ type: "thread.progress", runId: "run-new", payload: { text: "New work" } }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-legacy",
+      "progress:run-new",
+    ]);
+  });
+
+  it("preserves concurrent progress while applying a subagent update", () => {
+    const activeRun = threadRun("run-active");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        {
+          ...message("progress:run-active", [{ kind: "progress", text: "Active" }]),
+          runId: "run-active",
+        },
+        {
+          ...message("progress:run-concurrent", [{ kind: "progress", text: "Concurrent" }]),
+          runId: "run-concurrent",
+        },
+      ]),
+      run: activeRun,
+      activeRuns: [activeRun],
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.subagent",
+        runId: "run-active",
+        payload: { agentId: "research", name: "Research", task: "Check", status: "running" },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "subagent:research",
+      "progress:run-active",
+      "progress:run-concurrent",
+    ]);
+  });
+
+  it("clears the step trail once the durable answer arrives", () => {
+    const initial = snapshot([
+      message("progress:run-1", [
+        { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+      ]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "final", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["final"]);
   });
 
   it("updates a waiting group run without replacing the newer active run", () => {
@@ -413,6 +813,22 @@ function snapshot(messages: ThreadMessage[], olderCursor: number | null = null):
     olderCursor,
     run: null,
     computer: computer(),
+  };
+}
+
+function threadRun(id: string, botId = "bot-1"): NonNullable<ThreadSnapshot["run"]> {
+  return {
+    id,
+    botId,
+    threadId: "thread-1",
+    taskId: `task-${id}`,
+    status: "running",
+    trigger: "user",
+    modelProvider: null,
+    modelId: null,
+    error: null,
+    startedAt: null,
+    completedAt: null,
   };
 }
 

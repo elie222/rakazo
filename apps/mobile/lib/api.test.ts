@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMobileThreadEvent,
+  blockText,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
@@ -250,23 +251,124 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(second?.messages).toEqual([
-      { id: "progress:run-1", role: "bot", blocks: [{ kind: "progress", text: "Hello" }] },
+      {
+        id: "progress:run-1",
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "progress", text: "Hello" }],
+      },
     ]);
+  });
+
+  it("preserves progress from a legacy run-only snapshot", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-legacy", [{ kind: "progress", text: "Still working" }]),
+          runId: "run-legacy",
+        },
+      ]),
+      run: { id: "run-legacy", status: "running" },
+      activeRuns: undefined,
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.progress",
+      runId: "run-new",
+      payload: { text: "New work" },
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-legacy",
+      "progress:run-new",
+    ]);
+  });
+
+  it("preserves concurrent progress when active-run metadata lags", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-concurrent", [
+            { kind: "progress", text: "Concurrent work" },
+          ]),
+          runId: "run-concurrent",
+        },
+      ]),
+      run: { id: "run-current", status: "running" },
+      activeRuns: [{ id: "run-current", status: "running" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.progress",
+      runId: "run-current",
+      payload: { text: "Current work" },
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-concurrent",
+      "progress:run-current",
+    ]);
+  });
+
+  it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
+    const narration = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { text: "Let me check " },
+    });
+    const pending = applyMobileThreadEvent(narration, {
+      type: "agent.tool.called",
+      runId: "run-1",
+      payload: { name: "SLACK_FIND_CHANNELS" },
+    });
+    const completed = applyMobileThreadEvent(pending, {
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { delta: "now." },
+    });
+
+    expect(pending?.messages[0]?.blocks).toEqual([
+      {
+        kind: "progress",
+        text: "Let me check ",
+        pendingToolNames: ["SLACK_FIND_CHANNELS"],
+      },
+    ]);
+    expect(completed?.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "Let me check now." },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+    ]);
+    expect(blockText(completed?.messages[0] as MobileMessage)).toBe(
+      "Let me check now.\nSlack find channels",
+    );
   });
 
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
     const initial = snapshot([
       mobileMessage("message-1", [{ kind: "text", text: "old" }]),
       mobileMessage("subagent:research", [
-        { kind: "subagent", agentId: "research", status: "running" },
+        {
+          kind: "subagent",
+          agentId: "research",
+          name: "Research",
+          task: "Search",
+          status: "running",
+        },
       ]),
-      mobileMessage("subagent:other", [{ kind: "subagent", agentId: "other", status: "running" }]),
-      mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
+      mobileMessage("subagent:other", [
+        { kind: "subagent", agentId: "other", name: "Other", task: "Wait", status: "running" },
+      ]),
+      {
+        ...mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
+        runId: "run-1",
+      },
     ]);
     const completed = {
-      kind: "subagent",
+      kind: "subagent" as const,
       agentId: "research",
-      status: "completed",
+      name: "Research",
+      task: "Search",
+      status: "completed" as const,
       result: "Done",
     };
 
@@ -274,6 +376,7 @@ describe("mobile thread event reduction", () => {
       id: "event-1",
       type: "thread.message.created",
       seq: 9,
+      runId: "run-1",
       payload: { messageId: "message-1", role: "bot", blocks: [completed] },
     });
 
@@ -323,6 +426,36 @@ describe("mobile thread event reduction", () => {
       { id: "run-newer", status: "running" },
       { id: "run-waiting", status: "waiting_input" },
     ]);
+  });
+
+  it("clears only the terminal run's live progress", () => {
+    const runA = { id: "run-a", status: "running" };
+    const runB = { id: "run-b", status: "running" };
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-a", [{ kind: "progress", text: "A" }]),
+          runId: runA.id,
+        },
+        {
+          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
+          runId: runB.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.cancelled",
+      seq: 10,
+      runId: runA.id,
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
+    expect(next?.run).toEqual(runB);
+    expect(next?.activeRuns).toEqual([runB]);
+    expect(next?.cursor).toBe(10);
   });
 
   it("leaves the snapshot unchanged for unrelated events", () => {
