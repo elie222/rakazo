@@ -41,7 +41,7 @@ export type BotSection = z.infer<typeof BotSectionSchema>;
 
 export const CreateBotInput = z.object({
   name: z.string().min(1).max(80),
-  title: z.string().max(160).default(""),
+  title: z.string().max(500).default(""),
   description: z.string().max(4000).default(""),
   instructions: z.string().max(20000).default(""),
   notifyOnFinish: z.boolean().default(true),

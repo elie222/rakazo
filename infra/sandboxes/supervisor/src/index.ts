@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import Docker from "dockerode";
 import { Hono } from "hono";
@@ -40,7 +40,17 @@ import {
 
 loadRootEnv();
 
-const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET ?? "/var/run/docker.sock" });
+const dockerOptions: Docker.DockerOptions = {};
+if (process.env.DOCKER_HOST) {
+  // dockerode handles DOCKER_HOST automatically
+} else if (process.env.DOCKER_SOCKET) {
+  dockerOptions.socketPath = process.env.DOCKER_SOCKET;
+} else if (process.platform === "win32") {
+  dockerOptions.socketPath = "//./pipe/docker_engine";
+} else {
+  dockerOptions.socketPath = "/var/run/docker.sock";
+}
+const docker = new Docker(dockerOptions);
 const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
@@ -488,9 +498,7 @@ function startSupervisor() {
   });
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  startSupervisor();
-}
+startSupervisor();
 
 async function ensureComputerImage() {
   if (!imageReady) {
@@ -596,15 +604,7 @@ function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo
   return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
 
-function loadRootEnv() {
-  const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../.env");
-  if (!existsSync(envFile)) return;
-  try {
-    loadEnvFile(envFile);
-  } catch {
-    // The API reports malformed or missing deployment configuration in more detail.
-  }
-}
+
 
 async function publishedScreenUrl(
   container: Docker.Container,

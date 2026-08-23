@@ -843,10 +843,10 @@ export function ShellPage() {
     computerMode: ComputerMode;
   }) {
     const bot = await rpc.bots.create({
-      name: input.name.trim(),
-      title: input.title,
-      description: input.description,
-      instructions: input.description,
+      name: input.name.trim().slice(0, 80),
+      title: input.title.trim().slice(0, 500),
+      description: input.description.trim().slice(0, 4000),
+      instructions: input.description.trim().slice(0, 20000),
       notifyOnFinish: true,
       computerMode: input.computerMode,
     });
@@ -1296,14 +1296,15 @@ export function ShellPage() {
           <div className="rk-scroll h-full w-[384px] overflow-y-auto px-5 py-[17px]">
             {panel !== "routine" && panel !== "create" ? (
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-[13.5px] text-[#85858A]">
-                  {computer?.state ?? active.status}
+                <span className="text-[13.5px] font-medium text-[#85858A]">
+                  {panel === "settings" ? "Settings" : (computer?.state ?? active.status)}
                 </span>
                 <div className="flex gap-3.5">
                   <button
                     type="button"
                     aria-label="Bot settings"
-                    onClick={() => setPanel("settings")}
+                    onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
+                    className={panel === "settings" ? "text-[#ECECEE]" : "text-[#85858A] hover:text-[#ECECEE]"}
                   >
                     <Settings size={16} strokeWidth={1.7} />
                   </button>
@@ -2498,13 +2499,28 @@ function CreateBotForm({
     title: string;
     description: string;
     computerMode: ComputerMode;
-  }) => void;
+  }) => Promise<void> | void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!name.trim() || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onCreate({ name, title, description, computerMode });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create bot");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div>
@@ -2514,10 +2530,12 @@ function CreateBotForm({
           <X size={16} strokeWidth={1.8} />
         </button>
       </div>
+      {error ? <p className="mb-3 text-[13px] text-[#C94244]">{error}</p> : null}
       <label className="mt-6 block text-[14px] text-[#85858A]">
         Name
         <input
           value={name}
+          maxLength={80}
           onChange={(e) => setName(e.target.value)}
           placeholder="Name this bot"
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
@@ -2527,6 +2545,7 @@ function CreateBotForm({
         Title
         <input
           value={title}
+          maxLength={500}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Describe what this bot does"
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
@@ -2536,6 +2555,7 @@ function CreateBotForm({
         Description
         <textarea
           value={description}
+          maxLength={4000}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What this bot is for"
           rows={4}
@@ -2545,11 +2565,11 @@ function CreateBotForm({
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       <button
         type="button"
-        disabled={!name.trim()}
-        onClick={() => onCreate({ name, title, description, computerMode })}
+        disabled={!name.trim() || submitting}
+        onClick={() => void handleSubmit()}
         className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
       >
-        Create
+        {submitting ? "Creating…" : "Create"}
       </button>
     </div>
   );

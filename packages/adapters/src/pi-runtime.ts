@@ -58,7 +58,21 @@ export class PiAgentRuntime implements AgentRuntime {
             ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
             : request.model.id;
         const models = modelsForRequest(request, provider);
-        const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        let model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        if (!model && (provider === "openrouter" || provider === "scripted")) {
+          const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
+          if (envDefaultModel && modelId === envDefaultModel) {
+            const base = models.getModel("openrouter", "openai/gpt-4o") ?? models.getModels()[0];
+            if (base) {
+              model = {
+                ...base,
+                id: modelId,
+                name: modelId,
+                provider: "openrouter",
+              };
+            }
+          }
+        }
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
           queue.push({ type: "done" });
