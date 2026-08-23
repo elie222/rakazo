@@ -1,19 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
-  thinkingLevel: undefined as string | undefined,
+  thinkingLevels: [] as string[],
 }));
+
+type FakeAgentTool = {
+  name: string;
+  execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
+};
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: undefined, messages: [] };
+    private readonly tools: FakeAgentTool[];
 
-    constructor(options: { initialState: { thinkingLevel: string } }) {
-      fakeAgentState.thinkingLevel = options.initialState.thinkingLevel;
+    constructor(options: { initialState: { thinkingLevel: string; tools: FakeAgentTool[] } }) {
+      this.tools = options.initialState.tools;
+      fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
     }
 
     subscribe(_listener: unknown) {}
-    async prompt() {}
+    async prompt() {
+      const runSubagent = this.tools.find((tool) => tool.name === "run_subagent");
+      await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
+    }
     async waitForIdle() {}
     abort() {}
   },
@@ -32,8 +42,8 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   }),
 }));
 
-vi.mock("./local-providers.js", () => ({
-  withLocalProviders: (models: unknown) => models,
+vi.mock("./pi-local-provider.js", () => ({
+  registerLocalProvider: (models: unknown) => models,
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
@@ -62,15 +72,19 @@ async function runWithModel(modelId: string) {
   )) {
     // Exhaust the runtime event stream so the run completes.
   }
-  return fakeAgentState.thinkingLevel;
+  return fakeAgentState.thinkingLevels;
 }
 
 describe("Pi agent thinking level", () => {
-  it("enables reasoning for a model configured with reasoning support", async () => {
-    expect(await runWithModel("reasoning-model")).not.toBe("off");
+  beforeEach(() => {
+    fakeAgentState.thinkingLevels = [];
   });
 
-  it("keeps reasoning off for a model without reasoning support", async () => {
-    expect(await runWithModel("plain-model")).toBe("off");
+  it("uses medium reasoning for the main agent and subagent", async () => {
+    expect(await runWithModel("reasoning-model")).toEqual(["medium", "medium"]);
+  });
+
+  it("keeps reasoning off for the main agent and subagent", async () => {
+    expect(await runWithModel("plain-model")).toEqual(["off", "off"]);
   });
 });

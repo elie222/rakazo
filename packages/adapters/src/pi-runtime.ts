@@ -23,13 +23,9 @@ function catalogModels(): Models {
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
-// A model with reasoning configured (currently only local-mlx) reliably repeats a failed tool
-// call verbatim when run with thinking off — confirmed live and reproduced against the model
-// directly. Enabling reasoning fixes it: the model narrates its diagnosis and adapts instead of
-// retrying blind. Cloud models keep "off" per Rakazo's existing global default.
-const LOCAL_REASONING_THINKING_LEVEL = "medium";
+const REASONING_MODEL_THINKING_LEVEL = "medium";
 function thinkingLevelFor(model: { reasoning?: boolean }) {
-  return model.reasoning ? LOCAL_REASONING_THINKING_LEVEL : "off";
+  return model.reasoning ? REASONING_MODEL_THINKING_LEVEL : "off";
 }
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
