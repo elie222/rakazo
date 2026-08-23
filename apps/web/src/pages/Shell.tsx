@@ -30,6 +30,7 @@ import {
   hasMentionToken,
   inferAttachmentMimeType,
   isActive,
+  isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
   speechFromBlocks,
@@ -597,7 +598,7 @@ export function ShellPage() {
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
-              event.type === "run.completed" ||
+              isRunTerminalEvent(event) ||
               event.type === "thread.cleared"
             ) {
               void refreshBots().catch(() => undefined);
@@ -609,7 +610,7 @@ export function ShellPage() {
               }
               if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
-            if (event.type === "run.completed" || event.type === "skill.teaching.stopped") {
+            if (isRunTerminalEvent(event) || event.type === "skill.teaching.stopped") {
               void refreshThread(active.id).catch(() => undefined);
             } else if (isComputerStatusEvent(event)) {
               void refreshComputerScreen(active.id).catch(() => undefined);
@@ -678,7 +679,7 @@ export function ShellPage() {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
             }
-            if (event.type === "run.completed") {
+            if (isRunTerminalEvent(event)) {
               void refreshGroupThread(groupId).catch(() => undefined);
             }
           }

@@ -8,6 +8,7 @@ import type {
   ModelCredential,
 } from "@rakazo/contracts";
 import {
+  isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
@@ -362,6 +363,16 @@ export function applyMobileThreadEvent(
         )
       : prev.activeRuns;
     return { ...prev, run, activeRuns };
+  }
+  if (isRunTerminalEvent(event)) {
+    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
+      activeRuns,
+    };
   }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);

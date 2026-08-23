@@ -152,6 +152,12 @@ export function progressMessageId(event: { runId?: string | null; id?: string })
   return `progress:${event.runId ?? event.id ?? "live"}`;
 }
 
+export function isRunTerminalEvent(event: { type: string }): boolean {
+  return (
+    event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled"
+  );
+}
+
 export type LiveMessageUpdate =
   | { type: "progress"; payload: Record<string, unknown> | undefined }
   | { type: "tool"; name: string };

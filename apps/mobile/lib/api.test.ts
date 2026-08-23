@@ -428,6 +428,36 @@ describe("mobile thread event reduction", () => {
     ]);
   });
 
+  it("clears only the terminal run's live progress", () => {
+    const runA = { id: "run-a", status: "running" };
+    const runB = { id: "run-b", status: "running" };
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-a", [{ kind: "progress", text: "A" }]),
+          runId: runA.id,
+        },
+        {
+          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
+          runId: runB.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.cancelled",
+      seq: 10,
+      runId: runA.id,
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
+    expect(next?.run).toEqual(runB);
+    expect(next?.activeRuns).toEqual([runB]);
+    expect(next?.cursor).toBe(10);
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);

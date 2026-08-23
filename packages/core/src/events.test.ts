@@ -6,10 +6,20 @@ import {
   createStreamingRedactor,
   endsSentence,
   humanizeToolName,
+  isRunTerminalEvent,
   projectMessages,
   trackToolCallStreak,
   trackToolNameStreak,
 } from "./events.js";
+
+describe("isRunTerminalEvent", () => {
+  it("recognizes every terminal run outcome", () => {
+    expect(isRunTerminalEvent({ type: "run.completed" })).toBe(true);
+    expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
+    expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
+    expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
 
 describe("projectMessages", () => {
   it("replays durable messages and trailing live tokens from progress events", () => {

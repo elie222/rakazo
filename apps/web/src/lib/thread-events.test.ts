@@ -201,11 +201,39 @@ describe("thread event reduction", () => {
     expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
   });
 
-  it("routes live clear events through the snapshot reducer", () => {
+  it("routes clear and terminal events through the snapshot reducer", () => {
     expect(
       isThreadSnapshotEvent(event({ type: "thread.cleared", seq: 12, runId: undefined })),
     ).toBe(true);
-    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(false);
+    expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(true);
+  });
+
+  it("clears only the terminal run's live progress", () => {
+    const runA = threadRun("run-a", "bot-a");
+    const runB = threadRun("run-b", "bot-b");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        {
+          ...message("progress:run-a", [{ kind: "progress", text: "A" }]),
+          runId: runA.id,
+        },
+        {
+          ...message("progress:run-b", [{ kind: "progress", text: "B" }]),
+          runId: runB.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+    const failed = event({ type: "run.failed", seq: 10, runId: runA.id });
+
+    const next = reduceThreadSnapshot(initial, failed);
+
+    expect(isThreadSnapshotEvent(failed)).toBe(true);
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b"]);
+    expect(next?.run).toEqual(runB);
+    expect(next?.activeRuns).toEqual([runB]);
+    expect(next?.cursor).toBe(10);
   });
 
   it("applies the durable waiting-input run transition without a refresh", () => {

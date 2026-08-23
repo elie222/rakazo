@@ -6,6 +6,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
@@ -66,7 +67,8 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
-    event.type === "run.waiting_input"
+    event.type === "run.waiting_input" ||
+    isRunTerminalEvent(event)
   );
 }
 
@@ -102,6 +104,16 @@ export function reduceThreadSnapshot(
             candidate.id === event.runId ? { ...candidate, status: "waiting_input" } : candidate,
           )
         : prev.activeRuns,
+    };
+  }
+  if (isRunTerminalEvent(event)) {
+    const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
+      activeRuns,
     };
   }
   if (event.type === "thread.progress") {

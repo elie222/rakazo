@@ -3,6 +3,7 @@ import {
   abortableDelay,
   attachmentsForThread,
   hasMentionToken,
+  isRunTerminalEvent,
   latestAnswerableAskMessageId,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -330,11 +331,13 @@ export default function Thread() {
               retryMs = 250;
               if (
                 event.type === "thread.progress" ||
+                event.type === "agent.tool.called" ||
                 event.type === "thread.message.created" ||
                 event.type === "thread.message.updated" ||
                 event.type === "thread.subagent" ||
                 event.type === "thread.cleared" ||
-                event.type === "run.waiting_input"
+                event.type === "run.waiting_input" ||
+                isRunTerminalEvent(event)
               ) {
                 if (event.type === "thread.cleared") {
                   expandedHistoryThread.current = null;
@@ -347,7 +350,7 @@ export default function Thread() {
                 readVisibleTarget.current = null;
                 markReadIfVisible();
               }
-              if (event.type === "run.completed") {
+              if (isRunTerminalEvent(event)) {
                 void refresh().catch(() => undefined);
               }
             },
