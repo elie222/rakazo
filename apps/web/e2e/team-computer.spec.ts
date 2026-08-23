@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  openNewBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -165,7 +166,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   const team = page.getByRole("button", { name: "Team", exact: true });
   const privateComputer = page.getByRole("button", { name: "Private", exact: true });

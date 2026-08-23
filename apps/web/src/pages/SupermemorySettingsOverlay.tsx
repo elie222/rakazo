@@ -15,14 +15,17 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
   const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh() {
-    const next = await rpc.memory.supermemoryConfig();
+  function applyConfig(next: WorkspaceMemoryConfig | null) {
     setConfig(next);
     if (next) {
       setMode(next.mode);
       setBaseUrl(next.mode === "local" ? next.baseUrl : DEFAULT_LOCAL_BASE_URL);
       setDefaultScope(next.defaultMemoryScope);
     }
+  }
+
+  async function refresh() {
+    applyConfig(await rpc.memory.supermemoryConfig());
   }
 
   useEffect(() => {
@@ -38,14 +41,14 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
     setError(null);
     setPending("connect");
     try {
-      await rpc.memory.connectSupermemory({
+      const next = await rpc.memory.connectSupermemory({
         mode,
         apiKey: apiKey.trim(),
         baseUrl: mode === "local" ? baseUrl.trim() : undefined,
         defaultMemoryScope: defaultScope,
       });
       setApiKey("");
-      await refresh();
+      applyConfig(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect Supermemory");
     } finally {
@@ -58,7 +61,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
     setPending("disconnect");
     try {
       await rpc.memory.disconnectSupermemory();
-      await refresh();
+      setConfig(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not disconnect Supermemory");
     } finally {
@@ -100,7 +103,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
                 {config.mode === "cloud" ? "Supermemory Cloud" : `Local · ${config.baseUrl}`}
               </div>
               <div className="mt-1 text-[13px] text-[#85858A]">
-                Default scope for new bots: {config.defaultMemoryScope}
+                Default scope: {config.defaultMemoryScope}
               </div>
               <Button
                 type="button"
@@ -158,7 +161,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
               </label>
 
               <div className="mt-4 text-[13.5px] text-[#85858A]">
-                Default scope for new bots
+                Default scope
                 <div className="mt-2 flex gap-2">
                   {(["isolated", "shared"] as const).map((option) => (
                     <button

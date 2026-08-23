@@ -1,5 +1,5 @@
-import type { Bot } from "@rakazo/contracts";
-import { type ReactNode, type Ref, useEffect, useRef } from "react";
+import type { Bot, BotSection } from "@rakazo/contracts";
+import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
 export type ContextMenuPosition = { x: number; y: number };
 
@@ -8,6 +8,9 @@ export function BotContextMenu({
   position,
   onClose,
   onTogglePinned,
+  sections,
+  onMoveToSection,
+  onCreateSection,
   onToggleUnread,
   onEdit,
   onDuplicate,
@@ -19,6 +22,9 @@ export function BotContextMenu({
   position: ContextMenuPosition;
   onClose: () => void;
   onTogglePinned: () => void;
+  sections: BotSection[];
+  onMoveToSection: (sectionId: string | null) => void;
+  onCreateSection: () => void;
   onToggleUnread: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -27,6 +33,7 @@ export function BotContextMenu({
   onDelete: () => void;
 }) {
   const firstItem = useRef<HTMLButtonElement>(null);
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
 
   useEffect(() => {
     firstItem.current?.focus();
@@ -38,10 +45,16 @@ export function BotContextMenu({
   }, [onClose]);
 
   const menuWidth = 264;
-  const menuHeight = 340;
+  const menuHeight = 390;
   const margin = 8;
   const left = Math.min(position.x, window.innerWidth - menuWidth - margin);
   const top = Math.min(position.y, window.innerHeight - menuHeight - margin);
+  const safeLeft = Math.max(margin, left);
+  const safeTop = Math.max(margin, top);
+  const sectionLeft =
+    safeLeft + menuWidth * 2 + margin <= window.innerWidth
+      ? safeLeft + menuWidth + 6
+      : safeLeft - menuWidth - 6;
 
   return (
     <div className="fixed inset-0 z-40">
@@ -59,13 +72,20 @@ export function BotContextMenu({
         role="menu"
         aria-label={`Actions for ${bot.name}`}
         className="fixed w-[264px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
-        style={{ left: Math.max(margin, left), top: Math.max(margin, top) }}
+        style={{ left: safeLeft, top: safeTop }}
       >
         <MenuItem
           buttonRef={firstItem}
           icon={<PinIcon />}
           label={bot.pinned ? "Unpin" : "Pin"}
           onSelect={onTogglePinned}
+        />
+        <MenuItem
+          icon={<FolderIcon />}
+          endIcon={<ChevronIcon />}
+          label="Move to"
+          expanded={sectionMenuOpen}
+          onSelect={() => setSectionMenuOpen((open) => !open)}
         />
         <MenuItem
           icon={<ReadStatusIcon unread={bot.unread} />}
@@ -80,6 +100,32 @@ export function BotContextMenu({
         <MenuItem icon={<ArchiveIcon />} label="Archive" onSelect={onArchive} />
         <MenuItem icon={<TrashIcon />} label="Delete" tone="danger" onSelect={onDelete} />
       </div>
+      {sectionMenuOpen ? (
+        <div
+          role="menu"
+          aria-label={`Move ${bot.name} to section`}
+          className="fixed max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
+          style={{ left: Math.max(margin, sectionLeft), top: safeTop }}
+        >
+          {sections.map((section) => (
+            <MenuItem
+              key={section.id}
+              icon={<FolderIcon />}
+              endIcon={bot.sectionId === section.id ? <CheckIcon /> : null}
+              label={section.name}
+              onSelect={() => onMoveToSection(section.id)}
+            />
+          ))}
+          <MenuItem
+            icon={<FolderIcon />}
+            endIcon={bot.sectionId === null ? <CheckIcon /> : null}
+            label="Unassigned"
+            onSelect={() => onMoveToSection(null)}
+          />
+          <div className="my-1 border-t border-[#343438]" />
+          <MenuItem icon={<NewFolderIcon />} label="New section" onSelect={onCreateSection} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -87,13 +133,17 @@ export function BotContextMenu({
 function MenuItem({
   buttonRef,
   icon,
+  endIcon,
   label,
+  expanded,
   tone = "default",
   onSelect,
 }: {
   buttonRef?: Ref<HTMLButtonElement>;
   icon: ReactNode;
+  endIcon?: ReactNode;
   label: string;
+  expanded?: boolean;
   tone?: "default" | "danger";
   onSelect: () => void;
 }) {
@@ -102,6 +152,7 @@ function MenuItem({
       ref={buttonRef}
       type="button"
       role="menuitem"
+      aria-expanded={expanded}
       className={`flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-left text-[15px] outline-none hover:bg-[#29292D] focus-visible:bg-[#29292D] ${
         tone === "danger" ? "text-[#FF5364]" : "text-[#ECECEE]"
       }`}
@@ -109,6 +160,7 @@ function MenuItem({
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center">{icon}</span>
       <span>{label}</span>
+      {endIcon ? <span className="ml-auto grid h-5 w-5 place-items-center">{endIcon}</span> : null}
     </button>
   );
 }
@@ -129,6 +181,38 @@ function PinIcon() {
   return (
     <svg {...iconProps}>
       <path d="m15 4 5 5-4 2-3 5-2-2-5 5-1-1 5-5-2-2 5-3 2-4Z" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6h7l2 2h9v11H3z" />
+    </svg>
+  );
+}
+
+function NewFolderIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6h7l2 2h9v11H3zM16 11v5m-2.5-2.5h5" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="m9 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="m5 12 4 4L19 6" />
     </svg>
   );
 }

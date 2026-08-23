@@ -24,11 +24,6 @@ export interface SupermemoryConnectionConfig {
   apiKey: string;
 }
 
-/** Every bot's own memories live under this tag, mirroring the existing bot-scoped memory model. */
-export function supermemoryContainerTag(botId: string): string {
-  return `rakazo:${botId}`;
-}
-
 function unreachableError(error: unknown): string {
   return `Supermemory is unreachable: ${error instanceof Error ? error.message : String(error)}`;
 }
@@ -89,6 +84,41 @@ export async function searchSupermemory(
   }
 }
 
+export async function searchSupermemoryContainers(
+  query: string,
+  containerTags: string[],
+  config: SupermemoryConnectionConfig,
+): Promise<SupermemorySearchResponse> {
+  const responses = await Promise.all(
+    containerTags.map((containerTag) => searchSupermemory(query, containerTag, config)),
+  );
+  const successful = responses.filter(
+    (response): response is Extract<SupermemorySearchResponse, { ok: true }> => response.ok,
+  );
+  if (successful.length === 0) {
+    return {
+      ok: false,
+      error: responses
+        .filter(
+          (response): response is Extract<SupermemorySearchResponse, { ok: false }> => !response.ok,
+        )
+        .map((response) => response.error)
+        .join("; "),
+    };
+  }
+  const byMemory = new Map<string, SupermemoryResult>();
+  for (const result of successful.flatMap((response) => response.results)) {
+    const existing = byMemory.get(result.memory);
+    if (!existing || result.similarity > existing.similarity) byMemory.set(result.memory, result);
+  }
+  return {
+    ok: true,
+    results: [...byMemory.values()]
+      .sort((left, right) => right.similarity - left.similarity)
+      .slice(0, MAX_RECALLED_MEMORIES),
+  };
+}
+
 /** Deletes every memory in a container, e.g. after the conversation they summarize is cleared. */
 export async function deleteSupermemoryContainer(
   containerTag: string,
@@ -135,6 +165,31 @@ export async function saveSupermemoryMemory(
   } catch (error) {
     return { ok: false, error: unreachableError(error) };
   }
+}
+
+export async function saveSupermemoryMemoryToContainers(
+  content: string,
+  containerTags: string[],
+  config: SupermemoryConnectionConfig,
+): Promise<SupermemorySaveResponse> {
+  const results = await Promise.all(
+    containerTags.map(async (containerTag) => ({
+      containerTag,
+      result: await saveSupermemoryMemory(content, containerTag, config),
+    })),
+  );
+  const failures = results.filter(
+    (entry): entry is { containerTag: string; result: { ok: false; error: string } } =>
+      !entry.result.ok,
+  );
+  return failures.length === 0
+    ? { ok: true }
+    : {
+        ok: false,
+        error: failures
+          .map(({ containerTag, result }) => `${containerTag}: ${result.error}`)
+          .join("; "),
+      };
 }
 
 export async function probeSupermemory(

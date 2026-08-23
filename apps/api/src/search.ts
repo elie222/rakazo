@@ -56,6 +56,8 @@ export async function queryWorkspaceSearch(
     where: {
       workspaceId: actor.workspaceId,
       userId: actor.userId,
+      groupId: null,
+      botId: { not: null },
       name: { contains: query, mode: "insensitive" },
       bot: { archivedAt: null },
     },
@@ -63,6 +65,7 @@ export async function queryWorkspaceSearch(
     take: SEARCH_LIMIT,
   });
   for (const artifact of artifacts) {
+    if (!artifact.botId || !artifact.bot) continue;
     const messageRows = await prisma.$queryRaw<Array<{ id: string; seq: number }>>`
       SELECT m.id, m.seq
       FROM messages m

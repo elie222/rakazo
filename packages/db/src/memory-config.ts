@@ -1,6 +1,9 @@
 import type { PrismaClient } from "./client.js";
 
-export function findWorkspaceMemoryConfig(prisma: PrismaClient, workspaceId: string) {
+export function findWorkspaceMemoryConfig(
+  prisma: Pick<PrismaClient, "workspaceMemoryConfig">,
+  workspaceId: string,
+) {
   return prisma.workspaceMemoryConfig.findUnique({ where: { workspaceId } });
 }
 
@@ -16,6 +19,20 @@ export function supermemoryContainerTagFor(
   scope: "isolated" | "shared",
   botId: string,
   workspaceId: string,
+  historyGeneration = 0,
 ): string {
-  return scope === "shared" ? `rakazo:workspace:${workspaceId}` : `rakazo:${botId}`;
+  if (scope === "shared") return `rakazo:workspace:${workspaceId}`;
+  return historyGeneration > 0 ? `rakazo:${botId}:history:${historyGeneration}` : `rakazo:${botId}`;
+}
+
+export function supermemoryContainerTagsFor(
+  scope: "isolated" | "shared",
+  botId: string,
+  workspaceId: string,
+  historyGeneration = 0,
+): string[] {
+  const isolatedTag = supermemoryContainerTagFor("isolated", botId, workspaceId, historyGeneration);
+  return scope === "shared"
+    ? [supermemoryContainerTagFor("shared", botId, workspaceId), isolatedTag]
+    : [isolatedTag];
 }

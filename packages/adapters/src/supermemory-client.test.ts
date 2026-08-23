@@ -5,17 +5,12 @@ import {
   MAX_RECALLED_MEMORIES,
   probeSupermemory,
   saveSupermemoryMemory,
+  saveSupermemoryMemoryToContainers,
   searchSupermemory,
-  supermemoryContainerTag,
+  searchSupermemoryContainers,
 } from "./supermemory-client.js";
 
 const config = { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" };
-
-describe("supermemoryContainerTag", () => {
-  it("scopes the tag to the bot id", () => {
-    expect(supermemoryContainerTag("bot-123")).toBe("rakazo:bot-123");
-  });
-});
 
 describe("searchSupermemory", () => {
   it("posts the query and container tag, returning search results on success", async () => {
@@ -100,6 +95,43 @@ describe("searchSupermemory", () => {
   });
 });
 
+describe("searchSupermemoryContainers", () => {
+  it("deduplicates and ranks results from shared and bot containers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ results: [{ memory: "shared", similarity: 0.7 }] }), {
+            status: 200,
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              results: [
+                { memory: "private", similarity: 0.9 },
+                { memory: "shared", similarity: 0.6 },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+    );
+
+    await expect(
+      searchSupermemoryContainers("query", ["rakazo:workspace:ws-1", "rakazo:bot-1"], config),
+    ).resolves.toEqual({
+      ok: true,
+      results: [
+        { memory: "private", similarity: 0.9 },
+        { memory: "shared", similarity: 0.7 },
+      ],
+    });
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("saveSupermemoryMemory", () => {
   it("posts the content and container tag on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
@@ -140,6 +172,19 @@ describe("saveSupermemoryMemory", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
     const result = await saveSupermemoryMemory("fact", "rakazo:bot-123", config);
     expect(result).toEqual({ ok: false, error: expect.stringContaining("401") });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("saveSupermemoryMemoryToContainers", () => {
+  it("writes shared memories to both the workspace and bot containers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      saveSupermemoryMemoryToContainers("fact", ["rakazo:workspace:ws-1", "rakazo:bot-1"], config),
+    ).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     vi.unstubAllGlobals();
   });
 });

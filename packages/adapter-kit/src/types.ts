@@ -343,6 +343,7 @@ export interface BackgroundJobPayloads {
   "routine.wakeup": { routineId: string; scheduledFor: string };
   "computer.sleep": { computerId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
+  "skill.teaching-expire": { skillId: string };
   "history.compact": { threadId: string };
 }
 

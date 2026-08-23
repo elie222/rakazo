@@ -1,0 +1,47 @@
+import { describe, expect, it } from "vitest";
+import { groupBotsForSidebar } from "./bot-sections.js";
+
+const sections = [
+  { id: "work", name: "Work" },
+  { id: "home", name: "Home" },
+];
+
+describe("groupBotsForSidebar", () => {
+  it("keeps pinned bots in one top-level group without duplicating them", () => {
+    const groups = groupBotsForSidebar(
+      [
+        { id: "pinned", pinned: true, sectionId: "home" },
+        { id: "work", pinned: false, sectionId: "work" },
+        { id: "home", pinned: false, sectionId: "home" },
+        { id: "loose", pinned: false, sectionId: null },
+      ],
+      sections,
+    );
+
+    expect(groups.map((group) => [group.title, group.bots.map((bot) => bot.id)])).toEqual([
+      ["Pinned", ["pinned"]],
+      ["Work", ["work"]],
+      ["Home", ["home"]],
+      ["Unassigned", ["loose"]],
+    ]);
+  });
+
+  it("treats bots pointing at an unavailable section as unassigned", () => {
+    const groups = groupBotsForSidebar(
+      [{ id: "orphan", pinned: false, sectionId: "missing" }],
+      sections,
+    );
+    expect(groups).toEqual([
+      {
+        key: "unassigned",
+        title: "Unassigned",
+        bots: [{ id: "orphan", pinned: false, sectionId: "missing" }],
+      },
+    ]);
+  });
+
+  it("does not add a heading before sections or pins exist", () => {
+    const groups = groupBotsForSidebar([{ id: "first", pinned: false, sectionId: null }], []);
+    expect(groups[0]?.title).toBeNull();
+  });
+});

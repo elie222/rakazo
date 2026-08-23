@@ -72,7 +72,7 @@ describe("createJobReconciler", () => {
       name: "computer.control-expire",
       payload: { computerId: "computer-1", leaseId: "lease-1" },
       availableAt: controlExpiresAt,
-      replaceKey: "computer.control-expire:computer-1",
+      replaceKey: "computer.control-expire:computer-1:lease-1",
     });
     expect(vi.mocked(prisma.computer.findMany)).toHaveBeenCalledWith(
       expect.objectContaining({

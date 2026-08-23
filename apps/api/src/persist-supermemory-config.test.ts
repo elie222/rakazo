@@ -7,6 +7,7 @@ function makeDeps(
   overrides: {
     existing?: { id: string; secretId: string } | null;
     upsertResult?: { mode: string; baseUrl: string; defaultMemoryScope: string; updatedAt: Date };
+    workspaceOwner?: boolean;
   } = {},
 ) {
   const secretCreate = vi.fn().mockResolvedValue({ id: "secret-new" });
@@ -20,17 +21,52 @@ function makeDeps(
       updatedAt: new Date("2026-08-19T00:00:00.000Z"),
     },
   );
-  const deps = {
-    prisma: {
-      workspaceMemoryConfig: { findUnique, upsert },
-      secret: { create: secretCreate, deleteMany: secretDeleteMany },
+  const prisma = {
+    member: {
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(overrides.workspaceOwner === false ? null : { id: "m-1" }),
     },
+    workspaceMemoryConfig: { findUnique, upsert },
+    secret: { create: secretCreate, deleteMany: secretDeleteMany },
+    $transaction: vi.fn(),
+  };
+  prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
+    callback(prisma),
+  );
+  const deps = {
+    prisma,
     secrets: { put: vi.fn().mockResolvedValue({ id: "secret-new", ciphertext: "cipher" }) },
   };
-  return { deps, secretCreate, secretDeleteMany, findUnique, upsert };
+  return {
+    deps,
+    secretCreate,
+    secretDeleteMany,
+    findUnique,
+    upsert,
+    transaction: prisma.$transaction,
+  };
 }
 
 describe("persistSupermemoryConfig", () => {
+  it("rejects non-owners before probing or writing workspace configuration", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps({ workspaceOwner: false });
+
+    await expect(
+      persistSupermemoryConfig(deps as never, actor, {
+        mode: "cloud",
+        apiKey: "sm_test_key_12345",
+        defaultMemoryScope: "isolated",
+      }),
+    ).rejects.toThrow();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("rejects local mode without a baseUrl, without touching the database", async () => {
     const { deps, upsert } = makeDeps();
     await expect(
@@ -77,7 +113,7 @@ describe("persistSupermemoryConfig", () => {
 
   it("connects cloud mode, defaulting the base URL, and returns the serialized config", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
-    const { deps, upsert } = makeDeps();
+    const { deps, upsert, transaction } = makeDeps();
     const result = await persistSupermemoryConfig(deps as never, actor, {
       mode: "cloud",
       apiKey: "sm_test_key_12345",
@@ -93,9 +129,9 @@ describe("persistSupermemoryConfig", () => {
       mode: "cloud",
       baseUrl: "https://api.supermemory.ai",
       defaultMemoryScope: "isolated",
-      connected: true,
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
+    expect(transaction).toHaveBeenCalledOnce();
     vi.unstubAllGlobals();
   });
 

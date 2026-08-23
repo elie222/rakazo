@@ -33,6 +33,7 @@ export async function attachWorkspaceFileToThread(
     workspaceId: string;
     userId: string;
     botId: string;
+    groupId?: string;
     runId: string;
     filePath: string;
     bytes: Uint8Array;
@@ -65,6 +66,7 @@ export async function attachWorkspaceFileToThread(
         workspaceId: input.workspaceId,
         userId: input.userId,
         botId: input.botId,
+        groupId: input.groupId,
         runId: input.runId,
         name,
         mimeType,
@@ -110,7 +112,7 @@ export async function materializeCurrentTurnFiles(
     where: {
       id: { in: fileBlocks.map((block) => block.artifactId) },
       workspaceId: input.context.workspaceId,
-      botId: input.context.botId,
+      userId: input.context.userId,
     },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
