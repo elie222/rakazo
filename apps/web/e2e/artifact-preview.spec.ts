@@ -43,13 +43,21 @@ test("agent-attached Markdown opens a rendered preview and can be downloaded", a
   const dialog = page.getByRole("dialog", { name: "preview.md" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "Project preview" })).toBeVisible();
+  const closeButton = dialog.getByRole("button", { name: "Close preview" });
+  const downloadButton = dialog.getByRole("button", { name: "Download preview.md" });
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(downloadButton).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(closeButton).toBeFocused();
   await captureScreenshot(page, testInfo, "markdown-preview-open");
 
   const downloadPromise = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Download preview.md" }).click();
+  await downloadButton.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("preview.md");
 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  await expect(previewButton).toBeFocused();
 });

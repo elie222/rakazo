@@ -134,7 +134,9 @@ export function inferAttachmentMimeType(
   const dot = name.lastIndexOf(".");
   const extensionType = dot < 0 ? undefined : EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()];
   // Some browsers and native document pickers report Markdown as text/plain.
-  if (extensionType === "text/markdown") return extensionType;
+  if (extensionType === "text/markdown" && (!reportedType || reportedType === "text/plain")) {
+    return extensionType;
+  }
   if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
   return extensionType ?? null;
 }
