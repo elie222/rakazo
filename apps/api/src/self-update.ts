@@ -20,7 +20,6 @@ import {
   normalizeUpdateBranch,
   OFFICIAL_REPO_URL,
   parseGitStatusPorcelain,
-  repoIdentity,
   restartSupervisorAdvice,
   updateSteps,
 } from "@rakazo/core";
@@ -461,11 +460,10 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
           "The checkout has uncommitted changes to tracked files. Commit, stash, or discard them before updating.",
       };
     }
-    const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
-    const repository =
-      currentIdentity === repoIdentity(source.repoUrl) ? DEFAULT_UPDATE_REMOTE : source.repoUrl;
+    // Always use the exact owner-selected transport. Identity equality is not enough here: changing
+    // the same repository from an inaccessible SSH URL to working HTTPS must stop using origin.
     const fetched = await git(
-      ["fetch", "--no-tags", "--prune", repository, source.branch],
+      ["fetch", "--no-tags", "--prune", source.repoUrl, source.branch],
       "fetch",
     );
     if (!fetched.ok) {
@@ -599,8 +597,9 @@ export function createSelfUpdateService(options: SelfUpdateOptions): SelfUpdateS
         "The checkout changed during preflight. No update commands were run; check again.",
       );
     }
-    const currentIdentity = checkout.remoteUrl === null ? null : repoIdentity(checkout.remoteUrl);
-    const repointRemote = currentIdentity !== repoIdentity(source.repoUrl);
+    const currentRemote = checkout.remoteUrl === null ? null : normalizeRepoUrl(checkout.remoteUrl);
+    const repointRemote =
+      currentRemote === null || "error" in currentRemote || currentRemote.url !== source.repoUrl;
     const startedAt = new Date().toISOString();
     if (preflight.status === "up-to-date") {
       const record: ServerUpdateRun = {

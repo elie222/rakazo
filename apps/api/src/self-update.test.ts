@@ -10,6 +10,7 @@ import {
 import { type UpdaterClient, UpdaterRefused, UpdaterUnreachable } from "./updater-client.js";
 
 const REPO_ROOT = "/srv/rakazo";
+const OFFICIAL_REPO = "https://github.com/elie222/rakazo";
 const HEAD = "1111111111111111111111111111111111111111";
 const TARGET = "2222222222222222222222222222222222222222";
 
@@ -75,7 +76,7 @@ function fakePrisma(initial: Partial<Row> = {}) {
 function recorder(overrides: Record<string, CommandResult> = {}) {
   const calls: Array<{ command: string; args: string[] }> = [];
   let currentHead = HEAD;
-  let currentRemote = "https://github.com/elie222/rakazo.git";
+  let currentRemote = OFFICIAL_REPO;
   const runner: CommandRunner = async (command, args) => {
     calls.push({ command, args });
     const key = [command, ...args].join(" ");
@@ -306,6 +307,20 @@ describe("check", () => {
       "main",
     ]);
   });
+
+  it("uses the selected transport even when origin has the same repository identity", async () => {
+    const recorded = recorder({
+      "git remote get-url": ok("git@github.com:elie222/rakazo.git"),
+    });
+    await service({ runner: recorded.runner }).check();
+    expect(recorded.calls.find((call) => call.args[0] === "fetch")?.args).toEqual([
+      "fetch",
+      "--no-tags",
+      "--prune",
+      OFFICIAL_REPO,
+      "main",
+    ]);
+  });
 });
 
 describe("apply", () => {
@@ -399,9 +414,12 @@ describe("apply", () => {
   });
 
   it("repoints origin when a newly selected repository already has the running commit", async () => {
-    const selected = "https://github.com/me/rakazo.git";
+    const selected = OFFICIAL_REPO;
     const { prisma } = fakePrisma({ updateRepoUrl: selected });
-    const { runner, calls } = recorder({ "git rev-parse --verify FETCH_HEAD": ok(HEAD) });
+    const { runner, calls } = recorder({
+      "git remote get-url": ok("git@github.com:elie222/rakazo.git"),
+      "git rev-parse --verify FETCH_HEAD": ok(HEAD),
+    });
     const record = await service({ prisma, runner }).apply();
     expect(record).toMatchObject({
       ok: true,
@@ -418,8 +436,9 @@ describe("apply", () => {
   });
 
   it("reports a failed equal-commit repoint without running code or database changes", async () => {
-    const { prisma } = fakePrisma({ updateRepoUrl: "https://github.com/me/rakazo.git" });
+    const { prisma } = fakePrisma({ updateRepoUrl: OFFICIAL_REPO });
     const { runner, calls } = recorder({
+      "git remote get-url": ok("git@github.com:elie222/rakazo.git"),
       "git rev-parse --verify FETCH_HEAD": ok(HEAD),
       "git remote set-url": { ok: false, exitCode: 2, output: "fake remote failure" },
     });
