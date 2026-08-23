@@ -173,6 +173,7 @@ export function ShellPage() {
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<WorkspaceMemoryConfig | null>(
     null,
   );
+  const memoryProviderConfigRevision = useRef(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -451,6 +452,7 @@ export function ShellPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const providerConfigRevision = memoryProviderConfigRevision.current;
     void Promise.all([
       takeInitialBootstrap(botId),
       rpc.groups.list(),
@@ -463,7 +465,9 @@ export function ShellPage() {
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
         setGroups(groupList);
-        setMemoryProviderConfig(providerConfig);
+        if (memoryProviderConfigRevision.current === providerConfigRevision) {
+          setMemoryProviderConfig(providerConfig);
+        }
         setInitialBotsLoaded(true);
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
@@ -2139,7 +2143,10 @@ export function ShellPage() {
           <MemorySettingsOverlay
             onClose={() => setMemorySettingsOpen(false)}
             config={memoryProviderConfig}
-            onConfigChange={setMemoryProviderConfig}
+            onConfigChange={(config) => {
+              memoryProviderConfigRevision.current += 1;
+              setMemoryProviderConfig(config);
+            }}
           />
         ) : null}
       </Suspense>

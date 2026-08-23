@@ -1,5 +1,5 @@
 import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
-import { SupermemorySettingsOverlay } from "./SupermemorySettingsOverlay";
+import { memoryProviderSettings } from "./memory-provider-settings";
 
 /** Provider-neutral settings entry point; provider-specific forms stay in their adapters. */
 export function MemorySettingsOverlay(props: {
@@ -7,5 +7,7 @@ export function MemorySettingsOverlay(props: {
   config: WorkspaceMemoryConfig | null;
   onConfigChange: (config: WorkspaceMemoryConfig | null) => void;
 }) {
-  return <SupermemorySettingsOverlay {...props} />;
+  const adapter = memoryProviderSettings(props.config?.provider);
+  if (!adapter) return null;
+  return <adapter.Settings {...props} />;
 }

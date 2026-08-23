@@ -372,12 +372,16 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     semanticMemory &&
     latest.historyCompactionGeneration !== previousGeneration
   ) {
-    const removed = await semanticMemory.provider.purgeHistory(
-      { botId: thread.botId, generations: [previousGeneration] },
-      memoryContext,
-    );
-    if (!removed.ok) {
-      console.error(`history.compact could not purge stale semantic memory: ${removed.error}`);
+    try {
+      const removed = await semanticMemory.provider.purgeHistory(
+        { botId: thread.botId, generations: [previousGeneration] },
+        memoryContext,
+      );
+      if (!removed.ok) {
+        console.error(`history.compact could not purge stale semantic memory: ${removed.error}`);
+      }
+    } catch (error) {
+      console.error("history.compact could not purge stale semantic memory", error);
     }
   }
 

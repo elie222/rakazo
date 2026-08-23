@@ -720,6 +720,28 @@ describe("compactHistory", () => {
     );
   });
 
+  it("continues draining the backlog when a stale-history purge throws", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      nextMessageSeq: 150,
+    });
+    harness.saveMemory.mockImplementationOnce(async () => {
+      harness.thread.historyCompactionGeneration = 1;
+      return { ok: true, value: undefined };
+    });
+    harness.purgeHistory.mockRejectedValueOnce(new Error("provider unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(compactHistory(harness.deps, "thread-1")).resolves.toBeUndefined();
+
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1"));
+    expect(consoleError).toHaveBeenCalledWith(
+      "history.compact could not purge stale semantic memory",
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
+  });
+
   it("falls back to the deployment's configured default model when no deployment key is available", async () => {
     const harness = compactionHarness({
       settings: {
