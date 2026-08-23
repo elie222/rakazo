@@ -282,27 +282,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
       if (isTerminal(run.status as RunStatus)) return;
-      const resumeFromTakeover = run.status === "waiting_takeover";
-      const takeoverResume = resumeFromTakeover
-        ? takeoverResumeFromRelease(
-            takeoverReleaseReasonFromPayload(
-              (
-                await deps.prisma.event.findFirst({
-                  where: {
-                    botId: run.botId,
-                    runId: run.id,
-                    type: "computer.takeover.released",
-                    // Keep the release that resumed this waiting interval. A later
-                    // re-takeover must not replace its reason before this run starts.
-                    createdAt: { gte: run.updatedAt },
-                  },
-                  orderBy: [{ createdAt: "asc" }, { seq: "asc" }],
-                  select: { payload: true },
-                })
-              )?.payload,
-            ),
-          )
-        : null;
+      const resumeCheckpoint =
+        run.checkpoint === "takeover" || run.checkpoint === "takeover-skipped"
+          ? run.checkpoint
+          : null;
+      const resumeFromTakeover = run.status === "waiting_takeover" || Boolean(resumeCheckpoint);
+      const takeoverResume = resumeCheckpoint
+        ? takeoverResumeFromRelease(resumeCheckpoint === "takeover-skipped" ? "skipped" : "done")
+        : resumeFromTakeover
+          ? takeoverResumeFromRelease(
+              takeoverReleaseReasonFromPayload(
+                (
+                  await deps.prisma.event.findFirst({
+                    where: {
+                      botId: run.botId,
+                      runId: run.id,
+                      type: "computer.takeover.released",
+                      // Keep the release that resumed this waiting interval. A later
+                      // re-takeover must not replace its reason before this run starts.
+                      createdAt: { gte: run.updatedAt },
+                    },
+                    orderBy: [{ createdAt: "asc" }, { seq: "asc" }],
+                    select: { payload: true },
+                  })
+                )?.payload,
+              ),
+            )
+          : null;
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
@@ -1126,7 +1132,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               const paused = await deps.prisma.run.updateMany({
                 where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-                data: { status: "waiting_takeover", leaseOwner: null, leaseExpiresAt: null },
+                data: {
+                  status: "waiting_takeover",
+                  leaseOwner: null,
+                  leaseExpiresAt: null,
+                  checkpoint: null,
+                },
               });
               if (paused.count !== 1) return;
               retainComputerLease = true;

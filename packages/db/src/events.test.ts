@@ -103,7 +103,10 @@ describe("finalizeComputerControlRelease", () => {
           thread: { id: "thread-1" },
         }),
       },
-      run: { findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }) },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       event: {
         create: vi.fn().mockResolvedValue({
@@ -132,7 +135,7 @@ describe("finalizeComputerControlRelease", () => {
         },
         fanout,
       ),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ runId: "run-1" });
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: {
@@ -147,6 +150,15 @@ describe("finalizeComputerControlRelease", () => {
         controlLeaseExpiresAt: null,
         controlBotId: null,
       },
+    });
+    expect(tx.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "run-1",
+        workspaceId: "workspace-1",
+        botId: "bot-1",
+        status: "waiting_takeover",
+      },
+      data: { status: "queued", checkpoint: "takeover-skipped" },
     });
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -179,7 +191,7 @@ describe("finalizeComputerControlRelease", () => {
         holder: "none",
         reason: "expired",
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ runId: null });
 
     expect(tx.computer.updateMany).toHaveBeenCalledOnce();
   });

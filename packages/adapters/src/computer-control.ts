@@ -159,6 +159,6 @@ export async function expireComputerControl(
     holder: "none",
     reason: "expired",
   });
-  if (released && waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
-  return released;
+  if (released && released.runId) await deps.jobs.enqueue(runContinueJob(released.runId));
+  return Boolean(released);
 }

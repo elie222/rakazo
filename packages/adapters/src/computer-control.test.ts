@@ -251,7 +251,9 @@ function controlHarness(
   const sandbox = { setScreenControl };
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
-  const finalizeComputerControlRelease = vi.fn().mockResolvedValue(true);
+  const finalizeComputerControlRelease = vi.fn().mockResolvedValue({
+    runId: options.waitingRunId ?? options.executionRunId ?? null,
+  });
   if (options.finalizeError) {
     finalizeComputerControlRelease.mockRejectedValueOnce(options.finalizeError);
   }
