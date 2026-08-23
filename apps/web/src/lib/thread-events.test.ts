@@ -503,13 +503,13 @@ describe("thread event reduction", () => {
       startedAt: null,
       completedAt: null,
     };
-    const runB = { ...runA, id: "run-b", botId: "bot-b", taskId: "task-b" };
     const otherLive = {
       ...message("progress:run-b", [{ kind: "progress" as const, text: "Other bot" }]),
       botId: "bot-b",
       runId: "run-b",
     };
-    const initial = { ...snapshot([otherLive]), activeRuns: [runA, runB] };
+    // The snapshot can lag behind the event stream when another group run starts.
+    const initial = { ...snapshot([otherLive]), activeRuns: [runA] };
 
     const next = reduceThreadSnapshot(
       initial,
@@ -550,7 +550,7 @@ describe("thread event reduction", () => {
     ]);
   });
 
-  it("drops inactive progress while applying a subagent update", () => {
+  it("preserves concurrent progress while applying a subagent update", () => {
     const activeRun = threadRun("run-active");
     const initial: ThreadSnapshot = {
       ...snapshot([
@@ -559,12 +559,12 @@ describe("thread event reduction", () => {
           runId: "run-active",
         },
         {
-          ...message("progress:run-stale", [{ kind: "progress", text: "Stale" }]),
-          runId: "run-stale",
+          ...message("progress:run-concurrent", [{ kind: "progress", text: "Concurrent" }]),
+          runId: "run-concurrent",
         },
       ]),
       run: activeRun,
-      activeRuns: undefined,
+      activeRuns: [activeRun],
     };
 
     const next = reduceThreadSnapshot(
@@ -579,6 +579,7 @@ describe("thread event reduction", () => {
     expect(next?.messages.map((item) => item.id)).toEqual([
       "subagent:research",
       "progress:run-active",
+      "progress:run-concurrent",
     ]);
   });
 

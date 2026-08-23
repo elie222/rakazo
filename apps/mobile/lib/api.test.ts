@@ -284,6 +284,32 @@ describe("mobile thread event reduction", () => {
     ]);
   });
 
+  it("preserves concurrent progress when active-run metadata lags", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-concurrent", [
+            { kind: "progress", text: "Concurrent work" },
+          ]),
+          runId: "run-concurrent",
+        },
+      ]),
+      run: { id: "run-current", status: "running" },
+      activeRuns: [{ id: "run-current", status: "running" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.progress",
+      runId: "run-current",
+      payload: { text: "Current work" },
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-concurrent",
+      "progress:run-current",
+    ]);
+  });
+
   it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
     const narration = applyMobileThreadEvent(snapshot(), {
       type: "thread.progress",
@@ -332,7 +358,10 @@ describe("mobile thread event reduction", () => {
       mobileMessage("subagent:other", [
         { kind: "subagent", agentId: "other", name: "Other", task: "Wait", status: "running" },
       ]),
-      mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
+      {
+        ...mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
+        runId: "run-1",
+      },
     ]);
     const completed = {
       kind: "subagent" as const,
@@ -347,6 +376,7 @@ describe("mobile thread event reduction", () => {
       id: "event-1",
       type: "thread.message.created",
       seq: 9,
+      runId: "run-1",
       payload: { messageId: "message-1", role: "bot", blocks: [completed] },
     });
 

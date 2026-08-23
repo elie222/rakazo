@@ -276,19 +276,12 @@ function takeMobileLiveMessage(
   snapshot: MobileSnapshot,
   liveId: string,
 ): { previous: MobileMessage | undefined; remaining: MobileMessage[] } {
-  const activeRunIds = new Set([
-    ...(snapshot.run ? [snapshot.run.id] : []),
-    ...(snapshot.activeRuns?.map((run) => run.id) ?? []),
-  ]);
   let previous: MobileMessage | undefined;
   const remaining: MobileMessage[] = [];
   for (const message of snapshot.messages) {
     if (message.id === liveId) {
       previous = message;
-    } else if (
-      !message.id.startsWith("progress:") ||
-      (message.runId && activeRunIds.has(message.runId))
-    ) {
+    } else if (!message.id.startsWith("progress:") || message.runId) {
       remaining.push(message);
     }
   }
