@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { WorkspaceMemoryProviderResolver } from "./memory-provider-factory.js";
+import {
+  createMemoryProvider,
+  WorkspaceMemoryProviderResolver,
+} from "./memory-provider-factory.js";
 
 function resolverFor(plaintext: string) {
   const prisma = {
@@ -35,5 +38,42 @@ describe("WorkspaceMemoryProviderResolver", () => {
     const configured = await resolver.resolve("workspace-1");
 
     expect(configured?.provider.describe().id).toBe("supermemory");
+  });
+
+  it("revalidates persisted provider endpoints before using decrypted credentials", async () => {
+    expect(() =>
+      createMemoryProvider(
+        "supermemory",
+        { mode: "local", baseUrl: "https://memory.example.com" },
+        { apiKey: "sm_test_key" },
+      ),
+    ).toThrow(/loopback/);
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createMemoryProvider(
+      "supermemory",
+      { mode: "cloud", baseUrl: "https://memory.example.com" },
+      { apiKey: "sm_test_key" },
+    );
+
+    await provider.recall(
+      { query: "project", scope: "isolated", botId: "bot-1", limit: 1 },
+      {
+        operationId: "op-1",
+        traceId: "trace-1",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.supermemory.ai/v4/search");
+    vi.unstubAllGlobals();
   });
 });

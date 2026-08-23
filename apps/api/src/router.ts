@@ -44,6 +44,7 @@ import {
   serializeModelSecret,
   takeoverLeaseMs,
   toComputerRef,
+  toStringRecord,
   touchRunningComputer,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -2169,14 +2170,7 @@ function serializeWorkspaceMemoryConfig(config: {
 }) {
   return {
     provider: config.provider,
-    settings:
-      config.settings && typeof config.settings === "object" && !Array.isArray(config.settings)
-        ? Object.fromEntries(
-            Object.entries(config.settings).filter(
-              (entry): entry is [string, string] => typeof entry[1] === "string",
-            ),
-          )
-        : {},
+    settings: toStringRecord(config.settings),
     defaultMemoryScope: config.defaultMemoryScope as "isolated" | "shared",
     updatedAt: config.updatedAt.toISOString(),
   };

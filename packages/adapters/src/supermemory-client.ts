@@ -24,6 +24,15 @@ export interface SupermemoryConnectionConfig {
   apiKey: string;
 }
 
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+function boundedRecallLimit(limit: number): number {
+  return Math.min(Math.max(1, Math.floor(limit)), MAX_RECALLED_MEMORIES);
+}
+
 function unreachableError(error: unknown): string {
   return `Supermemory is unreachable: ${error instanceof Error ? error.message : String(error)}`;
 }
@@ -62,6 +71,8 @@ export async function searchSupermemory(
   query: string,
   containerTag: string,
   config: SupermemoryConnectionConfig,
+  limit = MAX_RECALLED_MEMORIES,
+  signal?: AbortSignal,
 ): Promise<SupermemorySearchResponse> {
   try {
     const response = await fetch(`${config.baseUrl}/v4/search`, {
@@ -71,10 +82,10 @@ export async function searchSupermemory(
         q: query,
         containerTag,
         searchMode: "memories",
-        limit: MAX_RECALLED_MEMORIES,
+        limit: boundedRecallLimit(limit),
       }),
       redirect: "error",
-      signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
+      signal: requestSignal(signal),
     });
     if (!response.ok) {
       return { ok: false, error: `Supermemory search failed: ${response.status}` };
@@ -89,9 +100,14 @@ export async function searchSupermemoryContainers(
   query: string,
   containerTags: string[],
   config: SupermemoryConnectionConfig,
+  limit = MAX_RECALLED_MEMORIES,
+  signal?: AbortSignal,
 ): Promise<SupermemorySearchResponse> {
+  const boundedLimit = boundedRecallLimit(limit);
   const responses = await Promise.all(
-    containerTags.map((containerTag) => searchSupermemory(query, containerTag, config)),
+    containerTags.map((containerTag) =>
+      searchSupermemory(query, containerTag, config, boundedLimit, signal),
+    ),
   );
   const successful = responses.filter(
     (response): response is Extract<SupermemorySearchResponse, { ok: true }> => response.ok,
@@ -116,7 +132,7 @@ export async function searchSupermemoryContainers(
     ok: true,
     results: [...byMemory.values()]
       .sort((left, right) => right.similarity - left.similarity)
-      .slice(0, MAX_RECALLED_MEMORIES),
+      .slice(0, boundedLimit),
   };
 }
 
@@ -124,6 +140,7 @@ export async function searchSupermemoryContainers(
 export async function deleteSupermemoryContainer(
   containerTag: string,
   config: SupermemoryConnectionConfig,
+  signal?: AbortSignal,
 ): Promise<SupermemorySaveResponse> {
   try {
     const response = await fetch(
@@ -132,7 +149,7 @@ export async function deleteSupermemoryContainer(
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
         redirect: "error",
-        signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
+        signal: requestSignal(signal),
       },
     );
     if (!response.ok) {
@@ -148,6 +165,7 @@ export async function saveSupermemoryMemory(
   content: string,
   containerTag: string,
   config: SupermemoryConnectionConfig,
+  signal?: AbortSignal,
 ): Promise<SupermemorySaveResponse> {
   const memory = content.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
   if (!memory) {
@@ -159,7 +177,7 @@ export async function saveSupermemoryMemory(
       headers: authHeaders(config),
       body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
       redirect: "error",
-      signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
+      signal: requestSignal(signal),
     });
     if (!response.ok) {
       return { ok: false, error: `Supermemory save failed: ${response.status}` };
@@ -174,11 +192,12 @@ export async function saveSupermemoryMemoryToContainers(
   content: string,
   containerTags: string[],
   config: SupermemoryConnectionConfig,
+  signal?: AbortSignal,
 ): Promise<SupermemorySaveResponse> {
   const results = await Promise.all(
     containerTags.map(async (containerTag) => ({
       containerTag,
-      result: await saveSupermemoryMemory(content, containerTag, config),
+      result: await saveSupermemoryMemory(content, containerTag, config, signal),
     })),
   );
   const failures = results.filter(

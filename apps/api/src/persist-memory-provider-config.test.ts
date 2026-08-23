@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { persistMemoryProviderConfig } from "./router.js";
 
-const actor = { userId: "user-1", workspaceId: "ws-1", email: "a@b.com", isDeploymentOwner: false };
+const actor = {
+  userId: "user-1",
+  workspaceId: "ws-1",
+  email: "a@b.com",
+  isDeploymentOwner: false,
+};
 
 function makeDeps(
   overrides: {

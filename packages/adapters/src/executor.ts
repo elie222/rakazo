@@ -1707,14 +1707,14 @@ async function resolveModelKey(
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
   redact: string[];
 }> {
-  if (credential && deps.secretStore) {
+  if (credential) {
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
       if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
-      const plaintext = deps.secretStore!.load(row.ciphertext);
+      const plaintext = deps.secretStore.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {
-        const stored = await deps.secretStore!.put(next, {
+        const stored = await deps.secretStore.put(next, {
           operationId: "cred",
           traceId: "cred-refresh",
           workspaceId,
@@ -1740,7 +1740,7 @@ async function resolveModelKey(
                   where: { id: credential.secretId },
                 });
                 if (!currentRow) return;
-                const current = parseModelSecret(deps.secretStore!.load(currentRow.ciphertext));
+                const current = parseModelSecret(deps.secretStore.load(currentRow.ciphertext));
                 if (current.kind === "oauth") {
                   const stored = current.credential;
                   if (stored.expires > next.expires) return;

@@ -18,6 +18,68 @@ import {
 export const SUPERMEMORY_PROVIDER_ID = "supermemory";
 export const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";
 
+function isLoopbackBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      (parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "[::1]")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function requiredValue(values: Record<string, string>, key: string): string {
+  const value = values[key]?.trim();
+  if (!value) throw new Error(`${key} is required`);
+  return value;
+}
+
+function parseSupermemoryConnection(
+  settings: Record<string, string>,
+  credentials: Record<string, string>,
+): SupermemoryConnectionConfig & { mode: "cloud" | "local" } {
+  if (settings.mode !== "cloud" && settings.mode !== "local") {
+    throw new Error("mode must be cloud or local");
+  }
+  const mode = settings.mode;
+  const apiKey = requiredValue(credentials, "apiKey");
+  if (apiKey.length < 8) throw new Error("apiKey must contain at least 8 characters");
+  const baseUrl =
+    mode === "cloud" ? SUPERMEMORY_CLOUD_BASE_URL : requiredValue(settings, "baseUrl");
+  if (mode === "local" && !isLoopbackBaseUrl(baseUrl)) {
+    throw new Error("Local mode requires a loopback address (localhost, 127.0.0.1, or ::1).");
+  }
+  return { mode, baseUrl, apiKey };
+}
+
+export async function prepareSupermemoryConnection(
+  settings: Record<string, string>,
+  credentials: Record<string, string>,
+): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
+  const { mode, baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
+  const probe = await probeSupermemory({ baseUrl, apiKey });
+  if (!probe.ok) throw new Error(probe.error);
+  return { settings: { mode, baseUrl }, credentials: { apiKey } };
+}
+
+export function createSupermemoryProvider(
+  settings: Record<string, string>,
+  credentials: Record<string, string>,
+): SemanticMemoryProvider {
+  const { baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
+  return new SupermemoryMemoryProvider({ baseUrl, apiKey });
+}
+
+export function decodeLegacySupermemoryCredentials(
+  plaintext: string,
+): Record<string, string> | null {
+  return plaintext.trim() ? { apiKey: plaintext } : null;
+}
+
 function durableContainerTags(
   scope: DurableMemoryScope,
   botId: string,
@@ -46,7 +108,12 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
       id: SUPERMEMORY_PROVIDER_ID,
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { recall: true, save: true, purgeHistory: true, sharedScope: true },
+      capabilities: {
+        recall: true,
+        save: true,
+        purgeHistory: true,
+        sharedScope: true,
+      } as const,
     };
   }
 
@@ -58,6 +125,8 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
       request.query,
       recallContainerTags(request, context.workspaceId),
       this.connection,
+      request.limit,
+      context.signal,
     );
     return result.ok
       ? {
@@ -79,17 +148,26 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
       request.source.kind === "history"
         ? [historyContainerTag(request.botId, request.source.generation)]
         : durableContainerTags(request.scope, request.botId, context.workspaceId);
-    const result = await saveSupermemoryMemoryToContainers(request.content, tags, this.connection);
+    const result = await saveSupermemoryMemoryToContainers(
+      request.content,
+      tags,
+      this.connection,
+      context.signal,
+    );
     return result.ok ? { ok: true, value: undefined } : result;
   }
 
   async purgeHistory(
     request: { botId: string; generations: number[] },
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<SemanticMemoryResponse> {
     const results = await Promise.all(
       [...new Set(request.generations)].map((generation) =>
-        deleteSupermemoryContainer(historyContainerTag(request.botId, generation), this.connection),
+        deleteSupermemoryContainer(
+          historyContainerTag(request.botId, generation),
+          this.connection,
+          context.signal,
+        ),
       ),
     );
     const errors = results.filter((result) => !result.ok).map((result) => result.error);

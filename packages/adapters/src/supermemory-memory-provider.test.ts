@@ -66,6 +66,27 @@ describe("SupermemoryMemoryProvider", () => {
     ).toEqual(["rakazo:bot-1", "rakazo:bot-1:history:3"]);
   });
 
+  it("passes recall limits and cancellation through to the provider client", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled"));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().recall(
+      { query: "project", scope: "isolated", botId: "bot-1", limit: 2 },
+      { ...context, signal: controller.signal },
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(JSON.parse(String(init?.body)).limit).toBe(2);
+    expect(init?.signal.aborted).toBe(true);
+  });
+
   it("mirrors shared durable saves so a later scope change retains bot memory", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

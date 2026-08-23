@@ -170,9 +170,9 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
-  const [memoryProviderConfig, setMemoryProviderConfig] = useState<WorkspaceMemoryConfig | null>(
-    null,
-  );
+  const [memoryProviderConfig, setMemoryProviderConfig] = useState<
+    WorkspaceMemoryConfig | null | undefined
+  >(undefined);
   const memoryProviderConfigRevision = useRef(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -453,21 +453,26 @@ export function ShellPage() {
   useEffect(() => {
     let cancelled = false;
     const providerConfigRevision = memoryProviderConfigRevision.current;
-    void Promise.all([
-      takeInitialBootstrap(botId),
-      rpc.groups.list(),
-      rpc.memory.providerConfig().catch(() => null),
-    ])
-      .then(([bootstrap, groupList, providerConfig]) => {
+    void rpc.memory
+      .providerConfig()
+      .then((providerConfig) => {
+        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
+          setMemoryProviderConfig(providerConfig);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
+          setMemoryProviderConfig(null);
+        }
+      });
+    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
+      .then(([bootstrap, groupList]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
         setGroups(groupList);
-        if (memoryProviderConfigRevision.current === providerConfigRevision) {
-          setMemoryProviderConfig(providerConfig);
-        }
         setInitialBotsLoaded(true);
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
@@ -1842,7 +1847,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
-                memoryProviderConfigured={memoryProviderConfig !== null}
+                memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({

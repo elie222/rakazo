@@ -329,7 +329,12 @@ function compactionHarness(
                 id: "test-memory",
                 contractVersion: "1",
                 adapterVersion: "1",
-                capabilities: { recall: true, save: true, purgeHistory: true, sharedScope: true },
+                capabilities: {
+                  recall: true,
+                  save: true,
+                  purgeHistory: true,
+                  sharedScope: true,
+                } as const,
               }),
               recall: vi.fn(),
               save: saveMemory,

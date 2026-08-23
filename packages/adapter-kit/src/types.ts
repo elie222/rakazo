@@ -237,10 +237,10 @@ export interface MemoryCapabilities {
 export type DurableMemoryScope = "isolated" | "shared";
 
 export interface SemanticMemoryCapabilities {
-  recall: boolean;
-  save: boolean;
-  purgeHistory: boolean;
-  sharedScope: boolean;
+  recall: true;
+  save: true;
+  purgeHistory: true;
+  sharedScope: true;
 }
 
 export interface SemanticMemoryResult {

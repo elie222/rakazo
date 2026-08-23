@@ -41,7 +41,7 @@ export * from "./sandbox-factory.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";
-export * from "./supermemory-memory-provider.js";
+export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export * from "./teaching-session.js";
 export * from "./voice-factory.js";
 export * from "./wakeup.js";
