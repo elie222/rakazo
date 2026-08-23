@@ -735,15 +735,19 @@ describe("computer event reduction", () => {
   it("grants user control without overwriting the lifecycle state", () => {
     const granted = reduceComputerStatus(
       computer({ state: "suspended", controlHolder: "bot" }),
-      event({ type: "computer.takeover.granted", payload: {} }),
+      event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
     );
     expect(granted).toMatchObject({
       state: "suspended",
       controlHolder: "user",
       controlBotId: "bot-1",
+      takeoverRequested: true,
     });
     expect(
-      reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
+      reduceComputerStatus(
+        granted,
+        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+      ),
     ).toBe(granted);
   });
 

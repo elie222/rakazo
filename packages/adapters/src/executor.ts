@@ -1624,12 +1624,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-          data: {
-            status: "queued",
-            error: computerBusy ? null : "Run setup failed; retrying",
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          },
+          data: computerRunRequeueData(
+            resumeCheckpoint,
+            computerBusy ? null : "Run setup failed; retrying",
+          ),
         });
         if (released.count === 1) {
           await deps.prisma.attempt.update({
@@ -1715,6 +1713,19 @@ function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
 }
 
+function computerRunRequeueData(
+  resumeCheckpoint: TakeoverResumeCheckpoint | null,
+  error: string | null = null,
+) {
+  return {
+    status: "queued" as const,
+    error,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    checkpoint: resumeCheckpoint,
+  };
+}
+
 async function requeueComputerRun(
   deps: ExecutorDeps,
   runId: string,
@@ -1724,13 +1735,7 @@ async function requeueComputerRun(
 ): Promise<void> {
   const released = await deps.prisma.run.updateMany({
     where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-    data: {
-      status: "queued",
-      error: null,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      checkpoint: resumeCheckpoint,
-    },
+    data: computerRunRequeueData(resumeCheckpoint),
   });
   if (released.count !== 1) return;
   await deps.jobs.enqueue({

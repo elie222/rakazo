@@ -1032,7 +1032,7 @@ export function createRouter(deps: RouterDeps) {
             threadId: bot.thread.id,
             botId: bot.id,
             type: "computer.takeover.granted",
-            payload: { leaseId },
+            payload: { leaseId, takeoverRequested: waitingForTakeover },
           });
         }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
