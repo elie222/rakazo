@@ -55,7 +55,7 @@ describeJourneys("required product journeys", () => {
     }
     return {
       ...(await rpc<Snap>(app, cookie, "threads/get", { botId })),
-      run: { status: terminal.status },
+      run: { id: runId, status: terminal.status },
     };
   }
 
@@ -1488,7 +1488,7 @@ type Bot = {
 };
 type Snap = {
   messages: Array<{ seq: number; blocks: unknown[] }>;
-  run: { status: string } | null;
+  run: { id: string; status: string } | null;
 };
 
 async function signup(app: App, email: string, name: string) {
