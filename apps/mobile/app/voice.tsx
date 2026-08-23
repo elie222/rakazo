@@ -22,7 +22,6 @@ type VoiceCatalogEntry = {
 type VoiceCredential = {
   id: string;
   provider: string;
-  label: string;
   voiceId: string;
 };
 type VoiceStatus = {
@@ -89,7 +88,6 @@ export default function VoiceSettings() {
         provider: selected.id,
         apiKey: apiKey.trim(),
         voiceId: voiceId || undefined,
-        label: selected.name,
       });
       setApiKey("");
       await load(selected.id);
@@ -164,13 +162,18 @@ export default function VoiceSettings() {
           <>
             <Text style={styles.help}>{selected.description}</Text>
             <TextInput
+              accessibilityLabel="API key"
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect={false}
+              importantForAutofill="no"
               value={apiKey}
               onChangeText={setApiKey}
               placeholder={credential ? "Paste a replacement key" : "Paste your API key"}
               placeholderTextColor="#6C6C70"
               secureTextEntry
-              autoCapitalize="none"
               style={styles.input}
+              textContentType="none"
             />
             <Pressable
               disabled={pending || apiKey.trim().length < 8}

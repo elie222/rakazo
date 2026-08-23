@@ -5,16 +5,19 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   const stamp = Date.now();
   const userName = `Models ${stamp}`;
   await signup(page, `models-${stamp}@rakazo.test`, "password12", userName);
+  await expect(page.getByLabel("API key")).toHaveAttribute("autocomplete", "new-password");
   await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "⌁ Models" }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
   await expect(page.getByRole("button", { name: "Close model settings" })).toBeVisible();
 
   const providerSearch = page.getByPlaceholder("Search providers");
   await providerSearch.fill("scripted");
   await page.getByRole("button", { name: /Scripted/ }).click();
-  await page.getByLabel("API key").fill("fake-scripted-key-one");
+  const apiKeyInput = page.getByLabel("API key");
+  await expect(apiKeyInput).toHaveAttribute("autocomplete", "new-password");
+  await apiKeyInput.fill("fake-scripted-key-one");
   await page.getByRole("button", { name: "Connect API key" }).click();
   await expect(page.getByText(/Connected and using Scripted runtime/)).toBeVisible();
 

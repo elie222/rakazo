@@ -4,7 +4,7 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { abortableDelay, inferHandoffTargetName } from "@rakazo/core";
 
 const running = new Map<string, AbortController>();
 
@@ -215,6 +215,47 @@ export function inferScript(
       {
         assistant: "spinning up a helper for that.",
         toolCalls: [{ name: "run_subagent", args: { name: "helper", task: prompt } }],
+        complete: true,
+      },
+    ];
+  }
+  if (
+    lower.includes("hand this to") ||
+    lower.includes("hand off to") ||
+    lower.includes("handoff to") ||
+    (lower.includes("@writer") && lower.includes("draft"))
+  ) {
+    const target = inferHandoffTargetName(prompt) ?? "Writer";
+    return [
+      {
+        assistant: "handing this off in the group thread.",
+        toolCalls: [
+          {
+            name: "handoff_to_bot",
+            args: {
+              confirm_name: target,
+              message: prompt,
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.startsWith("run taught skill:") || lower.includes("this is a safe test")) {
+    return [
+      {
+        assistant:
+          "Running the taught skill using its saved playbook. I will follow the demonstrated steps and report the result.",
+        complete: true,
+      },
+    ];
+  }
+  if (/^run\s+/.test(lower)) {
+    return [
+      {
+        assistant:
+          "Using the saved taught skill playbook for that request and following its steps.",
         complete: true,
       },
     ];

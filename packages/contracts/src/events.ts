@@ -26,6 +26,10 @@ export const ProductEventType = z.enum([
   "routine.created",
   "routine.updated",
   "routine.fired",
+  "skill.teaching.started",
+  "skill.teaching.stopped",
+  "skill.draft.created",
+  "skill.saved",
   "effect.recorded",
   "agent.tool.called",
   "effect.reconciled",
@@ -33,6 +37,9 @@ export const ProductEventType = z.enum([
   "bot.spawned",
   "bot.archived",
   "bot.deleted",
+  "group.created",
+  "group.updated",
+  "group.handoff",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
 
@@ -71,7 +78,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
-  z.object({ kind: z.literal("progress"), text: z.string() }),
+  z.object({
+    kind: z.literal("progress"),
+    text: z.string(),
+    pendingToolNames: z.array(z.string()).optional(),
+  }),
   z.object({
     kind: z.literal("steps"),
     steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
@@ -93,6 +104,22 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
+    kind: z.literal("skill_draft"),
+    skillId: Id,
+    name: z.string(),
+    goal: z.string(),
+    playbook: z.object({
+      whenToUse: z.string(),
+      inputs: z.array(z.string()),
+      steps: z.array(z.string()),
+      howToCheck: z.string(),
+      whatToReturn: z.string(),
+      approvalBoundaries: z.string(),
+      failureHandling: z.string(),
+    }),
+    status: z.enum(["draft", "saved"]),
+  }),
+  z.object({
     kind: z.literal("image"),
     artifactId: Id,
     mimeType: z.string(),
@@ -104,6 +131,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     mimeType: z.string(),
     name: z.string(),
     size: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal("handoff"),
+    fromBotId: Id,
+    toBotId: Id,
+    text: z.string(),
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;
@@ -127,6 +160,8 @@ export const ThreadMessageSchema = z.object({
   seq: z.number().int().nonnegative(),
   role: MessageRole,
   blocks: z.array(MessageBlock),
+  botId: Id.optional(),
+  replyToMessageId: Id.optional(),
   runId: Id.optional(),
   createdAt: z.string(),
 });

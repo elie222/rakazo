@@ -5,6 +5,7 @@ export const DELEGATION_TOOL_NAMES = new Set([
   "spawn_bot",
   "archive_bot",
   "delete_bot",
+  "handoff_to_bot",
 ]);
 
 export const builtinAgentTools: ConnectorTool[] = [
@@ -203,6 +204,23 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
       },
       required: ["confirm_name"],
+    },
+  },
+  {
+    name: "handoff_to_bot",
+    description:
+      "In a group chat only: hand the next stage to another current member. Appends a visible handoff in the shared thread and starts that bot asynchronously.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_id: { type: "string", description: "Target member bot id." },
+        confirm_name: {
+          type: "string",
+          description: "Exact name of the target member when bot_id is omitted.",
+        },
+        message: { type: "string", description: "What the receiving bot should do next." },
+      },
+      required: ["message"],
     },
   },
 ];

@@ -9,52 +9,52 @@ export function projectMessages(
     createdAt: Date | string;
     id: string;
     threadId: string;
+    botId?: string | null;
   }>,
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
-  // The live bot message merges narration and tool calls into one bubble, in the order they
-  // happened: fullStreamText is the whole model text stream (deltas are relative to it, never
-  // reset by a tool call), flushedUpTo marks how much of it is already folded into liveBlocks,
-  // and the remainder renders as the still-streaming tail.
-  let fullStreamText = "";
-  let flushedUpTo = 0;
-  let liveBlocks: MessageBlock[] = [];
-  // Tool calls that landed mid-sentence wait here until the narration catches up to a sentence
-  // boundary, so the step chips never render in the middle of a clause.
-  let pendingToolNames: string[] = [];
-  let liveMeta: {
-    id: string;
-    threadId: string;
-    seq: number;
-    runId?: string;
-    createdAt: string;
-  } | null = null;
+  type LiveProjection = {
+    blocks: MessageBlock[];
+    meta: {
+      id: string;
+      threadId: string;
+      seq: number;
+      botId?: string;
+      runId?: string;
+      createdAt: string;
+    };
+  };
+  const liveById = new Map<string, LiveProjection>();
   const liveSubagents = new Map<string, ThreadMessage>();
   const durableSubagents = new Set<string>();
-  const resetLive = () => {
-    fullStreamText = "";
-    flushedUpTo = 0;
-    liveBlocks = [];
-    pendingToolNames = [];
-    liveMeta = null;
+  const liveProjection = (event: (typeof events)[number], createdAt: string): LiveProjection => {
+    const id = progressMessageId(event);
+    const existing = liveById.get(id);
+    if (existing) return existing;
+    const projection: LiveProjection = {
+      blocks: [],
+      meta: {
+        id,
+        threadId: event.threadId,
+        seq: event.seq,
+        botId: event.botId ?? undefined,
+        runId: event.runId ?? undefined,
+        createdAt,
+      },
+    };
+    liveById.set(id, projection);
+    return projection;
   };
-  const tryFlushPendingTools = () => {
-    if (pendingToolNames.length === 0) return;
-    const tailText = fullStreamText.slice(flushedUpTo);
-    if (!endsSentence(tailText)) return;
-    liveBlocks = appendTextSegment(liveBlocks, tailText);
-    flushedUpTo = fullStreamText.length;
-    for (const name of pendingToolNames) {
-      liveBlocks = appendToolCallSegment(liveBlocks, name);
-    }
-    pendingToolNames = [];
+  const clearLive = (event: (typeof events)[number]) => {
+    if (event.runId) liveById.delete(progressMessageId(event));
+    else liveById.clear();
   };
   for (const event of events) {
     const payload = asRecord(event.payload);
     const createdAt =
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
     if (event.type === "thread.message.created") {
-      resetLive();
+      clearLive(event);
       const role = (payload.role as ThreadMessage["role"]) ?? "bot";
       const blocks = (payload.blocks as MessageBlock[]) ?? [];
       for (const block of blocks) {
@@ -69,38 +69,40 @@ export function projectMessages(
         seq: event.seq,
         role,
         blocks,
+        botId: event.botId ?? undefined,
         runId: event.runId ?? undefined,
         createdAt,
       });
       continue;
     }
     if (event.type === "thread.progress") {
-      fullStreamText = progressMessageText(payload, fullStreamText);
-      tryFlushPendingTools();
-      liveMeta = {
-        id: progressMessageId(event),
-        threadId: event.threadId,
+      const live = liveProjection(event, createdAt);
+      live.blocks = reduceLiveMessageBlocks(live.blocks, { type: "progress", payload });
+      live.meta = {
+        ...live.meta,
         seq: event.seq,
-        runId: event.runId ?? undefined,
+        botId: event.botId ?? undefined,
         createdAt,
       };
       continue;
     }
     if (event.type === "agent.tool.called") {
-      pendingToolNames.push(String(payload.name ?? ""));
-      tryFlushPendingTools();
-      liveMeta = {
-        id: progressMessageId(event),
-        threadId: event.threadId,
+      const live = liveProjection(event, createdAt);
+      live.blocks = reduceLiveMessageBlocks(live.blocks, {
+        type: "tool",
+        name: String(payload.name ?? ""),
+      });
+      live.meta = {
+        ...live.meta,
         seq: event.seq,
-        runId: event.runId ?? undefined,
+        botId: event.botId ?? undefined,
         createdAt,
       };
       continue;
     }
     if (event.type === "thread.cleared") {
       messages.length = 0;
-      resetLive();
+      liveById.clear();
       liveSubagents.clear();
       durableSubagents.clear();
       continue;
@@ -114,6 +116,7 @@ export function projectMessages(
         seq: event.seq,
         role: "bot",
         blocks: [block],
+        botId: event.botId ?? undefined,
         runId: event.runId ?? undefined,
         createdAt,
       });
@@ -124,24 +127,21 @@ export function projectMessages(
       event.type === "run.failed" ||
       event.type === "run.cancelled"
     ) {
-      resetLive();
+      clearLive(event);
     }
   }
   for (const live of liveSubagents.values()) messages.push(live);
-  if (liveMeta) {
-    const tailText = fullStreamText.slice(flushedUpTo);
-    const blocks = tailText
-      ? [...liveBlocks, { kind: "progress" as const, text: tailText }]
-      : liveBlocks;
-    if (blocks.length > 0) {
+  for (const live of liveById.values()) {
+    if (live.blocks.length > 0) {
       messages.push({
-        id: liveMeta.id,
-        threadId: liveMeta.threadId,
-        seq: liveMeta.seq,
+        id: live.meta.id,
+        threadId: live.meta.threadId,
+        seq: live.meta.seq,
         role: "bot",
-        blocks,
-        runId: liveMeta.runId,
-        createdAt: liveMeta.createdAt,
+        blocks: live.blocks,
+        botId: live.meta.botId,
+        runId: live.meta.runId,
+        createdAt: live.meta.createdAt,
       });
     }
   }
@@ -150,6 +150,53 @@ export function projectMessages(
 
 export function progressMessageId(event: { runId?: string | null; id?: string }): string {
   return `progress:${event.runId ?? event.id ?? "live"}`;
+}
+
+export type LiveMessageUpdate =
+  | { type: "progress"; payload: Record<string, unknown> | undefined }
+  | { type: "tool"; name: string };
+
+export function reduceLiveMessageBlocks(
+  blocks: readonly MessageBlock[],
+  update: LiveMessageUpdate,
+): MessageBlock[] {
+  const tail = blocks.at(-1);
+  const segments = tail?.kind === "progress" ? blocks.slice(0, -1) : blocks;
+  const priorText = liveMessageText(blocks);
+  const flushedLength =
+    tail?.kind === "progress" ? priorText.length - tail.text.length : priorText.length;
+  const tailText =
+    update.type === "progress"
+      ? progressMessageText(update.payload, priorText).slice(flushedLength)
+      : tail?.kind === "progress"
+        ? tail.text
+        : "";
+  const pendingToolNames = [
+    ...(tail?.kind === "progress" ? (tail.pendingToolNames ?? []) : []),
+    ...(update.type === "tool" ? [update.name] : []),
+  ];
+
+  if (pendingToolNames.length > 0 && endsSentence(tailText)) {
+    let next = appendTextSegment(segments, tailText);
+    for (const name of pendingToolNames) next = appendToolCallSegment(next, name);
+    return next;
+  }
+  if (!tailText) return [...segments];
+  return [
+    ...segments,
+    {
+      kind: "progress",
+      text: tailText,
+      ...(pendingToolNames.length > 0 ? { pendingToolNames } : {}),
+    },
+  ];
+}
+
+function liveMessageText(blocks: readonly MessageBlock[]): string {
+  return blocks
+    .filter((block) => block.kind === "text" || block.kind === "progress")
+    .map((block) => block.text)
+    .join("");
 }
 
 export type ToolStep = { label: string; count: number };

@@ -1,50 +1,37 @@
 import type {
   ComputerStatus,
-  MessageBlock,
   ProductEvent,
   ThreadMessage,
   ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
-  appendTextSegment,
-  appendToolCallSegment,
-  endsSentence,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
-  progressMessageText,
+  reduceLiveMessageBlocks,
   subagentBlockFromPayload,
 } from "@rakazo/core";
 
-// reduceThreadSnapshot runs once per incoming event with no memory of its own beyond the
-// `prev`/`next` snapshots, so a tool call held back mid-sentence (see flushPendingTools below)
-// needs somewhere to live between calls. Keyed by run id; cleared once the run's durable
-// message arrives.
-const pendingToolsByRun = new Map<string, string[]>();
-
-// If `tailText` (the narration not yet folded into `segments`) now ends a sentence, fold it in
-// followed by every tool call held back since the sentence started, and return the result.
-// Returns null when there's nothing pending or the sentence hasn't finished yet — the caller
-// keeps waiting.
-function flushPendingTools(
+function takeLiveMessage(
+  messages: readonly ThreadMessage[],
   liveId: string,
-  segments: readonly MessageBlock[],
-  tailText: string,
-): MessageBlock[] | null {
-  const pending = pendingToolsByRun.get(liveId);
-  if (!pending || pending.length === 0 || !endsSentence(tailText)) return null;
-  let next = appendTextSegment(segments, tailText);
-  for (const name of pending) next = appendToolCallSegment(next, name);
-  pendingToolsByRun.delete(liveId);
-  return next;
-}
-
-function liveStreamTextSoFar(blocks: readonly MessageBlock[]): string {
-  return blocks
-    .filter((block) => block.kind === "text" || block.kind === "progress")
-    .map((block) => (block.kind === "text" || block.kind === "progress" ? block.text : ""))
-    .join("");
+  activeRuns: ThreadSnapshot["activeRuns"],
+): { previous: ThreadMessage | undefined; remaining: ThreadMessage[] } {
+  const activeRunIds = new Set(activeRuns?.map((run) => run.id) ?? []);
+  let previous: ThreadMessage | undefined;
+  const remaining: ThreadMessage[] = [];
+  for (const message of messages) {
+    if (message.id === liveId) {
+      previous = message;
+    } else if (
+      !message.id.startsWith("progress:") ||
+      (message.runId && activeRunIds.has(message.runId))
+    ) {
+      remaining.push(message);
+    }
+  }
+  return { previous, remaining };
 }
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
@@ -54,6 +41,12 @@ const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "suspended",
   "error",
 ]);
+
+export function activeThreadRuns(
+  snapshot: ThreadSnapshot | null,
+): NonNullable<ThreadSnapshot["activeRuns"]> {
+  return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
+}
 
 export function mergeThreadSnapshot(
   prev: ThreadSnapshot | null,
@@ -82,98 +75,77 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
   );
 }
 
-// React StrictMode invokes a setState updater twice in development to surface impure updaters.
-// This reducer holds tool-call state pending a sentence boundary in a module-level Map
-// (pendingToolsByRun) rather than in the returned snapshot, so a naive replay would mutate it a
-// second time and corrupt the pending count. Memoize the last (prev, event) pair so a replay of
-// the exact same event returns the exact same result without touching pendingToolsByRun again.
-let lastReducedPrev: ThreadSnapshot | null = null;
-let lastReducedEventId: string | null = null;
-let lastReducedResult: ThreadSnapshot | null = null;
-
 export function reduceThreadSnapshot(
-  prev: ThreadSnapshot | null,
-  event: ProductEvent,
-): ThreadSnapshot | null {
-  if (prev === lastReducedPrev && event.id === lastReducedEventId) return lastReducedResult;
-  const result = reduceThreadSnapshotOnce(prev, event);
-  lastReducedPrev = prev;
-  lastReducedEventId = event.id;
-  lastReducedResult = result;
-  return result;
-}
-
-function reduceThreadSnapshotOnce(
   prev: ThreadSnapshot | null,
   event: ProductEvent,
 ): ThreadSnapshot | null {
   if (!prev) return prev;
   if (event.type === "thread.cleared") {
-    return { ...prev, cursor: event.seq, messages: [], olderCursor: null, run: null };
-  }
-  if (event.type === "run.waiting_input") {
-    const run = prev.run;
-    if (!run || run.id !== event.runId || run.status === "waiting_input") return prev;
     return {
       ...prev,
       cursor: event.seq,
-      run: { ...run, status: "waiting_input" },
+      messages: [],
+      olderCursor: null,
+      run: null,
+      activeRuns: [],
+    };
+  }
+  if (event.type === "run.waiting_input") {
+    const runChanged = Boolean(
+      prev.run && prev.run.id === event.runId && prev.run.status !== "waiting_input",
+    );
+    const activeRunChanged = prev.activeRuns?.some(
+      (candidate) => candidate.id === event.runId && candidate.status !== "waiting_input",
+    );
+    if (!runChanged && !activeRunChanged) return prev;
+    return {
+      ...prev,
+      cursor: event.seq,
+      run: runChanged && prev.run ? { ...prev.run, status: "waiting_input" } : prev.run,
+      activeRuns: activeRunChanged
+        ? prev.activeRuns?.map((candidate) =>
+            candidate.id === event.runId ? { ...candidate, status: "waiting_input" } : candidate,
+          )
+        : prev.activeRuns,
     };
   }
   if (event.type === "thread.progress") {
     const liveId = progressMessageId(event);
-    const previous = prev.messages.find((message) => message.id === liveId);
-    const priorBlocks = previous?.blocks ?? [];
-    const flushedBlocks =
-      priorBlocks.at(-1)?.kind === "progress" ? priorBlocks.slice(0, -1) : priorBlocks;
-    // Deltas are relative to the whole stream so far, not just the unflushed tail — reconstruct
-    // the full text, then take only what's beyond what earlier segments already captured.
-    const flushedLength = liveStreamTextSoFar(flushedBlocks).length;
-    const fullText = progressMessageText(event.payload, liveStreamTextSoFar(priorBlocks));
-    const tailText = fullText.slice(flushedLength);
-    const blocks =
-      flushPendingTools(liveId, flushedBlocks, tailText) ??
-      (tailText
-        ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
-        : flushedBlocks);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
+      type: "progress",
+      payload: event.payload,
+    });
     const streaming: ThreadMessage = {
       id: liveId,
       threadId: event.threadId,
       seq: event.seq,
       role: "bot",
       blocks,
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
-    const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
-    return { ...prev, cursor: event.seq, messages: [...without, streaming] };
+    return { ...prev, cursor: event.seq, messages: [...remaining, streaming] };
   }
   if (event.type === "agent.tool.called") {
     const liveId = progressMessageId(event);
-    const previous = prev.messages.find((message) => message.id === liveId);
-    const priorBlocks = previous?.blocks ?? [];
-    const tail = priorBlocks.at(-1);
-    const tailText = tail?.kind === "progress" ? tail.text : "";
-    const flushedBlocks = tail?.kind === "progress" ? priorBlocks.slice(0, -1) : priorBlocks;
-    const pending = pendingToolsByRun.get(liveId) ?? [];
-    pending.push(String(event.payload.name ?? ""));
-    pendingToolsByRun.set(liveId, pending);
-    const blocks =
-      flushPendingTools(liveId, flushedBlocks, tailText) ??
-      (tailText
-        ? [...flushedBlocks, { kind: "progress" as const, text: tailText }]
-        : flushedBlocks);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
+      type: "tool",
+      name: String(event.payload.name ?? ""),
+    });
     const next: ThreadMessage = {
       id: liveId,
       threadId: event.threadId,
       seq: event.seq,
       role: "bot",
       blocks,
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
-    const without = prev.messages.filter((message) => message.id !== liveId);
-    return { ...prev, cursor: event.seq, messages: [...without, next] };
+    return { ...prev, cursor: event.seq, messages: [...remaining, next] };
   }
   if (event.type === "thread.subagent") {
     const block = subagentBlockFromPayload(event.payload);
@@ -183,22 +155,17 @@ function reduceThreadSnapshotOnce(
       seq: event.seq,
       role: "bot",
       blocks: [block],
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
     const without = prev.messages.filter(
-      (message) =>
-        message.id !== next.id &&
-        !message.id.startsWith("progress:") &&
-        !message.id.startsWith("steps:"),
+      (message) => message.id !== next.id && !message.id.startsWith("progress:"),
     );
-    const kept = prev.messages.filter(
-      (message) => message.id.startsWith("progress:") || message.id.startsWith("steps:"),
-    );
+    const kept = prev.messages.filter((message) => message.id.startsWith("progress:"));
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
-    pendingToolsByRun.delete(progressMessageId(event));
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
     const next: ThreadMessage = {
@@ -207,22 +174,37 @@ function reduceThreadSnapshotOnce(
       seq: event.seq,
       role,
       blocks,
+      botId: event.botId,
       runId: event.runId,
       createdAt: event.createdAt,
     };
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
-    const without = prev.messages.filter(
-      (message) =>
-        message.id !== next.id &&
-        !message.id.startsWith("progress:") &&
-        !message.id.startsWith("steps:") &&
-        !replacedSubagent(message, replacedSubagentIds),
+    const liveId = progressMessageId(event);
+    const { remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const without = remaining.filter(
+      (message) => message.id !== next.id && !replacedSubagent(message, replacedSubagentIds),
     );
     return { ...prev, cursor: event.seq, messages: [...without, next] };
   }
   return prev;
+}
+
+export function userHoldsComputerControl(
+  computer: Pick<ComputerStatus, "controlHolder" | "controlBotId"> | null | undefined,
+  botId: string | undefined,
+): boolean {
+  return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
+}
+
+export function computerPanelAutoBoot(
+  state: ComputerStatus["state"] | undefined,
+  screenUrl?: string | null,
+): "boot" | "recover-screen" | "wait" {
+  if (state === "booting" || state === "suspended") return "wait";
+  if (state === "running") return screenUrl ? "wait" : "recover-screen";
+  return "boot";
 }
 
 export function reduceComputerStatus(
@@ -232,12 +214,16 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.granted") {
-    return prev.controlHolder === "user" ? prev : { ...prev, controlHolder: "user" };
+    return prev.controlHolder === "user" && prev.controlBotId === event.botId
+      ? prev
+      : { ...prev, controlHolder: "user", controlBotId: event.botId };
   }
   if (event.type === "computer.takeover.released") {
     const holder = event.payload.holder;
     if (holder !== "bot" && holder !== "none") return prev;
-    return prev.controlHolder === holder ? prev : { ...prev, controlHolder: holder };
+    return prev.controlHolder === holder && prev.controlBotId === null
+      ? prev
+      : { ...prev, controlHolder: holder, controlBotId: null };
   }
   const status = event.payload.status;
   if (!isComputerState(status)) return prev;

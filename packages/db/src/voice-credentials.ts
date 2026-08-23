@@ -12,3 +12,19 @@ export function findDefaultVoiceCredential(
     orderBy: newestVoiceCredentialOrder,
   });
 }
+
+export function findVoiceCredential(
+  prisma: PrismaClient,
+  scope: { userId: string; workspaceId: string },
+  provider: string,
+) {
+  return prisma.userVoiceCredential.findUnique({
+    where: {
+      userId_workspaceId_provider: {
+        userId: scope.userId,
+        workspaceId: scope.workspaceId,
+        provider,
+      },
+    },
+  });
+}

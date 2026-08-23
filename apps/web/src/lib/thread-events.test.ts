@@ -6,11 +6,14 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  activeThreadRuns,
+  computerPanelAutoBoot,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  userHoldsComputerControl,
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
@@ -300,7 +303,13 @@ describe("thread event reduction", () => {
     expect(afterTool?.messages).toEqual([
       expect.objectContaining({
         id: "progress:run-1",
-        blocks: [{ kind: "progress", text: "Let me check Slack " }],
+        blocks: [
+          {
+            kind: "progress",
+            text: "Let me check Slack ",
+            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          },
+        ],
       }),
     ]);
 
@@ -412,14 +421,106 @@ describe("thread event reduction", () => {
     expect(afterMore?.messages).toEqual([
       expect.objectContaining({
         id: "progress:run-1",
-        blocks: [{ kind: "progress", text: "Let me check Slack Found it, now sanding" }],
+        blocks: [
+          {
+            kind: "progress",
+            text: "Let me check Slack Found it, now sanding",
+            pendingToolNames: ["SLACK_FIND_CHANNELS"],
+          },
+        ],
       }),
     ]);
   });
 
+  it("restores pending tool calls from a refreshed snapshot", () => {
+    const refreshed = snapshot([
+      message("progress:run-1", [
+        {
+          kind: "progress",
+          text: "Let me check Slack ",
+          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        },
+      ]),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      refreshed,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { delta: "now.", streaming: true },
+      }),
+    );
+
+    expect(next?.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "Let me check Slack now." },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+    ]);
+  });
+
+  it("does not leak pending tool calls after clearing a thread", () => {
+    const withPending = snapshot([
+      message("progress:run-1", [
+        {
+          kind: "progress",
+          text: "Old unfinished narration ",
+          pendingToolNames: ["SLACK_FIND_CHANNELS"],
+        },
+      ]),
+    ]);
+    const cleared = reduceThreadSnapshot(
+      withPending,
+      event({ type: "thread.cleared", seq: 7, runId: undefined }),
+    );
+    const next = reduceThreadSnapshot(
+      cleared,
+      event({ type: "thread.progress", seq: 8, runId: "run-1", payload: { text: "Fresh." } }),
+    );
+
+    expect(next?.messages[0]?.blocks).toEqual([{ kind: "progress", text: "Fresh." }]);
+  });
+
+  it("preserves another active group run while updating live progress", () => {
+    const runA = {
+      id: "run-a",
+      botId: "bot-a",
+      threadId: "thread-1",
+      taskId: "task-a",
+      status: "running" as const,
+      trigger: "user" as const,
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const runB = { ...runA, id: "run-b", botId: "bot-b", taskId: "task-b" };
+    const otherLive = {
+      ...message("progress:run-b", [{ kind: "progress" as const, text: "Other bot" }]),
+      botId: "bot-b",
+      runId: "run-b",
+    };
+    const initial = { ...snapshot([otherLive]), activeRuns: [runA, runB] };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 8,
+        runId: "run-a",
+        botId: "bot-a",
+        payload: { text: "Current bot" },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["progress:run-b", "progress:run-a"]);
+    expect(next?.messages.map((item) => item.botId)).toEqual(["bot-b", "bot-a"]);
+  });
+
   it("clears the step trail once the durable answer arrives", () => {
     const initial = snapshot([
-      message("steps:run-1", [
+      message("progress:run-1", [
         { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
       ]),
     ]);
@@ -434,6 +535,43 @@ describe("thread event reduction", () => {
     );
 
     expect(next?.messages.map((item) => item.id)).toEqual(["final"]);
+  });
+
+  it("updates a waiting group run without replacing the newer active run", () => {
+    const newerRun = {
+      id: "run-newer",
+      botId: "bot-a",
+      threadId: "thread-1",
+      taskId: "task-a",
+      status: "running" as const,
+      trigger: "user" as const,
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const waitingRun = { ...newerRun, id: "run-waiting", botId: "bot-b", taskId: "task-b" };
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      run: newerRun,
+      activeRuns: [newerRun, waitingRun],
+    };
+
+    const waiting = reduceThreadSnapshot(
+      initial,
+      event({ type: "run.waiting_input", seq: 6, runId: "run-waiting" }),
+    );
+
+    expect(waiting?.run).toEqual(newerRun);
+    expect(waiting?.activeRuns?.find((run) => run.id === "run-waiting")?.status).toBe(
+      "waiting_input",
+    );
+    expect(activeThreadRuns(waiting)).toEqual([
+      newerRun,
+      expect.objectContaining({ id: "run-waiting", status: "waiting_input" }),
+    ]);
+    expect(activeThreadRuns({ ...initial, activeRuns: undefined })).toEqual([newerRun]);
   });
 
   it("replaces an ask message when its durable prompt state changes", () => {
@@ -463,6 +601,25 @@ describe("thread event reduction", () => {
     expect(next?.messages).toHaveLength(1);
     expect(next?.messages[0]?.blocks[0]).toMatchObject({ status: "answered", answer: "Paris" });
   });
+
+  it("preserves botId on durable bot messages", () => {
+    const initial = snapshot([]);
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        botId: "bot-researcher",
+        payload: {
+          messageId: "msg-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "on it." }],
+        },
+      }),
+    );
+
+    expect(next?.messages[0]?.botId).toBe("bot-researcher");
+  });
 });
 
 describe("computer event reduction", () => {
@@ -487,14 +644,22 @@ describe("computer event reduction", () => {
       computer({ state: "suspended", controlHolder: "bot" }),
       event({ type: "computer.takeover.granted", payload: {} }),
     );
-    expect(granted).toMatchObject({ state: "suspended", controlHolder: "user" });
+    expect(granted).toMatchObject({
+      state: "suspended",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     expect(
       reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
     ).toBe(granted);
   });
 
   it("applies the authoritative holder when a takeover is released or expires", () => {
-    const initial = computer({ state: "running", controlHolder: "user" });
+    const initial = computer({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
     const expired = reduceComputerStatus(
       initial,
       event({
@@ -509,8 +674,40 @@ describe("computer event reduction", () => {
         payload: { holder: "bot", reason: "released" },
       }),
     );
-    expect(expired).toMatchObject({ state: "running", controlHolder: "none" });
-    expect(released).toMatchObject({ state: "running", controlHolder: "bot" });
+    expect(expired).toMatchObject({
+      state: "running",
+      controlHolder: "none",
+      controlBotId: null,
+    });
+    expect(released).toMatchObject({
+      state: "running",
+      controlHolder: "bot",
+      controlBotId: null,
+    });
+  });
+
+  it("fills in controlBotId when a grant arrives after controlHolder is already user", () => {
+    const granted = reduceComputerStatus(
+      computer({ state: "running", controlHolder: "user", controlBotId: null }),
+      event({ type: "computer.takeover.granted", payload: {} }),
+    );
+    expect(granted).toMatchObject({
+      state: "running",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+    });
+    expect(userHoldsComputerControl(granted, "bot-1")).toBe(true);
+    expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
+  });
+
+  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
+    expect(computerPanelAutoBoot("stopped")).toBe("boot");
+    expect(computerPanelAutoBoot("error")).toBe("boot");
+    expect(computerPanelAutoBoot(undefined)).toBe("boot");
+    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
+    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
+    expect(computerPanelAutoBoot("booting")).toBe("wait");
+    expect(computerPanelAutoBoot("suspended")).toBe("wait");
   });
 });
 
@@ -535,6 +732,8 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     controlHolder: "none",
     controlBotId: null,
     screenAvailable: false,
+    screenWidth: 1280,
+    screenHeight: 800,
     homeRevision: null,
     busyBotName: null,
     ...overrides,

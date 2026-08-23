@@ -2,11 +2,13 @@ import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMobileThreadEvent,
+  blockText,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
   prependMobileMessagePage,
   rpc,
+  shouldApplyMobileThreadRefresh,
   signIn,
   signOut,
   subscribeThread,
@@ -123,7 +125,7 @@ describe("mobile thread subscription", () => {
     vi.stubGlobal("fetch", fetchMock);
     const onEvent = vi.fn();
 
-    await subscribeThread("bot-1", 3, onEvent, new AbortController().signal);
+    await subscribeThread({ botId: "bot-1" }, 3, onEvent, new AbortController().signal);
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:3100/rpc/threads/subscribe",
@@ -149,7 +151,7 @@ describe("mobile thread subscription", () => {
       vi.fn(async () => new Response(null, { status: 503 })),
     );
     await expect(
-      subscribeThread("bot-1", -1, vi.fn(), new AbortController().signal),
+      subscribeThread({ botId: "bot-1" }, -1, vi.fn(), new AbortController().signal),
     ).rejects.toThrow("rpc threads/subscribe failed (503)");
 
     vi.stubGlobal(
@@ -157,8 +159,47 @@ describe("mobile thread subscription", () => {
       vi.fn(async () => new Response(null, { status: 200 })),
     );
     await expect(
-      subscribeThread("bot-1", -1, vi.fn(), new AbortController().signal),
+      subscribeThread({ botId: "bot-1" }, -1, vi.fn(), new AbortController().signal),
     ).rejects.toThrow("rpc threads/subscribe failed (200)");
+  });
+});
+
+describe("mobile thread refresh targeting", () => {
+  it("drops a deferred group A refresh after navigation to group B", async () => {
+    let activeGroupId: string | undefined = "group-a";
+    let currentEpoch = 1;
+    let resolveRequest!: (snapshot: MobileSnapshot) => void;
+    const request = new Promise<MobileSnapshot>((resolve) => {
+      resolveRequest = resolve;
+    });
+    let applied: MobileSnapshot | null = null;
+    const refresh = request.then((snapshot) => {
+      if (
+        shouldApplyMobileThreadRefresh({
+          requestEpoch: 1,
+          currentEpoch,
+          targetBotId: undefined,
+          targetGroupId: "group-a",
+          activeBotId: undefined,
+          activeGroupId,
+        })
+      ) {
+        applied = snapshot;
+      }
+    });
+
+    activeGroupId = "group-b";
+    currentEpoch += 1;
+    resolveRequest({
+      groupId: "group-a",
+      threadId: "thread-a",
+      messages: [],
+      olderCursor: null,
+      run: null,
+    });
+    await refresh;
+
+    expect(applied).toBeNull();
   });
 });
 
@@ -210,23 +251,71 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(second?.messages).toEqual([
-      { id: "progress:run-1", role: "bot", blocks: [{ kind: "progress", text: "Hello" }] },
+      {
+        id: "progress:run-1",
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "progress", text: "Hello" }],
+      },
     ]);
+  });
+
+  it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
+    const narration = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { text: "Let me check " },
+    });
+    const pending = applyMobileThreadEvent(narration, {
+      type: "agent.tool.called",
+      runId: "run-1",
+      payload: { name: "SLACK_FIND_CHANNELS" },
+    });
+    const completed = applyMobileThreadEvent(pending, {
+      type: "thread.progress",
+      runId: "run-1",
+      payload: { delta: "now." },
+    });
+
+    expect(pending?.messages[0]?.blocks).toEqual([
+      {
+        kind: "progress",
+        text: "Let me check ",
+        pendingToolNames: ["SLACK_FIND_CHANNELS"],
+      },
+    ]);
+    expect(completed?.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "Let me check now." },
+      { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+    ]);
+    expect(blockText(completed?.messages[0] as MobileMessage)).toBe(
+      "Let me check now.\nSlack find channels",
+    );
   });
 
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
     const initial = snapshot([
       mobileMessage("message-1", [{ kind: "text", text: "old" }]),
       mobileMessage("subagent:research", [
-        { kind: "subagent", agentId: "research", status: "running" },
+        {
+          kind: "subagent",
+          agentId: "research",
+          name: "Research",
+          task: "Search",
+          status: "running",
+        },
       ]),
-      mobileMessage("subagent:other", [{ kind: "subagent", agentId: "other", status: "running" }]),
+      mobileMessage("subagent:other", [
+        { kind: "subagent", agentId: "other", name: "Other", task: "Wait", status: "running" },
+      ]),
       mobileMessage("progress:run-1", [{ kind: "progress", text: "draft" }]),
     ]);
     const completed = {
-      kind: "subagent",
+      kind: "subagent" as const,
       agentId: "research",
-      status: "completed",
+      name: "Research",
+      task: "Search",
+      status: "completed" as const,
       result: "Done",
     };
 
@@ -243,7 +332,7 @@ describe("mobile thread event reduction", () => {
 
   it("clears loaded history and active state when another client clears the thread", () => {
     const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "old" }])], 1);
-    initial.run = { status: "running" };
+    initial.run = { id: "run-1", status: "running" };
 
     const next = applyMobileThreadEvent(initial, { type: "thread.cleared", seq: 12 });
 
@@ -251,7 +340,7 @@ describe("mobile thread event reduction", () => {
   });
 
   it("applies the durable waiting-input run transition", () => {
-    const initial: MobileSnapshot = { ...snapshot(), run: { status: "running" } };
+    const initial: MobileSnapshot = { ...snapshot(), run: { id: "run-1", status: "running" } };
     const waiting = applyMobileThreadEvent(initial, {
       type: "run.waiting_input",
       runId: "run-1",
@@ -261,6 +350,28 @@ describe("mobile thread event reduction", () => {
     expect(applyMobileThreadEvent(waiting, { type: "run.waiting_input", runId: "run-1" })).toBe(
       waiting,
     );
+  });
+
+  it("updates a waiting group run without replacing the newer active run", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "run-newer", status: "running" },
+      activeRuns: [
+        { id: "run-newer", status: "running" },
+        { id: "run-waiting", status: "running" },
+      ],
+    };
+
+    const waiting = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      runId: "run-waiting",
+    });
+
+    expect(waiting?.run).toEqual({ id: "run-newer", status: "running" });
+    expect(waiting?.activeRuns).toEqual([
+      { id: "run-newer", status: "running" },
+      { id: "run-waiting", status: "waiting_input" },
+    ]);
   });
 
   it("leaves the snapshot unchanged for unrelated events", () => {

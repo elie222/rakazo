@@ -282,7 +282,85 @@ describe("projectMessages", () => {
     // No sentence terminator has streamed in yet, so the "Shell" call stays hidden and
     // everything so far renders as one continuous progress tail.
     expect(messages[0]?.blocks).toEqual([
-      { kind: "progress", text: "Let me check what I have locally and try the GitHub API" },
+      {
+        kind: "progress",
+        text: "Let me check what I have locally and try the GitHub API",
+        pendingToolNames: ["shell"],
+      },
+    ]);
+  });
+
+  it("keeps interleaved group runs and their tool calls isolated", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        botId: "bot-a",
+        seq: 0,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "Alpha " },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        botId: "bot-b",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r2",
+        payload: { text: "Beta." },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        botId: "bot-a",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell" },
+        createdAt: "2026-01-01T00:00:02.000Z",
+      },
+      {
+        id: "e4",
+        threadId: "t1",
+        botId: "bot-b",
+        seq: 3,
+        type: "agent.tool.called",
+        runId: "r2",
+        payload: { name: "read_file" },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+      {
+        id: "e5",
+        threadId: "t1",
+        botId: "bot-a",
+        seq: 4,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { delta: "done." },
+        createdAt: "2026-01-01T00:00:04.000Z",
+      },
+    ]);
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        id: "progress:r1",
+        botId: "bot-a",
+        blocks: [
+          { kind: "text", text: "Alpha done." },
+          { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+        ],
+      }),
+      expect.objectContaining({
+        id: "progress:r2",
+        botId: "bot-b",
+        blocks: [
+          { kind: "text", text: "Beta." },
+          { kind: "steps", steps: [{ label: "Read file", count: 1 }] },
+        ],
+      }),
     ]);
   });
 
