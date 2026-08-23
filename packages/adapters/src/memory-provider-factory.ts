@@ -93,6 +93,19 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function decodeCredentials(provider: string, plaintext: string): Record<string, string> {
+  try {
+    const credentials = stringRecord(JSON.parse(plaintext));
+    if (Object.keys(credentials).length > 0) return credentials;
+  } catch {
+    // Configurations created before the generic provider boundary stored the API key directly.
+  }
+  if (provider === SUPERMEMORY_PROVIDER_ID && plaintext.trim()) {
+    return { apiKey: plaintext };
+  }
+  throw new Error(`Stored credentials for memory provider "${provider}" are invalid.`);
+}
+
 export class WorkspaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
     private readonly prisma: Pick<PrismaClient, "workspaceMemoryConfig">,
@@ -105,7 +118,10 @@ export class WorkspaceMemoryProviderResolver implements MemoryProviderResolver {
       include: { secret: true },
     });
     if (!config) return null;
-    const credentials = stringRecord(JSON.parse(this.secrets.load(config.secret.ciphertext)));
+    const credentials = decodeCredentials(
+      config.provider,
+      this.secrets.load(config.secret.ciphertext),
+    );
     return {
       provider: createMemoryProvider(config.provider, stringRecord(config.settings), credentials),
       defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
