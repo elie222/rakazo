@@ -6,7 +6,38 @@ export async function loadMessagePage(
   threadId: string,
   before: number | undefined,
   pageSize: number,
+  around?: { messageId?: string; seq?: number },
 ): Promise<ThreadMessagePage> {
+  if (around) {
+    let targetSeq = around.seq;
+    if (targetSeq === undefined && around.messageId) {
+      const row = await prisma.message.findFirst({
+        where: { id: around.messageId, threadId },
+        select: { seq: true },
+      });
+      targetSeq = row?.seq;
+    }
+    if (targetSeq !== undefined) {
+      const half = Math.floor(pageSize / 2);
+      const minSeq = Math.max(0, targetSeq - half);
+      const maxSeq = targetSeq + half;
+      const rows = await prisma.message.findMany({
+        where: { threadId, seq: { gte: minSeq, lte: maxSeq } },
+        orderBy: { seq: "asc" },
+        take: pageSize,
+      });
+      const first = rows[0];
+      const hasOlder = first
+        ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
+        : false;
+      return {
+        threadId,
+        messages: rows.map(toThreadMessage),
+        olderCursor: hasOlder ? (first?.seq ?? null) : null,
+      };
+    }
+  }
+
   const rows = await prisma.message.findMany({
     where: {
       threadId,
@@ -45,6 +76,8 @@ function toThreadMessage(row: {
   seq: number;
   role: string;
   blocks: Prisma.JsonValue;
+  botId: string | null;
+  replyToMessageId: string | null;
   runId: string | null;
   createdAt: Date;
 }): ThreadMessage {
@@ -54,6 +87,8 @@ function toThreadMessage(row: {
     seq: row.seq,
     role: row.role as ThreadMessage["role"],
     blocks: row.blocks as ThreadMessage["blocks"],
+    botId: row.botId ?? undefined,
+    replyToMessageId: row.replyToMessageId ?? undefined,
     runId: row.runId ?? undefined,
     createdAt: row.createdAt.toISOString(),
   };

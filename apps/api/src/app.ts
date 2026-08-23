@@ -1,8 +1,14 @@
 import { rm } from "node:fs/promises";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { JobPublisher, RealtimeFanout, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  ManagedConnectorProvider,
+  RealtimeFanout,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import {
   type ComposioProvider,
+  type ConnectorRegistry,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -15,13 +21,20 @@ import {
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
+  InstalledConnectorProvider,
   isComposioEnabled,
+  isPipedreamEnabled,
   LocalAgentHomeStore,
+  LocalArtifactStore,
   PiAgentRuntime,
   PiOAuthLogins,
+  PipedreamConnector,
   PostgresRealtimeFanout,
+  pipedreamConfigFromEnv,
   pushTokenPath,
+  type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -30,6 +43,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
   app: Hono;
@@ -38,6 +52,7 @@ export interface AppHandles {
   sandbox: SandboxProvider;
   connector: DestinationEmulator;
   composio?: ComposioProvider;
+  connectors: ConnectorRegistry;
   executor: ReturnType<typeof createRunExecutor>;
   stop: () => Promise<void>;
 }
@@ -47,12 +62,16 @@ export async function createApp(
     prisma?: PrismaClient;
     realtime?: RealtimeFanout;
     composio?: ComposioProvider;
+    pipedream?: ManagedConnectorProvider;
+    remoteConnectors?: RemoteConnectorDependencies;
   } = {},
 ): Promise<AppHandles> {
   const {
     prisma: prismaOverride,
     realtime: realtimeOverride,
     composio: composioOverride,
+    pipedream: pipedreamOverride,
+    remoteConnectors,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -86,17 +105,30 @@ export async function createApp(
     daytonaApiKey: env.daytonaApiKey,
     daytonaApiUrl: env.daytonaApiUrl,
     daytonaTarget: env.daytonaTarget,
+    boxApiKey: env.boxApiKey,
+    boxApiUrl: env.boxApiUrl,
     dataDir: env.dataDir,
     prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
+  const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
+  const artifacts = new LocalArtifactStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
-  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride);
+  const pipedreamConfig = pipedreamConfigFromEnv(env);
+  const pipedream =
+    pipedreamOverride ??
+    (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
+  const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
+  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
+    installed,
+    ...(pipedream ? [pipedream] : []),
+  ]);
   const connector = stack.destination;
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);
+  void pipedream?.warmDirectory?.().catch(() => undefined);
   const runtime =
     env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
@@ -123,7 +155,7 @@ export async function createApp(
       await Promise.all(
         bots.map((bot) =>
           destroyBot(
-            { prisma, sandbox, home, jobs, dataDir: env.dataDir },
+            { prisma, sandbox, home, jobs, artifacts, dataDir: env.dataDir },
             bot,
             {
               operationId: `account-delete:${userId}`,
@@ -145,8 +177,11 @@ export async function createApp(
     runtime,
     sandbox,
     memory,
+    memoryProviders,
     home,
+    artifacts,
     connector: stack.connector,
+    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
@@ -165,6 +200,10 @@ export async function createApp(
     events,
     workerId: "api",
     composio: stack.composio,
+    runtime,
+    secretStore: secrets,
+    memoryProviders,
+    deploymentModelKey: env.openRouterKey,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -179,10 +218,13 @@ export async function createApp(
     jobs,
     sandbox,
     memory,
+    memoryProviders,
     home,
     secrets,
     oauthLogins,
-    composio: stack.composio,
+    connectors: stack.connector,
+    remoteConnectors,
+    artifacts,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,
@@ -224,14 +266,21 @@ export async function createApp(
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
+  mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
+    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    if (!session?.user) return null;
+    return requireMembership(prisma, session.user.id).catch(() => null);
+  });
   app.get("/health", (c) =>
     c.json({
       ok: true,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
       composio: Boolean(stack.composio),
+      pipedream: Boolean(pipedream),
       jobs: jobKind,
       realtime: realtime.describe().id,
+      revision: env.gitSha ?? null,
     }),
   );
 
@@ -242,6 +291,7 @@ export async function createApp(
     sandbox,
     connector,
     composio: stack.composio,
+    connectors: stack.connector,
     executor,
     stop: async () => {
       oauthLogins.abortAll();

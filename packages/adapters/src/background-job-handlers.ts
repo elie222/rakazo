@@ -1,5 +1,6 @@
 import type {
   AgentHomeStore,
+  AgentRuntime,
   BackgroundJobHandlers,
   JobPublisher,
   SandboxProvider,
@@ -10,6 +11,10 @@ import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 import { syncGtasksSlackInbox } from "./gtasks-slack-mirror.js";
+import { compactHistory } from "./history-compaction.js";
+import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import type { EncryptedSecretStore } from "./secrets.js";
+import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -20,6 +25,10 @@ export function createBackgroundJobHandlers(deps: {
   events: ThreadEvents;
   workerId: string;
   composio: ComposioProvider | undefined;
+  runtime: AgentRuntime;
+  secretStore: EncryptedSecretStore;
+  memoryProviders: MemoryProviderResolver;
+  deploymentModelKey?: string;
 }): BackgroundJobHandlers {
   return {
     "run.continue": async (payload) => {
@@ -46,6 +55,22 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
       if (result.status === "error") throw new Error(result.message);
+    },
+    "skill.teaching-expire": async (payload) => {
+      await expireTaughtSkillTeaching(deps, payload.skillId);
+    },
+    "history.compact": async (payload) => {
+      await compactHistory(
+        {
+          prisma: deps.prisma,
+          runtime: deps.runtime,
+          jobs: deps.jobs,
+          memoryProviders: deps.memoryProviders,
+          deploymentModelKey: deps.deploymentModelKey,
+          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
+        },
+        payload.threadId,
+      );
     },
   };
 }

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Pink Rakazo bot avatar</title>
+  <circle cx="32" cy="32" r="30" fill="#1A1A1D" />
+  <path fill="#D9508A" d="M5 62c0-10 7-16 13-20-1-11 5-20 15-20s16 9 15 19c7 5 12 11 12 21H5Z" />
+  <rect x="25" y="34" width="5" height="10" rx="2.5" fill="#07152B" />
+  <rect x="35" y="34" width="5" height="10" rx="2.5" fill="#07152B" />
+</svg>

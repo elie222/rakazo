@@ -15,6 +15,7 @@ type ConnectionRow = {
   id: string;
   workspaceId: string;
   userId: string;
+  connectorId: string;
   provider: string;
   status: string;
 };
@@ -40,12 +41,13 @@ function createPrisma(
         where,
         data,
       }: {
-        where: { userId?: string; provider?: string };
+        where: { userId?: string; connectorId?: string; provider?: string };
         data: { status: string };
       }) => {
         let count = 0;
         for (const row of rows) {
           if (where.userId !== undefined && row.userId !== where.userId) continue;
+          if (where.connectorId !== undefined && row.connectorId !== where.connectorId) continue;
           if (where.provider !== undefined && row.provider !== where.provider) continue;
           row.status = data.status;
           count += 1;
@@ -70,27 +72,34 @@ function createPrisma(
       }
       if (query.includes("pg_advisory_xact_lock_shared")) return [];
       if (query.includes('FROM "member"')) return [{ id: "member-1" }];
-      if (query.includes('SELECT "id", "provider"') && query.includes('WHERE "id"')) {
+      if (
+        query.includes('SELECT "id", "connectorId", "provider"') &&
+        query.includes('WHERE "id"')
+      ) {
         const [id, workspaceId, userId] = values;
         return rows
           .filter(
             (row) => row.id === id && row.workspaceId === workspaceId && row.userId === userId,
           )
-          .map(({ id: rowId, provider }) => ({ id: rowId, provider }));
+          .map(({ id: rowId, connectorId, provider }) => ({ id: rowId, connectorId, provider }));
       }
       if (query.includes('SELECT "id"') && query.includes('WHERE "userId"')) {
-        const [userId, provider] = values;
+        const [userId, connectorId, provider] = values;
         return rows
-          .filter((row) => row.userId === userId && row.provider === provider)
+          .filter(
+            (row) =>
+              row.userId === userId && row.connectorId === connectorId && row.provider === provider,
+          )
           .map(({ id }) => ({ id }));
       }
       if (query.includes('SELECT "provider"') && query.includes('FROM "connections"')) {
-        const [workspaceId, userId, googleTasks, slack] = values;
+        const [workspaceId, userId, connectorId, googleTasks, slack] = values;
         return rows
           .filter(
             (row) =>
               row.workspaceId === workspaceId &&
               row.userId === userId &&
+              row.connectorId === connectorId &&
               row.status === "connected" &&
               (row.provider === googleTasks || row.provider === slack),
           )
@@ -128,6 +137,7 @@ function connectedRows(): ConnectionRow[] {
       id: "connection-1",
       workspaceId: context.workspaceId,
       userId: context.userId,
+      connectorId: GTASKS_SLACK_ROUTING.connectorId,
       provider: "GOOGLETASKS",
       status: "connected",
     },
@@ -143,7 +153,7 @@ describe("connection revocation", () => {
     });
 
     await revokeConnection(
-      { prisma: prisma as never, composio: { revoke } },
+      { prisma: prisma as never, connectors: connectorRegistry(revoke) as never },
       "connection-1",
       context,
     );
@@ -153,6 +163,7 @@ describe("connection revocation", () => {
     expect(prisma.connection.updateMany).toHaveBeenCalledWith({
       where: {
         userId: context.userId,
+        connectorId: GTASKS_SLACK_ROUTING.connectorId,
         provider: "GOOGLETASKS",
       },
       data: { status: "revoked" },
@@ -167,7 +178,9 @@ describe("connection revocation", () => {
       revokeConnection(
         {
           prisma: prisma as never,
-          composio: { revoke: vi.fn(async () => Promise.reject(new Error("offline"))) },
+          connectors: connectorRegistry(
+            vi.fn(async () => Promise.reject(new Error("offline"))),
+          ) as never,
         },
         "connection-1",
         context,
@@ -189,7 +202,7 @@ describe("connection revocation", () => {
     });
 
     const revocation = revokeConnection(
-      { prisma: prisma as never, composio: { revoke } },
+      { prisma: prisma as never, connectors: connectorRegistry(revoke) as never },
       "connection-1",
       context,
     );
@@ -218,7 +231,7 @@ describe("connection revocation", () => {
 
       await expect(
         revokeConnection(
-          { prisma: prisma as never, composio: { revoke } },
+          { prisma: prisma as never, connectors: connectorRegistry(revoke) as never },
           "connection-1",
           context,
         ),
@@ -240,6 +253,7 @@ describe("connection revocation", () => {
         id: "slack-1",
         workspaceId: context.workspaceId,
         userId: context.userId,
+        connectorId: GTASKS_SLACK_ROUTING.connectorId,
         provider: slack,
         status: "connected",
       },
@@ -247,6 +261,7 @@ describe("connection revocation", () => {
         id: "google-2",
         workspaceId: workspaceB,
         userId: context.userId,
+        connectorId: GTASKS_SLACK_ROUTING.connectorId,
         provider: googleTasks,
         status: "connected",
       },
@@ -254,6 +269,7 @@ describe("connection revocation", () => {
         id: "slack-2",
         workspaceId: workspaceB,
         userId: context.userId,
+        connectorId: GTASKS_SLACK_ROUTING.connectorId,
         provider: slack,
         status: "connected",
       },
@@ -293,7 +309,11 @@ describe("connection revocation", () => {
     );
     await reachedDelivery.promise;
 
-    await revokeConnection({ prisma: prisma as never, composio }, "connection-1", context);
+    await revokeConnection(
+      { prisma: prisma as never, connectors: connectorRegistry(composio.revoke) as never },
+      "connection-1",
+      context,
+    );
     releaseDelivery.resolve();
     const result = await sync;
 
@@ -303,3 +323,7 @@ describe("connection revocation", () => {
     expect(rows.find((row) => row.id === "slack-2")?.status).toBe("connected");
   });
 });
+
+function connectorRegistry(revoke: (provider: string, context: unknown) => Promise<void>) {
+  return { managed: vi.fn(() => ({ revoke })) };
+}

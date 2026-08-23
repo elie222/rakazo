@@ -881,7 +881,7 @@ describe("gtasks-slack mirror", () => {
 
     expect(result).toEqual({ status: "skipped", reason: "connector_unavailable" });
     expect(port.posts).toHaveLength(0);
-    expect(await connectionsReadyForGtasksSlack(composio, ctx.userId)).toEqual({
+    expect(await connectionsReadyForGtasksSlack(composio, ctx)).toEqual({
       googleTasks: false,
       slack: false,
     });

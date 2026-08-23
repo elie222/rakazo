@@ -9,6 +9,8 @@ function handlers(): BackgroundJobHandlers {
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "integration.gtasks_slack.mirror": vi.fn(async () => undefined),
+    "skill.teaching-expire": vi.fn(async () => undefined),
+    "history.compact": vi.fn(async () => undefined),
   };
 }
 

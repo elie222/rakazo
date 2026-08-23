@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  openNewBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -80,9 +81,7 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
   await captureScreenshot(page, testInfo, "45-private-computer-restored");
 });
 
-test("user control blocks another Team bot until the computer is released", async ({
-  page,
-}, testInfo) => {
+test("user control leaves another Team bot's screen available", async ({ page }, testInfo) => {
   const stamp = Date.now();
   const marker = `after-release-${stamp}`;
 
@@ -103,37 +102,26 @@ test("user control blocks another Team bot until the computer is released", asyn
     `write a file in your home called notes/result.txt that says ${marker}`,
   );
 
-  await expect
-    .poll(async () => (await threadSnapshot(page, workerId)).run?.status ?? "idle", {
-      timeout: 5_000,
-      intervals: [250, 500, 1_000],
-      message: "the worker must remain queued while the user controls the Team Computer",
-    })
-    .toBe("queued");
-  // Keep control through multiple executor retry windows and prove no tool side effect occurs.
-  await page.waitForTimeout(1_500);
-  await expect(
-    rpc<{ controlHolder: string }>(page, "computer/status", { botId: workerId }),
-  ).resolves.toMatchObject({ controlHolder: "user" });
-  await expect(readFileResponse(page, workerId, "notes/result.txt")).resolves.toMatchObject({
-    ok: false,
-  });
-  await captureScreenshot(page, testInfo, "46-team-computer-user-control-blocks-bot");
-
-  const release = page.getByRole("button", { name: "Release", exact: true });
-  if (!(await release.isVisible().catch(() => false))) {
-    await page.getByTitle("Agent computer").click();
-  }
-  await expect(release).toBeVisible();
-  await expect(page.getByText("You have control", { exact: true })).toBeVisible();
-  await release.click();
-
   await waitForRun(page, workerId, workerRunId);
+  await expect(
+    rpc<{ controlHolder: string; controlBotId: string | null }>(page, "computer/status", {
+      botId: workerId,
+    }),
+  ).resolves.toMatchObject({ controlHolder: "user", controlBotId: chiefId });
   await expect(readFile(page, workerId, "notes/result.txt")).resolves.toContain(marker);
+  await captureScreenshot(page, testInfo, "46-team-computer-user-control-allows-parallel-bot");
+
+  await rpc(page, "computer/release", { botId: chiefId });
+  await expect(
+    rpc<{ controlHolder: string; controlBotId: string | null }>(page, "computer/status", {
+      botId: chiefId,
+    }),
+  ).resolves.toMatchObject({ controlHolder: "bot", controlBotId: null });
+
   await expect(readFileResponse(page, chiefId, "notes/result.txt")).resolves.toMatchObject({
     ok: false,
   });
-  await captureScreenshot(page, testInfo, "47-team-computer-released-to-bot");
+  await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
 test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
@@ -178,7 +166,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   const team = page.getByRole("button", { name: "Team", exact: true });
   const privateComputer = page.getByRole("button", { name: "Private", exact: true });

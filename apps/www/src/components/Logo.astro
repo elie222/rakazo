@@ -7,6 +7,13 @@ const { href = "/" } = Astro.props as Props;
 ---
 
 <a class="brand-lockup" href={href} aria-label="Rakazo home">
-  <span class="brand-lockup__mark" aria-hidden="true"></span>
+  <img
+    class="brand-lockup__mark"
+    src="/brand/rakazo-mark.svg"
+    width="36"
+    height="36"
+    alt=""
+    aria-hidden="true"
+  />
   <span class="brand-lockup__word">rakazo</span>
 </a>

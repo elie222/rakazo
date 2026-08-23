@@ -106,6 +106,36 @@ export default function Account() {
         <Pressable
           accessibilityRole="button"
           disabled={pending}
+          onPress={() => router.push("/voice")}
+          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+        >
+          <View>
+            <Text style={styles.settingsTitle}>Voice</Text>
+            <Text style={styles.settingsExplanation}>
+              Speak replies aloud with ElevenLabs, OpenAI, or Cartesia
+            </Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={pending}
+          onPress={() => router.push("/integrations")}
+          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+        >
+          <View>
+            <Text style={styles.settingsTitle}>Integrations</Text>
+            <Text style={styles.settingsExplanation}>
+              Connect apps and add Treg, MCP, or OpenAPI tools
+            </Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={pending}
           onPress={() => void handleSignOut()}
           style={({ pressed }) => [styles.button, pressed && styles.pressed]}
         >

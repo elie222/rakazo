@@ -2,17 +2,20 @@ import { rm } from "node:fs/promises";
 import type {
   AdapterContext,
   AgentHomeStore,
+  ArtifactStore,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import type { Actor, Bot } from "@rakazo/contracts";
+import { type Actor, type Bot, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
+  type Prisma,
   type PrismaClient,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
@@ -187,6 +190,7 @@ type BotLifecycleDeps = {
   home: AgentHomeStore;
   jobs: JobPublisher;
   dataDir?: string;
+  artifacts?: ArtifactStore;
 };
 
 type LifecycleBot = {
@@ -194,6 +198,7 @@ type LifecycleBot = {
   workspaceId: string;
   name: string;
   archivedAt: Date | null;
+  computerId?: string | null;
 };
 
 export async function archiveSpawnedBot(
@@ -279,6 +284,7 @@ export async function archiveBot(
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
     });
+    await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
     await tx.computer.updateMany({
       where: {
         OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
@@ -300,6 +306,7 @@ export async function archiveBot(
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
+  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
   const currentDedicated = dedicated
     ? await deps.prisma.computer.findUnique({ where: { id: dedicated.id } })
     : null;
@@ -343,45 +350,212 @@ export async function destroyBot(
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...routines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
+  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
   if (dedicated?.providerRef) {
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.computer.updateMany({
-      where: {
-        ...(dedicated ? { id: { not: dedicated.id } } : {}),
-        OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
-      },
-      data: releasedComputerLease(),
-    });
-    if (!options.deleteMemories) {
-      const directory = archivedMemoryDirectory(bot.name, bot.id);
-      await tx.$executeRaw`
-        UPDATE "memory_documents"
-        SET "botId" = NULL,
-            "scope" = 'user',
-            "path" = ${directory} || '/' || "path",
-            "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "botId" = ${bot.id}
+  const deletion = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM bots
+        WHERE id = ${bot.id} AND "workspaceId" = ${bot.workspaceId}
+        FOR UPDATE
       `;
-    }
-    await tx.botDeletion.create({
-      data: {
-        id: bot.id,
-        workspaceId: bot.workspaceId,
-        name: bot.name,
-        deletedByUserId: context.userId,
-        memoriesPreserved: !options.deleteMemories,
-      },
-    });
-    await tx.bot.delete({ where: { id: bot.id } });
-    if (dedicated) await tx.computer.delete({ where: { id: dedicated.id } });
-  });
+      const botArtifacts = await tx.artifact.findMany({
+        where: { botId: bot.id, groupId: null, workspaceId: bot.workspaceId },
+        select: { storageKey: true },
+      });
+      await tx.artifact.deleteMany({
+        where: { botId: bot.id, groupId: null, workspaceId: bot.workspaceId },
+      });
+      const groupCleanup = await detachBotFromGroups(tx, bot.id);
+      await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
+      await tx.computer.updateMany({
+        where: {
+          ...(dedicated ? { id: { not: dedicated.id } } : {}),
+          OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
+        },
+        data: releasedComputerLease(),
+      });
+      if (!options.deleteMemories) {
+        const directory = archivedMemoryDirectory(bot.name, bot.id);
+        await tx.$executeRaw`
+          UPDATE "memory_documents"
+          SET "botId" = NULL,
+              "scope" = 'user',
+              "path" = ${directory} || '/' || "path",
+              "updatedAt" = CURRENT_TIMESTAMP
+          WHERE "botId" = ${bot.id}
+        `;
+      }
+      await tx.botDeletion.create({
+        data: {
+          id: bot.id,
+          workspaceId: bot.workspaceId,
+          name: bot.name,
+          deletedByUserId: context.userId,
+          memoriesPreserved: !options.deleteMemories,
+        },
+      });
+      await tx.bot.delete({ where: { id: bot.id } });
+      if (dedicated) await tx.computer.delete({ where: { id: dedicated.id } });
+      return {
+        artifactKeys: [
+          ...botArtifacts.map((artifact) => artifact.storageKey),
+          ...groupCleanup.artifactKeys,
+        ],
+        cancelledGroupRuns: groupCleanup.cancelledRuns,
+      };
+    }),
+  );
+  await Promise.allSettled(
+    deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
+  );
+  const stoppedGroupBots = [
+    ...new Map(
+      deletion.cancelledGroupRuns.map((run) => [
+        run.botId,
+        { id: run.botId, computer: run.computer },
+      ]),
+    ).values(),
+  ];
+  await Promise.all(
+    stoppedGroupBots.map(async (stoppedBot) => {
+      if (!stoppedBot.computer?.providerRef) return;
+      await deps.sandbox
+        .releaseScreen?.(toComputerRef(stoppedBot.computer), {
+          ...context,
+          operationId: `destroy-group-run:${stoppedBot.id}`,
+          botId: stoppedBot.id,
+        })
+        .catch(() => undefined);
+    }),
+  );
   if (dedicated) {
     await rm(resolveAgentHomePath(deps.home, dedicated.homeKey, deps.dataDir ?? "./data"), {
       recursive: true,
       force: true,
     }).catch(() => undefined);
+  }
+  const artifactStore = deps.artifacts;
+  if (artifactStore) {
+    await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
+  }
+}
+
+async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) {
+  await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT groups.id
+    FROM chat_groups AS groups
+    INNER JOIN chat_group_members AS members ON members."groupId" = groups.id
+    WHERE members."botId" = ${botId}
+    ORDER BY groups.id
+    FOR UPDATE OF groups
+  `;
+  const affectedGroups = await tx.chatGroup.findMany({
+    where: { members: { some: { botId } } },
+    include: {
+      members: {
+        select: { botId: true, bot: { select: { archivedAt: true } } },
+      },
+      thread: { select: { id: true } },
+    },
+  });
+  const dissolvedGroupIds: string[] = [];
+  for (const group of affectedGroups) {
+    const activeMembersAfterDeletion = group.members.filter(
+      (member) => member.botId !== botId && member.bot.archivedAt === null,
+    ).length;
+    if (activeMembersAfterDeletion < GROUP_MEMBER_MIN) {
+      dissolvedGroupIds.push(group.id);
+    }
+  }
+  const dissolvedGroupIdSet = new Set(dissolvedGroupIds);
+  const dissolvedThreadIds = affectedGroups
+    .filter((group) => dissolvedGroupIdSet.has(group.id))
+    .flatMap((group) => (group.thread ? [group.thread.id] : []));
+  const activeRuns = dissolvedThreadIds.length
+    ? await tx.run.findMany({
+        where: {
+          threadId: { in: dissolvedThreadIds },
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: {
+          id: true,
+          taskId: true,
+          botId: true,
+          bot: {
+            select: {
+              computer: { select: { homeKey: true, kind: true, providerRef: true } },
+            },
+          },
+        },
+      })
+    : [];
+  if (activeRuns.length) {
+    const now = new Date();
+    const runIds = activeRuns.map((run) => run.id);
+    await tx.run.updateMany({
+      where: { id: { in: runIds } },
+      data: {
+        status: "cancelled",
+        completedAt: now,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    await tx.attempt.updateMany({
+      where: { runId: { in: runIds }, status: "running" },
+      data: { status: "cancelled", finishedAt: now },
+    });
+    await tx.task.updateMany({
+      where: { id: { in: activeRuns.map((run) => run.taskId) } },
+      data: { status: "cancelled" },
+    });
+    await tx.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+    await tx.computer.updateMany({
+      where: { executionRunId: { in: runIds } },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
+  }
+  if (affectedGroups.length) {
+    await tx.chatGroupMember.deleteMany({ where: { botId } });
+  }
+  const groupArtifacts = dissolvedGroupIds.length
+    ? await tx.artifact.findMany({
+        where: { groupId: { in: dissolvedGroupIds } },
+        select: { storageKey: true },
+      })
+    : [];
+  if (dissolvedGroupIds.length) {
+    await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
+  }
+  return {
+    artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
+    cancelledRuns: activeRuns.map((run) => ({
+      id: run.id,
+      botId: run.botId,
+      computer: run.bot.computer,
+    })),
+  };
+}
+
+async function removeStoredArtifacts(
+  artifacts: ArtifactStore | undefined,
+  storageKeys: string[],
+  context: AdapterContext,
+) {
+  if (!artifacts) return;
+  const results = await Promise.allSettled(
+    [...new Set(storageKeys)].map((storageKey) => artifacts.remove(storageKey, context)),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
   }
 }
 
@@ -400,4 +574,16 @@ function releasedComputerLease() {
     executionBotId: null,
     executionLeaseExpiresAt: null,
   };
+}
+
+async function releaseTeamComputerScreen(
+  deps: BotLifecycleDeps,
+  bot: LifecycleBot,
+  dedicatedId: string | undefined,
+  context: AdapterContext,
+) {
+  if (!bot.computerId || bot.computerId === dedicatedId) return;
+  const computer = await deps.prisma.computer.findUnique({ where: { id: bot.computerId } });
+  if (!computer?.providerRef) return;
+  await deps.sandbox.releaseScreen?.(toComputerRef(computer), context).catch(() => undefined);
 }

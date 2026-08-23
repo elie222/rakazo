@@ -1,14 +1,23 @@
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  compareScreenshotsWithBaseline,
+  createScreenshotManifest,
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
+  shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
 } from "../playwright-report-dashboard.js";
+import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
 
-const [historyPath, dashboardPath, testResultsPath, galleryPath] = process.argv.slice(2);
+const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
+  process.argv.slice(2);
+const MAX_SCREENSHOT_COUNT = 100;
+const MAX_ARTIFACT_ENTRIES = 2_000;
+const MAX_ARTIFACT_DEPTH = 12;
 
 if (!historyPath || !dashboardPath || !testResultsPath || !galleryPath) {
   throw new Error(
@@ -16,21 +25,33 @@ if (!historyPath || !dashboardPath || !testResultsPath || !galleryPath) {
   );
 }
 
-const screenshots = await collectScreenshots(testResultsPath, galleryPath);
+const collectedScreenshots = await collectScreenshots(testResultsPath, galleryPath);
+const comparison = compareScreenshotsWithBaseline(
+  collectedScreenshots,
+  await readOptionalJson(baselineManifestPath),
+);
+const screenshots = comparison.screenshots;
 const createdAt = new Date().toISOString();
 const dashboardUrl = getRequiredEnvironmentVariable("PLAYWRIGHT_DASHBOARD_URL");
-const reportUrl = getRequiredEnvironmentVariable("PLAYWRIGHT_REPORT_URL");
+const reportUrl = getOptionalHttpsEnvironmentVariable("PLAYWRIGHT_REPORT_URL");
 const screenshotsUrl = getRequiredEnvironmentVariable("PLAYWRIGHT_SCREENSHOTS_URL");
 const result = getRequiredEnvironmentVariable("PLAYWRIGHT_RESULT");
 const runUrl = getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_URL");
 const sha = getRequiredEnvironmentVariable("PLAYWRIGHT_SHA");
+const pullRequestNumber = getOptionalNumber("PLAYWRIGHT_PR_NUMBER");
+const pullRequestUrl = getOptionalHttpsEnvironmentVariable("PLAYWRIGHT_PR_URL");
 const existingHistory = await readHistory(historyPath);
-const history = updatePlaywrightHistory(existingHistory, {
+const runIdentity = {
   attempt: getRequiredNumber("PLAYWRIGHT_RUN_ATTEMPT"),
+  id: getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_ID"),
+};
+const history = updatePlaywrightHistory(existingHistory, {
+  ...runIdentity,
   branch: getRequiredEnvironmentVariable("PLAYWRIGHT_BRANCH"),
   createdAt,
   event: getRequiredEnvironmentVariable("PLAYWRIGHT_EVENT"),
-  id: getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_ID"),
+  pullRequestNumber,
+  pullRequestUrl,
   reportUrl,
   result,
   runNumber: getRequiredNumber("PLAYWRIGHT_RUN_NUMBER"),
@@ -46,14 +67,30 @@ await mkdir(galleryPath, { recursive: true });
 await writeFile(historyPath, `${JSON.stringify(history, null, 2)}\n`);
 await writeFile(dashboardPath, renderPlaywrightDashboard(history));
 await writeFile(
+  path.join(galleryPath, "manifest.json"),
+  `${JSON.stringify(createScreenshotManifest(screenshots, runIdentity), null, 2)}\n`,
+);
+await writeFile(
+  path.join(galleryPath, "publish-stable-baseline"),
+  `${shouldPublishStableMainBaseline({
+    candidate: runIdentity,
+    existingBaseline: await readOptionalJson(process.env.PLAYWRIGHT_EXISTING_STABLE_BASELINE_PATH),
+    history,
+  })}\n`,
+);
+await writeFile(
   path.join(galleryPath, "index.html"),
   renderScreenshotGallery({
+    baselineAvailable: comparison.baselineAvailable,
     createdAt,
     dashboardUrl,
+    pullRequestNumber,
+    pullRequestUrl,
     reportUrl,
     result,
     runUrl,
     screenshots,
+    screenshotsUrl,
     sha,
   }),
 );
@@ -65,28 +102,49 @@ console.log(
 async function collectScreenshots(
   resultsPath: string,
   outputPath: string,
-): Promise<PlaywrightScreenshot[]> {
+): Promise<Array<Omit<PlaywrightScreenshot, "comparison">>> {
   const files = (await findPngFiles(resultsPath)).sort((left, right) =>
     path.basename(left).localeCompare(path.basename(right)),
   );
+  if (files.length > MAX_SCREENSHOT_COUNT) {
+    throw new Error(
+      `Playwright artifact contains ${files.length} screenshots; maximum is ${MAX_SCREENSHOT_COUNT}`,
+    );
+  }
   const imagePath = path.join(outputPath, "images");
   await mkdir(imagePath, { recursive: true });
 
-  return Promise.all(
-    files.map(async (file, index) => {
-      const source = path.relative(resultsPath, file);
-      const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
-      await copyFile(file, path.join(imagePath, fileName));
-      return {
-        fileName: `images/${fileName}`,
-        source,
-        title: titleFromFileName(path.basename(file)),
-      };
-    }),
-  );
+  const screenshots: Array<Omit<PlaywrightScreenshot, "comparison">> = [];
+  for (const [index, file] of files.entries()) {
+    const info = await stat(file);
+    if (!info.isFile() || info.size <= 0 || info.size > MAX_PNG_SCREENSHOT_BYTES) {
+      throw new Error(`Invalid screenshot size for ${file}`);
+    }
+    const screenshot = await readFile(file);
+    validatePngScreenshot(screenshot, file);
+    const source = path.relative(resultsPath, file);
+    const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
+    await copyFile(file, path.join(imagePath, fileName));
+    screenshots.push({
+      captureType: isFailureCapture(file) ? "failure" : "checkpoint",
+      fileName: `images/${fileName}`,
+      hash: createHash("sha256").update(screenshot).digest("hex"),
+      source,
+      testId: testIdFromSource(source),
+      title: titleFromFileName(path.basename(file)),
+    });
+  }
+  return screenshots;
 }
 
-async function findPngFiles(directory: string): Promise<string[]> {
+async function findPngFiles(
+  directory: string,
+  depth = 0,
+  budget = { entries: 0 },
+): Promise<string[]> {
+  if (depth > MAX_ARTIFACT_DEPTH) {
+    throw new Error(`Playwright artifact exceeds maximum directory depth of ${MAX_ARTIFACT_DEPTH}`);
+  }
   let entries: Dirent[];
   try {
     entries = await readdir(directory, { withFileTypes: true });
@@ -94,12 +152,16 @@ async function findPngFiles(directory: string): Promise<string[]> {
     if (isNodeError(error) && error.code === "ENOENT") return [];
     throw error;
   }
+  budget.entries += entries.length;
+  if (budget.entries > MAX_ARTIFACT_ENTRIES) {
+    throw new Error(`Playwright artifact exceeds maximum entry count of ${MAX_ARTIFACT_ENTRIES}`);
+  }
 
   const files = await Promise.all(
     entries.map(async (entry) => {
       const entryPath = path.join(directory, entry.name);
       if (entry.isDirectory() && entry.name === "attachments") return [];
-      if (entry.isDirectory()) return findPngFiles(entryPath);
+      if (entry.isDirectory()) return findPngFiles(entryPath, depth + 1, budget);
       return entry.isFile() && entry.name.toLowerCase().endsWith(".png") ? [entryPath] : [];
     }),
   );
@@ -117,9 +179,27 @@ function titleFromFileName(fileName: string): string {
     .replaceAll(/[-_]+/g, " ");
 }
 
+function isFailureCapture(fileName: string): boolean {
+  return /^test-failed(?:-\d+)?\.png$/i.test(path.basename(fileName));
+}
+
+function testIdFromSource(source: string): string {
+  const directory = path.dirname(source);
+  return directory === "." ? "Unknown test" : directory.split(path.sep).join(" / ");
+}
+
 function getRequiredEnvironmentVariable(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+function getOptionalHttpsEnvironmentVariable(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  if (!URL.canParse(value) || new URL(value).protocol !== "https:") {
+    throw new Error(`${name} must use HTTPS`);
+  }
   return value;
 }
 
@@ -129,11 +209,39 @@ function getRequiredNumber(name: string): number {
   return value;
 }
 
+function getOptionalNumber(name: string): number | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0)
+    throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
 async function readHistory(filePath: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(filePath, "utf8"));
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function readOptionalJson(filePath: string | undefined): Promise<unknown> {
+  if (!filePath) return undefined;
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile() || info.size > 1_000_000) {
+      console.warn("Ignoring an invalid or oversized Playwright baseline manifest.");
+      return undefined;
+    }
+    return JSON.parse(await readFile(filePath, "utf8"));
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return undefined;
+    if (error instanceof SyntaxError) {
+      console.warn("Ignoring an invalid Playwright baseline manifest.");
+      return null;
+    }
     throw error;
   }
 }

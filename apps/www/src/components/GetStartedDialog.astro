@@ -1,0 +1,81 @@
+---
+import { GITHUB_URL } from "../site";
+import Button from "./Button.astro";
+import WaitlistForm from "./WaitlistForm.astro";
+---
+
+<dialog class="get-started-dialog" data-get-started-dialog aria-labelledby="get-started-title">
+  <div class="get-started-dialog__panel">
+    <button
+      class="get-started-dialog__close"
+      type="button"
+      data-get-started-close
+      aria-label="Close get started dialog"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </svg>
+    </button>
+
+    <div data-get-started-signup>
+      <div class="eyebrow">Rakazo Cloud</div>
+      <h2 id="get-started-title">Get started with Rakazo</h2>
+      <p class="get-started-dialog__copy">
+        Leave your email and we’ll let you know when your hosted workspace is ready.
+      </p>
+      <div class="get-started-dialog__form">
+        <WaitlistForm emailId="get-started-email" />
+      </div>
+    </div>
+
+    <div class="get-started-dialog__success" data-get-started-success hidden>
+      <div class="get-started-dialog__success-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6"></path>
+        </svg>
+      </div>
+      <h2 id="get-started-success-title" tabindex="-1" data-get-started-success-title>You’re in.</h2>
+      <p class="get-started-dialog__copy">
+        We’ll email you when hosted Rakazo is ready. Want to start today? Rakazo is already available on GitHub.
+      </p>
+      <div class="get-started-dialog__actions">
+        <Button href={GITHUB_URL} external>View on GitHub</Button>
+        <button class="button button--secondary" type="button" data-get-started-close>Done</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>("[data-get-started-dialog]");
+  const openers = document.querySelectorAll<HTMLButtonElement>("[data-get-started-open]");
+  const closeButtons = dialog?.querySelectorAll<HTMLButtonElement>("[data-get-started-close]");
+  const signup = dialog?.querySelector<HTMLElement>("[data-get-started-signup]");
+  const success = dialog?.querySelector<HTMLElement>("[data-get-started-success]");
+  const successTitle = dialog?.querySelector<HTMLElement>("[data-get-started-success-title]");
+  const email = dialog?.querySelector<HTMLInputElement>("input[type='email']");
+
+  openers.forEach((opener) => {
+    opener.addEventListener("click", () => {
+      if (!dialog || dialog.open) return;
+      dialog.showModal();
+      window.requestAnimationFrame(() => email?.focus());
+    });
+  });
+
+  closeButtons?.forEach((button) => {
+    button.addEventListener("click", () => dialog?.close());
+  });
+
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  dialog?.addEventListener("waitlist:joined", () => {
+    if (!signup || !success) return;
+    signup.hidden = true;
+    success.hidden = false;
+    dialog.setAttribute("aria-labelledby", "get-started-success-title");
+    successTitle?.focus();
+  });
+</script>

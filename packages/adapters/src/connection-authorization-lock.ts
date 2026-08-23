@@ -28,11 +28,12 @@ export async function beginConnectionOperation(
 export async function acquireSharedConnectionAuthorizationLocks(
   tx: Prisma.TransactionClient,
   userId: string,
+  connectorId: string,
   providers: string[],
 ): Promise<void> {
   const ordered = [...new Set(providers)].sort();
   for (const provider of ordered) {
-    const key = `connection:${userId}:${provider}`;
+    const key = `connection:${userId}:${connectorId}:${provider}`;
     await tx.$queryRaw`
       SELECT pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))
     `;
@@ -42,9 +43,10 @@ export async function acquireSharedConnectionAuthorizationLocks(
 export async function acquireExclusiveConnectionAuthorizationLock(
   tx: Prisma.TransactionClient,
   userId: string,
+  connectorId: string,
   provider: string,
 ): Promise<void> {
-  const key = `connection:${userId}:${provider}`;
+  const key = `connection:${userId}:${connectorId}:${provider}`;
   await tx.$queryRaw`
     SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))
   `;

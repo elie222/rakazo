@@ -5,7 +5,10 @@ export interface CreateThreadMessageInput {
   threadId: string;
   role: "user" | "bot" | "system";
   blocks: MessageBlock[];
+  botId?: string;
+  replyToMessageId?: string;
   runId?: string;
+  clientNonce?: string;
 }
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
@@ -26,13 +29,38 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
+  await assertRunCanWriteHistory(tx, input.runId);
   return tx.message.create({
     data: {
       threadId: input.threadId,
       seq: thread.nextMessageSeq - 1,
       role: input.role,
       blocks: input.blocks as Prisma.InputJsonValue,
+      botId: input.botId,
+      replyToMessageId: input.replyToMessageId,
       runId: input.runId,
+      clientNonce: input.clientNonce,
     },
   });
+}
+
+export class RunHistoryWriteError extends Error {
+  constructor() {
+    super("Run cannot write thread history");
+    this.name = "RunHistoryWriteError";
+  }
+}
+
+export async function assertRunCanWriteHistory(
+  tx: Prisma.TransactionClient,
+  runId?: string,
+): Promise<void> {
+  if (!runId) return;
+  const run = await tx.run.findUnique({
+    where: { id: runId },
+    select: { status: true },
+  });
+  if (!run || run.status === "cancelled") {
+    throw new RunHistoryWriteError();
+  }
 }

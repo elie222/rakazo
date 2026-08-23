@@ -52,7 +52,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await composer.fill("install the gsc cli and sign in");
   await page.keyboard.press("Enter");
   await expect(page.getByText(/sign in to continue|protected input/i).first()).toBeVisible({
-    timeout: 30_000,
+    timeout: realSandboxTimeout(90_000, 30_000),
   });
   await expect
     .poll(() => threadRunStatus(page), {
@@ -73,10 +73,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover");
   await page.getByRole("button", { name: "Release" }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
-  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
+    timeout: realSandboxTimeout(90_000, 30_000),
+  });
 
   await page.getByText("+ New routine").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
@@ -87,7 +90,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
-  await page.getByText("Plugins").click();
+  await page.getByText("Integrations").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
   await expect(page.getByText("Slack", { exact: true })).toBeVisible();
@@ -107,13 +110,47 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Gmail", { exact: true })).toBeHidden();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
-  await page.getByRole("tab", { name: "All", exact: true }).click();
+  await page.getByRole("tab", { name: "Apps", exact: true }).click();
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
   await expect(gmailRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close plugins" }).click();
+
+  const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
+  const connectPopup = page.waitForEvent("popup");
+  await linearRow.getByRole("button", { name: "Connect", exact: true }).click();
+  const popup = await connectPopup;
+  await popup.close();
+  await expect(linearRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(linearRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Treg", exact: true }).click();
+  await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(page.getByText(/MCP · https:\/\/treg\.to\/mcp\/ · credential saved/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
+  await page.getByPlaceholder("Display name").fill("Browser MCP");
+  await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(page.getByText(/MCP · https:\/\/mcp\.example\.test\/mcp · no auth/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
+  await page.getByPlaceholder("Display name").fill("Browser API");
+  await page
+    .getByPlaceholder("https://example.com/openapi.json")
+    .fill("https://api.example.test/openapi.json");
+  await page.locator("select").selectOption("bearer");
+  await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(
+    page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "11c-provider-emulators");
+
+  await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.locator("button:has-text('⚙')");
+  const gear = page.getByRole("button", { name: "Bot settings" });
   if (!(await gear.isVisible().catch(() => false))) {
     await page.getByTitle("Agent computer").click();
   }
@@ -228,4 +265,27 @@ async function threadRunStatus(page: Page) {
     botId: activeBotId(page),
   });
   return result.run?.status ?? "idle";
+}
+
+async function waitForBoxFramebuffer(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        for (const frame of page.frames()) {
+          if (frame === page.mainFrame()) continue;
+          const canvas = frame.locator("canvas").first();
+          if ((await canvas.count()) === 0) continue;
+          const ready = await canvas
+            .evaluate((element) => {
+              const framebuffer = element as HTMLCanvasElement;
+              return framebuffer.width > 0 && framebuffer.height > 0;
+            })
+            .catch(() => false);
+          if (ready) return true;
+        }
+        return false;
+      },
+      { timeout: 60_000, message: "the Box noVNC framebuffer must be ready" },
+    )
+    .toBe(true);
 }

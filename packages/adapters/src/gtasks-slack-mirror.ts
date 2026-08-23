@@ -75,13 +75,20 @@ export function formatGtaskSlackMirror(item: GtaskMirrorContent): string {
 
 export async function connectionsReadyForGtasksSlack(
   composio: ComposioProvider | undefined,
-  userId: string,
+  ctx: GtasksSlackMirrorContext,
   signal?: AbortSignal,
 ): Promise<{ googleTasks: boolean; slack: boolean }> {
   if (!composio) return { googleTasks: false, slack: false };
+  const context = {
+    operationId: "integration.gtasks_slack.mirror",
+    traceId: "integration.gtasks_slack.mirror",
+    workspaceId: ctx.workspaceId,
+    userId: ctx.userId,
+    signal: signal ?? new AbortController().signal,
+  };
   const [googleTasks, slack] = await Promise.all([
-    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.googleTasks, signal),
-    composio.connectionReady(userId, GTASKS_SLACK_ROUTING.composioProviders.slack, signal),
+    composio.connectionReady(context, GTASKS_SLACK_ROUTING.composioProviders.googleTasks),
+    composio.connectionReady(context, GTASKS_SLACK_ROUTING.composioProviders.slack),
   ]);
   return { googleTasks, slack };
 }
@@ -96,7 +103,12 @@ async function lockGtasksSlackScope(
     GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
     GTASKS_SLACK_ROUTING.composioProviders.slack,
   ];
-  await acquireSharedConnectionAuthorizationLocks(tx, ctx.userId, providers);
+  await acquireSharedConnectionAuthorizationLocks(
+    tx,
+    ctx.userId,
+    GTASKS_SLACK_ROUTING.connectorId,
+    providers,
+  );
   const members = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT "id"
     FROM "member"
@@ -109,6 +121,7 @@ async function lockGtasksSlackScope(
     FROM "connections"
     WHERE "workspaceId" = ${ctx.workspaceId}
       AND "userId" = ${ctx.userId}
+      AND "connectorId" = ${GTASKS_SLACK_ROUTING.connectorId}
       AND "status" = 'connected'
       AND "provider" IN (${providers[0]}, ${providers[1]})
     FOR SHARE
@@ -297,7 +310,7 @@ export async function syncGtasksSlackInbox(
   let listed: { available: boolean; tasks: GtaskInboxItem[] } | undefined;
   try {
     listed = await withGtasksSlackScopeLease(deps.prisma, ctx, async (signal) => {
-      const ready = await connectionsReadyForGtasksSlack(deps.composio, ctx.userId, signal);
+      const ready = await connectionsReadyForGtasksSlack(deps.composio, ctx, signal);
       if (!ready.googleTasks || !ready.slack) return { available: false, tasks: [] };
       return { available: true, tasks: await port.listInboxTasks(ctx, signal) };
     });
@@ -343,6 +356,7 @@ export async function listGtasksSlackMirrorTargets(
   const rows = await prisma.connection.findMany({
     where: {
       status: "connected",
+      connectorId: GTASKS_SLACK_ROUTING.connectorId,
       provider: {
         in: [
           GTASKS_SLACK_ROUTING.composioProviders.googleTasks,

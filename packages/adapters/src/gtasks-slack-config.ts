@@ -2,6 +2,8 @@
 export const GTASKS_SLACK_LANE = "gtasks-slack-inbox" as const;
 
 export const GTASKS_SLACK_ROUTING = {
+  /** Managed connector that owns both external toolkit authorizations. */
+  connectorId: "composio",
   /** Slack #tasks channel (informational mirror destination). */
   slackChannelId: "C0BQRCBPD51",
   /** Composio toolkit slugs used by the Plugins connection model. */

@@ -32,4 +32,5 @@ export const slots = {
   connector: "connector",
   auth: "connection-auth",
   runner: "runner",
+  voice: "voice",
 } as const;

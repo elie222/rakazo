@@ -15,6 +15,15 @@ export type DemoRoutine = {
   name: string;
   when: string;
   instruction?: string;
+  active?: boolean;
+  runs?: DemoRoutineRun[];
+};
+
+export type DemoRoutineRun = {
+  mark: string;
+  color: string;
+  text: string;
+  time: string;
 };
 
 export type DemoScreen = {

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Coral Rakazo bot avatar</title>
+  <circle cx="32" cy="32" r="30" fill="#1A1A1D" />
+  <path fill="#F2622A" d="M56 62c0-13-5-18-10-23-5-6-3-14-8-21-5-8-15-10-23-4-8 6-7 15-3 22 2 4-4 8-6 15-2 6 1 10 4 11h46Z" />
+  <rect x="21" y="25" width="5" height="10" rx="2.5" fill="#07152B" />
+  <rect x="31" y="24" width="5" height="10" rx="2.5" fill="#07152B" />
+</svg>
