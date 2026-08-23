@@ -180,7 +180,7 @@ type Pending = {
   endpoint: string;
   provider: StoredMcpOAuthProvider;
   createdAt: number;
-  expiry: ReturnType<typeof setTimeout>;
+  expiry?: ReturnType<typeof setTimeout>;
 };
 
 const PENDING_TTL_MS = 10 * 60_000;
@@ -254,6 +254,9 @@ export class McpOAuthBroker {
     });
     if (!server?.endpoint) throw new Error("MCP server endpoint is required for OAuth");
     await this.sweepExpiredPending();
+    if (this.pending.size >= MAX_PENDING_SESSIONS) {
+      throw new Error("Too many pending MCP authorization attempts; wait and try again");
+    }
     const activeCount = await this.prisma.mcpOAuthSession.count({
       where: { workspaceId: input.workspaceId, userId: input.userId },
     });
@@ -315,9 +318,20 @@ export class McpOAuthBroker {
         },
       }),
     ]);
+    for (const [pendingId, pending] of this.pending) {
+      if (
+        pending.serverId === server.id &&
+        pending.workspaceId === input.workspaceId &&
+        pending.userId === input.userId
+      ) {
+        this.discardPending(pendingId, pending);
+      }
+    }
     const expiry = setTimeout(() => {
       this.pending.delete(sessionId);
-      void this.prisma.mcpOAuthSession.deleteMany({ where: { id: sessionId } });
+      void this.prisma.mcpOAuthSession
+        .deleteMany({ where: { id: sessionId } })
+        .catch(() => undefined);
     }, PENDING_TTL_MS);
     expiry.unref?.();
     this.pending.set(sessionId, {
@@ -382,14 +396,13 @@ export class McpOAuthBroker {
           state: session.id,
         }),
         createdAt: session.createdAt.getTime(),
-        expiry: setTimeout(() => undefined, 0),
+        expiry: undefined,
       };
-      clearTimeout(pending.expiry);
     }
     // Consume the session up front so a failed token exchange cannot be
     // retried with a replayed code; the user starts a fresh flow instead.
     this.pending.delete(input.sessionId);
-    clearTimeout(pending.expiry);
+    if (pending.expiry) clearTimeout(pending.expiry);
     const consumed = await this.prisma.mcpOAuthSession.deleteMany({
       where: {
         id: input.sessionId,
@@ -422,13 +435,17 @@ export class McpOAuthBroker {
     const cutoff = Date.now() - PENDING_TTL_MS;
     for (const [sessionId, pending] of this.pending) {
       if (pending.createdAt < cutoff) {
-        clearTimeout(pending.expiry);
-        this.pending.delete(sessionId);
+        this.discardPending(sessionId, pending);
       }
     }
     await this.prisma.mcpOAuthSession.deleteMany({
       where: { createdAt: { lt: new Date(cutoff) } },
     });
+  }
+
+  private discardPending(sessionId: string, pending: Pending): void {
+    if (pending.expiry) clearTimeout(pending.expiry);
+    this.pending.delete(sessionId);
   }
 
   async disconnect(input: {

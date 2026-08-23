@@ -3,7 +3,11 @@ import { rpc } from "./rpc";
 export const MCP_OAUTH_CHANNEL = "rakazo-mcp-oauth";
 const MCP_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
 
-export type McpOauthResult = "connected" | "cancelled" | "no-authorization";
+export type McpOauthResult =
+  | "connected"
+  | "cancelled"
+  | "already_connected"
+  | "authorization_not_requested";
 
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
@@ -16,7 +20,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     serverId,
     redirectUri: `${window.location.origin}/mcp/oauth/callback`,
   });
-  if (started.status !== "authorization_required") return "no-authorization";
+  if (started.status !== "authorization_required") return started.status;
   const popup = window.open(
     started.authorizationUrl,
     MCP_OAUTH_CHANNEL,

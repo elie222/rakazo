@@ -153,11 +153,15 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     setOauthPending(server.id);
     try {
       const result = await connectMcpOauth(server.id);
-      if (result === "connected" || result === "no-authorization") setOauthPending(null);
+      if (result !== "cancelled") setOauthPending(null);
       await refresh();
       if (result === "connected") return;
-      if (result === "no-authorization") {
-        setError("No browser authorization is needed for this server — it is ready to use.");
+      if (result === "already_connected") {
+        setError("This server is already connected. Disconnect it first to authorize again.");
+        return;
+      }
+      if (result === "authorization_not_requested") {
+        setError("This server did not request browser authorization.");
         return;
       }
       setOauthPending((current) => (current === server.id ? null : current));

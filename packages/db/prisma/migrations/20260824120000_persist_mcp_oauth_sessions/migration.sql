@@ -12,6 +12,9 @@ CREATE TABLE "mcp_oauth_sessions" (
 CREATE INDEX "mcp_oauth_sessions_workspaceId_userId_createdAt_idx"
   ON "mcp_oauth_sessions"("workspaceId", "userId", "createdAt");
 
+CREATE UNIQUE INDEX "mcp_oauth_sessions_serverId_workspaceId_userId_key"
+  ON "mcp_oauth_sessions"("serverId", "workspaceId", "userId");
+
 ALTER TABLE "mcp_oauth_sessions"
   ADD CONSTRAINT "mcp_oauth_sessions_serverId_fkey"
   FOREIGN KEY ("serverId") REFERENCES "mcp_servers"("id")

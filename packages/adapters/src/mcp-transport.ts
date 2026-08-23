@@ -260,20 +260,28 @@ export class McpSession {
       try {
         await connect(options.transport ?? "streamable-http");
       } catch (error) {
-        await this.close();
-        if (
+        const canFallback =
           (options.fallbackToSse ?? true) &&
           options.allowLegacySse &&
-          (options.transport ?? "streamable-http") === "streamable-http"
-        ) {
-          usedFallback = true;
-          // The SDK's documented fallback uses a fresh Client after a failed
-          // Streamable HTTP handshake; a Client cannot be reconnected safely.
-          this.client = this.newClient();
-          await connect("sse");
-          return;
+          (options.transport ?? "streamable-http") === "streamable-http";
+        await this.client.close().catch(() => undefined);
+        this.connected = false;
+        this.transport = undefined;
+        if (!canFallback) {
+          await this.remoteFetch?.close().catch(() => undefined);
+          this.remoteFetch = undefined;
+          throw error;
         }
-        throw error;
+        usedFallback = true;
+        // The SDK's documented fallback uses a fresh Client after a failed
+        // Streamable HTTP handshake; a Client cannot be reconnected safely.
+        this.client = this.newClient();
+        try {
+          await connect("sse");
+        } catch (fallbackError) {
+          await this.close();
+          throw fallbackError;
+        }
       } finally {
         this.connecting = undefined;
       }

@@ -40,7 +40,7 @@ export function parseMcpServerToolArgs(
     endpoint = typeof args.endpoint === "string" ? args.endpoint.trim() : "";
     try {
       const url = new URL(endpoint);
-      if (url.protocol !== "https:") return undefined;
+      if (url.protocol !== "https:" || url.username || url.password || url.hash) return undefined;
     } catch {
       return undefined;
     }
