@@ -498,7 +498,9 @@ function startSupervisor() {
   });
 }
 
-startSupervisor();
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  startSupervisor();
+}
 
 async function ensureComputerImage() {
   if (!imageReady) {
