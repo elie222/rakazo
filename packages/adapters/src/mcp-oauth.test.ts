@@ -180,6 +180,16 @@ describe("MCP OAuth", () => {
     expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
     expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
 
+    const second = await broker.begin({
+      serverId: "server-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+    });
+    expect(second.status).toBe("authorization_required");
+    if (second.status !== "authorization_required") throw new Error("OAuth was not requested");
+    expect(second.sessionId).not.toBe(started.sessionId);
+
     await broker.complete({
       sessionId: started.sessionId,
       code: "authorization-code",

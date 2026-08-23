@@ -779,7 +779,6 @@ model McpOAuthSession {
   redirectUri String
   createdAt   DateTime @default(now())
 
-  @@unique([serverId, workspaceId, userId])
   @@index([workspaceId, userId, createdAt])
   @@map("mcp_oauth_sessions")
 }

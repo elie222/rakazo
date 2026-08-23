@@ -299,34 +299,16 @@ export class McpOAuthBroker {
       }
       return { status: "authorization_not_requested" };
     }
-    await this.prisma.$transaction([
-      this.prisma.mcpOAuthSession.deleteMany({
-        where: {
-          serverId: server.id,
-          workspaceId: input.workspaceId,
-          userId: input.userId,
-        },
-      }),
-      this.prisma.mcpOAuthSession.create({
-        data: {
-          id: sessionId,
-          serverId: server.id,
-          workspaceId: input.workspaceId,
-          userId: input.userId,
-          endpoint: server.endpoint,
-          redirectUri: input.redirectUri,
-        },
-      }),
-    ]);
-    for (const [pendingId, pending] of this.pending) {
-      if (
-        pending.serverId === server.id &&
-        pending.workspaceId === input.workspaceId &&
-        pending.userId === input.userId
-      ) {
-        this.discardPending(pendingId, pending);
-      }
-    }
+    await this.prisma.mcpOAuthSession.create({
+      data: {
+        id: sessionId,
+        serverId: server.id,
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        endpoint: server.endpoint,
+        redirectUri: input.redirectUri,
+      },
+    });
     const expiry = setTimeout(() => {
       this.pending.delete(sessionId);
       void this.prisma.mcpOAuthSession
