@@ -8,6 +8,12 @@ import {
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
+import { combineSignals } from "./connector-safety.js";
+import {
+  createSafeRemoteFetch,
+  type RemoteTransportDependencies,
+  type SafeRemoteFetch,
+} from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -37,6 +43,9 @@ export interface McpRemoteOptions {
   fallbackToSse?: boolean;
   /** Let the official SDK own token refresh, re-authentication, and request retry. */
   authProvider?: OAuthClientProvider;
+  network?: RemoteTransportDependencies;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface McpStdioOptions {
@@ -47,6 +56,8 @@ export interface McpStdioOptions {
   /** Exact executable allowlist. Stdio is otherwise disabled. */
   allowedCommands: readonly string[];
   maxBufferSize?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface McpClientOptions {
@@ -68,7 +79,7 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
     url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
   if (
     url.protocol !== "https:" &&
-    !(url.protocol === "http:" && (policy.allowHttpLocalhost ?? true) && local)
+    !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local)
   ) {
     throw new Error("MCP remote URL must use HTTPS (HTTP is allowed only for localhost)");
   }
@@ -82,14 +93,19 @@ export function secureFetch(
   resourceUrl: URL,
   urlPolicy: McpUrlPolicy,
   headerPolicy: McpHeaderPolicy = {},
-) {
+  network: RemoteTransportDependencies = {},
+): SafeRemoteFetch {
   const allowed = new Set(
     (headerPolicy.allowedHeaders ?? DEFAULT_HEADERS).map((h) => h.toLowerCase()),
   );
   const configured = Object.entries(headerPolicy.headers ?? {}).filter(([name]) =>
     allowed.has(name.toLowerCase()),
   );
-  return async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
+  const safeRemoteFetch = createSafeRemoteFetch(
+    network.fetch ?? globalThis.fetch,
+    network.resolveHostname,
+  );
+  const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     const source = input instanceof Request ? input : new Request(input, init);
     const url = validateUrl(source.url, urlPolicy);
     const headers = new Headers(source.headers);
@@ -104,18 +120,25 @@ export function secureFetch(
     // (the OAuth challenge) instead of draining it.
     const body =
       source.method === "GET" || source.method === "HEAD" ? undefined : await source.arrayBuffer();
-    const response = await fetch(url, {
+    const requestInit = {
       method: source.method,
       headers,
       body,
       redirect: "manual",
       signal: source.signal,
-    });
+    } satisfies RequestInit;
+    const localHttp = url.protocol === "http:";
+    const response = localHttp
+      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
+      : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
       throw new Error("MCP redirects are not permitted; configure the final HTTPS URL explicitly");
     }
     return response;
   };
+  const result = request as SafeRemoteFetch;
+  result.close = () => safeRemoteFetch.close();
+  return result;
 }
 
 /**
@@ -143,6 +166,8 @@ export function withEndpointOriginFallback(
     if (input instanceof Request) return fetchImpl(input, init);
     const url = new URL(String(input));
     if (url.origin === endpointOrigin) return fetchImpl(input, init);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") return fetchImpl(input, init);
     try {
       // Cap the first attempt: an unroutable host otherwise burns the full
       // connect timeout before the fallback gets a chance.
@@ -180,6 +205,7 @@ export class McpSession {
   client: Client;
   private readonly clientOptions: McpClientOptions;
   private transport?: Transport;
+  private remoteFetch?: SafeRemoteFetch;
   private connected = false;
   private connecting?: Promise<void>;
 
@@ -201,10 +227,15 @@ export class McpSession {
     if (this.connected || this.connecting)
       throw new Error("MCP session is already connected or connecting");
     const url = validateUrl(options.url, options.urlPolicy);
-    const fetch = withEndpointOriginFallback(
-      url.origin,
-      secureFetch(url, options.urlPolicy ?? {}, options.headerPolicy),
+    const safeFetch = secureFetch(
+      url,
+      options.urlPolicy ?? {},
+      options.headerPolicy,
+      options.network,
     );
+    this.remoteFetch = safeFetch;
+    const fetch = withEndpointOriginFallback(url.origin, safeFetch);
+    const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
     let usedFallback = false;
     const connect = async (kind: McpRemoteTransport): Promise<void> => {
       const requestInit: RequestInit = { headers: options.headerPolicy?.headers };
@@ -222,7 +253,7 @@ export class McpSession {
               eventSourceInit: { fetch: fetch as never },
             });
       this.transport = transport;
-      await this.client.connect(transport);
+      await this.client.connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 });
       this.connected = true;
     };
     this.connecting = (async () => {
@@ -259,8 +290,9 @@ export class McpSession {
       throw new Error("MCP session is already connected or connecting");
     const transport = new StdioClientTransport(stdioParams(options));
     this.transport = transport;
+    const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
     this.connecting = this.client
-      .connect(transport)
+      .connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 })
       .then(() => {
         this.connected = true;
       })
@@ -290,6 +322,8 @@ export class McpSession {
     this.connecting = undefined;
     this.connected = false;
     await this.client.close().catch(() => undefined);
+    await this.remoteFetch?.close().catch(() => undefined);
+    this.remoteFetch = undefined;
     this.transport = undefined;
   }
 

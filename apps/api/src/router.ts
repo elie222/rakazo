@@ -1763,9 +1763,24 @@ export function createRouter(deps: RouterDeps) {
             where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
             orderBy: [{ name: "asc" }, { createdAt: "asc" }],
           });
-          return Promise.all(
-            rows.map(async (row) =>
-              mcpServerDto(row, await mcpOAuth.statusFor(row, context.actor)),
+          const secretIds = rows.flatMap((row) => (row.secretId ? [row.secretId] : []));
+          const secrets = secretIds.length
+            ? await deps.prisma.secret.findMany({
+                where: {
+                  id: { in: secretIds },
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                },
+                select: { id: true, ciphertext: true },
+              })
+            : [];
+          const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
+          return rows.map((row) =>
+            mcpServerDto(
+              row,
+              mcpOAuth.statusForCiphertext(
+                row.secretId ? ciphertextById.get(row.secretId) : undefined,
+              ),
             ),
           );
         }),
@@ -1777,37 +1792,39 @@ export function createRouter(deps: RouterDeps) {
                 computerContext(context.actor, "mcp", "mcp.create"),
               )
             : null;
-          if (stored) {
-            await deps.prisma.secret.create({
+          const row = await deps.prisma.$transaction(async (tx) => {
+            if (stored) {
+              await tx.secret.create({
+                data: {
+                  id: stored.id,
+                  userId: context.actor.userId,
+                  workspaceId: context.actor.workspaceId,
+                  kind: "mcp",
+                  ciphertext: stored.ciphertext,
+                },
+              });
+            }
+            return tx.mcpServer.create({
               data: {
-                id: stored.id,
-                userId: context.actor.userId,
                 workspaceId: context.actor.workspaceId,
-                kind: "mcp",
-                ciphertext: stored.ciphertext,
+                userId: context.actor.userId,
+                slug: input.slug,
+                name: input.name,
+                description: input.description,
+                transport: input.transport,
+                endpoint: "endpoint" in input ? input.endpoint : null,
+                command: "command" in input ? input.command : null,
+                args: ("args" in input ? input.args : []) as Prisma.InputJsonValue,
+                env: ("env" in input
+                  ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
+                  : {}) as Prisma.InputJsonValue,
+                headers: ("headers" in input
+                  ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
+                  : {}) as Prisma.InputJsonValue,
+                secretId: stored?.id,
+                enabled: input.enabled,
               },
             });
-          }
-          const row = await deps.prisma.mcpServer.create({
-            data: {
-              workspaceId: context.actor.workspaceId,
-              userId: context.actor.userId,
-              slug: input.slug,
-              name: input.name,
-              description: input.description,
-              transport: input.transport,
-              endpoint: "endpoint" in input ? input.endpoint : null,
-              command: "command" in input ? input.command : null,
-              args: ("args" in input ? input.args : []) as Prisma.InputJsonValue,
-              env: ("env" in input
-                ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
-                : {}) as Prisma.InputJsonValue,
-              headers: ("headers" in input
-                ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
-                : {}) as Prisma.InputJsonValue,
-              secretId: stored?.id,
-              enabled: input.enabled,
-            },
           });
           return mcpServerDto(row, await mcpOAuth.statusFor(row, context.actor));
         }),
@@ -1915,6 +1932,17 @@ export function createRouter(deps: RouterDeps) {
         }),
       },
       assignments: {
+        all: authed.mcp.assignments.all.handler(async ({ context }) => {
+          const rows = await deps.prisma.botMcpServer.findMany({
+            where: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              bot: { archivedAt: null },
+            },
+            orderBy: { createdAt: "asc" },
+          });
+          return rows.map(mcpAssignmentDto);
+        }),
         list: authed.mcp.assignments.list.handler(async ({ context, input }) => {
           const bot = await deps.prisma.bot.findFirst({
             where: {
@@ -1934,6 +1962,43 @@ export function createRouter(deps: RouterDeps) {
             orderBy: { createdAt: "asc" },
           });
           return rows.map(mcpAssignmentDto);
+        }),
+        approve: authed.mcp.assignments.approve.handler(async ({ context, input }) => {
+          const row = await deps.prisma.$transaction(async (tx) => {
+            const [bot, server] = await Promise.all([
+              tx.bot.findFirst({
+                where: {
+                  id: input.botId,
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                },
+                select: { id: true },
+              }),
+              tx.mcpServer.findFirst({
+                where: {
+                  id: input.serverId,
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                  enabled: true,
+                },
+                select: { id: true },
+              }),
+            ]);
+            if (!bot || !server) throw new IsolationError();
+            return tx.botMcpServer.upsert({
+              where: { botId_serverId: { botId: bot.id, serverId: server.id } },
+              create: {
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                botId: bot.id,
+                serverId: server.id,
+                allowAllTools: true,
+                allowedTools: [],
+              },
+              update: {},
+            });
+          });
+          return mcpAssignmentDto(row);
         }),
         replace: authed.mcp.assignments.replace.handler(async ({ context, input }) => {
           const result = await deps.prisma.$transaction(async (tx) => {
@@ -1988,6 +2053,10 @@ export function createRouter(deps: RouterDeps) {
       oauth: {
         begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
+            const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
+            if (new URL(input.redirectUri).toString() !== expectedRedirect) {
+              throw new Error("MCP OAuth redirect URI is not allowed");
+            }
             return await mcpOAuth.begin({
               ...input,
               workspaceId: context.actor.workspaceId,
@@ -2000,12 +2069,18 @@ export function createRouter(deps: RouterDeps) {
           }
         }),
         complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
-          await mcpOAuth.complete({
-            ...input,
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-          });
-          return { ok: true as const };
+          try {
+            await mcpOAuth.complete({
+              ...input,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+            });
+            return { ok: true as const };
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Could not complete MCP OAuth",
+            });
+          }
         }),
         disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
           await mcpOAuth.disconnect({

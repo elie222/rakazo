@@ -39,6 +39,13 @@ describe("parseMcpServerToolArgs", () => {
     expect(
       parseMcpServerToolArgs({ name: "x", transport: "streamable_http", endpoint: "ftp://x.test" }),
     ).toBeUndefined();
+    expect(
+      parseMcpServerToolArgs({
+        name: "x",
+        transport: "streamable_http",
+        endpoint: "http://x.test",
+      }),
+    ).toBeUndefined();
     expect(parseMcpServerToolArgs({ name: "x", transport: "stdio" })).toBeUndefined();
   });
 

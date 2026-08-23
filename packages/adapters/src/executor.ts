@@ -1012,9 +1012,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return finish({ error: "Secret storage is not available in this deployment." });
             }
             const credentialBlob = buildMcpCredentialBlob(parsed);
-            let secretId: string | null = null;
+            let storedCredential: { id: string; ciphertext: string } | null = null;
             if (credentialBlob) {
-              const stored = await deps.secretStore.put(credentialBlob, {
+              storedCredential = await deps.secretStore.put(credentialBlob, {
                 operationId: executionId,
                 traceId: executionId,
                 workspaceId: run.workspaceId,
@@ -1022,37 +1022,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 botId: bot.id,
                 signal: new AbortController().signal,
               });
-              await deps.prisma.secret.create({
-                data: {
-                  id: stored.id,
-                  userId: run.userId,
-                  workspaceId: run.workspaceId,
-                  kind: "mcp",
-                  ciphertext: stored.ciphertext,
-                },
-              });
-              secretId = stored.id;
             }
             let serverRow: McpServer;
             try {
-              serverRow = await deps.prisma.mcpServer.create({
-                data: {
-                  workspaceId: run.workspaceId,
-                  userId: run.userId,
-                  slug: parsed.slug,
-                  name: parsed.name,
-                  description: parsed.description,
-                  transport: parsed.transport,
-                  endpoint: parsed.endpoint ?? null,
-                  command: parsed.command ?? null,
-                  args: parsed.args as unknown as Prisma.InputJsonValue,
-                  env: Object.fromEntries(Object.keys(parsed.env).map((key) => [key, true])),
-                  headers: Object.fromEntries(
-                    Object.keys(parsed.headers).map((key) => [key, true]),
-                  ),
-                  secretId,
-                  enabled: true,
-                },
+              serverRow = await deps.prisma.$transaction(async (tx) => {
+                if (storedCredential) {
+                  await tx.secret.create({
+                    data: {
+                      id: storedCredential.id,
+                      userId: run.userId,
+                      workspaceId: run.workspaceId,
+                      kind: "mcp",
+                      ciphertext: storedCredential.ciphertext,
+                    },
+                  });
+                }
+                return tx.mcpServer.create({
+                  data: {
+                    workspaceId: run.workspaceId,
+                    userId: run.userId,
+                    slug: parsed.slug,
+                    name: parsed.name,
+                    description: parsed.description,
+                    transport: parsed.transport,
+                    endpoint: parsed.endpoint ?? null,
+                    command: parsed.command ?? null,
+                    args: parsed.args as unknown as Prisma.InputJsonValue,
+                    env: Object.fromEntries(Object.keys(parsed.env).map((key) => [key, true])),
+                    headers: Object.fromEntries(
+                      Object.keys(parsed.headers).map((key) => [key, true]),
+                    ),
+                    secretId: storedCredential?.id,
+                    enabled: true,
+                  },
+                });
               });
             } catch (error) {
               if (
@@ -1061,47 +1064,34 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "code" in error &&
                 (error as { code?: string }).code === "P2002"
               ) {
-                if (secretId) {
-                  await deps.prisma.secret.deleteMany({
-                    where: { id: secretId, workspaceId: run.workspaceId },
-                  });
-                }
                 return finish({
                   error: `An MCP server named "${parsed.name}" already exists. Ask the user to remove it first or pick another name.`,
                 });
               }
               throw error;
             }
-            if (parsed.assignToSelf) {
-              await deps.prisma.botMcpServer.create({
-                data: {
-                  workspaceId: run.workspaceId,
-                  userId: run.userId,
-                  botId: bot.id,
-                  serverId: serverRow.id,
-                  allowAllTools: true,
-                  allowedTools: [],
-                },
-              });
-            }
             const oauthLikely = needsOAuthProbe(parsed);
-            await publishMessage(deps, run, "bot", [
-              {
-                kind: "mcp_approval",
-                name: serverRow.name,
-                serverId: serverRow.id,
-                transport: parsed.transport,
-                endpoint: parsed.endpoint ?? null,
-                needsOAuth: oauthLikely,
-              },
-            ]);
+            if (parsed.assignToSelf) {
+              await publishMessage(deps, run, "bot", [
+                {
+                  kind: "mcp_approval",
+                  name: serverRow.name,
+                  serverId: serverRow.id,
+                  transport: parsed.transport,
+                  endpoint: parsed.endpoint ?? null,
+                  needsOAuth: oauthLikely,
+                },
+              ]);
+            }
             return finish({
               ok: true,
               server_id: serverRow.id,
-              assigned_to_self: parsed.assignToSelf,
-              next_step: oauthLikely
-                ? "An approval card was posted to the chat. Tell the user to click Authorize on it to complete browser OAuth; its tools become available on their next message."
-                : "The server is connected and assigned to you; its tools are usable from the next message.",
+              assigned_to_self: false,
+              next_step: parsed.assignToSelf
+                ? oauthLikely
+                  ? "An approval card was posted. The user must authorize and approve it before its tools become available."
+                  : "An approval card was posted. The user must approve it before its tools become available."
+                : "The server was registered without assigning it to this bot.",
             });
           }
           if (name === "recall_memory") {

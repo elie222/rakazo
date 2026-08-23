@@ -2,7 +2,10 @@
  * the executor wires the parsed result into Prisma + the secret store. */
 
 import { type McpTransport, McpTransportSchema } from "@rakazo/contracts";
+import { deriveMcpSlug } from "@rakazo/core";
 import { toStringRecord } from "./memory-provider-factory.js";
+
+export { deriveMcpSlug } from "@rakazo/core";
 
 const MAX_ENV_ENTRIES = 32;
 const MAX_ARGS = 64;
@@ -21,17 +24,6 @@ export type ParsedMcpServerArgs = {
   assignToSelf: boolean;
 };
 
-export function deriveMcpSlug(name: string): string {
-  const slug =
-    name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64) || `mcp-${Date.now()}`;
-  return slug;
-}
-
 /** Returns undefined for anything that would fail server-side validation,
  * so the model gets a single actionable error instead of a partial create. */
 export function parseMcpServerToolArgs(
@@ -48,7 +40,7 @@ export function parseMcpServerToolArgs(
     endpoint = typeof args.endpoint === "string" ? args.endpoint.trim() : "";
     try {
       const url = new URL(endpoint);
-      if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+      if (url.protocol !== "https:") return undefined;
     } catch {
       return undefined;
     }

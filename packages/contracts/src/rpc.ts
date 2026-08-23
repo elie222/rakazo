@@ -337,6 +337,8 @@ export const appContract = {
     },
     assignments: {
       list: oc.input(botId).output(z.array(BotMcpServerSchema)),
+      all: oc.output(z.array(BotMcpServerSchema)),
+      approve: oc.input(z.object({ botId: Id, serverId: Id })).output(BotMcpServerSchema),
       replace: oc
         .input(
           z.object({
@@ -353,9 +355,18 @@ export const appContract = {
         .output(z.array(BotMcpServerSchema)),
     },
     oauth: {
-      begin: oc
-        .input(z.object({ serverId: Id, redirectUri: z.string().url() }))
-        .output(z.object({ sessionId: Id, authorizationUrl: z.string().url() })),
+      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url() })).output(
+        z.discriminatedUnion("status", [
+          z.object({
+            status: z.literal("authorization_required"),
+            sessionId: Id,
+            authorizationUrl: z.string().url(),
+          }),
+          z.object({
+            status: z.enum(["already_connected", "authorization_not_requested"]),
+          }),
+        ]),
+      ),
       complete: oc
         .input(z.object({ sessionId: Id, code: z.string().min(1), state: z.string().min(1) }))
         .output(z.object({ ok: z.literal(true) })),

@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id } from "./ids.js";
+import { McpTransportSchema } from "./mcp.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -170,8 +171,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("mcp_approval"),
     name: z.string(),
     serverId: Id,
-    // Mirrors McpTransportSchema; inlined to avoid a circular import with domain.ts.
-    transport: z.enum(["streamable_http", "sse", "stdio"]),
+    transport: McpTransportSchema,
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
   }),

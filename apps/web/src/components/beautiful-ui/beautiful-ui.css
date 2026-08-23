@@ -22,13 +22,13 @@
   0% {
     background-position: 150%;
   }
-  to {
+  100% {
     background-position: -50%;
   }
 }
 @keyframes bui-pixel-on {
   0%,
-  to {
+  100% {
     opacity: 0.15;
   }
   18%,
@@ -44,7 +44,7 @@
     opacity: 0;
     transform: scale(0.95);
   }
-  to {
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -54,7 +54,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translateY(0);
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
@@ -13,6 +13,7 @@ export function McpOAuthCallbackPage() {
   const [params] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const handledState = useRef<string | null>(null);
   useEffect(() => {
     const code = params.get("code");
     const state = params.get("state");
@@ -20,6 +21,8 @@ export function McpOAuthCallbackPage() {
       setError(params.get("error_description") ?? "OAuth authorization was cancelled.");
       return;
     }
+    if (handledState.current === state) return;
+    handledState.current = state;
     void rpc.mcp.oauth
       .complete({ sessionId: state, code, state })
       .then(() => {

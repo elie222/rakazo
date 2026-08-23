@@ -69,7 +69,7 @@ const FOCUS_OPTIONS: FocusOption[] = [
 ];
 
 const APP_DESCRIPTIONS: Record<string, string> = {
-  slack: "Slack MCP server. Search, read, and send messages.",
+  slack: "Search, read, and send messages.",
   gmail: "Search, read, draft, and send email.",
   googlecalendar: "Search events and schedule meetings.",
   notion: "Search and edit pages and databases.",
@@ -166,12 +166,11 @@ export async function chooseFocus(
   const pending = recent.find((message) =>
     (message.blocks as MessageBlock[]).some((block) => block.kind === "choice" && !block.answerId),
   );
-  if (pending) {
-    const blocks = (pending.blocks as MessageBlock[]).map((block) =>
-      block.kind === "choice" ? { ...block, answerId: option.id } : block,
-    );
-    await updateBlocks(deps, target, pending.id, blocks);
-  }
+  if (!pending) return;
+  const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+    block.kind === "choice" ? { ...block, answerId: option.id } : block,
+  );
+  await updateBlocks(deps, target, pending.id, blocks);
 
   await deps.prisma.bot.update({
     where: { id: bot.id },
@@ -238,7 +237,12 @@ export async function markAppConnected(
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const target = { workspaceId: actor.workspaceId, botId: bot.id, threadId: thread.id };
-  const messages = await deps.prisma.message.findMany({ where: { threadId: thread.id } });
+  const messages = await deps.prisma.message.findMany({
+    where: { threadId: thread.id },
+    select: { id: true, blocks: true },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+  });
   for (const message of messages) {
     const blocks = message.blocks as MessageBlock[];
     if (

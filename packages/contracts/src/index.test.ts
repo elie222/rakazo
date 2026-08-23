@@ -3,6 +3,7 @@ import {
   appContract,
   CreateBotInput,
   CreateGroupInput,
+  McpServerConfigInput,
   MessageBlock,
   ModelOAuthBeginSchema,
   ProductEventType,
@@ -69,6 +70,21 @@ describe("contracts", () => {
     expect(ProductEventType.options).toContain("thread.cleared");
     expect(ProductEventType.options).toContain("thread.subagent");
     expect(ProductEventType.options).toContain("bot.spawned");
+  });
+
+  it("caps remote MCP headers", () => {
+    const headers = Object.fromEntries(
+      Array.from({ length: 33 }, (_, index) => [`X-Test-${index}`, "value"]),
+    );
+    expect(
+      McpServerConfigInput.safeParse({
+        slug: "demo",
+        name: "Demo",
+        transport: "streamable_http",
+        endpoint: "https://mcp.example.test",
+        headers,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects oversized chart data wherever it is embedded", () => {

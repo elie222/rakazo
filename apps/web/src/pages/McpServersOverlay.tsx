@@ -1,6 +1,7 @@
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
+import { deriveMcpSlug } from "@rakazo/core";
 import { useEffect, useState } from "react";
-import { connectMcpOauth, isNoOauthNeededError, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
+import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
 function oauthStatusText(server: McpServer): string {
@@ -33,15 +34,21 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [oauthPending, setOauthPending] = useState<string | null>(null);
 
   async function refresh() {
-    const [nextServers, nextBots] = await Promise.all([rpc.mcp.servers.list(), rpc.bots.list()]);
+    const [nextServers, nextBots, assignments] = await Promise.all([
+      rpc.mcp.servers.list(),
+      rpc.bots.list(),
+      rpc.mcp.assignments.all(),
+    ]);
     const activeBots = nextBots.filter((bot) => !bot.archivedAt);
-    const assignmentLists = await Promise.all(
-      activeBots.map((bot) => rpc.mcp.assignments.list({ botId: bot.id })),
-    );
     setServers(nextServers);
     setBots(activeBots);
     setBotAssignments(
-      Object.fromEntries(activeBots.map((bot, index) => [bot.id, assignmentLists[index] ?? []])),
+      Object.fromEntries(
+        activeBots.map((bot) => [
+          bot.id,
+          assignments.filter((assignment) => assignment.botId === bot.id),
+        ]),
+      ),
     );
   }
 
@@ -86,13 +93,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     }
     setSaving(true);
     try {
-      const slug =
-        name
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 64) || `mcp-${Date.now()}`;
+      const slug = deriveMcpSlug(name);
       const headers = headerValue.trim()
         ? { [headerName.trim() || "Authorization"]: headerValue.trim() }
         : {};
@@ -152,16 +153,16 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     setOauthPending(server.id);
     try {
       const result = await connectMcpOauth(server.id);
-      if (result === "connected") setOauthPending(null);
+      if (result === "connected" || result === "no-authorization") setOauthPending(null);
       await refresh();
       if (result === "connected") return;
+      if (result === "no-authorization") {
+        setError("No browser authorization is needed for this server — it is ready to use.");
+        return;
+      }
       setOauthPending((current) => (current === server.id ? null : current));
     } catch (err) {
-      if (isNoOauthNeededError(err)) {
-        setError("No browser authorization is needed for this server — it is ready to use.");
-      } else {
-        setError(err instanceof Error ? err.message : "Could not start OAuth");
-      }
+      setError(err instanceof Error ? err.message : "Could not start OAuth");
       setOauthPending(null);
     }
   }
@@ -264,6 +265,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={transport === value}
                   onClick={() => setTransport(value)}
                   className={`rounded-lg px-2 py-2 text-xs ${transport === value ? "bg-[#30356A] text-[#E2E4FF]" : "text-[#85858B]"}`}
                 >

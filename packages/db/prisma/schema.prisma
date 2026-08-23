@@ -762,10 +762,25 @@ model McpServer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   assignments BotMcpServer[]
+  oauthSessions McpOAuthSession[]
 
   @@unique([workspaceId, userId, slug])
   @@index([workspaceId, userId])
   @@map("mcp_servers")
+}
+
+model McpOAuthSession {
+  id          String   @id
+  workspaceId String
+  userId      String
+  serverId    String
+  server      McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  endpoint    String
+  redirectUri String
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, userId, createdAt])
+  @@map("mcp_oauth_sessions")
 }
 
 model BotMcpServer {

@@ -87,7 +87,7 @@ import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
-import { connectMcpOauth, isNoOauthNeededError } from "../lib/mcp-connect";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
@@ -2921,45 +2921,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "choice") {
           const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
           if (!botId) return null;
-          return (
-            <div key={i} className="flex justify-start">
-              <div className="w-[min(420px,80%)] rounded-[20px] bg-[#1A1A1D] px-[18px] py-[14px]">
-                <div className="text-[15.5px] text-[#DFDFE2]">{block.question}</div>
-                {block.subtitle ? (
-                  <div className="mt-0.5 text-[13px] text-[#85858A]">{block.subtitle}</div>
-                ) : null}
-                <div className="mt-3 space-y-1.5">
-                  {block.options
-                    .filter((option) => !block.answerId || option.id === block.answerId)
-                    .map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        disabled={Boolean(block.answerId)}
-                        onClick={() =>
-                          void rpc.onboarding
-                            .choose({ botId, optionId: option.id })
-                            .catch(() => undefined)
-                        }
-                        className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-left ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
-                      >
-                        <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
-                          {option.letter}
-                        </span>
-                        <span
-                          className={`flex-1 text-[15px] ${block.answerId ? "text-[#85858A]" : "text-[#ECECEE]"}`}
-                        >
-                          {option.label}
-                        </span>
-                        {block.answerId === option.id ? (
-                          <span className="text-[#B9B9C0]">✓</span>
-                        ) : null}
-                      </button>
-                    ))}
-                </div>
-              </div>
-            </div>
-          );
+          return <ChoiceCard key={i} botId={botId} block={block} />;
         }
         if (block.kind === "app_connect") {
           const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
@@ -2981,6 +2943,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <McpApprovalCard
+                botId={"botId" in artifactTarget ? artifactTarget.botId : message.botId}
                 name={block.name}
                 serverId={block.serverId}
                 transport={block.transport}
@@ -3852,6 +3815,63 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
 }
 
+function ChoiceCard({
+  botId,
+  block,
+}: {
+  botId: string;
+  block: Extract<MessageBlock, { kind: "choice" }>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function choose(optionId: string) {
+    setPending(true);
+    setError(null);
+    try {
+      await rpc.onboarding.choose({ botId, optionId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save this choice");
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="flex justify-start">
+      <div className="w-[min(420px,80%)] rounded-[20px] bg-[#1A1A1D] px-[18px] py-[14px]">
+        <div className="text-[15.5px] text-[#DFDFE2]">{block.question}</div>
+        {block.subtitle ? (
+          <div className="mt-0.5 text-[13px] text-[#85858A]">{block.subtitle}</div>
+        ) : null}
+        <div className="mt-3 space-y-1.5">
+          {block.options
+            .filter((option) => !block.answerId || option.id === block.answerId)
+            .map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={Boolean(block.answerId) || pending}
+                onClick={() => void choose(option.id)}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-left disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+              >
+                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                  {option.letter}
+                </span>
+                <span
+                  className={`flex-1 text-[15px] ${block.answerId ? "text-[#85858A]" : "text-[#ECECEE]"}`}
+                >
+                  {option.label}
+                </span>
+                {block.answerId === option.id ? <span className="text-[#B9B9C0]">✓</span> : null}
+              </button>
+            ))}
+        </div>
+        {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function AppConnectCard({
   botId,
   block,
@@ -3861,6 +3881,7 @@ function AppConnectCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
+  const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
   const status = block.status === "connected" ? "connected" : localStatus;
   useEffect(() => () => connectionAttempt.current?.abort(), []);
@@ -3870,6 +3891,7 @@ function AppConnectCard({
     const controller = new AbortController();
     connectionAttempt.current = controller;
     setBusy(true);
+    setError(null);
     try {
       const started = await rpc.connections.begin({
         provider: block.provider,
@@ -3893,8 +3915,11 @@ function AppConnectCard({
         }
         await abortableDelay(2_000, controller.signal);
       }
+      if (!controller.signal.aborted) setError("Authorization timed out. Please try again.");
     } catch (error) {
-      if (!controller.signal.aborted) throw error;
+      if (!controller.signal.aborted) {
+        setError(error instanceof Error ? error.message : "Could not authorize this app");
+      }
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -3903,33 +3928,36 @@ function AppConnectCard({
     }
   }
   return (
-    <BuiCard className="flex w-[min(420px,80%)] items-center gap-3.5 px-4 py-3.5">
-      {block.logo ? (
-        <img
-          src={block.logo}
-          alt=""
-          className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
-        />
-      ) : (
-        <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
-          {block.name.slice(0, 1).toUpperCase()}
+    <BuiCard className="w-[min(420px,80%)] px-4 py-3.5">
+      <div className="flex items-center gap-3.5">
+        {block.logo ? (
+          <img
+            src={block.logo}
+            alt=""
+            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
+          />
+        ) : (
+          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
+            {block.name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-medium" style={{ color: "var(--bui-ink)" }}>
+            {block.name}
+          </span>
+          <span className="block truncate text-[13px]" style={{ color: "var(--bui-ink-3)" }}>
+            {block.description}
+          </span>
         </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-medium" style={{ color: "var(--bui-ink)" }}>
-          {block.name}
-        </span>
-        <span className="block truncate text-[13px]" style={{ color: "var(--bui-ink-3)" }}>
-          {block.description}
-        </span>
-      </span>
-      {status === "connected" ? (
-        <SuccessPop label="Connected" />
-      ) : (
-        <BuiButton disabled={busy} onClick={() => void authorize()}>
-          {busy ? "Waiting…" : "Authorize"}
-        </BuiButton>
-      )}
+        {status === "connected" ? (
+          <SuccessPop label="Connected" />
+        ) : (
+          <BuiButton disabled={busy} onClick={() => void authorize()}>
+            {busy ? "Waiting…" : "Authorize"}
+          </BuiButton>
+        )}
+      </div>
+      {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
     </BuiCard>
   );
 }
@@ -4012,39 +4040,48 @@ function ChartCanvas({
   );
 }
 
-type McpApprovalState = "pending" | "connecting" | "connected" | "no-auth" | "dismissed";
+type McpApprovalState = "pending" | "connecting" | "connected" | "dismissed";
 
 /** Approval card for an agent-created MCP server: the user completes browser
  * OAuth (or confirms no authorization is needed) without leaving the chat. */
 function McpApprovalCard({
+  botId,
   name,
   serverId,
   transport,
   endpoint,
   needsOAuth,
 }: {
+  botId: string | undefined;
   name: string;
   serverId: string;
   transport: string;
   endpoint: string | null;
   needsOAuth: boolean;
 }) {
-  const [state, setState] = useState<McpApprovalState>(needsOAuth ? "pending" : "no-auth");
+  const [state, setState] = useState<McpApprovalState>("pending");
   const [error, setError] = useState<string | null>(null);
 
   async function authorize() {
+    if (!botId) {
+      setError("This server cannot be assigned without a bot.");
+      return;
+    }
     setState("connecting");
     setError(null);
     try {
-      const result = await connectMcpOauth(serverId);
-      setState(result === "connected" ? "connected" : needsOAuth ? "pending" : "no-auth");
-    } catch (err) {
-      if (isNoOauthNeededError(err)) {
-        setState("no-auth");
-      } else {
-        setError(err instanceof Error ? err.message : "Could not start authorization");
-        setState("pending");
+      if (needsOAuth) {
+        const result = await connectMcpOauth(serverId);
+        if (result === "cancelled") {
+          setState("pending");
+          return;
+        }
       }
+      await rpc.mcp.assignments.approve({ botId, serverId });
+      setState("connected");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not approve this server");
+      setState("pending");
     }
   }
 
@@ -4065,8 +4102,9 @@ function McpApprovalCard({
       {state === "pending" || state === "connecting" ? (
         <>
           <p className="mt-2 text-[13px] leading-[1.5]" style={{ color: "var(--bui-ink-2)" }}>
-            This server uses browser sign-in. Authorize it to let your agents use its tools — a
-            popup will open.
+            {needsOAuth
+              ? "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
+              : "Approve this server to let your agent use its tools."}
           </p>
           {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
           <div className="mt-3 flex gap-2">
@@ -4075,16 +4113,11 @@ function McpApprovalCard({
               disabled={state === "connecting"}
               onClick={() => void authorize()}
             >
-              {state === "connecting" ? "Waiting for authorization…" : "Authorize"}
+              {state === "connecting" ? "Connecting…" : needsOAuth ? "Authorize" : "Approve"}
             </BuiButton>
             <BuiButton onClick={() => setState("dismissed")}>Not now</BuiButton>
           </div>
         </>
-      ) : null}
-      {state === "no-auth" ? (
-        <div className="mt-3">
-          <SuccessPop label="No browser authorization needed — the server is ready to use." />
-        </div>
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
@@ -4116,6 +4149,7 @@ function ChartBlockView({
   }));
   useEffect(() => {
     if (!expanded) return;
+    setViewport({ width: window.innerWidth, height: window.innerHeight });
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setExpanded(false);
     };
@@ -4127,6 +4161,7 @@ function ChartBlockView({
       window.removeEventListener("resize", onResize);
     };
   }, [expanded]);
+  const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
       <div className="group relative max-w-[74%] rounded-[20px] bg-[#17171A] p-4">
@@ -4167,8 +4202,8 @@ function ChartBlockView({
             <ChartCanvas
               spec={spec}
               data={data}
-              width={chartViewport(viewport.width, viewport.height).width}
-              height={chartViewport(viewport.width, viewport.height).height}
+              width={expandedViewport.width}
+              height={expandedViewport.height}
             />
           </div>
         </div>

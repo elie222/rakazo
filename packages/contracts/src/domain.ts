@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
+import { McpHeadersSchema, McpTransportSchema } from "./mcp.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -243,8 +244,7 @@ export const CapabilityInstallSchema = z.object({
 });
 export type CapabilityInstall = z.infer<typeof CapabilityInstallSchema>;
 
-export const McpTransportSchema = z.enum(["streamable_http", "sse", "stdio"]);
-export type McpTransport = z.infer<typeof McpTransportSchema>;
+export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({
   slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
@@ -259,13 +259,13 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("streamable_http"),
     endpoint: z.string().url(),
-    headers: z.record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4096)).default({}),
+    headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
   }),
   McpServerBaseInput.extend({
     transport: z.literal("sse"),
     endpoint: z.string().url(),
-    headers: z.record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4096)).default({}),
+    headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
   }),
   McpServerBaseInput.extend({

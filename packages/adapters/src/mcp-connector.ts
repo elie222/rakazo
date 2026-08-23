@@ -6,8 +6,9 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
-import type { McpOAuthBroker } from "./mcp-oauth.js";
+import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 type SessionEntry = { session: McpSession; revision: number };
@@ -20,7 +21,11 @@ export class McpConnector implements ConnectorProvider {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly secrets: EncryptedSecretStore,
-    private readonly options: { stdioEnabled?: boolean; allowedCommands?: string[] } = {},
+    private readonly options: {
+      stdioEnabled?: boolean;
+      allowedCommands?: string[];
+      network?: RemoteTransportDependencies;
+    } = {},
     private readonly oauth?: McpOAuthBroker,
   ) {}
 
@@ -172,12 +177,9 @@ export class McpConnector implements ConnectorProvider {
           })
         : null;
       const material = secret
-        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as {
-            secret?: string;
-            env?: Record<string, string>;
-            headers?: Record<string, string>;
-          })
+        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as OAuthMaterial)
         : {};
+      const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
       if (server.transport === "stdio") {
@@ -187,10 +189,13 @@ export class McpConnector implements ConnectorProvider {
           args,
           env,
           allowedCommands: this.options.allowedCommands ?? [],
+          signal: context.signal,
         });
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
-        const authProvider = this.oauth ? await this.oauth.providerFor(server, context) : undefined;
+        const authProvider = this.oauth
+          ? await this.oauth.providerFor(server, context, loaded)
+          : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
             ? material.secret
@@ -207,6 +212,8 @@ export class McpConnector implements ConnectorProvider {
           headerPolicy: { headers },
           fallbackToSse: false,
           authProvider,
+          network: this.options.network,
+          signal: context.signal,
         });
       }
       return session;

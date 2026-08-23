@@ -30,6 +30,8 @@ export interface AppEnv {
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
+  mcpStdioEnabled: boolean;
+  mcpStdioAllowedCommands: string[];
   port: number;
   gitSha: string | undefined;
 }
@@ -67,6 +69,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
     defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
+    mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
+    mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
   };

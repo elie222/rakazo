@@ -7,12 +7,19 @@ import { McpSession, validateUrl, withEndpointOriginFallback } from "./mcp-trans
 
 afterEach(() => vi.unstubAllGlobals());
 
+const TEST_NETWORK = {
+  resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+};
+
 describe("MCP transport seam", () => {
   it("rejects unsafe URLs and oversized URLs before network access", () => {
     expect(() => validateUrl("http://remote.example/mcp")).toThrow("HTTPS");
     expect(() => validateUrl("https://user:pass@example.com/mcp")).toThrow("credentials");
     expect(() => validateUrl(`https://example.com/${"x".repeat(2_100)}`)).toThrow("exceeds");
-    expect(validateUrl("http://127.0.0.1:1234/mcp").hostname).toBe("127.0.0.1");
+    expect(() => validateUrl("http://127.0.0.1:1234/mcp")).toThrow("HTTPS");
+    expect(validateUrl("http://127.0.0.1:1234/mcp", { allowHttpLocalhost: true }).hostname).toBe(
+      "127.0.0.1",
+    );
   });
 
   it("gates stdio by exact command allowlist", async () => {
@@ -25,6 +32,23 @@ describe("MCP transport seam", () => {
     ).rejects.toThrow("allowlist");
     await session.close();
     assert.ok(true);
+  });
+
+  it("rejects remote endpoints that resolve to a private address", async () => {
+    const fetchImpl = vi.fn();
+    const session = new McpSession();
+    await expect(
+      session.connectRemote({
+        url: "https://metadata.example.test/mcp",
+        fallbackToSse: false,
+        network: {
+          fetch: fetchImpl,
+          resolveHostname: async () => [{ address: "169.254.169.254", family: 4 }],
+        },
+      }),
+    ).rejects.toThrow("private address");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await session.close();
   });
 
   it("requires a connected session for operations", async () => {
@@ -105,6 +129,7 @@ describe("MCP transport seam", () => {
       url: "https://mcp.example.test/mcp",
       authProvider: provider,
       fallbackToSse: false,
+      network: TEST_NETWORK,
     });
 
     expect(resourceHeaders[0]).toBe("Bearer stale-access");
@@ -174,6 +199,7 @@ describe("MCP transport seam", () => {
         url: "https://mcp.example.test/mcp",
         authProvider: provider,
         fallbackToSse: false,
+        network: TEST_NETWORK,
       }),
     ).rejects.toThrow("Reconnect this server");
 
@@ -224,6 +250,7 @@ describe("MCP transport seam", () => {
           url: `http://127.0.0.1:${port}/mcp`,
           authProvider: provider,
           fallbackToSse: false,
+          urlPolicy: { allowHttpLocalhost: true },
         }),
       ).rejects.toThrow("Reconnect this server");
     } finally {
@@ -270,5 +297,23 @@ describe("MCP transport seam", () => {
       headers: { authorization: "Bearer secret" },
     });
     await expect(direct.json()).resolves.toEqual({ authorization: "Bearer secret" });
+  });
+
+  it("never retries a failed write against the endpoint origin", async () => {
+    const inner = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const fallback = withEndpointOriginFallback(
+      "https://endpoint.example.test",
+      inner as typeof fetch,
+    );
+
+    await expect(
+      fallback("https://private.example.test/register", {
+        method: "POST",
+        body: "client_secret=secret",
+      }),
+    ).rejects.toThrow("fetch failed");
+    expect(inner).toHaveBeenCalledTimes(1);
   });
 });

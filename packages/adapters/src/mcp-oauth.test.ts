@@ -7,6 +7,19 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 
+const TEST_NETWORK = {
+  resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+};
+
+function oauthSessionStore() {
+  return {
+    count: vi.fn().mockResolvedValue(0),
+    findFirst: vi.fn(),
+    create: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+  };
+}
+
 describe("MCP OAuth", () => {
   it("persists SDK credentials and invalidates only the requested scope", async () => {
     const persisted: unknown[] = [];
@@ -144,11 +157,12 @@ describe("MCP OAuth", () => {
       secret: {
         findFirst: vi.fn(),
         create: vi.fn().mockResolvedValue({}),
-        delete: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put } as never);
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
 
     const started = await broker.begin({
       serverId: "server-1",
@@ -156,6 +170,8 @@ describe("MCP OAuth", () => {
       userId: "user-1",
       redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
     });
+    expect(started.status).toBe("authorization_required");
+    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
     const authorizationUrl = new URL(started.authorizationUrl);
 
     expect(registration).toMatchObject({ client_name: "Rakazo", application_type: "native" });
@@ -212,10 +228,11 @@ describe("MCP OAuth", () => {
         }),
         update: vi.fn().mockResolvedValue({}),
       },
-      secret: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
+      secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+      mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never);
+    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never, TEST_NETWORK);
 
     await expect(
       broker.begin({
@@ -226,6 +243,87 @@ describe("MCP OAuth", () => {
       }),
     ).rejects.toThrow(/HTTPS/i);
     expect(fetchCalls).toEqual([]);
+  });
+
+  it("completes a persisted OAuth session after the API process restarts", async () => {
+    const sessionId = "5d259fd9-b9fa-478e-a268-cc778816a043";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (request.url !== "https://auth.example.test/token") {
+          throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+        }
+        return Response.json({ access_token: "fresh", token_type: "bearer" });
+      }),
+    );
+    const material = {
+      oauth: {
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        codeVerifier: "persisted-verifier",
+        clientInformation: { client_id: "persisted-client" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          resourceMetadata: {
+            resource: "https://mcp.example.test/mcp",
+            authorization_servers: ["https://auth.example.test"],
+          },
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code"],
+          },
+        },
+      },
+    };
+    const sessions = oauthSessionStore();
+    sessions.findFirst.mockResolvedValue({
+      id: sessionId,
+      serverId: "server-1",
+      endpoint: "https://mcp.example.test/mcp",
+      redirectUri: material.oauth.redirectUri,
+      createdAt: new Date(),
+    });
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "server-1",
+          endpoint: "https://mcp.example.test/mcp",
+          secretId: "secret-1",
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      mcpOAuthSession: sessions,
+      $transaction: vi.fn().mockResolvedValue([]),
+    };
+    const secrets = {
+      load: vi.fn(() => JSON.stringify(material)),
+      put: vi.fn(async () => ({ id: "secret-2", ciphertext: "encrypted-2" })),
+    };
+    const restartedBroker = new McpOAuthBroker(prisma as never, secrets as never, TEST_NETWORK);
+
+    await restartedBroker.complete({
+      sessionId,
+      code: "authorization-code",
+      state: sessionId,
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    expect(sessions.deleteMany).toHaveBeenCalledWith({
+      where: { id: sessionId, workspaceId: "workspace-1", userId: "user-1" },
+    });
+    expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+      where: { id: "server-1" },
+      data: { revision: { increment: 1 } },
+    });
   });
 
   it("rejects redirects during OAuth discovery instead of following them", async () => {
@@ -264,10 +362,11 @@ describe("MCP OAuth", () => {
         }),
         update: vi.fn().mockResolvedValue({}),
       },
-      secret: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
+      secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+      mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never);
+    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never, TEST_NETWORK);
 
     await expect(
       broker.begin({
@@ -280,7 +379,7 @@ describe("MCP OAuth", () => {
     expect(requestedUrls.every((url) => !url.includes("attacker.example.test"))).toBe(true);
   });
 
-  it("retries unreachable OAuth discovery and DCR hosts on the MCP endpoint origin", async () => {
+  it("retries safe OAuth discovery reads without replaying DCR writes", async () => {
     const requests: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -317,16 +416,6 @@ describe("MCP OAuth", () => {
             code_challenge_methods_supported: ["S256"],
           });
         }
-        if (url.href === "https://mcp.example.test/register" && request.method === "POST") {
-          return Response.json(
-            {
-              client_id: "fallback-client",
-              redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"],
-              token_endpoint_auth_method: "none",
-            },
-            { status: 201 },
-          );
-        }
         throw new Error(`Unexpected request: ${request.method} ${url}`);
       }),
     );
@@ -347,27 +436,25 @@ describe("MCP OAuth", () => {
       secret: {
         findFirst: vi.fn(),
         create: vi.fn().mockResolvedValue({}),
-        delete: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put } as never);
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
 
-    const started = await broker.begin({
-      serverId: "server-1",
-      workspaceId: "workspace-1",
-      userId: "user-1",
-      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
-    });
+    await expect(
+      broker.begin({
+        serverId: "server-1",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      }),
+    ).rejects.toThrow(/fetch failed|Unexpected request/);
 
     expect(requests).toContain(
       "GET https://mcp.example.test/.well-known/oauth-protected-resource/mcp",
     );
-    expect(requests).toContain("POST https://mcp.example.test/register");
-    expect(new URL(started.authorizationUrl).origin).toBe("https://login.example.test");
-    expect(new URL(started.authorizationUrl).searchParams.get("client_id")).toBe("fallback-client");
-    expect(new URL(started.authorizationUrl).searchParams.get("resource")).toBe(
-      "https://private-auth.example.test/",
-    );
+    expect(requests).not.toContain("POST https://mcp.example.test/register");
   });
 });

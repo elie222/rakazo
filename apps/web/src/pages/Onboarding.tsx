@@ -194,17 +194,22 @@ export function OnboardingPage() {
   }
 
   async function createBot() {
-    const bot = await rpc.bots.create({
-      name: name.trim(),
-      title,
-      description,
-      instructions: description,
-      notifyOnFinish: true,
-    });
-    // Onboarding continues conversationally in the thread: greeting, focus
-    // choice, and Composio authorize cards.
-    await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
-    navigate(`/app/${bot.id}`);
+    setError(null);
+    try {
+      const bot = await rpc.bots.create({
+        name: name.trim(),
+        title,
+        description,
+        instructions: description,
+        notifyOnFinish: true,
+      });
+      // Onboarding continues conversationally in the thread: greeting, focus
+      // choice, and Composio authorize cards.
+      await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
+      navigate(`/app/${bot.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create your bot");
+    }
   }
 
   return (
@@ -408,6 +413,7 @@ export function OnboardingPage() {
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
+            {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
             <button
               type="button"
               disabled={!name.trim()}

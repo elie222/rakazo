@@ -113,7 +113,7 @@ export async function createApp(
     prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
-  const mcpOAuth = new McpOAuthBroker(prisma, secrets);
+  const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
@@ -123,11 +123,9 @@ export async function createApp(
     prisma,
     secrets,
     {
-      stdioEnabled: process.env.MCP_STDIO_ENABLED === "true",
-      allowedCommands: (process.env.MCP_STDIO_ALLOWED_COMMANDS ?? "")
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean),
+      stdioEnabled: env.mcpStdioEnabled,
+      allowedCommands: env.mcpStdioAllowedCommands,
+      network: remoteConnectors,
     },
     mcpOAuth,
   );

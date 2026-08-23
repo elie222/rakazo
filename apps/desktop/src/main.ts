@@ -57,7 +57,18 @@ function createWindow() {
   // OAuth flows open the provider's authorize page via window.open; give that
   // popup a normal framed window and keep every non-http target closed.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith("https://") && !url.startsWith("http://")) return { action: "deny" };
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      return { action: "deny" };
+    }
+    const appOrigin = new URL(WEB_URL).origin;
+    if (
+      target.protocol !== "https:" &&
+      !(target.protocol === "http:" && target.origin === appOrigin)
+    )
+      return { action: "deny" };
     return {
       action: "allow",
       overrideBrowserWindowOptions: {

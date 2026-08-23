@@ -3,7 +3,7 @@ import { rpc } from "./rpc";
 export const MCP_OAUTH_CHANNEL = "rakazo-mcp-oauth";
 const MCP_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
 
-export type McpOauthResult = "connected" | "cancelled";
+export type McpOauthResult = "connected" | "cancelled" | "no-authorization";
 
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
@@ -16,6 +16,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     serverId,
     redirectUri: `${window.location.origin}/mcp/oauth/callback`,
   });
+  if (started.status !== "authorization_required") return "no-authorization";
   const popup = window.open(
     started.authorizationUrl,
     MCP_OAUTH_CHANNEL,
@@ -52,11 +53,4 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       finish("connected");
     };
   });
-}
-
-/** True when an oauth.begin error means no browser authorization is needed
- * (the server uses static credentials or accepted the existing connection). */
-export function isNoOauthNeededError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /did not request OAuth|accepted the existing connection/i.test(error.message);
 }

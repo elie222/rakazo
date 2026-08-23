@@ -71,7 +71,11 @@ describe("MCP connector session cache", () => {
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
       },
     };
-    const connector = new McpConnector(prisma as never, {} as never);
+    const connector = new McpConnector(prisma as never, {} as never, {
+      network: {
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+      },
+    });
     const context = {
       workspaceId: "w1",
       userId: "u1",
