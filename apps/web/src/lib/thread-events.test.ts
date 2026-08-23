@@ -80,19 +80,27 @@ describe("thread event reduction", () => {
   });
 
   it("updates a live subagent in place while preserving streamed answer progress", () => {
-    const initial = snapshot([
-      message("subagent:research", [
+    const activeRun = threadRun("run-1");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        message("subagent:research", [
+          {
+            kind: "subagent",
+            agentId: "research",
+            name: "Research",
+            task: "Find sources",
+            status: "running",
+            progress: "Starting",
+          },
+        ]),
         {
-          kind: "subagent",
-          agentId: "research",
-          name: "Research",
-          task: "Find sources",
-          status: "running",
-          progress: "Starting",
+          ...message("progress:run-1", [{ kind: "progress", text: "Draft" }]),
+          runId: activeRun.id,
         },
       ]),
-      message("progress:run-1", [{ kind: "progress", text: "Draft" }]),
-    ]);
+      run: activeRun,
+      activeRuns: undefined,
+    };
 
     const next = reduceThreadSnapshot(
       initial,
@@ -518,6 +526,62 @@ describe("thread event reduction", () => {
     expect(next?.messages.map((item) => item.botId)).toEqual(["bot-b", "bot-a"]);
   });
 
+  it("preserves live progress from a legacy run-only snapshot", () => {
+    const legacyRun = threadRun("run-legacy", "bot-legacy");
+    const legacyLive = {
+      ...message("progress:run-legacy", [{ kind: "progress" as const, text: "Still working" }]),
+      botId: legacyRun.botId,
+      runId: legacyRun.id,
+    };
+    const initial: ThreadSnapshot = {
+      ...snapshot([legacyLive]),
+      run: legacyRun,
+      activeRuns: undefined,
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({ type: "thread.progress", runId: "run-new", payload: { text: "New work" } }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-legacy",
+      "progress:run-new",
+    ]);
+  });
+
+  it("drops inactive progress while applying a subagent update", () => {
+    const activeRun = threadRun("run-active");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        {
+          ...message("progress:run-active", [{ kind: "progress", text: "Active" }]),
+          runId: "run-active",
+        },
+        {
+          ...message("progress:run-stale", [{ kind: "progress", text: "Stale" }]),
+          runId: "run-stale",
+        },
+      ]),
+      run: activeRun,
+      activeRuns: undefined,
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.subagent",
+        runId: "run-active",
+        payload: { agentId: "research", name: "Research", task: "Check", status: "running" },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "subagent:research",
+      "progress:run-active",
+    ]);
+  });
+
   it("clears the step trail once the durable answer arrives", () => {
     const initial = snapshot([
       message("progress:run-1", [
@@ -720,6 +784,22 @@ function snapshot(messages: ThreadMessage[], olderCursor: number | null = null):
     olderCursor,
     run: null,
     computer: computer(),
+  };
+}
+
+function threadRun(id: string, botId = "bot-1"): NonNullable<ThreadSnapshot["run"]> {
+  return {
+    id,
+    botId,
+    threadId: "thread-1",
+    taskId: `task-${id}`,
+    status: "running",
+    trigger: "user",
+    modelProvider: null,
+    modelId: null,
+    error: null,
+    startedAt: null,
+    completedAt: null,
   };
 }
 

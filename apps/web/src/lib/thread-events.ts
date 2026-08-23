@@ -15,14 +15,14 @@ import {
 
 function takeLiveMessage(
   messages: readonly ThreadMessage[],
-  liveId: string,
+  liveId: string | undefined,
   activeRuns: ThreadSnapshot["activeRuns"],
 ): { previous: ThreadMessage | undefined; remaining: ThreadMessage[] } {
   const activeRunIds = new Set(activeRuns?.map((run) => run.id) ?? []);
   let previous: ThreadMessage | undefined;
   const remaining: ThreadMessage[] = [];
   for (const message of messages) {
-    if (message.id === liveId) {
+    if (liveId && message.id === liveId) {
       previous = message;
     } else if (
       !message.id.startsWith("progress:") ||
@@ -111,7 +111,7 @@ export function reduceThreadSnapshot(
   }
   if (event.type === "thread.progress") {
     const liveId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, activeThreadRuns(prev));
     const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
       type: "progress",
       payload: event.payload,
@@ -130,7 +130,7 @@ export function reduceThreadSnapshot(
   }
   if (event.type === "agent.tool.called") {
     const liveId = progressMessageId(event);
-    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const { previous, remaining } = takeLiveMessage(prev.messages, liveId, activeThreadRuns(prev));
     const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {
       type: "tool",
       name: String(event.payload.name ?? ""),
@@ -159,10 +159,11 @@ export function reduceThreadSnapshot(
       runId: event.runId,
       createdAt: event.createdAt,
     };
-    const without = prev.messages.filter(
+    const { remaining } = takeLiveMessage(prev.messages, undefined, activeThreadRuns(prev));
+    const without = remaining.filter(
       (message) => message.id !== next.id && !message.id.startsWith("progress:"),
     );
-    const kept = prev.messages.filter((message) => message.id.startsWith("progress:"));
+    const kept = remaining.filter((message) => message.id.startsWith("progress:"));
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
@@ -182,7 +183,7 @@ export function reduceThreadSnapshot(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
     const liveId = progressMessageId(event);
-    const { remaining } = takeLiveMessage(prev.messages, liveId, prev.activeRuns);
+    const { remaining } = takeLiveMessage(prev.messages, liveId, activeThreadRuns(prev));
     const without = remaining.filter(
       (message) => message.id !== next.id && !replacedSubagent(message, replacedSubagentIds),
     );

@@ -2664,6 +2664,7 @@ const MessageView = memo(function MessageView({
     message.blocks.every(
       (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
     );
+  const isLive = message.id.startsWith("progress:");
   const messageContext = (
     <>
       {speakerName ? (
@@ -2677,7 +2678,6 @@ const MessageView = memo(function MessageView({
     </>
   );
   if (isNarration) {
-    const isLive = message.id.startsWith("progress:");
     return (
       <>
         {messageContext}
@@ -2761,7 +2761,10 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3">
-                <ToolSteps steps={block.steps} currentIndex={block.steps.length - 1} />
+                <ToolSteps
+                  steps={block.steps}
+                  currentIndex={isLive ? block.steps.length - 1 : undefined}
+                />
               </div>
             </div>
           );

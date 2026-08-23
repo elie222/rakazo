@@ -276,7 +276,10 @@ function takeMobileLiveMessage(
   snapshot: MobileSnapshot,
   liveId: string,
 ): { previous: MobileMessage | undefined; remaining: MobileMessage[] } {
-  const activeRunIds = new Set(snapshot.activeRuns?.map((run) => run.id) ?? []);
+  const activeRunIds = new Set([
+    ...(snapshot.run ? [snapshot.run.id] : []),
+    ...(snapshot.activeRuns?.map((run) => run.id) ?? []),
+  ]);
   let previous: MobileMessage | undefined;
   const remaining: MobileMessage[] = [];
   for (const message of snapshot.messages) {

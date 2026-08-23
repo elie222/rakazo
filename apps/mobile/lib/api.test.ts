@@ -260,6 +260,30 @@ describe("mobile thread event reduction", () => {
     ]);
   });
 
+  it("preserves progress from a legacy run-only snapshot", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-legacy", [{ kind: "progress", text: "Still working" }]),
+          runId: "run-legacy",
+        },
+      ]),
+      run: { id: "run-legacy", status: "running" },
+      activeRuns: undefined,
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.progress",
+      runId: "run-new",
+      payload: { text: "New work" },
+    });
+
+    expect(next?.messages.map((item) => item.id)).toEqual([
+      "progress:run-legacy",
+      "progress:run-new",
+    ]);
+  });
+
   it("holds live tool steps until mobile narration reaches a sentence boundary", () => {
     const narration = applyMobileThreadEvent(snapshot(), {
       type: "thread.progress",

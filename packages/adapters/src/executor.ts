@@ -1068,6 +1068,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (event.type === "text") {
               assembled += event.text;
               currentTextSegment += event.text;
+              toolNameStreak = { name: undefined, count: 0 };
               tryFlushPendingTools();
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
@@ -1255,7 +1256,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               });
             } else if (event.type === "done") {
-              assembled = assembled || event.text || assembled;
+              if (!assembled && event.text) {
+                assembled = event.text;
+                currentTextSegment += event.text;
+              }
             }
           }
 
