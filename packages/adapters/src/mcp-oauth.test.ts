@@ -346,6 +346,59 @@ describe("MCP OAuth", () => {
     });
   });
 
+  it("rotates the current credential inside a serialized database transaction", async () => {
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({ secretId: "secret-current" }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "server-1",
+          endpoint: "https://mcp.example.test/mcp",
+          secretId: "secret-current",
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "secret-current",
+          ciphertext: "encrypted-current",
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const secrets = {
+      load: vi.fn(() =>
+        JSON.stringify({
+          secret: "static-token",
+          oauth: { tokens: { access_token: "oauth-token", token_type: "bearer" } },
+        }),
+      ),
+      put: vi.fn(async () => ({ id: "secret-next", ciphertext: "encrypted-next" })),
+    };
+    const broker = new McpOAuthBroker(prisma as never, secrets as never, TEST_NETWORK);
+
+    await broker.disconnect({
+      serverId: "server-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.mcpServer.update).toHaveBeenCalledWith({
+      where: { id: "server-1" },
+      data: { secretId: "secret-next", revision: { increment: 1 } },
+    });
+    expect(tx.secret.deleteMany).toHaveBeenCalledWith({ where: { id: "secret-current" } });
+  });
+
   it("rejects redirects during OAuth discovery instead of following them", async () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal(

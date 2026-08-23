@@ -463,7 +463,7 @@ export class McpOAuthBroker {
     if (!row) return;
     const material = this.read(row.ciphertext);
     delete material.oauth;
-    await this.replaceMaterial(server.id, row.id, material, input, true);
+    await this.replaceMaterial(server.id, material, input, true);
   }
 
   private async loadMaterial(
@@ -483,18 +483,11 @@ export class McpOAuthBroker {
     loaded: { material: OAuthMaterial; secretId?: string },
     options: ProviderOptions = {},
   ): StoredMcpOAuthProvider {
-    let currentSecretId = loaded.secretId;
     return new StoredMcpOAuthProvider(
       server.id,
       loaded.material,
       async (material) => {
-        currentSecretId = await this.replaceMaterial(
-          server.id,
-          currentSecretId,
-          material,
-          context,
-          false,
-        );
+        await this.replaceMaterial(server.id, material, context, false);
       },
       options,
     );
@@ -502,7 +495,6 @@ export class McpOAuthBroker {
 
   private async replaceMaterial(
     serverId: string,
-    existingId: string | undefined,
     material: OAuthMaterial,
     context: ActorRef,
     incrementRevision: boolean,
@@ -513,41 +505,53 @@ export class McpOAuthBroker {
         Object.keys(material.headers ?? {}).length ||
         material.oauth,
     );
-    if (!hasMaterial) {
-      await this.prisma.$transaction([
-        this.prisma.mcpServer.update({
-          where: { id: serverId },
-          data: { secretId: null, ...(incrementRevision ? { revision: { increment: 1 } } : {}) },
-        }),
-        ...(existingId ? [this.prisma.secret.deleteMany({ where: { id: existingId } })] : []),
-      ]);
-      return undefined;
-    }
-    const stored = await this.secrets.put(JSON.stringify(material), {
-      operationId: "mcp.oauth.persist",
-      traceId: "mcp.oauth.persist",
-      workspaceId: context.workspaceId,
-      userId: context.userId,
-      botId: "mcp",
-      signal: new AbortController().signal,
-    });
-    await this.prisma.$transaction([
-      this.prisma.secret.create({
-        data: {
-          id: stored.id,
+    const stored = hasMaterial
+      ? await this.secrets.put(JSON.stringify(material), {
+          operationId: "mcp.oauth.persist",
+          traceId: "mcp.oauth.persist",
           workspaceId: context.workspaceId,
           userId: context.userId,
-          kind: "mcp",
-          ciphertext: stored.ciphertext,
+          botId: "mcp",
+          signal: new AbortController().signal,
+        })
+      : undefined;
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize credential rotation across API instances. Reading the current
+      // secret only after acquiring this lock prevents concurrent callbacks
+      // from deleting or orphaning one another's newly installed credential.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+      const server = await tx.mcpServer.findFirst({
+        where: {
+          id: serverId,
+          workspaceId: context.workspaceId,
+          userId: context.userId,
         },
-      }),
-      this.prisma.mcpServer.update({
+        select: { secretId: true },
+      });
+      if (!server) throw new Error("MCP server is unavailable");
+      if (stored) {
+        await tx.secret.create({
+          data: {
+            id: stored.id,
+            workspaceId: context.workspaceId,
+            userId: context.userId,
+            kind: "mcp",
+            ciphertext: stored.ciphertext,
+          },
+        });
+      }
+      await tx.mcpServer.update({
         where: { id: serverId },
-        data: { secretId: stored.id, ...(incrementRevision ? { revision: { increment: 1 } } : {}) },
-      }),
-      ...(existingId ? [this.prisma.secret.deleteMany({ where: { id: existingId } })] : []),
-    ]);
-    return stored.id;
+        data: {
+          secretId: stored?.id ?? null,
+          ...(incrementRevision ? { revision: { increment: 1 } } : {}),
+        },
+      });
+      if (server.secretId && server.secretId !== stored?.id) {
+        await tx.secret.deleteMany({ where: { id: server.secretId } });
+      }
+      return stored?.id;
+    });
   }
 
   private read(ciphertext: string): OAuthMaterial {
