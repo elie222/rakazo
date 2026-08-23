@@ -471,6 +471,37 @@ describeJourneys("required product journeys", () => {
     ).toBe(releaseEvents);
   });
 
+  it("4d: skipping takeover resumes without treating login as done", async () => {
+    const cookie = await signup(app, `takeover-skip-j-${stamp}@rakazo.test`, "Skip Takeover");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "install the gsc cli and sign in",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_takeover");
+    await rpc(app, cookie, "computer/release", { botId: bot.id, reason: "skipped" });
+    const done = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    expect(JSON.stringify(done.messages).toLowerCase()).toMatch(/skipped/);
+    expect(JSON.stringify(done.messages).toLowerCase()).not.toMatch(/signed in/);
+    expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
+    const released = await prisma.event.findFirst({
+      where: { botId: bot.id, type: "computer.takeover.released" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(released?.payload).toMatchObject({ reason: "skipped" });
+  });
+
   it("4b: an expired takeover denies input and reconciles API and database state", async () => {
     const previousTakeoverTtl = process.env.COMPUTER_TAKEOVER_TTL_MS;
     process.env.COMPUTER_TAKEOVER_TTL_MS = "1000";

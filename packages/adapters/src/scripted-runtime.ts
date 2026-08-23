@@ -118,8 +118,20 @@ export function inferScript(
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
   if (
+    resumeFromCheckpoint === "takeover-skipped" ||
+    lower.includes("skipped the login")
+  ) {
+    return [
+      {
+        assistant: "login was skipped. continuing without treating sign-in as done.",
+        complete: true,
+      },
+    ];
+  }
+  if (
     resumeFromCheckpoint === "takeover" ||
     lower.includes("completed sign-in") ||
+    lower.includes("the user finished the login") ||
     lower.includes("continue without requesting takeover")
   ) {
     return [
