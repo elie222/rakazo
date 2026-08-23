@@ -140,6 +140,46 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "render_plot",
+    description:
+      'Render a chart from tabular data as a PNG and attach it to the chat. Backed by Observable Plot: bar, line, area, scatter, histogram, heatmap, box plot, facets, and more via a declarative JSON spec. Call with {"charts": true} FIRST to list every chart type with a complete runnable example spec ({"charts": "<keyword>"} searches), then copy the closest example and substitute your rows and columns. {"help": true} returns the full guide. Pass rows inline as data, or data_path for a .csv/.tsv/.json file in your home.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        charts: {
+          description:
+            'true lists all chart types with runnable example specs; a keyword string (e.g. "distribution", "share", "trend") searches them.',
+        },
+        help: {
+          type: "boolean",
+          description: "Return the full render_plot skill guide instead of rendering.",
+        },
+        spec: {
+          type: "object",
+          description:
+            "Declarative Observable Plot spec: {title?, width?, height?, x?, y?, color?, fx?, fy?, marks: [{type, options, transform?, data?}]}.",
+        },
+        data: {
+          type: "array",
+          description: "Rows as objects, shared by marks without their own data.",
+        },
+        data_path: {
+          type: "string",
+          description:
+            "Workspace path of a .csv, .tsv, or .json rows file to load instead of inline data.",
+        },
+        path: {
+          type: "string",
+          description: "Output PNG path in this bot's home. Default charts/plot-<n>.png.",
+        },
+        attach: {
+          type: "boolean",
+          description: "Attach the rendered PNG to the chat (default true).",
+        },
+      },
+    },
+  },
+  {
     name: "remember",
     description: "Store a durable fact in this bot's explicit memory.",
     inputSchema: {

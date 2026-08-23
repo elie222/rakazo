@@ -398,12 +398,28 @@ describe("mobile thread event reduction", () => {
     const waiting = applyMobileThreadEvent(initial, {
       type: "run.waiting_input",
       runId: "run-1",
+      seq: 8,
     });
 
     expect(waiting?.run?.status).toBe("waiting_input");
-    expect(applyMobileThreadEvent(waiting, { type: "run.waiting_input", runId: "run-1" })).toBe(
-      waiting,
-    );
+    expect(waiting?.cursor).toBe(8);
+    const repeated = applyMobileThreadEvent(waiting, {
+      type: "run.waiting_input",
+      runId: "run-1",
+      seq: 9,
+    });
+    expect(repeated?.cursor).toBe(9);
+    expect(repeated?.run).toBe(waiting?.run);
+  });
+
+  it("advances the cursor for durable message events", () => {
+    const next = applyMobileThreadEvent(snapshot(), {
+      type: "thread.message.created",
+      seq: 11,
+      payload: { messageId: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+    });
+
+    expect(next?.cursor).toBe(11);
   });
 
   it("updates a waiting group run without replacing the newer active run", () => {

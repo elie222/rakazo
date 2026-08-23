@@ -278,7 +278,7 @@ export function mountVoiceHttpRoutes(
           ) as AbortSignal[],
         ),
       });
-      return new Response(clip.bytes, {
+      return new Response(clip.bytes as BodyInit, {
         headers: {
           "content-type": clip.mimeType,
           "cache-control": "no-store",

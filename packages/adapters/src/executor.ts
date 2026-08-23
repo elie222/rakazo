@@ -100,6 +100,15 @@ import {
   secretValuesToRedact,
   serializeModelSecret,
 } from "./pi-oauth.js";
+import {
+  assertPlotDataWithinLimits,
+  PLOT_TOOL_GUIDE,
+  type PlotSpec,
+  parsePlotData,
+  plotSvgToPng,
+  renderPlotSpecToSvg,
+  searchChartCatalog,
+} from "./plot-tool.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
@@ -778,6 +787,94 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
             return finish({ ok: true, path: filePath });
           }
+          if (name === "render_plot") {
+            if (args.charts !== undefined) {
+              const query = typeof args.charts === "string" ? args.charts : undefined;
+              return {
+                charts: searchChartCatalog(query),
+                note: "Each spec is a complete runnable example: substitute your rows and column names, then call render_plot with it.",
+              };
+            }
+            if (args.help === true || !args.spec || typeof args.spec !== "object") {
+              return { guide: PLOT_TOOL_GUIDE };
+            }
+            try {
+              let rows = Array.isArray(args.data) ? (args.data as unknown[]) : undefined;
+              const dataPath =
+                typeof args.data_path === "string" && args.data_path ? args.data_path : undefined;
+              if (!rows && dataPath) {
+                const bytes = await deps.sandbox.readFile(
+                  computer,
+                  resolveBotWorkspacePath(computerMode, bot.id, dataPath),
+                  context,
+                  { maxBytes: ATTACHMENT_MAX_BYTES },
+                );
+                rows = parsePlotData(dataPath, new TextDecoder().decode(bytes));
+              }
+              assertPlotDataWithinLimits(args.spec as PlotSpec, rows);
+              // jsdom and sharp load lazily so chart-free runs never pay for them.
+              const { JSDOM } = await import("jsdom");
+              const svg = renderPlotSpecToSvg(
+                args.spec as PlotSpec,
+                rows,
+                new JSDOM("").window.document,
+              );
+              const png = await plotSvgToPng(svg);
+              const outPath =
+                typeof args.path === "string" && args.path
+                  ? args.path
+                  : `charts/plot-${Date.now()}.png`;
+              await deps.sandbox.writeFile(
+                computer,
+                { path: resolveBotWorkspacePath(computerMode, bot.id, outPath), content: png },
+                context,
+              );
+              let attached = false;
+              const chartName = outPath.split("/").pop() ?? "chart";
+              const chartRows = rows ?? (args.spec as { data?: unknown[] }).data ?? [];
+              const chartSpec = { ...(args.spec as Record<string, unknown>) };
+              delete chartSpec.data;
+              const chartFits =
+                Array.isArray(chartRows) &&
+                JSON.stringify({ spec: chartSpec, data: chartRows }).length <= 200_000;
+              if (args.attach !== false && chartFits) {
+                // Live inline chart: the client re-renders the validated spec
+                // and the PNG stays on disk as the exportable copy.
+                await publishMessage(deps, run, "bot", [
+                  {
+                    kind: "chart",
+                    name: chartName,
+                    spec: chartSpec,
+                    data: chartRows,
+                  },
+                ]);
+                attached = true;
+              } else if (args.attach !== false && deps.artifacts) {
+                const result = await attachWorkspaceFileToThread(
+                  { prisma: deps.prisma, artifacts: deps.artifacts },
+                  {
+                    workspaceId: run.workspaceId,
+                    userId: run.userId,
+                    botId: bot.id,
+                    runId: run.id,
+                    filePath: outPath,
+                    bytes: png,
+                    operationId: executionId,
+                  },
+                );
+                await publishMessage(deps, run, "bot", [result.block]);
+                attached = true;
+              }
+              return finish({ ok: true, path: outPath, attached });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error(`render_plot failed for bot ${bot.id}: ${message}`);
+              return finish({
+                error: message,
+                hint: 'Call render_plot with {"charts": true} for runnable example specs, or {"help": true} for the full guide.',
+              });
+            }
+          }
           if (name === "attach_file") {
             const filePath = String(args.path ?? "");
             if (!deps.artifacts) {
@@ -1113,6 +1210,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 taughtSkillsLine,
+                'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
@@ -1164,6 +1262,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 await flushProgress();
               }
             } else if (event.type === "progress") {
+              // Flush batched text deltas first so an activity line cannot land
+              // ahead of text the model streamed before the tool call.
+              if (pendingProgress) {
+                await deps.events.append({
+                  workspaceId: run.workspaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  type: "thread.progress",
+                  runId,
+                  payload: { delta: pendingProgress, streaming: true },
+                });
+                pendingProgress = "";
+                lastProgressAt = Date.now();
+              }
               await deps.events.append({
                 workspaceId: run.workspaceId,
                 threadId: thread.id,

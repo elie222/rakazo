@@ -45,6 +45,38 @@ export type ProductEventType = z.infer<typeof ProductEventType>;
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
 
+export const MAX_CHART_DATA_ROWS = 5_000;
+
+const ChartSpec = z.record(z.string(), z.any());
+
+function embeddedChartRowCount(spec: Record<string, unknown>): number {
+  const specData = Array.isArray(spec.data) ? spec.data.length : 0;
+  const markData = Array.isArray(spec.marks)
+    ? spec.marks.reduce((total, mark) => {
+        if (!mark || typeof mark !== "object" || !Array.isArray(mark.data)) return total;
+        return total + mark.data.length;
+      }, 0)
+    : 0;
+  return specData + markData;
+}
+
+const ChartBlock = z
+  .object({
+    kind: z.literal("chart"),
+    name: z.string(),
+    /** Declarative Observable Plot spec, validated by render_plot before publish.
+        z.any keeps the inferred type JSON-assignable for persistence. */
+    spec: ChartSpec,
+    data: z.array(z.any()).max(MAX_CHART_DATA_ROWS),
+  })
+  .superRefine((block, ctx) => {
+    if (block.data.length + embeddedChartRowCount(block.spec) <= MAX_CHART_DATA_ROWS) return;
+    ctx.addIssue({
+      code: "custom",
+      message: `Chart data exceeds the ${MAX_CHART_DATA_ROWS.toLocaleString("en-US")}-row limit`,
+    });
+  });
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -119,6 +151,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     }),
     status: z.enum(["draft", "saved"]),
   }),
+  ChartBlock,
   z.object({
     kind: z.literal("image"),
     artifactId: Id,

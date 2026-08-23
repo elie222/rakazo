@@ -23,11 +23,17 @@ function catalogModels(): Models {
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
+const REASONING_MODEL_THINKING_LEVEL = "medium";
+function thinkingLevelFor(model: { reasoning?: boolean }) {
+  return model.reasoning ? REASONING_MODEL_THINKING_LEVEL : "off";
+}
 // Pi forwards these names to OpenAI Responses, whose function-name contract is
 // ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
 const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const MAX_AGENT_TOOL_NAME_LENGTH = 64;
 const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
+// Bound runaway agent loops before they can issue unbounded billable tool calls.
+const MAX_TOOL_CALLS_PER_TURN = 80;
 
 export class PiAgentRuntime implements AgentRuntime {
   describe() {
@@ -78,6 +84,8 @@ export class PiAgentRuntime implements AgentRuntime {
           apiKey,
           nestedAgents,
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
+          toolCallBudget: { count: 0, exceeded: false },
+          abortTurn: () => undefined,
           signal,
           depth: 0,
         };
@@ -95,30 +103,47 @@ export class PiAgentRuntime implements AgentRuntime {
                 ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
-            thinkingLevel: "off",
+            thinkingLevel: thinkingLevelFor(model),
             tools,
             messages: history,
           },
         });
 
-        if (signal.aborted) {
-          queue.push({ type: "done", text: "stopped" });
-          return;
-        }
         const onAbort = () => {
           agent.abort();
           for (const nested of nestedAgents) nested.abort();
         };
+        host.abortTurn = onAbort;
+        if (signal.aborted) {
+          queue.push({ type: "done", text: "stopped" });
+          return;
+        }
         signal.addEventListener("abort", onAbort);
 
         let streamed = "";
+        let toolActivityShowing = false;
         agent.subscribe((event) => {
+          if (event.type === "tool_execution_start") {
+            if (!consumeToolCall(host)) return;
+            // Live activity feedback: without this the thread shows a bare
+            // "working…" for the whole tool call with nothing actionable.
+            toolActivityShowing = true;
+            queue.push({
+              type: "progress",
+              text: describeToolActivity(event.toolName, event.args),
+            });
+          }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
           ) {
             const delta = event.assistantMessageEvent.delta;
             if (delta) {
+              if (toolActivityShowing) {
+                // Real text replaces the activity line instead of appending to it.
+                toolActivityShowing = false;
+                queue.push({ type: "progress", text: "" });
+              }
               streamed += delta;
               queue.push({ type: "text", text: delta });
             }
@@ -141,7 +166,8 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         });
 
-        queue.push({ type: "progress", text: "working…" });
+        // No "working…" progress push here: the shell already renders its own
+        // placeholder while a run is active, and emitting one here shows two.
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
@@ -221,6 +247,33 @@ export function normalizeAgentToolName(name: string): string {
  * Existing valid names are reserved first so sanitizing a connector cannot
  * rename or shadow a builtin tool with the same valid name.
  */
+const ACTIVITY_DETAIL_LIMIT = 90;
+
+/** One human-readable line describing a tool call, shown live in the thread. */
+export function describeToolActivity(toolName: string, args: unknown): string {
+  const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const detail = (value: unknown): string => {
+    const text = sanitizeSensitiveText(String(value ?? ""))
+      .replaceAll(/\s+/g, " ")
+      .trim();
+    return text.length > ACTIVITY_DETAIL_LIMIT ? `${text.slice(0, ACTIVITY_DETAIL_LIMIT)}…` : text;
+  };
+  if (toolName === "shell") return `Running: ${detail(record.command)}`;
+  if (toolName === "read_file") return `Reading ${detail(record.path)}`;
+  if (toolName === "write_file") return `Writing ${detail(record.path)}`;
+  if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
+  if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
+  if (toolName === "open_path") return `Opening ${detail(record.path)}`;
+  if (toolName === "render_plot") return "Rendering a chart";
+  if (toolName === "computer_observe") return "Looking at the screen";
+  if (toolName === "computer_act") return "Operating the computer";
+  if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
+  if (toolName === "remember") return "Saving a note to memory";
+  const mcp = toolName.match(/^mcp__(.+?)__(.+)$/);
+  if (mcp) return `Using ${mcp[1]}: ${mcp[2]}`;
+  return `Using ${toolName}`;
+}
+
 export function normalizeAgentToolNames(tools: readonly ConnectorTool[]): string[] {
   const reservedValidNames = new Set(
     tools.filter((tool) => isProviderSafeAgentToolName(tool.name)).map((tool) => tool.name),
@@ -423,7 +476,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         .filter(Boolean)
         .join(" "),
       model: host.model,
-      thinkingLevel: "off",
+      thinkingLevel: thinkingLevelFor(host.model),
       tools: toAgentTools(childDefs, nestedHost),
       messages: [],
     },
@@ -434,6 +487,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
   let lastPush = 0;
   nested.subscribe((event) => {
     if (event.type === "tool_execution_start") {
+      if (!consumeToolCall(host)) return;
       const toolName = "toolName" in event && event.toolName ? String(event.toolName) : "a tool";
       host.queue.push({
         type: "subagent",
@@ -678,13 +732,22 @@ function assistantText(message: unknown): string {
     .join("");
 }
 
-function sanitizeError(message: string) {
+function sanitizeSensitiveText(message: string) {
   return message
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/Bearer\s+[^\s"',;&]+/gi, "Bearer [redacted]")
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
-    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]");
+    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
+    .replace(
+      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)[^\s"',;&]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
+}
+
+function sanitizeError(message: string) {
+  return sanitizeSensitiveText(message);
 }
 
 interface EventQueue {
@@ -701,8 +764,24 @@ interface ToolHost {
   apiKey: string | undefined;
   nestedAgents: Set<Agent>;
   subagentGate: { acquire(): Promise<void>; release(): void };
+  toolCallBudget: { count: number; exceeded: boolean };
+  abortTurn(): void;
   signal: AbortSignal;
   depth: number;
+}
+
+function consumeToolCall(host: ToolHost): boolean {
+  host.toolCallBudget.count += 1;
+  if (host.toolCallBudget.count <= MAX_TOOL_CALLS_PER_TURN) return true;
+  if (!host.toolCallBudget.exceeded) {
+    host.toolCallBudget.exceeded = true;
+    host.queue.push({
+      type: "progress",
+      text: `Stopped: more than ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn.`,
+    });
+  }
+  host.abortTurn();
+  return false;
 }
 
 function createGate(max: number) {

@@ -3,6 +3,7 @@ import {
   appContract,
   CreateBotInput,
   CreateGroupInput,
+  MessageBlock,
   ModelOAuthBeginSchema,
   ProductEventType,
   UpdateGroupInput,
@@ -68,5 +69,37 @@ describe("contracts", () => {
     expect(ProductEventType.options).toContain("thread.cleared");
     expect(ProductEventType.options).toContain("thread.subagent");
     expect(ProductEventType.options).toContain("bot.spawned");
+  });
+
+  it("rejects oversized chart data wherever it is embedded", () => {
+    const rows = Array.from({ length: 5_001 }, (_, index) => index);
+
+    expect(
+      MessageBlock.safeParse({ kind: "chart", name: "outer", spec: {}, data: rows }).success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "chart",
+        name: "spec",
+        spec: { data: rows },
+        data: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "chart",
+        name: "marks",
+        spec: { marks: [{ data: rows }] },
+        data: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      MessageBlock.safeParse({
+        kind: "chart",
+        name: "combined",
+        spec: { marks: [{ data: rows.slice(0, 2_500) }] },
+        data: rows.slice(0, 2_501),
+      }).success,
+    ).toBe(false);
   });
 });

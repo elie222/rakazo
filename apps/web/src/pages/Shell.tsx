@@ -2348,10 +2348,18 @@ const Transcript = memo(function Transcript({
           />
         </div>
       ))}
-      {running ? (
+      {running &&
+      !messages.some(
+        (message) =>
+          message.id.startsWith("progress:") &&
+          message.blocks[0]?.kind === "progress" &&
+          message.blocks[0].text,
+      ) ? (
         <div className="flex justify-start">
+          {/* Box metrics match the progress bubble exactly so swapping between
+              them never changes height or text position. */}
           <div
-            className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
+            className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#85858A]"
             style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
           >
             working…
@@ -2889,6 +2897,13 @@ const MessageView = memo(function MessageView({
                   : block.title || "Opened its own thread. Tap to switch."}
               </div>
             </button>
+          );
+        }
+        if (block.kind === "chart") {
+          return (
+            <div key={i} className="flex justify-start">
+              <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+            </div>
           );
         }
         if (block.kind === "image") {
@@ -3751,6 +3766,155 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+}
+
+function ChartCanvas({
+  spec,
+  data,
+  width,
+  height,
+}: {
+  spec: Record<string, unknown>;
+  data: unknown[];
+  width: number;
+  height?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{
+    title?: string;
+    swatches: { label: string; color: string }[];
+  }>({ swatches: [] });
+  useEffect(() => {
+    let cancelled = false;
+    // Plot loads lazily so threads without charts never pay for the library.
+    void (async () => {
+      try {
+        const { buildPlotParts } = await import("@rakazo/core/plot");
+        if (cancelled || !ref.current) return;
+        // Hover inspection by default: give the first mark a tooltip unless
+        // the spec already asks for one somewhere.
+        const marks = Array.isArray((spec as { marks?: unknown[] }).marks)
+          ? ((spec as { marks: { options?: Record<string, unknown> }[] }).marks ?? [])
+          : [];
+        const hasTip = marks.some((mark) => mark.options && "tip" in mark.options);
+        const liveSpec = hasTip
+          ? spec
+          : {
+              ...spec,
+              marks: marks.map((mark, index) =>
+                index === 0 ? { ...mark, options: { ...(mark.options ?? {}), tip: true } } : mark,
+              ),
+            };
+        const parts = buildPlotParts(liveSpec as never, data, document, { width, height });
+        setMeta({ title: parts.title, swatches: parts.swatches });
+        setError(null);
+        ref.current.replaceChildren(parts.plotted);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not render chart");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [spec, data, width, height]);
+  if (error)
+    return <div className="text-[13px] text-[#F3A2AA]">Chart failed to render: {error}</div>;
+  return (
+    <div className="text-[#C9C9CE]">
+      {meta.title ? (
+        <div className="mb-1 text-[14.5px] font-semibold text-[#ECECEE]">{meta.title}</div>
+      ) : null}
+      {meta.swatches.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
+          {meta.swatches.map((swatch) => (
+            <span
+              key={swatch.label}
+              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
+            >
+              <span
+                className="h-[10px] w-[10px] rounded-[3px]"
+                style={{ background: swatch.color }}
+              />
+              {swatch.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div ref={ref} className="[&_svg]:max-w-full" />
+    </div>
+  );
+}
+
+function ChartBlockView({
+  name,
+  spec,
+  data,
+}: {
+  name: string;
+  spec: Record<string, unknown>;
+  data: unknown[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+  return (
+    <>
+      <div className="group relative max-w-[74%] rounded-[20px] bg-[#17171A] p-4">
+        <ChartCanvas spec={spec} data={data} width={520} />
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="absolute right-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+        >
+          Expand
+        </button>
+      </div>
+      {expanded ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,4,5,.78)] p-8">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Close expanded chart"
+            onClick={() => setExpanded(false)}
+            className="absolute inset-0 cursor-default"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Expanded chart: ${name}`}
+            className="relative max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[#2A2A31] bg-[#141416] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[13px] text-[#85858A]">{name}</span>
+              <button
+                type="button"
+                aria-label="Close chart"
+                onClick={() => setExpanded(false)}
+                className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
+              >
+                ✕
+              </button>
+            </div>
+            <ChartCanvas
+              spec={spec}
+              data={data}
+              width={Math.min(1240, Math.floor(window.innerWidth * 0.88))}
+              height={Math.floor(window.innerHeight * 0.66)}
+            />
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function ArtifactImage({
