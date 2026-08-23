@@ -64,11 +64,12 @@ import {
   useState,
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
-import { decodeArtifactBase64, openArtifact } from "../lib/artifact-open";
+import { decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { dictation } from "../lib/dictation";
@@ -2256,18 +2257,13 @@ const MessageView = memo(function MessageView({
               key={i}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <button
-                type="button"
-                onClick={() =>
-                  void openArtifact(botId, block.artifactId, block.name, block.mimeType)
-                }
-                className="rounded-[20px] border border-[#26262A] bg-[#17171A] px-4 py-3 text-left text-[14px] text-[#DFDFE2] hover:bg-[#1F1F22]"
-              >
-                <div className="font-medium">{block.name}</div>
-                <div className="mt-1 text-[#85858A]">
-                  {block.mimeType} · {formatBytes(block.size)}
-                </div>
-              </button>
+              <ArtifactFileCard
+                botId={botId}
+                artifactId={block.artifactId}
+                name={block.name}
+                mimeType={block.mimeType}
+                size={block.size}
+              />
             </div>
           );
         }
@@ -3169,10 +3165,4 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
-}
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -1,4 +1,3 @@
-import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import { rpc } from "./rpc";
 
 export function decodeArtifactBase64(contentBase64: string): Uint8Array {
@@ -10,23 +9,27 @@ export function decodeArtifactBase64(contentBase64: string): Uint8Array {
   return bytes;
 }
 
-export async function openArtifact(
+export async function fetchArtifactBytes(botId: string, artifactId: string): Promise<Uint8Array> {
+  const artifact = await rpc.artifacts.get({ botId, artifactId });
+  return decodeArtifactBase64(artifact.contentBase64);
+}
+
+export function downloadArtifactBytes(name: string, mimeType: string, bytes: Uint8Array): void {
+  const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function downloadArtifact(
   botId: string,
   artifactId: string,
   name: string,
   mimeType: string,
 ): Promise<void> {
-  const artifact = await rpc.artifacts.get({ botId, artifactId });
-  const bytes = decodeArtifactBase64(artifact.contentBase64);
-  const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  if (isAttachmentImageMimeType(mimeType)) {
-    window.open(url, "_blank", "noopener,noreferrer");
-  } else {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = name;
-    anchor.click();
-  }
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const bytes = await fetchArtifactBytes(botId, artifactId);
+  downloadArtifactBytes(name, mimeType, bytes);
 }

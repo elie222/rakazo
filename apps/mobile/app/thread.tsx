@@ -3,6 +3,10 @@ import { abortableDelay, attachmentsForBot } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  MarkdownArtifactPreview,
+  type MarkdownArtifactPreviewTarget,
+} from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
@@ -56,6 +60,9 @@ export default function Thread() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
+    null,
+  );
   const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
 
   useLayoutEffect(() => {
@@ -426,6 +433,7 @@ export default function Thread() {
               onOpenBot={(id, botName) =>
                 router.push({ pathname: "/thread", params: { botId: id, name: botName } })
               }
+              onPreviewMarkdown={setMarkdownPreview}
               onSpeak={
                 message.role === "bot"
                   ? () =>
@@ -543,6 +551,13 @@ export default function Thread() {
           <Text style={{ color: "#C9C9CE" }}>Open computer →</Text>
         </Pressable>
       </Link>
+      {markdownPreview ? (
+        <MarkdownArtifactPreview
+          botId={botId ?? ""}
+          target={markdownPreview}
+          onClose={() => setMarkdownPreview(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -564,11 +579,13 @@ function MessageBubble({
   botId,
   message,
   onOpenBot,
+  onPreviewMarkdown,
   onSpeak,
 }: {
   botId: string;
   message: MobileMessage;
   onOpenBot: (botId: string, name: string) => void;
+  onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onSpeak?: () => void;
 }) {
   const special = message.blocks.find(
@@ -708,17 +725,23 @@ function MessageBubble({
               key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
               onPress={() =>
                 attachment.artifactId
-                  ? void openMobileArtifact(
-                      botId,
-                      attachment.artifactId,
-                      attachment.name ?? "File",
-                      attachment.mimeType ?? "text/plain",
-                    ).catch((err) =>
-                      Alert.alert(
-                        "Could not open file",
-                        err instanceof Error ? err.message : "Try again.",
-                      ),
-                    )
+                  ? attachment.mimeType === "text/markdown"
+                    ? onPreviewMarkdown({
+                        artifactId: attachment.artifactId,
+                        name: attachment.name ?? "Markdown file",
+                        mimeType: attachment.mimeType,
+                      })
+                    : void openMobileArtifact(
+                        botId,
+                        attachment.artifactId,
+                        attachment.name ?? "File",
+                        attachment.mimeType ?? "text/plain",
+                      ).catch((err) =>
+                        Alert.alert(
+                          "Could not open file",
+                          err instanceof Error ? err.message : "Try again.",
+                        ),
+                      )
                   : undefined
               }
             >

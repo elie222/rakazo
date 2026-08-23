@@ -13,6 +13,7 @@ export const ATTACHMENT_IMAGE_MIME_TYPES = [
 export const ATTACHMENT_FILE_MIME_TYPES = [
   "application/pdf",
   "text/plain",
+  "text/markdown",
   "text/csv",
   "application/json",
 ] as const;

@@ -109,6 +109,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".gif": "image/gif",
   ".pdf": "application/pdf",
   ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".markdown": "text/markdown",
   ".csv": "text/csv",
   ".json": "application/json",
 };
@@ -120,6 +122,7 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "image/gif": ".gif",
   "application/pdf": ".pdf",
   "text/plain": ".txt",
+  "text/markdown": ".md",
   "text/csv": ".csv",
   "application/json": ".json",
 };
@@ -128,10 +131,12 @@ export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
 ): AttachmentMimeType | null {
-  if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
   const dot = name.lastIndexOf(".");
-  if (dot < 0) return null;
-  return EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()] ?? null;
+  const extensionType = dot < 0 ? undefined : EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()];
+  // Some browsers and native document pickers report Markdown as text/plain.
+  if (extensionType === "text/markdown") return extensionType;
+  if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
+  return extensionType ?? null;
 }
 
 export function attachmentExtensionForMimeType(mimeType: string): string {
