@@ -1839,44 +1839,50 @@ export function createRouter(deps: RouterDeps) {
           return mcpServerDto(row, await mcpOAuth.statusFor(row, context.actor));
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
-          const existing = await deps.prisma.mcpServer.findFirst({
-            where: {
-              id: input.id,
-              workspaceId: context.actor.workspaceId,
-              userId: context.actor.userId,
-            },
-          });
-          if (!existing) throw new IsolationError();
           const config = input.config;
-          const existingSecret = existing.secretId
-            ? await deps.prisma.secret.findFirst({
-                where: {
-                  id: existing.secretId,
-                  workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
-                },
-              })
-            : null;
-          let existingMaterial: Record<string, unknown> = {};
-          if (existingSecret) {
-            try {
-              const value = JSON.parse(deps.secrets.load(existingSecret.ciphertext));
-              if (value && typeof value === "object" && !Array.isArray(value))
-                existingMaterial = value as Record<string, unknown>;
-            } catch {
-              /* Existing malformed secrets are replaced only when new credentials are supplied. */
-            }
-          }
-          const update = buildMcpUpdateMaterial(existingMaterial, config);
-          const stored =
-            update.action === "store" && Object.keys(update.material).length > 0
-              ? await deps.secrets.put(
-                  JSON.stringify(update.material),
-                  computerContext(context.actor, "mcp", "mcp.update"),
-                )
-              : null;
-          const clearing = update.action === "store" && Object.keys(update.material).length === 0;
           const row = await deps.prisma.$transaction(async (tx) => {
+            // Share the OAuth broker's per-server lock so a stale authorization
+            // snapshot cannot overwrite a simultaneous credential edit.
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${input.id}))`;
+            const existing = await tx.mcpServer.findFirst({
+              where: {
+                id: input.id,
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+              },
+            });
+            if (!existing) throw new IsolationError();
+            const existingSecret = existing.secretId
+              ? await tx.secret.findFirst({
+                  where: {
+                    id: existing.secretId,
+                    workspaceId: context.actor.workspaceId,
+                    userId: context.actor.userId,
+                  },
+                })
+              : null;
+            let existingMaterial: Record<string, unknown> = {};
+            if (existingSecret) {
+              try {
+                const value = JSON.parse(deps.secrets.load(existingSecret.ciphertext));
+                if (value && typeof value === "object" && !Array.isArray(value))
+                  existingMaterial = value as Record<string, unknown>;
+              } catch {
+                /* Existing malformed secrets are replaced only when new credentials are supplied. */
+              }
+            }
+            const nextEndpoint = "endpoint" in config ? config.endpoint : null;
+            const update = buildMcpUpdateMaterial(existingMaterial, config, {
+              clearOAuth: existing.endpoint !== nextEndpoint,
+            });
+            const stored =
+              update.action === "store" && Object.keys(update.material).length > 0
+                ? await deps.secrets.put(
+                    JSON.stringify(update.material),
+                    computerContext(context.actor, "mcp", "mcp.update"),
+                  )
+                : null;
+            const clearing = update.action === "store" && Object.keys(update.material).length === 0;
             const updated = await tx.mcpServer.update({
               where: { id: existing.id },
               data: {
@@ -1884,7 +1890,7 @@ export function createRouter(deps: RouterDeps) {
                 name: config.name,
                 description: config.description,
                 transport: config.transport,
-                endpoint: "endpoint" in config ? config.endpoint : null,
+                endpoint: nextEndpoint,
                 command: "command" in config ? config.command : null,
                 args: ("args" in config ? config.args : []) as Prisma.InputJsonValue,
                 env: ("env" in config
@@ -1914,7 +1920,10 @@ export function createRouter(deps: RouterDeps) {
                 });
             } else if (clearing && existing.secretId) {
               await tx.secret.deleteMany({
-                where: { id: existing.secretId, workspaceId: context.actor.workspaceId },
+                where: {
+                  id: existing.secretId,
+                  workspaceId: context.actor.workspaceId,
+                },
               });
             }
             return updated;

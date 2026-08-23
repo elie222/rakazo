@@ -487,7 +487,7 @@ export class McpOAuthBroker {
       server.id,
       loaded.material,
       async (material) => {
-        await this.replaceMaterial(server.id, material, context, false);
+        await this.replaceMaterial(server.id, material, context, false, server.endpoint);
       },
       options,
     );
@@ -498,27 +498,12 @@ export class McpOAuthBroker {
     material: OAuthMaterial,
     context: ActorRef,
     incrementRevision: boolean,
+    expectedEndpoint?: string | null,
   ): Promise<string | undefined> {
-    const hasMaterial = Boolean(
-      material.secret ||
-        Object.keys(material.env ?? {}).length ||
-        Object.keys(material.headers ?? {}).length ||
-        material.oauth,
-    );
-    const stored = hasMaterial
-      ? await this.secrets.put(JSON.stringify(material), {
-          operationId: "mcp.oauth.persist",
-          traceId: "mcp.oauth.persist",
-          workspaceId: context.workspaceId,
-          userId: context.userId,
-          botId: "mcp",
-          signal: new AbortController().signal,
-        })
-      : undefined;
     return this.prisma.$transaction(async (tx) => {
-      // Serialize credential rotation across API instances. Reading the current
-      // secret only after acquiring this lock prevents concurrent callbacks
-      // from deleting or orphaning one another's newly installed credential.
+      // Serialize every credential rotation across API instances. OAuth
+      // providers hold a session snapshot, so merge only their OAuth state
+      // into the latest static material after acquiring the lock.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
       const server = await tx.mcpServer.findFirst({
         where: {
@@ -526,9 +511,40 @@ export class McpOAuthBroker {
           workspaceId: context.workspaceId,
           userId: context.userId,
         },
-        select: { secretId: true },
+        select: { endpoint: true, secretId: true },
       });
       if (!server) throw new Error("MCP server is unavailable");
+      if (expectedEndpoint !== undefined && server.endpoint !== expectedEndpoint) {
+        throw new Error("MCP server endpoint changed during authorization; reconnect this server");
+      }
+      const currentSecret = server.secretId
+        ? await tx.secret.findFirst({
+            where: {
+              id: server.secretId,
+              workspaceId: context.workspaceId,
+              userId: context.userId,
+            },
+          })
+        : null;
+      const nextMaterial = currentSecret ? this.read(currentSecret.ciphertext) : {};
+      if (material.oauth) nextMaterial.oauth = structuredClone(material.oauth);
+      else delete nextMaterial.oauth;
+      const hasMaterial = Boolean(
+        nextMaterial.secret ||
+          Object.keys(nextMaterial.env ?? {}).length ||
+          Object.keys(nextMaterial.headers ?? {}).length ||
+          nextMaterial.oauth,
+      );
+      const stored = hasMaterial
+        ? await this.secrets.put(JSON.stringify(nextMaterial), {
+            operationId: "mcp.oauth.persist",
+            traceId: "mcp.oauth.persist",
+            workspaceId: context.workspaceId,
+            userId: context.userId,
+            botId: "mcp",
+            signal: new AbortController().signal,
+          })
+        : undefined;
       if (stored) {
         await tx.secret.create({
           data: {

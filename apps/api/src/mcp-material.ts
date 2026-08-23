@@ -21,33 +21,40 @@ export type McpMaterialUpdate =
  *   server's secretId instead of storing an empty object.
  *
  * env/headers use full-replace semantics (the update payload is the complete
- * set), matching the create handler. OAuth state is never touched here except
- * that clearCredential preserves it so a connected server stays connected. */
+ * set), matching the create handler. OAuth state is preserved unless the
+ * endpoint changed, since tokens issued for one endpoint must never be sent to
+ * another server. */
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,
+  options: { clearOAuth?: boolean } = {},
 ): McpMaterialUpdate {
+  const material = options.clearOAuth ? { ...existing } : existing;
+  const clearedOAuth = options.clearOAuth === true && material.oauth !== undefined;
+  if (options.clearOAuth) delete material.oauth;
   const clearing = config.clearCredential === true;
   if (clearing) {
-    return { action: "store", material: existing.oauth ? { oauth: existing.oauth } : {} };
+    return { action: "store", material: material.oauth ? { oauth: material.oauth } : {} };
   }
   const secret = "secret" in config && config.secret ? config.secret : undefined;
   const env = "env" in config ? config.env : undefined;
   const headers = "headers" in config ? config.headers : undefined;
   const existingHasMaterial = Boolean(
-    existing.secret ||
-      (existing.env && Object.keys(existing.env).length > 0) ||
-      (existing.headers && Object.keys(existing.headers).length > 0) ||
-      existing.oauth,
+    material.secret ||
+      (material.env && Object.keys(material.env).length > 0) ||
+      (material.headers && Object.keys(material.headers).length > 0) ||
+      material.oauth,
   );
   const suppliesMaterial = Boolean(
     secret || (env && Object.keys(env).length > 0) || (headers && Object.keys(headers).length > 0),
   );
-  if (!existingHasMaterial && !suppliesMaterial) return { action: "keep" };
+  if (!existingHasMaterial && !suppliesMaterial) {
+    return clearedOAuth ? { action: "store", material } : { action: "keep" };
+  }
   return {
     action: "store",
     material: {
-      ...existing,
+      ...material,
       ...(secret ? { secret } : {}),
       ...(env !== undefined ? { env } : {}),
       ...(headers !== undefined ? { headers } : {}),

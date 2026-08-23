@@ -78,6 +78,39 @@ describe("buildMcpUpdateMaterial", () => {
     expect(result).toEqual({ action: "store", material: {} });
   });
 
+  it("clears endpoint-bound OAuth state while preserving static credentials", () => {
+    const result = buildMcpUpdateMaterial(
+      { secret: "token", oauth: { tokens: { access_token: "endpoint-token" } } },
+      {
+        transport: "streamable_http",
+        slug: "x",
+        name: "x",
+        endpoint: "https://new-mcp.example.test",
+        headers: {},
+      },
+      { clearOAuth: true },
+    );
+    expect(result).toEqual({
+      action: "store",
+      material: { secret: "token", headers: {} },
+    });
+  });
+
+  it("deletes an OAuth-only blob when its endpoint changes", () => {
+    const result = buildMcpUpdateMaterial(
+      { oauth: { tokens: { access_token: "endpoint-token" } } },
+      {
+        transport: "streamable_http",
+        slug: "x",
+        name: "x",
+        endpoint: "https://new-mcp.example.test",
+        headers: {},
+      },
+      { clearOAuth: true },
+    );
+    expect(result).toEqual({ action: "store", material: {} });
+  });
+
   it("replaces headers on update and leaves env untouched when the transport cannot express it", () => {
     const result = buildMcpUpdateMaterial(
       { secret: "s", env: { OLD: "x" }, headers: { Authorization: "a" } },
