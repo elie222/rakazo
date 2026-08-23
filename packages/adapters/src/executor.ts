@@ -1124,6 +1124,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   controlLeaseId: null,
                   controlLeaseExpiresAt: null,
                   controlBotId: null,
+                  controlRunId: null,
                 },
               });
               await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);

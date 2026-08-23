@@ -143,12 +143,14 @@ describe("finalizeComputerControlRelease", () => {
         workspaceId: "workspace-1",
         controlBotId: "bot-1",
         controlLeaseId: "lease-1",
+        controlRunId: "run-1",
       },
       data: {
         controlHolder: "none",
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
+        controlRunId: null,
       },
     });
     expect(tx.run.updateMany).toHaveBeenCalledWith({

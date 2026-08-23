@@ -616,6 +616,7 @@ model Computer {
   controlLeaseId           String?
   controlLeaseExpiresAt    DateTime?
   controlBotId             String?
+  controlRunId             String?
   controlFence             Int      @default(0)
   executionRunId           String?
   executionBotId           String?

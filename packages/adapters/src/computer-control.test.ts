@@ -93,10 +93,27 @@ describe("computer control leases", () => {
   });
 
   it("resumes the run holding the takeover lease instead of a newer waiting run", async () => {
-    const harness = controlHarness({ executionRunId: "run-holding-takeover" });
+    const harness = controlHarness({ controlRunId: "run-holding-takeover" });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
       where.id === "run-holding-takeover" ? { id: "run-holding-takeover" } : { id: "newer-run" },
     );
+
+    await expireComputerControl(harness.deps, "computer-id", "lease-1");
+
+    expect(harness.prisma.run.findFirst).toHaveBeenCalledWith({
+      where: { id: "run-holding-takeover", botId: "bot", status: "waiting_takeover" },
+    });
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-holding-takeover" }),
+    );
+  });
+
+  it("does not release a run acquired after the control lease", async () => {
+    const harness = controlHarness({
+      controlRunId: "run-holding-takeover",
+      executionRunId: "newer-run",
+    });
+    harness.prisma.run.findFirst.mockResolvedValue({ id: "run-holding-takeover" });
 
     await expireComputerControl(harness.deps, "computer-id", "lease-1");
 
@@ -215,6 +232,7 @@ function controlHarness(
     finalizeError?: Error;
     enqueueError?: Error;
     waitingRunId?: string;
+    controlRunId?: string;
     executionRunId?: string;
   } = {},
 ) {
@@ -227,6 +245,7 @@ function controlHarness(
     controlHolder: "user",
     controlLeaseId: options.controlLeaseId ?? "lease-1",
     controlBotId: "bot",
+    controlRunId: options.controlRunId ?? options.waitingRunId ?? options.executionRunId ?? null,
     controlLeaseExpiresAt:
       options.controlLeaseExpiresAt === undefined
         ? new Date("2026-01-01T00:00:00.000Z")

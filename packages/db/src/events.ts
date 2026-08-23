@@ -494,12 +494,14 @@ export async function finalizeComputerControlRelease(
         workspaceId: input.workspaceId,
         controlBotId: input.botId,
         controlLeaseId: input.leaseId,
+        controlRunId: input.runId,
       },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
+        controlRunId: null,
       },
     });
     if (cleared.count !== 1) return null;

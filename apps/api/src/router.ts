@@ -845,6 +845,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
         } catch (error) {
@@ -893,6 +894,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
           bot = await repos.getBot(context.actor, input.botId);
@@ -943,6 +945,7 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseId: leaseId,
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
+            controlRunId: waitingForTakeover ? executionLease?.runId : null,
             state: "running",
           },
         });
@@ -972,6 +975,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
           throw error;
@@ -1013,8 +1017,8 @@ export function createRouter(deps: RouterDeps) {
 
         const waiting = await findWaitingTakeoverRun(
           deps.prisma,
-          bot.computer.id,
           controlBotId,
+          bot.computer.controlRunId,
         );
         const released = await deps.events.finalizeComputerControlRelease({
           workspaceId: context.actor.workspaceId,

@@ -135,6 +135,7 @@ export async function sleepComputerIfIdle(
       controlLeaseId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
+      controlRunId: null,
     },
   });
   const bots = await deps.prisma.bot.findMany({
