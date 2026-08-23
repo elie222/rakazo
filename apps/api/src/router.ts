@@ -967,7 +967,7 @@ export function createRouter(deps: RouterDeps) {
           botId: controlBotId,
           leaseId: controlLeaseId,
           holder: "bot",
-          reason: "released",
+          reason: input.reason ?? "released",
         });
         if (!released) return { ok: true as const };
         // The lease-specific key makes this cancellation safe after a replacement takeover.

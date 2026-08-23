@@ -92,6 +92,10 @@ import {
   searchSupermemory,
   supermemoryContainerTag,
 } from "./supermemory-client.js";
+import {
+  takeoverReleaseReasonFromPayload,
+  takeoverResumeFromRelease,
+} from "./takeover-resume.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
@@ -277,6 +281,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (!run) return;
       if (isTerminal(run.status as RunStatus)) return;
       const resumeFromTakeover = run.status === "waiting_takeover";
+      const takeoverResume = resumeFromTakeover
+        ? takeoverResumeFromRelease(
+            takeoverReleaseReasonFromPayload(
+              (
+                await deps.prisma.event.findFirst({
+                  where: { botId: run.botId, type: "computer.takeover.released" },
+                  orderBy: [{ createdAt: "desc" }, { seq: "desc" }],
+                  select: { payload: true },
+                })
+              )?.payload,
+            ),
+          )
+        : null;
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
@@ -531,7 +548,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted
-          ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
+          ? inferScript(task.prompt, takeoverResume?.checkpoint)
           : undefined;
         const formatObservation = (
           observation: Awaited<ReturnType<SandboxProvider["observe"]>>,
@@ -908,12 +925,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
-        const prompt = invokedSkill
+        const basePrompt = invokedSkill
           ? `${formatSkillRunPrompt(
               invokedSkill.name || invokedSkill.goal.slice(0, 80),
               parsePlaybook(invokedSkill.playbook),
             )}\n\n${taskPrompt}`
           : taskPrompt;
+        const prompt = takeoverResume
+          ? `${basePrompt}\n\n${takeoverResume.promptNote}`
+          : basePrompt;
         const historicalContext: AgentRunRequest["history"] = [];
         if (compactedHistory.usedLocalSummary && compactedHistory.summary) {
           historicalContext.push({
@@ -968,7 +988,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
               },
-              resumeFromCheckpoint: resumeFromTakeover ? "takeover" : undefined,
+              resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
               executeTool: scripted ? undefined : applyTool,
             },

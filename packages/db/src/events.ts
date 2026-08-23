@@ -54,7 +54,7 @@ export interface FinalizeComputerControlReleaseInput {
   botId: string;
   leaseId: string;
   holder: "bot" | "none";
-  reason: "expired" | "released";
+  reason: "done" | "expired" | "released" | "skipped";
 }
 
 interface FinalizeRunBase {
