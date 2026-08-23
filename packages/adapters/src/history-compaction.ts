@@ -2,7 +2,7 @@ import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapte
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
-import { effectiveMemoryScope, type PrismaClient, supermemoryContainerTagsFor } from "@rakazo/db";
+import { type PrismaClient, supermemoryContainerTagFor } from "@rakazo/db";
 import type { EncryptedSecretStore } from "./secrets.js";
 import {
   deleteSupermemoryContainer as defaultDeleteSupermemoryContainer,
@@ -324,25 +324,23 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
 
   // Local compaction is first-party behavior and must not depend on an optional external store.
   // Saving only after the compare-and-set also prevents losing workers from creating duplicates.
-  let supermemory: { config: SupermemoryConnectionConfig; containerTags: string[] } | null = null;
+  let supermemory: { config: SupermemoryConnectionConfig; containerTag: string } | null = null;
   try {
     const memoryConfig = await deps.prisma.workspaceMemoryConfig.findUnique({
       where: { workspaceId: thread.workspaceId },
       include: { secret: true },
     });
     if (memoryConfig) {
-      const bot = await deps.prisma.bot.findUniqueOrThrow({
-        where: { id: thread.botId },
-        select: { memoryScope: true },
-      });
-      const memoryScope = effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope);
       supermemory = {
         config: {
           baseUrl: memoryConfig.baseUrl,
           apiKey: deps.secretStore.load(memoryConfig.secret.ciphertext),
         },
-        containerTags: supermemoryContainerTagsFor(
-          memoryScope,
+        // Compaction summaries belong to one conversation owner and must remain purgeable when
+        // that conversation is cleared. Shared bots still search this private mirror alongside
+        // their workspace container, while explicit save_memory calls retain shared semantics.
+        containerTag: supermemoryContainerTagFor(
+          "isolated",
           thread.botId,
           thread.workspaceId,
           previousGeneration,
@@ -357,16 +355,11 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     externalSaveAttempted = true;
     try {
       const save = deps.saveSupermemoryMemory ?? defaultSaveSupermemoryMemory;
-      const results = await Promise.all(
-        supermemory.containerTags.map(async (containerTag) => ({
-          containerTag,
-          result: await save(summary, containerTag, supermemory.config),
-        })),
-      );
-      for (const { containerTag, result } of results) {
-        if (!result.ok) {
-          console.error(`Failed to save compacted memory to ${containerTag}: ${result.error}`);
-        }
+      const result = await save(summary, supermemory.containerTag, supermemory.config);
+      if (!result.ok) {
+        console.error(
+          `Failed to save compacted memory to ${supermemory.containerTag}: ${result.error}`,
+        );
       }
     } catch (error) {
       console.error("Failed to save compacted memory", error);
@@ -390,11 +383,10 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     latest.historyCompactionGeneration !== previousGeneration
   ) {
     const remove = deps.deleteSupermemoryContainer ?? defaultDeleteSupermemoryContainer;
-    const privateContainerTag = supermemory.containerTags.at(-1)!;
-    const removed = await remove(privateContainerTag, supermemory.config);
+    const removed = await remove(supermemory.containerTag, supermemory.config);
     if (!removed.ok) {
       console.error(
-        `history.compact could not purge stale Supermemory container ${privateContainerTag}: ${removed.error}`,
+        `history.compact could not purge stale Supermemory container ${supermemory.containerTag}: ${removed.error}`,
       );
     }
   }

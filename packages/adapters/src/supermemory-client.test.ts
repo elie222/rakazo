@@ -33,6 +33,7 @@ describe("searchSupermemory", () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://localhost:6767/v4/search");
     expect(init.headers.Authorization).toBe("Bearer sm_test_key");
+    expect(init.redirect).toBe("error");
     expect(JSON.parse(init.body)).toStrictEqual({
       q: "spelling preference",
       containerTag: "rakazo:bot-123",
@@ -146,6 +147,7 @@ describe("saveSupermemoryMemory", () => {
     expect(result).toEqual({ ok: true });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://localhost:6767/v4/memories");
+    expect(init.redirect).toBe("error");
     expect(JSON.parse(init.body)).toEqual({
       containerTag: "rakazo:bot-123",
       memories: [{ content: "User prefers British English", isStatic: false }],
@@ -200,6 +202,7 @@ describe("deleteSupermemoryContainer", () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://localhost:6767/v3/container-tags/rakazo%3Abot-123");
     expect(init.method).toBe("DELETE");
+    expect(init.redirect).toBe("error");
     vi.unstubAllGlobals();
   });
 
@@ -213,9 +216,11 @@ describe("deleteSupermemoryContainer", () => {
 
 describe("probeSupermemory", () => {
   it("succeeds when the container-tags endpoint responds", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
     const result = await probeSupermemory(config);
     expect(result).toEqual({ ok: true });
+    expect(fetchMock.mock.calls[0]![1].redirect).toBe("error");
     vi.unstubAllGlobals();
   });
 

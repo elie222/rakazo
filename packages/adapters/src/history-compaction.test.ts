@@ -222,7 +222,6 @@ function compactionHarness(
       secretId: string;
       defaultMemoryScope: string;
     } | null;
-    botMemoryScope?: string | null;
   } = {},
 ) {
   const messages: HarnessMessage[] =
@@ -304,9 +303,6 @@ function compactionHarness(
       findUnique: vi.fn(async () =>
         memoryConfig ? { ...memoryConfig, secret: { ciphertext: "encrypted-key" } } : null,
       ),
-    },
-    bot: {
-      findUniqueOrThrow: vi.fn(async () => ({ memoryScope: options.botMemoryScope ?? null })),
     },
   };
   const runtime = {
@@ -390,22 +386,20 @@ describe("compactHistory", () => {
     });
   });
 
-  it("saves shared-scope summaries to the workspace container", async () => {
+  it("keeps compaction summaries private so clearing a shared bot cannot expose stale history", async () => {
     const harness = compactionHarness({
       deploymentModelKey: "openrouter-key",
-      botMemoryScope: "shared",
+      memoryConfig: {
+        baseUrl: "http://localhost:6767",
+        secretId: "secret-1",
+        defaultMemoryScope: "shared",
+      },
     });
 
     await compactHistory(harness.deps, "thread-1");
 
-    expect(harness.saveSupermemoryMemory).toHaveBeenNthCalledWith(
-      1,
-      "Summary of 50 messages.",
-      "rakazo:workspace:workspace-1",
-      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
-    );
-    expect(harness.saveSupermemoryMemory).toHaveBeenNthCalledWith(
-      2,
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledOnce();
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
       "Summary of 50 messages.",
       "rakazo:bot-1",
       { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
@@ -663,7 +657,14 @@ describe("compactHistory", () => {
   });
 
   it("purges a stale Supermemory save when clear advances the history generation", async () => {
-    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: {
+        baseUrl: "http://localhost:6767",
+        secretId: "secret-1",
+        defaultMemoryScope: "shared",
+      },
+    });
     let releaseSave!: () => void;
     let saveBegan!: () => void;
     const saveCanFinish = new Promise<void>((resolve) => {
@@ -687,6 +688,12 @@ describe("compactHistory", () => {
     await pending;
 
     expect(harness.thread.historyCompactionSummary).toBeNull();
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledOnce();
+    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
+      "Summary of 50 messages.",
+      "rakazo:bot-1",
+      { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
+    );
     expect(harness.deleteSupermemoryContainer).toHaveBeenCalledWith("rakazo:bot-1", {
       baseUrl: "http://localhost:6767",
       apiKey: "sm_test_key",

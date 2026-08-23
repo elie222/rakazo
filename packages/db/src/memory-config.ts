@@ -31,6 +31,9 @@ export function supermemoryContainerTagsFor(
   workspaceId: string,
   historyGeneration = 0,
 ): string[] {
+  // Shared operations also use a private bot mirror. Searching both keeps bot-authored memories
+  // available if its scope changes later; writing both allows private history to be purged without
+  // deleting the workspace container used by other bots.
   const isolatedTag = supermemoryContainerTagFor("isolated", botId, workspaceId, historyGeneration);
   return scope === "shared"
     ? [supermemoryContainerTagFor("shared", botId, workspaceId), isolatedTag]

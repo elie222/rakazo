@@ -73,6 +73,7 @@ export async function searchSupermemory(
         searchMode: "memories",
         limit: MAX_RECALLED_MEMORIES,
       }),
+      redirect: "error",
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -130,6 +131,7 @@ export async function deleteSupermemoryContainer(
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
+        redirect: "error",
         signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
       },
     );
@@ -156,6 +158,7 @@ export async function saveSupermemoryMemory(
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
+      redirect: "error",
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -199,6 +202,7 @@ export async function probeSupermemory(
     const response = await fetch(`${config.baseUrl}/v3/container-tags/list`, {
       method: "GET",
       headers: authHeaders(config),
+      redirect: "error",
       signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
     });
     if (!response.ok) {
