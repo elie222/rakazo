@@ -286,7 +286,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             takeoverReleaseReasonFromPayload(
               (
                 await deps.prisma.event.findFirst({
-                  where: { botId: run.botId, type: "computer.takeover.released" },
+                  where: {
+                    botId: run.botId,
+                    runId: run.id,
+                    type: "computer.takeover.released",
+                  },
                   orderBy: [{ createdAt: "desc" }, { seq: "desc" }],
                   select: { payload: true },
                 })

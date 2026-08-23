@@ -52,6 +52,7 @@ export interface FinalizeComputerControlReleaseInput {
   workspaceId: string;
   computerId: string;
   botId: string;
+  runId?: string;
   leaseId: string;
   holder: "bot" | "none";
   reason: "done" | "expired" | "released" | "skipped";
@@ -463,6 +464,7 @@ export async function finalizeComputerControlRelease(
       workspaceId: input.workspaceId,
       threadId: bot.thread.id,
       botId: input.botId,
+      runId: input.runId,
       type: "computer.takeover.released",
       payload: {
         holder: input.holder,

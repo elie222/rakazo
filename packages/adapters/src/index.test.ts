@@ -30,6 +30,18 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.complete)).toBe(true);
   });
 
+  it("resumes a skipped takeover without treating login as done", () => {
+    const script = inferScript("install the cli and sign in", "takeover-skipped");
+    expect(script?.some((t) => t.takeover)).toBe(false);
+    expect(script?.some((t) => t.assistant?.includes("login was skipped"))).toBe(true);
+  });
+
+  it("does not infer a takeover checkpoint from ordinary task text", () => {
+    const script = inferScript("ask me whether to record 'skipped the login'");
+    expect(script?.some((t) => t.assistant?.includes("decision"))).toBe(true);
+    expect(script?.some((t) => t.assistant?.includes("login was skipped"))).toBe(false);
+  });
+
   it("routes destination/crm work through the connector", () => {
     const script = inferScript("write this to the destination crm as a note");
     expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "destination.write"))).toBe(

@@ -2,6 +2,7 @@ import {
   type AdapterContext,
   computerControlExpireJob,
   type JobPublisher,
+  runContinueJob,
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -128,12 +129,19 @@ export async function expireComputerControl(
     await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
   }
 
-  return deps.events.finalizeComputerControlRelease({
+  const waiting = await deps.prisma.run.findFirst({
+    where: { botId, status: "waiting_takeover" },
+    orderBy: { createdAt: "desc" },
+  });
+  const released = await deps.events.finalizeComputerControlRelease({
     workspaceId: computer.workspaceId,
     computerId: computer.id,
     botId,
+    runId: waiting?.id,
     leaseId,
     holder: "none",
     reason: "expired",
   });
+  if (released && waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
+  return released;
 }

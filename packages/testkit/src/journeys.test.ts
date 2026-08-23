@@ -484,7 +484,12 @@ describeJourneys("required product journeys", () => {
       botId: bot.id,
       text: "install the gsc cli and sign in",
     });
-    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_takeover");
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_takeover",
+    );
     await rpc(app, cookie, "computer/release", { botId: bot.id, reason: "skipped" });
     const done = await waitFor(
       app,
@@ -499,7 +504,10 @@ describeJourneys("required product journeys", () => {
       where: { botId: bot.id, type: "computer.takeover.released" },
       orderBy: { createdAt: "desc" },
     });
-    expect(released?.payload).toMatchObject({ reason: "skipped" });
+    expect(released).toMatchObject({
+      runId: waiting.run?.id,
+      payload: { reason: "skipped" },
+    });
   });
 
   it("4b: an expired takeover denies input and reconciles API and database state", async () => {
@@ -518,7 +526,12 @@ describeJourneys("required product journeys", () => {
         botId: bot.id,
         text: "install the gsc cli and sign in",
       });
-      await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_takeover");
+      const waiting = await waitFor(
+        app,
+        cookie,
+        bot.id,
+        (snap) => snap.run?.status === "waiting_takeover",
+      );
       await rpc(app, cookie, "computer/boot", { botId: bot.id });
       const lease = await rpc<{ leaseId: string; expiresAt: string }>(
         app,
@@ -563,19 +576,21 @@ describeJourneys("required product journeys", () => {
           })
         ).status,
       ).toBeGreaterThanOrEqual(400);
-      expect((await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id })).run?.status).toBe(
-        "waiting_takeover",
-      );
-
-      await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-      await rpc(app, cookie, "computer/release", { botId: bot.id });
       const done = await waitFor(
         app,
         cookie,
         bot.id,
         (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
       );
+      expect(JSON.stringify(done.messages).toLowerCase()).toMatch(/skipped/);
+      expect(JSON.stringify(done.messages).toLowerCase()).not.toMatch(/signed in/);
       expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
+      expect(
+        await prisma.event.findFirst({
+          where: { runId: waiting.run?.id, type: "computer.takeover.released" },
+          orderBy: { createdAt: "desc" },
+        }),
+      ).toMatchObject({ payload: { reason: "expired" } });
     } finally {
       if (previousTakeoverTtl === undefined) delete process.env.COMPUTER_TAKEOVER_TTL_MS;
       else process.env.COMPUTER_TAKEOVER_TTL_MS = previousTakeoverTtl;

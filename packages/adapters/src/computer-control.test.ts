@@ -62,7 +62,7 @@ describe("computer control leases", () => {
   });
 
   it("denies control, revokes the stream, clears the lease, and publishes expiry", async () => {
-    const harness = controlHarness();
+    const harness = controlHarness({ waitingRunId: "run-1" });
 
     await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
 
@@ -80,9 +80,15 @@ describe("computer control leases", () => {
       workspaceId: "workspace",
       computerId: "computer-id",
       botId: "bot",
+      runId: "run-1",
       leaseId: "lease-1",
       holder: "none",
       reason: "expired",
+    });
+    expect(harness.enqueue).toHaveBeenCalledWith({
+      name: "run.continue",
+      payload: { runId: "run-1" },
+      replaceKey: "run:run-1",
     });
   });
 
@@ -180,6 +186,7 @@ function controlHarness(
     controlLeaseExpiresAt?: Date | null;
     revokeError?: Error;
     finalizeError?: Error;
+    waitingRunId?: string;
   } = {},
 ) {
   const computer = {
@@ -209,6 +216,11 @@ function controlHarness(
         thread: { id: "thread" },
         computer,
       }),
+    },
+    run: {
+      findFirst: vi.fn().mockResolvedValue(
+        options.waitingRunId ? { id: options.waitingRunId } : null,
+      ),
     },
   };
   const setScreenControl = vi.fn(async () => {

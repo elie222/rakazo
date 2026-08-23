@@ -961,10 +961,15 @@ export function createRouter(deps: RouterDeps) {
           );
         }
 
+        const waiting = await deps.prisma.run.findFirst({
+          where: { botId: controlBotId, status: "waiting_takeover" },
+          orderBy: { createdAt: "desc" },
+        });
         const released = await deps.events.finalizeComputerControlRelease({
           workspaceId: context.actor.workspaceId,
           computerId: bot.computer.id,
           botId: controlBotId,
+          runId: waiting?.id,
           leaseId: controlLeaseId,
           holder: "bot",
           reason: input.reason ?? "released",
@@ -973,10 +978,6 @@ export function createRouter(deps: RouterDeps) {
         // The lease-specific key makes this cancellation safe after a replacement takeover.
         await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
 
-        const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBotId, status: "waiting_takeover" },
-          orderBy: { createdAt: "desc" },
-        });
         if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };

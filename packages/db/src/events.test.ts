@@ -103,6 +103,7 @@ describe("finalizeComputerControlRelease", () => {
           thread: { id: "thread-1" },
         }),
       },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }) },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       event: {
         create: vi.fn().mockResolvedValue({
@@ -123,6 +124,7 @@ describe("finalizeComputerControlRelease", () => {
           workspaceId: "workspace-1",
           computerId: "computer-1",
           botId: "bot-1",
+          runId: "run-1",
           leaseId: "lease-1",
           holder: "none",
           reason: "expired",
@@ -149,6 +151,7 @@ describe("finalizeComputerControlRelease", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           type: "computer.takeover.released",
+          runId: "run-1",
           payload: { holder: "none", leaseId: "lease-1", reason: "expired" },
         }),
       }),
