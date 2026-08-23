@@ -14,6 +14,11 @@
       "development": "./src/node/load-root-env.ts",
       "default": "./src/node/load-root-env.ts"
     },
+    "./node/approval-effect-key": {
+      "types": "./src/approval-effect-key.ts",
+      "development": "./src/approval-effect-key.ts",
+      "default": "./src/approval-effect-key.ts"
+    },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",

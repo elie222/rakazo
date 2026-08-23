@@ -422,6 +422,33 @@ describe("mobile thread event reduction", () => {
     expect(next?.cursor).toBe(11);
   });
 
+  it("preserves ask actions and runId on created messages", () => {
+    const initial = snapshot();
+    const askBlock = {
+      kind: "ask",
+      text: "Review before writing",
+      detail: "title: Result",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "always", label: "Always allow" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.message.created",
+      runId: "run-1",
+      payload: { messageId: "message-ask", role: "bot", blocks: [askBlock] },
+    });
+
+    expect(next?.messages.at(-1)).toMatchObject({
+      id: "message-ask",
+      runId: "run-1",
+      blocks: [askBlock],
+    });
+  });
+
   it("updates a waiting group run without replacing the newer active run", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),

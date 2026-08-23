@@ -62,7 +62,7 @@ describe("computer control leases", () => {
   });
 
   it("denies control, revokes the stream, clears the lease, and publishes expiry", async () => {
-    const harness = controlHarness();
+    const harness = controlHarness({ waitingRunId: "run-1" });
 
     await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
 
@@ -80,10 +80,50 @@ describe("computer control leases", () => {
       workspaceId: "workspace",
       computerId: "computer-id",
       botId: "bot",
+      runId: "run-1",
       leaseId: "lease-1",
       holder: "none",
       reason: "expired",
     });
+    expect(harness.enqueue).toHaveBeenCalledWith({
+      name: "run.continue",
+      payload: { runId: "run-1" },
+      replaceKey: "run:run-1",
+    });
+  });
+
+  it("resumes the run holding the takeover lease instead of a newer waiting run", async () => {
+    const harness = controlHarness({ controlRunId: "run-holding-takeover" });
+
+    await expireComputerControl(harness.deps, "computer-id", "lease-1");
+
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-holding-takeover" }),
+    );
+  });
+
+  it("does not release a run acquired after the control lease", async () => {
+    const harness = controlHarness({
+      controlRunId: "run-holding-takeover",
+      executionRunId: "newer-run",
+    });
+
+    await expireComputerControl(harness.deps, "computer-id", "lease-1");
+
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-holding-takeover" }),
+    );
+  });
+
+  it("leaves a released run recoverable when its immediate continuation enqueue fails", async () => {
+    const enqueueError = new Error("job broker unavailable");
+    const harness = controlHarness({ waitingRunId: "run-1", enqueueError });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
+
+    expect(logError).toHaveBeenCalledWith("takeover continuation enqueue", enqueueError);
+    logError.mockRestore();
   });
 
   it("keeps the denied lease retryable when provider revocation fails", async () => {
@@ -180,6 +220,10 @@ function controlHarness(
     controlLeaseExpiresAt?: Date | null;
     revokeError?: Error;
     finalizeError?: Error;
+    enqueueError?: Error;
+    waitingRunId?: string;
+    controlRunId?: string;
+    executionRunId?: string;
   } = {},
 ) {
   const computer = {
@@ -191,6 +235,8 @@ function controlHarness(
     controlHolder: "user",
     controlLeaseId: options.controlLeaseId ?? "lease-1",
     controlBotId: "bot",
+    controlRunId: options.controlRunId ?? options.waitingRunId ?? null,
+    executionRunId: options.executionRunId ?? null,
     controlLeaseExpiresAt:
       options.controlLeaseExpiresAt === undefined
         ? new Date("2026-01-01T00:00:00.000Z")
@@ -216,8 +262,11 @@ function controlHarness(
   });
   const sandbox = { setScreenControl };
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
+  if (options.enqueueError) enqueue.mockRejectedValueOnce(options.enqueueError);
   const jobs = { enqueue, cancel: vi.fn(), close: vi.fn() };
-  const finalizeComputerControlRelease = vi.fn().mockResolvedValue(true);
+  const finalizeComputerControlRelease = vi.fn().mockResolvedValue({
+    runId: options.controlRunId ?? options.waitingRunId ?? null,
+  });
   if (options.finalizeError) {
     finalizeComputerControlRelease.mockRejectedValueOnce(options.finalizeError);
   }

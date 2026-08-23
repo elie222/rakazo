@@ -55,6 +55,25 @@ function buildPiCatalog(): PiCatalogEntry[] {
       });
     }
   }
+
+  const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
+  const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
+  if (
+    envDefaultProvider === "openrouter" &&
+    envDefaultModel &&
+    !models.getModel("openrouter", envDefaultModel)
+  ) {
+    entries.unshift({
+      provider: "openrouter",
+      providerName: "OpenRouter",
+      id: envDefaultModel,
+      label: envDefaultModel,
+      billing: `Configured via PI_DEFAULT_MODEL (${envDefaultModel}).`,
+      auth: "api-key",
+      subscription: false,
+    });
+  }
+
   return entries;
 }
 

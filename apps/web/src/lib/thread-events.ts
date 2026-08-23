@@ -227,16 +227,19 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.granted") {
-    return prev.controlHolder === "user" && prev.controlBotId === event.botId
+    const takeoverRequested = event.payload.takeoverRequested === true;
+    return prev.controlHolder === "user" &&
+      prev.controlBotId === event.botId &&
+      prev.takeoverRequested === takeoverRequested
       ? prev
-      : { ...prev, controlHolder: "user", controlBotId: event.botId };
+      : { ...prev, controlHolder: "user", controlBotId: event.botId, takeoverRequested };
   }
   if (event.type === "computer.takeover.released") {
     const holder = event.payload.holder;
     if (holder !== "bot" && holder !== "none") return prev;
-    return prev.controlHolder === holder && prev.controlBotId === null
+    return prev.controlHolder === holder && prev.controlBotId === null && !prev.takeoverRequested
       ? prev
-      : { ...prev, controlHolder: holder, controlBotId: null };
+      : { ...prev, controlHolder: holder, controlBotId: null, takeoverRequested: false };
   }
   const status = event.payload.status;
   if (!isComputerState(status)) return prev;

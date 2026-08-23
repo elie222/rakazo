@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -40,7 +40,8 @@ import {
 
 loadRootEnv();
 
-const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET ?? "/var/run/docker.sock" });
+const dockerSocketPath = resolveDockerSocketPath();
+const docker = dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) : new Docker();
 const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
@@ -54,6 +55,16 @@ const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 const app = new Hono();
 
 export { app as supervisorApp };
+
+export function resolveDockerSocketPath(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+) {
+  if (env.DOCKER_HOST) return undefined;
+  return (
+    env.DOCKER_SOCKET ?? (platform === "win32" ? "//./pipe/docker_engine" : "/var/run/docker.sock")
+  );
+}
 
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
 
@@ -595,17 +606,6 @@ function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo
   if (!dataMount?.Source) return serviceHomePath;
   return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
-
-function loadRootEnv() {
-  const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../.env");
-  if (!existsSync(envFile)) return;
-  try {
-    loadEnvFile(envFile);
-  } catch {
-    // The API reports malformed or missing deployment configuration in more detail.
-  }
-}
-
 async function publishedScreenUrl(
   container: Docker.Container,
   initialInfo?: Docker.ContainerInspectInfo,

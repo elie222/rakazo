@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   appContract,
+  BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_TITLE_MAX_LENGTH,
   CreateBotInput,
   CreateGroupInput,
   McpServerConfigInput,
   MessageBlock,
   ModelOAuthBeginSchema,
+  normalizeCreateBotProfile,
   ProductEventType,
+  UpdateBotInput,
   UpdateGroupInput,
 } from "./index.js";
 
@@ -15,6 +20,33 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
+  });
+
+  it("normalizes bot creation fields without losing the longer instruction copy", () => {
+    const profile = normalizeCreateBotProfile({
+      name: `  ${"N".repeat(100)}  `,
+      title: `  ${"T".repeat(BOT_TITLE_MAX_LENGTH + 10)}  `,
+      description: `  ${"D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
+    });
+
+    expect(profile.name).toHaveLength(80);
+    expect(profile.title).toHaveLength(BOT_TITLE_MAX_LENGTH);
+    expect(profile.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
+    expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
+  });
+
+  it("accepts the same title limit when creating and updating bots", () => {
+    const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
+    expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", title }).success).toBe(true);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", title: `${title}T` }).success).toBe(false);
+  });
+
+  it("normalizes bot names and rejects whitespace-only values at the contract boundary", () => {
+    expect(CreateBotInput.parse({ name: "  Chief  " }).name).toBe("Chief");
+    expect(UpdateBotInput.parse({ botId: "bot-1", name: "  Atlas  " }).name).toBe("Atlas");
+    expect(CreateBotInput.safeParse({ name: "   " }).success).toBe(false);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", name: "   " }).success).toBe(false);
   });
 
   it("normalizes group names and rejects duplicate members", () => {

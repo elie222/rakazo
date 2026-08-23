@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 
 describe("Pi model catalog", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("lists real Pi providers instead of a two-option dropdown", () => {
     const catalog = listPiCatalog();
     const providers = new Set(catalog.map((entry) => entry.provider));
@@ -27,5 +32,31 @@ describe("Pi model catalog", () => {
       oauthLabel: "Sign in with Claude Pro/Max",
     });
     expect(scriptedCatalogEntry.provider).toBe("scripted");
+  });
+
+  it("adds a configured OpenRouter model that is newer than the static catalog", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", " openrouter ");
+    vi.stubEnv("PI_DEFAULT_MODEL", " stealth/ox-alpha ");
+    vi.resetModules();
+
+    const { listPiCatalog: listConfiguredCatalog } = await import("./pi-models.js");
+    expect(listConfiguredCatalog()[0]).toMatchObject({
+      provider: "openrouter",
+      id: "stealth/ox-alpha",
+      label: "stealth/ox-alpha",
+    });
+  });
+
+  it("does not advertise a synthetic model for providers the runtime cannot synthesize", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "anthropic");
+    vi.stubEnv("PI_DEFAULT_MODEL", "future/unknown-model");
+    vi.resetModules();
+
+    const { listPiCatalog: listConfiguredCatalog } = await import("./pi-models.js");
+    expect(
+      listConfiguredCatalog().some(
+        (entry) => entry.provider === "anthropic" && entry.id === "future/unknown-model",
+      ),
+    ).toBe(false);
   });
 });

@@ -2,6 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
   thinkingLevels: [] as string[],
+  models: [] as Array<{
+    id: string;
+    provider: string;
+    reasoning: boolean;
+    contextWindow?: number;
+    maxTokens?: number;
+  }>,
+  failPrompt: false,
 }));
 
 type FakeAgentTool = {
@@ -14,13 +22,21 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     state = { errorMessage: undefined, messages: [] };
     private readonly tools: FakeAgentTool[];
 
-    constructor(options: { initialState: { thinkingLevel: string; tools: FakeAgentTool[] } }) {
+    constructor(options: {
+      initialState: {
+        thinkingLevel: string;
+        tools: FakeAgentTool[];
+        model: (typeof fakeAgentState.models)[number];
+      };
+    }) {
       this.tools = options.initialState.tools;
       fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
+      fakeAgentState.models.push(options.initialState.model);
     }
 
     subscribe(_listener: unknown) {}
     async prompt() {
+      if (fakeAgentState.failPrompt) throw new Error("prompt failed");
       const runSubagent = this.tools.find((tool) => tool.name === "run_subagent");
       await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
     }
@@ -48,7 +64,11 @@ vi.mock("./pi-local-provider.js", () => ({
 
 import { PiAgentRuntime } from "./pi-runtime.js";
 
-async function runWithModel(modelId: string) {
+async function runWithModel(
+  modelId: string,
+  provider = "test",
+  signal = new AbortController().signal,
+) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
     {
@@ -59,7 +79,7 @@ async function runWithModel(modelId: string) {
       instructions: "",
       history: [],
       tools: [],
-      model: { provider: "test", id: modelId },
+      model: { provider, id: modelId },
       executeTool: vi.fn(async () => ({ ok: true })),
     },
     {
@@ -67,7 +87,7 @@ async function runWithModel(modelId: string) {
       traceId: "1",
       workspaceId: "w",
       userId: "u",
-      signal: new AbortController().signal,
+      signal,
     },
   )) {
     // Exhaust the runtime event stream so the run completes.
@@ -78,6 +98,9 @@ async function runWithModel(modelId: string) {
 describe("Pi agent thinking level", () => {
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
+    fakeAgentState.models = [];
+    fakeAgentState.failPrompt = false;
+    vi.unstubAllEnvs();
   });
 
   it("uses medium reasoning for the main agent and subagent", async () => {
@@ -86,5 +109,39 @@ describe("Pi agent thinking level", () => {
 
   it("keeps reasoning off for the main agent and subagent", async () => {
     expect(await runWithModel("plain-model")).toEqual(["off", "off"]);
+  });
+
+  it("normalizes and runs a configured OpenRouter model absent from the static catalog", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", " openrouter ");
+    vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");
+
+    await runWithModel("  stealth/ox-alpha  ", "openrouter");
+
+    expect(fakeAgentState.models).toHaveLength(2);
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "stealth/ox-alpha",
+      provider: "openrouter",
+      reasoning: false,
+      contextWindow: 16_384,
+      maxTokens: 4_096,
+    });
+  });
+
+  it("uses the trimmed configured default for scripted requests", async () => {
+    vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");
+
+    await runWithModel("scripted", "scripted");
+
+    expect(fakeAgentState.models[0]?.id).toBe("stealth/ox-alpha");
+  });
+
+  it("removes the abort listener when prompting fails", async () => {
+    const controller = new AbortController();
+    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    fakeAgentState.failPrompt = true;
+
+    await runWithModel("plain-model", "test", controller.signal);
+
+    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });

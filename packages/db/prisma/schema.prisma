@@ -24,6 +24,7 @@ model User {
   secrets          Secret[]
   mcpServers       McpServer[]
   botSections      BotSection[]
+  actionApprovalRules ActionApprovalRule[]
 
   @@unique([email])
   @@map("user")
@@ -107,11 +108,28 @@ model Organization {
   computers   Computer[]
   externalEffects ExternalEffect[]
   mcpServers   McpServer[]
+  actionApprovalRules ActionApprovalRule[]
   workspaceMemoryConfig WorkspaceMemoryConfig?
   chatGroups  ChatGroup[]
 
   @@unique([slug])
   @@map("organization")
+}
+
+model ActionApprovalRule {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  workspace       Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  createdByUser   User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  effect          String
+  matchKind       String
+  matchValue      String
+  createdAt       DateTime     @default(now())
+
+  @@unique([workspaceId, createdByUserId, effect, matchKind, matchValue])
+  @@index([workspaceId, createdByUserId])
+  @@map("action_approval_rules")
 }
 
 model Member {
@@ -623,6 +641,7 @@ model Computer {
   controlLeaseId           String?
   controlLeaseExpiresAt    DateTime?
   controlBotId             String?
+  controlRunId             String?
   controlFence             Int      @default(0)
   executionRunId           String?
   executionBotId           String?

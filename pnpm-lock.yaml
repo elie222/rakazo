@@ -574,6 +574,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
       dotenv:
         specifier: ^17.2.1
         version: 17.4.2

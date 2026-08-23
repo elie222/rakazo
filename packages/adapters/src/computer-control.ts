@@ -2,6 +2,7 @@ import {
   type AdapterContext,
   computerControlExpireJob,
   type JobPublisher,
+  runContinueJob,
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -40,6 +41,19 @@ export function scheduleComputerControlExpiry(
   expiresAt: Date,
 ): Promise<void> {
   return jobs.enqueue(computerControlExpireJob(computerId, leaseId, expiresAt));
+}
+
+export async function enqueueTakeoverContinuation(
+  jobs: JobPublisher,
+  runId: string | null,
+): Promise<void> {
+  if (!runId) return;
+  try {
+    await jobs.enqueue(runContinueJob(runId));
+  } catch (error) {
+    // The release is durable; reconciliation will retry this queued run.
+    console.error("takeover continuation enqueue", error);
+  }
 }
 
 export function teachingControlLeaseExpiresAt(teachingExpiresAt: Date, now = new Date()): Date {
@@ -128,12 +142,15 @@ export async function expireComputerControl(
     await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
   }
 
-  return deps.events.finalizeComputerControlRelease({
+  const released = await deps.events.finalizeComputerControlRelease({
     workspaceId: computer.workspaceId,
     computerId: computer.id,
     botId,
+    runId: computer.controlRunId,
     leaseId,
     holder: "none",
     reason: "expired",
   });
+  await enqueueTakeoverContinuation(deps.jobs, released ? released.runId : null);
+  return Boolean(released);
 }

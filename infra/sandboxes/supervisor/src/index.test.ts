@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { supervisorApp } from "./index.js";
+import { resolveDockerSocketPath, supervisorApp } from "./index.js";
 import {
   assertRequestIdentity,
   clearComputerScreenRegistry,
@@ -21,6 +21,19 @@ import {
 } from "./supervisor-logic.js";
 
 const token = resolveSupervisorToken(process.env);
+
+describe("sandbox supervisor Docker endpoint", () => {
+  it("respects Docker host and socket overrides before platform defaults", () => {
+    expect(resolveDockerSocketPath({ DOCKER_HOST: "tcp://docker.test:2375" }, "win32")).toBe(
+      undefined,
+    );
+    expect(resolveDockerSocketPath({ DOCKER_SOCKET: "/tmp/docker.sock" }, "win32")).toBe(
+      "/tmp/docker.sock",
+    );
+    expect(resolveDockerSocketPath({}, "win32")).toBe("//./pipe/docker_engine");
+    expect(resolveDockerSocketPath({}, "linux")).toBe("/var/run/docker.sock");
+  });
+});
 
 describe("sandbox supervisor HTTP boundary", () => {
   it("keeps health public while every computer route requires the service token", async () => {

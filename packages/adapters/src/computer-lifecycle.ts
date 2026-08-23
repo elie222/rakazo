@@ -110,7 +110,12 @@ export async function provisionComputer(
         kind: ref.kind,
         controlHolder: activeControl ? "user" : controlHolder,
         ...(!activeControl
-          ? { controlLeaseId: null, controlLeaseExpiresAt: null, controlBotId: null }
+          ? {
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: null,
+            }
           : {}),
       },
     });

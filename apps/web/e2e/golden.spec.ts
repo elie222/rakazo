@@ -73,13 +73,32 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
   await page.getByRole("button", { name: "Take control" }).click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
   if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
-  await captureScreenshot(page, testInfo, "09-computer-takeover");
-  await page.getByRole("button", { name: "Release" }).last().click();
+  await captureScreenshot(page, testInfo, "09-computer-takeover-outcomes");
+  await page.getByRole("button", { name: "I’m done", exact: true }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
   await expect(page.getByText(/signed in|session stays/i).first()).toBeVisible({
     timeout: realSandboxTimeout(90_000, 30_000),
   });
+
+  await composer.fill("sign in again so I can skip this time");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => threadRunStatus(page), {
+      timeout: realSandboxTimeout(90_000, 30_000),
+      message: "the second protected-input run must be ready for takeover",
+    })
+    .toBe("waiting_takeover");
+  await page.getByRole("button", { name: "Take control" }).click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip", exact: true }).last().click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
+  await expect(page.getByText(/login was skipped/i).last()).toBeVisible({
+    timeout: realSandboxTimeout(90_000, 30_000),
+  });
+  await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
   await page.getByText("+ New routine").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
@@ -150,7 +169,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.getByRole("button", { name: "Bot settings" });
+  const gear = page.getByRole("button", { name: "Show settings" });
   if (!(await gear.isVisible().catch(() => false))) {
     await page.getByTitle("Agent computer").click();
   }

@@ -141,6 +141,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/begin", connectionInput("Unauthenticated")],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
+      ["approvalRules/list"],
+      [
+        "approvalRules/set",
+        { effect: "require_approval", matchKind: "category", matchValue: "email" },
+      ],
+      ["approvalRules/remove", { id: "missing-rule" }],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
       ["usage/summary"],
@@ -413,6 +419,48 @@ describeWithDatabase("API authorization and resource isolation", () => {
       deleteMemories: true,
     });
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
+  });
+
+  it("keeps approval rules private to each user in a shared workspace", async () => {
+    const owner = await signup(app, `approval-owner-${stamp}@rakazo.test`, "Approval Owner");
+    const member = await signup(app, `approval-member-${stamp}@rakazo.test`, "Approval Member");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const memberActor = await rpc<Actor>(app, member, "me");
+
+    await handles.prisma.member.deleteMany({ where: { userId: memberActor.userId } });
+    await handles.prisma.member.create({
+      data: {
+        id: `approval-member-${stamp}`,
+        organizationId: ownerActor.workspaceId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    const ownerRule = await rpc<{ id: string }>(app, owner, "approvalRules/set", {
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "destination.write",
+    });
+    expect(await rpc<unknown[]>(app, member, "approvalRules/list")).toEqual([]);
+
+    const memberRule = await rpc<{ id: string }>(app, member, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "category",
+      matchValue: "email",
+    });
+    expect(await rpc<Array<{ id: string }>>(app, owner, "approvalRules/list")).toEqual([
+      expect.objectContaining({ id: ownerRule.id }),
+    ]);
+    expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
+      expect.objectContaining({ id: memberRule.id }),
+    ]);
+
+    await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
+    expect(
+      await handles.prisma.actionApprovalRule.findUnique({ where: { id: ownerRule.id } }),
+    ).not.toBeNull();
   });
 
   it("isolates model defaults by workspace and switches them atomically", async () => {

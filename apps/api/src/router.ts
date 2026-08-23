@@ -28,6 +28,7 @@ import {
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
+  enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
   listPiCatalog,
@@ -589,6 +590,7 @@ export function createRouter(deps: RouterDeps) {
                 controlLeaseId: null,
                 controlLeaseExpiresAt: null,
                 controlBotId: null,
+                controlRunId: null,
                 executionRunId: null,
                 executionBotId: null,
                 executionLeaseExpiresAt: null,
@@ -880,6 +882,7 @@ export function createRouter(deps: RouterDeps) {
           threadId: target.threadId,
           runId: input.runId,
           messageId: input.messageId,
+          answeredByUserId: context.actor.userId,
           answer: input.answer,
         });
         if (!answered) {
@@ -996,6 +999,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
         } catch (error) {
@@ -1044,6 +1048,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
           bot = await repos.getBot(context.actor, input.botId);
@@ -1094,6 +1099,7 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseId: leaseId,
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
+            controlRunId: waitingForTakeover ? executionLease?.runId : null,
             state: "running",
           },
         });
@@ -1123,6 +1129,7 @@ export function createRouter(deps: RouterDeps) {
               controlLeaseId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
+              controlRunId: null,
             },
           });
           throw error;
@@ -1133,7 +1140,7 @@ export function createRouter(deps: RouterDeps) {
             threadId: bot.thread.id,
             botId: bot.id,
             type: "computer.takeover.granted",
-            payload: { leaseId },
+            payload: { leaseId, takeoverRequested: waitingForTakeover },
           });
         }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -1166,19 +1173,22 @@ export function createRouter(deps: RouterDeps) {
           workspaceId: context.actor.workspaceId,
           computerId: bot.computer.id,
           botId: controlBotId,
+          runId: bot.computer.controlRunId,
           leaseId: controlLeaseId,
           holder: "bot",
-          reason: "released",
+          reason: input.reason ?? "released",
         });
         if (!released) return { ok: true as const };
         // The lease-specific key makes this cancellation safe after a replacement takeover.
-        await deps.jobs.cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId));
+        await deps.jobs
+          .cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId))
+          .catch((error) => {
+            // The expired job is harmless after the lease is cleared, so do not report a
+            // failed release after the transaction has committed.
+            console.error("computer control expiry cancellation", error);
+          });
 
-        const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBotId, status: "waiting_takeover" },
-          orderBy: { createdAt: "desc" },
-        });
-        if (waiting) await deps.jobs.enqueue(runContinueJob(waiting.id));
+        await enqueueTakeoverContinuation(deps.jobs, released.runId);
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };
       }),
@@ -2280,6 +2290,62 @@ export function createRouter(deps: RouterDeps) {
             userId: context.actor.userId,
           },
           data: { status: "revoked" },
+        });
+        return { ok: true as const };
+      }),
+    },
+    approvalRules: {
+      list: authed.approvalRules.list.handler(async ({ context }) => {
+        const rows = await deps.prisma.actionApprovalRule.findMany({
+          where: {
+            workspaceId: context.actor.workspaceId,
+            createdByUserId: context.actor.userId,
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        return rows.map((row) => ({
+          id: row.id,
+          effect: row.effect as "always_allow" | "require_approval",
+          matchKind: row.matchKind as "tool" | "connector" | "category",
+          matchValue: row.matchValue,
+          createdAt: row.createdAt.toISOString(),
+        }));
+      }),
+      set: authed.approvalRules.set.handler(async ({ context, input }) => {
+        const row = await deps.prisma.actionApprovalRule.upsert({
+          where: {
+            workspaceId_createdByUserId_effect_matchKind_matchValue: {
+              workspaceId: context.actor.workspaceId,
+              createdByUserId: context.actor.userId,
+              effect: input.effect,
+              matchKind: input.matchKind,
+              matchValue: input.matchValue,
+            },
+          },
+          create: {
+            workspaceId: context.actor.workspaceId,
+            createdByUserId: context.actor.userId,
+            effect: input.effect,
+            matchKind: input.matchKind,
+            matchValue: input.matchValue,
+          },
+          update: {},
+        });
+        return {
+          id: row.id,
+          effect: row.effect as "always_allow" | "require_approval",
+          matchKind: row.matchKind as "tool" | "connector" | "category",
+          matchValue: row.matchValue,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+      remove: authed.approvalRules.remove.handler(async ({ context, input }) => {
+        await deps.prisma.actionApprovalRule.deleteMany({
+          where: {
+            id: input.id,
+            workspaceId: context.actor.workspaceId,
+            createdByUserId: context.actor.userId,
+          },
         });
         return { ok: true as const };
       }),

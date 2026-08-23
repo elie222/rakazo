@@ -735,15 +735,19 @@ describe("computer event reduction", () => {
   it("grants user control without overwriting the lifecycle state", () => {
     const granted = reduceComputerStatus(
       computer({ state: "suspended", controlHolder: "bot" }),
-      event({ type: "computer.takeover.granted", payload: {} }),
+      event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
     );
     expect(granted).toMatchObject({
       state: "suspended",
       controlHolder: "user",
       controlBotId: "bot-1",
+      takeoverRequested: true,
     });
     expect(
-      reduceComputerStatus(granted, event({ type: "computer.takeover.granted", payload: {} })),
+      reduceComputerStatus(
+        granted,
+        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+      ),
     ).toBe(granted);
   });
 
@@ -752,6 +756,7 @@ describe("computer event reduction", () => {
       state: "running",
       controlHolder: "user",
       controlBotId: "bot-1",
+      takeoverRequested: true,
     });
     const expired = reduceComputerStatus(
       initial,
@@ -771,11 +776,13 @@ describe("computer event reduction", () => {
       state: "running",
       controlHolder: "none",
       controlBotId: null,
+      takeoverRequested: false,
     });
     expect(released).toMatchObject({
       state: "running",
       controlHolder: "bot",
       controlBotId: null,
+      takeoverRequested: false,
     });
   });
 
@@ -840,6 +847,7 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     state: "booting",
     controlHolder: "none",
     controlBotId: null,
+    takeoverRequested: false,
     screenAvailable: false,
     screenWidth: 1280,
     screenHeight: 800,

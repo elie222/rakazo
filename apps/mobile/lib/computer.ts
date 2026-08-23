@@ -8,6 +8,7 @@ export type ComputerStatus = {
   state: string;
   controlHolder: string;
   controlBotId: string | null;
+  takeoverRequested: boolean;
   screenAvailable: boolean;
   mode: ComputerMode;
   busyBotName: string | null;

@@ -59,12 +59,25 @@ export class PiAgentRuntime implements AgentRuntime {
       try {
         const provider =
           request.model.provider === "scripted" ? "openrouter" : request.model.provider;
+        const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
+        const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
-            ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-            : request.model.id;
+            ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
+            : request.model.id.trim();
         const models = modelsForRequest(request, provider);
-        const model = models.getModel(provider, modelId) ?? models.getModel("openrouter", modelId);
+        let model = models.getModel(provider, modelId);
+        if (!model && provider !== "openrouter") {
+          model = models.getModel("openrouter", modelId);
+        }
+        if (
+          !model &&
+          provider === "openrouter" &&
+          envDefaultProvider === "openrouter" &&
+          modelId === envDefaultModel
+        ) {
+          model = configuredOpenRouterModel(modelId);
+        }
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
           queue.push({ type: "done" });
@@ -173,9 +186,12 @@ export class PiAgentRuntime implements AgentRuntime {
           data: Buffer.from(image.data).toString("base64"),
           mimeType: image.mimeType,
         }));
-        await agent.prompt(request.prompt, images?.length ? images : undefined);
-        await agent.waitForIdle();
-        signal.removeEventListener("abort", onAbort);
+        try {
+          await agent.prompt(request.prompt, images?.length ? images : undefined);
+          await agent.waitForIdle();
+        } finally {
+          signal.removeEventListener("abort", onAbort);
+        }
 
         const error = agent.state.errorMessage;
         if (error) {
@@ -205,6 +221,23 @@ export class PiAgentRuntime implements AgentRuntime {
       running.delete(request.runId);
     }
   }
+}
+
+function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
+  // A configured model can intentionally be newer than Pi's static catalog. Keep unknown
+  // capabilities and pricing conservative instead of inheriting them from an unrelated model.
+  return {
+    id,
+    name: id,
+    api: "openai-completions",
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 16_384,
+    maxTokens: 4_096,
+  };
 }
 
 function modelsForRequest(request: AgentRunRequest, provider: string): Models {

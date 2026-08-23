@@ -1,14 +1,17 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import type { MessageBlock } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
   hasMentionToken,
+  isApprovalAskBlock,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AskActions } from "../components/AskActions";
 import {
   MarkdownArtifactPreview,
   type MarkdownArtifactPreviewTarget,
@@ -37,6 +40,14 @@ import {
 import { playMpeg, speakUtterance } from "../lib/voice";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
+
+function formatApprovalAnswer(answer: string | undefined): string {
+  if (!answer) return "Answered";
+  if (answer === "allow") return "Allowed once";
+  if (answer === "always") return "Always allowed";
+  if (answer === "deny") return "Denied";
+  return `Answered: ${answer}`;
+}
 
 export default function Thread() {
   const navigation = useNavigation();
@@ -830,7 +841,10 @@ function MessageBubble({
   onSpeak?: () => void;
 }) {
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
-  const ask = message.blocks.find((block) => block.kind === "ask");
+  const ask = message.blocks.find(
+    (block): block is Extract<MessageBlock, { kind: "ask" }> =>
+      block.kind === "ask" && !isApprovalAskBlock(block),
+  );
   if (ask) return <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />;
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
@@ -923,6 +937,48 @@ function MessageBubble({
             : special.title || "Opened its own thread. Tap to switch."}
         </Text>
       </Pressable>
+    );
+  }
+  const askBlock = message.blocks.find(isApprovalAskBlock);
+  if (askBlock?.kind === "ask" && askBlock.actions?.length) {
+    return (
+      <View
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "#232326",
+          backgroundColor: "#17171A",
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
+        {askBlock.text ? (
+          <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>{askBlock.text}</Text>
+        ) : null}
+        {askBlock.detail ? (
+          <Text
+            style={{
+              color: "#85858A",
+              marginTop: 8,
+              fontSize: 12.5,
+              fontFamily: "Menlo",
+              lineHeight: 20,
+            }}
+          >
+            {askBlock.detail}
+          </Text>
+        ) : null}
+        {askBlock.status === "answered" ? (
+          <Text style={{ color: "#4ECB71", marginTop: 12, fontSize: 13.5, fontWeight: "600" }}>
+            {formatApprovalAnswer(askBlock.answer)}
+          </Text>
+        ) : canAnswer && onAnswer ? (
+          <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
+        ) : (
+          <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>No longer active</Text>
+        )}
+      </View>
     );
   }
   const attachments = message.blocks.filter(

@@ -290,6 +290,7 @@ async function releaseTeachingComputerControl(
       controlHolder: string;
       controlBotId: string | null;
       controlLeaseId: string | null;
+      controlRunId: string | null;
     } | null;
   },
   expectedLeaseId?: string | null,
@@ -317,6 +318,7 @@ async function releaseTeachingComputerControl(
     workspaceId: actor.workspaceId,
     computerId: computer.id,
     botId: bot.id,
+    runId: computer.controlRunId,
     leaseId,
     holder: "bot",
     reason: "released",

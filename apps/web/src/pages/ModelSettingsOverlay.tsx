@@ -38,6 +38,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
+  const refreshRevisionRef = useRef(0);
+  const selectionRevisionRef = useRef(0);
 
   function cancelOAuthAttempt(resetState = true) {
     const loginId = oauthLoginIdRef.current;
@@ -52,11 +54,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function refresh() {
+    const refreshRevision = ++refreshRevisionRef.current;
+    const selectionRevision = selectionRevisionRef.current;
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
       rpc.models.list(),
       rpc.models.credentials(),
       rpc.me(),
     ]);
+    if (refreshRevision !== refreshRevisionRef.current) return;
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
         ? provider
@@ -71,8 +76,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setMe(nextMe);
-    setProvider(nextProvider);
-    setModelId(nextModel);
+    if (selectionRevision === selectionRevisionRef.current) {
+      setProvider(nextProvider);
+      setModelId(nextModel);
+    }
   }
 
   useEffect(() => {
@@ -81,7 +88,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
         setError(err instanceof Error ? err.message : "Could not load model settings"),
       )
       .finally(() => setLoading(false));
-    return () => cancelOAuthAttempt(false);
+    return () => {
+      refreshRevisionRef.current += 1;
+      cancelOAuthAttempt(false);
+    };
   }, []);
 
   const groups = useMemo(() => {
@@ -120,6 +130,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
 
   function chooseProvider(nextProvider: string) {
     cancelOAuthAttempt();
+    selectionRevisionRef.current += 1;
     setProvider(nextProvider);
     setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
     detailScrollRef.current?.scrollTo({ top: 0 });
@@ -348,6 +359,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     value={selected.id}
                     onChange={(nextModelId) => {
                       cancelOAuthAttempt();
+                      selectionRevisionRef.current += 1;
                       setModelId(nextModelId);
                       setError(null);
                       setNotice(null);
