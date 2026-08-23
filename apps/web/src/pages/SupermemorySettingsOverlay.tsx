@@ -5,7 +5,13 @@ import { rpc } from "../lib/rpc";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
 
-export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void }) {
+export function SupermemorySettingsOverlay({
+  onClose,
+  onConfigChange,
+}: {
+  onClose: () => void;
+  onConfigChange: () => void;
+}) {
   const [config, setConfig] = useState<WorkspaceMemoryConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<"cloud" | "local">("cloud");
@@ -49,6 +55,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
       });
       setApiKey("");
       applyConfig(next);
+      onConfigChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect Supermemory");
     } finally {
@@ -62,6 +69,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
     try {
       await rpc.memory.disconnectSupermemory();
       setConfig(null);
+      onConfigChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not disconnect Supermemory");
     } finally {
@@ -84,8 +92,9 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
           <button
             type="button"
             aria-label="Close memory settings"
+            disabled={busy}
             onClick={onClose}
-            className="text-[#85858A]"
+            className="text-[#85858A] disabled:opacity-40"
           >
             ✕
           </button>

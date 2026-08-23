@@ -2128,10 +2128,8 @@ export function ShellPage() {
       <Suspense fallback={null}>
         {supermemorySettingsOpen ? (
           <SupermemorySettingsOverlay
-            onClose={() => {
-              setSupermemorySettingsOpen(false);
-              setSupermemoryConfigVersion((version) => version + 1);
-            }}
+            onClose={() => setSupermemorySettingsOpen(false)}
+            onConfigChange={() => setSupermemoryConfigVersion((version) => version + 1)}
           />
         ) : null}
       </Suspense>
@@ -3119,15 +3117,26 @@ function BotSettings({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let current = true;
     void rpc.memory
       .supermemoryConfig()
-      .then((config) => setSupermemoryConnected(config !== null))
-      .catch(() => setSupermemoryConnected(false));
+      .then((config) => {
+        if (current) setSupermemoryConnected(config !== null);
+      })
+      .catch(() => {
+        if (current) setSupermemoryConnected(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [supermemoryConfigVersion]);
+
+  useEffect(() => {
     void rpc.voice
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
-  }, [supermemoryConfigVersion]);
+  }, []);
 
   return (
     <div data-testid="bot-settings">
