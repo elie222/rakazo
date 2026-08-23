@@ -2,7 +2,7 @@
 ALTER TABLE "bots" ADD COLUMN     "memoryScope" TEXT;
 
 -- AddConstraint
-ALTER TABLE "bots" ADD CONSTRAINT "bots_memoryScope_check" CHECK ("memoryScope" IS NULL OR "memoryScope" IN ('isolated', 'shared'));
+ALTER TABLE "bots" ADD CONSTRAINT "bots_memoryScope_check" CHECK ("memoryScope" IS NULL OR "memoryScope" IN ('isolated', 'shared')) NOT VALID;
 
 -- CreateTable
 CREATE TABLE "workspace_memory_configs" (

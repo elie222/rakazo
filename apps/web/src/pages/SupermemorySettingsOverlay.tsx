@@ -37,7 +37,7 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
   }, []);
 
   async function connect() {
-    if (!apiKey.trim()) return;
+    if (loading || !apiKey.trim()) return;
     setError(null);
     setPending("connect");
     try {
@@ -185,7 +185,12 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
                 type="button"
                 variant="pill"
                 size="sm"
-                disabled={busy || apiKey.trim().length < 8 || (mode === "local" && !baseUrl.trim())}
+                disabled={
+                  loading ||
+                  busy ||
+                  apiKey.trim().length < 8 ||
+                  (mode === "local" && !baseUrl.trim())
+                }
                 onClick={() => void connect()}
                 className="mt-5"
               >

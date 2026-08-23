@@ -2097,7 +2097,10 @@ const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 // this integration from reaching private network services or cloud metadata endpoints.
 function isLoopbackBaseUrl(url: string): boolean {
   try {
-    return LOOPBACK_HOSTNAMES.has(new URL(url).hostname);
+    const hostname = new URL(url).hostname;
+    const normalizedHostname =
+      hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+    return LOOPBACK_HOSTNAMES.has(normalizedHostname);
   } catch {
     return false;
   }

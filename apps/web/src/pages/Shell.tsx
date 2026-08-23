@@ -168,6 +168,7 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [supermemorySettingsOpen, setSupermemorySettingsOpen] = useState(false);
+  const [supermemoryConfigVersion, setSupermemoryConfigVersion] = useState(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -1828,6 +1829,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                supermemoryConfigVersion={supermemoryConfigVersion}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -2125,7 +2127,12 @@ export function ShellPage() {
 
       <Suspense fallback={null}>
         {supermemorySettingsOpen ? (
-          <SupermemorySettingsOverlay onClose={() => setSupermemorySettingsOpen(false)} />
+          <SupermemorySettingsOverlay
+            onClose={() => {
+              setSupermemorySettingsOpen(false);
+              setSupermemoryConfigVersion((version) => version + 1);
+            }}
+          />
         ) : null}
       </Suspense>
 
@@ -3079,11 +3086,13 @@ function CreateBotForm({
 
 function BotSettings({
   bot,
+  supermemoryConfigVersion,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
+  supermemoryConfigVersion: number;
   onSave: (patch: {
     name?: string;
     title?: string;
@@ -3118,7 +3127,7 @@ function BotSettings({
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
-  }, []);
+  }, [supermemoryConfigVersion]);
 
   return (
     <div data-testid="bot-settings">

@@ -111,6 +111,23 @@ describe("persistSupermemoryConfig", () => {
     vi.unstubAllGlobals();
   });
 
+  it("accepts a bracketed IPv6 loopback base URL in local mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+
+    await persistSupermemoryConfig(deps as never, actor, {
+      mode: "local",
+      apiKey: "sm_test_key_12345",
+      baseUrl: "http://[::1]:6767",
+      defaultMemoryScope: "isolated",
+    });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/v3/container-tags/list");
+    expect(upsert).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("connects cloud mode, defaulting the base URL, and returns the serialized config", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
     const { deps, upsert, transaction } = makeDeps();
