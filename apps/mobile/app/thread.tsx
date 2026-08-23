@@ -1,5 +1,10 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import { abortableDelay, attachmentsForBot } from "@rakazo/core";
+import {
+  abortableDelay,
+  attachmentsForThread,
+  hasMentionToken,
+  latestAnswerableAskMessageId,
+} from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -17,9 +22,10 @@ import {
   mergeMobileSnapshot,
   prependMobileMessagePage,
   rpc,
+  shouldApplyMobileThreadRefresh,
   subscribeThread,
 } from "../lib/api";
-import { openMobileArtifact } from "../lib/artifact-open";
+import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import {
   type PickedAttachment,
@@ -29,16 +35,18 @@ import {
 } from "../lib/pick-attachments";
 import { playMpeg, speakUtterance } from "../lib/voice";
 
-type PendingAttachment = PickedAttachment & { botId: string };
+type PendingAttachment = PickedAttachment & { threadKey: string };
 
 export default function Thread() {
   const navigation = useNavigation();
   const router = useRouter();
-  const { botId, name, messageId } = useLocalSearchParams<{
+  const { botId, groupId, name, messageId } = useLocalSearchParams<{
     botId?: string;
+    groupId?: string;
     name?: string;
     messageId?: string;
   }>();
+  const inGroup = Boolean(groupId);
   const scroll = useRef<ScrollView>(null);
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
@@ -53,9 +61,23 @@ export default function Thread() {
   const jumpScrollTarget = useRef<string | null>(null);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
+  const activeGroupId = useRef(groupId);
+  activeGroupId.current = groupId;
+  const readVisibleTarget = useRef<string | null>(null);
+  const threadKey = groupId ?? botId;
+  const artifactTarget: MobileArtifactTarget | undefined = groupId
+    ? { groupId }
+    : botId
+      ? { botId }
+      : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const [draft, setDraft] = useState("");
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [selectedMentions, setSelectedMentions] = useState<Array<{ botId: string; name: string }>>(
+    [],
+  );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,18 +85,47 @@ export default function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
-  const activePendingAttachments = attachmentsForBot(pendingAttachments, botId);
+  const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
+  const mentionOptions =
+    inGroup && mentionQuery !== null
+      ? [
+          ...((snap?.members ?? []).filter((member) =>
+            member.name.toLowerCase().startsWith(mentionQuery.toLowerCase()),
+          ) ?? []),
+          ...("everyone".startsWith(mentionQuery.toLowerCase())
+            ? [{ botId: "everyone", name: "everyone", color: "#85858A" }]
+            : []),
+        ].slice(0, 8)
+      : [];
+
+  function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
+    return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
+  }
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: name || "Thread",
-      headerRight: () => (
-        <Pressable accessibilityLabel="Bot actions" hitSlop={8} onPress={showBotActions}>
-          <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color="#ECECEE" />
-        </Pressable>
-      ),
+      headerRight: () =>
+        inGroup ? (
+          <Pressable
+            accessibilityLabel="Group settings"
+            hitSlop={8}
+            onPress={() =>
+              router.push({
+                pathname: "/group-settings",
+                params: { groupId: groupId ?? "" },
+              })
+            }
+          >
+            <NativeSymbol ios="gearshape" android="settings-outline" size={21} color="#ECECEE" />
+          </Pressable>
+        ) : (
+          <Pressable accessibilityLabel="Bot actions" hitSlop={8} onPress={showBotActions}>
+            <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={21} color="#ECECEE" />
+          </Pressable>
+        ),
     });
-  }, [botId, name, navigation]);
+  }, [botId, groupId, inGroup, name, navigation, router]);
 
   function leaveBot() {
     router.dismissAll();
@@ -134,16 +185,29 @@ export default function Thread() {
   }
 
   async function refresh() {
-    if (!botId) return;
+    if (!botId && !groupId) return;
+    const targetBotId = botId;
+    const targetGroupId = groupId;
     const epoch = historyEpoch.current;
-    const next = await rpc<MobileSnapshot>("threads/get", { botId });
-    // The epoch check drops a response that raced a conversation clear, which would otherwise
-    // re-apply the deleted messages and cursor over the emptied snapshot.
-    if (epoch !== historyEpoch.current) return next;
+    const next = await rpc<MobileSnapshot>(
+      "threads/get",
+      targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
+    );
+    if (
+      !shouldApplyMobileThreadRefresh({
+        requestEpoch: epoch,
+        currentEpoch: historyEpoch.current,
+        targetBotId,
+        targetGroupId,
+        activeBotId: activeBotId.current,
+        activeGroupId: activeGroupId.current,
+      })
+    )
+      return next;
     const pin = pinnedAroundRef.current;
     setSnap((prev) => {
       let merged = mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId);
-      if (pin && merged && pin.botId === botId) {
+      if (pin && merged && pin.botId === targetBotId) {
         merged = {
           ...merged,
           messages: [...pin.messages],
@@ -184,7 +248,7 @@ export default function Thread() {
   }
 
   async function loadOlderMessages() {
-    if (!botId || snap?.olderCursor == null || loadingOlder) return;
+    if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
     pinnedAroundRef.current = null;
     jumpScrollTarget.current = null;
     loadingOlderContent.current = true;
@@ -192,7 +256,7 @@ export default function Thread() {
     const epoch = historyEpoch.current;
     try {
       const page = await rpc<MobileMessagePage>("threads/messages", {
-        botId,
+        ...(groupId ? { groupId } : { botId: botId! }),
         before: snap.olderCursor,
       });
       if (epoch !== historyEpoch.current) {
@@ -210,9 +274,20 @@ export default function Thread() {
   }
 
   const markReadIfVisible = useCallback(() => {
-    if (!botId || AppState.currentState !== "active" || !navigation.isFocused()) return;
-    void rpc("threads/markRead", { botId }).catch(() => undefined);
-  }, [botId, navigation]);
+    if (AppState.currentState !== "active" || !navigation.isFocused()) return;
+    const target = groupId ?? botId;
+    if (!target || readVisibleTarget.current === target) return;
+    readVisibleTarget.current = target;
+    if (groupId) {
+      void rpc("threads/markRead", { groupId }).catch(() => {
+        if (readVisibleTarget.current === target) readVisibleTarget.current = null;
+      });
+      return;
+    }
+    void rpc("threads/markRead", { botId: botId! }).catch(() => {
+      if (readVisibleTarget.current === target) readVisibleTarget.current = null;
+    });
+  }, [botId, groupId, navigation]);
 
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
@@ -229,7 +304,7 @@ export default function Thread() {
   }, [markReadIfVisible]);
 
   useEffect(() => {
-    if (!botId) return;
+    if (!botId && !groupId) return;
     if (!messageId) {
       pinnedAroundRef.current = null;
       jumpScrollTarget.current = null;
@@ -248,7 +323,7 @@ export default function Thread() {
       while (!abort.signal.aborted) {
         try {
           await subscribeThread(
-            botId,
+            groupId ? { groupId } : { botId: botId! },
             cursor,
             (event) => {
               cursor = Math.max(cursor, event.seq ?? -1);
@@ -269,6 +344,7 @@ export default function Thread() {
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {
+                readVisibleTarget.current = null;
                 markReadIfVisible();
               }
               if (event.type === "run.completed") {
@@ -289,7 +365,7 @@ export default function Thread() {
     return () => {
       abort.abort();
     };
-  }, [botId, markReadIfVisible]);
+  }, [botId, groupId, markReadIfVisible]);
 
   useEffect(() => {
     if (!botId || !messageId) return;
@@ -299,16 +375,41 @@ export default function Thread() {
   }, [botId, messageId]);
 
   useEffect(() => {
-    setPendingAttachments((current) => attachmentsForBot(current, botId));
+    setPendingAttachments((current) => attachmentsForThread(current, threadKey));
     setDraft("");
+    setMentionQuery(null);
+    setSelectedMentions([]);
+    setReplyTarget(null);
     setAttachmentNotice(null);
     setError(null);
-  }, [botId]);
+  }, [threadKey]);
+
+  function updateDraft(value: string) {
+    setDraft(value);
+    setSelectedMentions((current) =>
+      current.filter((member) => hasMentionToken(value, member.name)),
+    );
+    const match = /(?:^|\s)@([\w-]*)$/.exec(value);
+    setMentionQuery(match ? (match[1] ?? "") : null);
+  }
+
+  function insertMention(member: { botId: string; name: string }) {
+    setDraft((current) => current.replace(/@([\w-]*)$/, `@${member.name} `));
+    if (member.botId !== "everyone") {
+      setSelectedMentions((current) =>
+        current.some((selected) => selected.botId === member.botId)
+          ? current
+          : [...current, member],
+      );
+    }
+    setMentionQuery(null);
+  }
 
   async function send() {
     const targetBotId = botId;
-    if (!targetBotId || sending) return;
-    const attachments = attachmentsForBot(pendingAttachments, targetBotId);
+    const targetGroupId = groupId;
+    if ((!targetBotId && !targetGroupId) || sending) return;
+    const attachments = attachmentsForThread(pendingAttachments, threadKey);
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
     setSending(true);
@@ -317,33 +418,63 @@ export default function Thread() {
       const artifactIds: string[] = [];
       for (const pending of attachments) {
         const artifact = await rpc<{ id: string }>("artifacts/create", {
-          botId: targetBotId,
+          ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
           name: pending.name,
           mimeType: pending.mimeType,
           contentBase64: pending.contentBase64,
         });
         artifactIds.push(artifact.id);
       }
-      await rpc("threads/send", {
-        botId: targetBotId,
-        text: text || undefined,
-        artifactIds: artifactIds.length ? artifactIds : undefined,
-      });
-      setPendingAttachments((current) =>
-        current.filter((attachment) => attachment.botId !== targetBotId),
+      await rpc(
+        "threads/send",
+        targetGroupId
+          ? {
+              groupId: targetGroupId,
+              text: text || undefined,
+              mentions: selectedMentions.length
+                ? selectedMentions.map((member) => member.botId)
+                : undefined,
+              artifactIds: artifactIds.length ? artifactIds : undefined,
+              replyToMessageId: replyTarget?.id,
+            }
+          : {
+              botId: targetBotId!,
+              text: text || undefined,
+              artifactIds: artifactIds.length ? artifactIds : undefined,
+              replyToMessageId: replyTarget?.id,
+            },
       );
-      if (activeBotId.current === targetBotId) {
+      setPendingAttachments((current) =>
+        current.filter((attachment) => attachment.threadKey !== threadKey),
+      );
+      if (isCurrentTarget(targetBotId, targetGroupId)) {
         setDraft("");
+        setMentionQuery(null);
+        setSelectedMentions([]);
+        setReplyTarget(null);
         setAttachmentNotice(null);
         await refresh();
       }
     } catch (err) {
-      if (activeBotId.current === targetBotId) {
+      if (isCurrentTarget(targetBotId, targetGroupId)) {
         setError(err instanceof Error ? err.message : "Failed to send message");
       }
     } finally {
       setSending(false);
     }
+  }
+
+  async function answerMessage(message: MobileMessage, answer: string) {
+    const targetBotId = botId;
+    const targetGroupId = groupId;
+    if ((!targetBotId && !targetGroupId) || !message.runId) return;
+    await rpc("threads/answer", {
+      ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+      runId: message.runId,
+      messageId: message.id,
+      answer,
+    });
+    if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
   }
 
   function showAttachMenu() {
@@ -361,14 +492,14 @@ export default function Thread() {
       skipped: Array<{ name: string; reason: string }>;
     }>,
   ) {
-    const targetBotId = botId;
-    if (!targetBotId) return;
+    const targetKey = groupId ?? botId;
+    if (!targetKey) return;
     const result = await picker(activePendingAttachments.length);
-    if (activeBotId.current !== targetBotId) return;
+    if ((groupId ?? botId) !== targetKey) return;
     if (result.attachments.length) {
       setPendingAttachments((current) => [
         ...current,
-        ...result.attachments.map((attachment) => ({ ...attachment, botId: targetBotId })),
+        ...result.attachments.map((attachment) => ({ ...attachment, threadKey: targetKey })),
       ]);
     }
     setAttachmentNotice(
@@ -377,6 +508,8 @@ export default function Thread() {
         : null,
     );
   }
+
+  const answerableAskMessageId = latestAnswerableAskMessageId(snap);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20, paddingBottom: 24 }}>
@@ -427,28 +560,78 @@ export default function Thread() {
               justifyContent: message.role === "user" ? "flex-end" : "flex-start",
             }}
           >
-            <MessageBubble
-              botId={botId ?? ""}
-              message={message}
-              onOpenBot={(id, botName) =>
-                router.push({ pathname: "/thread", params: { botId: id, name: botName } })
-              }
-              onPreviewMarkdown={setMarkdownPreview}
-              onSpeak={
-                message.role === "bot"
-                  ? () =>
-                      void speakMessage(botId ?? "", message).catch((err) =>
-                        Alert.alert(
-                          "Could not speak",
-                          err instanceof Error ? err.message : "Try again.",
-                        ),
-                      )
-                  : undefined
-              }
-            />
+            <View style={{ maxWidth: "90%", flexShrink: 1 }}>
+              <Pressable
+                accessibilityLabel="Reply"
+                onPress={() => setReplyTarget(message)}
+                style={{
+                  alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
+              </Pressable>
+              <MessageBubble
+                botId={botId ?? snap?.members?.[0]?.botId ?? ""}
+                groupId={groupId}
+                message={message}
+                members={snap?.members}
+                replyPreview={
+                  message.replyToMessageId
+                    ? snap?.messages.find((row) => row.id === message.replyToMessageId)
+                    : undefined
+                }
+                canAnswer={message.id === answerableAskMessageId}
+                onAnswer={(answer) => answerMessage(message, answer)}
+                onOpenBot={(id, botName) =>
+                  router.push({ pathname: "/thread", params: { botId: id, name: botName } })
+                }
+                onPreviewMarkdown={setMarkdownPreview}
+                onSpeak={
+                  message.role === "bot"
+                    ? () =>
+                        void speakMessage(
+                          message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "",
+                          message,
+                        ).catch((err) =>
+                          Alert.alert(
+                            "Could not speak",
+                            err instanceof Error ? err.message : "Try again.",
+                          ),
+                        )
+                    : undefined
+                }
+              />
+            </View>
           </View>
         ))}
       </ScrollView>
+      {replyTarget ? (
+        <View
+          style={{
+            marginTop: 12,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#26262A",
+            backgroundColor: "#17171A",
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#85858A", fontSize: 12 }}>Replying to</Text>
+            <Text style={{ color: "#C9C9CE", fontSize: 13 }} numberOfLines={1}>
+              {previewMessageText(replyTarget)}
+            </Text>
+          </View>
+          <Pressable accessibilityLabel="Cancel reply" onPress={() => setReplyTarget(null)}>
+            <Text style={{ color: "#85858A" }}>✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {attachmentNotice ? (
         <Text style={{ color: "#D6CFA0", marginTop: 12, fontSize: 13 }}>{attachmentNotice}</Text>
       ) : null}
@@ -494,6 +677,29 @@ export default function Thread() {
           ))}
         </View>
       ) : null}
+      {mentionOptions.length ? (
+        <View
+          style={{
+            marginTop: 12,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#26262A",
+            backgroundColor: "#17171A",
+            overflow: "hidden",
+          }}
+        >
+          {mentionOptions.map((member) => (
+            <Pressable
+              key={member.botId}
+              accessibilityLabel={`Mention ${member.name}`}
+              onPress={() => insertMention(member)}
+              style={{ paddingHorizontal: 14, paddingVertical: 10 }}
+            >
+              <Text style={{ color: "#ECECEE", fontSize: 14 }}>@{member.name}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
         <Pressable
           accessibilityLabel="Attach file"
@@ -512,7 +718,7 @@ export default function Thread() {
         </Pressable>
         <TextInput
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={updateDraft}
           placeholder="Message…"
           placeholderTextColor="#6C6C70"
           keyboardAppearance="dark"
@@ -543,23 +749,46 @@ export default function Thread() {
           <NativeSymbol ios="arrow.up" android="arrow-up" size={18} color="#17171A" />
         </Pressable>
       </View>
-      <Link
-        href={{ pathname: "/computer", params: { botId: botId ?? "", name: name ?? "Bot" } }}
-        asChild
-      >
-        <Pressable style={{ marginTop: 16 }}>
-          <Text style={{ color: "#C9C9CE" }}>Open computer →</Text>
-        </Pressable>
-      </Link>
-      {markdownPreview ? (
+      {!inGroup ? (
+        <Link
+          href={{ pathname: "/computer", params: { botId: botId ?? "", name: name ?? "Bot" } }}
+          asChild
+        >
+          <Pressable style={{ marginTop: 16 }}>
+            <Text style={{ color: "#C9C9CE" }}>Open computer →</Text>
+          </Pressable>
+        </Link>
+      ) : null}
+      {markdownPreview && artifactTarget ? (
         <MarkdownArtifactPreview
-          botId={botId ?? ""}
+          threadTarget={artifactTarget}
           target={markdownPreview}
           onClose={() => setMarkdownPreview(null)}
         />
       ) : null}
     </View>
   );
+}
+
+function previewMessageText(message: MobileMessage): string {
+  const text = message.blocks
+    .filter((block) => block.kind === "text" && block.text)
+    .map((block) => block.text)
+    .join(" ")
+    .trim();
+  if (text) return text;
+  if (message.blocks.some((block) => block.kind === "image" || block.kind === "file")) {
+    return "Attachment";
+  }
+  return "Message";
+}
+
+function memberName(
+  members: MobileSnapshot["members"] | undefined,
+  botId: string | undefined,
+): string | undefined {
+  if (!botId || !members) return undefined;
+  return members.find((member) => member.botId === botId)?.name;
 }
 
 async function speakMessage(botId: string, message: MobileMessage) {
@@ -577,17 +806,43 @@ async function speakMessage(botId: string, message: MobileMessage) {
 
 function MessageBubble({
   botId,
+  groupId,
   message,
+  members,
+  replyPreview,
+  canAnswer,
+  onAnswer,
   onOpenBot,
   onPreviewMarkdown,
   onSpeak,
 }: {
   botId: string;
+  groupId?: string;
   message: MobileMessage;
+  members?: MobileSnapshot["members"];
+  replyPreview?: MobileMessage;
+  canAnswer: boolean;
+  onAnswer: (answer: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onSpeak?: () => void;
 }) {
+  const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
+  const ask = message.blocks.find((block) => block.kind === "ask");
+  if (ask) return <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />;
+  const handoff = message.blocks.find((block) => block.kind === "handoff");
+  if (handoff) {
+    const from = memberName(members, handoff.fromBotId) ?? "bot";
+    const to = memberName(members, handoff.toBotId) ?? "bot";
+    return (
+      <View style={{ paddingVertical: 4 }}>
+        <Text style={{ color: "#85858A", fontSize: 13.5, textAlign: "center" }}>
+          ↪ {to} ← {from}
+          {handoff.text ? ` · ${handoff.text}` : ""}
+        </Text>
+      </View>
+    );
+  }
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );
@@ -676,10 +931,11 @@ function MessageBubble({
     .map((block) => block.text)
     .join("\n");
   if (attachments.length > 0) {
+    const speaker = message.role === "bot" ? memberName(members, message.botId) : undefined;
     return (
       <View
         style={{
-          maxWidth: "85%",
+          maxWidth: "100%",
           borderRadius: 20,
           borderWidth: 1,
           borderColor: "#26262A",
@@ -689,6 +945,14 @@ function MessageBubble({
           gap: 8,
         }}
       >
+        {speaker ? (
+          <Text style={{ color: "#85858A", fontSize: 12.5, fontWeight: "600" }}>{speaker}</Text>
+        ) : null}
+        {replyPreview ? (
+          <Text style={{ color: "#85858A", fontSize: 12.5 }} numberOfLines={2}>
+            {previewMessageText(replyPreview)}
+          </Text>
+        ) : null}
         {caption ? (
           <Text style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2", fontSize: 15 }}>
             {caption}
@@ -701,7 +965,7 @@ function MessageBubble({
               onPress={() =>
                 attachment.artifactId
                   ? void openMobileArtifact(
-                      botId,
+                      artifactTarget,
                       attachment.artifactId,
                       attachment.name ?? "Image",
                       attachment.mimeType ?? "image/png",
@@ -732,7 +996,7 @@ function MessageBubble({
                         mimeType: attachment.mimeType,
                       })
                     : void openMobileArtifact(
-                        botId,
+                        artifactTarget,
                         attachment.artifactId,
                         attachment.name ?? "File",
                         attachment.mimeType ?? "text/plain",
@@ -761,17 +1025,28 @@ function MessageBubble({
       </View>
     );
   }
+  const speaker = message.role === "bot" ? memberName(members, message.botId) : undefined;
   return (
     <View
       style={{
         flexShrink: 1,
         minWidth: 0,
-        maxWidth: "85%",
+        maxWidth: "100%",
         backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
         padding: 12,
         borderRadius: 20,
       }}
     >
+      {speaker ? (
+        <Text style={{ color: "#85858A", fontSize: 12.5, fontWeight: "600", marginBottom: 4 }}>
+          {speaker}
+        </Text>
+      ) : null}
+      {replyPreview ? (
+        <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 6 }} numberOfLines={2}>
+          {previewMessageText(replyPreview)}
+        </Text>
+      ) : null}
       {message.role === "user" ? (
         <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
           {blockText(message)}
@@ -788,6 +1063,97 @@ function MessageBubble({
           ) : null}
         </>
       )}
+    </View>
+  );
+}
+
+function AskBlock({
+  ask,
+  canAnswer,
+  onAnswer,
+}: {
+  ask: MobileMessage["blocks"][number];
+  canAnswer: boolean;
+  onAnswer: (answer: string) => Promise<void>;
+}) {
+  const [answer, setAnswer] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const answered = ask.status === "answered";
+
+  async function submit() {
+    const text = answer.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onAnswer(text);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not send answer");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <View
+      style={{
+        width: "90%",
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: "#2D2D31",
+        backgroundColor: "#17171A",
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        gap: 10,
+      }}
+    >
+      <Text style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "600" }}>{ask.text}</Text>
+      {ask.detail ? <Text style={{ color: "#85858A", fontSize: 13.5 }}>{ask.detail}</Text> : null}
+      {answered ? (
+        <Text style={{ color: "#4ECB71", fontSize: 14 }}>Answered: {ask.answer ?? "Done"}</Text>
+      ) : canAnswer ? (
+        <>
+          <TextInput
+            accessibilityLabel="Answer"
+            value={answer}
+            onChangeText={setAnswer}
+            placeholder="Type your answer"
+            placeholderTextColor="#6C6C70"
+            onSubmitEditing={() => void submit()}
+            style={{
+              minHeight: 42,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#35353A",
+              color: "#ECECEE",
+              paddingHorizontal: 12,
+              paddingVertical: 9,
+            }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send answer"
+            disabled={!answer.trim() || submitting}
+            onPress={() => void submit()}
+            style={{
+              alignSelf: "flex-end",
+              borderRadius: 999,
+              backgroundColor: "#ECECEE",
+              opacity: !answer.trim() || submitting ? 0.5 : 1,
+              paddingHorizontal: 16,
+              paddingVertical: 9,
+            }}
+          >
+            <Text style={{ color: "#17171A", fontWeight: "600" }}>
+              {submitting ? "Sending…" : "Send answer"}
+            </Text>
+          </Pressable>
+        </>
+      ) : (
+        <Text style={{ color: "#85858A", fontSize: 13.5 }}>Waiting for this bot’s response.</Text>
+      )}
+      {error ? <Text style={{ color: "#E65707", fontSize: 13 }}>{error}</Text> : null}
     </View>
   );
 }

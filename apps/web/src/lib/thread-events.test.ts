@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  activeThreadRuns,
   computerPanelAutoBoot,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -229,6 +230,43 @@ describe("thread event reduction", () => {
     ).toBe(waiting);
   });
 
+  it("updates a waiting group run without replacing the newer active run", () => {
+    const newerRun = {
+      id: "run-newer",
+      botId: "bot-a",
+      threadId: "thread-1",
+      taskId: "task-a",
+      status: "running" as const,
+      trigger: "user" as const,
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const waitingRun = { ...newerRun, id: "run-waiting", botId: "bot-b", taskId: "task-b" };
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      run: newerRun,
+      activeRuns: [newerRun, waitingRun],
+    };
+
+    const waiting = reduceThreadSnapshot(
+      initial,
+      event({ type: "run.waiting_input", seq: 6, runId: "run-waiting" }),
+    );
+
+    expect(waiting?.run).toEqual(newerRun);
+    expect(waiting?.activeRuns?.find((run) => run.id === "run-waiting")?.status).toBe(
+      "waiting_input",
+    );
+    expect(activeThreadRuns(waiting)).toEqual([
+      newerRun,
+      expect.objectContaining({ id: "run-waiting", status: "waiting_input" }),
+    ]);
+    expect(activeThreadRuns({ ...initial, activeRuns: undefined })).toEqual([newerRun]);
+  });
+
   it("replaces an ask message when its durable prompt state changes", () => {
     const initial = snapshot([
       message("ask-1", [{ kind: "ask", text: "Which city?", status: "pending" }]),
@@ -255,6 +293,25 @@ describe("thread event reduction", () => {
 
     expect(next?.messages).toHaveLength(1);
     expect(next?.messages[0]?.blocks[0]).toMatchObject({ status: "answered", answer: "Paris" });
+  });
+
+  it("preserves botId on durable bot messages", () => {
+    const initial = snapshot([]);
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        botId: "bot-researcher",
+        payload: {
+          messageId: "msg-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "on it." }],
+        },
+      }),
+    );
+
+    expect(next?.messages[0]?.botId).toBe("bot-researcher");
   });
 });
 

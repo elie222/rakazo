@@ -134,6 +134,7 @@ export interface CompactHistoryDeps {
 
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
+  if (!thread.botId) return;
   const previousCursor = thread.historyCompactedUpToSeq;
   const previousGeneration = thread.historyCompactionGeneration;
   const previousSummary = thread.historyCompactionSummary?.trim() || null;

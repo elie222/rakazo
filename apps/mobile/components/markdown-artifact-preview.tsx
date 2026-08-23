@@ -1,7 +1,11 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { useEffect, useState } from "react";
 import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
-import { openMobileArtifact, readMobileArtifactText } from "../lib/artifact-open";
+import {
+  type MobileArtifactTarget,
+  openMobileArtifact,
+  readMobileArtifactText,
+} from "../lib/artifact-open";
 import { NativeSymbol } from "./native-symbol";
 
 export type MarkdownArtifactPreviewTarget = {
@@ -11,11 +15,11 @@ export type MarkdownArtifactPreviewTarget = {
 };
 
 export function MarkdownArtifactPreview({
-  botId,
+  threadTarget,
   target,
   onClose,
 }: {
-  botId: string;
+  threadTarget: MobileArtifactTarget;
   target: MarkdownArtifactPreviewTarget;
   onClose: () => void;
 }) {
@@ -24,10 +28,14 @@ export function MarkdownArtifactPreview({
     | { status: "ready"; markdown: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
+  const targetBotId = "botId" in threadTarget ? threadTarget.botId : undefined;
+  const targetGroupId = "groupId" in threadTarget ? threadTarget.groupId : undefined;
 
   useEffect(() => {
     let cancelled = false;
-    void readMobileArtifactText(botId, target.artifactId, target.mimeType)
+    const requestTarget: MobileArtifactTarget =
+      targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
+    void readMobileArtifactText(requestTarget, target.artifactId, target.mimeType)
       .then((markdown) => {
         if (!cancelled) setState({ status: "ready", markdown });
       })
@@ -41,7 +49,7 @@ export function MarkdownArtifactPreview({
     return () => {
       cancelled = true;
     };
-  }, [botId, target.artifactId, target.mimeType]);
+  }, [targetBotId, targetGroupId, target.artifactId, target.mimeType]);
 
   return (
     <Modal animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -66,12 +74,16 @@ export function MarkdownArtifactPreview({
             accessibilityLabel={`Share ${target.name}`}
             hitSlop={8}
             onPress={() =>
-              void openMobileArtifact(botId, target.artifactId, target.name, target.mimeType).catch(
-                (error) =>
-                  Alert.alert(
-                    "Could not share file",
-                    error instanceof Error ? error.message : "Try again.",
-                  ),
+              void openMobileArtifact(
+                threadTarget,
+                target.artifactId,
+                target.name,
+                target.mimeType,
+              ).catch((error) =>
+                Alert.alert(
+                  "Could not share file",
+                  error instanceof Error ? error.message : "Try again.",
+                ),
               )
             }
             style={{ padding: 10 }}

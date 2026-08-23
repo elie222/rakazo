@@ -1,10 +1,15 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { Download, FileText, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
+import {
+  type ArtifactTarget,
+  downloadArtifact,
+  downloadArtifactBytes,
+  fetchArtifactBytes,
+} from "../lib/artifact-open";
 
 type ArtifactFileCardProps = {
-  botId: string;
+  target: ArtifactTarget;
   artifactId: string;
   name: string;
   mimeType: string;
@@ -20,7 +25,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
   async function startDownload() {
     setDownloadError(null);
     try {
-      await downloadArtifact(props.botId, props.artifactId, props.name, props.mimeType);
+      await downloadArtifact(props.target, props.artifactId, props.name, props.mimeType);
     } catch {
       setDownloadError(`Could not download ${props.name}. Try again.`);
     }
@@ -88,7 +93,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
 }
 
 function MarkdownPreview({
-  botId,
+  target,
   artifactId,
   name,
   mimeType,
@@ -103,6 +108,8 @@ function MarkdownPreview({
     | { status: "ready"; bytes: Uint8Array; markdown: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
+  const targetBotId = "botId" in target ? target.botId : undefined;
+  const targetGroupId = "groupId" in target ? target.groupId : undefined;
 
   useEffect(() => {
     closeButton.current?.focus();
@@ -138,7 +145,9 @@ function MarkdownPreview({
 
   useEffect(() => {
     let cancelled = false;
-    void fetchArtifactBytes(botId, artifactId)
+    const artifactTarget: ArtifactTarget =
+      targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
+    void fetchArtifactBytes(artifactTarget, artifactId)
       .then((bytes) => {
         if (cancelled) return;
         try {
@@ -158,7 +167,7 @@ function MarkdownPreview({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, botId]);
+  }, [artifactId, targetBotId, targetGroupId]);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-5 backdrop-blur-sm">
@@ -192,7 +201,7 @@ function MarkdownPreview({
                 setDownloadError(null);
                 try {
                   if (state.status === "ready") downloadArtifactBytes(name, mimeType, state.bytes);
-                  else await downloadArtifact(botId, artifactId, name, mimeType);
+                  else await downloadArtifact(target, artifactId, name, mimeType);
                 } catch {
                   setDownloadError(`Could not download ${name}. Try again.`);
                 }

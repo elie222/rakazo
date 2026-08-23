@@ -145,6 +145,14 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+export function attachmentsForThread<T extends { threadKey: string }>(
+  attachments: readonly T[],
+  threadKey: string | undefined,
+): T[] {
+  if (!threadKey) return [];
+  return attachments.filter((attachment) => attachment.threadKey === threadKey);
+}
+
 export function attachmentsForBot<T extends { botId: string }>(
   attachments: readonly T[],
   botId: string | undefined,
@@ -156,8 +164,18 @@ export function attachmentsForBot<T extends { botId: string }>(
 export function userTurnBlocksForRun(
   trigger: string,
   runId: string,
-  messages: Array<{ role: string; runId?: string | null; blocks: MessageBlock[] }>,
+  messages: Array<{
+    id?: string;
+    role: string;
+    runId?: string | null;
+    blocks: MessageBlock[];
+  }>,
+  sourceMessageId?: string | null,
 ): MessageBlock[] | undefined {
   if (trigger !== "user") return undefined;
-  return messages.find((message) => message.role === "user" && message.runId === runId)?.blocks;
+  return messages.find(
+    (message) =>
+      message.role === "user" &&
+      (sourceMessageId ? message.id === sourceMessageId : message.runId === runId),
+  )?.blocks;
 }

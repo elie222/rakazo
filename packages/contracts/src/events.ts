@@ -37,6 +37,9 @@ export const ProductEventType = z.enum([
   "bot.spawned",
   "bot.archived",
   "bot.deleted",
+  "group.created",
+  "group.updated",
+  "group.handoff",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
 
@@ -121,6 +124,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     name: z.string(),
     size: z.number().int().nonnegative(),
   }),
+  z.object({
+    kind: z.literal("handoff"),
+    fromBotId: Id,
+    toBotId: Id,
+    text: z.string(),
+  }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;
 
@@ -143,6 +152,8 @@ export const ThreadMessageSchema = z.object({
   seq: z.number().int().nonnegative(),
   role: MessageRole,
   blocks: z.array(MessageBlock),
+  botId: Id.optional(),
+  replyToMessageId: Id.optional(),
   runId: Id.optional(),
   createdAt: z.string(),
 });

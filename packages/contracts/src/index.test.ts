@@ -1,11 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { appContract, CreateBotInput, ProductEventType } from "./index.js";
+import {
+  appContract,
+  CreateBotInput,
+  CreateGroupInput,
+  ProductEventType,
+  UpdateGroupInput,
+} from "./index.js";
 
 describe("contracts", () => {
   it("parses bot create input", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
+  });
+
+  it("normalizes group names and rejects duplicate members", () => {
+    expect(CreateGroupInput.parse({ name: "  Draft team  ", botIds: ["bot-1", "bot-2"] })).toEqual({
+      name: "Draft team",
+      botIds: ["bot-1", "bot-2"],
+    });
+    expect(CreateGroupInput.safeParse({ name: "   ", botIds: ["bot-1", "bot-2"] }).success).toBe(
+      false,
+    );
+    expect(
+      UpdateGroupInput.safeParse({ groupId: "group-1", botIds: ["bot-1", "bot-1"] }).success,
+    ).toBe(false);
   });
 
   it("exposes the product rpc surface", () => {

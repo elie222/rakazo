@@ -3,12 +3,17 @@ import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
 import { artifactCacheFileName } from "./artifact-file";
 
+export type MobileArtifactTarget = { botId: string } | { groupId: string };
+
 async function cacheMobileArtifact(
-  botId: string,
+  target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
 ): Promise<File> {
-  const artifact = await rpc<{ contentBase64: string }>("artifacts/get", { botId, artifactId });
+  const artifact = await rpc<{ contentBase64: string }>("artifacts/get", {
+    ...target,
+    artifactId,
+  });
   const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
   file.create({ overwrite: true });
   file.write(artifact.contentBase64, { encoding: "base64" });
@@ -16,21 +21,21 @@ async function cacheMobileArtifact(
 }
 
 export async function readMobileArtifactText(
-  botId: string,
+  target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
 ): Promise<string> {
-  const file = await cacheMobileArtifact(botId, artifactId, mimeType);
+  const file = await cacheMobileArtifact(target, artifactId, mimeType);
   return file.text();
 }
 
 export async function openMobileArtifact(
-  botId: string,
+  target: MobileArtifactTarget,
   artifactId: string,
   name: string,
   mimeType: string,
 ): Promise<void> {
-  const file = await cacheMobileArtifact(botId, artifactId, mimeType);
+  const file = await cacheMobileArtifact(target, artifactId, mimeType);
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(file.uri, { mimeType });
     return;

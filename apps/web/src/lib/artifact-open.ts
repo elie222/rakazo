@@ -1,5 +1,7 @@
 import { rpc } from "./rpc";
 
+export type ArtifactTarget = { botId: string } | { groupId: string };
+
 export function decodeArtifactBase64(contentBase64: string): Uint8Array {
   const binary = atob(contentBase64);
   const bytes = new Uint8Array(binary.length);
@@ -9,8 +11,11 @@ export function decodeArtifactBase64(contentBase64: string): Uint8Array {
   return bytes;
 }
 
-export async function fetchArtifactBytes(botId: string, artifactId: string): Promise<Uint8Array> {
-  const artifact = await rpc.artifacts.get({ botId, artifactId });
+export async function fetchArtifactBytes(
+  target: ArtifactTarget,
+  artifactId: string,
+): Promise<Uint8Array> {
+  const artifact = await rpc.artifacts.get({ ...target, artifactId });
   return decodeArtifactBase64(artifact.contentBase64);
 }
 
@@ -25,11 +30,11 @@ export function downloadArtifactBytes(name: string, mimeType: string, bytes: Uin
 }
 
 export async function downloadArtifact(
-  botId: string,
+  target: ArtifactTarget,
   artifactId: string,
   name: string,
   mimeType: string,
 ): Promise<void> {
-  const bytes = await fetchArtifactBytes(botId, artifactId);
+  const bytes = await fetchArtifactBytes(target, artifactId);
   downloadArtifactBytes(name, mimeType, bytes);
 }

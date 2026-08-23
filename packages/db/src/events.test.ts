@@ -114,6 +114,7 @@ describe("finalizeComputerControlRelease", () => {
       },
     };
     const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -165,6 +166,7 @@ describe("finalizeComputerControlRelease", () => {
       bot: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -254,6 +256,7 @@ describe("answerRunInput", () => {
   it("answers only the selected pending prompt and publishes its update", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
+    publish.mockRejectedValueOnce(new Error("realtime unavailable"));
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
@@ -264,6 +267,7 @@ describe("answerRunInput", () => {
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
       run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-2" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({
           status: "queued",
@@ -291,7 +295,6 @@ describe("answerRunInput", () => {
         {
           workspaceId: "workspace-1",
           threadId: "thread-1",
-          botId: "bot-1",
           runId: "run-1",
           messageId: "message-1",
           answer: "Paris",
@@ -302,7 +305,7 @@ describe("answerRunInput", () => {
 
     expect(tx.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: "waiting_input", botId: "bot-1" }),
+        where: expect.objectContaining({ status: "waiting_input" }),
         data: { status: "queued" },
       }),
     );
@@ -314,7 +317,7 @@ describe("answerRunInput", () => {
     });
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: "thread.message.updated" }),
+        data: expect.objectContaining({ type: "thread.message.updated", botId: "bot-2" }),
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 9 }));
@@ -329,7 +332,10 @@ describe("answerRunInput", () => {
           blocks: [{ kind: "ask", text: "Which city?", status: "answered", answer: "Paris" }],
         }),
       },
-      run: { updateMany: vi.fn() },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1" }),
+        updateMany: vi.fn(),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -339,7 +345,6 @@ describe("answerRunInput", () => {
       answerRunInput(prisma, {
         workspaceId: "workspace-1",
         threadId: "thread-1",
-        botId: "bot-1",
         runId: "run-1",
         messageId: "message-1",
         answer: "Rome",
@@ -378,6 +383,7 @@ describe("sendUserMessage", () => {
       },
     };
     const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -401,7 +407,11 @@ describe("sendUserMessage", () => {
 
     expect(tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ trigger: "user", clientNonce: "nonce-1" }),
+        data: expect.objectContaining({
+          trigger: "user",
+          clientNonce: "send:message-1",
+          sourceMessageId: "message-1",
+        }),
       }),
     );
     expect(tx.message.update).toHaveBeenCalledWith({
