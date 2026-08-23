@@ -111,7 +111,7 @@ import {
 } from "./plot-tool.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
-import { takeoverResumeFromRelease } from "./takeover-resume.js";
+import { type TakeoverResumeCheckpoint, takeoverResumeFromRelease } from "./takeover-resume.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
@@ -356,7 +356,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
       if (leaseTarget.computerSwitching) {
-        await requeueComputerRun(deps, runId, workerId, fence);
+        await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint);
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
@@ -369,7 +369,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
       } catch (error) {
         if (!(error instanceof ComputerBusyError)) throw error;
-        await requeueComputerRun(deps, runId, workerId, fence);
+        await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint);
         return;
       }
       const attempt = await deps.prisma.attempt
@@ -1720,10 +1720,17 @@ async function requeueComputerRun(
   runId: string,
   workerId: string,
   fence: number,
+  resumeCheckpoint: TakeoverResumeCheckpoint | null,
 ): Promise<void> {
   const released = await deps.prisma.run.updateMany({
     where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-    data: { status: "queued", error: null, leaseOwner: null, leaseExpiresAt: null },
+    data: {
+      status: "queued",
+      error: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      checkpoint: resumeCheckpoint,
+    },
   });
   if (released.count !== 1) return;
   await deps.jobs.enqueue({
