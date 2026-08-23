@@ -16,6 +16,7 @@ import type {
   ComputerRef,
   ConnectorCall,
   ConnectorCapabilities,
+  ConnectorCatalogItem,
   ConnectorEvent,
   ConnectorTool,
   ControlLeaseRef,
@@ -34,6 +35,12 @@ import type {
   ScreenRequest,
   ScreenSession,
   SecretRecord,
+  SemanticMemoryCapabilities,
+  SemanticMemoryPurgeHistoryRequest,
+  SemanticMemoryRecallRequest,
+  SemanticMemoryResponse,
+  SemanticMemoryResult,
+  SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
   VoiceCapabilities,
@@ -130,6 +137,16 @@ export interface ConnectionAuthProvider {
   revoke(connectionRef: string, context: AdapterContext): Promise<void>;
 }
 
+/** A connector that also owns an end-user app catalog and connection lifecycle. */
+export interface ManagedConnectorProvider
+  extends ConnectorProvider,
+    Omit<ConnectionAuthProvider, "describe"> {
+  catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
+  listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
+  connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
+  warmDirectory?(): Promise<void>;
+}
+
 export interface MemoryStore {
   describe(): AdapterDescriptor<MemoryCapabilities>;
   read(request: MemoryReadRequest, context: AdapterContext): Promise<MemorySnapshot>;
@@ -143,6 +160,23 @@ export interface MemoryStore {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ): Promise<MemoryRevision>;
+}
+
+/** Optional semantic memory. Durable Markdown memory remains owned by MemoryStore. */
+export interface SemanticMemoryProvider {
+  describe(): AdapterDescriptor<SemanticMemoryCapabilities>;
+  recall(
+    request: SemanticMemoryRecallRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>>;
+  save(
+    request: SemanticMemorySaveRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse>;
+  purgeHistory(
+    request: SemanticMemoryPurgeHistoryRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse>;
 }
 
 export interface AgentRuntime {

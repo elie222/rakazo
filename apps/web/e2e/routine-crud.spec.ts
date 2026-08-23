@@ -150,15 +150,15 @@ test("switching bots while a routine save is pending does not reopen stale state
   const staleListIntercepted = new Promise<void>((resolve) => {
     sawStaleList = resolve;
   });
-  await page.route(
-    "**/rpc/routines/list",
-    async (route) => {
-      sawStaleList();
-      await staleListReleased;
+  await page.route("**/rpc/routines/list", async (route) => {
+    if (route.request().postData()?.includes(firstBotId) !== true) {
       await route.continue();
-    },
-    { times: 1 },
-  );
+      return;
+    }
+    sawStaleList();
+    await staleListReleased;
+    await route.continue();
+  });
   const staleListResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/rpc/routines/list") &&
@@ -172,6 +172,7 @@ test("switching bots while a routine save is pending does not reopen stale state
   await page.waitForURL(new RegExp(`/app/${secondBot.id}$`));
   releaseStaleList();
   await staleListResponse;
+  await page.unroute("**/rpc/routines/list");
 
   await expect(page.getByRole("button", { name: /Second routine/ })).toHaveCount(1);
   await expect(page.getByRole("button", { name: /First routine/ })).toHaveCount(0);

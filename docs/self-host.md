@@ -45,6 +45,21 @@ DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 BOX_API_KEY=              # when SANDBOX_PROVIDER=box
 ```
 
+To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio, llama.cpp, or
+MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
+
+```env
+RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
+RAKAZO_LOCAL_CONTEXT_WINDOW=32768
+RAKAZO_LOCAL_MAX_TOKENS=4096
+```
+
+The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
+use the model server's Compose service name or another address reachable from the containers.
+Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
+leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
+
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
 ## Choosing a computer provider
@@ -143,8 +158,6 @@ substitute for an encrypted off-host backup or provider snapshot.
 Pull the new source, rebuild with `GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --filter @rakazo/db migrate` if you are not using the production Compose file, then restart API and worker. Product contracts stay compatible across cloud and self-hosted. `GET /health` should then report that commit as `"revision"`.
 
 ## What “Rakazo Cloud” still needs
-
-`apps/www` (Astro, `output: "static"`, `site: https://rakazo.com`) can go live today on Vercel, Cloudflare Pages, or any static host. The waitlist link is `mailto:hello@rakazo.com`. That is the marketing site, not the product.
 
 The product cannot be “pushed live” as a Vercel serverless app. Graphile Worker, Postgres `LISTEN`, Pi runs, and Docker computers need durable processes and a sandbox host.
 

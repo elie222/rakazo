@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -11,7 +11,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const botList = page.locator("aside").first();
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   await page.locator("label:has-text('Name') input").fill("Researcher");
   await page.locator("label:has-text('Title') input").fill("Market researcher");

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
+  type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
   resolveModelApiKey,
@@ -26,6 +27,11 @@ async function flushMicrotasks() {
 }
 
 type TestActor = { userId: string; workspaceId: string };
+
+function deviceCodeResult(started: PiOAuthBegin) {
+  if (started.mode !== "device-code") throw new Error("Expected a device-code login");
+  return started;
+}
 
 function createControlledOAuthLogins() {
   let startedCount = 0;
@@ -128,8 +134,18 @@ describe("PiOAuthLogins", () => {
     });
     expect(started.mode).toBe("auth-url");
     expect(started.verificationUri).toContain("claude.ai/oauth/authorize");
-    expect(started.userCode).toBe("");
+    expect("userCode" in started).toBe(false);
 
+    expect(() =>
+      logins.submit(started.loginId, { userId: "other", workspaceId: "w" }, "pasted-code#state"),
+    ).toThrow(/not found/);
+    expect(() => logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "   ")).toThrow(
+      /Paste an authorization code/,
+    );
+
+    expect(
+      logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "pasted-code#state"),
+    ).toEqual({ ok: true });
     expect(
       logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "pasted-code#state"),
     ).toEqual({ ok: true });
@@ -164,6 +180,76 @@ describe("PiOAuthLogins", () => {
       /not waiting for a pasted code/,
     );
     await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+  });
+
+  it("releases a pending manual-code prompt when the login is cancelled", async () => {
+    let promptSettled = false;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      try {
+        await interaction.prompt({ type: "manual_code", message: "paste" });
+      } finally {
+        promptSettled = true;
+      }
+      return oauthCred();
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: "anthropic",
+    });
+
+    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+    await flushMicrotasks();
+
+    expect(promptSettled).toBe(true);
+  });
+
+  it("honors provider cancellation of a manual-code prompt", async () => {
+    const promptAbort = new AbortController();
+    let promptSettled = false;
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+      });
+      try {
+        await interaction.prompt({
+          type: "manual_code",
+          message: "paste",
+          signal: promptAbort.signal,
+        });
+      } finally {
+        promptSettled = true;
+      }
+      return oauthCred();
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: "anthropic",
+    });
+
+    promptAbort.abort(new Error("Callback completed elsewhere"));
+    await flushMicrotasks();
+
+    expect(promptSettled).toBe(true);
+    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+  });
+
+  it("rejects non-HTTPS authorization URLs", async () => {
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
+      interaction.notify({ type: "auth_url", url: "javascript:alert(1)" });
+      return oauthCred();
+    });
+
+    await expect(
+      logins.begin({ userId: "u", workspaceId: "w", provider: "anthropic" }),
+    ).rejects.toThrow(/must use HTTPS/);
   });
 
   it("does not start a login for an already-aborted request", async () => {
@@ -213,7 +299,7 @@ describe("PiOAuthLogins", () => {
       workspaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
-    expect(started.userCode).toBe("ABCD-1234");
+    expect(deviceCodeResult(started).userCode).toBe("ABCD-1234");
     expect(started.verificationUri).toContain("auth.openai.com");
     const pending = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
     expect(pending.status).toBe("pending");
@@ -651,7 +737,7 @@ describe("PiOAuthLogins", () => {
       ...otherWorkspace,
       provider: CHATGPT_OAUTH_PROVIDER,
     });
-    expect(otherWorkspaceLogin.userCode).toBe("CODE-1");
+    expect(deviceCodeResult(otherWorkspaceLogin).userCode).toBe("CODE-1");
     expect(control.startedCount).toBe(2);
     expect((await control.logins.complete(original.loginId, ownerWorkspace)).status).toBe(
       "pending",
@@ -690,7 +776,7 @@ describe("PiOAuthLogins", () => {
       workspaceId: "w",
       provider: COPILOT_OAUTH_PROVIDER,
     });
-    expect(started.userCode).toBe("GH-CODE");
+    expect(deviceCodeResult(started).userCode).toBe("GH-CODE");
     expect(started.verificationUri).toContain("github.com");
     logins.abortAll();
   });
@@ -714,7 +800,7 @@ describe("PiOAuthLogins", () => {
       workspaceId: "w",
       provider: XAI_OAUTH_PROVIDER,
     });
-    expect(started.userCode).toBe("XAI-CODE");
+    expect(deviceCodeResult(started).userCode).toBe("XAI-CODE");
     logins.abortAll();
   });
 });

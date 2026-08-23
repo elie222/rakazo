@@ -20,6 +20,12 @@ describe("Pi model catalog", () => {
     expect(copilot?.signIn).toBe("device-code");
     const grok = catalog.find((entry) => entry.provider === "xai");
     expect(grok?.signIn).toBe("device-code");
+    const claude = catalog.find((entry) => entry.provider === "anthropic");
+    expect(claude).toMatchObject({
+      signIn: "auth-url",
+      authHint: "Claude Pro/Max / key",
+      oauthLabel: "Sign in with Claude Pro/Max",
+    });
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 });

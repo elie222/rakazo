@@ -1,6 +1,7 @@
 ---
 import Button from "../components/Button.astro";
 import Footer from "../components/Footer.astro";
+import GetStartedDialog from "../components/GetStartedDialog.astro";
 import Header from "../components/Header.astro";
 import { ProductDemo } from "../components/ProductDemo";
 import RosterBotAvatar from "../components/RosterBotAvatar.astro";
@@ -14,7 +15,6 @@ import {
   SITE_DESCRIPTION,
   SITE_NAME,
   SITE_URL,
-  WAITLIST_HREF,
 } from "../site";
 
 const stars = await fetchGithubStars();
@@ -69,8 +69,8 @@ const structuredData = {
           needs you. Your keys, your model, your machine.
         </p>
         <div class="hero__actions">
-          <Button href={GITHUB_URL} external>View on GitHub</Button>
-          <Button href="#demo" variant="secondary">See it in action</Button>
+          <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+          <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
         </div>
         <div class="hero__agent-setup">
           <button class="setup-copy" type="button" data-setup-copy={setupAgentPrompt}>
@@ -170,7 +170,9 @@ const structuredData = {
               <div>Same bots, same routines, no migration</div>
             </div>
             <div class="comparison-actions">
-              <Button href={WAITLIST_HREF} variant="secondary" size="sm">Join the waitlist</Button>
+              <button class="button button--primary button--small" type="button" data-get-started-open>
+                Get started
+              </button>
             </div>
           </article>
         </div>
@@ -179,9 +181,10 @@ const structuredData = {
       <section class="stats-band">
         <div>
           <h2>Meet your first bot</h2>
-          <p>Clone the repo, add a model key, and hand it something you have been putting off.</p>
+          <p>Give Rakazo something you have been putting off and let it handle the follow-through.</p>
           <div class="cta-actions">
-            <Button href={GITHUB_URL} external>View on GitHub</Button>
+            <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+            <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
           </div>
         </div>
         <div class="stats-grid">
@@ -203,6 +206,8 @@ const structuredData = {
           </div>
         </div>
       </section>
+
+      <GetStartedDialog />
     </main>
 
     <Footer />

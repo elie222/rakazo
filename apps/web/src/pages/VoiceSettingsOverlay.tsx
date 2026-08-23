@@ -211,6 +211,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                   API key
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={credential ? "Paste a replacement key" : "Paste your API key"}

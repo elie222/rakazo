@@ -1,3 +1,4 @@
+import type { ModelOAuthBegin } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -19,13 +20,6 @@ import {
 } from "../lib/model-auth";
 import { native } from "../lib/native";
 
-type OAuthNotice = {
-  verificationUri: string;
-  userCode: string;
-  mode: "device-code" | "auth-url";
-  loginId: string;
-};
-
 type ModelSelection = {
   provider?: string;
   modelId?: string;
@@ -38,7 +32,7 @@ export default function Models() {
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [oauth, setOauth] = useState<OAuthNotice | null>(null);
+  const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
@@ -47,6 +41,7 @@ export default function Models() {
   const [notice, setNotice] = useState<string | null>(null);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
+  const oauthCodeSubmittingRef = useRef(false);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -118,7 +113,7 @@ export default function Models() {
   );
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
   const acceptsKey = selected?.auth !== "oauth";
-  const subscriptionSignIn = selected?.signIn === "device-code" || selected?.signIn === "auth-url";
+  const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
@@ -168,20 +163,28 @@ export default function Models() {
     }
   }
 
-  async function startDeviceSignIn() {
+  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
+    await waitForModelOAuth(loginId, controller.signal);
+    if (controller.signal.aborted) return;
+    await rpc("models/finishOAuth", { loginId }, { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    oauthLoginIdRef.current = null;
+    setOauth(null);
+    await load({ provider, modelId });
+    if (controller.signal.aborted) return;
+    setNotice(`Connected and using ${selected?.label ?? "this model"}.`);
+  }
+
+  async function startSubscriptionSignIn() {
     if (!selected) return;
     setError(null);
     setNotice(null);
     setOauthPending(true);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
+    let waitingForCode = false;
     try {
-      const started = await rpc<{
-        loginId: string;
-        verificationUri: string;
-        userCode: string;
-        mode: "device-code" | "auth-url";
-      }>(
+      const started = await rpc<ModelOAuthBegin>(
         "models/beginOAuth",
         {
           provider: selected.provider,
@@ -193,22 +196,10 @@ export default function Models() {
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
-      setOauth({
-        verificationUri: started.verificationUri,
-        userCode: started.userCode,
-        mode: started.mode,
-        loginId: started.loginId,
-      });
+      setOauth(started);
       await Linking.openURL(started.verificationUri);
-      await waitForModelOAuth(started.loginId, controller.signal);
-      if (controller.signal.aborted) return;
-      await rpc("models/finishOAuth", { loginId: started.loginId }, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      oauthLoginIdRef.current = null;
-      setOauth(null);
-      await load({ provider, modelId });
-      if (controller.signal.aborted) return;
-      setNotice(`Connected and using ${selected.label}.`);
+      waitingForCode = started.mode === "auth-url";
+      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -217,7 +208,48 @@ export default function Models() {
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      if (!waitingForCode) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
+    }
+  }
+
+  async function submitOAuthCode() {
+    if (oauth?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
+    const controller = oauthAbortRef.current;
+    const code = pasteCode.trim();
+    if (!controller || !code) return;
+    oauthCodeSubmittingRef.current = true;
+    setPasteCode("");
+    setError(null);
+    let submitted = false;
+    let retryable = false;
+    try {
+      await rpc(
+        "models/submitOAuthCode",
+        { loginId: oauth.loginId, code },
+        {
+          signal: controller.signal,
+        },
+      );
+      submitted = true;
+      await finishSubscriptionSignIn(oauth.loginId, controller);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (submitted) {
+        oauthLoginIdRef.current = null;
+        setOauth(null);
+        void rpc("models/cancelOAuth", { loginId: oauth.loginId }).catch(() => undefined);
+      } else {
+        retryable = true;
+        setPasteCode(code);
+      }
+      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+    } finally {
+      oauthCodeSubmittingRef.current = false;
+      if (!retryable) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
     }
   }
 
@@ -324,8 +356,7 @@ export default function Models() {
                         <Text style={styles.link}>{oauth.verificationUri}</Text>
                       </Pressable>
                       <Text style={styles.secondary}>
-                        When the final page fails to load, copy its URL (or the code it shows) and
-                        paste it here:
+                        The final page may not load. Paste its URL or code here.
                       </Text>
                       <TextInput
                         accessibilityLabel="Authorization code"
@@ -340,17 +371,7 @@ export default function Models() {
                       <Pressable
                         accessibilityRole="button"
                         disabled={!pasteCode.trim()}
-                        onPress={() => {
-                          const code = pasteCode.trim();
-                          if (!code) return;
-                          void rpc("models/submitOAuthCode", { loginId: oauth.loginId, code })
-                            .then(() => setPasteCode(""))
-                            .catch((err: unknown) =>
-                              setError(
-                                err instanceof Error ? err.message : "Could not submit code",
-                              ),
-                            );
-                        }}
+                        onPress={() => void submitOAuthCode()}
                         style={({ pressed }) => [
                           styles.outlineButton,
                           pressed && styles.pressed,
@@ -376,7 +397,7 @@ export default function Models() {
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy}
-                  onPress={() => void startDeviceSignIn()}
+                  onPress={() => void startSubscriptionSignIn()}
                   style={({ pressed }) => [
                     styles.outlineButton,
                     pressed && styles.pressed,
@@ -405,11 +426,13 @@ export default function Models() {
                   autoCorrect={false}
                   autoComplete="off"
                   editable={!busy}
+                  importantForAutofill="no"
                   onChangeText={setApiKey}
                   placeholder="sk-…"
                   placeholderTextColor={native.tertiaryLabel}
                   secureTextEntry
                   style={styles.keyInput}
+                  textContentType="none"
                   value={apiKey}
                 />
                 <Pressable

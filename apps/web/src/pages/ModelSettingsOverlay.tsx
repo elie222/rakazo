@@ -13,17 +13,11 @@ import {
   finishModelOAuthAttempt,
   type ModelCatalogEntry,
   type ModelCredential,
+  type ModelOAuthBegin,
   providerHint,
   waitForModelOAuth,
 } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
-
-type OAuthNotice = {
-  verificationUri: string;
-  userCode: string;
-  mode: "device-code" | "auth-url";
-  loginId: string;
-};
 
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -33,7 +27,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [oauth, setOauth] = useState<OAuthNotice | null>(null);
+  const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
@@ -43,6 +37,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
+  const oauthCodeSubmittingRef = useRef(false);
 
   function cancelOAuthAttempt(resetState = true) {
     const loginId = oauthLoginIdRef.current;
@@ -120,7 +115,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   );
   const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
   const acceptsKey = selected?.auth !== "oauth";
-  const subscriptionSignIn = selected?.signIn === "device-code" || selected?.signIn === "auth-url";
+  const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
 
   function chooseProvider(nextProvider: string) {
@@ -171,13 +166,26 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function startDeviceSignIn() {
+  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
+    await waitForModelOAuth(loginId, controller.signal);
+    if (controller.signal.aborted) return;
+    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    oauthLoginIdRef.current = null;
+    setOauth(null);
+    await refresh();
+    if (controller.signal.aborted) return;
+    setNotice(`Connected and using ${selected?.label ?? "this model"}.`);
+  }
+
+  async function startSubscriptionSignIn() {
     if (!selected) return;
     setError(null);
     setNotice(null);
     setOauthPending(true);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
+    let waitingForCode = false;
     try {
       const started = await rpc.models.beginOAuth(
         {
@@ -190,22 +198,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       if (controller.signal.aborted) return;
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
-      setOauth({
-        verificationUri: started.verificationUri,
-        userCode: started.userCode,
-        mode: started.mode,
-        loginId: started.loginId,
-      });
+      setOauth(started);
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      await waitForModelOAuth(started.loginId, controller.signal);
-      if (controller.signal.aborted) return;
-      await rpc.models.finishOAuth({ loginId: started.loginId }, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      oauthLoginIdRef.current = null;
-      setOauth(null);
-      await refresh();
-      if (controller.signal.aborted) return;
-      setNotice(`Connected and using ${selected.label}.`);
+      waitingForCode = started.mode === "auth-url";
+      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -214,7 +210,45 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setError(err instanceof Error ? err.message : "Could not start sign-in");
       setOauth(null);
     } finally {
-      finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      if (!waitingForCode) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
+    }
+  }
+
+  async function submitOAuthCode() {
+    if (oauth?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
+    const controller = oauthAbortRef.current;
+    const code = pasteCode.trim();
+    if (!controller || !code) return;
+    oauthCodeSubmittingRef.current = true;
+    setPasteCode("");
+    setError(null);
+    let submitted = false;
+    let retryable = false;
+    try {
+      await rpc.models.submitOAuthCode(
+        { loginId: oauth.loginId, code },
+        { signal: controller.signal },
+      );
+      submitted = true;
+      await finishSubscriptionSignIn(oauth.loginId, controller);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (submitted) {
+        oauthLoginIdRef.current = null;
+        setOauth(null);
+        void rpc.models.cancelOAuth({ loginId: oauth.loginId }).catch(() => undefined);
+      } else {
+        retryable = true;
+        setPasteCode(code);
+      }
+      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+    } finally {
+      oauthCodeSubmittingRef.current = false;
+      if (!retryable) {
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+      }
     }
   }
 
@@ -352,13 +386,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               >
                                 {new URL(oauth.verificationUri).hostname}
                               </a>
-                              . When the final page fails to load, copy its URL (or the code it
-                              shows) and paste it here:
+                              . The final page may not load; paste its URL or code here.
                             </p>
                             <div className="mt-3 flex items-center gap-2">
                               <input
                                 value={pasteCode}
                                 onChange={(e) => setPasteCode(e.target.value)}
+                                aria-label="Authorization code or callback URL"
+                                autoComplete="off"
+                                spellCheck={false}
                                 placeholder="http://localhost:53692/callback?code=…"
                                 className="w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-2.5 text-[13px] text-[#ECECEE]"
                               />
@@ -367,20 +403,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                                 variant="outline"
                                 size="sm"
                                 disabled={!pasteCode.trim()}
-                                onClick={() => {
-                                  const code = pasteCode.trim();
-                                  if (!code) return;
-                                  void rpc.models
-                                    .submitOAuthCode({ loginId: oauth.loginId, code })
-                                    .then(() => setPasteCode(""))
-                                    .catch((err) =>
-                                      setError(
-                                        err instanceof Error
-                                          ? err.message
-                                          : "Could not submit code",
-                                      ),
-                                    );
-                                }}
+                                onClick={() => void submitOAuthCode()}
                               >
                                 Submit
                               </Button>
@@ -413,7 +436,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         variant="outline"
                         size="sm"
                         disabled={busy}
-                        onClick={() => void startDeviceSignIn()}
+                        onClick={() => void startSubscriptionSignIn()}
                       >
                         {oauthPending ? "Starting…" : (selected.oauthLabel ?? "Sign in")}
                       </Button>
@@ -434,7 +457,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         onChange={(event) => setApiKey(event.target.value)}
                         placeholder="sk-…"
                         type="password"
-                        autoComplete="off"
+                        autoComplete="new-password"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                       />
                     </label>

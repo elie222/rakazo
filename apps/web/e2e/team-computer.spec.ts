@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  openNewBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -159,15 +160,13 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .poll(async () => (await rpcResponse(page, "computer/takeover", { botId: chiefId })).ok)
     .toBe(true);
   await page.getByTitle("Agent computer").click();
-  await expect(page.getByText("You have control", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByText("You have control", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "49-team-computer-takeover-after-stop");
   await rpc(page, "computer/release", { botId: chiefId });
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   const team = page.getByRole("button", { name: "Team", exact: true });
   const privateComputer = page.getByRole("button", { name: "Private", exact: true });

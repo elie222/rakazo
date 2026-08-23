@@ -1,11 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { appContract, CreateBotInput, ProductEventType } from "./index.js";
+import {
+  appContract,
+  CreateBotInput,
+  CreateGroupInput,
+  ModelOAuthBeginSchema,
+  ProductEventType,
+  UpdateGroupInput,
+} from "./index.js";
 
 describe("contracts", () => {
   it("parses bot create input", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
+  });
+
+  it("normalizes group names and rejects duplicate members", () => {
+    expect(CreateGroupInput.parse({ name: "  Draft team  ", botIds: ["bot-1", "bot-2"] })).toEqual({
+      name: "Draft team",
+      botIds: ["bot-1", "bot-2"],
+    });
+    expect(CreateGroupInput.safeParse({ name: "   ", botIds: ["bot-1", "bot-2"] }).success).toBe(
+      false,
+    );
+    expect(
+      UpdateGroupInput.safeParse({ groupId: "group-1", botIds: ["bot-1", "bot-1"] }).success,
+    ).toBe(false);
+  });
+
+  it("keeps model OAuth start results mode-specific", () => {
+    const shared = {
+      loginId: "login-1",
+      provider: "anthropic",
+      verificationUri: "https://example.com/authorize",
+      expiresInSeconds: 900,
+    };
+    expect(ModelOAuthBeginSchema.safeParse({ ...shared, mode: "auth-url" }).success).toBe(true);
+    expect(ModelOAuthBeginSchema.safeParse({ ...shared, mode: "device-code" }).success).toBe(false);
+    expect(
+      ModelOAuthBeginSchema.safeParse({ ...shared, mode: "device-code", userCode: "ABCD-1234" })
+        .success,
+    ).toBe(true);
+    expect(
+      ModelOAuthBeginSchema.safeParse({
+        ...shared,
+        mode: "auth-url",
+        verificationUri: "javascript:alert(1)",
+      }).success,
+    ).toBe(false);
   });
 
   it("exposes the product rpc surface", () => {
@@ -16,6 +58,8 @@ describe("contracts", () => {
     expect(appContract.bots.archive).toBeTruthy();
     expect(appContract.bots.restore).toBeTruthy();
     expect(appContract.bots.remove).toBeTruthy();
+    expect(appContract.botSections.list).toBeTruthy();
+    expect(appContract.botSections.create).toBeTruthy();
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.threads.clear).toBeTruthy();
     expect(appContract.voice.prepare).toBeTruthy();
