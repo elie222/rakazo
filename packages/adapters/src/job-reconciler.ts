@@ -111,6 +111,7 @@ export function createJobReconciler(
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
+  let mirrorCursor: string | undefined;
   let controlScanDeadline: Date | undefined;
 
   const reconcileOnce = async () => {
@@ -210,7 +211,10 @@ export function createJobReconciler(
             controlLeaseExpiresAt: true,
           },
         }),
-        listGtasksSlackMirrorTargets(deps.prisma),
+        listGtasksSlackMirrorTargets(deps.prisma, {
+          afterUserId: mirrorCursor,
+          take: batchSize,
+        }),
       ]);
       const activeMirrorKeys = new Set(
         (
@@ -265,6 +269,11 @@ export function createJobReconciler(
           ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
           : undefined;
       if (!controlCursor) controlScanDeadline = undefined;
+      const lastMirrorTarget = mirrorTargets.at(-1);
+      mirrorCursor =
+        mirrorTargets.length === batchSize && lastMirrorTarget
+          ? lastMirrorTarget.userId
+          : undefined;
     })().finally(() => {
       reconciling = undefined;
     });

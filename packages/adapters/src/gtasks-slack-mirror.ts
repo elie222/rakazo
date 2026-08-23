@@ -352,66 +352,38 @@ export async function syncGtasksSlackInbox(
 
 export async function listGtasksSlackMirrorTargets(
   prisma: PrismaClient,
+  options: { afterUserId?: string; take?: number } = {},
 ): Promise<Array<{ workspaceId: string; userId: string }>> {
-  const rows = await prisma.connection.findMany({
-    where: {
-      status: "connected",
-      connectorId: GTASKS_SLACK_ROUTING.connectorId,
-      provider: {
-        in: [
-          GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
-          GTASKS_SLACK_ROUTING.composioProviders.slack,
-        ],
-      },
-    },
-    select: { workspaceId: true, userId: true, provider: true },
-  });
-
-  const byWorkspaceUser = new Map<
-    string,
-    { workspaceId: string; userId: string; providers: Set<string> }
-  >();
-  for (const row of rows) {
-    const key = `${row.workspaceId}:${row.userId}`;
-    const entry = byWorkspaceUser.get(key) ?? {
-      workspaceId: row.workspaceId,
-      userId: row.userId,
-      providers: new Set<string>(),
-    };
-    entry.providers.add(row.provider);
-    byWorkspaceUser.set(key, entry);
-  }
-
-  const readyScopes = [...byWorkspaceUser.values()].filter(
-    (entry) =>
-      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.googleTasks) &&
-      entry.providers.has(GTASKS_SLACK_ROUTING.composioProviders.slack),
-  );
-  if (readyScopes.length === 0) return [];
-
-  const memberships = await prisma.member.findMany({
-    where: {
-      OR: readyScopes.map((scope) => ({
-        organizationId: scope.workspaceId,
-        userId: scope.userId,
-      })),
-    },
-    select: { organizationId: true, userId: true },
-  });
-  const memberScopes = new Set(
-    memberships.map((membership) => `${membership.organizationId}:${membership.userId}`),
-  );
-
-  const byUser = new Map<string, { workspaceId: string; userId: string }>();
-  for (const scope of readyScopes) {
-    if (!memberScopes.has(`${scope.workspaceId}:${scope.userId}`)) continue;
-    const existing = byUser.get(scope.userId);
-    if (!existing || scope.workspaceId < existing.workspaceId) {
-      byUser.set(scope.userId, { workspaceId: scope.workspaceId, userId: scope.userId });
-    }
-  }
-
-  return [...byUser.values()];
+  const take = Math.max(1, Math.min(options.take ?? 100, 1_000));
+  const afterUserId = options.afterUserId ?? "";
+  const providers = GTASKS_SLACK_ROUTING.composioProviders;
+  return prisma.$queryRaw<Array<{ workspaceId: string; userId: string }>>`
+    WITH "eligibleScopes" AS (
+      SELECT c."workspaceId", c."userId"
+      FROM "connections" AS c
+      INNER JOIN "member" AS m
+        ON m."organizationId" = c."workspaceId"
+        AND m."userId" = c."userId"
+      WHERE c."status" = 'connected'
+        AND c."connectorId" = ${GTASKS_SLACK_ROUTING.connectorId}
+        AND c."provider" IN (${providers.googleTasks}, ${providers.slack})
+      GROUP BY c."workspaceId", c."userId"
+      HAVING COUNT(DISTINCT c."provider") = 2
+    ),
+    "selectedTargets" AS (
+      SELECT
+        "workspaceId",
+        "userId",
+        ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY "workspaceId") AS "targetRank"
+      FROM "eligibleScopes"
+    )
+    SELECT "workspaceId", "userId"
+    FROM "selectedTargets"
+    WHERE "targetRank" = 1
+      AND "userId" > ${afterUserId}
+    ORDER BY "userId"
+    LIMIT ${take}
+  `;
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

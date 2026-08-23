@@ -138,7 +138,7 @@ function connectedRows(): ConnectionRow[] {
       workspaceId: context.workspaceId,
       userId: context.userId,
       connectorId: GTASKS_SLACK_ROUTING.connectorId,
-      provider: "GOOGLETASKS",
+      provider: GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
       status: "connected",
     },
   ];
@@ -164,7 +164,7 @@ describe("connection revocation", () => {
       where: {
         userId: context.userId,
         connectorId: GTASKS_SLACK_ROUTING.connectorId,
-        provider: "GOOGLETASKS",
+        provider: GTASKS_SLACK_ROUTING.composioProviders.googleTasks,
       },
       data: { status: "revoked" },
     });

@@ -30,17 +30,66 @@ function fakePrisma(
     updatedAt: Date;
   }> = [],
 ) {
+  const connection = { findMany: vi.fn(async () => []) };
+  const member = {
+    findMany: vi.fn(
+      async ({ where }: { where: { OR?: Array<{ organizationId: string; userId: string }> } }) =>
+        where.OR ?? [],
+    ),
+  };
   return {
     run: { findMany: vi.fn(async () => runs) },
     routine: { findMany: vi.fn(async () => routines) },
     computer: { findMany: vi.fn(async () => controls) },
-    connection: { findMany: vi.fn(async () => []) },
-    member: {
-      findMany: vi.fn(
-        async ({ where }: { where: { OR?: Array<{ organizationId: string; userId: string }> } }) =>
-          where.OR ?? [],
-      ),
-    },
+    connection,
+    member,
+    $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+      const rows = (await connection.findMany()) as Array<{
+        workspaceId: string;
+        userId: string;
+        provider: string;
+      }>;
+      const scopes = new Map<
+        string,
+        { workspaceId: string; userId: string; providers: Set<string> }
+      >();
+      for (const row of rows) {
+        const key = `${row.workspaceId}:${row.userId}`;
+        const scope = scopes.get(key) ?? {
+          workspaceId: row.workspaceId,
+          userId: row.userId,
+          providers: new Set<string>(),
+        };
+        scope.providers.add(row.provider);
+        scopes.set(key, scope);
+      }
+      const ready = [...scopes.values()].filter(
+        (scope) => scope.providers.has("GOOGLETASKS") && scope.providers.has("SLACK"),
+      );
+      const memberships = await member.findMany({
+        where: {
+          OR: ready.map((scope) => ({
+            organizationId: scope.workspaceId,
+            userId: scope.userId,
+          })),
+        },
+      });
+      const memberScopes = new Set(memberships.map((row) => `${row.organizationId}:${row.userId}`));
+      const byUser = new Map<string, { workspaceId: string; userId: string }>();
+      for (const scope of ready) {
+        if (!memberScopes.has(`${scope.workspaceId}:${scope.userId}`)) continue;
+        const existing = byUser.get(scope.userId);
+        if (!existing || scope.workspaceId < existing.workspaceId) {
+          byUser.set(scope.userId, { workspaceId: scope.workspaceId, userId: scope.userId });
+        }
+      }
+      const afterUserId = String(values.at(-2) ?? "");
+      const take = Number(values.at(-1) ?? 100);
+      return [...byUser.values()]
+        .filter((target) => target.userId > afterUserId)
+        .sort((left, right) => left.userId.localeCompare(right.userId))
+        .slice(0, take);
+    }),
   } as unknown as PrismaClient;
 }
 
@@ -140,6 +189,34 @@ describe("createJobReconciler", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("advances through bounded mirror target batches", async () => {
+    const prisma = fakePrisma();
+    vi.mocked(prisma.connection.findMany).mockResolvedValue(
+      ["user-a", "user-b", "user-c"].flatMap((userId) => [
+        { workspaceId: `workspace-${userId}`, userId, provider: "GOOGLETASKS" },
+        { workspaceId: `workspace-${userId}`, userId, provider: "SLACK" },
+      ]) as never,
+    );
+    const { jobs, enqueue } = publisher();
+    const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });
+
+    await reconciler.reconcileOnce();
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ userId: "user-a" }) }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ userId: "user-b" }) }),
+    );
+
+    enqueue.mockClear();
+    await reconciler.reconcileOnce();
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ userId: "user-c" }) }),
+    );
+  });
+
   it("restores queued runs and near-due routines with stable replacement keys", async () => {
     const scheduledFor = new Date(Date.now() + 30_000);
     const controlExpiresAt = new Date(Date.now() + 15_000);
@@ -236,6 +313,7 @@ describe("createJobReconciler", () => {
       routine: { findMany: vi.fn(async () => []) },
       computer: { findMany: computerFindMany },
       connection: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () => []),
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });
@@ -299,6 +377,7 @@ describe("createJobReconciler", () => {
       routine: { findMany: routineFindMany },
       computer: { findMany: vi.fn(async () => []) },
       connection: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () => []),
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs }, { batchSize: 2 });

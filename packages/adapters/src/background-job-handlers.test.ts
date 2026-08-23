@@ -14,7 +14,10 @@ import type { EncryptedSecretStore } from "./secrets.js";
 const syncGtasksSlackInbox = vi.hoisted(() => vi.fn());
 
 vi.mock("./history-compaction.js", () => ({ compactHistory: vi.fn(async () => undefined) }));
-vi.mock("./gtasks-slack-mirror.js", () => ({ syncGtasksSlackInbox }));
+vi.mock("./gtasks-slack-mirror.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./gtasks-slack-mirror.js")>()),
+  syncGtasksSlackInbox,
+}));
 
 describe("createBackgroundJobHandlers", () => {
   it("rejects failed Google Tasks mirror jobs with the sanitized message", async () => {

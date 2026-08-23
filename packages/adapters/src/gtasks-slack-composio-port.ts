@@ -71,10 +71,12 @@ function asArray(value: unknown): unknown[] {
   return [];
 }
 
-function nextPageToken(data: unknown): string | undefined {
+function nextPageToken(data: unknown, seen: Set<string>): string | undefined {
   const record = asRecord(data);
   const token = record?.nextPageToken ?? record?.next_page_token ?? record?.pageToken;
-  return typeof token === "string" && token.length > 0 ? token : undefined;
+  if (typeof token !== "string" || token.length === 0 || seen.has(token)) return undefined;
+  seen.add(token);
+  return token;
 }
 
 function mapInboxTask(raw: unknown): GtaskInboxItem | undefined {
@@ -107,6 +109,7 @@ async function resolveInboxListId(
   signal: AbortSignal,
 ): Promise<string | undefined> {
   let pageToken: string | undefined;
+  const seenPageTokens = new Set<string>();
   do {
     const args: Record<string, unknown> = { max_results: 50 };
     if (pageToken) args.page_token = pageToken;
@@ -125,7 +128,7 @@ async function resolveInboxListId(
         return String(record.id ?? record.tasklist_id ?? "");
       }
     }
-    pageToken = nextPageToken(data);
+    pageToken = nextPageToken(data, seenPageTokens);
   } while (pageToken);
   return undefined;
 }
@@ -137,6 +140,7 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
       if (!tasklistId) return [];
       const tasks: GtaskInboxItem[] = [];
       let pageToken: string | undefined;
+      const seenPageTokens = new Set<string>();
       do {
         const args: Record<string, unknown> = {
           tasklist_id: tasklistId,
@@ -156,7 +160,7 @@ export function createComposioGtasksSlackPort(composio: ComposioProvider): Gtask
           const mapped = mapInboxTask(item);
           if (mapped) tasks.push(mapped);
         }
-        pageToken = nextPageToken(data);
+        pageToken = nextPageToken(data, seenPageTokens);
       } while (pageToken);
       return tasks;
     },
