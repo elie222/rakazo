@@ -261,6 +261,9 @@ export const appContract = {
         }),
       )
       .output(WorkspaceMemoryConfigSchema),
+    setDefaultScope: oc
+      .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
+      .output(WorkspaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {

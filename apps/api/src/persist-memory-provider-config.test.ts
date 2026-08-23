@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { persistMemoryProviderConfig } from "./router.js";
+import { persistMemoryProviderConfig, updateMemoryProviderDefaultScope } from "./router.js";
 
 const actor = {
   userId: "user-1",
@@ -12,6 +12,12 @@ function makeDeps(
   overrides: {
     existing?: { id: string; secretId: string } | null;
     upsertResult?: {
+      provider: string;
+      settings: Record<string, string>;
+      defaultMemoryScope: string;
+      updatedAt: Date;
+    };
+    updateResult?: {
       provider: string;
       settings: Record<string, string>;
       defaultMemoryScope: string;
@@ -31,13 +37,21 @@ function makeDeps(
       updatedAt: new Date("2026-08-19T00:00:00.000Z"),
     },
   );
+  const update = vi.fn().mockResolvedValue(
+    overrides.updateResult ?? {
+      provider: "supermemory",
+      settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
+      defaultMemoryScope: "shared",
+      updatedAt: new Date("2026-08-20T00:00:00.000Z"),
+    },
+  );
   const prisma = {
     member: {
       findFirst: vi
         .fn()
         .mockResolvedValue(overrides.workspaceOwner === false ? null : { id: "m-1" }),
     },
-    workspaceMemoryConfig: { findUnique, upsert },
+    workspaceMemoryConfig: { findUnique, update, upsert },
     secret: { create: secretCreate, deleteMany: secretDeleteMany },
     $transaction: vi.fn(),
   };
@@ -54,6 +68,7 @@ function makeDeps(
     secretDeleteMany,
     findUnique,
     upsert,
+    update,
     transaction: prisma.$transaction,
   };
 }
@@ -173,5 +188,35 @@ describe("persistMemoryProviderConfig", () => {
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
     vi.unstubAllGlobals();
+  });
+});
+
+describe("updateMemoryProviderDefaultScope", () => {
+  it("updates only the generic scope setting and retains the provider secret", async () => {
+    const { deps, update, secretCreate, secretDeleteMany } = makeDeps({
+      existing: { id: "cfg-1", secretId: "secret-existing" },
+    });
+
+    const result = await updateMemoryProviderDefaultScope(deps as never, actor, "shared");
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "cfg-1" },
+      data: { defaultMemoryScope: "shared" },
+    });
+    expect(secretCreate).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+    expect(result.defaultMemoryScope).toBe("shared");
+  });
+
+  it("rejects non-owners without updating provider configuration", async () => {
+    const { deps, update } = makeDeps({
+      existing: { id: "cfg-1", secretId: "secret-existing" },
+      workspaceOwner: false,
+    });
+
+    await expect(
+      updateMemoryProviderDefaultScope(deps as never, actor, "shared"),
+    ).rejects.toThrow();
+    expect(update).not.toHaveBeenCalled();
   });
 });

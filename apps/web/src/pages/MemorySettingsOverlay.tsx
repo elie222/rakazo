@@ -9,6 +9,40 @@ import {
   memoryProviderSettings,
 } from "./memory-providers/registry";
 
+function ScopePicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: "isolated" | "shared";
+  disabled: boolean;
+  onChange: (scope: "isolated" | "shared") => void;
+}) {
+  return (
+    <div className="text-[13.5px] text-[#85858A]">
+      Default scope
+      <div className="mt-2 flex gap-2">
+        {(["isolated", "shared"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            disabled={disabled}
+            onClick={() => onChange(option)}
+            className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
+              value === option
+                ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
+                : "border-[#26262A] text-[#85858A]"
+            }`}
+          >
+            {option === "isolated" ? "Isolated" : "Shared"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MemorySettingsOverlay({
   onClose,
   config,
@@ -25,7 +59,7 @@ export function MemorySettingsOverlay({
   const [defaultScope, setDefaultScope] = useState<"isolated" | "shared">(
     config?.defaultMemoryScope ?? "isolated",
   );
-  const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
+  const [pending, setPending] = useState<"connect" | "disconnect" | "scope" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +109,20 @@ export function MemorySettingsOverlay({
     }
   }
 
+  async function updateDefaultScope(scope: "isolated" | "shared") {
+    if (scope === defaultScope) return;
+    setError(null);
+    setPending("scope");
+    try {
+      const next = await rpc.memory.setDefaultScope({ defaultMemoryScope: scope });
+      onConfigChange(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update the default memory scope");
+    } finally {
+      setPending(null);
+    }
+  }
+
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
       <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
@@ -109,8 +157,12 @@ export function MemorySettingsOverlay({
               <div className="mt-1 text-[15px] text-[#ECECEE]">
                 {registration?.connectedLabel(config) ?? config.provider}
               </div>
-              <div className="mt-1 text-[13px] text-[#85858A]">
-                Default scope: {config.defaultMemoryScope}
+              <div className="mt-3">
+                <ScopePicker
+                  value={defaultScope}
+                  disabled={busy}
+                  onChange={(scope) => void updateDefaultScope(scope)}
+                />
               </div>
               <Button
                 type="button"
@@ -143,26 +195,8 @@ export function MemorySettingsOverlay({
                 </label>
               ) : null}
 
-              <div className="mb-4 text-[13.5px] text-[#85858A]">
-                Default scope
-                <div className="mt-2 flex gap-2">
-                  {(["isolated", "shared"] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={defaultScope === option}
-                      disabled={busy}
-                      onClick={() => setDefaultScope(option)}
-                      className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
-                        defaultScope === option
-                          ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
-                          : "border-[#26262A] text-[#85858A]"
-                      }`}
-                    >
-                      {option === "isolated" ? "Isolated" : "Shared"}
-                    </button>
-                  ))}
-                </div>
+              <div className="mb-4">
+                <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
               </div>
 
               <registration.SettingsForm busy={busy} onConnect={connect} />

@@ -1283,6 +1283,9 @@ export function createRouter(deps: RouterDeps) {
       connectProvider: authed.memory.connectProvider.handler(async ({ context, input }) =>
         persistMemoryProviderConfig(deps, context.actor, input),
       ),
+      setDefaultScope: authed.memory.setDefaultScope.handler(async ({ context, input }) =>
+        updateMemoryProviderDefaultScope(deps, context.actor, input.defaultMemoryScope),
+      ),
       disconnectProvider: authed.memory.disconnectProvider.handler(async ({ context }) => {
         await requireWorkspaceOwner(deps.prisma, context.actor);
         await withSerializableRetry(() =>
@@ -2160,6 +2163,21 @@ export async function persistMemoryProviderConfig(
     ),
   );
   return serializeWorkspaceMemoryConfig(config);
+}
+
+export async function updateMemoryProviderDefaultScope(
+  deps: RouterDeps,
+  actor: Actor,
+  defaultMemoryScope: "isolated" | "shared",
+) {
+  await requireWorkspaceOwner(deps.prisma, actor);
+  const existing = await findWorkspaceMemoryConfig(deps.prisma, actor.workspaceId);
+  if (!existing) throw new ORPCError("NOT_FOUND");
+  const updated = await deps.prisma.workspaceMemoryConfig.update({
+    where: { id: existing.id },
+    data: { defaultMemoryScope },
+  });
+  return serializeWorkspaceMemoryConfig(updated);
 }
 
 function serializeWorkspaceMemoryConfig(config: {
