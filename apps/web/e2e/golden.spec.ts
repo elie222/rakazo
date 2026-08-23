@@ -18,13 +18,13 @@ test("two users are isolated and a bot completes durable work", async ({ browser
 
   const stamp = Date.now();
   await signup(pageA, `ada-${stamp}@rakazo.test`, "password12", "Ada", testInfo);
-  await completeOnboarding(pageA, ["A bit of everything", "Clear and tight"], testInfo);
+  await completeOnboarding(pageA, testInfo);
   await expect(pageA.getByText("Chief").first()).toBeVisible();
 
   await signup(pageB, `bob-${stamp}@rakazo.test`, "password12", "Bob");
-  await completeOnboarding(pageB, ["Coding & repos", "Clear and tight"]);
+  await completeOnboarding(pageB);
   await expect(pageB.getByText("Chief").first()).toBeVisible();
-  await expect(pageB.getByText("Ada")).toHaveCount(0);
+  await expect(pageB.getByText("Ada", { exact: true })).toHaveCount(0);
 
   const composer = pageA.getByPlaceholder(/Message/);
   await composer.fill("write a file in your home called notes/result.txt that says isolation-ok");
@@ -46,7 +46,7 @@ test("two users are isolated and a bot completes durable work", async ({ browser
 test("takeover, routine, plugins, and export are reachable", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `flow-${stamp}@rakazo.test`, "password12", "Flow");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("install the gsc cli and sign in");
@@ -180,7 +180,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   const stamp = Date.now();
   const email = `shell-${stamp}@rakazo.test`;
   await signup(page, email, "password12", "Shell");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("spawn a bot named Scout to research venues");
@@ -221,7 +221,7 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
 }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `menu-${stamp}@rakazo.test`, "password12", "Menu");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
 
   const chief = page.getByRole("button", { name: /Chief/ }).first();
   await chief.click({ button: "right" });

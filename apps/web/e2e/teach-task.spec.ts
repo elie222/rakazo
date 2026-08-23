@@ -4,7 +4,7 @@ import { completeOnboarding, signup } from "./helpers";
 test("teach a task records interaction and saves a draft", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   await page.getByTitle("Agent computer").click();
   await page.getByTestId("teach-start-button").click();
   await page.getByTestId("teach-goal-input").fill("Export weekly CRM list");

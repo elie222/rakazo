@@ -5,7 +5,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   const stamp = Date.now();
   const userName = `Voice ${stamp}`;
   await signup(page, `voice-${stamp}@rakazo.test`, "password12", userName);
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
 
   await page.getByRole("button", { name: "Call" }).click();
   await expect(page.getByTestId("voice-settings")).toBeVisible();

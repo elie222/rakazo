@@ -18,7 +18,7 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
   const privateMarker = `private-${stamp}`;
 
   await signup(page, `team-computer-${stamp}@rakazo.test`, "password12", "Team Computer");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   const chiefId = activeBotId(page);
 
   await openComputerPanel(page);
@@ -86,7 +86,7 @@ test("user control leaves another Team bot's screen available", async ({ page },
   const marker = `after-release-${stamp}`;
 
   await signup(page, `team-control-${stamp}@rakazo.test`, "password12", "Team Control");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   const chiefId = activeBotId(page);
   const workerId = await createBot(page, "Worker", "team");
 
@@ -133,7 +133,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     "password12",
     "Active Team Control",
   );
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   const chiefId = activeBotId(page);
 
   await sendMessage(page, "keep working until I stop you");

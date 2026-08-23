@@ -24,7 +24,7 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
   return parsed.json as T;
 }
 
-export async function completeOnboarding(page: Page, answers: string[], testInfo?: TestInfo) {
+export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
   const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });
   const chief = page.getByText("Chief").first();
@@ -51,21 +51,12 @@ export async function completeOnboarding(page: Page, answers: string[], testInfo
   ) {
     if (testInfo) await captureScreenshot(page, testInfo, "03-create-first-bot");
     await page.locator("label:has-text('Name') input").fill("Chief");
-    await page.getByRole("button", { name: "Continue" }).click();
-    for (const [index, answer] of answers.entries()) {
-      const option = page.getByText(answer, { exact: true });
-      await expect(option).toBeVisible();
-      if (testInfo) {
-        await captureScreenshot(page, testInfo, `0${index + 4}-onboarding-question-${index + 1}`);
-      }
-      await option.click();
-    }
     const created = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/create") && response.ok(),
     );
-    await page.getByRole("button", { name: "Open Rakazo" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
     await created;
-    await page.waitForURL(/\/app/, { timeout: 5_000 }).catch(() => page.goto("/app"));
+    await page.waitForURL(/\/app\//, { timeout: 20_000 });
   }
   await page.waitForURL(/\/app/);
   await expect(page.getByText("Chief").first()).toBeVisible();

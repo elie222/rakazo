@@ -7,7 +7,7 @@ test("routine editing updates in place, preserves timezone, and deletion persist
 }) => {
   const stamp = Date.now();
   await signup(page, `routine-crud-${stamp}@rakazo.test`, "password12", "Routine CRUD");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   const botId = activeBotId(page);
 
   await rpc<Routine>(page, "routines/create", {
@@ -68,7 +68,7 @@ test("switching bots while a routine save is pending does not reopen stale state
 }) => {
   const stamp = Date.now();
   await signup(page, `routine-switch-${stamp}@rakazo.test`, "password12", "Routine Switch");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   const firstBotId = activeBotId(page);
   const secondBot = await rpc<Bot>(page, "bots/create", {
     name: "Second",

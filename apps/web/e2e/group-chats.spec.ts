@@ -23,7 +23,7 @@ async function createBot(page: import("@playwright/test").Page, name: string) {
 test("create group from + and see two bots in one transcript", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `group-${stamp}@rakazo.test`, "password12", "Group E2E");
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 

@@ -15,7 +15,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "new-password");
 
   await signup(page, email, password, userName);
-  await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
+  await completeOnboarding(page);
 
   await page.waitForURL(/\/app\/[^/]+$/);
   const protectedBotPath = new URL(page.url()).pathname;
