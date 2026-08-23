@@ -20,6 +20,11 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 /** Deterministic, offline Composio catalog and connection emulator for product tests. */
 export class ComposioEmulator implements ComposioProvider {
   private readonly connectedByUser = new Map<string, Set<string>>();
+  readonly executions: Array<{
+    userId: string;
+    tool: string;
+    args: Record<string, unknown>;
+  }> = [];
 
   constructor(
     private readonly directory: ReadonlyArray<
@@ -29,19 +34,19 @@ export class ComposioEmulator implements ComposioProvider {
 
   describe() {
     return {
-      id: "composio-emulator",
+      id: "composio",
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: { discover: true, oauth: true, secretsBrokered: true },
     };
   }
 
-  async catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]> {
-    const connected = this.connectedByUser.get(userId) ?? new Set<string>();
+  async catalog(context: AdapterContext, query?: string) {
+    const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
     return filterCatalog(
       this.directory.map((item) => ({ ...item, connected: connected.has(item.slug) })),
       query ?? "",
-    );
+    ).map((item) => ({ ...item, connectorId: "composio" }));
   }
 
   async warmDirectory(): Promise<void> {}
@@ -50,12 +55,30 @@ export class ComposioEmulator implements ComposioProvider {
     return [...(this.connectedByUser.get(userId) ?? [])];
   }
 
-  async discoverTools(_context: AdapterContext): Promise<ConnectorTool[]> {
-    return [];
+  async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
+    return this.listConnectedSlugs(context.userId);
   }
 
-  async *execute(call: ConnectorCall, _context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    yield { type: "error", message: `Composio emulator cannot execute ${call.tool}` };
+  async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
+    const connected =
+      context.connectedConnections
+        ?.filter((connection) => connection.connectorId === "composio")
+        .map((connection) => connection.externalId) ??
+      context.connectedProviders ??
+      [];
+    return [...new Set(connected)].map((slug) => ({
+      name: `${slug}_EMULATED_ACTION`,
+      description: `Run a deterministic ${slug} action`,
+      inputSchema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+      },
+    }));
+  }
+
+  async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
+    this.executions.push({ userId: context.userId, tool: call.tool, args: call.args });
+    yield { type: "result", data: { ok: true, tool: call.tool, args: call.args } };
   }
 
   async begin(
@@ -68,8 +91,8 @@ export class ComposioEmulator implements ComposioProvider {
     return { authorizationUrl: null, state: request.provider };
   }
 
-  async connectionReady(userId: string, slug: string): Promise<boolean> {
-    return this.connectedByUser.get(userId)?.has(slug) ?? false;
+  async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
+    return this.connectedByUser.get(context.userId)?.has(slug) ?? false;
   }
 
   async complete(

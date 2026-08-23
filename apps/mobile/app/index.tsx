@@ -4,6 +4,7 @@ import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -20,6 +21,7 @@ import {
   loadSessionToken,
   type MobileBot,
   type MobileBotSection,
+  type MobileGroup,
   type MobileMe,
   rpc,
 } from "../lib/api";
@@ -34,11 +36,13 @@ const FALLBACK_COLOR = "#9B5CF6";
 
 type InboxItem =
   | { type: "bot"; bot: MobileBot }
+  | { type: "group"; group: MobileGroup }
   | { type: "search"; hit: SearchHit }
   | { type: "heading"; key: string; title: string };
 
 export default function Home() {
   const [bots, setBots] = useState<MobileBot[]>([]);
+  const [groups, setGroups] = useState<MobileGroup[]>([]);
   const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,12 +58,14 @@ export default function Home() {
   const loadBots = useCallback(async () => {
     setError(null);
     try {
-      const [nextBots, nextSections] = await Promise.all([
+      const [nextBots, nextSections, nextGroups] = await Promise.all([
         rpc<MobileBot[]>("bots/list"),
         rpc<MobileBotSection[]>("botSections/list"),
+        rpc<MobileGroup[]>("groups/list"),
       ]);
       setBots(nextBots);
       setBotSections(nextSections);
+      setGroups(nextGroups);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load bots");
     }
@@ -127,11 +133,15 @@ export default function Home() {
     if (query.trim() && searching) {
       return searchHits.map((hit) => ({ type: "search", hit }));
     }
-    return groupBotsForSidebar(visible, botSections).flatMap((group) => [
+    const items: InboxItem[] = groupBotsForSidebar(visible, botSections).flatMap((group) => [
       ...(group.title ? [{ type: "heading" as const, key: group.key, title: group.title }] : []),
       ...group.bots.map((bot) => ({ type: "bot" as const, bot })),
     ]);
-  }, [botSections, query, searching, searchHits, visible]);
+    for (const group of groups) {
+      items.push({ type: "group", group });
+    }
+    return items;
+  }, [botSections, groups, query, searching, searchHits, visible]);
   const initials = userInitials(me?.name ?? "");
   const organizeBot = bots.find((bot) => bot.id === organizeBotId) ?? null;
   const insets = useSafeAreaInsets();
@@ -165,7 +175,16 @@ export default function Home() {
           >
             <NativeSymbol ios="magnifyingglass" android="search" size={17} />
           </CircleButton>
-          <CircleButton accessibilityLabel="New bot" onPress={() => router.push("/new")}>
+          <CircleButton
+            accessibilityLabel="Create"
+            onPress={() =>
+              Alert.alert("Create", undefined, [
+                { text: "New bot", onPress: () => router.push("/new") },
+                { text: "New group", onPress: () => router.push("/new-group") },
+                { text: "Cancel", style: "cancel" },
+              ])
+            }
+          >
             <NativeSymbol ios="plus" android="add" size={18} />
           </CircleButton>
         </View>
@@ -194,6 +213,7 @@ export default function Home() {
         keyExtractor={(item) => {
           if (item.type === "heading") return `heading-${item.key}`;
           if (item.type === "bot") return item.bot.id;
+          if (item.type === "group") return `group-${item.group.id}`;
           const hit = item.hit;
           return `${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
         }}
@@ -235,6 +255,8 @@ export default function Home() {
             />
           ) : item.type === "heading" ? (
             <Text style={styles.sectionHeading}>{item.title}</Text>
+          ) : item.type === "group" ? (
+            <GroupRow group={item.group} />
           ) : (
             <BotRow bot={item.bot} onLongPress={() => setOrganizeBotId(item.bot.id)} />
           )
@@ -355,6 +377,42 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
   );
 }
 
+function GroupRow({ group }: { group: MobileGroup }) {
+  const router = useRouter();
+  const preview =
+    previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
+  const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
+  return (
+    <Pressable
+      accessibilityLabel={[group.name, group.unread ? "unread" : null, time, preview]
+        .filter(Boolean)
+        .join(", ")}
+      onPress={() =>
+        router.push({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } })
+      }
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={[styles.groupAvatar]}>
+        <Text style={styles.groupAvatarLabel}>G</Text>
+      </View>
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.name} numberOfLines={1}>
+            {group.name}
+          </Text>
+          <View style={styles.rowMeta}>
+            {time ? <Text style={styles.time}>{time}</Text> : null}
+            {group.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+          </View>
+        </View>
+        <Text style={[styles.preview, group.unread && styles.unreadPreview]} numberOfLines={1}>
+          {preview}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -412,14 +470,6 @@ const styles = StyleSheet.create({
   list: {
     flexGrow: 1,
     paddingBottom: 32,
-  },
-  sectionHeading: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    fontWeight: "600",
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 6,
   },
   empty: {
     color: native.secondaryLabel,
@@ -495,5 +545,26 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: "#8B5CF6",
+  },
+  sectionHeading: {
+    color: native.secondaryLabel,
+    fontSize: 14,
+    fontWeight: "600",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  groupAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#232326",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupAvatarLabel: {
+    color: "#C9C9CE",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

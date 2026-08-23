@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -11,14 +11,23 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const botList = page.locator("aside").first();
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
-  await page.getByTitle("New bot").click();
+  await openNewBot(page);
   await expect(page.getByText("New bot", { exact: true })).toBeVisible();
   await page.locator("label:has-text('Name') input").fill("Researcher");
-  await page.locator("label:has-text('Title') input").fill("Market researcher");
+  const longTitle = `Market researcher ${"and source verifier ".repeat(9)}`;
+  const normalizedLongTitle = longTitle.trim();
+  expect(longTitle.length).toBeGreaterThan(160);
+  await page.locator("label:has-text('Title') input").fill(longTitle);
   await page
     .locator("label:has-text('Description') textarea")
     .fill("Finds reliable sources and turns them into concise briefs.");
   await captureScreenshot(page, testInfo, "26-new-bot-form");
+  await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "26a-new-bot-error");
+  await page.unroute("**/rpc/bots/create");
   await page.getByRole("button", { name: "Create", exact: true }).click();
 
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
@@ -31,14 +40,24 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27-created-bot");
 
   await page.locator("main").getByRole("button", { name: "Researcher", exact: true }).click();
+  await expect(page.getByText("Settings", { exact: true })).toBeVisible();
   const nameInput = page.locator("label:has-text('Name') input");
   const titleInput = page.locator("label:has-text('Title') input");
   const descriptionInput = page.locator("label:has-text('Description') textarea");
   await expect(nameInput).toHaveValue("Researcher");
-  await expect(titleInput).toHaveValue("Market researcher");
+  await expect(titleInput).toHaveValue(normalizedLongTitle);
   await expect(descriptionInput).toHaveValue(
     "Finds reliable sources and turns them into concise briefs.",
   );
+  await captureScreenshot(page, testInfo, "27a-settings-panel");
+  await page.getByRole("button", { name: "Show computer" }).click();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");
+  await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();
+  const bootOverlay = page.getByText(/Booting up .* computer/);
+  await expect(bootOverlay).toBeVisible();
+  await expect(bootOverlay).toBeHidden();
+  await captureScreenshot(page, testInfo, "27b-computer-panel");
+  await page.getByRole("button", { name: "Show settings" }).click();
 
   await nameInput.fill("Atlas");
   await titleInput.fill("Research lead");

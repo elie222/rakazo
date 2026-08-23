@@ -4,8 +4,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -40,17 +40,8 @@ import {
 
 loadRootEnv();
 
-const dockerOptions: Docker.DockerOptions = {};
-if (process.env.DOCKER_HOST) {
-  // dockerode handles DOCKER_HOST automatically
-} else if (process.env.DOCKER_SOCKET) {
-  dockerOptions.socketPath = process.env.DOCKER_SOCKET;
-} else if (process.platform === "win32") {
-  dockerOptions.socketPath = "//./pipe/docker_engine";
-} else {
-  dockerOptions.socketPath = "/var/run/docker.sock";
-}
-const docker = new Docker(dockerOptions);
+const dockerSocketPath = resolveDockerSocketPath();
+const docker = dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) : new Docker();
 const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
@@ -64,6 +55,16 @@ const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 const app = new Hono();
 
 export { app as supervisorApp };
+
+export function resolveDockerSocketPath(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+) {
+  if (env.DOCKER_HOST) return undefined;
+  return (
+    env.DOCKER_SOCKET ?? (platform === "win32" ? "//./pipe/docker_engine" : "/var/run/docker.sock")
+  );
+}
 
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
 
@@ -605,9 +606,6 @@ function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo
   if (!dataMount?.Source) return serviceHomePath;
   return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
-
-
-
 async function publishedScreenUrl(
   container: Docker.Container,
   initialInfo?: Docker.ContainerInspectInfo,

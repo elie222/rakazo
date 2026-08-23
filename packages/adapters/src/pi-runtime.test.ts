@@ -1,78 +1,51 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { normalizeAgentToolName, normalizeAgentToolNames, PiAgentRuntime } from "./pi-runtime.js";
+import { describeToolActivity } from "./pi-runtime.js";
 
-function tool(name: string): ConnectorTool {
-  return { name, description: name, inputSchema: { type: "object" } };
-}
-
-describe("Pi agent runtime", () => {
-  it("reports an unknown model without calling a provider", async () => {
-    const runtime = new PiAgentRuntime();
-    const events: string[] = [];
-    for await (const event of runtime.run(
-      {
-        botId: "b",
-        threadId: "t",
-        runId: "r",
-        prompt: "hi",
-        instructions: "test",
-        history: [],
-        tools: [],
-        model: { provider: "openrouter", id: "not-a-real-model-xyz" },
-      },
-      {
-        operationId: "1",
-        traceId: "1",
-        workspaceId: "w",
-        userId: "u",
-        signal: new AbortController().signal,
-      },
-    )) {
-      if (event.type === "text") events.push(event.text);
-    }
-    expect(events.join(" ")).toMatch(/Unknown model/i);
-  });
-});
-
-describe("Pi model-facing connector tool names", () => {
-  it("leaves builtin-compatible names unchanged", () => {
-    expect(normalizeAgentToolName("write_file")).toBe("write_file");
-    expect(normalizeAgentToolNames([tool("write_file"), tool("shell")])).toEqual([
-      "write_file",
-      "shell",
-    ]);
+describe("describeToolActivity", () => {
+  it("summarizes builtin tools with their most informative argument", () => {
+    expect(describeToolActivity("shell", { command: "pnpm test --filter web" })).toBe(
+      "Running: pnpm test --filter web",
+    );
+    expect(describeToolActivity("read_file", { path: "notes/plan.md" })).toBe(
+      "Reading notes/plan.md",
+    );
+    expect(describeToolActivity("write_file", { path: "out.csv", content: "…" })).toBe(
+      "Writing out.csv",
+    );
+    expect(describeToolActivity("render_plot", { spec: {} })).toBe("Rendering a chart");
+    expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
+      "Delegating to helper: scout",
+    );
   });
 
-  it("normalizes punctuation, whitespace, and Unicode to the provider-safe pattern", () => {
-    const names = normalizeAgentToolNames([
-      tool("destination.write"),
-      tool("Google Calendar / criar evento"),
-      tool("🦊"),
-    ]);
-
-    expect(names[0]).toBe("destination_write");
-    expect(names[1]).toBe("Google_Calendar_criar_evento");
-    expect(names[2]).toBe("connector_tool");
-    expect(names.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
+  it("names MCP server and remote tool", () => {
+    expect(describeToolActivity("mcp__brex__list_expenses", {})).toBe("Using brex: list_expenses");
+    expect(describeToolActivity("mcp__demo-oauth__greet", {})).toBe("Using demo-oauth: greet");
   });
 
-  it("limits long names to the provider's 64-character maximum", () => {
-    const name = normalizeAgentToolName(`very-long-${"x".repeat(100)}`);
-
-    expect(name).toHaveLength(64);
-    expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
+  it("truncates long details and collapses whitespace", () => {
+    const long = `x${"y".repeat(200)}`;
+    const line = describeToolActivity("shell", { command: `a\n\t${long}` });
+    expect(line.length).toBeLessThanOrEqual("Running: ".length + 91);
+    expect(line).toContain("…");
+    expect(line).not.toContain("\n");
+    expect(line).toMatch(/^Running: a x/);
   });
 
-  it("keeps normalized names unique and deterministic without shadowing valid names", () => {
-    const tools = [tool("foo.bar"), tool("foo bar"), tool("foo_bar"), tool("🦊"), tool("🦊")];
+  it("redacts credentials from activity details", () => {
+    const line = describeToolActivity("shell", {
+      command:
+        "curl -H 'Authorization: Bearer fake-token' https://example.test?api_key=fake-key password=fake-password",
+    });
 
-    const first = normalizeAgentToolNames(tools);
-    const second = normalizeAgentToolNames(tools);
+    expect(line).toContain("Bearer [redacted]");
+    expect(line).toContain("api_key=[redacted]");
+    expect(line).not.toContain("fake-token");
+    expect(line).not.toContain("fake-key");
+    expect(line).not.toContain("fake-password");
+  });
 
-    expect(second).toEqual(first);
-    expect(new Set(first).size).toBe(tools.length);
-    expect(first[2]).toBe("foo_bar");
-    expect(first.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
+  it("falls back to the tool name", () => {
+    expect(describeToolActivity("destination_write", undefined)).toBe("Using destination_write");
   });
 });

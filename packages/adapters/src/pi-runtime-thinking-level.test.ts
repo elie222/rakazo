@@ -1,0 +1,130 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const fakeAgentState = vi.hoisted(() => ({
+  thinkingLevels: [] as string[],
+  models: [] as Array<{
+    id: string;
+    provider: string;
+    reasoning: boolean;
+    contextWindow?: number;
+    maxTokens?: number;
+  }>,
+}));
+
+type FakeAgentTool = {
+  name: string;
+  execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
+};
+
+vi.mock("@earendil-works/pi-agent-core", () => ({
+  Agent: class {
+    state = { errorMessage: undefined, messages: [] };
+    private readonly tools: FakeAgentTool[];
+
+    constructor(options: {
+      initialState: {
+        thinkingLevel: string;
+        tools: FakeAgentTool[];
+        model: (typeof fakeAgentState.models)[number];
+      };
+    }) {
+      this.tools = options.initialState.tools;
+      fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
+      fakeAgentState.models.push(options.initialState.model);
+    }
+
+    subscribe(_listener: unknown) {}
+    async prompt() {
+      const runSubagent = this.tools.find((tool) => tool.name === "run_subagent");
+      await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
+    }
+    async waitForIdle() {}
+    abort() {}
+  },
+}));
+
+vi.mock("@earendil-works/pi-ai/providers/all", () => ({
+  builtinModels: () => ({
+    getModel: (_provider: string, modelId: string) => {
+      if (modelId === "reasoning-model") return { provider: "test", id: modelId, reasoning: true };
+      if (modelId === "plain-model") return { provider: "test", id: modelId, reasoning: false };
+      return undefined;
+    },
+    streamSimple: () => {
+      throw new Error("the fake agent must not call a provider");
+    },
+  }),
+}));
+
+vi.mock("./pi-local-provider.js", () => ({
+  registerLocalProvider: (models: unknown) => models,
+}));
+
+import { PiAgentRuntime } from "./pi-runtime.js";
+
+async function runWithModel(modelId: string, provider = "test") {
+  const runtime = new PiAgentRuntime();
+  for await (const _event of runtime.run(
+    {
+      botId: "b",
+      threadId: "t",
+      runId: "r",
+      prompt: "hello",
+      instructions: "",
+      history: [],
+      tools: [],
+      model: { provider, id: modelId },
+      executeTool: vi.fn(async () => ({ ok: true })),
+    },
+    {
+      operationId: "1",
+      traceId: "1",
+      workspaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    },
+  )) {
+    // Exhaust the runtime event stream so the run completes.
+  }
+  return fakeAgentState.thinkingLevels;
+}
+
+describe("Pi agent thinking level", () => {
+  beforeEach(() => {
+    fakeAgentState.thinkingLevels = [];
+    fakeAgentState.models = [];
+    vi.unstubAllEnvs();
+  });
+
+  it("uses medium reasoning for the main agent and subagent", async () => {
+    expect(await runWithModel("reasoning-model")).toEqual(["medium", "medium"]);
+  });
+
+  it("keeps reasoning off for the main agent and subagent", async () => {
+    expect(await runWithModel("plain-model")).toEqual(["off", "off"]);
+  });
+
+  it("normalizes and runs a configured OpenRouter model absent from the static catalog", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", " openrouter ");
+    vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");
+
+    await runWithModel("  stealth/ox-alpha  ", "openrouter");
+
+    expect(fakeAgentState.models).toHaveLength(2);
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "stealth/ox-alpha",
+      provider: "openrouter",
+      reasoning: false,
+      contextWindow: 16_384,
+      maxTokens: 4_096,
+    });
+  });
+
+  it("uses the trimmed configured default for scripted requests", async () => {
+    vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");
+
+    await runWithModel("scripted", "scripted");
+
+    expect(fakeAgentState.models[0]?.id).toBe("stealth/ox-alpha");
+  });
+});

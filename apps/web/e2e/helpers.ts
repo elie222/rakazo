@@ -98,3 +98,8 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
   });
   await testInfo.attach(name, { contentType: "image/png", path: screenshotPath });
 }
+
+export async function openNewBot(page: Page) {
+  await page.getByTitle("Create").click();
+  await page.getByRole("button", { name: "New bot" }).click();
+}

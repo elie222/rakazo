@@ -10,6 +10,8 @@ import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
+import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
 export function createBackgroundJobHandlers(deps: {
@@ -21,6 +23,8 @@ export function createBackgroundJobHandlers(deps: {
   events: ThreadEvents;
   workerId: string;
   runtime: AgentRuntime;
+  secretStore: EncryptedSecretStore;
+  memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
 }): BackgroundJobHandlers {
   return {
@@ -47,6 +51,7 @@ export function createBackgroundJobHandlers(deps: {
           prisma: deps.prisma,
           runtime: deps.runtime,
           jobs: deps.jobs,
+          memoryProviders: deps.memoryProviders,
           deploymentModelKey: deps.deploymentModelKey,
           ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },

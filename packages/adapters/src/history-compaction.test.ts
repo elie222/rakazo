@@ -1,4 +1,9 @@
-import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
+import type {
+  AgentRunRequest,
+  AgentRuntime,
+  JobPublisher,
+  SemanticMemoryResponse,
+} from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -14,7 +19,6 @@ import {
   selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
-import type { SupermemorySaveResponse } from "./supermemory-client.js";
 
 describe("shouldEnqueueCompaction", () => {
   it("is false when nothing has aged out of the window yet", () => {
@@ -46,25 +50,25 @@ describe("nextCompactionBatchRange", () => {
 describe("historyWindowSize", () => {
   it("uses the smaller window only after compaction and a successful recall", () => {
     expect(
-      historyWindowSize({ supermemoryEnabled: true, compacted: true, recallSucceeded: true }),
+      historyWindowSize({ semanticMemoryEnabled: true, compacted: true, recallSucceeded: true }),
     ).toBe(50);
   });
 
   it("keeps the legacy window until a thread has actually been compacted", () => {
     expect(
-      historyWindowSize({ supermemoryEnabled: true, compacted: false, recallSucceeded: false }),
+      historyWindowSize({ semanticMemoryEnabled: true, compacted: false, recallSucceeded: false }),
     ).toBe(200);
   });
 
   it("keeps the legacy window when recall fails so compacted facts are not dropped", () => {
     expect(
-      historyWindowSize({ supermemoryEnabled: true, compacted: true, recallSucceeded: false }),
+      historyWindowSize({ semanticMemoryEnabled: true, compacted: true, recallSucceeded: false }),
     ).toBe(200);
   });
 
-  it("uses the legacy 200-message window when Supermemory is not configured", () => {
+  it("uses the legacy 200-message window when semantic memory is not configured", () => {
     expect(
-      historyWindowSize({ supermemoryEnabled: false, compacted: true, recallSucceeded: true }),
+      historyWindowSize({ semanticMemoryEnabled: false, compacted: true, recallSucceeded: true }),
     ).toBe(200);
   });
 });
@@ -215,7 +219,10 @@ function compactionHarness(
       userId: string;
       workspaceId: string;
     }) => Promise<AgentRunRequest["model"]>;
-    withSupermemorySaver?: boolean;
+    withMemoryProvider?: boolean;
+    memoryConfig?: {
+      defaultMemoryScope: string;
+    } | null;
   } = {},
 ) {
   const messages: HarnessMessage[] =
@@ -236,6 +243,14 @@ function compactionHarness(
     historyCompactionSummary: options.historyCompactionSummary ?? (null as string | null),
     historyCompactionGeneration: options.historyCompactionGeneration ?? 0,
   };
+  const memoryConfig =
+    options.memoryConfig === undefined
+      ? options.withMemoryProvider === false
+        ? null
+        : {
+            defaultMemoryScope: "isolated",
+          }
+      : options.memoryConfig;
   const prisma = {
     thread: {
       findUniqueOrThrow: vi.fn(async () => thread),
@@ -295,37 +310,64 @@ function compactionHarness(
       yield { type: "done", text: "Summary of 50 messages." };
     }),
   };
-  const saveSupermemoryMemory = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
-    ok: true,
-  }));
-  const deleteSupermemoryContainer = vi.fn<() => Promise<SupermemorySaveResponse>>(async () => ({
-    ok: true,
-  }));
+  const saveMemory = vi.fn(
+    async (): Promise<SemanticMemoryResponse> => ({ ok: true, value: undefined }),
+  );
+  const purgeHistory = vi.fn(
+    async (): Promise<SemanticMemoryResponse> => ({ ok: true, value: undefined }),
+  );
+  const memoryProviders = {
+    resolve: vi.fn(async () =>
+      memoryConfig
+        ? {
+            defaultScope:
+              memoryConfig.defaultMemoryScope === "shared"
+                ? ("shared" as const)
+                : ("isolated" as const),
+            provider: {
+              describe: () => ({
+                id: "test-memory",
+                contractVersion: "1",
+                adapterVersion: "1",
+                capabilities: {
+                  recall: true,
+                  save: true,
+                  purgeHistory: true,
+                  sharedScope: true,
+                } as const,
+              }),
+              recall: vi.fn(),
+              save: saveMemory,
+              purgeHistory,
+            },
+          }
+        : null,
+    ),
+  };
   const jobs = { enqueue: vi.fn(async () => undefined) };
   const deps = {
     prisma: prisma as unknown as PrismaClient,
     runtime: runtime as unknown as AgentRuntime,
     jobs: jobs as unknown as JobPublisher,
+    memoryProviders,
     deploymentModelKey: options.deploymentModelKey,
     ...(options.resolveModel ? { resolveModel: options.resolveModel } : {}),
-    ...(options.withSupermemorySaver === false
-      ? {}
-      : { saveSupermemoryMemory, deleteSupermemoryContainer }),
   };
   return {
     thread,
     messages,
     prisma,
     runtime,
-    saveSupermemoryMemory,
-    deleteSupermemoryContainer,
+    saveMemory,
+    purgeHistory,
+    memoryProviders,
     jobs,
     deps,
   };
 }
 
 describe("compactHistory", () => {
-  it("summarizes the next batch, saves it to Supermemory, and advances the cursor", async () => {
+  it("summarizes the next batch, saves it through the provider, and advances the cursor", async () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
 
     await compactHistory(harness.deps, "thread-1");
@@ -341,9 +383,14 @@ describe("compactHistory", () => {
     expect(request.prompt).toContain("message 0");
     expect(request.prompt).toContain("message 49");
 
-    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
-      "Summary of 50 messages.",
-      "rakazo:bot-1",
+    expect(harness.saveMemory).toHaveBeenCalledWith(
+      {
+        content: "Summary of 50 messages.",
+        scope: "isolated",
+        botId: "bot-1",
+        source: { kind: "history", generation: 0 },
+      },
+      expect.objectContaining({ workspaceId: "workspace-1", botId: "bot-1" }),
     );
 
     const [, context] = harness.runtime.run.mock.calls[0]!;
@@ -361,6 +408,27 @@ describe("compactHistory", () => {
         historyCompactionSummary: "Summary of 50 messages.",
       },
     });
+  });
+
+  it("keeps compaction summaries private so clearing a shared bot cannot expose stale history", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: {
+        defaultMemoryScope: "shared",
+      },
+    });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.saveMemory).toHaveBeenCalledOnce();
+    expect(harness.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Summary of 50 messages.",
+        scope: "isolated",
+        source: { kind: "history", generation: 0 },
+      }),
+      expect.any(Object),
+    );
   });
 
   it("serializes attachment metadata into the transcript", async () => {
@@ -391,21 +459,32 @@ describe("compactHistory", () => {
     expect(request.prompt).toContain("[image: diagram.png]");
   });
 
-  it("compacts locally without a Supermemory key", async () => {
+  it("compacts locally without a semantic memory provider", async () => {
     const harness = compactionHarness({
       settings: {
         defaultModelProvider: "openrouter",
         defaultModelId: "deepseek/deepseek-v4-flash-0731",
       },
-      withSupermemorySaver: false,
+      withMemoryProvider: false,
     });
 
     await compactHistory(harness.deps, "thread-1");
 
     expect(harness.runtime.run).toHaveBeenCalledOnce();
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
     expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+  });
+
+  it("keeps local compaction when the optional memory provider cannot be loaded", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+    harness.memoryProviders.resolve.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await compactHistory(harness.deps, "thread-1");
+
+    expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.saveMemory).not.toHaveBeenCalled();
   });
 
   it("uses the thread owner's resolved model for background compaction", async () => {
@@ -491,9 +570,12 @@ describe("compactHistory", () => {
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.prompt).toContain("new message 50");
     expect(request.prompt).not.toContain("message 0");
-    expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
-      "Summary of 50 messages.",
-      "rakazo:bot-1:history:1",
+    expect(harness.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Summary of 50 messages.",
+        source: { kind: "history", generation: 1 },
+      }),
+      expect.any(Object),
     );
     expect(harness.thread.historyCompactedUpToSeq).toBe(99);
   });
@@ -538,7 +620,7 @@ describe("compactHistory", () => {
     await compactHistory(harness.deps, "thread-1");
 
     expect(harness.runtime.run).not.toHaveBeenCalled();
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
@@ -573,7 +655,7 @@ describe("compactHistory", () => {
   it("still advances when an unrelated thread event arrives during summarization", async () => {
     const harness = compactionHarness({
       deploymentModelKey: "openrouter-key",
-      withSupermemorySaver: false,
+      withMemoryProvider: false,
     });
     let releaseSummary!: () => void;
     let summarizationBegan!: () => void;
@@ -599,8 +681,13 @@ describe("compactHistory", () => {
     expect(harness.thread.historyCompactionSummary).toBe("valid summary");
   });
 
-  it("purges a stale Supermemory save when clear advances the history generation", async () => {
-    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+  it("purges a stale provider save when clear advances the history generation", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      memoryConfig: {
+        defaultMemoryScope: "shared",
+      },
+    });
     let releaseSave!: () => void;
     let saveBegan!: () => void;
     const saveCanFinish = new Promise<void>((resolve) => {
@@ -609,10 +696,10 @@ describe("compactHistory", () => {
     const saveStarted = new Promise<void>((resolve) => {
       saveBegan = resolve;
     });
-    harness.saveSupermemoryMemory.mockImplementationOnce(async () => {
+    harness.saveMemory.mockImplementationOnce(async () => {
       saveBegan();
       await saveCanFinish;
-      return { ok: true };
+      return { ok: true, value: undefined };
     });
 
     const pending = compactHistory(harness.deps, "thread-1");
@@ -624,7 +711,40 @@ describe("compactHistory", () => {
     await pending;
 
     expect(harness.thread.historyCompactionSummary).toBeNull();
-    expect(harness.deleteSupermemoryContainer).toHaveBeenCalledWith("rakazo:bot-1");
+    expect(harness.saveMemory).toHaveBeenCalledOnce();
+    expect(harness.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Summary of 50 messages.",
+        source: { kind: "history", generation: 0 },
+      }),
+      expect.any(Object),
+    );
+    expect(harness.purgeHistory).toHaveBeenCalledWith(
+      { botId: "bot-1", generations: [0] },
+      expect.any(Object),
+    );
+  });
+
+  it("continues draining the backlog when a stale-history purge throws", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      nextMessageSeq: 150,
+    });
+    harness.saveMemory.mockImplementationOnce(async () => {
+      harness.thread.historyCompactionGeneration = 1;
+      return { ok: true, value: undefined };
+    });
+    harness.purgeHistory.mockRejectedValueOnce(new Error("provider unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(compactHistory(harness.deps, "thread-1")).resolves.toBeUndefined();
+
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1"));
+    expect(consoleError).toHaveBeenCalledWith(
+      "history.compact could not purge stale semantic memory",
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
   });
 
   it("falls back to the deployment's configured default model when no deployment key is available", async () => {
@@ -670,7 +790,7 @@ describe("compactHistory", () => {
     await compactHistory(harness.deps, "thread-1");
 
     expect(harness.runtime.run).not.toHaveBeenCalled();
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
@@ -697,7 +817,7 @@ describe("compactHistory", () => {
 
     expect(harness.thread.historyCompactedUpToSeq).toBeNull();
     expect(harness.thread.historyCompactionSummary).toBeNull();
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
   });
 
   it("caps an oversized transcript without advancing past unsummarized messages", async () => {
@@ -758,8 +878,9 @@ describe("compactHistory", () => {
     await compactHistory(harness.deps, "thread-1");
 
     expect(harness.runtime.run).not.toHaveBeenCalled();
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.memoryProviders.resolve).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
@@ -773,7 +894,7 @@ describe("compactHistory", () => {
       "summarizer returned no summary",
     );
 
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
@@ -786,7 +907,7 @@ describe("compactHistory", () => {
 
     await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow("summarizer failed");
 
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
@@ -801,13 +922,13 @@ describe("compactHistory", () => {
       "summarizer unavailable",
     );
 
-    expect(harness.saveSupermemoryMemory).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
   });
 
-  it("keeps local compaction when the optional Supermemory save fails", async () => {
+  it("keeps local compaction when the optional provider save fails", async () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
-    harness.saveSupermemoryMemory.mockResolvedValueOnce({ ok: false, error: "network error" });
+    harness.saveMemory.mockResolvedValueOnce({ ok: false, error: "network error" });
 
     await compactHistory(harness.deps, "thread-1");
 

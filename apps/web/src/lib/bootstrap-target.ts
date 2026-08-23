@@ -5,7 +5,9 @@ export function initialBootstrapTarget(pathname: string, desktop: boolean) {
 }
 
 function botIdFromPath(pathname: string) {
-  const encoded = pathname.split("/")[2];
+  const segments = pathname.split("/");
+  if (segments[2] === "g") return undefined;
+  const encoded = segments[2];
   if (!encoded) return undefined;
   try {
     return decodeURIComponent(encoded);
