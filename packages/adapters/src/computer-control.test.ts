@@ -92,6 +92,22 @@ describe("computer control leases", () => {
     });
   });
 
+  it("resumes the run holding the takeover lease instead of a newer waiting run", async () => {
+    const harness = controlHarness({ executionRunId: "run-holding-takeover" });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.id === "run-holding-takeover" ? { id: "run-holding-takeover" } : { id: "newer-run" },
+    );
+
+    await expireComputerControl(harness.deps, "computer-id", "lease-1");
+
+    expect(harness.prisma.run.findFirst).toHaveBeenCalledWith({
+      where: { id: "run-holding-takeover", botId: "bot", status: "waiting_takeover" },
+    });
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-holding-takeover" }),
+    );
+  });
+
   it("keeps the denied lease retryable when provider revocation fails", async () => {
     const harness = controlHarness({
       revokeError: new Error("provider unavailable"),
@@ -187,6 +203,7 @@ function controlHarness(
     revokeError?: Error;
     finalizeError?: Error;
     waitingRunId?: string;
+    executionRunId?: string;
   } = {},
 ) {
   const computer = {
@@ -216,6 +233,11 @@ function controlHarness(
         thread: { id: "thread" },
         computer,
       }),
+    },
+    computerExecutionLease: {
+      findUnique: vi.fn().mockResolvedValue(
+        options.executionRunId ? { runId: options.executionRunId } : null,
+      ),
     },
     run: {
       findFirst: vi.fn().mockResolvedValue(

@@ -27,6 +27,7 @@ import {
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   expireComputerControl,
+  findWaitingTakeoverRun,
   hasActiveComputerControl,
   isSupermemoryEnabled,
   listPiCatalog,
@@ -1009,10 +1010,11 @@ export function createRouter(deps: RouterDeps) {
           );
         }
 
-        const waiting = await deps.prisma.run.findFirst({
-          where: { botId: controlBotId, status: "waiting_takeover" },
-          orderBy: { createdAt: "desc" },
-        });
+        const waiting = await findWaitingTakeoverRun(
+          deps.prisma,
+          bot.computer.id,
+          controlBotId,
+        );
         const released = await deps.events.finalizeComputerControlRelease({
           workspaceId: context.actor.workspaceId,
           computerId: bot.computer.id,
