@@ -1097,9 +1097,12 @@ export function ShellPage() {
       notifyOnFinish: true,
       computerMode: input.computerMode,
     });
-    await refreshBots();
+    setBots((current) =>
+      current.some((item) => item.id === bot.id) ? current : [bot, ...current],
+    );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    await refreshBots().catch(() => undefined);
   }
 
   async function bootComputer({
