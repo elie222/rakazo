@@ -777,6 +777,7 @@ model McpOAuthSession {
   server      McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
   endpoint    String
   redirectUri String
+  oauthCiphertext String
   createdAt   DateTime @default(now())
 
   @@index([workspaceId, userId, createdAt])

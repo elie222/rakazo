@@ -5,6 +5,7 @@ CREATE TABLE "mcp_oauth_sessions" (
   "serverId" TEXT NOT NULL,
   "endpoint" TEXT NOT NULL,
   "redirectUri" TEXT NOT NULL,
+  "oauthCiphertext" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "mcp_oauth_sessions_pkey" PRIMARY KEY ("id")
 );

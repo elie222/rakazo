@@ -257,6 +257,7 @@ describe("MCP OAuth", () => {
 
   it("completes a persisted OAuth session after the API process restarts", async () => {
     const sessionId = "5d259fd9-b9fa-478e-a268-cc778816a043";
+    let tokenRequestBody = "";
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -264,6 +265,7 @@ describe("MCP OAuth", () => {
         if (request.url !== "https://auth.example.test/token") {
           throw new Error(`Unexpected request: ${request.method} ${request.url}`);
         }
+        tokenRequestBody = await request.text();
         return Response.json({ access_token: "fresh", token_type: "bearer" });
       }),
     );
@@ -294,6 +296,7 @@ describe("MCP OAuth", () => {
       serverId: "server-1",
       endpoint: "https://mcp.example.test/mcp",
       redirectUri: material.oauth.redirectUri,
+      oauthCiphertext: "session-first",
       createdAt: new Date(),
     });
     const prisma = {
@@ -314,7 +317,13 @@ describe("MCP OAuth", () => {
       $transaction: vi.fn().mockResolvedValue([]),
     };
     const secrets = {
-      load: vi.fn(() => JSON.stringify(material)),
+      load: vi.fn((ciphertext: string) =>
+        JSON.stringify(
+          ciphertext === "session-first"
+            ? material
+            : { oauth: { ...material.oauth, codeVerifier: "wrong-later-verifier" } },
+        ),
+      ),
       put: vi.fn(async () => ({ id: "secret-2", ciphertext: "encrypted-2" })),
     };
     const restartedBroker = new McpOAuthBroker(prisma as never, secrets as never, TEST_NETWORK);
@@ -330,6 +339,7 @@ describe("MCP OAuth", () => {
     expect(sessions.deleteMany).toHaveBeenCalledWith({
       where: { id: sessionId, workspaceId: "workspace-1", userId: "user-1" },
     });
+    expect(new URLSearchParams(tokenRequestBody).get("code_verifier")).toBe("persisted-verifier");
     expect(prisma.mcpServer.update).toHaveBeenCalledWith({
       where: { id: "server-1" },
       data: { revision: { increment: 1 } },

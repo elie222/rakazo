@@ -299,6 +299,14 @@ export class McpOAuthBroker {
       }
       return { status: "authorization_not_requested" };
     }
+    const sessionMaterial = await this.secrets.put(JSON.stringify(loaded.material), {
+      operationId: "mcp.oauth.session",
+      traceId: "mcp.oauth.session",
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      botId: "mcp",
+      signal: new AbortController().signal,
+    });
     await this.prisma.mcpOAuthSession.create({
       data: {
         id: sessionId,
@@ -307,6 +315,7 @@ export class McpOAuthBroker {
         userId: input.userId,
         endpoint: server.endpoint,
         redirectUri: input.redirectUri,
+        oauthCiphertext: sessionMaterial.ciphertext,
       },
     });
     const expiry = setTimeout(() => {
@@ -367,7 +376,10 @@ export class McpOAuthBroker {
       });
       if (!server?.endpoint) throw new Error("MCP OAuth session is invalid or expired");
       const context = { workspaceId: input.workspaceId, userId: input.userId };
-      const loaded = await this.loadMaterial(server, context);
+      const loaded = {
+        material: this.read(session.oauthCiphertext),
+        ...(server.secretId ? { secretId: server.secretId } : {}),
+      };
       pending = {
         serverId: server.id,
         workspaceId: input.workspaceId,
