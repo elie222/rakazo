@@ -19,23 +19,53 @@ export function supermemoryContainerTagFor(
   scope: "isolated" | "shared",
   botId: string,
   workspaceId: string,
-  historyGeneration = 0,
 ): string {
   if (scope === "shared") return `rakazo:workspace:${workspaceId}`;
-  return historyGeneration > 0 ? `rakazo:${botId}:history:${historyGeneration}` : `rakazo:${botId}`;
+  return `rakazo:${botId}`;
 }
 
 export function supermemoryContainerTagsFor(
   scope: "isolated" | "shared",
   botId: string,
   workspaceId: string,
-  historyGeneration = 0,
 ): string[] {
-  // Shared operations also use a private bot mirror. Searching both keeps bot-authored memories
-  // available if its scope changes later; writing both allows private history to be purged without
-  // deleting the workspace container used by other bots.
-  const isolatedTag = supermemoryContainerTagFor("isolated", botId, workspaceId, historyGeneration);
+  // Shared durable memories also use a private bot mirror so they remain available if the bot's
+  // scope changes later.
+  const isolatedTag = supermemoryContainerTagFor("isolated", botId, workspaceId);
   return scope === "shared"
     ? [supermemoryContainerTagFor("shared", botId, workspaceId), isolatedTag]
     : [isolatedTag];
+}
+
+/** Conversation-derived summaries are isolated from durable memories so clear can purge safely. */
+export function supermemoryHistoryContainerTagFor(
+  botId: string,
+  historyGeneration: number,
+): string {
+  return `rakazo:${botId}:history:${historyGeneration}`;
+}
+
+export function supermemoryRecallContainerTagsFor(
+  scope: "isolated" | "shared",
+  botId: string,
+  workspaceId: string,
+  historyGeneration: number,
+): string[] {
+  return [
+    ...supermemoryContainerTagsFor(scope, botId, workspaceId),
+    supermemoryHistoryContainerTagFor(botId, historyGeneration),
+  ];
+}
+
+export function supermemoryHistoryContainerTagsForClear(
+  botId: string,
+  historyGenerationAfterClear: number,
+): string[] {
+  const previousGeneration = Math.max(0, historyGenerationAfterClear - 1);
+  return [
+    ...new Set([
+      supermemoryHistoryContainerTagFor(botId, previousGeneration),
+      supermemoryHistoryContainerTagFor(botId, historyGenerationAfterClear),
+    ]),
+  ];
 }

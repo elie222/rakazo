@@ -64,7 +64,7 @@ import {
   Prisma,
   type PrismaClient,
   parseComputerMode,
-  supermemoryContainerTagsFor,
+  supermemoryHistoryContainerTagsForClear,
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -616,9 +616,9 @@ export function createRouter(deps: RouterDeps) {
           where: { workspaceId: context.actor.workspaceId },
           include: { secret: true },
         });
-        // Shared memories remain in the workspace container, but every bot also has a private
-        // mirror so changing scope never strands its own memories. Clearing removes that mirror
-        // without touching memories contributed by other shared bots.
+        // Durable memories remain in their workspace/private containers. Clear only removes
+        // conversation-derived summaries from the previous generation; including the new
+        // generation also covers a compaction job that began just after the clear committed.
         if (memoryConfig) {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
@@ -627,17 +627,10 @@ export function createRouter(deps: RouterDeps) {
               baseUrl: memoryConfig.baseUrl,
               apiKey: deps.secrets.load(memoryConfig.secret.ciphertext),
             };
-            const tags = [
-              ...new Set([
-                ...supermemoryContainerTagsFor("isolated", bot.id, context.actor.workspaceId),
-                ...supermemoryContainerTagsFor(
-                  "isolated",
-                  bot.id,
-                  context.actor.workspaceId,
-                  historyCompactionGeneration,
-                ),
-              ]),
-            ];
+            const tags = supermemoryHistoryContainerTagsForClear(
+              bot.id,
+              historyCompactionGeneration,
+            );
             await Promise.all(
               tags.map(async (tag) => {
                 const purged = await deleteSupermemoryContainer(tag, connection);

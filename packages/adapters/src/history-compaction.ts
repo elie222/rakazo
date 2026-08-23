@@ -2,7 +2,7 @@ import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapte
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
-import { type PrismaClient, supermemoryContainerTagFor } from "@rakazo/db";
+import { type PrismaClient, supermemoryHistoryContainerTagFor } from "@rakazo/db";
 import type { EncryptedSecretStore } from "./secrets.js";
 import {
   deleteSupermemoryContainer as defaultDeleteSupermemoryContainer,
@@ -339,12 +339,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
         // Compaction summaries belong to one conversation owner and must remain purgeable when
         // that conversation is cleared. Shared bots still search this private mirror alongside
         // their workspace container, while explicit save_memory calls retain shared semantics.
-        containerTag: supermemoryContainerTagFor(
-          "isolated",
-          thread.botId,
-          thread.workspaceId,
-          previousGeneration,
-        ),
+        containerTag: supermemoryHistoryContainerTagFor(thread.botId, previousGeneration),
       };
     }
   } catch (error) {

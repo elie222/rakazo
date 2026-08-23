@@ -47,6 +47,7 @@ import {
   type PrismaClient,
   parseComputerMode,
   supermemoryContainerTagsFor,
+  supermemoryRecallContainerTagsFor,
   type ThreadEvents,
 } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
@@ -453,18 +454,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
           signal: runAbortController.signal,
           connectedProviders: connectedPlugins.map((row) => row.provider),
         };
-        const supermemory = memoryConfig
-          ? {
-              baseUrl: memoryConfig.baseUrl,
-              apiKey: deps.secretStore.load(memoryConfig.secret.ciphertext),
-              containerTags: supermemoryContainerTagsFor(
-                effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope),
-                bot.id,
-                run.workspaceId,
-                thread.historyCompactionGeneration,
-              ),
-            }
+        const memoryScope = memoryConfig
+          ? effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope)
           : null;
+        const supermemory =
+          memoryConfig && memoryScope
+            ? {
+                baseUrl: memoryConfig.baseUrl,
+                apiKey: deps.secretStore.load(memoryConfig.secret.ciphertext),
+                recallContainerTags: supermemoryRecallContainerTagsFor(
+                  memoryScope,
+                  bot.id,
+                  run.workspaceId,
+                  thread.historyCompactionGeneration,
+                ),
+                saveContainerTags: supermemoryContainerTagsFor(
+                  memoryScope,
+                  bot.id,
+                  run.workspaceId,
+                ),
+              }
+            : null;
 
         await deps.events.append({
           workspaceId: run.workspaceId,
@@ -509,7 +519,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (supermemory && thread.historyCompactedUpToSeq != null) {
           const recalled = await searchSupermemoryContainers(
             task.prompt,
-            supermemory.containerTags,
+            supermemory.recallContainerTags,
             supermemory,
           );
           if (recalled.ok && recalled.results.length > 0) {
@@ -868,7 +878,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "recall_memory") {
             return searchSupermemoryContainers(
               String(args.query ?? ""),
-              supermemory!.containerTags,
+              supermemory!.recallContainerTags,
               supermemory!,
             );
           }
@@ -876,7 +886,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(
               await saveSupermemoryMemoryToContainers(
                 String(args.content ?? ""),
-                supermemory!.containerTags,
+                supermemory!.saveContainerTags,
                 supermemory!,
               ),
             );

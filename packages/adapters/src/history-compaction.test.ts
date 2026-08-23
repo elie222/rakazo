@@ -365,7 +365,7 @@ describe("compactHistory", () => {
 
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
       "Summary of 50 messages.",
-      "rakazo:bot-1",
+      "rakazo:bot-1:history:0",
       { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
     );
 
@@ -401,7 +401,7 @@ describe("compactHistory", () => {
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledOnce();
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
       "Summary of 50 messages.",
-      "rakazo:bot-1",
+      "rakazo:bot-1:history:0",
       { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
     );
   });
@@ -691,10 +691,10 @@ describe("compactHistory", () => {
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledOnce();
     expect(harness.saveSupermemoryMemory).toHaveBeenCalledWith(
       "Summary of 50 messages.",
-      "rakazo:bot-1",
+      "rakazo:bot-1:history:0",
       { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" },
     );
-    expect(harness.deleteSupermemoryContainer).toHaveBeenCalledWith("rakazo:bot-1", {
+    expect(harness.deleteSupermemoryContainer).toHaveBeenCalledWith("rakazo:bot-1:history:0", {
       baseUrl: "http://localhost:6767",
       apiKey: "sm_test_key",
     });
