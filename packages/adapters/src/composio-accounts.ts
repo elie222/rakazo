@@ -70,12 +70,12 @@ export function buildComposioMultiAccountOptions(
     if (!toolkit || !id) continue;
     const ids = connectedAccounts[toolkit] ?? [];
     connectedAccounts[toolkit] = ids;
-    if (!ids.includes(id)) ids.push(id);
+    if (!ids.includes(id) && ids.length < 10) ids.push(id);
   }
   return {
     multiAccount: {
       enable: true,
-      maxAccountsPerToolkit: 5,
+      maxAccountsPerToolkit: 10,
       requireExplicitSelection: true,
     },
     connectedAccounts,

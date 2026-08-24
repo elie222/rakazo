@@ -2446,8 +2446,28 @@ export function createRouter(deps: RouterDeps) {
             });
           }
           try {
+            const providerRef = row.providerRef?.trim() || "";
+            const legacySlug =
+              !providerRef || providerRef.toLowerCase() === row.provider.trim().toLowerCase();
+            if (legacySlug) {
+              const siblings = await deps.prisma.connection.count({
+                where: {
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                  connectorId: row.connectorId,
+                  provider: row.provider,
+                  status: "connected",
+                  id: { not: row.id },
+                },
+              });
+              if (siblings > 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                  message: "Reconnect this account before revoking.",
+                });
+              }
+            }
             await connector.revoke(
-              row.providerRef ?? row.provider,
+              providerRef || row.provider,
               await connectedConnectionContext(
                 deps,
                 context.actor,
@@ -2456,6 +2476,7 @@ export function createRouter(deps: RouterDeps) {
               ),
             );
           } catch (error) {
+            if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
         }

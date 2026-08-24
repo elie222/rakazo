@@ -160,7 +160,10 @@ export function PluginsOverlay({
           await refreshBestEffort();
           return;
         }
-        if (row?.status === "revoked" || row?.status === "error") return;
+        if (row?.status === "revoked" || row?.status === "error") {
+          if (!controller.signal.aborted) await refreshBestEffort();
+          return;
+        }
         await abortableDelay(2_000, controller.signal);
       }
       if (controller.signal.aborted) return;

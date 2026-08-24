@@ -21,7 +21,7 @@ describe("Composio account selection", () => {
     expect(buildComposioMultiAccountOptions(accounts)).toEqual({
       multiAccount: {
         enable: true,
-        maxAccountsPerToolkit: 5,
+        maxAccountsPerToolkit: 10,
         requireExplicitSelection: true,
       },
       connectedAccounts: {
@@ -29,6 +29,16 @@ describe("Composio account selection", () => {
         googlecalendar: ["ca_calendar"],
       },
     });
+  });
+
+  it("caps each toolkit at ten connected-account ids for the session", () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      toolkit: "gmail",
+      id: `ca_${index}`,
+      alias: `a${index}`,
+    }));
+    expect(buildComposioMultiAccountOptions(many).connectedAccounts.gmail).toHaveLength(10);
+    expect(buildComposioMultiAccountOptions(many).multiAccount.maxAccountsPerToolkit).toBe(10);
   });
 
   it("resolves an explicit alias or connected-account id only within the requested toolkit", () => {

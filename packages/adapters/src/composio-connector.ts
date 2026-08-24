@@ -226,7 +226,7 @@ export class ComposioConnector implements ComposioProvider {
       sandbox: { enable: false },
       multiAccount: {
         enable: true,
-        maxAccountsPerToolkit: 5,
+        maxAccountsPerToolkit: 10,
         requireExplicitSelection: false,
       },
     });
@@ -550,13 +550,9 @@ function isManagedConnectorProvider(
 }
 
 function connectedComposioExternalIds(context: AdapterContext): string[] {
-  return (
-    context.connectedConnections
-      ?.filter((connection) => connection.connectorId === "composio")
-      .map((connection) => connection.externalId) ??
-    context.connectedProviders ??
-    []
-  );
+  return (context.connectedConnections ?? [])
+    .filter((connection) => connection.connectorId === "composio")
+    .map((connection) => connection.externalId);
 }
 
 export function createConnectorStack(
