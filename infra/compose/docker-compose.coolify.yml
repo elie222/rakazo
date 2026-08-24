@@ -1,0 +1,161 @@
+name: rakazo-coolify
+
+services:
+  data-init:
+    image: busybox:1
+    command: ["chown", "-R", "1000:1000", "/data"]
+    restart: "no"
+    volumes:
+      - appdata:/data
+
+  computer:
+    image: rakazo/computer:local
+    build:
+      context: infra/sandboxes/computer
+    command: ["true"]
+    restart: "no"
+    networks:
+      - internal
+
+  supervisor:
+    build:
+      context: .
+      dockerfile: infra/sandboxes/supervisor/Dockerfile
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      SUPERVISOR_HOST: 0.0.0.0
+      SUPERVISOR_PORT: 7091
+      DOCKER_SOCKET: /var/run/docker.sock
+      RAKAZO_COMPUTER_IMAGE: rakazo/computer:local
+      SANDBOX_SCREEN_NETWORK: internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - appdata:/data
+    networks:
+      - app
+      - internal
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      computer:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/compose/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+    restart: unless-stopped
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1536m
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: ${WAKEUP_DRIVER:-graphile}
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-pi}
+      GIT_SHA: ${GIT_SHA:-}
+    expose:
+      - "3100"
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      supervisor:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/compose/Dockerfile
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 2g
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: ${WAKEUP_DRIVER:-graphile}
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-pi}
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/compose/Dockerfile
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:3100
+    expose:
+      - "5173"
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  appdata:
+
+networks:
+  app:
+  internal:
