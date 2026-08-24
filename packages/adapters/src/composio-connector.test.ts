@@ -1,6 +1,6 @@
 import type { Composio } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   asConnectorTools,
   ComposioConnector,
@@ -302,6 +302,28 @@ describe("composio tool mapping", () => {
       { type: "error", message: "Choose a connected gmail account before running this action." },
     ]);
     expect(calls).toHaveLength(2);
+  });
+
+  it("checks the exact connected account before completing a multi-account authorization", async () => {
+    const get = vi.fn().mockResolvedValue({
+      id: "ca_work",
+      status: "ACTIVE",
+      isDisabled: false,
+      toolkit: { slug: "gmail" },
+    });
+    const connector = new ComposioConnector({ connectedAccounts: { get } } as unknown as Composio);
+    const context = { userId: "u", signal: new AbortController().signal } as AdapterContext;
+
+    await expect(connector.connectionReady(context, "GMAIL", "ca_work")).resolves.toBe(true);
+    expect(get).toHaveBeenCalledWith("ca_work");
+
+    get.mockResolvedValueOnce({
+      id: "ca_other",
+      status: "ACTIVE",
+      isDisabled: false,
+      toolkit: { slug: "slack" },
+    });
+    await expect(connector.connectionReady(context, "GMAIL", "ca_other")).resolves.toBe(false);
   });
 });
 

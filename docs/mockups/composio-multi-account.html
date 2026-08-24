@@ -112,14 +112,14 @@
               <h1 class="title">Integrations</h1>
               <p class="subtitle">Connect apps or add Treg, MCP, and OpenAPI tool sources.</p>
             </div>
-            <button class="close" aria-label="Close integrations">×</button>
+            <button type="button" class="close" aria-label="Close integrations">×</button>
           </header>
           <div class="content">
             <input class="search" aria-label="Search apps" placeholder="Search apps" />
             <div class="tabs" role="tablist" aria-label="Integration views">
-              <button class="tab">Apps</button>
-              <button class="tab active">Connected</button>
-              <button class="tab">Tool sources</button>
+              <button type="button" class="tab">Apps</button>
+              <button type="button" class="tab active">Connected</button>
+              <button type="button" class="tab">Tool sources</button>
             </div>
 
             <div id="flow-scenes">
@@ -130,7 +130,7 @@
                     <div class="app-name">Google Calendar</div>
                     <div class="app-meta">composio · googlecalendar</div>
                   </div>
-                  <button class="pill primary" data-next="1">Connect</button>
+                  <button type="button" class="pill primary" data-next="1">Connect</button>
                 </div>
                 <p class="scene-note">Start from Apps, find the provider, and choose Connect.</p>
               </section>
@@ -142,14 +142,14 @@
                     <div class="app-name">Google Calendar</div>
                     <div class="app-meta">composio · googlecalendar · 1 account connected</div>
                   </div>
-                  <button class="pill primary" data-next="2">＋ Add another account</button>
+                  <button type="button" class="pill primary" data-next="2">＋ Add another account</button>
                 </div>
                 <div class="account-panel">
                   <div class="account-row">
                     <div class="account-badge">P</div>
                     <div class="account-info">
                       <div class="account-label">Personal</div>
-                      <div class="account-address">shrage@gmail.com</div>
+                      <div class="account-address">personal@example.test</div>
                     </div>
                     <span class="status default">Default</span>
                   </div>
@@ -163,8 +163,8 @@
                   <h2 class="card-title">Connect another Google Calendar</h2>
                   <p class="card-copy">Rakazo opens the provider authorization page. This does not replace your Personal account.</p>
                   <div class="auth-actions">
-                    <button class="pill" data-next="1">Cancel</button>
-                    <button class="pill primary" data-next="3">Authorize Google</button>
+                    <button type="button" class="pill" data-next="1">Cancel</button>
+                    <button type="button" class="pill primary" data-next="3">Authorize Google</button>
                   </div>
                 </div>
                 <p class="scene-note">The second Connect action has its own authorization flow and returns to Rakazo when complete.</p>
@@ -179,8 +179,8 @@
                     </div>
                     <input class="label-input" id="account-label-input" value="Work" aria-label="Account label" />
                     <div class="label-footer">
-                      <span class="account-address">Connected identity · shrag@company.com</span>
-                      <button class="pill primary" data-next="4">Save account</button>
+                      <span class="account-address">Connected identity · work@example.test</span>
+                      <button type="button" class="pill primary" data-next="4">Save account</button>
                     </div>
                   </div>
                 </div>
@@ -194,27 +194,27 @@
                     <div class="app-name">Google Calendar</div>
                     <div class="app-meta">composio · googlecalendar · 2 accounts connected</div>
                   </div>
-                  <button class="pill" data-next="5">Manage accounts</button>
+                  <button type="button" class="pill" data-next="5">Manage accounts</button>
                 </div>
                 <div class="account-panel">
                   <div class="account-row">
                     <div class="account-badge">P</div>
                     <div class="account-info">
                       <div class="account-label">Personal</div>
-                      <div class="account-address">shrage@gmail.com</div>
+                      <div class="account-address">personal@example.test</div>
                     </div>
                     <span class="status default">Default</span>
-                    <button class="row-action" data-default="personal">Use as default</button>
+                    <button type="button" class="row-action" data-default="personal">Use as default</button>
                   </div>
                   <div class="divider"></div>
                   <div class="account-row">
                     <div class="account-badge">W</div>
                     <div class="account-info">
                       <div class="account-label" id="saved-account-label">Work</div>
-                      <div class="account-address">shrag@company.com</div>
+                      <div class="account-address">work@example.test</div>
                     </div>
                     <span class="status">Connected</span>
-                    <button class="row-action" data-default="work">Use as default</button>
+                    <button type="button" class="row-action" data-default="work">Use as default</button>
                   </div>
                 </div>
                 <p class="scene-note">The account list now shows both identities. The bot default can be changed without reconnecting either account.</p>
@@ -231,7 +231,7 @@
                     <div class="account-badge">W</div>
                     <div class="run-select-copy">
                       <div class="run-select-title">Work</div>
-                      <div class="run-select-meta">shrag@company.com · Google Calendar</div>
+                      <div class="run-select-meta">work@example.test · Google Calendar</div>
                     </div>
                     <span class="status default">Selected</span>
                   </div>
@@ -246,17 +246,17 @@
                 <h2 class="caption-title" id="caption-title">Start where you already connect apps</h2>
                 <p class="caption-body" id="caption-body">Open Apps, find Google Calendar, and press Connect. The first account follows the existing Rakazo connection flow.</p>
                 <div class="reel-controls">
-                  <button class="pill" id="previous-button">Previous</button>
-                  <button class="pill primary" id="next-button">Next beat</button>
+                  <button type="button" class="pill" id="previous-button">Previous</button>
+                  <button type="button" class="pill primary" id="next-button">Next beat</button>
                 </div>
               </div>
-              <div class="beat-card" aria-label="Storyboard beats">
-                <button class="beat active" data-beat="0"><span class="beat-dot"></span>Apps → Connect</button>
-                <button class="beat" data-beat="1"><span class="beat-dot"></span>Add another account</button>
-                <button class="beat" data-beat="2"><span class="beat-dot"></span>Authorize provider</button>
-                <button class="beat" data-beat="3"><span class="beat-dot"></span>Label the account</button>
-                <button class="beat" data-beat="4"><span class="beat-dot"></span>Set the default</button>
-                <button class="beat" data-beat="5"><span class="beat-dot"></span>Use it in a run</button>
+              <div class="beat-card">
+                <button type="button" class="beat active" data-beat="0"><span class="beat-dot"></span>Apps → Connect</button>
+                <button type="button" class="beat" data-beat="1"><span class="beat-dot"></span>Add another account</button>
+                <button type="button" class="beat" data-beat="2"><span class="beat-dot"></span>Authorize provider</button>
+                <button type="button" class="beat" data-beat="3"><span class="beat-dot"></span>Label the account</button>
+                <button type="button" class="beat" data-beat="4"><span class="beat-dot"></span>Set the default</button>
+                <button type="button" class="beat" data-beat="5"><span class="beat-dot"></span>Use it in a run</button>
               </div>
             </div>
             <p class="fine-print">Mockup uses the current Rakazo Integrations overlay language and visual tokens. Provider identities are illustrative.</p>
@@ -282,24 +282,36 @@
         activeBeat = (index + beats.length) % beats.length;
         title.textContent = beats[activeBeat][0];
         body.textContent = beats[activeBeat][1];
-        beatButtons.forEach((button) => button.classList.toggle("active", Number(button.dataset.beat) === activeBeat));
-        scenes.forEach((scene) => scene.classList.toggle("active", Number(scene.dataset.scene) === activeBeat));
+        beatButtons.forEach((button) => {
+          button.classList.toggle("active", Number(button.dataset.beat) === activeBeat);
+        });
+        scenes.forEach((scene) => {
+          scene.classList.toggle("active", Number(scene.dataset.scene) === activeBeat);
+        });
       }
       document.getElementById("next-button").addEventListener("click", () => showBeat(activeBeat + 1));
       document.getElementById("previous-button").addEventListener("click", () => showBeat(activeBeat - 1));
-      beatButtons.forEach((button) => button.addEventListener("click", () => showBeat(Number(button.dataset.beat))));
-      document.querySelectorAll("[data-next]").forEach((button) => button.addEventListener("click", () => showBeat(Number(button.dataset.next))));
-      document.querySelectorAll("[data-default]").forEach((button) => button.addEventListener("click", () => {
-        const selected = button.dataset.default;
-        const scene = button.closest("[data-scene]");
-        scene.querySelectorAll("[data-default]").forEach((candidate) => candidate.textContent = candidate.dataset.default === selected ? "Default" : "Use as default");
-        scene.querySelectorAll(".status").forEach((status) => {
-          if (status.textContent === "Default" || status.textContent === "Connected") status.textContent = "Connected";
+      beatButtons.forEach((button) => {
+        button.addEventListener("click", () => showBeat(Number(button.dataset.beat)));
+      });
+      document.querySelectorAll("[data-next]").forEach((button) => {
+        button.addEventListener("click", () => showBeat(Number(button.dataset.next)));
+      });
+      document.querySelectorAll("[data-default]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const selected = button.dataset.default;
+          const scene = button.closest("[data-scene]");
+          scene.querySelectorAll("[data-default]").forEach((candidate) => {
+            candidate.textContent = candidate.dataset.default === selected ? "Default" : "Use as default";
+          });
+          scene.querySelectorAll(".status").forEach((status) => {
+            if (status.textContent === "Default" || status.textContent === "Connected") status.textContent = "Connected";
+          });
+          button.previousElementSibling.textContent = "Default";
+          button.previousElementSibling.className = "status default";
+          showBeat(4);
         });
-        button.previousElementSibling.textContent = "Default";
-        button.previousElementSibling.className = "status default";
-        showBeat(4);
-      }));
+      });
       document.getElementById("account-label-input").addEventListener("input", (event) => {
         document.getElementById("saved-account-label").textContent = event.currentTarget.value || "Work";
       });

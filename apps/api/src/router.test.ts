@@ -124,3 +124,62 @@ describe("MCP server deletion", () => {
     });
   });
 });
+
+describe("connection completion", () => {
+  it("checks the pending connection ref instead of any account for the same provider", async () => {
+    const connectionReady = vi.fn().mockResolvedValue(false);
+    const complete = vi.fn();
+    const existing = {
+      id: "connection-1",
+      connectorId: "composio",
+      provider: "GMAIL",
+      providerRef: "ca-pending",
+      displayName: "Work",
+      status: "pending",
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+    };
+    const prisma = {
+      connection: { findFirst: vi.fn().mockResolvedValue(existing) },
+      botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: {
+        managed: vi.fn().mockReturnValue({ connectionReady, complete }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { matched, response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: existing.id } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(matched).toBe(true);
+    expect(response.status).toBe(200);
+    expect(connectionReady).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: "connections.complete" }),
+      "GMAIL",
+      "ca-pending",
+    );
+    expect(complete).not.toHaveBeenCalled();
+  });
+});

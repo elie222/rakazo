@@ -31,9 +31,9 @@ The mockup shows a Rakazo-styled authorization step before returning to the Inte
 
 Visible evidence: Rakazo asks for a short label after authorization:
 
-> Personal · shrage@gmail.com
+> Personal · personal@example.test
 >
-> Work · shrage@company.com
+> Work · work@example.test
 
 The label is user-facing. The provider connected-account ID remains internal.
 

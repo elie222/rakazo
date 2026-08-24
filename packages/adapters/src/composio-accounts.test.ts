@@ -9,8 +9,8 @@ import {
 } from "./composio-accounts.js";
 
 const accounts: ComposioAccountRef[] = [
-  { toolkit: "gmail", id: "ca_personal", alias: "personal", email: "shrage@gmail.com" },
-  { toolkit: "gmail", id: "ca_work", alias: "work", email: "shrage@company.com" },
+  { toolkit: "gmail", id: "ca_personal", alias: "personal", email: "personal@example.test" },
+  { toolkit: "gmail", id: "ca_work", alias: "work", email: "work@example.test" },
   { toolkit: "googlecalendar", id: "ca_calendar", alias: "personal-calendar" },
 ];
 
@@ -47,7 +47,11 @@ describe("Composio account selection", () => {
   it("adds a safe account selector to a multi-account tool schema", () => {
     expect(
       addComposioAccountParameter(
-        { type: "object", properties: { to: { type: "string" } }, required: ["to"] },
+        {
+          type: "object",
+          properties: { to: { type: "string" } },
+          required: ["to", "account"],
+        },
         accounts.filter((account) => account.toolkit === "gmail"),
       ),
     ).toEqual({
@@ -61,6 +65,31 @@ describe("Composio account selection", () => {
         },
       },
       required: ["to", "account"],
+    });
+  });
+
+  it("keeps the account selector optional when the bot already has a default", () => {
+    expect(
+      addComposioAccountParameter(
+        {
+          type: "object",
+          properties: { to: { type: "string" } },
+          required: ["to", "account"],
+        },
+        accounts.filter((account) => account.toolkit === "gmail"),
+        "work",
+      ),
+    ).toEqual({
+      type: "object",
+      properties: {
+        to: { type: "string" },
+        account: {
+          type: "string",
+          enum: ["personal", "work"],
+          description: "Connected account alias. The bot default is used when omitted.",
+        },
+      },
+      required: ["to"],
     });
   });
 

@@ -214,7 +214,11 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     return { connectionRef: request.state };
   }
 
-  async connectionReady(context: AdapterContext, externalId: string): Promise<boolean> {
+  async connectionReady(
+    context: AdapterContext,
+    externalId: string,
+    _connectionRef?: string,
+  ): Promise<boolean> {
     const accounts = await this.accounts(context, externalId);
     return accounts.some(
       (account) =>

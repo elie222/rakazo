@@ -98,8 +98,15 @@ export function resolveComposioAccount(
 export function addComposioAccountParameter(
   inputSchema: Record<string, unknown>,
   accounts: ComposioAccountRef[],
+  defaultSelector?: string,
 ): Record<string, unknown> {
   if (accounts.length <= 1) return inputSchema;
+  const hasDefault = Boolean(
+    defaultSelector &&
+      accounts.some(
+        (account) => account.id === defaultSelector || account.alias === defaultSelector,
+      ),
+  );
   const properties =
     inputSchema.properties &&
     typeof inputSchema.properties === "object" &&
@@ -109,11 +116,18 @@ export function addComposioAccountParameter(
   properties.account = {
     type: "string",
     enum: accounts.map((account) => account.alias),
-    description: "Connected account alias. Required when more than one account is connected.",
+    description: hasDefault
+      ? "Connected account alias. The bot default is used when omitted."
+      : "Connected account alias. Required when more than one account is connected.",
   };
   const required = Array.isArray(inputSchema.required)
-    ? [...inputSchema.required.filter((value): value is string => typeof value === "string")]
+    ? [
+        ...inputSchema.required.filter(
+          (value): value is string =>
+            typeof value === "string" && (!hasDefault || value !== "account"),
+        ),
+      ]
     : [];
-  if (!required.includes("account")) required.push("account");
+  if (!hasDefault && !required.includes("account")) required.push("account");
   return { ...inputSchema, properties, required };
 }

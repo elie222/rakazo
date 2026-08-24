@@ -97,4 +97,38 @@ describe("ComposioEmulator", () => {
     await emulator.revoke(second.state, context);
     await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(false);
   });
+
+  it("does not reuse a revoked account ref when reconnecting the same provider", async () => {
+    const emulator = new ComposioEmulator();
+    const first = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+    const second = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+    await emulator.revoke(first.state, context);
+
+    const replacement = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+
+    expect(replacement.state).not.toBe(first.state);
+    expect(replacement.state).not.toBe(second.state);
+  });
+
+  it("reports readiness for the exact pending connection ref", async () => {
+    const emulator = new ComposioEmulator();
+    const first = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+
+    await expect(emulator.connectionReady(context, "GMAIL", first.state)).resolves.toBe(true);
+    await expect(emulator.connectionReady(context, "GMAIL", "gmail-account-missing")).resolves.toBe(
+      false,
+    );
+  });
 });

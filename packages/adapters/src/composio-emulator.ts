@@ -21,6 +21,7 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 export class ComposioEmulator implements ComposioProvider {
   private readonly connectedByUser = new Map<string, Set<string>>();
   private readonly accountIdsByUser = new Map<string, Map<string, string[]>>();
+  private readonly nextAccountSequenceByUser = new Map<string, Map<string, number>>();
   readonly executions: Array<{
     userId: string;
     tool: string;
@@ -91,15 +92,26 @@ export class ComposioEmulator implements ComposioProvider {
     this.connectedByUser.set(context.userId, connected);
     const accounts = this.accountIdsByUser.get(context.userId) ?? new Map<string, string[]>();
     const ids = accounts.get(request.provider) ?? [];
-    const id = `${request.provider.toLowerCase()}-account-${ids.length + 1}`;
+    const sequences =
+      this.nextAccountSequenceByUser.get(context.userId) ?? new Map<string, number>();
+    const sequence = (sequences.get(request.provider) ?? 0) + 1;
+    sequences.set(request.provider, sequence);
+    this.nextAccountSequenceByUser.set(context.userId, sequences);
+    const id = `${request.provider.toLowerCase()}-account-${sequence}`;
     ids.push(id);
     accounts.set(request.provider, ids);
     this.accountIdsByUser.set(context.userId, accounts);
     return { authorizationUrl: null, state: id };
   }
 
-  async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    return this.connectedByUser.get(context.userId)?.has(slug) ?? false;
+  async connectionReady(
+    context: AdapterContext,
+    slug: string,
+    connectionRef?: string,
+  ): Promise<boolean> {
+    if (!this.connectedByUser.get(context.userId)?.has(slug)) return false;
+    if (!connectionRef || connectionRef === slug) return true;
+    return this.accountIdsByUser.get(context.userId)?.get(slug)?.includes(connectionRef) ?? false;
   }
 
   async complete(

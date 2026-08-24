@@ -143,7 +143,11 @@ export interface ManagedConnectorProvider
     Omit<ConnectionAuthProvider, "describe"> {
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
-  connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
+  connectionReady(
+    context: AdapterContext,
+    externalId: string,
+    connectionRef?: string,
+  ): Promise<boolean>;
   warmDirectory?(): Promise<void>;
 }
 

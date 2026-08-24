@@ -314,8 +314,19 @@ export class ComposioConnector implements ComposioProvider {
       const toolkitAccounts = toolkit
         ? accounts.filter((account) => account.toolkit === toolkit)
         : [];
+      const defaultSelector = toolkit
+        ? (context.accountDefaults?.[`composio:${toolkit}`] ??
+          context.accountDefaults?.[`composio:${toolkit.toUpperCase()}`])
+        : undefined;
       return toolkitAccounts.length > 1
-        ? { ...tool, inputSchema: addComposioAccountParameter(tool.inputSchema, toolkitAccounts) }
+        ? {
+            ...tool,
+            inputSchema: addComposioAccountParameter(
+              tool.inputSchema,
+              toolkitAccounts,
+              defaultSelector,
+            ),
+          }
         : tool;
     });
   }
@@ -400,7 +411,23 @@ export class ComposioConnector implements ComposioProvider {
     }
   }
 
-  async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
+  async connectionReady(
+    context: AdapterContext,
+    slug: string,
+    connectionRef?: string,
+  ): Promise<boolean> {
+    if (connectionRef && connectionRef.toLowerCase() !== slug.toLowerCase()) {
+      try {
+        const account = await this.sdk().connectedAccounts.get(connectionRef);
+        return (
+          account.status === "ACTIVE" &&
+          !account.isDisabled &&
+          account.toolkit.slug.toLowerCase() === slug.toLowerCase()
+        );
+      } catch {
+        return false;
+      }
+    }
     const session = await this.sessionFor(context.userId);
     const page = await session.toolkits({ search: slug, limit: 50 });
     const match = page.items.find((item) => item.slug === slug);

@@ -2289,6 +2289,7 @@ export function createRouter(deps: RouterDeps) {
           const ready = await connector.connectionReady(
             connectionContext(context.actor, "connections.complete", context.signal),
             existing.provider,
+            existing.providerRef ?? undefined,
           );
           if (ready) {
             const completed = await connector.complete(
