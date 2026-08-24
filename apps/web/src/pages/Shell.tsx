@@ -1240,13 +1240,13 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
+    setComputerOpen(true);
     const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    await bootComputer({
+    void bootComputer({
       takeControl: needsTakeover,
-      overlay: needsTakeover || computer?.state !== "running",
+      overlay: false,
       force: computer?.state !== "running",
     });
-    setComputerOpen(true);
   }
 
   function closeComputerOverlay() {
@@ -1791,23 +1791,22 @@ export function ShellPage() {
                   <button
                     type="button"
                     className="absolute inset-0 z-0 cursor-pointer"
-                    aria-label="Open computer"
+                    aria-label="Maximize computer"
                     onClick={() => void openComputer()}
                   />
-                  {computer?.kind === "desktop" ? null : (
-                    <button
-                      type="button"
-                      className="absolute right-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 text-[#ECECEE]"
-                      aria-label="Maximize"
-                      title="Maximize"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void openComputer();
-                      }}
-                    >
-                      <Maximize2 size={14} strokeWidth={1.8} />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="absolute right-2.5 top-2.5 z-20 grid h-8 w-8 place-items-center rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 text-[#ECECEE] pointer-events-auto"
+                    aria-label="Maximize"
+                    title="Maximize"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void openComputer();
+                    }}
+                  >
+                    <Maximize2 size={14} strokeWidth={1.8} />
+                  </button>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13.5px] text-[#85858A]">
