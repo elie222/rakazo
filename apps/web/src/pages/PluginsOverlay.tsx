@@ -1,7 +1,8 @@
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { CapabilityInstall, ConnectionCatalogItem, McpServer } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
 type CatalogView = "all" | "connected" | "sources";
@@ -42,15 +43,19 @@ export function PluginsOverlay({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [oauthPending, setOauthPending] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
+    const [items, installs, servers] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
+      rpc.mcp.servers.list().catch(() => [] as McpServer[]),
     ]);
     setCatalog(items);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setMcpServers(servers);
     return items;
   }
 
@@ -287,6 +292,61 @@ export function PluginsOverlay({
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {loading ? <p className="text-[#6C6C70]">Loading integrations…</p> : null}
 
+          {!loading && mcpServers.length > 0 ? (
+            <div className="mb-6">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-[15px] font-medium text-[#ECECEE]">Installed</h2>
+                {onOpenMcp ? (
+                  <button
+                    type="button"
+                    onClick={onOpenMcp}
+                    className="text-[12.5px] text-[#C9C9CE] hover:text-[#ECECEE]"
+                  >
+                    Manage
+                  </button>
+                ) : null}
+              </div>
+              {mcpServers.map((server) => (
+                <div key={server.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
+                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
+                    {server.name[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{server.name}</div>
+                    <div className="truncate text-[13.5px] text-[#7A7A80]">
+                      {server.oauthStatus === "connected"
+                        ? "Connected"
+                        : server.oauthStatus === "reconnect"
+                          ? "Needs reconnection"
+                          : server.endpoint ?? server.command ?? server.slug}
+                    </div>
+                  </div>
+                  {server.transport !== "stdio" && server.oauthStatus !== "connected" ? (
+                    <Button
+                      type="button"
+                      variant="pill"
+                      size="sm"
+                      disabled={oauthPending === server.id}
+                      onClick={() => {
+                        setOauthPending(server.id);
+                        void connectMcpOauth(server.id)
+                          .then((result) => {
+                            if (result === "connected") void refresh();
+                          })
+                          .catch((err: unknown) =>
+                            setError(err instanceof Error ? err.message : "OAuth failed"),
+                          )
+                          .finally(() => setOauthPending(null));
+                      }}
+                    >
+                      {oauthPending === server.id ? "Connecting…" : "Connect"}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {view === "sources" ? (
             <div className="space-y-4">
               {sourceKind ? (
@@ -400,7 +460,7 @@ export function PluginsOverlay({
             </div>
           ) : (
             <>
-              {!loading && catalog.length === 0 ? (
+              {!loading && catalog.length === 0 && mcpServers.length === 0 ? (
                 <p className="text-[#6C6C70]">
                   No managed app catalog is configured on this deployment. You can still add Treg,
                   MCP, or OpenAPI sources.
