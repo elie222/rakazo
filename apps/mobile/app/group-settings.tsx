@@ -1,7 +1,7 @@
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { CHAT_GROUP_KIND_BOT_DM, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput } from "react-native";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { type MobileBot, type MobileGroup, rpc } from "../lib/api";
 
@@ -77,6 +77,47 @@ export default function GroupSettingsScreen() {
             ),
       },
     ]);
+  }
+
+  if (!group) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Group settings" }} />
+        <ScrollView
+          style={{ flex: 1, backgroundColor: "#050506" }}
+          contentContainerStyle={{ padding: 24 }}
+        >
+          {error ? <Text style={{ color: "#FF6B6B" }}>{error}</Text> : null}
+        </ScrollView>
+      </>
+    );
+  }
+
+  if (group.kind === CHAT_GROUP_KIND_BOT_DM) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Bot conversation" }} />
+        <ScrollView
+          style={{ flex: 1, backgroundColor: "#050506" }}
+          contentContainerStyle={{ padding: 24 }}
+        >
+          <Text style={{ color: "#85858A", fontSize: 14, lineHeight: 20 }}>
+            This thread opens automatically when bots message each other. You can read it here, but
+            members and the name cannot be edited.
+          </Text>
+          <Text style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}>Members</Text>
+          {group.members.map((member) => (
+            <View
+              key={member.botId}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }}
+            >
+              <BotAvatar color={member.color} size={34} status={member.status} />
+              <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>{member.name}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </>
+    );
   }
 
   return (

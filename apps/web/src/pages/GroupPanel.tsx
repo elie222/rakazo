@@ -1,4 +1,10 @@
-import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakazo/contracts";
+import {
+  type Bot,
+  CHAT_GROUP_KIND_BOT_DM,
+  GROUP_MEMBER_MAX,
+  GROUP_MEMBER_MIN,
+  type Group,
+} from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { useMemo, useState } from "react";
 
@@ -156,6 +162,29 @@ export function GroupSettings({
     } finally {
       setPending(null);
     }
+  }
+
+  if (group.kind === CHAT_GROUP_KIND_BOT_DM) {
+    return (
+      <div>
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-[13.5px] text-[#85858A]">Bot conversation</span>
+        </div>
+        <p className="text-[14px] leading-[1.5] text-[#85858A]">
+          This thread opens automatically when bots message each other. You can read it here, but
+          members and the name cannot be edited.
+        </p>
+        <div className="mt-5 text-[14px] text-[#85858A]">Members</div>
+        <div className="mt-2 space-y-1">
+          {group.members.map((member) => (
+            <div key={member.botId} className="flex items-center gap-3 rounded-xl px-2.5 py-2.5">
+              <BotAvatar color={member.color} size={32} status={member.status} />
+              <span className="flex-1 text-[15px] text-[#ECECEE]">{member.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   function save() {

@@ -666,6 +666,9 @@ export function ShellPage() {
               if (blocks.some((block) => block.kind === "child_bot")) {
                 void refreshBots().catch(() => undefined);
               }
+              if (blocks.some((block) => block.kind === "handoff")) {
+                void refreshBots().catch(() => undefined);
+              }
               if (event.payload.role === "bot") markBotReadIfVisible(active.id);
             }
             if (isRunTerminalEvent(event) || event.type === "skill.teaching.stopped") {
@@ -896,10 +899,7 @@ export function ShellPage() {
     },
     [bots, transcriptMembers],
   );
-  const visibleGroups = useMemo(
-    () => groups.filter((group) => group.kind !== CHAT_GROUP_KIND_BOT_DM),
-    [groups],
-  );
+  const isBotDmGroup = activeGroup?.kind === CHAT_GROUP_KIND_BOT_DM;
   const shellReady =
     initialBotsLoaded &&
     (inGroup ? Boolean(activeGroup && activeSnapshot) : Boolean(active && activeSnapshot));
@@ -1409,7 +1409,7 @@ export function ShellPage() {
             ))
           )}
           {!showWorkspaceSearch
-            ? visibleGroups.map((group) => (
+            ? groups.map((group) => (
                 <button
                   key={group.id}
                   type="button"
@@ -1447,7 +1447,9 @@ export function ShellPage() {
                       ) : null}
                     </div>
                     <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
-                      {group.members.map((member) => member.name).join(", ")}
+                      {group.kind === CHAT_GROUP_KIND_BOT_DM
+                        ? group.preview || group.members.map((member) => member.name).join(", ")
+                        : group.members.map((member) => member.name).join(", ")}
                     </div>
                   </div>
                 </button>
@@ -1605,7 +1607,10 @@ export function ShellPage() {
             <button
               type="button"
               data-testid="bot-settings-trigger"
-              onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
+              onClick={() => {
+                if (inGroup && isBotDmGroup) return;
+                setPanel(inGroup ? "group-settings" : "settings");
+              }}
               className="flex min-w-0 items-center gap-3"
             >
               {inGroup ? (

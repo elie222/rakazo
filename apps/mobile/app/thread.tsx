@@ -1,5 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
+import { CHAT_GROUP_KIND_BOT_DM } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
@@ -20,6 +21,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
   blockText,
+  type MobileBot,
   type MobileMessage,
   type MobileMessagePage,
   type MobileSnapshot,
@@ -97,6 +99,8 @@ export default function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
+  const [workspaceBots, setWorkspaceBots] = useState<MobileBot[]>([]);
+  const [groupKind, setGroupKind] = useState<string | undefined>();
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const mentionOptions =
     inGroup && mentionQuery !== null
@@ -114,11 +118,27 @@ export default function Thread() {
     return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
   }
 
+  useEffect(() => {
+    void rpc<MobileBot[]>("bots/list")
+      .then(setWorkspaceBots)
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!groupId) {
+      setGroupKind(undefined);
+      return;
+    }
+    void rpc<Array<{ id: string; kind?: string }>>("groups/list")
+      .then((groups) => setGroupKind(groups.find((group) => group.id === groupId)?.kind))
+      .catch(() => undefined);
+  }, [groupId]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: name || "Thread",
       headerRight: () =>
-        inGroup ? (
+        inGroup && groupKind !== CHAT_GROUP_KIND_BOT_DM ? (
           <Pressable
             accessibilityLabel="Group settings"
             hitSlop={8}
@@ -137,7 +157,7 @@ export default function Thread() {
           </Pressable>
         ),
     });
-  }, [botId, groupId, inGroup, name, navigation, router]);
+  }, [botId, groupId, groupKind, inGroup, name, navigation, router]);
 
   function leaveBot() {
     router.dismissAll();
@@ -590,6 +610,7 @@ export default function Thread() {
                 groupId={groupId}
                 message={message}
                 members={snap?.members}
+                workspaceBots={workspaceBots}
                 replyPreview={
                   message.replyToMessageId
                     ? snap?.messages.find((row) => row.id === message.replyToMessageId)
@@ -799,9 +820,12 @@ function previewMessageText(message: MobileMessage): string {
 function memberName(
   members: MobileSnapshot["members"] | undefined,
   botId: string | undefined,
+  workspaceBots?: Array<{ id: string; name: string }>,
 ): string | undefined {
-  if (!botId || !members) return undefined;
-  return members.find((member) => member.botId === botId)?.name;
+  if (!botId) return undefined;
+  const fromMembers = members?.find((member) => member.botId === botId)?.name;
+  if (fromMembers) return fromMembers;
+  return workspaceBots?.find((bot) => bot.id === botId)?.name;
 }
 
 async function speakMessage(botId: string, message: MobileMessage) {
@@ -822,6 +846,7 @@ function MessageBubble({
   groupId,
   message,
   members,
+  workspaceBots,
   replyPreview,
   canAnswer,
   onAnswer,
@@ -833,6 +858,7 @@ function MessageBubble({
   groupId?: string;
   message: MobileMessage;
   members?: MobileSnapshot["members"];
+  workspaceBots?: Array<{ id: string; name: string }>;
   replyPreview?: MobileMessage;
   canAnswer: boolean;
   onAnswer: (answer: string) => Promise<void>;
@@ -848,8 +874,8 @@ function MessageBubble({
   if (ask) return <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />;
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
-    const from = memberName(members, handoff.fromBotId) ?? "bot";
-    const to = memberName(members, handoff.toBotId) ?? "bot";
+    const from = memberName(members, handoff.fromBotId, workspaceBots) ?? "bot";
+    const to = memberName(members, handoff.toBotId, workspaceBots) ?? "bot";
     return (
       <View style={{ paddingVertical: 4 }}>
         <Text style={{ color: "#85858A", fontSize: 13.5, textAlign: "center" }}>
@@ -988,7 +1014,8 @@ function MessageBubble({
     .flatMap((block) => (block.kind === "text" && block.text ? [block.text] : []))
     .join("\n");
   if (attachments.length > 0) {
-    const speaker = message.role === "bot" ? memberName(members, message.botId) : undefined;
+    const speaker =
+      message.role === "bot" ? memberName(members, message.botId, workspaceBots) : undefined;
     return (
       <View
         style={{
@@ -1082,7 +1109,8 @@ function MessageBubble({
       </View>
     );
   }
-  const speaker = message.role === "bot" ? memberName(members, message.botId) : undefined;
+  const speaker =
+    message.role === "bot" ? memberName(members, message.botId, workspaceBots) : undefined;
   return (
     <View
       style={{
