@@ -236,100 +236,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </header>
-        <div className="border-b border-[#27272C] px-8 py-3 text-sm text-[#C9C9CE]">
-          {servers.length === 0
-            ? "No MCP servers configured."
-            : servers.map((server) => server.name).join(" · ")}
-        </div>
         {error ? (
           <p className="mx-8 mt-5 rounded-xl border border-[#6A2C37] bg-[#2A151A] p-3 text-xs text-[#F3A2AA]">
             {error}
           </p>
         ) : null}
-        <div className="rk-scroll min-h-0 space-y-6 overflow-y-auto p-8">
-          <div>
-            <h2 className="text-[15px] font-medium text-[#ECECEE]">Configured servers</h2>
-            <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-              {servers.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F] lg:col-span-3">
-                  No MCP servers yet.
-                </p>
-              ) : (
-                servers.map((server) => (
-                  <div
-                    key={server.id}
-                    className="rounded-xl border border-[#292930] bg-[#101012] p-4"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-[#ECECEE]">{server.name}</span>
-                      <span className="rounded-full bg-[#202536] px-2 py-1 text-[10px] uppercase text-[#AEB7FF]">
-                        {server.transport.replace("_", " ")}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-[#77777F]">
-                      {server.endpoint ?? server.command ?? server.slug}
-                    </p>
-                    <p
-                      className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-[#F0A15A]" : "text-[#6E778A]"}`}
-                    >
-                      {oauthStatusText(server)}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {server.transport !== "stdio" ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={oauthPending === server.id}
-                            onClick={() => void connectOAuth(server)}
-                            className="rounded-lg bg-[#7785FF] px-3 py-2 text-xs font-semibold text-[#090A12] disabled:opacity-50"
-                          >
-                            {oauthActionLabel(server, oauthPending === server.id)}
-                          </button>
-                          {server.oauthStatus !== "none" ? (
-                            <button
-                              type="button"
-                              disabled={oauthPending === server.id}
-                              onClick={() => void disconnectOAuth(server)}
-                              className="rounded-lg border border-[#34343B] px-3 py-2 text-xs text-[#B9B9C0]"
-                            >
-                              Disconnect
-                            </button>
-                          ) : null}
-                        </>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void deleteServer(server)}
-                        className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[#34343B] text-[#B9B9C0]"}`}
-                      >
-                        {confirmingDelete === server.id ? "Confirm delete" : "Delete"}
-                      </button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-[#77777F]">Agents:</span>
-                      {bots.map((bot) => {
-                        const assigned = (botAssignments[bot.id] ?? []).some(
-                          (entry) => entry.serverId === server.id,
-                        );
-                        return (
-                          <button
-                            key={bot.id}
-                            type="button"
-                            onClick={() => void toggleAssignment(server, bot.id)}
-                            className={`rounded-full border px-2.5 py-1 text-[11px] ${assigned ? "border-[#7785FF] bg-[#30356A] text-[#E2E4FF]" : "border-[#34343B] text-[#85858B]"}`}
-                          >
-                            {assigned ? "✓ " : ""}
-                            {bot.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.08fr]">
+        <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
           <div className="rounded-2xl border border-[#292930] bg-[#101012] p-5">
             <h2 className="text-[15px] font-medium text-[#ECECEE]">Add a server</h2>
             <p className="mb-5 mt-1 text-xs text-[#77777F]">
@@ -449,7 +361,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 Applies when you click Add server. Use the agent chips on each server card to change
                 access at any time — the agent picks it up on its next message.
               </p>
-              <div className="rk-scroll mt-3 max-h-[280px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-3 space-y-2">
                 {bots.map((bot) => (
                   <label
                     key={bot.id}
@@ -472,7 +384,88 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </div>
-          </div>
+            <div>
+              <h2 className="text-[15px] font-medium text-[#ECECEE]">Configured servers</h2>
+              <div className="mt-3 space-y-2">
+                {servers.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F]">
+                    No MCP servers yet.
+                  </p>
+                ) : (
+                  servers.map((server) => (
+                    <div
+                      key={server.id}
+                      className="rounded-xl border border-[#292930] bg-[#101012] p-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-[#ECECEE]">{server.name}</span>
+                        <span className="rounded-full bg-[#202536] px-2 py-1 text-[10px] uppercase text-[#AEB7FF]">
+                          {server.transport.replace("_", " ")}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[#77777F]">
+                        {server.endpoint ?? server.command ?? server.slug}
+                      </p>
+                      <p
+                        className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-[#F0A15A]" : "text-[#6E778A]"}`}
+                      >
+                        {oauthStatusText(server)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-[#77777F]">Agents:</span>
+                        {bots.map((bot) => {
+                          const assigned = (botAssignments[bot.id] ?? []).some(
+                            (entry) => entry.serverId === server.id,
+                          );
+                          return (
+                            <button
+                              key={bot.id}
+                              type="button"
+                              onClick={() => void toggleAssignment(server, bot.id)}
+                              className={`rounded-full border px-2.5 py-1 text-[11px] ${assigned ? "border-[#7785FF] bg-[#30356A] text-[#E2E4FF]" : "border-[#34343B] text-[#85858B]"}`}
+                            >
+                              {assigned ? "✓ " : ""}
+                              {bot.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {server.transport !== "stdio" ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={oauthPending === server.id}
+                              onClick={() => void connectOAuth(server)}
+                              className="rounded-lg bg-[#7785FF] px-3 py-2 text-xs font-semibold text-[#090A12] disabled:opacity-50"
+                            >
+                              {oauthActionLabel(server, oauthPending === server.id)}
+                            </button>
+                            {server.oauthStatus !== "none" ? (
+                              <button
+                                type="button"
+                                disabled={oauthPending === server.id}
+                                onClick={() => void disconnectOAuth(server)}
+                                className="rounded-lg border border-[#34343B] px-3 py-2 text-xs text-[#B9B9C0]"
+                              >
+                                Disconnect
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void deleteServer(server)}
+                          className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[#34343B] text-[#B9B9C0]"}`}
+                        >
+                          {confirmingDelete === server.id ? "Confirm delete" : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </section>

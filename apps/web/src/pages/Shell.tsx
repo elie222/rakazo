@@ -1,7 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
-  BotMcpServer,
   BotSection,
   ComputerMode,
   ComputerReleaseReason,
@@ -53,7 +52,9 @@ import {
   Gauge,
   LogOut,
   Menu,
+  Maximize2,
   Mic,
+  Minimize2,
   Monitor,
   Paperclip,
   Phone,
@@ -78,6 +79,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
@@ -195,8 +197,6 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [mcpAssignments, setMcpAssignments] = useState<BotMcpServer[]>([]);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
@@ -235,6 +235,8 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [computerFullscreen, setComputerFullscreen] = useState(false);
+  const computerOverlayRef = useRef<HTMLDivElement>(null);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -264,13 +266,6 @@ export function ShellPage() {
 
   const inGroup = Boolean(groupId);
   const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
-  const activeMcpServers = useMemo(() => {
-    if (!active) return [];
-    const assigned = new Set(
-      mcpAssignments.filter((row) => row.botId === active.id).map((row) => row.serverId),
-    );
-    return mcpServers.filter((server) => assigned.has(server.id));
-  }, [active, mcpAssignments, mcpServers]);
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
@@ -370,15 +365,6 @@ export function ShellPage() {
     },
     [navigate],
   );
-
-  const refreshMcp = useCallback(async () => {
-    const [servers, assignments] = await Promise.all([
-      rpc.mcp.servers.list(),
-      rpc.mcp.assignments.all(),
-    ]);
-    setMcpServers(servers);
-    setMcpAssignments(assignments);
-  }, []);
 
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
@@ -574,10 +560,6 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", refreshVisibleBots);
     };
   }, []);
-
-  useEffect(() => {
-    void refreshMcp().catch(() => undefined);
-  }, [refreshMcp, mcpOpen]);
 
   useEffect(() => {
     void rpc.voice
@@ -1243,9 +1225,23 @@ export function ShellPage() {
   }, [active?.id, groupId, inGroup]);
 
   useEffect(() => {
+    function onFullscreenChange() {
+      setComputerFullscreen(document.fullscreenElement === computerOverlayRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     if (!computerOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setComputerOpen(false);
+      if (event.key !== "Escape") return;
+      if (document.fullscreenElement) {
+        event.preventDefault();
+        void document.exitFullscreen().catch(() => undefined);
+        return;
+      }
+      setComputerOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1259,20 +1255,46 @@ export function ShellPage() {
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, active?.id, computer?.state]);
 
-  async function openComputer() {
+  async function openComputer(opts?: { fullscreen?: boolean }) {
     if (!active) return;
     const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    await bootComputer({
+    const boot = bootComputer({
       takeControl: needsTakeover,
       overlay: needsTakeover || computer?.state !== "running",
       force: computer?.state !== "running",
     });
+    if (opts?.fullscreen) {
+      flushSync(() => setComputerOpen(true));
+      const fullscreen = computerOverlayRef.current?.requestFullscreen() ?? Promise.resolve();
+      await Promise.all([boot, fullscreen.catch(() => undefined)]);
+      return;
+    }
+    await boot;
     setComputerOpen(true);
+  }
+
+  async function toggleComputerFullscreen() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (!computerOpen) {
+      await openComputer({ fullscreen: true });
+      return;
+    }
+    await computerOverlayRef.current?.requestFullscreen().catch(() => undefined);
+  }
+
+  async function closeComputerOverlay() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+    }
+    setComputerOpen(false);
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    setComputerOpen(false);
+    await closeComputerOverlay();
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
   }
@@ -1508,16 +1530,13 @@ export function ShellPage() {
         </div>
         <button
           type="button"
-          onClick={() => setMcpOpen(true)}
+          onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
         >
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">MCP servers</span>
-          {mcpServers.length ? (
-            <span className="ml-auto text-[12px] text-[#85858A]">{mcpServers.length}</span>
-          ) : null}
+          <span className="text-[14.5px] text-[#C9C9CE]">Integrations</span>
         </button>
         <div className="relative">
           {menuOpen ? (
@@ -1638,53 +1657,8 @@ export function ShellPage() {
                 </span>
               </span>
             </button>
-            {!inGroup && active ? (
-              <div className="ml-1 hidden min-w-0 flex-wrap items-center gap-1 md:flex">
-                {activeMcpServers.length ? (
-                  activeMcpServers.map((server) => (
-                    <button
-                      key={server.id}
-                      type="button"
-                      title={
-                        server.oauthStatus === "connected"
-                          ? `${server.name} connected`
-                          : `${server.name} needs authorization`
-                      }
-                      onClick={() => setMcpOpen(true)}
-                      className={`max-w-[148px] truncate rounded-full border px-2 py-0.5 text-[11px] ${
-                        server.oauthStatus === "connected"
-                          ? "border-[#2F6B4F] bg-[#14241C] text-[#A8E0C4]"
-                          : "border-[#6B4A2F] bg-[#241C14] text-[#E0C4A8]"
-                      }`}
-                    >
-                      {server.name}
-                    </button>
-                  ))
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setMcpOpen(true)}
-                    className="rounded-full border border-[#2A2A2F] px-2 py-0.5 text-[11px] text-[#85858A]"
-                  >
-                    MCP
-                  </button>
-                )}
-              </div>
-            ) : null}
           </div>
           <div className="flex items-center gap-1">
-            {!inGroup && active ? (
-              <button
-                type="button"
-                title="MCP servers"
-                aria-label="MCP servers"
-                onClick={() => setMcpOpen(true)}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: mcpOpen ? "#1B1B1E" : "transparent" }}
-              >
-                <Puzzle size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
-              </button>
-            ) : null}
             {!inGroup && active ? (
               <button
                 type="button"
@@ -1828,7 +1802,7 @@ export function ShellPage() {
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full window
+                      Open in full screen
                     </div>
                   ) : computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
@@ -1855,10 +1829,24 @@ export function ShellPage() {
                   )}
                   <button
                     type="button"
-                    className="absolute inset-0 cursor-pointer"
+                    className="absolute inset-0 z-0 cursor-pointer"
                     aria-label="Open computer"
                     onClick={() => void openComputer()}
                   />
+                  {computer?.kind === "desktop" ? null : (
+                    <button
+                      type="button"
+                      className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 px-2.5 py-1.5 text-[12px] text-[#ECECEE]"
+                      aria-label="Full screen"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openComputer({ fullscreen: true });
+                      }}
+                    >
+                      <Maximize2 size={13} strokeWidth={1.8} />
+                      Full screen
+                    </button>
+                  )}
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13.5px] text-[#85858A]">
@@ -1985,7 +1973,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
-                onOpenMcp={() => setMcpOpen(true)}
+                onOpenMcp={() => setPluginsOpen(true)}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -2320,7 +2308,10 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
+        <div
+          ref={computerOverlayRef}
+          className="fixed inset-0 z-50 flex flex-col bg-[#050506]"
+        >
           <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar color={active.color} size={28} />
@@ -2360,11 +2351,26 @@ export function ShellPage() {
                   Take control
                 </Button>
               )}
+              {computer?.kind === "desktop" ? null : (
+                <button
+                  type="button"
+                  className="grid h-[30px] w-[34px] place-items-center rounded-[9px] text-[#85858A] hover:bg-[#1B1B1E] hover:text-[#ECECEE]"
+                  aria-label={computerFullscreen ? "Exit full screen" : "Full screen"}
+                  title={computerFullscreen ? "Exit full screen" : "Full screen"}
+                  onClick={() => void toggleComputerFullscreen()}
+                >
+                  {computerFullscreen ? (
+                    <Minimize2 size={16} strokeWidth={1.7} />
+                  ) : (
+                    <Maximize2 size={16} strokeWidth={1.7} />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
                 aria-label="Close computer"
-                onClick={() => setComputerOpen(false)}
+                onClick={() => void closeComputerOverlay()}
               >
                 <X size={16} strokeWidth={1.8} />
               </button>
@@ -3430,7 +3436,7 @@ function BotSettings({
       </div>
       <div className="mt-5 rounded-[11px] border border-[#26262A] p-3.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[14px] text-[#85858A]">MCP servers</span>
+          <span className="text-[14px] text-[#85858A]">Integrations</span>
           <button type="button" onClick={onOpenMcp} className="text-[12.5px] text-[#C9C9CE]">
             Manage
           </button>
