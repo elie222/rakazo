@@ -68,7 +68,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
-    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-vision-exp",
+    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")

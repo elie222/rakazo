@@ -67,7 +67,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
-            ? envDefaultModel || "deepseek/deepseek-v4-flash-vision-exp"
+            ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
