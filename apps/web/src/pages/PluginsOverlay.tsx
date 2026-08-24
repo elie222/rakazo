@@ -32,7 +32,7 @@ export function PluginsOverlay({
 }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<CatalogView>("sources");
-  const [tregInfoOpen, setTregInfoOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState<"treg" | "api" | null>(null);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -237,9 +237,31 @@ export function PluginsOverlay({
           >
             Add MCP server
           </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
-            Add OpenAPI
-          </Button>
+          <span className="relative inline-flex items-center gap-1">
+            <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
+              Add OpenAPI
+            </Button>
+            <button
+              type="button"
+              aria-label="What is OpenAPI?"
+              aria-expanded={infoOpen === "api"}
+              onClick={() => setInfoOpen((open) => (open === "api" ? null : "api"))}
+              className="grid h-7 w-7 place-items-center rounded-full border border-[#383844] text-[11px] font-medium text-[#C9C9CE] hover:bg-[#232327]"
+            >
+              i
+            </button>
+            {infoOpen === "api" ? (
+              <div
+                role="dialog"
+                aria-label="About OpenAPI"
+                className="absolute left-0 top-9 z-10 w-[320px] rounded-2xl border border-[#2C2C30] bg-[#1A1A1D] p-3.5 text-[13px] leading-5 text-[#C9C9CE] shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+              >
+                OpenAPI is a spec file that describes a REST API. Rakazo reads that JSON and turns
+                the endpoints into tools for your agents. Use this when a service has an OpenAPI
+                URL but no MCP server. Not related to OpenAI.
+              </div>
+            ) : null}
+          </span>
           <span className="relative inline-flex items-center gap-1">
             <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
               Add Treg
@@ -247,13 +269,13 @@ export function PluginsOverlay({
             <button
               type="button"
               aria-label="What is Treg?"
-              aria-expanded={tregInfoOpen}
-              onClick={() => setTregInfoOpen((open) => !open)}
+              aria-expanded={infoOpen === "treg"}
+              onClick={() => setInfoOpen((open) => (open === "treg" ? null : "treg"))}
               className="grid h-7 w-7 place-items-center rounded-full border border-[#383844] text-[11px] font-medium text-[#C9C9CE] hover:bg-[#232327]"
             >
               i
             </button>
-            {tregInfoOpen ? (
+            {infoOpen === "treg" ? (
               <div
                 role="dialog"
                 aria-label="About Treg"
