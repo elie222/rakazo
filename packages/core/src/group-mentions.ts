@@ -27,6 +27,27 @@ export function parseMentionNames(text: string): string[] {
   return [...names];
 }
 
+export function filterSelectedMentionsByText<T extends { name: string }>(
+  text: string,
+  mentions: readonly T[],
+): T[] {
+  const counts = new Map<string, number>();
+  for (const match of text.matchAll(MENTION_PATTERN)) {
+    const name = match[1]?.toLowerCase();
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const used = new Map<string, number>();
+  return mentions.filter((mention) => {
+    const key = mention.name.trim().toLowerCase();
+    if (!key) return false;
+    const allowed = counts.get(key) ?? 0;
+    const taken = used.get(key) ?? 0;
+    if (taken >= allowed) return false;
+    used.set(key, taken + 1);
+    return true;
+  });
+}
+
 export function resolveGroupTargetBotIds(input: {
   text: string;
   members: GroupMemberRef[];

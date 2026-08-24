@@ -119,18 +119,12 @@ describeWithDatabase("structured @ mention targets", () => {
       groupId: group.id,
       text: messageText,
     });
-    const groupSnap = await rpc<{ messages: Array<{ blocks: Array<{ kind: string; text?: string }> }> }>(
-      app,
-      cookie,
-      "threads/get",
-      { groupId: group.id },
-    );
-    const botSnap = await rpc<{ messages: Array<{ blocks: Array<{ kind: string; text?: string }> }> }>(
-      app,
-      cookie,
-      "threads/get",
-      { botId: botA.id },
-    );
+    const groupSnap = await rpc<{
+      messages: Array<{ blocks: Array<{ kind: string; text?: string }> }>;
+    }>(app, cookie, "threads/get", { groupId: group.id });
+    const botSnap = await rpc<{
+      messages: Array<{ blocks: Array<{ kind: string; text?: string }> }>;
+    }>(app, cookie, "threads/get", { botId: botA.id });
     const groupHasMessage = groupSnap.messages.some((message) =>
       message.blocks.some((block) => block.kind === "text" && block.text?.includes(messageText)),
     );

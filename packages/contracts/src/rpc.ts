@@ -20,7 +20,6 @@ import {
   CreateRoutineInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
-  GROUP_MEMBER_MAX,
   GroupDetailSchema,
   GroupSchema,
   McpServerConfigInput,
@@ -81,7 +80,10 @@ const threadSendInput = threadTarget
   .safeExtend({
     text: z.string().optional(),
     artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
-    mentions: z.array(z.union([Id, structuredMentionTarget])).max(64).optional(),
+    mentions: z
+      .array(z.union([Id, structuredMentionTarget]))
+      .max(64)
+      .optional(),
     replyToMessageId: Id.optional(),
     clientNonce: z.string().min(1).max(200).optional(),
   })

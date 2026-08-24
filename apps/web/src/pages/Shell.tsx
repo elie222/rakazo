@@ -2,10 +2,10 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
   BotSection,
-  Connection,
   ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
+  Connection,
   Group,
   Me,
   MessageBlock,
@@ -33,9 +33,9 @@ import {
   attachmentsForThread,
   cronFromPreset,
   defaultCronPreset,
+  filterSelectedMentionsByText,
   formatCron,
   groupBotsForSidebar,
-  hasMentionToken,
   inferAttachmentMimeType,
   isActive,
   isRunTerminalEvent,
@@ -1085,9 +1085,13 @@ export function ShellPage() {
       for (const mention of mentions ?? []) {
         if (mention.kind !== "bot") trimmed = stripMentionToken(trimmed, mention.name);
       }
-      const routineMentions = [...new Set((mentions ?? [])
-        .filter((mention) => mention.kind === "routine")
-        .map((mention) => mention.id))];
+      const routineMentions = [
+        ...new Set(
+          (mentions ?? [])
+            .filter((mention) => mention.kind === "routine")
+            .map((mention) => mention.id),
+        ),
+      ];
       if (!trimmed && attachments.length === 0 && routineMentions.length === 0) return;
       setSending(true);
       setSendError(null);
@@ -1120,7 +1124,7 @@ export function ShellPage() {
             text: trimmed || undefined,
             mentions: mentionPayload?.length ? mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
-            replyToMessageId: activeReplyTarget?.id,
+            replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
           });
         } else if (botTarget && (trimmed || attachments.length > 0)) {
           await rpc.threads.send({
@@ -2602,9 +2606,7 @@ const Composer = memo(function Composer({
 
   function updateDraft(value: string) {
     setDraft(value);
-    setSelectedMentions((current) =>
-      current.filter((mention) => hasMentionToken(value, mention.name)),
-    );
+    setSelectedMentions((current) => filterSelectedMentionsByText(value, current));
     const match = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(match ? (match[1] ?? "") : null);
   }
@@ -2635,7 +2637,7 @@ const Composer = memo(function Composer({
     const text = draft;
     setDraft("");
     setMentionQuery(null);
-    const mentions = [...selectedMentions];
+    const mentions = filterSelectedMentionsByText(text, selectedMentions);
     setSelectedMentions([]);
     void onSend(text, mentions);
   }

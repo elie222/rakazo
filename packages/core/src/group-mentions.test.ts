@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterSelectedMentionsByText,
   hasMentionToken,
   inferHandoffTargetBotId,
   inferHandoffTargetName,
@@ -24,6 +25,18 @@ describe("hasMentionToken", () => {
   it("supports multi-word and Unicode member names", () => {
     expect(hasMentionToken("Ask @Research Writer and @Éditeur", "Research Writer")).toBe(true);
     expect(hasMentionToken("Ask @Research Writer and @Éditeur", "Éditeur")).toBe(true);
+  });
+});
+
+describe("filterSelectedMentionsByText", () => {
+  it("keeps only as many same-named mentions as appear in text", () => {
+    const mentions = [
+      { kind: "routine", id: "r1", name: "Daily" },
+      { kind: "routine", id: "r2", name: "Daily" },
+    ];
+    expect(filterSelectedMentionsByText("@Daily check inbox", mentions)).toEqual([mentions[0]]);
+    expect(filterSelectedMentionsByText("@Daily @Daily check inbox", mentions)).toEqual(mentions);
+    expect(filterSelectedMentionsByText("check inbox", mentions)).toEqual([]);
   });
 });
 

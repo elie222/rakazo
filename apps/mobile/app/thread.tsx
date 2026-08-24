@@ -3,7 +3,7 @@ import type { Connection, Group, MessageBlock, Routine } from "@rakazo/contracts
 import {
   abortableDelay,
   attachmentsForThread,
-  hasMentionToken,
+  filterSelectedMentionsByText,
   isApprovalAskBlock,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
@@ -130,7 +130,12 @@ export default function Thread() {
       options.push({ key: `group:${group.id}`, kind: "group", id: group.id, name: group.name });
     }
     for (const routine of routines) {
-      options.push({ key: `routine:${routine.id}`, kind: "routine", id: routine.id, name: routine.name });
+      options.push({
+        key: `routine:${routine.id}`,
+        kind: "routine",
+        id: routine.id,
+        name: routine.name,
+      });
     }
     for (const connection of connections) {
       if (connection.status !== "connected") continue;
@@ -479,9 +484,7 @@ export default function Thread() {
 
   function updateDraft(value: string) {
     setDraft(value);
-    setSelectedMentions((current) =>
-      current.filter((mention) => hasMentionToken(value, mention.name)),
-    );
+    setSelectedMentions((current) => filterSelectedMentionsByText(value, current));
     const match = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(match ? (match[1] ?? "") : null);
   }
@@ -504,7 +507,8 @@ export default function Thread() {
     if ((!currentBotId && !currentGroupId) || sending) return;
     let targetBotId = currentBotId;
     let targetGroupId = currentGroupId;
-    const mentionedGroup = selectedMentions.find((mention) => mention.kind === "group");
+    const activeMentions = filterSelectedMentionsByText(draft, selectedMentions);
+    const mentionedGroup = activeMentions.find((mention) => mention.kind === "group");
     const reroutedToGroup = Boolean(!currentGroupId && mentionedGroup);
     if (reroutedToGroup && mentionedGroup) {
       targetGroupId = mentionedGroup.id;
@@ -512,12 +516,14 @@ export default function Thread() {
     }
     const attachments = attachmentsForThread(pendingAttachments, threadKey);
     let text = draft.trim();
-    for (const mention of selectedMentions) {
+    for (const mention of activeMentions) {
       if (mention.kind !== "bot") text = stripMentionToken(text, mention.name);
     }
-    const routineMentions = [...new Set(
-      selectedMentions.filter((mention) => mention.kind === "routine").map((mention) => mention.id),
-    )];
+    const routineMentions = [
+      ...new Set(
+        activeMentions.filter((mention) => mention.kind === "routine").map((mention) => mention.id),
+      ),
+    ];
     if (!text && attachments.length === 0 && routineMentions.length === 0) return;
     setSending(true);
     setError(null);
@@ -533,9 +539,11 @@ export default function Thread() {
         artifactIds.push(artifact.id);
       }
       if (routineMentions.length) {
-        await Promise.all(routineMentions.map((routineId) => rpc("routines/testRun", { routineId })));
+        await Promise.all(
+          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
+        );
       }
-      const mentionPayload = selectedMentions.map((mention) =>
+      const mentionPayload = activeMentions.map((mention) =>
         mention.kind === "bot" ? mention.id : { kind: mention.kind, id: mention.id },
       );
       if (text || artifactIds.length > 0) {
@@ -547,7 +555,7 @@ export default function Thread() {
                 text: text || undefined,
                 mentions: mentionPayload.length ? mentionPayload : undefined,
                 artifactIds: artifactIds.length ? artifactIds : undefined,
-                replyToMessageId: replyTarget?.id,
+                replyToMessageId: reroutedToGroup ? undefined : replyTarget?.id,
               }
             : {
                 botId: targetBotId!,
