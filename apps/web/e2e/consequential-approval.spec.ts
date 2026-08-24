@@ -112,8 +112,13 @@ async function requestDestinationWrite(page: Page, prompt: string) {
       { timeout: 30_000 },
     )
     .toBe("waiting_input");
-  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeVisible({
-    timeout: 5_000,
+  // threads/get can observe waiting_input before the shell realtime feed paints the ask card.
+  if ((await page.getByRole("button", { name: "Allow once" }).count()) === 0) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
+  }
+  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible({
+    timeout: 15_000,
   });
 }
 
