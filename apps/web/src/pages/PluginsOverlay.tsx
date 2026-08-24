@@ -292,33 +292,28 @@ export function PluginsOverlay({
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {loading ? <p className="text-[#6C6C70]">Loading integrations…</p> : null}
 
-          {!loading && mcpServers.length > 0 ? (
-            <div className="mb-6">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-[15px] font-medium text-[#ECECEE]">Installed</h2>
-                {onOpenMcp ? (
-                  <button
-                    type="button"
-                    onClick={onOpenMcp}
-                    className="text-[12.5px] text-[#C9C9CE] hover:text-[#ECECEE]"
-                  >
-                    Manage
-                  </button>
-                ) : null}
-              </div>
+          {view === "sources" ? (
+            <div className="space-y-4">
               {mcpServers.map((server) => (
                 <div key={server.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
                   <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
                     {server.name[0]}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{server.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15.5px] font-medium text-[#ECECEE]">{server.name}</span>
+                      <span className="rounded-full bg-[#202536] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#AEB7FF]">
+                        MCP
+                      </span>
+                    </div>
                     <div className="truncate text-[13.5px] text-[#7A7A80]">
                       {server.oauthStatus === "connected"
                         ? "Connected"
                         : server.oauthStatus === "reconnect"
                           ? "Needs reconnection"
-                          : server.endpoint ?? server.command ?? server.slug}
+                          : "Needs authorization"}
+                      {" · "}
+                      {server.endpoint ?? server.command ?? server.slug}
                     </div>
                   </div>
                   {server.transport !== "stdio" && server.oauthStatus !== "connected" ? (
@@ -331,7 +326,9 @@ export function PluginsOverlay({
                         setOauthPending(server.id);
                         void connectMcpOauth(server.id)
                           .then((result) => {
-                            if (result === "connected") void refresh();
+                            if (result === "connected" || result === "already_connected") {
+                              void refresh();
+                            }
                           })
                           .catch((err: unknown) =>
                             setError(err instanceof Error ? err.message : "OAuth failed"),
@@ -341,14 +338,13 @@ export function PluginsOverlay({
                     >
                       {oauthPending === server.id ? "Connecting…" : "Connect"}
                     </Button>
+                  ) : onOpenMcp ? (
+                    <Button type="button" variant="pill" size="sm" onClick={onOpenMcp}>
+                      Manage
+                    </Button>
                   ) : null}
                 </div>
               ))}
-            </div>
-          ) : null}
-
-          {view === "sources" ? (
-            <div className="space-y-4">
               {sourceKind ? (
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
                   <div className="text-base font-medium text-[#ECECEE]">
@@ -431,7 +427,7 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              {sources.length === 0 && !sourceKind ? (
+              {sources.length === 0 && mcpServers.length === 0 && !sourceKind ? (
                 <p className="text-[#6C6C70]">No MCP or API tool sources installed yet.</p>
               ) : null}
               {sources.map((source) => (
@@ -440,10 +436,14 @@ export function PluginsOverlay({
                     {source.kind === "mcp" ? "M" : "A"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</span>
+                      <span className="rounded-full bg-[#202536] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#AEB7FF]">
+                        {source.kind === "mcp" ? "MCP" : "API"}
+                      </span>
+                    </div>
                     <div className="truncate text-[13.5px] text-[#7A7A80]">
-                      {source.kind.toUpperCase()} · {source.source} ·{" "}
-                      {source.secretConfigured ? "credential saved" : "no auth"}
+                      {source.source} · {source.secretConfigured ? "credential saved" : "no auth"}
                     </div>
                   </div>
                   <Button
@@ -460,10 +460,10 @@ export function PluginsOverlay({
             </div>
           ) : (
             <>
-              {!loading && catalog.length === 0 && mcpServers.length === 0 ? (
+              {!loading && catalog.length === 0 ? (
                 <p className="text-[#6C6C70]">
-                  No managed app catalog is configured on this deployment. You can still add Treg,
-                  MCP, or OpenAPI sources.
+                  No managed app catalog is configured on this deployment. MCP servers like Krisp
+                  and Superhuman are under Tool sources.
                 </p>
               ) : null}
               {!loading && catalog.length > 0 && visible.length === 0 ? (
