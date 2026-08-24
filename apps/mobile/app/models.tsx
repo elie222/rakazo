@@ -1,4 +1,10 @@
 import type { ModelOAuthBegin } from "@rakazo/contracts";
+import {
+  OPENAI_COMPATIBLE_BASE_URL_HINT,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatibleConnectReady,
+  openAiCompatibleProbeSuccessMessage,
+} from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -32,6 +38,12 @@ export default function Models() {
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [showEndpointHelp, setShowEndpointHelp] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [probeModels, setProbeModels] = useState<string[]>([]);
+  const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -42,6 +54,7 @@ export default function Models() {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
+  const probeRequestIdRef = useRef(0);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -66,19 +79,33 @@ export default function Models() {
         : nextMe.defaultProvider) ??
       nextCatalog[0]?.provider ??
       "";
+    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
     const nextModel =
-      nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === preferred.modelId)
-        ?.id ??
-      nextCatalog.find(
-        (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-      )?.id ??
-      nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-      "";
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? preferred.modelId?.trim() ||
+          nextCredential?.modelId ||
+          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ||
+          ""
+        : (nextCatalog.find(
+            (entry) => entry.provider === nextProvider && entry.id === preferred.modelId,
+          )?.id ??
+          nextCatalog.find(
+            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
+          )?.id ??
+          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
+          "");
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
+    probeRequestIdRef.current += 1;
+    setProbeModels([]);
+    setProbedBaseUrl(null);
+    setProbing(false);
     setProvider(nextProvider);
     setModelId(nextModel);
+    if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+      setBaseUrl(nextCredential?.baseUrl ?? "");
+    }
   }, []);
 
   useFocusEffect(
@@ -88,7 +115,10 @@ export default function Models() {
           setError(err instanceof Error ? err.message : "Could not load model settings"),
         )
         .finally(() => setLoading(false));
-      return cancelOAuth;
+      return () => {
+        probeRequestIdRef.current += 1;
+        cancelOAuth();
+      };
     }, [cancelOAuth, load]),
   );
 
@@ -107,33 +137,100 @@ export default function Models() {
   }, [catalog]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
-  const isActive = me?.defaultProvider === selected?.provider && me?.defaultModel === selected?.id;
+  const isActive =
+    me?.defaultProvider === selected?.provider &&
+    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
+  const effectiveBaseUrl = baseUrl.trim();
+  const openAiCompatibleReady = openAiCompatibleConnectReady({
+    baseUrl: effectiveBaseUrl,
+    modelId,
+    probedBaseUrl,
+    storedBaseUrl: credential?.baseUrl,
+  });
 
-  function chooseProvider(nextProvider: string) {
-    cancelOAuth();
-    setProvider(nextProvider);
-    setModelId(catalog.find((entry) => entry.provider === nextProvider)?.id ?? "");
-    setApiKey("");
+  function resetOpenAiCompatibleProbe() {
+    probeRequestIdRef.current += 1;
+    setProbeModels([]);
+    setProbedBaseUrl(null);
+    setProbing(false);
+  }
+
+  function updateBaseUrl(nextBaseUrl: string) {
+    setBaseUrl(nextBaseUrl);
+    resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
   }
 
+  function updateApiKey(nextApiKey: string) {
+    setApiKey(nextApiKey);
+    resetOpenAiCompatibleProbe();
+  }
+
+  function chooseProvider(nextProvider: string) {
+    cancelOAuth();
+    setProvider(nextProvider);
+    setModelId(
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
+    );
+    setBaseUrl(
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
+        : "",
+    );
+    setApiKey("");
+    resetOpenAiCompatibleProbe();
+    setError(null);
+    setNotice(null);
+  }
+
+  async function probeServerModels() {
+    const trimmedBaseUrl = effectiveBaseUrl;
+    if (!trimmedBaseUrl) return;
+    resetOpenAiCompatibleProbe();
+    const requestId = probeRequestIdRef.current;
+    setProbing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
+        baseUrl: trimmedBaseUrl,
+        apiKey: apiKey.trim() || undefined,
+      });
+      if (requestId !== probeRequestIdRef.current) return;
+      setProbeModels(result.models);
+      setProbedBaseUrl(trimmedBaseUrl);
+      setModelId((current) => current.trim() || result.models[0] || "");
+      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+    } catch (err) {
+      if (requestId !== probeRequestIdRef.current) return;
+      setError(err instanceof Error ? err.message : "Could not reach this model server");
+    } finally {
+      if (requestId === probeRequestIdRef.current) setProbing(false);
+    }
+  }
+
   async function setModelDefault() {
     if (!selected || !credential) return;
+    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
+    if (isOpenAiCompatible && !activeModelId) return;
     setError(null);
     setNotice(null);
     setPending("default");
     try {
-      await rpc("models/setDefault", { provider: selected.provider, modelId: selected.id });
-      await load({ provider, modelId });
-      setNotice(`Now using ${selected.label}.`);
+      await rpc("models/setDefault", { provider: selected.provider, modelId: activeModelId });
+      await load({ provider, modelId: activeModelId });
+      setNotice(isOpenAiCompatible ? "Model updated." : `Now using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change the default model");
     } finally {
@@ -142,20 +239,36 @@ export default function Models() {
   }
 
   async function connectKey() {
-    if (!selected || !apiKey.trim()) return;
+    if (!selected) return;
+    if (isOpenAiCompatible) {
+      if (!effectiveBaseUrl || !modelId.trim()) return;
+    } else if (!apiKey.trim()) {
+      return;
+    }
     setError(null);
     setNotice(null);
     setPending("connect");
     try {
-      await rpc("models/connect", {
-        provider: selected.provider,
-        apiKey: apiKey.trim(),
-        modelId: selected.id,
-        label: selected.providerName ?? selected.provider,
-      });
+      await rpc(
+        "models/connect",
+        isOpenAiCompatible
+          ? {
+              provider: selected.provider,
+              baseUrl: effectiveBaseUrl,
+              modelId: modelId.trim(),
+              apiKey: apiKey.trim() || undefined,
+              label: selected.providerName ?? selected.provider,
+            }
+          : {
+              provider: selected.provider,
+              apiKey: apiKey.trim(),
+              modelId: selected.id,
+              label: selected.providerName ?? selected.provider,
+            },
+      );
       setApiKey("");
       await load({ provider, modelId });
-      setNotice(`Connected and using ${selected.label}.`);
+      setNotice(isOpenAiCompatible ? "Saved." : `Connected and using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect this provider");
     } finally {
@@ -306,45 +419,147 @@ export default function Models() {
 
         {selected ? (
           <>
-            <Text style={styles.sectionTitle}>Model</Text>
-            <View style={styles.card}>
-              {modelsForProvider.map((entry) => (
+            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>Model</Text> : null}
+            {isOpenAiCompatible ? (
+              <>
+                <Text style={styles.sectionTitle}>Server URL</Text>
+                <TextInput
+                  accessibilityLabel="OpenAI-compatible server URL"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                  onChangeText={updateBaseUrl}
+                  placeholder="http://127.0.0.1:8000/v1"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.keyInput}
+                  value={baseUrl}
+                />
                 <Pressable
-                  key={`${entry.provider}:${entry.id}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: entry.id === selected.id }}
-                  onPress={() => {
-                    cancelOAuth();
-                    setModelId(entry.id);
-                    setError(null);
-                    setNotice(null);
-                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showEndpointHelp }}
+                  onPress={() => setShowEndpointHelp((visible) => !visible)}
+                >
+                  <Text style={styles.helpLabel}>Setup help</Text>
+                </Pressable>
+                {showEndpointHelp ? (
+                  <Text style={styles.hint}>{OPENAI_COMPATIBLE_BASE_URL_HINT}</Text>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy || probing || !effectiveBaseUrl}
+                  onPress={() => void probeServerModels()}
                   style={({ pressed }) => [
-                    styles.modelRow,
-                    entry.id === selected.id && styles.selectedRow,
+                    styles.outlineButton,
+                    (busy || probing || !effectiveBaseUrl) && styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
-                  <View style={styles.radio}>
-                    {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
-                  </View>
-                  <Text style={styles.modelLabel}>{entry.label}</Text>
+                  <Text style={styles.outlineLabel}>{probing ? "Finding…" : "Find models"}</Text>
                 </Pressable>
-              ))}
-            </View>
-            <Text style={styles.billing}>{selected.billing}</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Model</Text>
+                {probeModels.length && probeModels.includes(modelId) ? (
+                  <View style={styles.card}>
+                    {probeModels.map((entry) => (
+                      <Pressable
+                        key={entry}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: entry === modelId }}
+                        disabled={probing}
+                        onPress={() => setModelId(entry)}
+                        style={({ pressed }) => [
+                          styles.modelRow,
+                          entry === modelId && styles.selectedRow,
+                          probing && styles.disabled,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <View style={styles.radio}>
+                          {entry === modelId ? <View style={styles.radioDot} /> : null}
+                        </View>
+                        <Text style={styles.modelLabel}>{entry}</Text>
+                      </Pressable>
+                    ))}
+                    <Pressable
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: false }}
+                      disabled={probing}
+                      onPress={() => setModelId("")}
+                      style={({ pressed }) => [
+                        styles.modelRow,
+                        probing && styles.disabled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <View style={styles.radio} />
+                      <Text style={styles.modelLabel}>Other model…</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <TextInput
+                      accessibilityLabel="Model id"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!busy && !probing}
+                      onChangeText={setModelId}
+                      placeholder="exact-model-id"
+                      placeholderTextColor={native.tertiaryLabel}
+                      style={styles.keyInput}
+                      value={modelId}
+                    />
+                    {probeModels.length ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setModelId(probeModels[0] ?? "")}
+                      >
+                        <Text style={styles.helpLabel}>Use a found model</Text>
+                      </Pressable>
+                    ) : null}
+                  </>
+                )}
+              </>
+            ) : (
+              <View style={styles.card}>
+                {modelsForProvider.map((entry) => (
+                  <Pressable
+                    key={`${entry.provider}:${entry.id}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: entry.id === selected.id }}
+                    onPress={() => {
+                      cancelOAuth();
+                      setModelId(entry.id);
+                      setError(null);
+                      setNotice(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.modelRow,
+                      entry.id === selected.id && styles.selectedRow,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.radio}>
+                      {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
+                    </View>
+                    <Text style={styles.modelLabel}>{entry.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {!isOpenAiCompatible ? <Text style={styles.billing}>{selected.billing}</Text> : null}
 
-            <View style={styles.credentialCard}>
-              <Text style={styles.eyebrow}>Personal credential</Text>
-              <Text style={styles.credentialTitle}>
-                {credential ? `Connected · ${credential.label}` : "Not connected"}
-              </Text>
-              <Text style={styles.secondary}>
-                {credential
-                  ? "Your key or subscription token is stored securely and is never shown here."
-                  : "Connect this provider to use it as your personal model."}
-              </Text>
-            </View>
+            {!isOpenAiCompatible ? (
+              <View style={styles.credentialCard}>
+                <Text style={styles.eyebrow}>Personal credential</Text>
+                <Text style={styles.credentialTitle}>
+                  {credential ? `Connected · ${credential.label}` : "Not connected"}
+                </Text>
+                <Text style={styles.secondary}>
+                  {credential
+                    ? "Your key or subscription token is stored securely and is never shown here."
+                    : "Connect this provider to use it as your personal model."}
+                </Text>
+              </View>
+            ) : null}
 
             {subscriptionSignIn ? (
               oauth ? (
@@ -413,44 +628,81 @@ export default function Models() {
 
             {acceptsKey ? (
               <View style={styles.keySection}>
-                <Text style={styles.sectionTitle}>
-                  {credential
-                    ? "Replace API key"
-                    : subscriptionSignIn
-                      ? "Or connect an API key"
-                      : "API key"}
-                </Text>
-                <TextInput
-                  accessibilityLabel="API key"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  editable={!busy}
-                  importantForAutofill="no"
-                  onChangeText={setApiKey}
-                  placeholder="sk-…"
-                  placeholderTextColor={native.tertiaryLabel}
-                  secureTextEntry
-                  style={styles.keyInput}
-                  textContentType="none"
-                  value={apiKey}
-                />
+                {isOpenAiCompatible ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showApiKey }}
+                      onPress={() => setShowApiKey((visible) => !visible)}
+                    >
+                      <Text style={styles.helpLabel}>API key</Text>
+                    </Pressable>
+                    {showApiKey ? (
+                      <TextInput
+                        accessibilityLabel="API key"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        autoComplete="off"
+                        editable={!busy}
+                        importantForAutofill="no"
+                        onChangeText={updateApiKey}
+                        placeholder="Optional"
+                        placeholderTextColor={native.tertiaryLabel}
+                        secureTextEntry
+                        style={styles.keyInput}
+                        textContentType="none"
+                        value={apiKey}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.sectionTitle}>
+                      {credential
+                        ? "Replace API key"
+                        : subscriptionSignIn
+                          ? "Or connect an API key"
+                          : "API key"}
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="API key"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      editable={!busy}
+                      importantForAutofill="no"
+                      onChangeText={updateApiKey}
+                      placeholder="sk-…"
+                      placeholderTextColor={native.tertiaryLabel}
+                      secureTextEntry
+                      style={styles.keyInput}
+                      textContentType="none"
+                      value={apiKey}
+                    />
+                  </>
+                )}
                 <Pressable
                   accessibilityRole="button"
-                  disabled={busy || apiKey.trim().length < 8}
+                  disabled={
+                    busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+                  }
                   onPress={() => void connectKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
-                    (busy || apiKey.trim().length < 8) && styles.disabled,
+                    (busy ||
+                      (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)) &&
+                      styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Text style={styles.primaryLabel}>
                     {pending === "connect"
                       ? "Saving…"
-                      : credential
-                        ? "Replace API key"
-                        : "Connect API key"}
+                      : isOpenAiCompatible
+                        ? "Save"
+                        : credential
+                          ? "Replace API key"
+                          : "Connect API key"}
                   </Text>
                 </Pressable>
               </View>
@@ -463,23 +715,19 @@ export default function Models() {
               </Text>
             ) : null}
 
-            {credential ? (
+            {credential && !isActive ? (
               <Pressable
                 accessibilityRole="button"
-                disabled={busy || isActive}
+                disabled={busy || (isOpenAiCompatible && !modelId.trim())}
                 onPress={() => void setModelDefault()}
                 style={({ pressed }) => [
-                  isActive ? styles.outlineButton : styles.primaryButton,
-                  (busy || isActive) && styles.disabled,
+                  styles.primaryButton,
+                  busy && styles.disabled,
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={isActive ? styles.outlineLabel : styles.primaryLabel}>
-                  {isActive
-                    ? "Active model"
-                    : pending === "default"
-                      ? "Switching…"
-                      : "Use this model"}
+                <Text style={styles.primaryLabel}>
+                  {pending === "default" ? "Switching…" : "Use this model"}
                 </Text>
               </Pressable>
             ) : null}
@@ -599,6 +847,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: 2,
+  },
+  hint: {
+    color: native.secondaryLabel,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  helpLabel: {
+    color: native.secondaryLabel,
+    fontSize: 13,
+    marginTop: 8,
+    textDecorationLine: "underline",
   },
   credentialCard: {
     borderRadius: 14,

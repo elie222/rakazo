@@ -886,6 +886,36 @@ describeJourneys("required product journeys", () => {
     expect(routineRuns).toBe(1);
     const advanced = await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } });
     expect(advanced.nextRunAt?.getTime()).toBeGreaterThan(dueAt.getTime());
+
+    const legacyRunsBefore = await prisma.run.count({
+      where: { botId: bot.id, trigger: "routine" },
+    });
+    const legacyDueAt = new Date(Date.now() - 1_000);
+    const legacy = await prisma.routine.create({
+      data: {
+        workspaceId: advanced.workspaceId,
+        userId: advanced.userId,
+        botId: bot.id,
+        name: "Legacy schedule",
+        prompt: "Run the legacy schedule once",
+        cron: "0 0 9 * * *",
+        timezone: "UTC",
+        notify: false,
+        active: true,
+        nextRunAt: legacyDueAt,
+      },
+    });
+    await jobs.enqueue({
+      name: "routine.wakeup",
+      payload: { routineId: legacy.id, scheduledFor: legacyDueAt.toISOString() },
+    });
+    await waitForDatabase(async () => {
+      const stored = await prisma.routine.findUnique({ where: { id: legacy.id } });
+      return stored?.active === false && stored.nextRunAt === null;
+    });
+    expect(await prisma.run.count({ where: { botId: bot.id, trigger: "routine" } })).toBe(
+      legacyRunsBefore + 1,
+    );
   });
 
   it("allocates event and message cursors atomically under concurrent writes", async () => {

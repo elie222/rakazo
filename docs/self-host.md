@@ -62,6 +62,15 @@ use the model server's Compose service name or another address reachable from th
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
+Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
+**Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
+(for example `http://127.0.0.1:8000/v1` for Rapid-MLX, Ollama, LM Studio, llama.cpp, or vLLM),
+the exact model id from that server, and an optional API key. By default Rakazo only allows
+loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
+only to public addresses; redirects and DNS answers that reach private or link-local networks are
+rejected.
+
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
 ## Choosing a computer provider

@@ -1,16 +1,16 @@
 import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
-import { activeBotId, completeOnboarding, rpc, signup } from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("routine editing updates in place, preserves timezone, and deletion persists", async ({
   page,
-}) => {
+}, testInfo) => {
   const stamp = Date.now();
   await signup(page, `routine-crud-${stamp}@rakazo.test`, "password12", "Routine CRUD");
   await completeOnboarding(page);
   const botId = activeBotId(page);
 
-  await rpc<Routine>(page, "routines/create", {
+  const created = await rpc<Routine>(page, "routines/create", {
     botId,
     name: "Tokyo check-in",
     prompt: "Send the original update",
@@ -19,6 +19,8 @@ test("routine editing updates in place, preserves timezone, and deletion persist
     active: true,
     notify: true,
   });
+  expect(created.nextRunAt).not.toBeNull();
+  expect(localSchedule(created.nextRunAt!, created.timezone)).toMatchObject({ hour: 9, minute: 0 });
   await page.reload();
   await page.getByTitle("Agent computer").click();
 
@@ -40,6 +42,11 @@ test("routine editing updates in place, preserves timezone, and deletion persist
     cron: "0 9 * * 1-5",
     timezone: "Asia/Tokyo",
   });
+  expect(updated?.nextRunAt).not.toBeNull();
+  expect(["Mon", "Tue", "Wed", "Thu", "Fri"]).toContain(
+    localSchedule(updated!.nextRunAt!, updated!.timezone).weekday,
+  );
+  await captureScreenshot(page, testInfo, "routine-weekday-schedule");
 
   await updatedButton.click();
   await page.getByRole("button", { name: "Delete routine" }).click();
@@ -61,6 +68,62 @@ test("routine editing updates in place, preserves timezone, and deletion persist
   await page.reload();
   await page.getByTitle("Agent computer").click();
   await expect(updatedButton).toHaveCount(0);
+});
+
+test("invalid advanced cron is rejected without creating a routine", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-invalid-${stamp}@rakazo.test`, "password12", "Invalid Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "+ New routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Broken schedule");
+  await page.locator("label:has-text('Instruction') textarea").fill("This should never run");
+  await page.getByLabel("How often").selectOption("Advanced");
+  await page.getByLabel("Cron expression").fill("61 25 * * *");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.getByRole("alert")).toContainText("Enter a valid cron expression.");
+  expect(await rpc<Routine[]>(page, "routines/list", { botId })).toEqual([]);
+  await captureScreenshot(page, testInfo, "invalid-cron-rejected");
+});
+
+test("a successful routine create is not reported as failed when refresh fails", async ({
+  page,
+}) => {
+  const stamp = Date.now();
+  await signup(page, `routine-refresh-${stamp}@rakazo.test`, "password12", "Routine Refresh");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "+ New routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Persisted routine");
+  await page.locator("label:has-text('Instruction') textarea").fill("Run once each morning");
+
+  await page.route(
+    "**/rpc/routines/list",
+    (route) => route.fulfill({ status: 500, body: "refresh failed" }),
+    { times: 1 },
+  );
+  const createResponse = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
+  const failedRefresh = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/list") && response.status() === 500,
+  );
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await createResponse;
+  await failedRefresh;
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await page.unroute("**/rpc/routines/list");
+  const routines = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routines).toHaveLength(1);
+  expect(routines[0]?.name).toBe("Persisted routine");
 });
 
 test("switching bots while a routine save is pending does not reopen stale state", async ({
@@ -116,12 +179,12 @@ test("switching bots while a routine save is pending does not reopen stale state
     async (route) => {
       sawUpdate();
       await updateReleased;
-      await route.continue();
+      await route.fulfill({ status: 500, body: "save failed" });
     },
     { times: 1 },
   );
-  const updateResponse = page.waitForResponse(
-    (response) => response.url().includes("/rpc/routines/update") && response.ok(),
+  const updateResponse = page.waitForResponse((response) =>
+    response.url().includes("/rpc/routines/update"),
   );
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -137,6 +200,7 @@ test("switching bots while a routine save is pending does not reopen stale state
   releaseUpdate();
   await updateResponse;
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
+  await expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.getByTitle("Agent computer").click();
   await expect(page.getByRole("button", { name: /Second routine/ })).toHaveCount(1);
@@ -177,3 +241,20 @@ test("switching bots while a routine save is pending does not reopen stale state
   await expect(page.getByRole("button", { name: /Second routine/ })).toHaveCount(1);
   await expect(page.getByRole("button", { name: /First routine/ })).toHaveCount(0);
 });
+
+function localSchedule(iso: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    weekday: value("weekday"),
+    hour: Number(value("hour")) % 24,
+    minute: Number(value("minute")),
+  };
+}
