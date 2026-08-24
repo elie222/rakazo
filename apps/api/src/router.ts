@@ -2338,20 +2338,29 @@ export function createRouter(deps: RouterDeps) {
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
         }
-        await deps.prisma.connection.updateMany({
-          where: {
-            id: input.connectionId,
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-          },
-          data: { status: "revoked" },
-        });
-        await deps.prisma.botConnectorDefault.deleteMany({
-          where: {
-            connectionId: input.connectionId,
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-          },
+        await deps.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM connections
+            WHERE id = ${input.connectionId}
+              AND "workspaceId" = ${context.actor.workspaceId}
+              AND "userId" = ${context.actor.userId}
+            FOR UPDATE
+          `;
+          await tx.connection.updateMany({
+            where: {
+              id: input.connectionId,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+            },
+            data: { status: "revoked" },
+          });
+          await tx.botConnectorDefault.deleteMany({
+            where: {
+              connectionId: input.connectionId,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+            },
+          });
         });
         return { ok: true as const };
       }),
@@ -2381,8 +2390,20 @@ export function createRouter(deps: RouterDeps) {
         return connectionDto(updated, isDefault);
       }),
       setDefault: authed.connections.setDefault.handler(async ({ context, input }) => {
-        const [bot, connection] = await Promise.all([
-          deps.prisma.bot.findFirst({
+        return deps.prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<
+            Array<{ id: string; connectorId: string; provider: string; status: string }>
+          >`
+            SELECT id, "connectorId", provider, status
+            FROM connections
+            WHERE id = ${input.connectionId}
+              AND "workspaceId" = ${context.actor.workspaceId}
+              AND "userId" = ${context.actor.userId}
+            FOR UPDATE
+          `;
+          const connection = locked[0];
+          if (!connection || connection.status !== "connected") throw new IsolationError();
+          const bot = await tx.bot.findFirst({
             where: {
               id: input.botId,
               workspaceId: context.actor.workspaceId,
@@ -2390,36 +2411,27 @@ export function createRouter(deps: RouterDeps) {
               archivedAt: null,
             },
             select: { id: true },
-          }),
-          deps.prisma.connection.findFirst({
+          });
+          if (!bot) throw new IsolationError();
+          return tx.botConnectorDefault.upsert({
             where: {
-              id: input.connectionId,
+              botId_connectorId_provider: {
+                botId: bot.id,
+                connectorId: connection.connectorId,
+                provider: connection.provider,
+              },
+            },
+            create: {
               workspaceId: context.actor.workspaceId,
               userId: context.actor.userId,
-              status: "connected",
-            },
-            select: { id: true, connectorId: true, provider: true },
-          }),
-        ]);
-        if (!bot || !connection) throw new IsolationError();
-        return deps.prisma.botConnectorDefault.upsert({
-          where: {
-            botId_connectorId_provider: {
               botId: bot.id,
+              connectionId: connection.id,
               connectorId: connection.connectorId,
               provider: connection.provider,
             },
-          },
-          create: {
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-            botId: bot.id,
-            connectionId: connection.id,
-            connectorId: connection.connectorId,
-            provider: connection.provider,
-          },
-          update: { connectionId: connection.id },
-          select: { botId: true, connectionId: true, connectorId: true, provider: true },
+            update: { connectionId: connection.id },
+            select: { botId: true, connectionId: true, connectorId: true, provider: true },
+          });
         });
       }),
     },

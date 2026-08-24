@@ -9,9 +9,11 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
+  accountsForComposioToolkit,
   addComposioAccountParameter,
   buildComposioMultiAccountOptions,
   type ComposioAccountRef,
+  composioAccountDefaultSelector,
   composioAccountsFromConnections,
   resolveComposioAccount,
   stripComposioAccount,
@@ -311,12 +313,9 @@ export class ComposioConnector implements ComposioProvider {
     const raw = await session.tools();
     return asConnectorTools(raw).map((tool) => {
       const toolkit = tool.route?.resourceId;
-      const toolkitAccounts = toolkit
-        ? accounts.filter((account) => account.toolkit === toolkit)
-        : [];
+      const toolkitAccounts = toolkit ? accountsForComposioToolkit(accounts, toolkit) : [];
       const defaultSelector = toolkit
-        ? (context.accountDefaults?.[`composio:${toolkit}`] ??
-          context.accountDefaults?.[`composio:${toolkit.toUpperCase()}`])
+        ? composioAccountDefaultSelector(context.accountDefaults, toolkit)
         : undefined;
       return toolkitAccounts.length > 1
         ? {
@@ -348,20 +347,15 @@ export class ComposioConnector implements ComposioProvider {
       const toolkit = call.route?.resourceId ?? toolkitFromTool({}, call.tool);
       const selection = stripComposioAccount(call.args ?? {});
       const defaultSelector = toolkit
-        ? (context.accountDefaults?.[`composio:${toolkit}`] ??
-          context.accountDefaults?.[`composio:${toolkit.toUpperCase()}`])
+        ? composioAccountDefaultSelector(context.accountDefaults, toolkit)
         : undefined;
       const account = toolkit
         ? resolveComposioAccount(accounts, toolkit, selection.account, defaultSelector)
         : undefined;
-      if (
-        toolkit &&
-        accounts.filter((candidate) => candidate.toolkit === toolkit).length > 1 &&
-        !account
-      ) {
+      if (toolkit && accountsForComposioToolkit(accounts, toolkit).length > 1 && !account) {
         yield {
           type: "error",
-          message: `Choose a connected ${toolkit} account before running this action.`,
+          message: `Choose a ${toolkit} account.`,
         };
         return;
       }

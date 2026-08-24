@@ -185,7 +185,7 @@ export function PluginsOverlay({
       const updated = await rpc.connections.rename({ connectionId: row.id, displayName });
       setConnections((current) => current.map((entry) => (entry.id === row.id ? updated : entry)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save account label");
+      setError(err instanceof Error ? err.message : "Could not save label");
     } finally {
       setPending(null);
     }
@@ -212,7 +212,7 @@ export function PluginsOverlay({
         selected,
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not set account default");
+      setError(err instanceof Error ? err.message : "Could not set default");
     } finally {
       setPending(null);
     }
@@ -522,7 +522,7 @@ export function PluginsOverlay({
                           size="sm"
                           onClick={() => setExpandedKey(expanded ? null : key)}
                         >
-                          {expanded ? "Hide accounts" : "Manage accounts"}
+                          {expanded ? "Hide" : "Accounts"}
                         </Button>
                       ) : (
                         <Button
@@ -539,26 +539,19 @@ export function PluginsOverlay({
                     {expanded ? (
                       <div className="mt-3 space-y-3 rounded-[13px] border border-[#2C2C30] bg-[#101012] p-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-[#ECECEE]">
-                              Connected accounts
-                            </div>
-                            <div className="text-xs text-[#77777D]">
-                              Choose which account this bot should use by default.
-                            </div>
-                          </div>
+                          <div className="text-sm font-medium text-[#ECECEE]">Accounts</div>
                           <Button
                             type="button"
                             variant="pill"
                             size="sm"
                             onClick={() => void connect(item)}
                           >
-                            Add another account
+                            Add account
                           </Button>
                         </div>
                         {bots.length > 0 ? (
                           <select
-                            aria-label="Bot default account"
+                            aria-label="Bot for account default"
                             value={activeBotId}
                             onChange={(event) => setActiveBotId(event.target.value)}
                             className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2 text-sm text-[#ECECEE] outline-none"
@@ -594,7 +587,7 @@ export function PluginsOverlay({
                                 disabled={pending === `rename:${row.id}`}
                                 onClick={() => void renameConnection(row)}
                               >
-                                {pending === `rename:${row.id}` ? "Saving…" : "Save label"}
+                                {pending === `rename:${row.id}` ? "Saving…" : "Save"}
                               </Button>
                               {row.status === "connected" ? (
                                 <Button
@@ -608,7 +601,7 @@ export function PluginsOverlay({
                                     ? "Default"
                                     : pending === `default:${row.id}`
                                       ? "Setting…"
-                                      : "Use as default"}
+                                      : "Set default"}
                                 </Button>
                               ) : null}
                               <Button

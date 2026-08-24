@@ -526,7 +526,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .map(
                 (row) =>
                   [
-                    `${row.connectorId}:${row.provider}`,
+                    `${row.connectorId}:${row.provider.trim().toLowerCase()}`,
                     row.connection.providerRef ?? row.connection.displayName,
                   ] as const,
               )

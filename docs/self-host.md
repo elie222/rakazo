@@ -66,15 +66,10 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 
 ## Multiple accounts per app
 
-When Composio is enabled, Rakazo can keep multiple accounts for the same app. Open Integrations,
-choose a connected app, then select **Manage accounts** and **Add another account**. After the
-provider authorization returns, save a local label such as `Personal` or `Work`. The label is stored
-in Rakazo; Composio remains the owner of OAuth credentials and connected-account IDs.
-
-Each bot can choose its own default account for an app. If a bot has more than one account and no
-default is set, its run must name the account or ask the user to choose one. Revoking an account
-removes only that connected account. Existing single-account connections continue to work without
-extra configuration.
+With Composio enabled, Integrations can keep multiple accounts per app. Open a connected app →
+**Accounts** → **Add account**, authorize, then save a label. Labels live in Rakazo; Composio keeps
+the OAuth credentials. Each bot can set its own default. Without a default, the run must pick an
+account. Revoke removes only that account. Existing single-account connections keep working.
 
 ## Choosing a computer provider
 

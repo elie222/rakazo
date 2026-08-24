@@ -6,7 +6,7 @@ Visual mockup: [`docs/mockups/composio-multi-account.html`](./mockups/composio-m
 
 ## Feature message
 
-Choose which personal or work account a Rakazo bot uses for each connected app.
+Pick which account a bot uses for each connected app.
 
 ## Storyboard
 
@@ -17,14 +17,14 @@ Starting context: the Integrations overlay is open on the Apps view.
 Visible evidence: Google Calendar appears as a normal app row with the existing primary action
 `Connect`.
 
-### Beat 2 — Add another account
+### Beat 2 — Add account
 
 After the first account is connected, the row changes to `1 account connected` and exposes
-`Add another account`. The existing Personal connection remains visible and is not replaced.
+`Add account`. The existing Personal connection remains visible and is not replaced.
 
 ### Beat 3 — Authorize the second account
 
-Interaction: the user selects `Add another account` and completes the provider authorization flow.
+Interaction: the user selects `Add account` and completes the provider authorization flow.
 The mockup shows a Rakazo-styled authorization step before returning to the Integrations surface.
 
 ### Beat 4 — Label the account
@@ -39,7 +39,7 @@ The label is user-facing. The provider connected-account ID remains internal.
 
 ### Beat 5 — Choose the bot default
 
-Interaction: the user selects `Manage accounts` after saving.
+Interaction: the user selects `Accounts` after saving.
 
 Visible evidence: the account panel shows both Personal and Work, with a per-bot default control.
 The user can set Work as Ari's default without reconnecting either account.

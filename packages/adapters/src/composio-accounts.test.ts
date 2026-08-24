@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountsForComposioToolkit,
   addComposioAccountParameter,
   buildComposioMultiAccountOptions,
   type ComposioAccountRef,
+  composioAccountDefaultSelector,
   composioAccountsFromConnections,
   resolveComposioAccount,
   stripComposioAccount,
@@ -35,6 +37,16 @@ describe("Composio account selection", () => {
     expect(resolveComposioAccount(accounts, "googlecalendar", "personal")).toBeUndefined();
   });
 
+  it("matches toolkit accounts and defaults case-insensitively", () => {
+    expect(accountsForComposioToolkit(accounts, "GMAIL")).toEqual([accounts[0], accounts[1]]);
+    expect(
+      composioAccountDefaultSelector(
+        { "composio:gmail": "ca_work", "composio:GMAIL": "ignored" },
+        "Gmail",
+      ),
+    ).toBe("ca_work");
+  });
+
   it("uses a toolkit default when no explicit account was requested", () => {
     expect(resolveComposioAccount(accounts, "gmail", undefined, "work")).toEqual(accounts[1]);
     expect(resolveComposioAccount(accounts, "googlecalendar")).toEqual(accounts[2]);
@@ -61,7 +73,7 @@ describe("Composio account selection", () => {
         account: {
           type: "string",
           enum: ["personal", "work"],
-          description: "Connected account alias. Required when more than one account is connected.",
+          description: "Account alias.",
         },
       },
       required: ["to", "account"],
@@ -86,7 +98,7 @@ describe("Composio account selection", () => {
         account: {
           type: "string",
           enum: ["personal", "work"],
-          description: "Connected account alias. The bot default is used when omitted.",
+          description: "Account alias. Uses bot default if omitted.",
         },
       },
       required: ["to"],

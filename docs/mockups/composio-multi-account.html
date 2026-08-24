@@ -142,7 +142,7 @@
                     <div class="app-name">Google Calendar</div>
                     <div class="app-meta">composio · googlecalendar · 1 account connected</div>
                   </div>
-                  <button type="button" class="pill primary" data-next="2">＋ Add another account</button>
+                  <button type="button" class="pill primary" data-next="2">＋ Add account</button>
                 </div>
                 <div class="account-panel">
                   <div class="account-row">
@@ -154,7 +154,7 @@
                     <span class="status default">Default</span>
                   </div>
                 </div>
-                <p class="scene-note">After the first authorization, the app stays in Connected and offers Add another account.</p>
+                <p class="scene-note">After the first authorization, the app stays in Connected and offers Add account.</p>
               </section>
 
               <section class="flow-scene" data-scene="2" aria-label="Authorize another account">
@@ -194,7 +194,7 @@
                     <div class="app-name">Google Calendar</div>
                     <div class="app-meta">composio · googlecalendar · 2 accounts connected</div>
                   </div>
-                  <button type="button" class="pill" data-next="5">Manage accounts</button>
+                  <button type="button" class="pill" data-next="5">Accounts</button>
                 </div>
                 <div class="account-panel">
                   <div class="account-row">
@@ -204,7 +204,7 @@
                       <div class="account-address">personal@example.test</div>
                     </div>
                     <span class="status default">Default</span>
-                    <button type="button" class="row-action" data-default="personal">Use as default</button>
+                    <button type="button" class="row-action" data-default="personal">Set default</button>
                   </div>
                   <div class="divider"></div>
                   <div class="account-row">
@@ -214,7 +214,7 @@
                       <div class="account-address">work@example.test</div>
                     </div>
                     <span class="status">Connected</span>
-                    <button type="button" class="row-action" data-default="work">Use as default</button>
+                    <button type="button" class="row-action" data-default="work">Set default</button>
                   </div>
                 </div>
                 <p class="scene-note">The account list now shows both identities. The bot default can be changed without reconnecting either account.</p>
@@ -252,7 +252,7 @@
               </div>
               <div class="beat-card">
                 <button type="button" class="beat active" data-beat="0"><span class="beat-dot"></span>Apps → Connect</button>
-                <button type="button" class="beat" data-beat="1"><span class="beat-dot"></span>Add another account</button>
+                <button type="button" class="beat" data-beat="1"><span class="beat-dot"></span>Add account</button>
                 <button type="button" class="beat" data-beat="2"><span class="beat-dot"></span>Authorize provider</button>
                 <button type="button" class="beat" data-beat="3"><span class="beat-dot"></span>Label the account</button>
                 <button type="button" class="beat" data-beat="4"><span class="beat-dot"></span>Set the default</button>
@@ -267,7 +267,7 @@
     <script>
       const beats = [
         ["Start where you already connect apps", "Open Apps, find Google Calendar, and press Connect. The first account follows the existing Rakazo connection flow."],
-        ["Add another account without replacing the first", "Once Personal is connected, the same app row offers Add another account. Your first authorization stays intact."],
+        ["Add account without replacing the first", "Once Personal is connected, the same app row offers Add account. Your first authorization stays intact."],
         ["Authorize the second provider identity", "Rakazo opens the provider authorization step for the second account and returns to this setup flow when it succeeds."],
         ["Give the account a useful name", "Name the new connection Work or Personal so you and the bot can refer to it without seeing provider IDs."],
         ["Choose the bot default", "Both accounts appear under one app. Set a per-bot default, or change it later without reconnecting."],
@@ -302,7 +302,7 @@
           const selected = button.dataset.default;
           const scene = button.closest("[data-scene]");
           scene.querySelectorAll("[data-default]").forEach((candidate) => {
-            candidate.textContent = candidate.dataset.default === selected ? "Default" : "Use as default";
+            candidate.textContent = candidate.dataset.default === selected ? "Default" : "Set default";
           });
           scene.querySelectorAll(".status").forEach((status) => {
             if (status.textContent === "Default" || status.textContent === "Connected") status.textContent = "Connected";

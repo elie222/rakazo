@@ -78,15 +78,34 @@ export function buildComposioMultiAccountOptions(
   };
 }
 
+export function accountsForComposioToolkit(
+  accounts: ComposioAccountRef[],
+  toolkit: string,
+): ComposioAccountRef[] {
+  const normalized = normalizeToolkit(toolkit);
+  return accounts.filter((account) => normalizeToolkit(account.toolkit) === normalized);
+}
+
+export function composioAccountDefaultSelector(
+  accountDefaults: Record<string, string> | undefined,
+  toolkit: string,
+): string | undefined {
+  if (!accountDefaults) return undefined;
+  const normalized = normalizeToolkit(toolkit);
+  return (
+    accountDefaults[`composio:${normalized}`] ??
+    accountDefaults[`composio:${normalized.toUpperCase()}`] ??
+    accountDefaults[`composio:${toolkit}`]
+  );
+}
+
 export function resolveComposioAccount(
   accounts: ComposioAccountRef[],
   toolkit: string,
   requested?: string,
   defaultAlias?: string,
 ): ComposioAccountRef | undefined {
-  const candidates = accounts.filter(
-    (account) => normalizeToolkit(account.toolkit) === normalizeToolkit(toolkit),
-  );
+  const candidates = accountsForComposioToolkit(accounts, toolkit);
   if (candidates.length === 0) return undefined;
   const selector = requested?.trim() || defaultAlias?.trim();
   if (selector) {
@@ -116,9 +135,7 @@ export function addComposioAccountParameter(
   properties.account = {
     type: "string",
     enum: accounts.map((account) => account.alias),
-    description: hasDefault
-      ? "Connected account alias. The bot default is used when omitted."
-      : "Connected account alias. Required when more than one account is connected.",
+    description: hasDefault ? "Account alias. Uses bot default if omitted." : "Account alias.",
   };
   const required = Array.isArray(inputSchema.required)
     ? [
