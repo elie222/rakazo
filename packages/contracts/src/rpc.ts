@@ -516,9 +516,7 @@ export const appContract = {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
   },
   runs: {
-    list: oc
-      .input(z.object({ filter: z.enum(["active", "recent"]) }))
-      .output(RunsListOutputSchema),
+    list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),

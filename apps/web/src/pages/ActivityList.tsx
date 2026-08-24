@@ -1,5 +1,5 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 function formatRelativeTime(iso: string, now = new Date()): string {
@@ -55,33 +55,38 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
   const [activeRuns, setActiveRuns] = useState<RunActivityRow[]>([]);
   const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const refreshGeneration = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     try {
       const [active, recent] = await Promise.all([
         rpc.runs.list({ filter: "active" }),
         rpc.runs.list({ filter: "recent" }),
       ]);
+      if (generation !== refreshGeneration.current) return;
       setActiveRuns(active.runs);
       setRecentRuns(recent.runs);
     } catch {
+      if (generation !== refreshGeneration.current) return;
       setActiveRuns([]);
       setRecentRuns([]);
     } finally {
-      setLoading(false);
+      if (generation === refreshGeneration.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      refreshGeneration.current += 1;
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   if (loading) {
-    return (
-      <div className="px-2.5 py-2 text-[13px] text-[#6C6C70]">Loading activity…</div>
-    );
+    return <div className="px-2.5 py-2 text-[13px] text-[#6C6C70]">Loading activity…</div>;
   }
 
   if (activeRuns.length === 0 && recentRuns.length === 0) return null;
@@ -110,9 +115,11 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 
 function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
+  const label = statusLabel(run.status);
   return (
     <button
       type="button"
+      aria-label={`Activity for ${title}, ${label}`}
       onClick={onOpen}
       className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-[#131315]"
     >
@@ -129,11 +136,9 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
           </span>
         </div>
         <div className="mt-0.5 flex items-baseline justify-between gap-2">
-          <span className="truncate text-[13px] text-[#85858A]">
-            {run.promptSnippet || statusLabel(run.status)}
-          </span>
+          <span className="truncate text-[13px] text-[#85858A]">{run.promptSnippet || label}</span>
           <span className="shrink-0 text-[12px]" style={{ color: statusColor(run.status) }}>
-            {statusLabel(run.status)}
+            {label}
           </span>
         </div>
       </div>

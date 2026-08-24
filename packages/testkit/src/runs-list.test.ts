@@ -1,8 +1,8 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { PrismaClient } from "@rakazo/db";
 import type { RunActivityRow } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -91,6 +91,33 @@ describeRunsList("runs.list activity tracker", () => {
       filter: "active",
     });
     expect(active.runs).toEqual([]);
+  });
+
+  it("excludes archived bots from recent before applying the limit", async () => {
+    const cookie = await signup(app, `runs-archived-${stamp}@rakazo.test`, "Archive User");
+    const archivedBot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Archived",
+      title: "Archived",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const visibleBot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Visible",
+      title: "Visible",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await seedRun(prisma, archivedBot.id, "completed", "archived run");
+    await rpc(app, cookie, "bots/archive", { botId: archivedBot.id });
+    await seedRun(prisma, visibleBot.id, "completed", "visible run");
+
+    const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "recent",
+    });
+    expect(recent.runs.some((run) => run.botName === "Archived")).toBe(false);
+    expect(recent.runs.some((run) => run.botName === "Visible")).toBe(true);
   });
 
   it("returns group runs with groupId for navigation", async () => {

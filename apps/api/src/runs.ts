@@ -20,6 +20,7 @@ export async function listWorkspaceRuns(
     where: {
       workspaceId: actor.workspaceId,
       userId: actor.userId,
+      bot: { archivedAt: null },
       ...(filter === "active"
         ? { status: { in: [...ACTIVE_RUN_STATUSES] } }
         : { status: { in: [...TERMINAL_STATUSES] } }),
@@ -41,18 +42,19 @@ export async function listWorkspaceRuns(
     take: filter === "recent" ? RECENT_LIMIT : undefined,
   });
 
-  return rows
-    .filter((row) => !row.bot.archivedAt)
-    .map((row) => ({
-      runId: row.id,
-      botId: row.botId,
-      botName: row.bot.name,
-      groupId: row.thread.groupId,
-      groupName: row.thread.group?.name ?? null,
-      threadId: row.threadId,
-      status: row.status as RunActivityRow["status"],
-      trigger: row.trigger as RunActivityRow["trigger"],
-      promptSnippet: promptSnippet(row.task.prompt),
-      updatedAt: (filter === "recent" && row.completedAt ? row.completedAt : row.updatedAt).toISOString(),
-    }));
+  return rows.map((row) => ({
+    runId: row.id,
+    botId: row.botId,
+    botName: row.bot.name,
+    groupId: row.thread.groupId,
+    groupName: row.thread.group?.name ?? null,
+    threadId: row.threadId,
+    status: row.status as RunActivityRow["status"],
+    trigger: row.trigger as RunActivityRow["trigger"],
+    promptSnippet: promptSnippet(row.task.prompt),
+    updatedAt: (filter === "recent" && row.completedAt
+      ? row.completedAt
+      : row.updatedAt
+    ).toISOString(),
+  }));
 }

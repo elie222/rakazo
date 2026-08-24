@@ -1,7 +1,7 @@
 import type { RunActivityRow, SearchHit } from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,11 @@ import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
+  activityStatusLabel,
+  fetchWorkspaceActivity,
+  formatActivityRelativeTime,
+} from "../lib/activity";
+import {
   loadSessionToken,
   type MobileBot,
   type MobileBotSection,
@@ -30,13 +35,8 @@ import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox
 import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
-import {
-  activityStatusLabel,
-  fetchWorkspaceActivity,
-  formatActivityRelativeTime,
-} from "../lib/activity";
-import { mobileSearchDestination } from "../lib/search-destination";
 import { queryWorkspaceSearch } from "../lib/search";
+import { mobileSearchDestination } from "../lib/search-destination";
 
 const FALLBACK_COLOR = "#9B5CF6";
 
@@ -64,6 +64,7 @@ export default function Home() {
     active: [],
     recent: [],
   });
+  const activityGeneration = useRef(0);
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -113,20 +114,31 @@ export default function Home() {
 
   const loadActivity = useCallback(async () => {
     if (!hasSession || searching || query.trim()) {
+      activityGeneration.current += 1;
       setActivity({ active: [], recent: [] });
       return;
     }
+    const generation = ++activityGeneration.current;
     try {
-      setActivity(await fetchWorkspaceActivity());
+      const next = await fetchWorkspaceActivity();
+      if (generation !== activityGeneration.current) return;
+      setActivity(next);
     } catch {
+      if (generation !== activityGeneration.current) return;
       setActivity({ active: [], recent: [] });
     }
   }, [hasSession, query, searching]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!hasSession || searching || query.trim()) return;
       void loadActivity();
-    }, [loadActivity]),
+      const timer = setInterval(() => void loadActivity(), 15_000);
+      return () => {
+        activityGeneration.current += 1;
+        clearInterval(timer);
+      };
+    }, [hasSession, loadActivity, query, searching]),
   );
 
   useEffect(() => {
@@ -262,7 +274,9 @@ export default function Home() {
           />
         }
         ListHeaderComponent={
-          !searching && !query.trim() && (activity.active.length > 0 || activity.recent.length > 0) ? (
+          !searching &&
+          !query.trim() &&
+          (activity.active.length > 0 || activity.recent.length > 0) ? (
             <ActivitySection activity={activity} />
           ) : null
         }
@@ -325,7 +339,10 @@ function ActivitySection({
   const router = useRouter();
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
-      router.push({ pathname: "/group-thread", params: { groupId: run.groupId, name: run.groupName ?? "Group" } });
+      router.push({
+        pathname: "/group-thread",
+        params: { groupId: run.groupId, name: run.groupName ?? "Group" },
+      });
       return;
     }
     router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
@@ -357,8 +374,15 @@ function ActivitySection({
 
 function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
+  const status = activityStatusLabel(run.status);
+  const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Activity for ${title}, ${status}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
       <View style={styles.activityDot} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
@@ -368,7 +392,7 @@ function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => voi
           <Text style={styles.time}>{formatActivityRelativeTime(run.updatedAt)}</Text>
         </View>
         <Text style={styles.preview} numberOfLines={1}>
-          {run.promptSnippet || activityStatusLabel(run.status)} · {activityStatusLabel(run.status)}
+          {preview}
         </Text>
       </View>
     </Pressable>
