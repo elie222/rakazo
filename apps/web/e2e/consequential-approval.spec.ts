@@ -37,7 +37,7 @@ test("actions run by default while optional confirmations live in advanced user 
 
   await rpc(page, "approvalRules/set", {
     effect: "require_approval",
-    matchKind: "tool",
+    matchKind: "connector",
     matchValue: "destination.write",
   });
 
