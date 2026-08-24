@@ -332,10 +332,18 @@ export default function Thread() {
     historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
-      const next = await refresh().catch((err: Error) => {
-        setError(err.message);
-        return null;
-      });
+      const next = messageId
+        ? await rpc<MobileSnapshot>(
+            "threads/get",
+            groupId ? { groupId } : { botId: botId! },
+          ).catch((err: Error) => {
+            setError(err.message);
+            return null;
+          })
+        : await refresh().catch((err: Error) => {
+            setError(err.message);
+            return null;
+          });
       if (abort.signal.aborted) return;
       let cursor = next?.cursor ?? -1;
       let retryMs = 250;

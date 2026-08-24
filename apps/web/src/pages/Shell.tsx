@@ -367,14 +367,14 @@ export function ShellPage() {
       !scrollElement ||
       scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
-    const pin = pinnedAroundRef.current;
-    const keepPin = pin?.groupId === id;
     const snap = await rpc.threads.get({ groupId: id });
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id) return snap;
+    const pin = pinnedAroundRef.current;
+    const keepPin = pin?.groupId === id;
     setSnapshot((prev) => {
       let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
-      if (keepPin && merged) {
+      if (keepPin && merged && pin) {
         merged = {
           ...merged,
           messages: pin.messages,
@@ -401,8 +401,6 @@ export function ShellPage() {
       !scrollElement ||
       scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
-    const pin = pinnedAroundRef.current;
-    const keepPin = pin?.botId === id;
     const epoch = historyEpoch.current;
     const [snap, routines, skills] = await Promise.all([
       rpc.threads.get({ botId: id }),
@@ -414,9 +412,11 @@ export function ShellPage() {
     // The epoch check drops a response that raced a conversation clear, which would otherwise
     // re-apply the deleted messages and cursor over the emptied snapshot.
     if (activeBotId.current !== id || epoch !== historyEpoch.current) return snap;
+    const pin = pinnedAroundRef.current;
+    const keepPin = pin?.botId === id;
     setSnapshot((prev) => {
       let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
-      if (keepPin && merged) {
+      if (keepPin && merged && pin) {
         merged = {
           ...merged,
           messages: pin.messages,
@@ -630,7 +630,8 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
-    if (!searchParams.get("m")) {
+    const pendingJump = searchParams.get("m");
+    if (!pendingJump) {
       pinnedAroundRef.current = null;
     }
     screenRequest.current += 1;
@@ -642,7 +643,11 @@ export function ShellPage() {
       const primed = bootstrappedThread.current;
       bootstrappedThread.current = null;
       const snap =
-        primed?.botId === active.id ? primed : await refreshThread(active.id).catch(() => null);
+        primed?.botId === active.id
+          ? primed
+          : pendingJump
+            ? await rpc.threads.get({ botId: active.id }).catch(() => null)
+            : await refreshThread(active.id).catch(() => null);
       if (abort.signal.aborted) return;
       let cursor = snap?.cursor ?? -1;
       let retryMs = 250;
@@ -697,7 +702,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible, searchParams]);
+  }, [active?.id, markBotReadIfVisible]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -729,12 +734,15 @@ export function ShellPage() {
     markVisibleGroupRead();
     window.addEventListener("focus", markVisibleGroupRead);
     document.addEventListener("visibilitychange", markVisibleGroupRead);
-    if (!searchParams.get("m")) {
+    const pendingJump = searchParams.get("m");
+    if (!pendingJump) {
       pinnedAroundRef.current = null;
     }
     const abort = new AbortController();
     void (async () => {
-      const snap = await refreshGroupThread(groupId).catch(() => null);
+      const snap = pendingJump
+        ? await rpc.threads.get({ groupId }).catch(() => null)
+        : await refreshGroupThread(groupId).catch(() => null);
       if (abort.signal.aborted) return;
       let cursor = snap?.cursor ?? -1;
       let retryMs = 250;
@@ -768,7 +776,7 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
-  }, [activeGroup?.id, groupId, searchParams]);
+  }, [activeGroup?.id, groupId]);
 
   const filtered = useMemo(
     () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
