@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { cn } from "./lib/utils.js";
 
 const ACTIVE_STATUSES = new Set([
@@ -7,16 +8,6 @@ const ACTIVE_STATUSES = new Set([
   "waiting_input",
   "waiting_takeover",
 ]);
-
-let stylesInjected = false;
-function ensureAvatarStyles() {
-  if (stylesInjected || typeof document === "undefined") return;
-  const styleEl = document.createElement("style");
-  styleEl.setAttribute("data-rakazo-avatar-styles", "true");
-  styleEl.textContent = AVATAR_KEYFRAMES;
-  document.head.appendChild(styleEl);
-  stylesInjected = true;
-}
 
 export interface BotAvatarProps {
   color: string;
@@ -33,8 +24,6 @@ export function BotAvatar({
   working,
   className,
 }: BotAvatarProps) {
-  ensureAvatarStyles();
-
   const isWorking =
     working || (status != null && ACTIVE_STATUSES.has(status));
   const visorW = Math.round(size * 0.68);
@@ -49,7 +38,8 @@ export function BotAvatar({
   const variant = seed % 4;
   const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
   const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
-  const gradId = `spin-grad-${seed}`;
+  const rawId = useId();
+  const gradId = `spin-grad-${rawId.replace(/[^a-zA-Z0-9-_]/g, "")}`;
 
   return (
     <div

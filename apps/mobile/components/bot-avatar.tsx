@@ -1,5 +1,13 @@
 import { View } from "react-native";
 
+const ACTIVE_STATUSES = new Set([
+  "queued",
+  "leased",
+  "running",
+  "waiting_input",
+  "waiting_takeover",
+]);
+
 export function BotAvatar({
   color,
   size = 54,
@@ -11,6 +19,7 @@ export function BotAvatar({
   status?: string;
   working?: boolean;
 }) {
+  const isWorking = working || (status != null && ACTIVE_STATUSES.has(status));
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(3, Math.round(size * 0.11));
@@ -25,6 +34,8 @@ export function BotAvatar({
         backgroundColor: color,
         alignItems: "center",
         justifyContent: "center",
+        borderWidth: isWorking ? 2 : 0,
+        borderColor: "#FFFFFF",
       }}
     >
       <View

@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.8",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
   }
