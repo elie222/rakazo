@@ -142,6 +142,12 @@ describeSearch("workspace search", () => {
     const groupMessage = messageHits.hits.find((hit) => hit.kind === "message");
     expect(groupMessage?.groupId).toBe(group.id);
     expect(groupMessage?.botId).toBeUndefined();
+    expect(groupMessage?.messageId).toBeDefined();
+    const page = await rpc<{ messages: Array<{ id: string }> }>(app, cookie, "threads/messages", {
+      groupId: group.id,
+      around: { messageId: groupMessage!.messageId! },
+    });
+    expect(page.messages.some((message) => message.id === groupMessage!.messageId)).toBe(true);
 
     const fileHits = await rpc<{
       hits: Array<{ kind: string; groupId?: string; artifactId?: string }>;

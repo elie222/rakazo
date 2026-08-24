@@ -40,6 +40,7 @@ import {
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
+  searchHitThreadTarget,
   speechFromBlocks,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
@@ -244,7 +245,8 @@ export function ShellPage() {
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
-    botId: string;
+    botId?: string;
+    groupId?: string;
     messageId: string;
     threadId: string;
     messages: ThreadMessage[];
@@ -365,16 +367,26 @@ export function ShellPage() {
       !scrollElement ||
       scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
     markOnce("rk:renderer:thread-request-start");
+    const pin = pinnedAroundRef.current;
+    const keepPin = pin?.groupId === id;
     const snap = await rpc.threads.get({ groupId: id });
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id) return snap;
-    setSnapshot((prev) =>
-      mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
-    );
+    setSnapshot((prev) => {
+      let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
+      if (keepPin && merged) {
+        merged = {
+          ...merged,
+          messages: pin.messages,
+          olderCursor: pin.olderCursor,
+        };
+      }
+      return merged;
+    });
     setComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
-    if (stickToEnd) {
+    if (!keepPin && stickToEnd) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -717,7 +729,9 @@ export function ShellPage() {
     markVisibleGroupRead();
     window.addEventListener("focus", markVisibleGroupRead);
     document.addEventListener("visibilitychange", markVisibleGroupRead);
-    pinnedAroundRef.current = null;
+    if (!searchParams.get("m")) {
+      pinnedAroundRef.current = null;
+    }
     const abort = new AbortController();
     void (async () => {
       const snap = await refreshGroupThread(groupId).catch(() => null);
@@ -754,7 +768,7 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
-  }, [activeGroup?.id, groupId]);
+  }, [activeGroup?.id, groupId, searchParams]);
 
   const filtered = useMemo(
     () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
@@ -806,19 +820,20 @@ export function ShellPage() {
     });
   }
 
-  async function jumpToMessage(botId: string, messageId: string) {
+  async function jumpToMessage(target: { botId?: string; groupId?: string; messageId: string }) {
+    const threadTarget = searchHitThreadTarget(target);
     const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
-      rpc.threads.get({ botId }),
-      rpc.threads.messages({ botId, around: { messageId } }),
+      rpc.threads.get(threadTarget),
+      rpc.threads.messages({ ...threadTarget, around: { messageId: target.messageId } }),
     ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
     // the fetched page would pin deleted messages that every later refresh keeps restoring.
     if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
-      botId,
-      messageId,
+      ...threadTarget,
+      messageId: target.messageId,
       threadId: page.threadId,
       messages: page.messages,
       olderCursor: page.olderCursor,
@@ -828,20 +843,34 @@ export function ShellPage() {
       messages: page.messages,
       olderCursor: page.olderCursor,
     });
-    setComputer(snap.computer ?? null);
-    setRoutines(await rpc.routines.list({ botId }));
-    setRoutinesBotId(botId);
+    if (threadTarget.botId) {
+      setComputer(snap.computer ?? null);
+      setRoutines(await rpc.routines.list({ botId: threadTarget.botId }));
+      setRoutinesBotId(threadTarget.botId);
+    } else {
+      setComputer(null);
+      setRoutines([]);
+      setRoutinesBotId(null);
+    }
     window.requestAnimationFrame(() => {
       document
-        .querySelector(`[data-message-id="${messageId}"]`)
+        .querySelector(`[data-message-id="${target.messageId}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }
 
   useEffect(() => {
-    if (!active) return;
     const messageId = searchParams.get("m");
     const routineId = searchParams.get("routine");
+    if (inGroup && groupId && messageId) {
+      void jumpToMessage({ groupId, messageId }).finally(() => {
+        const next = new URLSearchParams(searchParams);
+        next.delete("m");
+        setSearchParams(next, { replace: true });
+      });
+      return;
+    }
+    if (!active) return;
     if (routineId && routinesBotId === active.id) {
       const routine = routines.find((item) => item.id === routineId);
       if (routine) {
@@ -859,13 +888,13 @@ export function ShellPage() {
       setSearchParams(next, { replace: true });
     }
     if (messageId) {
-      void jumpToMessage(active.id, messageId).finally(() => {
+      void jumpToMessage({ botId: active.id, messageId }).finally(() => {
         const next = new URLSearchParams(searchParams);
         next.delete("m");
         setSearchParams(next, { replace: true });
       });
     }
-  }, [active?.id, routines, routinesBotId, searchParams, setSearchParams]);
+  }, [active?.id, groupId, inGroup, routines, routinesBotId, searchParams, setSearchParams]);
   const activeSnapshot = inGroup
     ? snapshot?.groupId === groupId
       ? snapshot
@@ -918,14 +947,21 @@ export function ShellPage() {
   }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
 
   useLayoutEffect(() => {
-    if (!active || !snapshot || snapshot.botId !== active.id) return;
-    if (initiallyScrolledThread.current === snapshot.threadId) return;
-    if (pinnedAroundRef.current?.botId === active.id) return;
+    const pin = pinnedAroundRef.current;
+    if (inGroup) {
+      if (!groupId || !snapshot || snapshot.groupId !== groupId) return;
+      if (initiallyScrolledThread.current === snapshot.threadId) return;
+      if (pin?.groupId === groupId) return;
+    } else {
+      if (!active || !snapshot || snapshot.botId !== active.id) return;
+      if (initiallyScrolledThread.current === snapshot.threadId) return;
+      if (pin?.botId === active.id) return;
+    }
     const element = messageScroll.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
     initiallyScrolledThread.current = snapshot.threadId;
-  }, [active, snapshot?.botId, snapshot?.threadId]);
+  }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
 
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);

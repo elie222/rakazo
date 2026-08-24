@@ -7,6 +7,7 @@ import {
   isApprovalAskBlock,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
+  searchHitThreadTarget,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -64,7 +65,8 @@ export default function Thread() {
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
   const pinnedAroundRef = useRef<{
-    botId: string;
+    botId?: string;
+    groupId?: string;
     messageId: string;
     threadId: string;
     messages: readonly MobileMessage[];
@@ -219,7 +221,11 @@ export default function Thread() {
     const pin = pinnedAroundRef.current;
     setSnap((prev) => {
       let merged = mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId);
-      if (pin && merged && pin.botId === targetBotId) {
+      if (
+        pin &&
+        merged &&
+        ((pin.botId && pin.botId === targetBotId) || (pin.groupId && pin.groupId === targetGroupId))
+      ) {
         merged = {
           ...merged,
           messages: [...pin.messages],
@@ -231,13 +237,14 @@ export default function Thread() {
     return next;
   }
 
-  async function applyMessageJump(targetBotId: string, targetMessageId: string) {
+  async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
+    const threadTarget = searchHitThreadTarget(target);
     const epoch = historyEpoch.current;
     const [snap, page] = await Promise.all([
-      rpc<MobileSnapshot>("threads/get", { botId: targetBotId }),
+      rpc<MobileSnapshot>("threads/get", threadTarget),
       rpc<MobileMessagePage>("threads/messages", {
-        botId: targetBotId,
-        around: { messageId: targetMessageId },
+        ...threadTarget,
+        around: { messageId: target.messageId },
       }),
     ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
@@ -245,13 +252,13 @@ export default function Thread() {
     if (epoch !== historyEpoch.current) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
-      botId: targetBotId,
-      messageId: targetMessageId,
+      ...threadTarget,
+      messageId: target.messageId,
       threadId: page.threadId,
       messages: [...page.messages],
       olderCursor: page.olderCursor,
     };
-    jumpScrollTarget.current = targetMessageId;
+    jumpScrollTarget.current = target.messageId;
     setSnap({
       ...snap,
       messages: [...page.messages],
@@ -382,11 +389,13 @@ export default function Thread() {
   }, [botId, groupId, markReadIfVisible]);
 
   useEffect(() => {
-    if (!botId || !messageId) return;
-    void applyMessageJump(botId, messageId).catch((err) => {
+    if ((!botId && !groupId) || !messageId) return;
+    void applyMessageJump(
+      groupId ? { groupId, messageId } : { botId: botId!, messageId },
+    ).catch((err) => {
       setError(err instanceof Error ? err.message : "Could not open message");
     });
-  }, [botId, messageId]);
+  }, [botId, groupId, messageId]);
 
   useEffect(() => {
     setPendingAttachments((current) => attachmentsForThread(current, threadKey));
@@ -539,7 +548,10 @@ export default function Thread() {
           }
           if (
             jumpScrollTarget.current ||
-            (pinnedAroundRef.current && pinnedAroundRef.current.botId === botId)
+            (pinnedAroundRef.current &&
+              ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
+                (pinnedAroundRef.current.groupId &&
+                  pinnedAroundRef.current.groupId === groupId)))
           )
             return;
           scroll.current?.scrollToEnd({ animated: false });

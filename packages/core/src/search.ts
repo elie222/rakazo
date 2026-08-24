@@ -26,3 +26,16 @@ export function snippetAroundMatch(text: string, query: string, maxLen = 120): s
   const suffix = end < text.length ? "…" : "";
   return `${prefix}${text.slice(start, end)}${suffix}`;
 }
+
+export type SearchThreadTarget =
+  | { botId: string; groupId?: undefined }
+  | { groupId: string; botId?: undefined };
+
+export function searchHitThreadTarget(hit: {
+  botId?: string;
+  groupId?: string;
+}): SearchThreadTarget {
+  if (hit.groupId) return { groupId: hit.groupId };
+  if (hit.botId) return { botId: hit.botId };
+  throw new Error("Search hit must target a bot or group");
+}
