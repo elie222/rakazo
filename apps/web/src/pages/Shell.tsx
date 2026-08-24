@@ -229,6 +229,7 @@ export function ShellPage() {
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
   const [runningRoutine, setRunningRoutine] = useState(false);
+  const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [usage, setUsage] = useState<{
@@ -238,6 +239,7 @@ export function ShellPage() {
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
+  const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
@@ -1204,6 +1206,13 @@ export function ShellPage() {
     setComputerOpen(false);
   }, [active?.id]);
 
+  useEffect(() => {
+    if (panel !== "routine") {
+      routineSaveRequest.current += 1;
+      setRoutineError(null);
+    }
+  }, [panel]);
+
   // The routine panel copies a routine's data into local draft state at click time
   // rather than deriving it from `active`, so it goes stale across a bot switch —
   // without this, Save on bot B could silently update bot A's routine.
@@ -2006,8 +2015,10 @@ export function ShellPage() {
                       const targetBotId = active.id;
                       const targetRoutine = editingRoutine;
                       if (targetRoutine && targetRoutine.botId !== targetBotId) return;
+                      const saveRequest = ++routineSaveRequest.current;
                       routineSavePending.current = true;
                       setSavingRoutine(true);
+                      setRoutineError(null);
                       try {
                         if (targetRoutine) {
                           await rpc.routines.update({
@@ -2027,12 +2038,26 @@ export function ShellPage() {
                             notify: true,
                           });
                         }
-                        if (activeBotId.current !== targetBotId) return;
-                        await refreshThread(targetBotId);
-                        if (activeBotId.current === targetBotId) setPanel("computer");
+                      } catch (error) {
+                        if (
+                          routineSaveRequest.current !== saveRequest ||
+                          activeBotId.current !== targetBotId
+                        ) {
+                          return;
+                        }
+                        setRoutineError(
+                          error instanceof Error ? error.message : "Could not save routine",
+                        );
+                        return;
                       } finally {
                         routineSavePending.current = false;
                         setSavingRoutine(false);
+                      }
+                      if (
+                        routineSaveRequest.current === saveRequest &&
+                        activeBotId.current === targetBotId
+                      ) {
+                        setPanel("computer");
                       }
                     }}
                     className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
@@ -2074,6 +2099,11 @@ export function ShellPage() {
                     </>
                   ) : null}
                 </div>
+                {routineError ? (
+                  <p role="alert" className="mt-3 text-[13px] text-[#EF6461]">
+                    {routineError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>

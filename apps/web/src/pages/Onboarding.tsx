@@ -151,7 +151,7 @@ export function OnboardingPage() {
       if (requestId !== probeRequestIdRef.current) return;
       setProbeModels(result.models);
       setProbedBaseUrl(trimmedBaseUrl);
-      if (result.models[0]) setModelId(result.models[0]!);
+      setModelId((current) => current.trim() || result.models[0] || "");
       setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
@@ -360,7 +360,7 @@ export function OnboardingPage() {
                   </div>
                   <div className="mt-4 block">
                     <span>Model</span>
-                    {probeModels.length ? (
+                    {probeModels.length && probeModels.includes(modelId) ? (
                       <div className="relative mt-2">
                         <select
                           value={modelId}
@@ -373,6 +373,7 @@ export function OnboardingPage() {
                               {id}
                             </option>
                           ))}
+                          <option value="">Other model…</option>
                         </select>
                         <span
                           aria-hidden="true"
@@ -390,6 +391,15 @@ export function OnboardingPage() {
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                       />
                     )}
+                    {probeModels.length && !probeModels.includes(modelId) ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-[13px] text-[#85858A] underline"
+                        onClick={() => setModelId(probeModels[0] ?? "")}
+                      >
+                        Use a found model
+                      </button>
+                    ) : null}
                   </div>
                 </>
               ) : (

@@ -210,7 +210,7 @@ export default function Models() {
       if (requestId !== probeRequestIdRef.current) return;
       setProbeModels(result.models);
       setProbedBaseUrl(trimmedBaseUrl);
-      if (result.models[0]) setModelId(result.models[0]!);
+      setModelId((current) => current.trim() || result.models[0] || "");
       setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
@@ -457,7 +457,7 @@ export default function Models() {
                   <Text style={styles.outlineLabel}>{probing ? "Finding…" : "Find models"}</Text>
                 </Pressable>
                 <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Model</Text>
-                {probeModels.length ? (
+                {probeModels.length && probeModels.includes(modelId) ? (
                   <View style={styles.card}>
                     {probeModels.map((entry) => (
                       <Pressable
@@ -479,19 +479,43 @@ export default function Models() {
                         <Text style={styles.modelLabel}>{entry}</Text>
                       </Pressable>
                     ))}
+                    <Pressable
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: false }}
+                      disabled={probing}
+                      onPress={() => setModelId("")}
+                      style={({ pressed }) => [
+                        styles.modelRow,
+                        probing && styles.disabled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <View style={styles.radio} />
+                      <Text style={styles.modelLabel}>Other model…</Text>
+                    </Pressable>
                   </View>
                 ) : (
-                  <TextInput
-                    accessibilityLabel="Model id"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!busy && !probing}
-                    onChangeText={setModelId}
-                    placeholder="exact-model-id"
-                    placeholderTextColor={native.tertiaryLabel}
-                    style={styles.keyInput}
-                    value={modelId}
-                  />
+                  <>
+                    <TextInput
+                      accessibilityLabel="Model id"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!busy && !probing}
+                      onChangeText={setModelId}
+                      placeholder="exact-model-id"
+                      placeholderTextColor={native.tertiaryLabel}
+                      style={styles.keyInput}
+                      value={modelId}
+                    />
+                    {probeModels.length ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setModelId(probeModels[0] ?? "")}
+                      >
+                        <Text style={styles.helpLabel}>Use a found model</Text>
+                      </Pressable>
+                    ) : null}
+                  </>
                 )}
               </>
             ) : (

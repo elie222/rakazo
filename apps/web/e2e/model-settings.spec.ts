@@ -81,11 +81,17 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       page.getByText("Paste the OpenAI-compatible address", { exact: false }),
     ).toBeHidden();
     await page.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
+    await page.getByLabel("Model id").fill("manual-model-not-listed");
     await page.getByRole("button", { name: "Find models" }).click();
 
-    await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveValue(
-      LOCAL_MODEL_ID,
-    );
+    await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
+    await page.getByRole("button", { name: "Use a found model" }).click();
+    const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
+    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
+    await discoveredModels.selectOption("");
+    await expect(page.getByLabel("Model id")).toBeVisible();
+    await page.getByRole("button", { name: "Find models" }).click();
+    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
     await expect(page.getByText("Found 1 model.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");

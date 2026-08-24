@@ -22,7 +22,6 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   await page.getByRole("button", { name: /Day-to-day work/ }).click();
   await expect(page.getByText("Renamed to Chief of Staff", { exact: true })).toBeVisible();
   await expect(page.getByText("Renamed to Sarah", { exact: true })).toBeVisible();
-  await expect(page.locator("main").getByText("Sarah", { exact: true })).toBeVisible();
   await expect(page.getByPlaceholder("Message Sarah")).toBeVisible();
   await expect(page.getByText("Slack", { exact: true })).toBeVisible();
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();

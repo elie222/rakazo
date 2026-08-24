@@ -172,26 +172,28 @@ export async function mirrorBotDmCompletionToWatchThread(
   },
 ) {
   if (input.blocks.length === 0) return;
-  const thread = await deps.prisma.thread.findUnique({
-    where: { id: input.threadId },
-    select: { group: { select: { kind: true, watchThreadId: true } } },
+  const run = await deps.prisma.run.findUnique({
+    where: { id: input.runId },
+    select: {
+      mirrorThreadId: true,
+      thread: { select: { group: { select: { kind: true } } } },
+    },
   });
-  const group = thread?.group;
-  if (!group || group.kind !== CHAT_GROUP_KIND_BOT_DM) return;
-  const watchThreadId = group.watchThreadId;
-  if (!watchThreadId || watchThreadId === input.threadId) return;
+  if (!run || run.thread.group?.kind !== CHAT_GROUP_KIND_BOT_DM) return;
+  const mirrorThreadId = run.mirrorThreadId;
+  if (!mirrorThreadId || mirrorThreadId === input.threadId) return;
 
   const eventSeq = await deps.prisma.$transaction(async (tx) => {
     const published = await publishThreadMessage(tx, {
       workspaceId: input.workspaceId,
-      threadId: watchThreadId,
+      threadId: mirrorThreadId,
       botId: input.botId,
       runId: input.runId,
       blocks: input.blocks,
     });
     return published.eventSeq;
   });
-  await deps.events.notify(watchThreadId, eventSeq).catch((error) => {
+  await deps.events.notify(mirrorThreadId, eventSeq).catch((error) => {
     console.error("bot dm watch-thread mirror notification", error);
   });
 }
@@ -246,10 +248,6 @@ export async function messageBot(
     });
     let sourceEventSeq = dmPublished.eventSeq;
     if (!sameThread) {
-      await tx.chatGroup.update({
-        where: { id: dm.groupId },
-        data: { watchThreadId: run.threadId },
-      });
       const sourcePublished = await publishThreadMessage(tx, {
         workspaceId: run.workspaceId,
         threadId: run.threadId,
@@ -279,6 +277,7 @@ export async function messageBot(
         status: "queued",
         trigger: "user",
         sourceMessageId: dmPublished.message.id,
+        mirrorThreadId: sameThread ? null : run.threadId,
       },
     });
     await touchGroupUpdatedAt(tx, dm.groupId);

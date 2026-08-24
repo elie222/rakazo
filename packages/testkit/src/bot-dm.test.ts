@@ -332,11 +332,11 @@ describeIntegration("bot-to-bot direct messages", () => {
     );
     expect(result.ok).toBe(true);
 
-    const group = await handles.prisma.chatGroup.findUniqueOrThrow({
-      where: { id: result.groupId },
-      select: { watchThreadId: true },
+    const dmRun = await handles.prisma.run.findUniqueOrThrow({
+      where: { id: result.runId },
+      select: { mirrorThreadId: true },
     });
-    expect(group.watchThreadId).toBe(botA.threadId);
+    expect(dmRun.mirrorThreadId).toBe(botA.threadId);
 
     const sourceSnap = await rpc<{
       messages: Array<{ blocks: Array<{ kind?: string; text?: string }> }>;

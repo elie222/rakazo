@@ -284,15 +284,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
         include: { thread: true },
       });
       if (!bot?.thread) return;
-      const nextRunAt = nextCronDate(
-        routine.cron,
-        new Date(Math.max(Date.now(), scheduledAt.getTime())),
-        routine.timezone,
-      );
+      let nextRunAt: Date | null = null;
+      try {
+        nextRunAt = nextCronDate(
+          routine.cron,
+          new Date(Math.max(Date.now(), scheduledAt.getTime())),
+          routine.timezone,
+        );
+      } catch {
+        // Legacy rows may contain schedules accepted before cron validation was added.
+        // Fire the already-due run once, then pause the invalid schedule.
+      }
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: { id: routine.id, active: true, nextRunAt: scheduledAt },
-          data: { lastRunAt: new Date(), nextRunAt },
+          data: {
+            lastRunAt: new Date(),
+            nextRunAt,
+            ...(nextRunAt ? {} : { active: false }),
+          },
         });
         if (updated.count !== 1) return null;
         const task = await tx.task.create({
@@ -326,7 +336,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runId: claimed.id,
         payload: { routineId: routine.id, scheduledFor },
       });
-      await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+      if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
       await deps.jobs.enqueue(runContinueJob(claimed.id));
     },
 

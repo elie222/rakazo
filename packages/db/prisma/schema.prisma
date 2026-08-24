@@ -297,7 +297,6 @@ model ChatGroup {
   name        String
   kind          String   @default("user")
   pairKey       String?  @unique
-  watchThreadId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   members     ChatGroupMember[]
@@ -432,6 +431,7 @@ model Run {
   clientNonce   String?
   sourceMessageId String?
   sourceMessage Message?  @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  mirrorThreadId  String?
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime  @default(now())
@@ -446,6 +446,7 @@ model Run {
   @@index([workspaceId, botId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  @@index([mirrorThreadId])
   @@map("runs")
 }
 
