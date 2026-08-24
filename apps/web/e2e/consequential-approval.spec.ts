@@ -8,10 +8,10 @@ test("actions run by default while optional confirmations live in advanced user 
   await signup(page, `action-confirmations-${stamp}@rakazo.test`, "password12", "Approval UI");
   await completeOnboarding(page, ["A bit of everything", "Clear and tight"]);
 
-  await sendDestinationWrite(page);
-  await waitForRunCompletion(page);
+  await sendDestinationWrite(page, "write this to the destination crm as a note");
+  await waitForRunIdle(page);
   await expectComposerReady(page);
-  await expect(page.getByRole("button", { name: "Allow once" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "50-actions-run-without-confirmation");
 
   await page.getByTestId("bot-settings-trigger").click();
@@ -37,39 +37,41 @@ test("actions run by default while optional confirmations live in advanced user 
 
   await rpc(page, "approvalRules/set", {
     effect: "require_approval",
-    matchKind: "connector",
+    matchKind: "tool",
     matchValue: "destination.write",
   });
 
-  await requestDestinationWrite(page);
-  await expect(page.getByRole("button", { name: "Always allow this tool" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Deny" })).toBeVisible();
+  await requestDestinationWrite(page, "write this to the destination crm as a note again");
+  await expect(
+    page.getByRole("button", { name: "Always allow this tool", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "53-action-confirmation-pending");
 
-  await page.getByRole("button", { name: "Deny" }).click();
+  await page.getByRole("button", { name: "Deny", exact: true }).click();
   await expect(page.getByText("Denied", { exact: true })).toBeVisible();
-  await waitForRunCompletion(page);
+  await waitForRunIdle(page);
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "54-action-confirmation-denied");
 
-  await requestDestinationWrite(page);
-  await page.getByRole("button", { name: "Allow once" }).click();
+  await requestDestinationWrite(page, "write this to the destination crm once more");
+  await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(page.getByText("Allowed once", { exact: true })).toBeVisible();
-  await waitForRunCompletion(page);
+  await waitForRunIdle(page);
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "55-action-confirmation-allowed-once");
 
-  await requestDestinationWrite(page);
-  await page.getByRole("button", { name: "Always allow this tool" }).click();
+  await requestDestinationWrite(page, "write this to the destination crm one final time");
+  await page.getByRole("button", { name: "Always allow this tool", exact: true }).click();
   await expect(page.getByText("Always allowed", { exact: true })).toBeVisible();
-  await waitForRunCompletion(page);
+  await waitForRunIdle(page);
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "56-action-confirmation-always-allowed");
 
-  await sendDestinationWrite(page);
-  await waitForRunCompletion(page);
+  await sendDestinationWrite(page, "write this to the destination crm after always allow");
+  await waitForRunIdle(page);
   await expectComposerReady(page);
-  await expect(page.getByRole("button", { name: "Allow once" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
 });
 
 async function openUserSettings(page: Page) {
@@ -78,10 +80,10 @@ async function openUserSettings(page: Page) {
   await expect(page.getByTestId("user-settings")).toBeVisible();
 }
 
-async function sendDestinationWrite(page: Page) {
+async function sendDestinationWrite(page: Page, prompt: string) {
   await expectComposerReady(page);
   const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("write this to the destination crm as a note");
+  await composer.fill(prompt);
   const sent = page.waitForResponse(
     (response) => response.url().includes("/rpc/threads/send") && response.ok(),
   );
@@ -93,16 +95,11 @@ async function expectComposerReady(page: Page) {
   const composer = page.getByPlaceholder(/Message/);
   await expect(composer).toBeVisible();
   await expect(composer).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
 }
 
-async function requestDestinationWrite(page: Page) {
-  await sendDestinationWrite(page);
-  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible({
-    timeout: 30_000,
-  });
-}
-
-async function waitForRunCompletion(page: Page) {
+async function requestDestinationWrite(page: Page, prompt: string) {
+  await sendDestinationWrite(page, prompt);
   const botId = activeBotId(page);
   await expect
     .poll(
@@ -110,9 +107,27 @@ async function waitForRunCompletion(page: Page) {
         const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
           botId,
         });
-        return snapshot.run?.status ?? "completed";
+        return snapshot.run?.status ?? null;
       },
       { timeout: 30_000 },
     )
-    .toMatch(/completed|failed|cancelled/);
+    .toBe("waiting_input");
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeVisible({
+    timeout: 5_000,
+  });
+}
+
+async function waitForRunIdle(page: Page) {
+  const botId = activeBotId(page);
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 30_000 },
+    )
+    .toBeNull();
 }

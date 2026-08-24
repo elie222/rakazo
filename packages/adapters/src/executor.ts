@@ -762,6 +762,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           const requestApproval = async () => {
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
+              // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
             }
             await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
@@ -775,7 +776,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               leaseFence: fence,
               blocks: [buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets)],
             });
-            if (!paused) return pauseForApproval();
+            // pauseRunForInput returning false after a successful renew means the run row no
+            // longer matches this worker. Exiting via pauseForApproval() would leave the run
+            // stuck in "running" with no ask card — fail instead so the user can retry.
+            if (!paused) {
+              throw new Error("Could not pause this run for approval; try sending again.");
+            }
             await notifyRun(deps, run, {
               kind: "help",
               title: `${bot.name} needs approval`,

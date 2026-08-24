@@ -187,9 +187,11 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const current = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const queued = previous.then(() => current);
+    // Keep the chain alive even when a prior write rejects, so later writers are not stuck
+    // behind a permanently rejected predecessor.
+    const queued = previous.catch(() => undefined).then(() => current);
     this.botWrites.set(botId, queued);
-    await previous;
+    await previous.catch(() => undefined);
     try {
       return await work();
     } finally {
