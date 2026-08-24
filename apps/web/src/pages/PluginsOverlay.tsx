@@ -1,11 +1,21 @@
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { CapabilityInstall, ConnectionCatalogItem, McpServer } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
 type CatalogView = "all" | "connected" | "sources";
 type SourceKind = "treg" | "mcp" | "api";
+
+function mcpConnectionStatus(server: McpServer) {
+  const ok = server.oauthStatus === "connected" || server.transport === "stdio";
+  return {
+    ok,
+    label: ok ? "Connected" : "Disconnected",
+    className: ok ? "text-[#3DDC84]" : "text-[#F05252]",
+  };
+}
 
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
@@ -30,7 +40,8 @@ export function PluginsOverlay({
   onOpenMcp?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<CatalogView>("all");
+  const [view, setView] = useState<CatalogView>("sources");
+  const [infoOpen, setInfoOpen] = useState<"treg" | "api" | null>(null);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -42,15 +53,19 @@ export function PluginsOverlay({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [oauthPending, setOauthPending] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
-      rpc.connections.catalog({}),
-      rpc.capabilities.list(),
+    const [items, installs, servers] = await Promise.all([
+      rpc.connections.catalog({}).catch(() => [] as ConnectionCatalogItem[]),
+      rpc.capabilities.list().catch(() => [] as CapabilityInstall[]),
+      rpc.mcp.servers.list(),
     ]);
     setCatalog(items);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setMcpServers(servers);
     return items;
   }
 
@@ -209,43 +224,88 @@ export function PluginsOverlay({
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Integrations</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              Connect apps or add Treg, MCP, and OpenAPI tool sources.
+              Tool servers for your agents. App catalog is optional.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {onOpenMcp ? (
-              <button
-                type="button"
-                onClick={onOpenMcp}
-                className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
-              >
-                MCP servers
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label="Close integrations"
-              onClick={onClose}
-              className="text-[#85858A]"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label="Close integrations"
+            onClick={onClose}
+            className="text-[#85858A]"
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 px-8 pt-4">
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
-            Add Treg
-          </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
+        <div className="flex flex-wrap items-center gap-2 px-8 pt-4">
+          <Button
+            type="button"
+            variant="pill"
+            size="sm"
+            onClick={() => (onOpenMcp ? onOpenMcp() : beginSource("mcp"))}
+          >
             Add MCP server
           </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
-            Add OpenAPI
-          </Button>
+          <span className="relative inline-flex items-center gap-1">
+            <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
+              Add OpenAPI
+            </Button>
+            <button
+              type="button"
+              aria-label="What is OpenAPI?"
+              aria-expanded={infoOpen === "api"}
+              onClick={() => setInfoOpen((open) => (open === "api" ? null : "api"))}
+              className="grid h-7 w-7 place-items-center rounded-full border border-[#383844] text-[11px] font-medium text-[#C9C9CE] hover:bg-[#232327]"
+            >
+              i
+            </button>
+            {infoOpen === "api" ? (
+              <div
+                role="dialog"
+                aria-label="About OpenAPI"
+                className="absolute left-0 top-9 z-10 w-[320px] rounded-2xl border border-[#2C2C30] bg-[#1A1A1D] p-3.5 text-[13px] leading-5 text-[#C9C9CE] shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+              >
+                OpenAPI is a spec file that describes a REST API. Rakazo reads that JSON and turns
+                the endpoints into tools for your agents. Use this when a service has an OpenAPI
+                URL but no MCP server. Not related to OpenAI.
+              </div>
+            ) : null}
+          </span>
+          <span className="relative inline-flex items-center gap-1">
+            <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
+              Add Treg
+            </Button>
+            <button
+              type="button"
+              aria-label="What is Treg?"
+              aria-expanded={infoOpen === "treg"}
+              onClick={() => setInfoOpen((open) => (open === "treg" ? null : "treg"))}
+              className="grid h-7 w-7 place-items-center rounded-full border border-[#383844] text-[11px] font-medium text-[#C9C9CE] hover:bg-[#232327]"
+            >
+              i
+            </button>
+            {infoOpen === "treg" ? (
+              <div
+                role="dialog"
+                aria-label="About Treg"
+                className="absolute left-0 top-9 z-10 w-[320px] rounded-2xl border border-[#2C2C30] bg-[#1A1A1D] p-3.5 text-[13px] leading-5 text-[#C9C9CE] shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+              >
+                Treg is a paid catalog of extra agent tools (SEO, ads, outreach) behind one API
+                key. You do not need it for MCP servers you already added.
+                <a
+                  href="https://treg.to"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 block text-[#AEB7FF] hover:underline"
+                >
+                  treg.to
+                </a>
+              </div>
+            ) : null}
+          </span>
         </div>
 
-        {view !== "sources" ? (
+        {catalog.length > 0 && view !== "sources" ? (
           <div className="px-8 pt-4">
             <input
               value={query}
@@ -256,28 +316,30 @@ export function PluginsOverlay({
           </div>
         ) : null}
 
-        <div role="tablist" aria-label="Integration views" className="flex gap-1 px-8 pt-4">
-          {(["all", "connected", "sources"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              aria-selected={view === option}
-              aria-controls="integration-list"
-              onClick={() => {
-                setView(option);
-                if (option !== "sources") setSourceKind(null);
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
-                view === option
-                  ? "bg-[#2C2C30] text-[#F1F1F2]"
-                  : "text-[#7A7A80] hover:text-[#C8C8CC]"
-              }`}
-            >
-              {option === "all" ? "Apps" : option === "connected" ? "Connected" : "Tool sources"}
-            </button>
-          ))}
-        </div>
+        {catalog.length > 0 ? (
+          <div role="tablist" aria-label="Integration views" className="flex gap-1 px-8 pt-4">
+            {(["sources", "all", "connected"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={view === option}
+                aria-controls="integration-list"
+                onClick={() => {
+                  setView(option);
+                  if (option !== "sources") setSourceKind(null);
+                }}
+                className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                  view === option
+                    ? "bg-[#2C2C30] text-[#F1F1F2]"
+                    : "text-[#7A7A80] hover:text-[#C8C8CC]"
+                }`}
+              >
+                {option === "sources" ? "Tool servers" : option === "all" ? "Apps" : "Connected apps"}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div
           id="integration-list"
@@ -287,8 +349,57 @@ export function PluginsOverlay({
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {loading ? <p className="text-[#6C6C70]">Loading integrations…</p> : null}
 
-          {view === "sources" ? (
+          {view === "sources" || catalog.length === 0 ? (
             <div className="space-y-4">
+              {mcpServers.map((server) => (
+                <div key={server.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
+                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
+                    {server.name[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15.5px] font-medium text-[#ECECEE]">{server.name}</span>
+                      <span className="rounded-full bg-[#202536] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#AEB7FF]">
+                        MCP
+                      </span>
+                    </div>
+                    <div className="truncate text-[13.5px] text-[#7A7A80]">
+                      <span className={mcpConnectionStatus(server).className}>
+                        {mcpConnectionStatus(server).label}
+                      </span>
+                      {" · "}
+                      {server.endpoint ?? server.command ?? server.slug}
+                    </div>
+                  </div>
+                  {server.transport !== "stdio" && server.oauthStatus !== "connected" ? (
+                    <Button
+                      type="button"
+                      variant="pill"
+                      size="sm"
+                      disabled={oauthPending === server.id}
+                      onClick={() => {
+                        setOauthPending(server.id);
+                        void connectMcpOauth(server.id)
+                          .then((result) => {
+                            if (result === "connected" || result === "already_connected") {
+                              void refresh();
+                            }
+                          })
+                          .catch((err: unknown) =>
+                            setError(err instanceof Error ? err.message : "OAuth failed"),
+                          )
+                          .finally(() => setOauthPending(null));
+                      }}
+                    >
+                      {oauthPending === server.id ? "Connecting…" : "Connect"}
+                    </Button>
+                  ) : onOpenMcp ? (
+                    <Button type="button" variant="pill" size="sm" onClick={onOpenMcp}>
+                      Manage
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
               {sourceKind ? (
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
                   <div className="text-base font-medium text-[#ECECEE]">
@@ -371,19 +482,20 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              {sources.length === 0 && !sourceKind ? (
-                <p className="text-[#6C6C70]">No MCP or API tool sources installed yet.</p>
-              ) : null}
               {sources.map((source) => (
                 <div key={source.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
                   <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
                     {source.kind === "mcp" ? "M" : "A"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</span>
+                      <span className="rounded-full bg-[#202536] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#AEB7FF]">
+                        {source.kind === "mcp" ? "MCP" : "API"}
+                      </span>
+                    </div>
                     <div className="truncate text-[13.5px] text-[#7A7A80]">
-                      {source.kind.toUpperCase()} · {source.source} ·{" "}
-                      {source.secretConfigured ? "credential saved" : "no auth"}
+                      {source.source} · {source.secretConfigured ? "credential saved" : "no auth"}
                     </div>
                   </div>
                   <Button
@@ -402,8 +514,8 @@ export function PluginsOverlay({
             <>
               {!loading && catalog.length === 0 ? (
                 <p className="text-[#6C6C70]">
-                  No managed app catalog is configured on this deployment. You can still add Treg,
-                  MCP, or OpenAPI sources.
+                  No managed app catalog is configured on this deployment. Added MCP servers appear
+                  under Tool sources.
                 </p>
               ) : null}
               {!loading && catalog.length > 0 && visible.length === 0 ? (

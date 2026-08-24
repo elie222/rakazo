@@ -6,7 +6,9 @@ import type {
   ComputerReleaseReason,
   ComputerStatus,
   Group,
+  McpServer,
   Me,
+  ModelCatalogEntry,
   MessageBlock,
   ProductEvent,
   Routine,
@@ -50,7 +52,9 @@ import {
   Gauge,
   LogOut,
   Menu,
+  Maximize2,
   Mic,
+  Minimize2,
   Monitor,
   Paperclip,
   Phone,
@@ -1236,18 +1240,25 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    await bootComputer({
-      takeControl: needsTakeover,
-      overlay: needsTakeover || computer?.state !== "running",
+    setComputerOpen(true);
+    void bootComputer({
+      takeControl: false,
+      overlay: false,
       force: computer?.state !== "running",
     });
-    setComputerOpen(true);
+  }
+
+  function closeComputerOverlay() {
+    setComputerOpen(false);
+  }
+
+  function toggleComputerWindow() {
+    if (computerOpen) closeComputerOverlay();
+    else void openComputer();
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    setComputerOpen(false);
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
   }
@@ -1752,10 +1763,16 @@ export function ShellPage() {
             ) : null}
             {panel === "computer" && active ? (
               <div>
-                <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+                <div
+                  className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]"
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    toggleComputerWindow();
+                  }}
+                >
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full window
+                      Maximized
                     </div>
                   ) : computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
@@ -1782,10 +1799,22 @@ export function ShellPage() {
                   )}
                   <button
                     type="button"
-                    className="absolute inset-0 cursor-pointer"
-                    aria-label="Open computer"
-                    onClick={() => void openComputer()}
-                  />
+                    className="absolute right-2.5 top-2.5 z-20 grid h-8 w-8 place-items-center rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 text-[#ECECEE] pointer-events-auto"
+                    aria-label={computerOpen ? "Restore" : "Maximize"}
+                    title={computerOpen ? "Restore" : "Maximize"}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      toggleComputerWindow();
+                    }}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  >
+                    {computerOpen ? (
+                      <Minimize2 size={14} strokeWidth={1.8} />
+                    ) : (
+                      <Maximize2 size={14} strokeWidth={1.8} />
+                    )}
+                  </button>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13.5px] text-[#85858A]">
@@ -1807,7 +1836,13 @@ export function ShellPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => void openComputer()}
+                      onClick={() =>
+                        void bootComputer({
+                          takeControl: true,
+                          overlay: false,
+                          force: computer?.state !== "running",
+                        })
+                      }
                     >
                       Take control
                     </Button>
@@ -1912,6 +1947,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
+                onOpenMcp={() => setPluginsOpen(true)}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -2246,8 +2282,20 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
-          <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-[#050506]"
+          onDoubleClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            closeComputerOverlay();
+          }}
+        >
+          <div
+            className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              closeComputerOverlay();
+            }}
+          >
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar color={active.color} size={28} />
               {recordingSkill ? (
@@ -2288,15 +2336,30 @@ export function ShellPage() {
               )}
               <button
                 type="button"
+                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] text-[#85858A] hover:bg-[#1B1B1E] hover:text-[#ECECEE]"
+                aria-label="Restore"
+                title="Restore"
+                onClick={closeComputerOverlay}
+              >
+                <Minimize2 size={16} strokeWidth={1.7} />
+              </button>
+              <button
+                type="button"
                 className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
                 aria-label="Close computer"
-                onClick={() => setComputerOpen(false)}
+                onClick={closeComputerOverlay}
               >
                 <X size={16} strokeWidth={1.8} />
               </button>
             </div>
           </div>
-          <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
+          <div
+            className="relative min-h-0 flex-1 bg-[#0E0E10]"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              closeComputerOverlay();
+            }}
+          >
             {computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
                 This bot runs on this computer. There is no separate Linux desktop. Ask it to use
@@ -3279,6 +3342,7 @@ function BotSettings({
   onSave,
   onExport,
   onClear,
+  onOpenMcp,
 }: {
   bot: Bot;
   memoryProviderConfigured: boolean;
@@ -3291,9 +3355,12 @@ function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelProvider?: string | null;
+    modelId?: string | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
+  onOpenMcp: () => void;
 }) {
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
@@ -3303,20 +3370,104 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [modelId, setModelId] = useState(bot.modelId ?? "");
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assignedMcp, setAssignedMcp] = useState<McpServer[]>([]);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [oauthPending, setOauthPending] = useState<string | null>(null);
+
+  async function refreshAssignedMcp() {
+    const [servers, assignments] = await Promise.all([
+      rpc.mcp.servers.list(),
+      rpc.mcp.assignments.list({ botId: bot.id }),
+    ]);
+    const assignedIds = new Set(assignments.map((row) => row.serverId));
+    setAssignedMcp(servers.filter((server) => assignedIds.has(server.id)));
+  }
 
   useEffect(() => {
     void rpc.voice
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void Promise.all([rpc.models.list(), rpc.me()])
+      .then(([catalog, me]) => {
+        const openrouter = catalog.filter((entry) => entry.provider === "openrouter");
+        openrouter.sort((a, b) => {
+          const rank = (id: string) => (id.startsWith("deepseek/") ? 0 : 1);
+          return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
+        });
+        setModelCatalog(openrouter);
+        setWorkspaceDefaultModel(me.defaultModel ?? "");
+      })
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    void refreshAssignedMcp().catch((err: unknown) =>
+      setMcpError(err instanceof Error ? err.message : "Could not load MCP"),
+    );
+  }, [bot.id]);
 
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
         <BotAvatar color={bot.color} size={64} />
+      </div>
+      <div className="mt-5 rounded-[11px] border border-[#26262A] p-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[14px] text-[#85858A]">Integrations</span>
+          <button type="button" onClick={onOpenMcp} className="text-[12.5px] text-[#C9C9CE]">
+            Manage
+          </button>
+        </div>
+        {mcpError ? <p className="mt-2 text-[12.5px] text-[#E65707]">{mcpError}</p> : null}
+        {assignedMcp.length === 0 ? (
+          <p className="mt-2 text-[13px] text-[#6C6C70]">None assigned to this bot.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {assignedMcp.map((server) => (
+              <li key={server.id} className="flex items-center justify-between gap-2">
+                <span>
+                  <span className="block text-[13.5px] text-[#ECECEE]">{server.name}</span>
+                  <span
+                    className={`block text-[11px] ${
+                      server.oauthStatus === "connected" || server.transport === "stdio"
+                        ? "text-[#3DDC84]"
+                        : "text-[#F05252]"
+                    }`}
+                  >
+                    {server.oauthStatus === "connected" || server.transport === "stdio"
+                      ? "Connected"
+                      : "Disconnected"}
+                  </span>
+                </span>
+                {server.oauthStatus !== "connected" ? (
+                  <button
+                    type="button"
+                    disabled={oauthPending === server.id}
+                    onClick={() => {
+                      setMcpError(null);
+                      setOauthPending(server.id);
+                      void connectMcpOauth(server.id)
+                        .then(() => refreshAssignedMcp())
+                        .catch((err: unknown) =>
+                          setMcpError(err instanceof Error ? err.message : "OAuth failed"),
+                        )
+                        .finally(() => setOauthPending(null));
+                    }}
+                    className="rounded-lg bg-[#7785FF] px-2.5 py-1.5 text-[11px] font-semibold text-[#090A12] disabled:opacity-50"
+                  >
+                    {oauthPending === server.id ? "Connecting…" : "Connect"}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
         Name
@@ -3347,6 +3498,26 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Model
+        <select
+          value={modelId}
+          onChange={(event) => setModelId(event.target.value)}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        >
+          <option value="">
+            Workspace default{workspaceDefaultModel ? ` (${workspaceDefaultModel})` : ""}
+          </option>
+          {modelId && !modelCatalog.some((entry) => entry.id === modelId) ? (
+            <option value={modelId}>{modelId}</option>
+          ) : null}
+          {modelCatalog.map((entry) => (
+            <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </label>
       {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
           Memory scope
@@ -3417,6 +3588,8 @@ function BotSettings({
               memoryScope,
               autoSpeak,
               voiceId: voiceId || null,
+              modelProvider: modelId ? "openrouter" : null,
+              modelId: modelId || null,
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));

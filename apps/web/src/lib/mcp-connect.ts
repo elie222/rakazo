@@ -14,11 +14,16 @@ export type McpOauthResult =
  * broadcasts completion or the popup is closed without finishing.
  *
  * The BroadcastChannel (not window.opener) is the completion signal because
- * provider login pages with COOP sever the opener link. */
+ * provider login pages with COOP sever the opener link. Loopback callbacks
+ * are a different origin, so we also poll oauthStatus. */
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({
     serverId,
-    redirectUri: `${window.location.origin}/mcp/oauth/callback`,
+    // Some providers reject non-loopback HTTP. Optional public HTTPS callback
+    // via VITE_MCP_OAUTH_REDIRECT_URI (otherwise the current origin).
+    redirectUri:
+      (import.meta.env.VITE_MCP_OAUTH_REDIRECT_URI as string | undefined)?.trim() ||
+      `${window.location.origin}/mcp/oauth/callback`,
   });
   if (started.status !== "authorization_required") return started.status;
   const popup = window.open(
@@ -35,19 +40,36 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     const channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
     let settled = false;
     let pollTimer = 0;
+    let statusTimer = 0;
     let timeoutTimer = 0;
     const finish = (result: McpOauthResult) => {
       if (settled) return;
       settled = true;
       window.clearInterval(pollTimer);
+      window.clearInterval(statusTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
       resolve(result);
     };
     pollTimer = window.setInterval(() => {
       if (!popup.closed) return;
-      finish("cancelled");
+      void rpc.mcp.servers
+        .list()
+        .then((servers) => {
+          const server = servers.find((entry) => entry.id === serverId);
+          finish(server?.oauthStatus === "connected" ? "connected" : "cancelled");
+        })
+        .catch(() => finish("cancelled"));
     }, 500);
+    statusTimer = window.setInterval(() => {
+      void rpc.mcp.servers
+        .list()
+        .then((servers) => {
+          const server = servers.find((entry) => entry.id === serverId);
+          if (server?.oauthStatus === "connected") finish("connected");
+        })
+        .catch(() => undefined);
+    }, 1500);
     timeoutTimer = window.setTimeout(() => {
       popup.close();
       finish("cancelled");
