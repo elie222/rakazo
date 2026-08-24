@@ -459,8 +459,8 @@ export function PluginsOverlay({
             <>
               {!loading && catalog.length === 0 ? (
                 <p className="text-[#6C6C70]">
-                  No managed app catalog is configured on this deployment. MCP servers like Krisp
-                  and Superhuman are under Tool sources.
+                  No managed app catalog is configured on this deployment. Added MCP servers appear
+                  under Tool sources.
                 </p>
               ) : null}
               {!loading && catalog.length > 0 && visible.length === 0 ? (
