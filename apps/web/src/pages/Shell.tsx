@@ -320,36 +320,44 @@ export function ShellPage() {
     [markBotRead],
   );
 
-  async function refreshBots(includeArchived = false) {
-    markOnce("rk:renderer:bots-request-start");
-    const [list, sections, archived, groupList] = await Promise.all([
-      rpc.bots.list(),
-      rpc.botSections.list(),
-      includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
-      rpc.groups.list(),
-    ]);
-    markOnce("rk:renderer:bots-response");
-    setBots(list);
-    setBotSections(sections);
-    setGroups(groupList);
-    setInitialBotsLoaded(true);
-    if (archived) setArchivedBots(archived);
-    if (includeArchived && list.length === 0 && archived?.length === 0 && groupList.length === 0) {
-      navigate("/onboarding", { replace: true });
-      return;
-    }
-    const currentGroupId = routeGroupId.current;
-    if (currentGroupId) {
-      if (!groupList.some((group) => group.id === currentGroupId)) {
+  const refreshBots = useCallback(
+    async (includeArchived = false) => {
+      markOnce("rk:renderer:bots-request-start");
+      const [list, sections, archived, groupList] = await Promise.all([
+        rpc.bots.list(),
+        rpc.botSections.list(),
+        includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
+        rpc.groups.list(),
+      ]);
+      markOnce("rk:renderer:bots-response");
+      setBots(list);
+      setBotSections(sections);
+      setGroups(groupList);
+      setInitialBotsLoaded(true);
+      if (archived) setArchivedBots(archived);
+      if (
+        includeArchived &&
+        list.length === 0 &&
+        archived?.length === 0 &&
+        groupList.length === 0
+      ) {
+        navigate("/onboarding", { replace: true });
+        return;
+      }
+      const currentGroupId = routeGroupId.current;
+      if (currentGroupId) {
+        if (!groupList.some((group) => group.id === currentGroupId)) {
+          navigate(firstThreadRoute(list, groupList), { replace: true });
+        }
+        return;
+      }
+      const currentBotId = routeBotId.current;
+      if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
         navigate(firstThreadRoute(list, groupList), { replace: true });
       }
-      return;
-    }
-    const currentBotId = routeBotId.current;
-    if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
-      navigate(firstThreadRoute(list, groupList), { replace: true });
-    }
-  }
+    },
+    [navigate],
+  );
 
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
