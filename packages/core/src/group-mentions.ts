@@ -44,11 +44,7 @@ export function mentionInsertToken(
     (mention) => mention.name.trim().toLowerCase() === lower && mention.id !== id,
   );
   const defaultSuffixToken = `${normalized}-${id.slice(-4)}`;
-  if (
-    !baseCollision &&
-    !usedNames.has(lower) &&
-    !usedNames.has(defaultSuffixToken.toLowerCase())
-  ) {
+  if (!baseCollision && !usedNames.has(lower) && !usedNames.has(defaultSuffixToken.toLowerCase())) {
     return normalized;
   }
 
