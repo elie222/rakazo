@@ -1,3 +1,13 @@
+import {
+  accountDefaultSelector,
+  accountsForExternalId,
+  accountsFromConnections,
+  addAccountParameter,
+  type ConnectorAccountRef,
+  resolveConnectorAccount,
+  stripAccountArg,
+} from "./connector-accounts.js";
+
 export interface ComposioAccountRef {
   toolkit: string;
   id: string;
@@ -20,40 +30,34 @@ export interface ComposioConnectionRow {
   displayName: string;
 }
 
-function normalizeToolkit(toolkit: string): string {
-  return toolkit.trim().toLowerCase();
+function toComposioAccount(account: ConnectorAccountRef, email?: string): ComposioAccountRef {
+  return {
+    toolkit: account.externalId,
+    id: account.id,
+    alias: account.alias,
+    ...(email ? { email } : {}),
+  };
+}
+
+function toConnectorAccounts(accounts: readonly ComposioAccountRef[]): ConnectorAccountRef[] {
+  return accounts.map((account) => ({
+    externalId: account.toolkit,
+    id: account.id,
+    alias: account.alias,
+  }));
 }
 
 export function composioAccountsFromConnections(
   connections: readonly ComposioConnectionRow[] | undefined,
 ): ComposioAccountRef[] {
-  const aliases = new Map<string, number>();
-  const accounts: ComposioAccountRef[] = [];
-  for (const connection of connections ?? []) {
-    const toolkit = normalizeToolkit(connection.externalId);
-    const id = connection.providerRef?.trim() ?? "";
-    if (!toolkit || !id || normalizeToolkit(id) === toolkit) continue;
-    const baseAlias = connection.displayName.trim() || `${toolkit} account`;
-    const key = `${toolkit}:${baseAlias.toLowerCase()}`;
-    const count = (aliases.get(key) ?? 0) + 1;
-    aliases.set(key, count);
-    accounts.push({
-      toolkit,
-      id,
-      alias: count === 1 ? baseAlias : `${baseAlias} ${count}`,
-    });
-  }
-  return accounts;
+  return accountsFromConnections(connections).map((account) => toComposioAccount(account));
 }
 
 export function stripComposioAccount(args: Record<string, unknown>): {
   args: Record<string, unknown>;
   account?: string;
 } {
-  const { account, ...providerArgs } = args;
-  return typeof account === "string" && account.trim()
-    ? { account: account.trim(), args: providerArgs }
-    : { args: providerArgs };
+  return stripAccountArg(args);
 }
 
 export function buildComposioMultiAccountOptions(
@@ -82,21 +86,17 @@ export function accountsForComposioToolkit(
   accounts: ComposioAccountRef[],
   toolkit: string,
 ): ComposioAccountRef[] {
-  const normalized = normalizeToolkit(toolkit);
-  return accounts.filter((account) => normalizeToolkit(account.toolkit) === normalized);
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  return accountsForExternalId(toConnectorAccounts(accounts), toolkit).map(
+    (account) => byId.get(account.id) ?? toComposioAccount(account),
+  );
 }
 
 export function composioAccountDefaultSelector(
   accountDefaults: Record<string, string> | undefined,
   toolkit: string,
 ): string | undefined {
-  if (!accountDefaults) return undefined;
-  const normalized = normalizeToolkit(toolkit);
-  return (
-    accountDefaults[`composio:${normalized}`] ??
-    accountDefaults[`composio:${normalized.toUpperCase()}`] ??
-    accountDefaults[`composio:${toolkit}`]
-  );
+  return accountDefaultSelector(accountDefaults, "composio", toolkit);
 }
 
 export function resolveComposioAccount(
@@ -105,13 +105,14 @@ export function resolveComposioAccount(
   requested?: string,
   defaultAlias?: string,
 ): ComposioAccountRef | undefined {
-  const candidates = accountsForComposioToolkit(accounts, toolkit);
-  if (candidates.length === 0) return undefined;
-  const selector = requested?.trim() || defaultAlias?.trim();
-  if (selector) {
-    return candidates.find((account) => account.id === selector || account.alias === selector);
-  }
-  return candidates.length === 1 ? candidates[0] : undefined;
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const resolved = resolveConnectorAccount(
+    toConnectorAccounts(accounts),
+    toolkit,
+    requested,
+    defaultAlias,
+  );
+  return resolved ? (byId.get(resolved.id) ?? toComposioAccount(resolved)) : undefined;
 }
 
 export function addComposioAccountParameter(
@@ -119,32 +120,5 @@ export function addComposioAccountParameter(
   accounts: ComposioAccountRef[],
   defaultSelector?: string,
 ): Record<string, unknown> {
-  if (accounts.length <= 1) return inputSchema;
-  const hasDefault = Boolean(
-    defaultSelector &&
-      accounts.some(
-        (account) => account.id === defaultSelector || account.alias === defaultSelector,
-      ),
-  );
-  const properties =
-    inputSchema.properties &&
-    typeof inputSchema.properties === "object" &&
-    !Array.isArray(inputSchema.properties)
-      ? { ...(inputSchema.properties as Record<string, unknown>) }
-      : {};
-  properties.account = {
-    type: "string",
-    enum: accounts.map((account) => account.alias),
-    description: hasDefault ? "Account alias. Uses bot default if omitted." : "Account alias.",
-  };
-  const required = Array.isArray(inputSchema.required)
-    ? [
-        ...inputSchema.required.filter(
-          (value): value is string =>
-            typeof value === "string" && (!hasDefault || value !== "account"),
-        ),
-      ]
-    : [];
-  if (!hasDefault && !required.includes("account")) required.push("account");
-  return { ...inputSchema, properties, required };
+  return addAccountParameter(inputSchema, toConnectorAccounts(accounts), defaultSelector);
 }

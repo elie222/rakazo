@@ -139,7 +139,10 @@ describe("connection completion", () => {
       createdAt: new Date("2026-08-24T00:00:00.000Z"),
     };
     const prisma = {
-      connection: { findFirst: vi.fn().mockResolvedValue(existing) },
+      connection: {
+        findFirst: vi.fn().mockResolvedValue(existing),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
@@ -176,7 +179,10 @@ describe("connection completion", () => {
     expect(matched).toBe(true);
     expect(response.status).toBe(200);
     expect(connectionReady).toHaveBeenCalledWith(
-      expect.objectContaining({ operationId: "connections.complete" }),
+      expect.objectContaining({
+        operationId: "connections.complete",
+        connectedConnections: [],
+      }),
       "GMAIL",
       "ca-pending",
     );
@@ -257,6 +263,7 @@ describe("duplicate connection completion", () => {
     const prisma = {
       connection: {
         findFirst: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(active),
+        findMany: vi.fn().mockResolvedValue([]),
         updateMany,
       },
       botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -327,6 +334,7 @@ describe("duplicate connection completion", () => {
     const prisma = {
       connection: {
         findFirst,
+        findMany: vi.fn().mockResolvedValue([]),
         updateMany,
         findFirstOrThrow: vi.fn(),
       },

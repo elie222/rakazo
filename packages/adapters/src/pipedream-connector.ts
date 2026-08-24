@@ -9,6 +9,15 @@ import type {
 } from "@rakazo/adapter-kit";
 import { collectPages, filterCatalog } from "./composio-connector.js";
 import {
+  accountDefaultSelector,
+  accountsForExternalId,
+  accountsFromConnections,
+  addAccountParameter,
+  isLegacyAppSlugRef,
+  resolveConnectorAccount,
+  stripAccountArg,
+} from "./connector-accounts.js";
+import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
@@ -79,6 +88,10 @@ export function isPipedreamEnabled(config: Partial<PipedreamConnectorConfig>): b
   );
 }
 
+function isPipedreamAccountId(value: string): boolean {
+  return /^(?:apn_|account-)/i.test(value.trim());
+}
+
 export class PipedreamConnector implements ManagedConnectorProvider {
   private accessToken?: { value: string; expiresAt: number };
   private accessTokenRequest?: Promise<string>;
@@ -135,14 +148,15 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const apps =
-      context.connectedConnections
-        ?.filter((connection) => connection.connectorId === "pipedream")
-        .map((connection) => connection.externalId) ?? [];
+    const rows =
+      context.connectedConnections?.filter((connection) => connection.connectorId === "pipedream") ??
+      [];
+    const apps = [...new Set(rows.map((connection) => connection.externalId))];
     if (apps.length === 0) return [];
+    const accounts = accountsFromConnections(rows);
     const token = await this.token();
     const groups = await Promise.all(
-      [...new Set(apps)].slice(0, 20).map(async (app) => {
+      apps.slice(0, 20).map(async (app) => {
         const tools = await listRemoteMcpTools({
           endpoint: MCP_ENDPOINT,
           headers: this.mcpHeaders(context, app, token),
@@ -150,8 +164,11 @@ export class PipedreamConnector implements ManagedConnectorProvider {
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
         });
+        const appAccounts = accountsForExternalId(accounts, app);
+        const defaultSelector = accountDefaultSelector(context.accountDefaults, "pipedream", app);
         return tools.map((tool) => ({
           ...tool,
+          inputSchema: addAccountParameter(tool.inputSchema, appAccounts, defaultSelector),
           route: { connectorId: "pipedream", resourceId: app, toolName: tool.name },
         }));
       }),
@@ -165,19 +182,38 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       yield { type: "error", message: "Pipedream app route is missing" };
       return;
     }
+    const accounts = accountsFromConnections(
+      context.connectedConnections?.filter((connection) => connection.connectorId === "pipedream"),
+    );
+    const selection = stripAccountArg(call.args ?? {});
+    const defaultSelector = accountDefaultSelector(context.accountDefaults, "pipedream", app);
+    const account = resolveConnectorAccount(
+      accounts,
+      app,
+      selection.account,
+      defaultSelector,
+    );
+    if (selection.account && !account) {
+      yield { type: "error", message: `Unknown ${app} account.` };
+      return;
+    }
+    if (accountsForExternalId(accounts, app).length > 1 && !account) {
+      yield { type: "error", message: `Choose a ${app} account.` };
+      return;
+    }
     let token: string | undefined;
     try {
       token = await this.token();
       const result = await callRemoteMcpTool(
         {
           endpoint: MCP_ENDPOINT,
-          headers: this.mcpHeaders(context, app, token),
+          headers: this.mcpHeaders(context, app, token, account?.id),
           signal: context.signal,
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
         },
         call.route?.toolName ?? call.tool,
-        call.args,
+        selection.args,
       );
       yield { type: "result", data: redactConnectorPayload(result, [token]) };
     } catch (error) {
@@ -210,27 +246,41 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     return { authorizationUrl: url.toString(), state: request.provider };
   }
 
-  async complete(request: { state: string }): Promise<{ connectionRef: string }> {
-    return { connectionRef: request.state };
+  async complete(
+    request: { state: string },
+    context: AdapterContext,
+  ): Promise<{ connectionRef: string }> {
+    const state = request.state.trim();
+    if (isPipedreamAccountId(state)) return { connectionRef: state };
+    const accountId = await this.unclaimedAccountId(context, state);
+    return { connectionRef: accountId ?? state };
   }
 
   async connectionReady(
     context: AdapterContext,
     externalId: string,
-    _connectionRef?: string,
+    connectionRef?: string,
   ): Promise<boolean> {
-    const accounts = await this.accounts(context, externalId);
-    return accounts.some(
-      (account) =>
-        account.app?.name_slug === externalId && account.healthy !== false && account.dead !== true,
-    );
+    const accounts = await this.healthyAccounts(context, externalId);
+    if (connectionRef && isPipedreamAccountId(connectionRef)) {
+      return accounts.some((account) => account.id === connectionRef);
+    }
+    return Boolean(await this.unclaimedAccountId(context, externalId, accounts));
   }
 
-  async revoke(externalId: string, context: AdapterContext): Promise<void> {
-    const accounts = await this.accounts(context, externalId);
+  async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
+    if (isPipedreamAccountId(connectionRef)) {
+      await this.request(
+        `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(connectionRef)}`,
+        { method: "DELETE" },
+        context.signal,
+      );
+      return;
+    }
+    const accounts = await this.accounts(context, connectionRef);
     await Promise.all(
       accounts
-        .filter((account) => account.app?.name_slug === externalId)
+        .filter((account) => account.app?.name_slug === connectionRef)
         .map((account) =>
           this.request(
             `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
@@ -238,6 +288,39 @@ export class PipedreamConnector implements ManagedConnectorProvider {
             context.signal,
           ),
         ),
+    );
+  }
+
+  private async unclaimedAccountId(
+    context: AdapterContext,
+    externalId: string,
+    knownAccounts?: PipedreamAccount[],
+  ): Promise<string | undefined> {
+    const accounts = knownAccounts ?? (await this.healthyAccounts(context, externalId));
+    const claimed = new Set(
+      (context.connectedConnections ?? [])
+        .filter(
+          (connection) =>
+            connection.connectorId === "pipedream" &&
+            connection.externalId.trim().toLowerCase() === externalId.trim().toLowerCase() &&
+            connection.providerRef &&
+            !isLegacyAppSlugRef(connection.providerRef, externalId),
+        )
+        .map((connection) => connection.providerRef!),
+    );
+    return accounts.find((account) => !claimed.has(account.id))?.id;
+  }
+
+  private async healthyAccounts(
+    context: AdapterContext,
+    externalId: string,
+  ): Promise<PipedreamAccount[]> {
+    const accounts = await this.accounts(context, externalId);
+    return accounts.filter(
+      (account) =>
+        account.app?.name_slug === externalId &&
+        account.healthy !== false &&
+        account.dead !== true,
     );
   }
 
@@ -251,6 +334,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     context: AdapterContext,
     app: string,
     accessToken: string,
+    accountId?: string,
   ): Record<string, string> {
     return {
       authorization: `Bearer ${accessToken}`,
@@ -258,6 +342,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       "x-pd-environment": this.config.environment,
       "x-pd-external-user-id": this.externalUserId(context),
       "x-pd-app-slug": app,
+      ...(accountId ? { "x-pd-account-id": accountId } : {}),
     };
   }
 

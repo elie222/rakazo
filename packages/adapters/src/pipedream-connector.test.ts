@@ -127,6 +127,9 @@ describe("PipedreamConnector", () => {
       ),
     ).resolves.toEqual({ authorizationUrl: "about:blank?app=linear", state: "linear" });
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(true);
+    await expect(connector.complete({ state: "linear" }, context)).resolves.toEqual({
+      connectionRef: "account-linear-1",
+    });
 
     const connectedContext = {
       ...context,
@@ -136,6 +139,7 @@ describe("PipedreamConnector", () => {
           connectorId: "pipedream",
           externalId: "linear",
           displayName: "Linear",
+          providerRef: "account-linear-1",
         },
       ],
     };
@@ -169,10 +173,145 @@ describe("PipedreamConnector", () => {
         provider: "mcp",
         operation: "notes.write",
         args: { text: "emulated-pipedream-ok" },
+        accountId: "account-linear-1",
       }),
     );
 
-    await connector.revoke("linear", context);
+    await connector.revoke("account-linear-1", context);
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(false);
+  });
+
+  it("resolves a selected Pipedream account and passes it on execute", async () => {
+    const emulator = new ThirdPartyConnectorEmulator();
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch: emulator.fetch, resolveHostname: emulator.resolveHostname },
+    );
+
+    await connector.begin(
+      { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+      context,
+    );
+    await connector.connectionReady(context, "gmail");
+    const first = await connector.complete({ state: "gmail" }, context);
+    await connector.begin(
+      { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+      {
+        ...context,
+        connectedConnections: [
+          {
+            id: "one",
+            connectorId: "pipedream",
+            externalId: "gmail",
+            displayName: "Personal",
+            providerRef: first.connectionRef,
+          },
+        ],
+      },
+    );
+    await connector.connectionReady(
+      {
+        ...context,
+        connectedConnections: [
+          {
+            id: "one",
+            connectorId: "pipedream",
+            externalId: "gmail",
+            displayName: "Personal",
+            providerRef: first.connectionRef,
+          },
+        ],
+      },
+      "gmail",
+    );
+    const second = await connector.complete(
+      { state: "gmail" },
+      {
+        ...context,
+        connectedConnections: [
+          {
+            id: "one",
+            connectorId: "pipedream",
+            externalId: "gmail",
+            displayName: "Personal",
+            providerRef: first.connectionRef,
+          },
+        ],
+      },
+    );
+    expect(second.connectionRef).not.toBe(first.connectionRef);
+
+    const multiContext = {
+      ...context,
+      accountDefaults: { "pipedream:gmail": first.connectionRef },
+      connectedConnections: [
+        {
+          id: "one",
+          connectorId: "pipedream",
+          externalId: "gmail",
+          displayName: "Personal",
+          providerRef: first.connectionRef,
+        },
+        {
+          id: "two",
+          connectorId: "pipedream",
+          externalId: "gmail",
+          displayName: "Work",
+          providerRef: second.connectionRef,
+        },
+      ],
+    };
+    const tools = await connector.discoverTools(multiContext);
+    expect(tools[0]?.inputSchema).toMatchObject({
+      properties: {
+        account: {
+          enum: ["Personal", "Work"],
+          description: "Account alias. Uses bot default if omitted.",
+        },
+      },
+      required: expect.not.arrayContaining(["account"]),
+    });
+
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: "notes.write",
+        args: { account: "Work", text: "work-inbox" },
+        executionId: "pipedream-multi-account",
+        route: { connectorId: "pipedream", resourceId: "gmail", toolName: "notes.write" },
+      },
+      multiContext,
+    )) {
+      events.push(event);
+    }
+    expect(events).toContainEqual(expect.objectContaining({ type: "result" }));
+    expect(emulator.records).toContainEqual(
+      expect.objectContaining({
+        provider: "mcp",
+        operation: "notes.write",
+        accountId: second.connectionRef,
+        args: { text: "work-inbox" },
+      }),
+    );
+
+    const ambiguous = [];
+    for await (const event of connector.execute(
+      {
+        tool: "notes.write",
+        args: { text: "needs-choice" },
+        executionId: "pipedream-ambiguous",
+        route: { connectorId: "pipedream", resourceId: "gmail", toolName: "notes.write" },
+      },
+      { ...multiContext, accountDefaults: {} },
+    )) {
+      ambiguous.push(event);
+    }
+    expect(ambiguous).toEqual([{ type: "error", message: "Choose a gmail account." }]);
   });
 });

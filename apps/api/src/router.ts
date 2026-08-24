@@ -233,6 +233,7 @@ function connectionContext(
   actor: Pick<Actor, "workspaceId" | "userId">,
   operationId: string,
   signal?: AbortSignal,
+  connectedConnections?: AdapterContext["connectedConnections"],
 ): AdapterContext {
   return {
     operationId,
@@ -240,7 +241,42 @@ function connectionContext(
     workspaceId: actor.workspaceId,
     userId: actor.userId,
     signal: signal ?? new AbortController().signal,
+    ...(connectedConnections ? { connectedConnections } : {}),
   };
+}
+
+async function connectedConnectionContext(
+  deps: Pick<RouterDeps, "prisma">,
+  actor: Pick<Actor, "workspaceId" | "userId">,
+  operationId: string,
+  signal?: AbortSignal,
+): Promise<AdapterContext> {
+  const rows = await deps.prisma.connection.findMany({
+    where: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      status: "connected",
+    },
+    select: {
+      id: true,
+      connectorId: true,
+      provider: true,
+      displayName: true,
+      providerRef: true,
+    },
+  });
+  return connectionContext(
+    actor,
+    operationId,
+    signal,
+    rows.map((row) => ({
+      id: row.id,
+      connectorId: row.connectorId,
+      externalId: row.provider,
+      displayName: row.displayName,
+      providerRef: row.providerRef ?? undefined,
+    })),
+  );
 }
 
 function connectionDto(
@@ -2275,7 +2311,12 @@ export function createRouter(deps: RouterDeps) {
         try {
           const auth = await connector.begin(
             { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
-            connectionContext(context.actor, "connections.begin", context.signal),
+            await connectedConnectionContext(
+              deps,
+              context.actor,
+              "connections.begin",
+              context.signal,
+            ),
           );
           await deps.prisma.connection.update({
             where: { id: row.id },
@@ -2311,15 +2352,21 @@ export function createRouter(deps: RouterDeps) {
         }
         let row = existing;
         if (existing.status !== "connected") {
+          const lifecycle = await connectedConnectionContext(
+            deps,
+            context.actor,
+            "connections.complete",
+            context.signal,
+          );
           const ready = await connector.connectionReady(
-            connectionContext(context.actor, "connections.complete", context.signal),
+            lifecycle,
             existing.provider,
             existing.providerRef ?? undefined,
           );
           if (ready) {
             const completed = await connector.complete(
               { state: existing.providerRef ?? existing.provider, code: input.code },
-              connectionContext(context.actor, "connections.complete", context.signal),
+              lifecycle,
             );
             const duplicate = await deps.prisma.connection.findFirst({
               where: {
@@ -2401,7 +2448,12 @@ export function createRouter(deps: RouterDeps) {
           try {
             await connector.revoke(
               row.providerRef ?? row.provider,
-              connectionContext(context.actor, "connections.revoke", context.signal),
+              await connectedConnectionContext(
+                deps,
+                context.actor,
+                "connections.revoke",
+                context.signal,
+              ),
             );
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
