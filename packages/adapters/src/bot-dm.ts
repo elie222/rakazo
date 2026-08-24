@@ -150,6 +150,7 @@ export async function messageBot(
   if ("error" in resolved) return resolved;
 
   const dm = await findOrCreateBotDmThread(deps.prisma, run, run.botId, resolved.target.id);
+  const sameThread = run.threadId === dm.threadId;
 
   const handoffBlock: MessageBlock = {
     kind: "handoff",
@@ -179,13 +180,15 @@ export async function messageBot(
       botId: run.botId,
       runId: run.id,
     });
-    await createThreadMessageInTransaction(tx, {
-      threadId: run.threadId,
-      role: "bot",
-      blocks: [handoffBlock],
-      botId: run.botId,
-      runId: run.id,
-    });
+    if (!sameThread) {
+      await createThreadMessageInTransaction(tx, {
+        threadId: run.threadId,
+        role: "bot",
+        blocks: [handoffBlock],
+        botId: run.botId,
+        runId: run.id,
+      });
+    }
     const task = await tx.task.create({
       data: {
         workspaceId: run.workspaceId,
@@ -222,20 +225,24 @@ export async function messageBot(
         text: message,
       },
     });
-    const sourceEvent = await appendEventInTransaction(tx, {
-      workspaceId: run.workspaceId,
-      threadId: run.threadId,
-      botId: run.botId,
-      type: "bot.dm",
-      runId: run.id,
-      payload: {
-        messageId: dmMessage.id,
-        groupId: dm.groupId,
-        fromBotId: run.botId,
-        toBotId: resolved.target.id,
-        text: message,
-      },
-    });
+    const sourceEventSeq = sameThread
+      ? dmEvent.seq
+      : (
+          await appendEventInTransaction(tx, {
+            workspaceId: run.workspaceId,
+            threadId: run.threadId,
+            botId: run.botId,
+            type: "bot.dm",
+            runId: run.id,
+            payload: {
+              messageId: dmMessage.id,
+              groupId: dm.groupId,
+              fromBotId: run.botId,
+              toBotId: resolved.target.id,
+              text: message,
+            },
+          })
+        ).seq;
     await touchGroupUpdatedAt(tx, dm.groupId);
     return {
       ok: true as const,
@@ -244,7 +251,7 @@ export async function messageBot(
       botId: resolved.target.id,
       runId: nextRun.id,
       dmEventSeq: dmEvent.seq,
-      sourceEventSeq: sourceEvent.seq,
+      sourceEventSeq,
     };
   });
 

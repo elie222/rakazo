@@ -1338,6 +1338,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "handoff_to_bot") {
             if (!thread.groupId) return finish({ error: "handoff_to_bot is only for group chats" });
+            if (groupKind === CHAT_GROUP_KIND_BOT_DM) {
+              const result = await messageBot(deps, run, {
+                bot_id: args.bot_id ? String(args.bot_id) : undefined,
+                confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
+                message: String(args.message ?? ""),
+              });
+              return finish(result);
+            }
             const result = await handoffToGroupBot(deps, run, thread.groupId, {
               bot_id: args.bot_id ? String(args.bot_id) : undefined,
               confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,

@@ -213,6 +213,74 @@ describeIntegration("bot-to-bot direct messages", () => {
     ).toBe(1);
   });
 
+  it("does not duplicate handoffs when messaging from the DM thread", async () => {
+    const cookie = await signup(`bot-dm-inplace-${stamp}@rakazo.test`, "Inplace Owner");
+    const botA = await createBot(cookie, "Sender");
+    const botB = await createBot(cookie, "Receiver");
+    const me = await rpc<{ userId: string }>(cookie, "me");
+    const deps = {
+      prisma: handles.prisma,
+      events: createThreadEvents(handles.prisma),
+      jobs: handles.jobs,
+    };
+    const bootstrap = await seedRunningRun({
+      workspaceId: botA.workspaceId,
+      userId: me.userId,
+      botId: botA.id,
+      threadId: botA.threadId,
+    });
+    const first = await messageBot(
+      deps,
+      {
+        id: bootstrap.id,
+        workspaceId: bootstrap.workspaceId,
+        threadId: bootstrap.threadId,
+        botId: bootstrap.botId,
+        userId: bootstrap.userId,
+      },
+      { bot_id: botB.id, message: "First ask" },
+    );
+    expect(first.ok).toBe(true);
+
+    const beforeCount = await handles.prisma.message.count({
+      where: { threadId: first.threadId },
+    });
+    const beforeEvents = await handles.prisma.event.count({
+      where: { threadId: first.threadId, type: "bot.dm" },
+    });
+
+    const dmRun = await seedRunningRun({
+      workspaceId: botA.workspaceId,
+      userId: me.userId,
+      botId: botA.id,
+      threadId: first.threadId,
+    });
+    const second = await messageBot(
+      deps,
+      {
+        id: dmRun.id,
+        workspaceId: dmRun.workspaceId,
+        threadId: dmRun.threadId,
+        botId: dmRun.botId,
+        userId: dmRun.userId,
+      },
+      { bot_id: botB.id, message: "Follow up from DM thread" },
+    );
+    expect(second.ok).toBe(true);
+    expect(second.threadId).toBe(first.threadId);
+
+    expect(
+      await handles.prisma.message.count({
+        where: { threadId: first.threadId },
+      }),
+    ).toBe(beforeCount + 1);
+    expect(
+      await handles.prisma.event.count({
+        where: { threadId: first.threadId, type: "bot.dm" },
+      }),
+    ).toBe(beforeEvents + 1);
+  });
+
   it("creates only one DM group when findOrCreate runs concurrently", async () => {
     const cookie = await signup(`bot-dm-race-${stamp}@rakazo.test`, "Race Owner");
     const botA = await createBot(cookie, "RaceA");
