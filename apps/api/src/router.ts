@@ -2951,8 +2951,8 @@ function duplicateBotName(name: string) {
   return `${name.slice(0, 75)} copy`;
 }
 
-/** Superhuman/Krisp reject non-localhost HTTP redirects. Allow the app origin
- * plus loopback so MCP OAuth can complete through an SSH tunnel to Vite. */
+/** Some MCP OAuth providers reject non-localhost HTTP redirects. Allow the app origin
+ * plus loopback so a tunnelled Vite callback can complete. */
 function isAllowedMcpOauthRedirect(redirectUri: string, webOrigin: string) {
   try {
     const url = new URL(redirectUri);

@@ -11,8 +11,8 @@ from pathlib import Path
 
 API = "http://127.0.0.1:3100"
 ORIGIN = "http://127.0.0.1:5173"
-IMPORT = Path("/Users/martinbouchard/src/rakazo-import")
-CREDS = Path("/Users/martinbouchard/.config/rakazo/admin.txt")
+IMPORT = Path.home() / "src" / "rakazo-import"
+CREDS = Path.home() / ".config" / "rakazo" / "admin.txt"
 DESC_MAX = 4000
 INST_MAX = 20000
 NAME_MAX = 80
@@ -120,7 +120,7 @@ def main() -> None:
     creds = load_creds()
     email = creds["email"]
     password = creds["password"]
-    name = creds.get("name", "Martin")
+    name = creds.get("name", "Admin")
 
     status, parsed, set_cookie = http(
         "POST",

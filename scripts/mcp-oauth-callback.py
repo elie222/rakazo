@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Localhost MCP OAuth catcher. Superhuman/Krisp only allow http://127.0.0.1 redirects."""
+"""Localhost MCP OAuth catcher for providers that only allow loopback HTTP redirects."""
 from __future__ import annotations
 
 import json

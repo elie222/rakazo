@@ -199,7 +199,7 @@ function oauthFetch(
     {},
     {
       headers: {
-        // Krisp's Cloudflare 1010s some default Node/Python signatures on DCR.
+        // Some CDNs 1010 default Node/Python signatures on DCR.
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
@@ -296,8 +296,8 @@ export class McpOAuthBroker {
     // invalidates dead tokens when a refresh is rejected with invalid_grant.
     const networkFetch = oauthFetch(server.endpoint, this.network);
     try {
-      // Don't use StreamableHTTP Client.connect here: Krisp's GET stream hangs
-      // behind Cloudflare, so OAuth never reaches DCR. auth() does discovery +
+      // Don't use StreamableHTTP Client.connect here: some providers' GET stream
+      // hangs, so OAuth never reaches DCR. auth() does discovery +
       // registration + authorize URL only.
       await auth(provider, {
         serverUrl: server.endpoint,

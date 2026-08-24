@@ -19,8 +19,8 @@ export type McpOauthResult =
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({
     serverId,
-    // Superhuman/Krisp reject non-loopback HTTP and most custom HTTPS URIs.
-    // A local catcher on this machine receives the code and posts it to Rakazo.
+    // Some providers reject non-loopback HTTP and most custom HTTPS URIs.
+    // A local catcher receives the code and posts it to Rakazo.
     redirectUri: "https://macstudio.lenok-truck.ts.net/mcp/oauth/callback",
   });
   if (started.status !== "authorization_required") return started.status;

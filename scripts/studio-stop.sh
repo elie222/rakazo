@@ -1,6 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
-ROOT="/Users/martinbouchard/src/rakazo"
+ROOT="${RAKAZO_ROOT:-$HOME/src/rakazo}"
 cd "$ROOT"
 # shellcheck disable=SC1091
 source "$ROOT/.rakazo-env.sh"
