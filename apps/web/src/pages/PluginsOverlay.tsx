@@ -31,7 +31,8 @@ export function PluginsOverlay({
   onOpenMcp?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<CatalogView>("all");
+  const [view, setView] = useState<CatalogView>("sources");
+  const [tregInfoOpen, setTregInfoOpen] = useState(false);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -214,43 +215,66 @@ export function PluginsOverlay({
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Integrations</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              Connect apps or add Treg, MCP, and OpenAPI tool sources.
+              Tool servers for your agents. App catalog is optional.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {onOpenMcp ? (
-              <button
-                type="button"
-                onClick={onOpenMcp}
-                className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
-              >
-                MCP servers
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label="Close integrations"
-              onClick={onClose}
-              className="text-[#85858A]"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label="Close integrations"
+            onClick={onClose}
+            className="text-[#85858A]"
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 px-8 pt-4">
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
-            Add Treg
-          </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
+        <div className="flex flex-wrap items-center gap-2 px-8 pt-4">
+          <Button
+            type="button"
+            variant="pill"
+            size="sm"
+            onClick={() => (onOpenMcp ? onOpenMcp() : beginSource("mcp"))}
+          >
             Add MCP server
           </Button>
           <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
             Add OpenAPI
           </Button>
+          <span className="relative inline-flex items-center gap-1">
+            <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
+              Add Treg
+            </Button>
+            <button
+              type="button"
+              aria-label="What is Treg?"
+              aria-expanded={tregInfoOpen}
+              onClick={() => setTregInfoOpen((open) => !open)}
+              className="grid h-7 w-7 place-items-center rounded-full border border-[#383844] text-[11px] font-medium text-[#C9C9CE] hover:bg-[#232327]"
+            >
+              i
+            </button>
+            {tregInfoOpen ? (
+              <div
+                role="dialog"
+                aria-label="About Treg"
+                className="absolute left-0 top-9 z-10 w-[320px] rounded-2xl border border-[#2C2C30] bg-[#1A1A1D] p-3.5 text-[13px] leading-5 text-[#C9C9CE] shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+              >
+                Treg is a paid catalog of extra agent tools (SEO, ads, outreach) behind one API
+                key. You do not need it for MCP servers you already added.
+                <a
+                  href="https://treg.to"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 block text-[#AEB7FF] hover:underline"
+                >
+                  treg.to
+                </a>
+              </div>
+            ) : null}
+          </span>
         </div>
 
-        {view !== "sources" ? (
+        {catalog.length > 0 && view !== "sources" ? (
           <div className="px-8 pt-4">
             <input
               value={query}
@@ -261,28 +285,30 @@ export function PluginsOverlay({
           </div>
         ) : null}
 
-        <div role="tablist" aria-label="Integration views" className="flex gap-1 px-8 pt-4">
-          {(["all", "connected", "sources"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              aria-selected={view === option}
-              aria-controls="integration-list"
-              onClick={() => {
-                setView(option);
-                if (option !== "sources") setSourceKind(null);
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
-                view === option
-                  ? "bg-[#2C2C30] text-[#F1F1F2]"
-                  : "text-[#7A7A80] hover:text-[#C8C8CC]"
-              }`}
-            >
-              {option === "all" ? "Apps" : option === "connected" ? "Connected" : "Tool sources"}
-            </button>
-          ))}
-        </div>
+        {catalog.length > 0 ? (
+          <div role="tablist" aria-label="Integration views" className="flex gap-1 px-8 pt-4">
+            {(["sources", "all", "connected"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={view === option}
+                aria-controls="integration-list"
+                onClick={() => {
+                  setView(option);
+                  if (option !== "sources") setSourceKind(null);
+                }}
+                className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                  view === option
+                    ? "bg-[#2C2C30] text-[#F1F1F2]"
+                    : "text-[#7A7A80] hover:text-[#C8C8CC]"
+                }`}
+              >
+                {option === "sources" ? "Tool servers" : option === "all" ? "Apps" : "Connected apps"}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div
           id="integration-list"
@@ -292,7 +318,7 @@ export function PluginsOverlay({
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {loading ? <p className="text-[#6C6C70]">Loading integrations…</p> : null}
 
-          {view === "sources" ? (
+          {view === "sources" || catalog.length === 0 ? (
             <div className="space-y-4">
               {mcpServers.map((server) => (
                 <div key={server.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
