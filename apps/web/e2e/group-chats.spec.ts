@@ -45,6 +45,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.getByRole("button", { name: "Create group", exact: true }).click();
   await page.waitForURL(/\/app\/g\/[^/]+$/);
   const groupUrl = page.url();
+  const draftGroupId = new URL(groupUrl).pathname.split("/").at(-1)!;
   const reviewGroup = await rpc<{ id: string }>(page, "groups/create", {
     name: "Review team",
     botIds: [researcherId, writerId],
@@ -63,6 +64,9 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
       members: Array<{ botId: string; name: string; color: string; status?: string }>;
     }>
   >(page, "groups/list", {});
+  const groupSnapshot = await rpc<{
+    members?: Array<{ botId: string; name: string; color: string; status?: string }>;
+  }>(page, "threads/get", { groupId: draftGroupId });
   await page.route("**/rpc/groups/list", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -74,6 +78,20 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
             status: index === 0 ? "running" : "idle",
           })),
         })),
+      }),
+    });
+  });
+  await page.route("**/rpc/threads/get", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          ...groupSnapshot,
+          members: groupSnapshot.members?.map((member, index) => ({
+            ...member,
+            status: index === 0 ? "running" : "idle",
+          })),
+        },
       }),
     });
   });
@@ -90,6 +108,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(workingAvatar.locator("svg")).toHaveCSS("animation-name", "rakazo-avatar-spin");
   await captureScreenshot(page, testInfo, "group-avatar-active");
   await page.unroute("**/rpc/groups/list");
+  await page.unroute("**/rpc/threads/get");
   await page.reload();
 
   await page.getByTestId("bot-settings-trigger").click();

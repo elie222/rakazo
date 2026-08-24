@@ -10,6 +10,12 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { IsolationError } from "./scope.js";
 
 const activeRunStatuses = [...ACTIVE_RUN_STATUSES];
+const activeRunSelection = {
+  where: { status: { in: activeRunStatuses } },
+  orderBy: { createdAt: "desc" as const },
+  take: 1,
+  select: { status: true },
+} as const;
 
 type GroupRecord = {
   id: string;
@@ -116,12 +122,7 @@ const groupInclude = {
           id: true,
           name: true,
           color: true,
-          runs: {
-            where: { status: { in: activeRunStatuses } },
-            orderBy: { createdAt: "desc" as const },
-            take: 1,
-            select: { status: true },
-          },
+          runs: activeRunSelection,
         },
       },
     },
@@ -133,7 +134,16 @@ const groupTargetInclude = {
   thread: { select: { id: true } },
   members: {
     where: { bot: { archivedAt: null } },
-    include: { bot: { select: { id: true, name: true, color: true } } },
+    include: {
+      bot: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          runs: activeRunSelection,
+        },
+      },
+    },
     orderBy: { createdAt: "asc" as const },
   },
 } as const;

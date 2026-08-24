@@ -1414,7 +1414,14 @@ export function ShellPage() {
                     background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
                   }}
                 >
-                  <GroupAvatar members={group.members} size={38} />
+                  <GroupAvatar
+                    members={
+                      group.id === activeSnapshot?.groupId
+                        ? (activeSnapshot.members ?? group.members)
+                        : group.members
+                    }
+                    size={38}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span
@@ -1594,7 +1601,10 @@ export function ShellPage() {
               className="flex min-w-0 items-center gap-3"
             >
               {inGroup ? (
-                <GroupAvatar members={activeGroup?.members ?? []} size={26} />
+                <GroupAvatar
+                  members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                  size={26}
+                />
               ) : active ? (
                 <BotAvatar color={active.color} size={26} status={active.status} />
               ) : null}
