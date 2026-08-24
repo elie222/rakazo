@@ -1,12 +1,15 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
+  BotMcpServer,
   BotSection,
   ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
   Group,
+  McpServer,
   Me,
+  ModelCatalogEntry,
   MessageBlock,
   ProductEvent,
   Routine,
@@ -192,6 +195,8 @@ export function ShellPage() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpAssignments, setMcpAssignments] = useState<BotMcpServer[]>([]);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
@@ -259,6 +264,13 @@ export function ShellPage() {
 
   const inGroup = Boolean(groupId);
   const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
+  const activeMcpServers = useMemo(() => {
+    if (!active) return [];
+    const assigned = new Set(
+      mcpAssignments.filter((row) => row.botId === active.id).map((row) => row.serverId),
+    );
+    return mcpServers.filter((server) => assigned.has(server.id));
+  }, [active, mcpAssignments, mcpServers]);
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
@@ -358,6 +370,15 @@ export function ShellPage() {
     },
     [navigate],
   );
+
+  const refreshMcp = useCallback(async () => {
+    const [servers, assignments] = await Promise.all([
+      rpc.mcp.servers.list(),
+      rpc.mcp.assignments.all(),
+    ]);
+    setMcpServers(servers);
+    setMcpAssignments(assignments);
+  }, []);
 
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
@@ -553,6 +574,10 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", refreshVisibleBots);
     };
   }, []);
+
+  useEffect(() => {
+    void refreshMcp().catch(() => undefined);
+  }, [refreshMcp, mcpOpen]);
 
   useEffect(() => {
     void rpc.voice
@@ -1483,13 +1508,16 @@ export function ShellPage() {
         </div>
         <button
           type="button"
-          onClick={() => setPluginsOpen(true)}
+          onClick={() => setMcpOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
         >
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">Integrations</span>
+          <span className="text-[14.5px] text-[#C9C9CE]">MCP servers</span>
+          {mcpServers.length ? (
+            <span className="ml-auto text-[12px] text-[#85858A]">{mcpServers.length}</span>
+          ) : null}
         </button>
         <div className="relative">
           {menuOpen ? (
@@ -1610,8 +1638,53 @@ export function ShellPage() {
                 </span>
               </span>
             </button>
+            {!inGroup && active ? (
+              <div className="ml-1 hidden min-w-0 flex-wrap items-center gap-1 md:flex">
+                {activeMcpServers.length ? (
+                  activeMcpServers.map((server) => (
+                    <button
+                      key={server.id}
+                      type="button"
+                      title={
+                        server.oauthStatus === "connected"
+                          ? `${server.name} connected`
+                          : `${server.name} needs authorization`
+                      }
+                      onClick={() => setMcpOpen(true)}
+                      className={`max-w-[148px] truncate rounded-full border px-2 py-0.5 text-[11px] ${
+                        server.oauthStatus === "connected"
+                          ? "border-[#2F6B4F] bg-[#14241C] text-[#A8E0C4]"
+                          : "border-[#6B4A2F] bg-[#241C14] text-[#E0C4A8]"
+                      }`}
+                    >
+                      {server.name}
+                    </button>
+                  ))
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMcpOpen(true)}
+                    className="rounded-full border border-[#2A2A2F] px-2 py-0.5 text-[11px] text-[#85858A]"
+                  >
+                    MCP
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-1">
+            {!inGroup && active ? (
+              <button
+                type="button"
+                title="MCP servers"
+                aria-label="MCP servers"
+                onClick={() => setMcpOpen(true)}
+                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                style={{ background: mcpOpen ? "#1B1B1E" : "transparent" }}
+              >
+                <Puzzle size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
+              </button>
+            ) : null}
             {!inGroup && active ? (
               <button
                 type="button"
@@ -1912,6 +1985,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
+                onOpenMcp={() => setMcpOpen(true)}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -3279,6 +3353,7 @@ function BotSettings({
   onSave,
   onExport,
   onClear,
+  onOpenMcp,
 }: {
   bot: Bot;
   memoryProviderConfigured: boolean;
@@ -3291,9 +3366,12 @@ function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelProvider?: string | null;
+    modelId?: string | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
+  onOpenMcp: () => void;
 }) {
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
@@ -3303,20 +3381,96 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [modelId, setModelId] = useState(bot.modelId ?? "");
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [workspaceDefaultModel, setWorkspaceDefaultModel] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assignedMcp, setAssignedMcp] = useState<McpServer[]>([]);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [oauthPending, setOauthPending] = useState<string | null>(null);
+
+  async function refreshAssignedMcp() {
+    const [servers, assignments] = await Promise.all([
+      rpc.mcp.servers.list(),
+      rpc.mcp.assignments.list({ botId: bot.id }),
+    ]);
+    const assignedIds = new Set(assignments.map((row) => row.serverId));
+    setAssignedMcp(servers.filter((server) => assignedIds.has(server.id)));
+  }
 
   useEffect(() => {
     void rpc.voice
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void Promise.all([rpc.models.list(), rpc.me()])
+      .then(([catalog, me]) => {
+        const openrouter = catalog.filter((entry) => entry.provider === "openrouter");
+        openrouter.sort((a, b) => {
+          const rank = (id: string) => (id.startsWith("deepseek/") ? 0 : 1);
+          return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
+        });
+        setModelCatalog(openrouter);
+        setWorkspaceDefaultModel(me.defaultModel ?? "");
+      })
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    void refreshAssignedMcp().catch((err: unknown) =>
+      setMcpError(err instanceof Error ? err.message : "Could not load MCP"),
+    );
+  }, [bot.id]);
 
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
         <BotAvatar color={bot.color} size={64} />
+      </div>
+      <div className="mt-5 rounded-[11px] border border-[#26262A] p-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[14px] text-[#85858A]">MCP servers</span>
+          <button type="button" onClick={onOpenMcp} className="text-[12.5px] text-[#C9C9CE]">
+            Manage
+          </button>
+        </div>
+        {mcpError ? <p className="mt-2 text-[12.5px] text-[#E65707]">{mcpError}</p> : null}
+        {assignedMcp.length === 0 ? (
+          <p className="mt-2 text-[13px] text-[#6C6C70]">None assigned to this bot.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {assignedMcp.map((server) => (
+              <li key={server.id} className="flex items-center justify-between gap-2">
+                <span>
+                  <span className="block text-[13.5px] text-[#ECECEE]">{server.name}</span>
+                  <span className="block text-[11px] text-[#85858A]">
+                    {server.oauthStatus === "connected" ? "Connected" : "Needs authorization"}
+                  </span>
+                </span>
+                {server.oauthStatus !== "connected" ? (
+                  <button
+                    type="button"
+                    disabled={oauthPending === server.id}
+                    onClick={() => {
+                      setMcpError(null);
+                      setOauthPending(server.id);
+                      void connectMcpOauth(server.id)
+                        .then(() => refreshAssignedMcp())
+                        .catch((err: unknown) =>
+                          setMcpError(err instanceof Error ? err.message : "OAuth failed"),
+                        )
+                        .finally(() => setOauthPending(null));
+                    }}
+                    className="rounded-lg bg-[#7785FF] px-2.5 py-1.5 text-[11px] font-semibold text-[#090A12] disabled:opacity-50"
+                  >
+                    {oauthPending === server.id ? "Connecting…" : "Connect"}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
         Name
@@ -3347,6 +3501,26 @@ function BotSettings({
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Model
+        <select
+          value={modelId}
+          onChange={(event) => setModelId(event.target.value)}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        >
+          <option value="">
+            Workspace default{workspaceDefaultModel ? ` (${workspaceDefaultModel})` : ""}
+          </option>
+          {modelId && !modelCatalog.some((entry) => entry.id === modelId) ? (
+            <option value={modelId}>{modelId}</option>
+          ) : null}
+          {modelCatalog.map((entry) => (
+            <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </label>
       {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
           Memory scope
@@ -3417,6 +3591,8 @@ function BotSettings({
               memoryScope,
               autoSpeak,
               voiceId: voiceId || null,
+              modelProvider: modelId ? "openrouter" : null,
+              modelId: modelId || null,
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));

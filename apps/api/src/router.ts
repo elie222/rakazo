@@ -493,6 +493,8 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -542,6 +544,8 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -2072,8 +2076,7 @@ export function createRouter(deps: RouterDeps) {
       oauth: {
         begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
-            const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
-            if (new URL(input.redirectUri).toString() !== expectedRedirect) {
+            if (!isAllowedMcpOauthRedirect(input.redirectUri, deps.env.webOrigin)) {
               throw new Error("MCP OAuth redirect URI is not allowed");
             }
             return await mcpOAuth.begin({
@@ -2087,12 +2090,16 @@ export function createRouter(deps: RouterDeps) {
             });
           }
         }),
-        complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
+        complete: os.mcp.oauth.complete.handler(async ({ input }) => {
           try {
+            const session = await deps.prisma.mcpOAuthSession.findFirst({
+              where: { id: input.sessionId },
+            });
+            if (!session) throw new Error("MCP OAuth session is invalid or expired");
             await mcpOAuth.complete({
               ...input,
-              workspaceId: context.actor.workspaceId,
-              userId: context.actor.userId,
+              workspaceId: session.workspaceId,
+              userId: session.userId,
             });
             return { ok: true as const };
           } catch (error) {
@@ -2942,4 +2949,25 @@ function withViewOnly(url: string, viewOnly: boolean) {
 
 function duplicateBotName(name: string) {
   return `${name.slice(0, 75)} copy`;
+}
+
+/** Superhuman/Krisp reject non-localhost HTTP redirects. Allow the app origin
+ * plus loopback so MCP OAuth can complete through an SSH tunnel to Vite. */
+function isAllowedMcpOauthRedirect(redirectUri: string, webOrigin: string) {
+  try {
+    const url = new URL(redirectUri);
+    if (url.pathname !== "/mcp/oauth/callback") return false;
+    if (url.protocol === "http:") {
+      return url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    }
+    if (url.toString() === new URL("/mcp/oauth/callback", webOrigin).toString()) return true;
+    // Public HTTPS callback via Tailscale Funnel on :443 (no custom port).
+    return (
+      url.protocol === "https:" &&
+      url.port === "" &&
+      (url.hostname === "macstudio.lenok-truck.ts.net" || url.hostname.endsWith(".ts.net"))
+    );
+  } catch {
+    return false;
+  }
 }

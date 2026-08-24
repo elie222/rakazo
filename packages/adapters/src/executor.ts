@@ -254,7 +254,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         credential?.defaultModel ??
         settings?.defaultModelId ??
         (deps.deploymentModelKey
-          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
+          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-vision-exp")
           : "scripted");
       return {
         provider,
@@ -1472,8 +1472,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentTurnImages,
               tools,
               model: {
-                provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
-                id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                provider:
+                  bot.modelProvider ??
+                  credential?.provider ??
+                  settings?.defaultModelProvider ??
+                  "scripted",
+                id:
+                  bot.modelId ??
+                  credential?.defaultModel ??
+                  settings?.defaultModelId ??
+                  "scripted",
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }

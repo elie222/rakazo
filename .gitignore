@@ -35,3 +35,7 @@ verify-report
 .last-deployed-revision
 design/
 PRODUCT_PLAN.md
+# Local Studio runtime
+run/
+.nvm-ish.sh
+.rakazo-env.sh

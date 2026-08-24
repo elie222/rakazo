@@ -32,6 +32,7 @@ export interface AppEnv {
   wakeupDriver: string;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
+  trustedOrigins: string[];
   port: number;
   gitSha: string | undefined;
 }
@@ -67,10 +68,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
-    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
+    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-vision-exp",
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    trustedOrigins: (source.TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),

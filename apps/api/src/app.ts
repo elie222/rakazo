@@ -160,6 +160,7 @@ export async function createApp(
       "http://127.0.0.1:8081",
       "http://localhost:19006",
       "http://127.0.0.1:19006",
+      ...env.trustedOrigins,
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -324,6 +325,7 @@ export async function createApp(
 function isTrustedOrigin(origin: string, env: AppEnv) {
   if (!origin) return true;
   if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
+  if (env.trustedOrigins.includes(origin)) return true;
   if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
   try {
     const host = new URL(origin).hostname;

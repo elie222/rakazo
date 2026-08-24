@@ -32,6 +32,8 @@ export const BotSchema = z.object({
   createdAt: z.string(),
   voiceId: z.string().nullable(),
   autoSpeak: z.boolean(),
+  modelProvider: z.string().nullable(),
+  modelId: z.string().nullable(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -132,6 +134,8 @@ export const UpdateBotInput = z.object({
   sectionId: Id.nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
   autoSpeak: z.boolean().optional(),
+  modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+  modelId: z.string().trim().min(1).max(200).nullable().optional(),
 });
 
 export const RoutineSchema = z.object({

@@ -31,6 +31,8 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    modelProvider?: string | null;
+    modelId?: string | null;
   },
   preview = "",
   status = "idle",
@@ -61,6 +63,8 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    modelProvider: bot.modelProvider ?? null,
+    modelId: bot.modelId ?? null,
   };
 }
 
@@ -187,6 +191,8 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
+        modelProvider?: string | null;
+        modelId?: string | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -201,6 +207,8 @@ export function createRepos(prisma: PrismaClient) {
         });
         color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
       }
+      let modelProvider = input.modelProvider ?? null;
+      let modelId = input.modelId ?? null;
       if (input.parentBotId) {
         const parent = await prisma.bot.findFirst({
           where: {
@@ -210,6 +218,10 @@ export function createRepos(prisma: PrismaClient) {
           },
         });
         if (!parent) throw new IsolationError();
+        if (!modelId) {
+          modelProvider = parent.modelProvider ?? null;
+          modelId = parent.modelId ?? null;
+        }
       }
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
@@ -235,6 +247,8 @@ export function createRepos(prisma: PrismaClient) {
             parentBotId: input.parentBotId ?? null,
             computerId: teamComputer.id,
             spawnKey: input.spawnKey,
+            modelProvider,
+            modelId,
           },
         });
         const thread = await tx.thread.create({

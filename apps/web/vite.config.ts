@@ -14,8 +14,6 @@ import {
   stripSensitiveHandshakeHeaders,
 } from "./src/screen-proxy.js";
 
-const webPort = Number(process.env.WEB_PORT ?? 5173);
-
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
   server.middlewares.use((req, res, next) => {
     if (!req.url?.startsWith("/novnc/")) {
@@ -115,6 +113,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
 
 export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
+  const webPort = Number(rootEnv.WEB_PORT || process.env.WEB_PORT || 5175);
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const screenProxySecret = resolveAuthSecret({
@@ -147,9 +146,17 @@ export default defineConfig(({ mode }) => {
       },
     ],
     server: {
-      host: "127.0.0.1",
+      host: rootEnv.RAKAZO_BIND || process.env.RAKAZO_BIND || "127.0.0.1",
       port: webPort,
       strictPort: true,
+      allowedHosts: true,
+      hmr: (rootEnv.RAKAZO_PUBLIC_HOST || process.env.RAKAZO_PUBLIC_HOST)
+        ? {
+            protocol: "wss",
+            host: rootEnv.RAKAZO_PUBLIC_HOST || process.env.RAKAZO_PUBLIC_HOST,
+            clientPort: Number(rootEnv.RAKAZO_PUBLIC_PORT || process.env.RAKAZO_PUBLIC_PORT || 5173),
+          }
+        : undefined,
       proxy: {
         "/api": { target: api, changeOrigin: true },
         "/rpc": { target: api, changeOrigin: true },
@@ -157,7 +164,7 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       host: "0.0.0.0",
-      port: Number(process.env.WEB_PORT ?? 5173),
+      port: webPort,
       allowedHosts: [previewHost],
       proxy: {
         "/api": { target: api, changeOrigin: true },
