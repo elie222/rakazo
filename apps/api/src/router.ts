@@ -2076,7 +2076,13 @@ export function createRouter(deps: RouterDeps) {
       oauth: {
         begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
-            if (!isAllowedMcpOauthRedirect(input.redirectUri, deps.env.webOrigin)) {
+            if (
+              !isAllowedMcpOauthRedirect(
+                input.redirectUri,
+                deps.env.webOrigin,
+                deps.env.trustedOrigins,
+              )
+            ) {
               throw new Error("MCP OAuth redirect URI is not allowed");
             }
             return await mcpOAuth.begin({
@@ -2951,22 +2957,31 @@ function duplicateBotName(name: string) {
   return `${name.slice(0, 75)} copy`;
 }
 
-/** Superhuman/Krisp reject non-localhost HTTP redirects. Allow the app origin
- * plus loopback so MCP OAuth can complete through an SSH tunnel to Vite. */
-function isAllowedMcpOauthRedirect(redirectUri: string, webOrigin: string) {
+/** MCP OAuth providers reject non-localhost HTTP redirects. Allow the app origin,
+ * loopback, and extra HTTPS origins from TRUSTED_ORIGINS. */
+function isAllowedMcpOauthRedirect(
+  redirectUri: string,
+  webOrigin: string,
+  extraOrigins: string[] = [],
+) {
   try {
     const url = new URL(redirectUri);
     if (url.pathname !== "/mcp/oauth/callback") return false;
     if (url.protocol === "http:") {
       return url.hostname === "127.0.0.1" || url.hostname === "localhost";
     }
-    if (url.toString() === new URL("/mcp/oauth/callback", webOrigin).toString()) return true;
-    // Public HTTPS callback via Tailscale Funnel on :443 (no custom port).
-    return (
-      url.protocol === "https:" &&
-      url.port === "" &&
-      (url.hostname === "macstudio.lenok-truck.ts.net" || url.hostname.endsWith(".ts.net"))
+    const allowed = new Set(
+      [webOrigin, ...extraOrigins]
+        .map((origin) => {
+          try {
+            return new URL("/mcp/oauth/callback", origin).toString();
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean),
     );
+    return allowed.has(url.toString());
   } catch {
     return false;
   }

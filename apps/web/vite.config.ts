@@ -113,7 +113,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
 
 export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
-  const webPort = Number(rootEnv.WEB_PORT || process.env.WEB_PORT || 5175);
+  const webPort = Number(rootEnv.WEB_PORT || process.env.WEB_PORT || 5173);
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const screenProxySecret = resolveAuthSecret({

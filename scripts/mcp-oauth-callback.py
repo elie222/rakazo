@@ -8,10 +8,14 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-PORT = 8765
+PORT = int(__import__("os").environ.get("MCP_OAUTH_CALLBACK_PORT", "8765"))
 CANDIDATES = [
-    "http://127.0.0.1:5175",
-    "https://macstudio.lenok-truck.ts.net:5173",
+    origin.strip()
+    for origin in __import__("os").environ.get(
+        "MCP_OAUTH_COMPLETE_ORIGINS",
+        "http://127.0.0.1:5173,http://127.0.0.1:5175",
+    ).split(",")
+    if origin.strip()
 ]
 
 

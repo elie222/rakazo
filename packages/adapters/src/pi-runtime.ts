@@ -67,7 +67,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
-            ? envDefaultModel || "deepseek/deepseek-v4-flash-vision-exp"
+            ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
@@ -237,9 +237,10 @@ function withOpenRouterProviderRouting<T extends { provider: string; compat?: Re
 ): T {
   if (model.provider !== "openrouter") return model;
   const vision = /\bvision\b/i.test(model.id);
-  const slug = vision
-    ? (process.env.OPENROUTER_VISION_PROVIDER ?? "deepseek").trim() || "deepseek"
-    : (process.env.OPENROUTER_PROVIDER ?? "wafer").trim() || "wafer";
+  const slug = (
+    vision ? process.env.OPENROUTER_VISION_PROVIDER : process.env.OPENROUTER_PROVIDER
+  )?.trim();
+  if (!slug) return model;
   return {
     ...model,
     compat: {

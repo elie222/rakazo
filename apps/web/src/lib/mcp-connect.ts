@@ -19,9 +19,11 @@ export type McpOauthResult =
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({
     serverId,
-    // Superhuman/Krisp reject non-loopback HTTP and most custom HTTPS URIs.
-    // A local catcher on this machine receives the code and posts it to Rakazo.
-    redirectUri: "https://macstudio.lenok-truck.ts.net/mcp/oauth/callback",
+    // Providers often reject non-loopback HTTP. Optional public HTTPS callback
+    // (e.g. a Tailscale Funnel) can be set via VITE_MCP_OAUTH_REDIRECT_URI.
+    redirectUri:
+      (import.meta.env.VITE_MCP_OAUTH_REDIRECT_URI as string | undefined)?.trim() ||
+      `${window.location.origin}/mcp/oauth/callback`,
   });
   if (started.status !== "authorization_required") return started.status;
   const popup = window.open(
