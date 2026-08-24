@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { messageBot } from "@rakazo/adapters";
+import { findOrCreateBotDmThread, messageBot } from "@rakazo/adapters";
 import { CHAT_GROUP_KIND_BOT_DM } from "@rakazo/contracts";
 import { createThreadEvents } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -209,6 +209,29 @@ describeIntegration("bot-to-bot direct messages", () => {
     expect(
       await handles.prisma.chatGroup.count({
         where: { kind: CHAT_GROUP_KIND_BOT_DM, userId: me.userId },
+      }),
+    ).toBe(1);
+  });
+
+  it("creates only one DM group when findOrCreate runs concurrently", async () => {
+    const cookie = await signup(`bot-dm-race-${stamp}@rakazo.test`, "Race Owner");
+    const botA = await createBot(cookie, "RaceA");
+    const botB = await createBot(cookie, "RaceB");
+    const me = await rpc<{ userId: string }>(cookie, "me");
+    const actor = { workspaceId: botA.workspaceId, userId: me.userId };
+
+    const [first, second] = await Promise.all([
+      findOrCreateBotDmThread(handles.prisma, actor, botA.id, botB.id),
+      findOrCreateBotDmThread(handles.prisma, actor, botA.id, botB.id),
+    ]);
+    expect(first).toEqual(second);
+    expect(
+      await handles.prisma.chatGroup.count({
+        where: {
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          kind: CHAT_GROUP_KIND_BOT_DM,
+        },
       }),
     ).toBe(1);
   });

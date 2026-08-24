@@ -19,6 +19,7 @@ import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
   CHAT_GROUP_KIND_BOT_DM,
+  CHAT_GROUP_KIND_USER,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 import {
@@ -640,7 +641,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           graphical
             ? builtinAgentTools
             : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name))
-        ).filter((tool) => thread.groupId || tool.name !== "handoff_to_bot");
+        ).filter(
+          (tool) =>
+            tool.name !== "handoff_to_bot" ||
+            (Boolean(thread.groupId) && groupKind === CHAT_GROUP_KIND_USER),
+        );
         const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const exposedConnectorTools = discovered.filter(
           (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),

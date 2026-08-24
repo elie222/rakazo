@@ -14,6 +14,28 @@ export function botDmPairKey(botA: string, botB: string): string {
   return [botA, botB].sort().join(":");
 }
 
+function isPairKeyUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+async function lookupBotDmThread(
+  prisma: Pick<PrismaClient, "chatGroup">,
+  actor: { workspaceId: string; userId: string },
+  pairKey: string,
+) {
+  const existing = await prisma.chatGroup.findFirst({
+    where: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      kind: CHAT_GROUP_KIND_BOT_DM,
+      pairKey,
+    },
+    include: { thread: { select: { id: true } } },
+  });
+  if (!existing?.thread) return undefined;
+  return { groupId: existing.id, threadId: existing.thread.id };
+}
+
 async function resolveWorkspaceBotTarget(
   prisma: PrismaClient,
   actor: { workspaceId: string; userId: string },
@@ -50,18 +72,8 @@ export async function findOrCreateBotDmThread(
   targetBotId: string,
 ) {
   const pairKey = botDmPairKey(sourceBotId, targetBotId);
-  const existing = await prisma.chatGroup.findFirst({
-    where: {
-      workspaceId: actor.workspaceId,
-      userId: actor.userId,
-      kind: CHAT_GROUP_KIND_BOT_DM,
-      pairKey,
-    },
-    include: { thread: { select: { id: true } } },
-  });
-  if (existing?.thread) {
-    return { groupId: existing.id, threadId: existing.thread.id };
-  }
+  const existing = await lookupBotDmThread(prisma, actor, pairKey);
+  if (existing) return existing;
 
   const bots = await prisma.bot.findMany({
     where: {
@@ -77,42 +89,47 @@ export async function findOrCreateBotDmThread(
   const target = bots.find((bot) => bot.id === targetBotId);
   if (!source || !target) throw new IsolationError();
 
-  return prisma.$transaction(async (tx) => {
-    const raced = await tx.chatGroup.findFirst({
-      where: {
-        workspaceId: actor.workspaceId,
-        userId: actor.userId,
-        kind: CHAT_GROUP_KIND_BOT_DM,
-        pairKey,
-      },
-      include: { thread: { select: { id: true } } },
-    });
-    if (raced?.thread) return { groupId: raced.id, threadId: raced.thread.id };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const raced = await lookupBotDmThread(prisma, actor, pairKey);
+    if (raced) return raced;
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const locked = await lookupBotDmThread(tx, actor, pairKey);
+        if (locked) return locked;
 
-    const group = await tx.chatGroup.create({
-      data: {
-        workspaceId: actor.workspaceId,
-        userId: actor.userId,
-        name: `${source.name} → ${target.name}`,
-        kind: CHAT_GROUP_KIND_BOT_DM,
-        pairKey,
-      },
-    });
-    await tx.chatGroupMember.createMany({
-      data: [
-        { groupId: group.id, botId: sourceBotId },
-        { groupId: group.id, botId: targetBotId },
-      ],
-    });
-    const thread = await tx.thread.create({
-      data: {
-        workspaceId: actor.workspaceId,
-        groupId: group.id,
-        userId: actor.userId,
-      },
-    });
-    return { groupId: group.id, threadId: thread.id };
-  });
+        const group = await tx.chatGroup.create({
+          data: {
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            name: `${source.name} → ${target.name}`,
+            kind: CHAT_GROUP_KIND_BOT_DM,
+            pairKey,
+          },
+        });
+        await tx.chatGroupMember.createMany({
+          data: [
+            { groupId: group.id, botId: sourceBotId },
+            { groupId: group.id, botId: targetBotId },
+          ],
+        });
+        const thread = await tx.thread.create({
+          data: {
+            workspaceId: actor.workspaceId,
+            groupId: group.id,
+            userId: actor.userId,
+          },
+        });
+        return { groupId: group.id, threadId: thread.id };
+      });
+    } catch (error) {
+      if (isPairKeyUniqueViolation(error)) continue;
+      throw error;
+    }
+  }
+
+  const final = await lookupBotDmThread(prisma, actor, pairKey);
+  if (final) return final;
+  throw new Error("Failed to resolve bot DM thread");
 }
 
 export async function messageBot(
