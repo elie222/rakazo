@@ -183,3 +183,122 @@ describe("connection completion", () => {
     expect(complete).not.toHaveBeenCalled();
   });
 });
+
+describe("connection start", () => {
+  it("does not create another authorization attempt while one is pending for the same app", async () => {
+    const create = vi.fn();
+    const prisma = {
+      connection: {
+        findFirst: vi.fn().mockResolvedValue({ id: "pending-connection" }),
+        create,
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: {
+        managed: vi.fn().mockReturnValue({ begin: vi.fn().mockResolvedValue({ state: "ca-new" }) }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { matched, response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/begin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          json: {
+            connectorId: "composio",
+            provider: "googlecalendar",
+            displayName: "Google Calendar",
+          },
+        }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(matched).toBe(true);
+    expect(response.status).toBe(409);
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("duplicate connection completion", () => {
+  it("keeps the original active row when Composio returns an already-connected account", async () => {
+    const pending = {
+      id: "pending-connection",
+      connectorId: "composio",
+      provider: "googlecalendar",
+      providerRef: "ca-new",
+      displayName: "Google Calendar",
+      status: "pending",
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+    };
+    const active = {
+      ...pending,
+      id: "active-connection",
+      providerRef: "ca-existing",
+      status: "connected",
+    };
+    const update = vi.fn().mockResolvedValue(pending);
+    const prisma = {
+      connection: {
+        findFirst: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(active),
+        update,
+      },
+      botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: {
+        managed: vi.fn().mockReturnValue({
+          connectionReady: vi.fn().mockResolvedValue(true),
+          complete: vi.fn().mockResolvedValue({ connectionRef: "ca-existing" }),
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: pending.id } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: pending.id },
+      data: { status: "revoked" },
+    });
+  });
+});

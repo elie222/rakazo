@@ -2237,6 +2237,22 @@ export function createRouter(deps: RouterDeps) {
             message: `Connector ${input.connectorId} is not configured`,
           });
         }
+        const pending = await deps.prisma.connection.findFirst({
+          where: {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            connectorId: input.connectorId,
+            provider: input.provider,
+            status: "pending",
+          },
+          select: { id: true },
+        });
+        if (pending) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              "Finish or cancel the current connection attempt before adding another account.",
+          });
+        }
         const row = await deps.prisma.connection.create({
           data: {
             workspaceId: context.actor.workspaceId,
@@ -2296,10 +2312,29 @@ export function createRouter(deps: RouterDeps) {
               { state: existing.providerRef ?? existing.provider, code: input.code },
               connectionContext(context.actor, "connections.complete", context.signal),
             );
-            row = await deps.prisma.connection.update({
-              where: { id: existing.id },
-              data: { status: "connected", providerRef: completed.connectionRef },
+            const duplicate = await deps.prisma.connection.findFirst({
+              where: {
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                connectorId: existing.connectorId,
+                provider: existing.provider,
+                providerRef: completed.connectionRef,
+                status: "connected",
+                id: { not: existing.id },
+              },
             });
+            if (duplicate) {
+              await deps.prisma.connection.update({
+                where: { id: existing.id },
+                data: { status: "revoked" },
+              });
+              row = duplicate;
+            } else {
+              row = await deps.prisma.connection.update({
+                where: { id: existing.id },
+                data: { status: "connected", providerRef: completed.connectionRef },
+              });
+            }
           }
         }
         const isDefault = Boolean(

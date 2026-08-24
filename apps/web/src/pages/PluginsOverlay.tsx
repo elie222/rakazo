@@ -8,6 +8,7 @@ import type {
 import { abortableDelay } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { splitConnectionAccounts } from "../lib/connection-accounts";
 import { rpc } from "../lib/rpc";
 
 type CatalogView = "all" | "connected" | "sources";
@@ -86,7 +87,10 @@ export function PluginsOverlay({
     const needle = query.trim().toLowerCase();
     const scoped =
       view === "connected"
-        ? catalog.filter((item) => connectionRows(item).some(isUsableConnection))
+        ? catalog.filter((item) => {
+            const rows = splitConnectionAccounts(connectionRows(item));
+            return rows.active.length > 0 || rows.pending.length > 0;
+          })
         : catalog;
     if (!needle) return scoped;
     return scoped.filter(
@@ -102,10 +106,6 @@ export function PluginsOverlay({
       (connection) =>
         connection.connectorId === item.connectorId && connection.provider === item.slug,
     );
-  }
-
-  function isUsableConnection(connection: Connection) {
-    return connection.status === "connected";
   }
 
   function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
@@ -485,13 +485,9 @@ export function PluginsOverlay({
               {visible.map((item) => {
                 const key = itemKey(item);
                 const matches = connectionRows(item);
-                const connectedRows = matches.filter(isUsableConnection);
-                const connected = matches.some(
-                  (row) =>
-                    row.status === "connected" ||
-                    row.status === "pending" ||
-                    row.status === "error",
-                );
+                const { active: connectedRows, pending: pendingRows } =
+                  splitConnectionAccounts(matches);
+                const connected = connectedRows.length > 0 || pendingRows.length > 0;
                 const expanded = expandedKey === key;
                 return (
                   <div key={key} className="rounded-[13px] px-3 py-2.5">
@@ -544,9 +540,10 @@ export function PluginsOverlay({
                             type="button"
                             variant="pill"
                             size="sm"
+                            disabled={pendingRows.length > 0}
                             onClick={() => void connect(item)}
                           >
-                            Add account
+                            {pendingRows.length > 0 ? "Connection in progress" : "Add account"}
                           </Button>
                         </div>
                         {bots.length > 0 ? (
@@ -563,7 +560,33 @@ export function PluginsOverlay({
                             ))}
                           </select>
                         ) : null}
-                        {matches.map((row) => {
+                        {pendingRows.map((row) => (
+                          <div
+                            key={row.id}
+                            role="status"
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2"
+                          >
+                            <div>
+                              <div className="text-sm text-[#ECECEE]">
+                                {row.displayName} is waiting to connect
+                              </div>
+                              <div className="text-xs text-[#77777D]">
+                                Finish the sign-in window, or cancel this attempt before adding
+                                another account.
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="pill"
+                              size="sm"
+                              disabled={pending === `connection:${row.id}`}
+                              onClick={() => void revokeConnection(row)}
+                            >
+                              {pending === `connection:${row.id}` ? "Cancelling…" : "Cancel"}
+                            </Button>
+                          </div>
+                        ))}
+                        {connectedRows.map((row) => {
                           const isDefault = defaults.some(
                             (entry) => entry.botId === activeBotId && entry.connectionId === row.id,
                           );

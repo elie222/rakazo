@@ -162,6 +162,7 @@
                   <div class="auth-logo">31</div>
                   <h2 class="card-title">Connect another Google Calendar</h2>
                   <p class="card-copy">Rakazo opens the provider authorization page. This does not replace your Personal account.</p>
+                  <p class="card-copy">One connection is in progress, so Add another account stays unavailable until you finish or cancel it.</p>
                   <div class="auth-actions">
                     <button type="button" class="pill" data-next="1">Cancel</button>
                     <button type="button" class="pill primary" data-next="3">Authorize Google</button>
@@ -268,7 +269,7 @@
       const beats = [
         ["Start where you already connect apps", "Open Apps, find Google Calendar, and press Connect. The first account follows the existing Rakazo connection flow."],
         ["Add account without replacing the first", "Once Personal is connected, the same app row offers Add account. Your first authorization stays intact."],
-        ["Authorize the second provider identity", "Rakazo opens the provider authorization step for the second account and returns to this setup flow when it succeeds."],
+        ["Authorize the second provider identity", "Rakazo shows one connection in progress while the provider sign-in is open, preventing duplicate attempts until it finishes or is cancelled."],
         ["Give the account a useful name", "Name the new connection Work or Personal so you and the bot can refer to it without seeing provider IDs."],
         ["Choose the bot default", "Both accounts appear under one app. Set a per-bot default, or change it later without reconnecting."],
         ["Use the right account during a run", "When a request names Work, Rakazo passes the Work account to Composio and keeps credentials behind the connector."]
