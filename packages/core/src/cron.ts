@@ -137,14 +137,51 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   if (parts.length < 5) {
     return new Date(from.getTime() + 60_000);
   }
-  const [minuteExpr, hourExpr] = parts;
+  const [minuteExpr, hourExpr, , , dowExpr] = parts;
   const candidate = new Date(from.getTime() + 60_000);
   candidate.setSeconds(0, 0);
-  for (let i = 0; i < 24 * 60 + 2; i += 1) {
-    const minute = candidate.getUTCMinutes();
-    const hour = candidate.getUTCHours();
-    if (matchField(minuteExpr ?? "*", minute, 0, 59) && matchField(hourExpr ?? "*", hour, 0, 23)) {
-      void timezone;
+  // Scan up to 8 days so any weekly day-of-week is reachable; evaluate the
+  // cron fields in the routine's timezone instead of silently using UTC.
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      minute: "numeric",
+      hour: "numeric",
+      weekday: "short",
+      hour12: false,
+    });
+  } catch {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      minute: "numeric",
+      hour: "numeric",
+      weekday: "short",
+      hour12: false,
+    });
+  }
+  const weekdayIndex: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  const dowExprSunday = dowExpr === undefined ? "*" : dowExpr.replace(/(^|\s)7(?=\s|$)/g, "$10");
+  for (let i = 0; i < 8 * 24 * 60 + 2; i += 1) {
+    const fields = formatter.formatToParts(candidate);
+    const num = (type: string) => Number(fields.find((part) => part.type === type)?.value ?? "0");
+    const weekdayPart = fields.find((part) => part.type === "weekday")?.value ?? "Sun";
+    const minute = num("minute");
+    const hour = num("hour") % 24;
+    const weekday = weekdayIndex[weekdayPart] ?? 0;
+    if (
+      matchField(minuteExpr ?? "*", minute, 0, 59) &&
+      matchField(hourExpr ?? "*", hour, 0, 23) &&
+      matchField(dowExprSunday, weekday, 0, 6)
+    ) {
       return candidate;
     }
     candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);

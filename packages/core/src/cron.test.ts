@@ -4,6 +4,7 @@ import {
   cronFromPreset,
   describeCronPreset,
   formatCron,
+  nextCronDate,
   presetFromCron,
 } from "./cron.js";
 
@@ -97,5 +98,40 @@ describe("formatCron", () => {
       lead: "Every hour",
       detail: "",
     });
+  });
+});
+
+describe("nextCronDate", () => {
+  it("returns the next matching time today for a daily cron", () => {
+    const from = new Date("2026-08-24T10:30:00.000Z");
+    expect(nextCronDate("0 11 * * *", from)).toEqual(new Date("2026-08-24T11:00:00.000Z"));
+  });
+
+  it("honors day-of-week instead of matching the same hour tomorrow", () => {
+    // Monday 13:52 UTC; the weekly slot is Monday 13:00, so the next fire is
+    // the following Monday, not Tuesday.
+    const from = new Date("2026-08-24T13:52:00.000Z");
+    expect(nextCronDate("0 13 * * 1", from)).toEqual(new Date("2026-08-31T13:00:00.000Z"));
+  });
+
+  it("maps cron day 7 to Sunday", () => {
+    const from = new Date("2026-08-26T12:00:00.000Z"); // Wednesday
+    expect(nextCronDate("0 9 * * 7", from)).toEqual(new Date("2026-08-30T09:00:00.000Z"));
+  });
+
+  it("evaluates the schedule in the routine timezone", () => {
+    // 10:00 UTC is 06:00 in New York on the same day, so a 7 AM America/New_York
+    // daily slot still fires later the same UTC day.
+    const from = new Date("2026-08-24T10:00:00.000Z");
+    expect(nextCronDate("0 7 * * *", from, "America/New_York")).toEqual(
+      new Date("2026-08-24T11:00:00.000Z"),
+    );
+  });
+
+  it("falls back to UTC for an unknown timezone", () => {
+    const from = new Date("2026-08-24T10:00:00.000Z");
+    expect(nextCronDate("0 7 * * *", from, "Mars/Olympus")).toEqual(
+      new Date("2026-08-25T07:00:00.000Z"),
+    );
   });
 });
