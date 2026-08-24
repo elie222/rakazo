@@ -87,6 +87,10 @@ export class PiAgentRuntime implements AgentRuntime {
           queue.push({ type: "done" });
           return;
         }
+        if (/\bvision\b/i.test(model.id) && !model.input.includes("image")) {
+          model = { ...model, input: ["text", "image"] };
+        }
+        model = withOpenRouterProviderRouting(model);
 
         const apiKey = request.model.oauth
           ? undefined
@@ -227,11 +231,35 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
+
+function withOpenRouterProviderRouting<T extends { provider: string; compat?: Record<string, unknown> }>(
+  model: T,
+): T {
+  if (model.provider !== "openrouter") return model;
+  const vision = /\bvision\b/i.test(model.id);
+  const slug = (
+    vision ? process.env.OPENROUTER_VISION_PROVIDER : process.env.OPENROUTER_PROVIDER
+  )?.trim();
+  if (!slug) return model;
+  return {
+    ...model,
+    compat: {
+      ...(model.compat ?? {}),
+      openRouterRouting: {
+        only: [slug],
+        order: [slug],
+        allow_fallbacks: false,
+      },
+    },
+  };
+}
+
 function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
   // A configured model can intentionally be newer than Pi's static catalog. Keep
   // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
   // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
   // thinkingLevel "off" becomes effort "none" which those endpoints reject.
+  const vision = /\bvision\b/i.test(id);
   return {
     id,
     name: id,
@@ -239,10 +267,10 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     provider: "openrouter",
     baseUrl: "https://openrouter.ai/api/v1",
     reasoning: true,
-    input: ["text"],
+    input: vision ? ["text", "image"] : ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 16_384,
-    maxTokens: 4_096,
+    contextWindow: vision ? 1_048_576 : 16_384,
+    maxTokens: vision ? 384_000 : 4_096,
   };
 }
 
