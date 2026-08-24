@@ -42,7 +42,7 @@ import {
   presetFromCron,
   speechFromBlocks,
 } from "@rakazo/core";
-import { BotAvatar, Button } from "@rakazo/ui-web";
+import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import {
   ArrowUp,
   ChevronLeft,
@@ -1366,7 +1366,7 @@ export function ShellPage() {
                       background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
                     }}
                   >
-                    <BotAvatar color={bot.color} size={38} />
+                    <BotAvatar color={bot.color} size={38} status={bot.status} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span
@@ -1414,9 +1414,14 @@ export function ShellPage() {
                     background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
                   }}
                 >
-                  <span className="grid h-[38px] w-[38px] place-items-center rounded-full bg-[#232326] text-[13px] text-[#C9C9CE]">
-                    G
-                  </span>
+                  <GroupAvatar
+                    members={
+                      group.id === activeSnapshot?.groupId
+                        ? (activeSnapshot.members ?? group.members)
+                        : group.members
+                    }
+                    size={38}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span
@@ -1454,7 +1459,7 @@ export function ShellPage() {
               {archivedOpen
                 ? archivedBots.map((bot) => (
                     <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
-                      <BotAvatar color={bot.color} size={28} />
+                      <BotAvatar color={bot.color} size={28} status={bot.status} />
                       <span className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]">
                         {bot.name}
                       </span>
@@ -1596,11 +1601,12 @@ export function ShellPage() {
               className="flex min-w-0 items-center gap-3"
             >
               {inGroup ? (
-                <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-[#232326] text-[11px] text-[#C9C9CE]">
-                  G
-                </span>
+                <GroupAvatar
+                  members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                  size={26}
+                />
               ) : active ? (
-                <BotAvatar color={active.color} size={26} />
+                <BotAvatar color={active.color} size={26} status={active.status} />
               ) : null}
               <span className="min-w-0">
                 <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
@@ -2249,7 +2255,7 @@ export function ShellPage() {
         <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
           <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <BotAvatar color={active.color} size={28} />
+              <BotAvatar color={active.color} size={28} status={active.status} />
               {recordingSkill ? (
                 <TeachRecordingChrome
                   recording={recordingSkill}
@@ -3316,7 +3322,7 @@ function BotSettings({
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
-        <BotAvatar color={bot.color} size={64} />
+        <BotAvatar color={bot.color} size={64} status={bot.status} />
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
         Name

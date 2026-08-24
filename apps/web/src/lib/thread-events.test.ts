@@ -205,7 +205,41 @@ describe("thread event reduction", () => {
     expect(
       isThreadSnapshotEvent(event({ type: "thread.cleared", seq: 12, runId: undefined })),
     ).toBe(true);
+    expect(isThreadSnapshotEvent(event({ type: "run.started" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(true);
+  });
+
+  it("keeps group member status in sync with run lifecycle events", () => {
+    const run = threadRun("run-1", "bot-member");
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      botId: undefined,
+      groupId: "group-1",
+      members: [{ botId: "bot-member", name: "Member", color: "#8B5CF6", status: "idle" }],
+    };
+
+    const started = reduceThreadSnapshot(
+      initial,
+      event({ type: "run.started", botId: "bot-member", runId: run.id }),
+    );
+    expect(started?.members?.[0]?.status).toBe("running");
+
+    const waiting = reduceThreadSnapshot(
+      { ...started!, run, activeRuns: [run] },
+      event({
+        type: "run.waiting_input",
+        seq: 5,
+        botId: "bot-member",
+        runId: run.id,
+      }),
+    );
+    expect(waiting?.members?.[0]?.status).toBe("waiting_input");
+
+    const completed = reduceThreadSnapshot(
+      waiting,
+      event({ type: "run.completed", seq: 6, botId: "bot-member", runId: run.id }),
+    );
+    expect(completed?.members?.[0]?.status).toBe("idle");
   });
 
   it("clears only the terminal run's live progress", () => {

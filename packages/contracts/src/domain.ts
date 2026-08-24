@@ -39,6 +39,7 @@ export const GroupMemberSchema = z.object({
   botId: Id,
   name: z.string(),
   color: z.string(),
+  status: z.string().optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
 
