@@ -119,6 +119,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
   await gmailRow.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Accounts", exact: true })).toBeVisible();
+  await gmailRow.getByRole("button", { name: "Accounts", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Connected", exact: true }).click();
   await expect(page.getByText("Slack", { exact: true })).toBeHidden();
@@ -138,6 +140,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await linearRow.getByRole("button", { name: "Connect", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
+  await expect(linearRow.getByRole("button", { name: "Accounts", exact: true })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Accounts", exact: true }).click();
   await expect(linearRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
   await linearRow.getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(linearRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
