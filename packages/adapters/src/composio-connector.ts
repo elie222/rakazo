@@ -332,17 +332,13 @@ export class ComposioConnector implements ComposioProvider {
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     try {
+      const accounts = composioAccountsFromConnections(
+        context.connectedConnections?.filter((connection) => connection.connectorId === "composio"),
+      );
       const session = await this.sessionForExecute(
         context.userId,
         connectedComposioExternalIds(context),
-        composioAccountsFromConnections(
-          context.connectedConnections?.filter(
-            (connection) => connection.connectorId === "composio",
-          ),
-        ),
-      );
-      const accounts = composioAccountsFromConnections(
-        context.connectedConnections?.filter((connection) => connection.connectorId === "composio"),
+        accounts,
       );
       const toolkit = call.route?.resourceId ?? toolkitFromTool({}, call.tool);
       const selection = stripComposioAccount(call.args ?? {});

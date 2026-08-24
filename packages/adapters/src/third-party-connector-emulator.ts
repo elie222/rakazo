@@ -2,7 +2,13 @@ import type { ResolveHostname } from "./remote-mcp.js";
 
 type EmulatorRecord =
   | { provider: "pipedream"; operation: string; app?: string; accountId?: string }
-  | { provider: "mcp"; operation: string; host: string; args?: Record<string, unknown>; accountId?: string }
+  | {
+      provider: "mcp";
+      operation: string;
+      host: string;
+      args?: Record<string, unknown>;
+      accountId?: string;
+    }
   | { provider: "openapi"; operation: string; path: string; authenticated: boolean };
 
 const PIPEDREAM_APPS = [
@@ -63,7 +69,7 @@ export class ThirdPartyConnectorEmulator {
         const sequenceKey = `${externalUserId}:${requestedApp}`;
         const sequence = (this.nextAccountSequence.get(sequenceKey) ?? 0) + 1;
         this.nextAccountSequence.set(sequenceKey, sequence);
-        const id = `account-${requestedApp}-${sequence}`;
+        const id = `apn_${requestedApp}_${sequence}`;
         ids.push(id);
         byApp.set(requestedApp, ids);
         this.accountsByUser.set(externalUserId, byApp);

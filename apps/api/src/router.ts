@@ -2288,7 +2288,7 @@ export function createRouter(deps: RouterDeps) {
             message: "Finish or cancel the open connection first.",
           });
         }
-        let row;
+        let row: Awaited<ReturnType<PrismaClient["connection"]["create"]>>;
         try {
           row = await deps.prisma.connection.create({
             data: {
@@ -2523,7 +2523,7 @@ export function createRouter(deps: RouterDeps) {
             FOR UPDATE
           `;
           const connection = locked[0];
-          if (!connection || connection.status !== "connected") throw new IsolationError();
+          if (connection?.status !== "connected") throw new IsolationError();
           const bot = await tx.bot.findFirst({
             where: {
               id: input.botId,

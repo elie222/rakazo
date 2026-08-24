@@ -89,7 +89,7 @@ export function isPipedreamEnabled(config: Partial<PipedreamConnectorConfig>): b
 }
 
 function isPipedreamAccountId(value: string): boolean {
-  return /^(?:apn_|account-)/i.test(value.trim());
+  return /^apn_/i.test(value.trim());
 }
 
 export class PipedreamConnector implements ManagedConnectorProvider {
@@ -149,8 +149,9 @@ export class PipedreamConnector implements ManagedConnectorProvider {
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const rows =
-      context.connectedConnections?.filter((connection) => connection.connectorId === "pipedream") ??
-      [];
+      context.connectedConnections?.filter(
+        (connection) => connection.connectorId === "pipedream",
+      ) ?? [];
     const apps = [...new Set(rows.map((connection) => connection.externalId))];
     if (apps.length === 0) return [];
     const accounts = accountsFromConnections(rows);
@@ -187,12 +188,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
     const selection = stripAccountArg(call.args ?? {});
     const defaultSelector = accountDefaultSelector(context.accountDefaults, "pipedream", app);
-    const account = resolveConnectorAccount(
-      accounts,
-      app,
-      selection.account,
-      defaultSelector,
-    );
+    const account = resolveConnectorAccount(accounts, app, selection.account, defaultSelector);
     if (selection.account && !account) {
       yield { type: "error", message: `Unknown ${app} account.` };
       return;
@@ -278,9 +274,22 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       return;
     }
     const accounts = await this.accounts(context, connectionRef);
+    const claimedByOthers = new Set(
+      (context.connectedConnections ?? [])
+        .filter(
+          (connection) =>
+            connection.connectorId === "pipedream" &&
+            connection.externalId.trim().toLowerCase() === connectionRef.trim().toLowerCase() &&
+            connection.providerRef &&
+            !isLegacyAppSlugRef(connection.providerRef, connectionRef),
+        )
+        .map((connection) => connection.providerRef!),
+    );
     await Promise.all(
       accounts
-        .filter((account) => account.app?.name_slug === connectionRef)
+        .filter(
+          (account) => account.app?.name_slug === connectionRef && !claimedByOthers.has(account.id),
+        )
         .map((account) =>
           this.request(
             `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
@@ -318,9 +327,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const accounts = await this.accounts(context, externalId);
     return accounts.filter(
       (account) =>
-        account.app?.name_slug === externalId &&
-        account.healthy !== false &&
-        account.dead !== true,
+        account.app?.name_slug === externalId && account.healthy !== false && account.dead !== true,
     );
   }
 

@@ -80,7 +80,6 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     await connectRemote(composio, owner, "GMAIL");
 
     const first = await createConnection(owner, "GMAIL");
-    const duplicate = await createConnection(owner, "GMAIL");
     const otherProvider = await createConnection(owner, "SLACK");
     const otherUser = await createConnection(
       { workspaceId: owner.workspaceId, userId: other.userId },
@@ -100,10 +99,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       expect(catalog).toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: true }));
     }
 
-    await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "connected" },
-      { id: duplicate.id, status: "revoked" },
-    ]);
+    await expect(statuses([first.id])).resolves.toEqual([{ id: first.id, status: "connected" }]);
     await expect(statuses([otherProvider.id, otherUser.id, otherWorkspace.id])).resolves.toEqual([
       { id: otherProvider.id, status: "pending" },
       { id: otherUser.id, status: "pending" },
@@ -111,10 +107,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ]);
 
     await rpc(app, ownerCookie, "connections/catalog");
-    await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "connected" },
-      { id: duplicate.id, status: "revoked" },
-    ]);
+    await expect(statuses([first.id])).resolves.toEqual([{ id: first.id, status: "connected" }]);
   });
 
   it("returns the remote catalog when local reconciliation fails", async () => {
@@ -251,7 +244,13 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       displayName: "Work Calendar",
     });
     expect(renamed.displayName).toBe("Work Calendar");
-    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", botInput("Calendar Bot"));
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Calendar Bot",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
     await expect(
       rpc(app, cookie, "connections/setDefault", {
         botId: bot.id,

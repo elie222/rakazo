@@ -54,7 +54,7 @@ describe("PipedreamConnector", () => {
           return Response.json({
             data: [
               {
-                id: "account-1",
+                id: "apn_gmail_1",
                 healthy: true,
                 app: { id: "app-1", name_slug: "gmail", name: "Gmail" },
               },
@@ -128,7 +128,7 @@ describe("PipedreamConnector", () => {
     ).resolves.toEqual({ authorizationUrl: "about:blank?app=linear", state: "linear" });
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(true);
     await expect(connector.complete({ state: "linear" }, context)).resolves.toEqual({
-      connectionRef: "account-linear-1",
+      connectionRef: "apn_linear_1",
     });
 
     const connectedContext = {
@@ -139,7 +139,7 @@ describe("PipedreamConnector", () => {
           connectorId: "pipedream",
           externalId: "linear",
           displayName: "Linear",
-          providerRef: "account-linear-1",
+          providerRef: "apn_linear_1",
         },
       ],
     };
@@ -173,11 +173,11 @@ describe("PipedreamConnector", () => {
         provider: "mcp",
         operation: "notes.write",
         args: { text: "emulated-pipedream-ok" },
-        accountId: "account-linear-1",
+        accountId: "apn_linear_1",
       }),
     );
 
-    await connector.revoke("account-linear-1", context);
+    await connector.revoke("apn_linear_1", context);
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(false);
   });
 
@@ -313,5 +313,23 @@ describe("PipedreamConnector", () => {
       ambiguous.push(event);
     }
     expect(ambiguous).toEqual([{ type: "error", message: "Choose a gmail account." }]);
+
+    await connector.revoke("gmail", {
+      ...multiContext,
+      connectedConnections: [
+        {
+          id: "legacy",
+          connectorId: "pipedream",
+          externalId: "gmail",
+          displayName: "Legacy",
+          providerRef: "gmail",
+        },
+        ...multiContext.connectedConnections!,
+      ],
+    });
+    expect(emulator.records.filter((record) => record.operation === "revoke")).toEqual([]);
+    await expect(connector.connectionReady(context, "gmail", first.connectionRef)).resolves.toBe(
+      true,
+    );
   });
 });

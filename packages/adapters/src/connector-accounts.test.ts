@@ -37,7 +37,11 @@ describe("connector account selection", () => {
 
   it("uses connector-scoped defaults and stays silent when multiple accounts are ambiguous", () => {
     expect(
-      accountDefaultSelector({ "pipedream:gmail": "apn_work", "composio:GMAIL": "ca_x" }, "pipedream", "Gmail"),
+      accountDefaultSelector(
+        { "pipedream:gmail": "apn_work", "composio:GMAIL": "ca_x" },
+        "pipedream",
+        "Gmail",
+      ),
     ).toBe("apn_work");
     expect(resolveConnectorAccount(accounts, "gmail", undefined, "work")).toEqual(accounts[1]);
     expect(resolveConnectorAccount(accounts, "gmail")).toBeUndefined();

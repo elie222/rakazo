@@ -55,7 +55,10 @@ export function PluginsOverlay({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const connectionAttempt = useRef<AbortController | null>(null);
+  const connectionAttempt = useRef<{
+    controller: AbortController;
+    connectionId: string;
+  } | null>(null);
 
   async function refresh() {
     const [items, installs, rows, botRows, defaultRows] = await Promise.all([
@@ -74,13 +77,21 @@ export function PluginsOverlay({
     return items;
   }
 
+  async function refreshBestEffort() {
+    try {
+      await refresh();
+    } catch {
+      // Keep the last known catalog/connections; connect polling must continue.
+    }
+  }
+
   useEffect(() => {
     void refresh()
       .catch((err: unknown) =>
         setError(err instanceof Error ? err.message : "Could not load integrations"),
       )
       .finally(() => setLoading(false));
-    return () => connectionAttempt.current?.abort();
+    return () => connectionAttempt.current?.controller.abort();
   }, []);
 
   const visible = useMemo(() => {
@@ -113,9 +124,9 @@ export function PluginsOverlay({
   }
 
   async function connect(item: ConnectionCatalogItem) {
-    connectionAttempt.current?.abort();
+    connectionAttempt.current?.controller.abort();
     const controller = new AbortController();
-    connectionAttempt.current = controller;
+    connectionAttempt.current = { controller, connectionId: "" };
     setError(null);
     const key = itemKey(item);
     setPending(key);
@@ -125,14 +136,17 @@ export function PluginsOverlay({
         provider: item.slug,
         displayName: item.name,
       });
+      if (connectionAttempt.current?.controller === controller) {
+        connectionAttempt.current = { controller, connectionId: started.connectionId };
+      }
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
-        if (!controller.signal.aborted) await refresh();
+        if (!controller.signal.aborted) await refreshBestEffort();
       }
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
-        await refresh();
+        await refreshBestEffort();
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -143,9 +157,10 @@ export function PluginsOverlay({
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
           setItemConnected(item, true);
-          await refresh();
+          await refreshBestEffort();
           return;
         }
+        if (row?.status === "revoked" || row?.status === "error") return;
         await abortableDelay(2_000, controller.signal);
       }
       if (controller.signal.aborted) return;
@@ -154,7 +169,7 @@ export function PluginsOverlay({
       if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Could not connect");
     } finally {
-      if (connectionAttempt.current === controller) {
+      if (connectionAttempt.current?.controller === controller) {
         connectionAttempt.current = null;
         setPending(null);
       }
@@ -166,6 +181,10 @@ export function PluginsOverlay({
     const key = `connection:${row.id}`;
     setPending(key);
     try {
+      if (connectionAttempt.current?.connectionId === row.id) {
+        connectionAttempt.current.controller.abort();
+        connectionAttempt.current = null;
+      }
       await rpc.connections.revoke({ connectionId: row.id });
       setConnections((current) =>
         current.map((entry) => (entry.id === row.id ? { ...entry, status: "revoked" } : entry)),
