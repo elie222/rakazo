@@ -19,6 +19,7 @@ import {
   applyTeachingDesktopInput,
   archiveBot,
   buildMcpCredentialBlob,
+  buildModelConnectPlaintext,
   type ComposioProvider,
   ComputerBusyError,
   type ComputerExecutionLease,
@@ -34,10 +35,12 @@ import {
   listPiCatalog,
   McpOAuthBroker,
   type MemoryProviderResolver,
+  modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
   prepareApiInstall,
   prepareMemoryProviderConnection,
+  probeOpenAiCompatibleModels,
   provisionComputer,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
@@ -62,6 +65,7 @@ import {
   type ComputerStatus,
   type McpServer,
   type Me,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -371,23 +375,57 @@ export function createRouter(deps: RouterDeps) {
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        return rows.map((row) => ({
-          id: row.id,
-          provider: row.provider,
-          label: row.label,
-          hasKey: true,
-          isDefault: row.isDefault,
-        }));
+        const compatibleRows = rows.filter((row) => row.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+        const secrets = compatibleRows.length
+          ? await deps.prisma.secret.findMany({
+              where: {
+                id: { in: compatibleRows.map((row) => row.secretId) },
+                userId: context.actor.userId,
+                workspaceId: context.actor.workspaceId,
+              },
+              select: { id: true, ciphertext: true },
+            })
+          : [];
+        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
+        return rows.map((row) => {
+          const ciphertext = ciphertextById.get(row.secretId);
+          if (!ciphertext) return modelCredentialDto(row);
+          try {
+            return modelCredentialDto(row, deps.secrets.load(ciphertext));
+          } catch {
+            return modelCredentialDto(row);
+          }
+        });
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        let plaintext: string;
+        try {
+          plaintext = buildModelConnectPlaintext(input);
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Invalid model connection",
+          });
+        }
         return persistModelCredential(deps, context.actor, {
           provider: input.provider,
-          plaintext: input.apiKey,
+          plaintext,
           label: input.label,
           modelId: input.modelId,
           signal: context.signal,
         });
       }),
+      probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
+        async ({ context, input }) => {
+          try {
+            const models = await probeOpenAiCompatibleModels(input, fetch, context.signal);
+            return { models };
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Could not list models",
+            });
+          }
+        },
+      ),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         return deps.oauthLogins.begin({
           userId: context.actor.userId,
@@ -2788,13 +2826,7 @@ async function persistModelCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return {
-    id: cred.id,
-    provider: cred.provider,
-    label: cred.label,
-    hasKey: true,
-    isDefault: true,
-  };
+  return modelCredentialDto(cred, input.plaintext);
 }
 
 async function requireWorkspaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {

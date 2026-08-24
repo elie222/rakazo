@@ -87,6 +87,19 @@ describe("model secrets", () => {
     expect(secretValuesToRedact(parsed)).toEqual(["access-token", "refresh-token"]);
   });
 
+  it("round-trips openai-compatible credentials", () => {
+    const parsed = parseModelSecret(
+      serializeModelSecret({
+        kind: "openai_compatible",
+        baseUrl: "http://127.0.0.1:8000/v1",
+      }),
+    );
+    expect(parsed).toEqual({
+      kind: "openai_compatible",
+      baseUrl: "http://127.0.0.1:8000/v1",
+    });
+  });
+
   it("refreshes expired OAuth tokens and persists them", async () => {
     const credential = oauthCred({ access: "old", expires: 1 });
     let saved = "";

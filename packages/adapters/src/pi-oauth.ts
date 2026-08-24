@@ -51,7 +51,8 @@ const SIGN_IN_START_WAIT_MS = 30_000;
 
 export type StoredModelSecret =
   | { kind: "api_key"; key: string }
-  | { kind: "oauth"; credential: OAuthCredential };
+  | { kind: "oauth"; credential: OAuthCredential }
+  | { kind: "openai_compatible"; baseUrl: string; apiKey?: string };
 
 export type PiOAuthConnected = {
   status: "connected";
@@ -112,7 +113,19 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
   const trimmed = plaintext.trim();
   if (trimmed.startsWith("{")) {
     try {
-      const parsed = JSON.parse(trimmed) as Partial<OAuthCredential>;
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (
+        parsed.kind === "openai_compatible" &&
+        typeof parsed.baseUrl === "string" &&
+        parsed.baseUrl.trim()
+      ) {
+        const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
+        return {
+          kind: "openai_compatible",
+          baseUrl: parsed.baseUrl.trim(),
+          ...(apiKey ? { apiKey } : {}),
+        };
+      }
       if (
         parsed.type === "oauth" &&
         typeof parsed.access === "string" &&
@@ -129,11 +142,20 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 }
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
-  return secret.kind === "oauth" ? JSON.stringify(secret.credential) : secret.key;
+  if (secret.kind === "oauth") return JSON.stringify(secret.credential);
+  if (secret.kind === "openai_compatible") {
+    return JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: secret.baseUrl,
+      ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
+    });
+  }
+  return secret.key;
 }
 
 export function secretValuesToRedact(secret: StoredModelSecret): string[] {
   if (secret.kind === "api_key") return secret.key ? [secret.key] : [];
+  if (secret.kind === "openai_compatible") return secret.apiKey ? [secret.apiKey] : [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
 }
 
@@ -162,6 +184,9 @@ export async function resolveModelAuth(
 ): Promise<{ secret: StoredModelSecret; apiKey: string }> {
   const parsed = parseModelSecret(plaintext);
   if (parsed.kind === "api_key") return { secret: parsed, apiKey: parsed.key };
+  if (parsed.kind === "openai_compatible") {
+    return { secret: parsed, apiKey: parsed.apiKey ?? "" };
+  }
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
     throw new Error(`No OAuth handler for ${provider}. Sign in again from onboarding.`);

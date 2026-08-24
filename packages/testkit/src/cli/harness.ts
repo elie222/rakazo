@@ -12,9 +12,11 @@ const e2e = process.argv.includes("--e2e");
 const sandboxArg = process.argv.find((arg) => arg.startsWith("--sandbox="));
 const specArg = process.argv.find((arg) => arg.startsWith("--spec="));
 const grepArg = process.argv.find((arg) => arg.startsWith("--grep="));
+const runtimeArg = process.argv.find((arg) => arg.startsWith("--runtime="));
 const sandboxProvider = sandboxArg?.slice("--sandbox=".length) ?? "fake";
 const e2eSpec = specArg?.slice("--spec=".length);
 const e2eGrep = grepArg?.slice("--grep=".length);
+const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
@@ -24,6 +26,9 @@ if (!["fake", "e2b", "daytona", "box"].includes(sandboxProvider)) {
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
+}
+if (agentRuntime !== "pi" && agentRuntime !== "scripted") {
+  throw new Error('Runtime must be "pi" or "scripted"');
 }
 if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
   throw new Error("E2B_API_KEY is required when --sandbox=e2b");
@@ -50,7 +55,7 @@ async function main() {
     process.env.VERIFY_DATABASE = "1";
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = sandboxProvider;
-    process.env.AGENT_RUNTIME = "scripted";
+    process.env.AGENT_RUNTIME = agentRuntime;
     process.env.COMPOSIO_API_KEY = "";
     process.env.BETTER_AUTH_SECRET = "test-secret-test-secret-32chars!";
     process.env.ENCRYPTION_KEY = "test-encryption-key-test-encryption-key";

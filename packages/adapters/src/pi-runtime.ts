@@ -12,6 +12,11 @@ import type {
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
+import {
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  registerOpenAiCompatibleCatalog,
+  registerOpenAiCompatibleRuntime,
+} from "./pi-openai-compatible-provider.js";
 
 const running = new Map<string, AbortController>();
 // Built on first use, not at module load: entry points call loadRootEnv() after
@@ -19,7 +24,7 @@ const running = new Map<string, AbortController>();
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registerLocalProvider(builtinModels());
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
@@ -71,7 +76,7 @@ export class PiAgentRuntime implements AgentRuntime {
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
-        if (!model && provider !== "openrouter") {
+        if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
           model = models.getModel("openrouter", modelId);
         }
         if (
@@ -90,7 +95,9 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const apiKey = request.model.oauth
           ? undefined
-          : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+          : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? request.model.apiKey || "local"
+            : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -246,20 +253,37 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
   };
 }
 
-function modelsForRequest(request: AgentRunRequest, provider: string): Models {
+export function modelsForRequest(
+  request: Pick<AgentRunRequest, "model">,
+  provider: string,
+): Models {
   const oauth = request.model.oauth;
-  if (!oauth) return catalogModels();
-
-  const persist = oauth.persist;
-  return registerLocalProvider(
-    builtinModels({
-      credentials: new PiRuntimeCredentialStore(
-        provider,
-        toOAuthCredential(oauth.credential),
-        persist ? (next) => persist(next) : undefined,
+  if (oauth) {
+    const persist = oauth.persist;
+    return registerOpenAiCompatibleCatalog(
+      registerLocalProvider(
+        builtinModels({
+          credentials: new PiRuntimeCredentialStore(
+            provider,
+            toOAuthCredential(oauth.credential),
+            persist ? (next) => persist(next) : undefined,
+          ),
+        }),
       ),
-    }),
-  );
+    );
+  }
+  if (
+    provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
+    request.model.baseUrl &&
+    request.model.id.trim()
+  ) {
+    const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+    return registerOpenAiCompatibleRuntime(models, {
+      modelId: request.model.id,
+      baseUrl: request.model.baseUrl,
+    });
+  }
+  return catalogModels();
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {

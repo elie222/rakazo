@@ -29,6 +29,7 @@ import {
   MemoryScopeSchema,
   MeSchema,
   ModelCatalogEntrySchema,
+  ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   RoutineSchema,
@@ -109,16 +110,15 @@ export const appContract = {
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
-    connect: oc
+    connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
+    probeOpenAiCompatible: oc
       .input(
         z.object({
-          provider: z.string(),
-          apiKey: z.string().min(8),
-          label: z.string().optional(),
-          modelId: z.string().optional(),
+          baseUrl: z.string(),
+          apiKey: z.string().optional(),
         }),
       )
-      .output(ModelCredentialSchema),
+      .output(z.object({ models: z.array(z.string()) })),
     beginOAuth: oc
       .input(
         z.object({
