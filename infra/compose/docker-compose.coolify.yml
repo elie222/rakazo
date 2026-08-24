@@ -38,8 +38,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data
     networks:
-      - app
       - internal
+      - app
     depends_on:
       data-init:
         condition: service_completed_successfully

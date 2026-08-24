@@ -542,10 +542,12 @@ export function PluginsOverlay({
                             type="button"
                             variant="pill"
                             size="sm"
-                            disabled={pendingRows.length > 0}
+                            disabled={pendingRows.length > 0 || pending === key}
                             onClick={() => void connect(item)}
                           >
-                            {pendingRows.length > 0 ? "Connecting…" : "Add account"}
+                            {pendingRows.length > 0 || pending === key
+                              ? "Connecting…"
+                              : "Add account"}
                           </Button>
                         </div>
                         {bots.length > 0 ? (
