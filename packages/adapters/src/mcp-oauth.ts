@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type {
-  OAuthClientProvider,
-  OAuthDiscoveryState,
+import {
+  auth,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   OAuthClientInformationMixed,
@@ -194,7 +194,18 @@ function oauthFetch(
   network: RemoteTransportDependencies,
 ): { fetch: typeof fetch; close: () => Promise<void> } {
   const url = new URL(endpoint);
-  const safeFetch = secureFetch(url, {}, {}, network);
+  const safeFetch = secureFetch(
+    url,
+    {},
+    {
+      headers: {
+        // Some CDNs 1010 default Node/Python signatures on DCR.
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    },
+    network,
+  );
   return {
     fetch: withEndpointOriginFallback(url.origin, safeFetch),
     close: () => safeFetch.close(),
@@ -283,20 +294,18 @@ export class McpOAuthBroker {
     // Never destroy working tokens here: if this attempt fails (network error,
     // cancelled popup), the server keeps its valid connection. The SDK itself
     // invalidates dead tokens when a refresh is rejected with invalid_grant.
-    const endpoint = new URL(server.endpoint);
     const networkFetch = oauthFetch(server.endpoint, this.network);
-    const transport = new StreamableHTTPClientTransport(endpoint, {
-      authProvider: provider,
-      fetch: networkFetch.fetch,
-    });
-    const client = new Client({ name: "rakazo-oauth", version: "0.1.0" });
-    const signal = AbortSignal.timeout(15_000);
     try {
-      await client.connect(transport, { signal, timeout: 15_000 });
+      // Don't use StreamableHTTP Client.connect here: some providers' GET stream
+      // hangs, so OAuth never reaches DCR. auth() does discovery +
+      // registration + authorize URL only.
+      await auth(provider, {
+        serverUrl: server.endpoint,
+        fetchFn: networkFetch.fetch,
+      });
     } catch (error) {
       if (!authorizationUrl) throw error;
     } finally {
-      await client.close().catch(() => undefined);
       await networkFetch.close().catch(() => undefined);
     }
     if (!authorizationUrl) {

@@ -52,8 +52,15 @@ export class McpConnector implements ConnectorProvider {
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         try {
-          const session = await this.sessionFor(assignment.server, context);
-          const listed = await session.listTools({ signal: context.signal });
+          const discoverSignal = AbortSignal.any([
+            context.signal,
+            AbortSignal.timeout(8_000),
+          ]);
+          const session = await this.sessionFor(assignment.server, {
+            ...context,
+            signal: discoverSignal,
+          });
+          const listed = await session.listTools({ signal: discoverSignal });
           return listed.tools
             .filter(
               (tool) =>
