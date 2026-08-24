@@ -147,6 +147,10 @@ services:
       API_PROXY_TARGET: http://api:3100
     expose:
       - "5173"
+    labels:
+      # Coolify creates this router for the Rakazo application but does not infer
+      # the Vite preview port from a raw Compose service.
+      - "traefik.http.services.https-0-x94qckwbeep0xc0u3w089voq-web.loadbalancer.server.port=5173"
     networks:
       - app
     depends_on:
