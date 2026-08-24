@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+infra/sandboxes/computer/rakazo-browser text eol=lf
+infra/sandboxes/computer/fluxbox.* text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
