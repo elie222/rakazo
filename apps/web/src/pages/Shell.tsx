@@ -1241,9 +1241,8 @@ export function ShellPage() {
   async function openComputer() {
     if (!active) return;
     setComputerOpen(true);
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
     void bootComputer({
-      takeControl: needsTakeover,
+      takeControl: false,
       overlay: false,
       force: computer?.state !== "running",
     });
@@ -1260,7 +1259,6 @@ export function ShellPage() {
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    await closeComputerOverlay();
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
   }
@@ -1838,7 +1836,13 @@ export function ShellPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => void openComputer()}
+                      onClick={() =>
+                        void bootComputer({
+                          takeControl: true,
+                          overlay: false,
+                          force: computer?.state !== "running",
+                        })
+                      }
                     >
                       Take control
                     </Button>
