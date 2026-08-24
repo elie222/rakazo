@@ -79,7 +79,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
@@ -235,8 +234,6 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
-  const [computerFullscreen, setComputerFullscreen] = useState(false);
-  const computerOverlayRef = useRef<HTMLDivElement>(null);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -1225,23 +1222,9 @@ export function ShellPage() {
   }, [active?.id, groupId, inGroup]);
 
   useEffect(() => {
-    function onFullscreenChange() {
-      setComputerFullscreen(document.fullscreenElement === computerOverlayRef.current);
-    }
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
-
-  useEffect(() => {
     if (!computerOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      if (document.fullscreenElement) {
-        event.preventDefault();
-        void document.exitFullscreen().catch(() => undefined);
-        return;
-      }
-      setComputerOpen(false);
+      if (event.key === "Escape") setComputerOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1255,40 +1238,18 @@ export function ShellPage() {
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, active?.id, computer?.state]);
 
-  async function openComputer(opts?: { fullscreen?: boolean }) {
+  async function openComputer() {
     if (!active) return;
     const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    const boot = bootComputer({
+    await bootComputer({
       takeControl: needsTakeover,
       overlay: needsTakeover || computer?.state !== "running",
       force: computer?.state !== "running",
     });
-    if (opts?.fullscreen) {
-      flushSync(() => setComputerOpen(true));
-      const fullscreen = computerOverlayRef.current?.requestFullscreen() ?? Promise.resolve();
-      await Promise.all([boot, fullscreen.catch(() => undefined)]);
-      return;
-    }
-    await boot;
     setComputerOpen(true);
   }
 
-  async function toggleComputerFullscreen() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen().catch(() => undefined);
-      return;
-    }
-    if (!computerOpen) {
-      await openComputer({ fullscreen: true });
-      return;
-    }
-    await computerOverlayRef.current?.requestFullscreen().catch(() => undefined);
-  }
-
-  async function closeComputerOverlay() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen().catch(() => undefined);
-    }
+  function closeComputerOverlay() {
     setComputerOpen(false);
   }
 
@@ -1802,7 +1763,7 @@ export function ShellPage() {
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full screen
+                      Maximized
                     </div>
                   ) : computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
@@ -1836,15 +1797,15 @@ export function ShellPage() {
                   {computer?.kind === "desktop" ? null : (
                     <button
                       type="button"
-                      className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 px-2.5 py-1.5 text-[12px] text-[#ECECEE]"
-                      aria-label="Full screen"
+                      className="absolute right-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 text-[#ECECEE]"
+                      aria-label="Maximize"
+                      title="Maximize"
                       onClick={(event) => {
                         event.stopPropagation();
-                        void openComputer({ fullscreen: true });
+                        void openComputer();
                       }}
                     >
-                      <Maximize2 size={13} strokeWidth={1.8} />
-                      Full screen
+                      <Maximize2 size={14} strokeWidth={1.8} />
                     </button>
                   )}
                 </div>
@@ -2308,10 +2269,7 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div
-          ref={computerOverlayRef}
-          className="fixed inset-0 z-50 flex flex-col bg-[#050506]"
-        >
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#050506]">
           <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar color={active.color} size={28} />
@@ -2351,26 +2309,20 @@ export function ShellPage() {
                   Take control
                 </Button>
               )}
-              {computer?.kind === "desktop" ? null : (
-                <button
-                  type="button"
-                  className="grid h-[30px] w-[34px] place-items-center rounded-[9px] text-[#85858A] hover:bg-[#1B1B1E] hover:text-[#ECECEE]"
-                  aria-label={computerFullscreen ? "Exit full screen" : "Full screen"}
-                  title={computerFullscreen ? "Exit full screen" : "Full screen"}
-                  onClick={() => void toggleComputerFullscreen()}
-                >
-                  {computerFullscreen ? (
-                    <Minimize2 size={16} strokeWidth={1.7} />
-                  ) : (
-                    <Maximize2 size={16} strokeWidth={1.7} />
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] text-[#85858A] hover:bg-[#1B1B1E] hover:text-[#ECECEE]"
+                aria-label="Restore"
+                title="Restore"
+                onClick={closeComputerOverlay}
+              >
+                <Minimize2 size={16} strokeWidth={1.7} />
+              </button>
               <button
                 type="button"
                 className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
                 aria-label="Close computer"
-                onClick={() => void closeComputerOverlay()}
+                onClick={closeComputerOverlay}
               >
                 <X size={16} strokeWidth={1.8} />
               </button>
