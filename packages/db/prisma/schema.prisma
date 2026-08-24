@@ -295,6 +295,8 @@ model ChatGroup {
   workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId      String
   name        String
+  kind        String   @default("user")
+  pairKey     String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   members     ChatGroupMember[]
@@ -302,6 +304,7 @@ model ChatGroup {
   artifacts   Artifact[]
 
   @@index([workspaceId, userId, updatedAt])
+  @@index([workspaceId, userId, kind])
   @@map("chat_groups")
 }
 

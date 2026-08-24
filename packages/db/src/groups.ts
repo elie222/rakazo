@@ -1,5 +1,6 @@
 import {
   type Actor,
+  CHAT_GROUP_KIND_USER,
   GROUP_MEMBER_MAX,
   GROUP_MEMBER_MIN,
   type Group,
@@ -13,6 +14,7 @@ type GroupRecord = {
   workspaceId: string;
   userId: string;
   name: string;
+  kind: string;
   createdAt: Date;
   updatedAt: Date;
   thread: {
@@ -47,6 +49,7 @@ function mapGroup(group: GroupRecord): Group {
     id: group.id,
     workspaceId: group.workspaceId,
     name: group.name,
+    kind: group.kind === "bot_dm" ? "bot_dm" : "user",
     members: group.members.map((member) => ({
       botId: member.bot.id,
       name: member.bot.name,
@@ -154,6 +157,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             workspaceId: actor.workspaceId,
             userId: actor.userId,
             name: input.name.trim(),
+            kind: CHAT_GROUP_KIND_USER,
           },
         });
         await tx.chatGroupMember.createMany({
@@ -193,6 +197,9 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
         });
         if (!current?.thread) throw new IsolationError();
+        if (current.kind !== CHAT_GROUP_KIND_USER) {
+          throw new IsolationError("Bot direct-message threads cannot be edited");
+        }
         if (
           !members &&
           !hasMinimumActiveMembers(

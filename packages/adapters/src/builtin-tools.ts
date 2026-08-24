@@ -6,6 +6,7 @@ export const DELEGATION_TOOL_NAMES = new Set([
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
+  "message_bot",
 ]);
 
 export const builtinAgentTools: ConnectorTool[] = [
@@ -309,6 +310,23 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target member when bot_id is omitted.",
         },
         message: { type: "string", description: "What the receiving bot should do next." },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "message_bot",
+    description:
+      "Send an async direct message to another bot in this workspace. Opens or reuses a bot-to-bot thread the user can follow, appends a visible handoff there, and starts the target bot without requiring a group chat.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_id: { type: "string", description: "Target bot id." },
+        confirm_name: {
+          type: "string",
+          description: "Exact name of the target bot when bot_id is omitted.",
+        },
+        message: { type: "string", description: "What the receiving bot should do." },
       },
       required: ["message"],
     },

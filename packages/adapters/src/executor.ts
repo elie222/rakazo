@@ -16,7 +16,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { historyCompactJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_BYTES,
+  CHAT_GROUP_KIND_BOT_DM,
+  isAttachmentImageMimeType,
+} from "@rakazo/contracts";
 import {
   type ActionApprovalRule,
   appendTextSegment,
@@ -67,6 +71,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
+import { loadBotDmContext, messageBot } from "./bot-dm.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -618,8 +623,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+        const groupKind = thread.groupId
+          ? (
+              await deps.prisma.chatGroup.findUnique({
+                where: { id: thread.groupId },
+                select: { kind: true },
+              })
+            )?.kind
+          : undefined;
         const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId)
+          ? groupKind === CHAT_GROUP_KIND_BOT_DM
+            ? await loadBotDmContext(deps.prisma, thread.groupId, bot.id)
+            : await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
         const availableBuiltins = (
           graphical
@@ -1319,6 +1334,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "handoff_to_bot") {
             if (!thread.groupId) return finish({ error: "handoff_to_bot is only for group chats" });
             const result = await handoffToGroupBot(deps, run, thread.groupId, {
+              bot_id: args.bot_id ? String(args.bot_id) : undefined,
+              confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
+              message: String(args.message ?? ""),
+            });
+            return finish(result);
+          }
+          if (name === "message_bot") {
+            const result = await messageBot(deps, run, {
               bot_id: args.bot_id ? String(args.bot_id) : undefined,
               confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
               message: String(args.message ?? ""),

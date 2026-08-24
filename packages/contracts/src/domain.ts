@@ -45,10 +45,14 @@ export type GroupMember = z.infer<typeof GroupMemberSchema>;
 export const GROUP_MEMBER_MIN = 2;
 export const GROUP_MEMBER_MAX = 6;
 
+export const CHAT_GROUP_KIND_USER = "user";
+export const CHAT_GROUP_KIND_BOT_DM = "bot_dm";
+
 export const GroupSchema = z.object({
   id: Id,
   workspaceId: Id,
   name: z.string(),
+  kind: z.enum([CHAT_GROUP_KIND_USER, CHAT_GROUP_KIND_BOT_DM]).default(CHAT_GROUP_KIND_USER),
   members: z.array(GroupMemberSchema),
   threadId: Id,
   preview: z.string(),
