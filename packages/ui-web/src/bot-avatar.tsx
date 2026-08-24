@@ -1,5 +1,23 @@
 import { cn } from "./lib/utils.js";
 
+const ACTIVE_STATUSES = new Set([
+  "queued",
+  "leased",
+  "running",
+  "waiting_input",
+  "waiting_takeover",
+]);
+
+let stylesInjected = false;
+function ensureAvatarStyles() {
+  if (stylesInjected || typeof document === "undefined") return;
+  const styleEl = document.createElement("style");
+  styleEl.setAttribute("data-rakazo-avatar-styles", "true");
+  styleEl.textContent = AVATAR_KEYFRAMES;
+  document.head.appendChild(styleEl);
+  stylesInjected = true;
+}
+
 export interface BotAvatarProps {
   color: string;
   size?: number;
@@ -15,7 +33,10 @@ export function BotAvatar({
   working,
   className,
 }: BotAvatarProps) {
-  const isWorking = working || status === "running";
+  ensureAvatarStyles();
+
+  const isWorking =
+    working || (status != null && ACTIVE_STATUSES.has(status));
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(4, Math.round(size * 0.14));
@@ -28,6 +49,7 @@ export function BotAvatar({
   const variant = seed % 4;
   const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
   const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
+  const gradId = `spin-grad-${seed}`;
 
   return (
     <div
@@ -42,8 +64,6 @@ export function BotAvatar({
           : `0 2px ${Math.max(4, Math.round(size * 0.15))}px rgba(0,0,0,0.4), inset 0 1px 1.5px rgba(255,255,255,0.4)`,
       }}
     >
-      <style>{AVATAR_KEYFRAMES}</style>
-
       {/* Vivid Spinning Orbital Ring when working */}
       {isWorking ? (
         <svg
@@ -62,14 +82,14 @@ export function BotAvatar({
             cx="24"
             cy="24"
             r="22"
-            stroke="url(#spin-grad)"
+            stroke={`url(#${gradId})`}
             strokeWidth="3.2"
             strokeLinecap="round"
             strokeDasharray="45 80"
           />
           <circle cx="43" cy="24" r="2.8" fill="#ffffff" />
           <defs>
-            <linearGradient id="spin-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
               <stop offset="60%" stopColor={color} stopOpacity="0.9" />
               <stop offset="100%" stopColor={color} stopOpacity="0" />
