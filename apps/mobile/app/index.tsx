@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
+import { GroupAvatar } from "../components/group-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { NativeSymbol } from "../components/native-symbol";
 import {
@@ -392,9 +393,7 @@ function GroupRow({ group }: { group: MobileGroup }) {
       }
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={[styles.groupAvatar]}>
-        <Text style={styles.groupAvatarLabel}>G</Text>
-      </View>
+      <GroupAvatar members={group.members} size={54} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.name} numberOfLines={1}>

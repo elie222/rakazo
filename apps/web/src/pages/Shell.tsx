@@ -42,7 +42,7 @@ import {
   presetFromCron,
   speechFromBlocks,
 } from "@rakazo/core";
-import { BotAvatar, Button } from "@rakazo/ui-web";
+import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import {
   ArrowUp,
   ChevronLeft,
@@ -1414,9 +1414,7 @@ export function ShellPage() {
                     background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
                   }}
                 >
-                  <span className="grid h-[38px] w-[38px] place-items-center rounded-full bg-[#232326] text-[13px] text-[#C9C9CE]">
-                    G
-                  </span>
+                  <GroupAvatar members={group.members} size={38} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span
@@ -1596,9 +1594,7 @@ export function ShellPage() {
               className="flex min-w-0 items-center gap-3"
             >
               {inGroup ? (
-                <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-[#232326] text-[11px] text-[#C9C9CE]">
-                  G
-                </span>
+                <GroupAvatar members={activeGroup?.members ?? []} size={26} />
               ) : active ? (
                 <BotAvatar color={active.color} size={26} status={active.status} />
               ) : null}
