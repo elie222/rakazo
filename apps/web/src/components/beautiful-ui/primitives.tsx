@@ -112,14 +112,14 @@ export function SuccessPop({ label }: { label: string }) {
 export function BuiCard({
   children,
   className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+  style,
+  ...props
+}: React.ComponentPropsWithoutRef<"div">) {
   return (
     <div
+      {...props}
       className={`rounded-[16px] ${className}`}
-      style={{ background: "var(--bui-surface)", boxShadow: "var(--bui-shadow-card)" }}
+      style={{ background: "var(--bui-surface)", boxShadow: "var(--bui-shadow-card)", ...style }}
     >
       {children}
     </div>

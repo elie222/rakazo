@@ -77,6 +77,15 @@ const APP_DESCRIPTIONS: Record<string, string> = {
   hackernews: "Search stories and discussions.",
 };
 
+const APP_NAMES: Record<string, string> = {
+  gmail: "Gmail",
+  googlecalendar: "Google Calendar",
+  googledocs: "Google Docs",
+  hackernews: "Hacker News",
+  notion: "Notion",
+  slack: "Slack",
+};
+
 async function requireBotThread(deps: OnboardingDeps, actor: Actor, botId: string) {
   const bot = await deps.prisma.bot.findFirst({
     where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
@@ -198,13 +207,13 @@ export async function chooseFocus(
         })
         .catch(() => [])
     : [];
-  const bySlug = new Map(catalog.map((entry) => [entry.slug, entry]));
+  const bySlug = new Map(catalog.map((entry) => [entry.slug.toLowerCase(), entry]));
   const cards: MessageBlock[] = option.apps.map((slug) => {
-    const entry = bySlug.get(slug);
+    const entry = bySlug.get(slug.toLowerCase());
     return {
       kind: "app_connect",
-      provider: slug,
-      name: entry?.name ?? capitalize(slug),
+      provider: entry?.slug ?? slug,
+      name: entry?.name ?? APP_NAMES[slug] ?? capitalize(slug),
       description: APP_DESCRIPTIONS[slug] ?? `Connect ${entry?.name ?? slug} to your account.`,
       logo: entry?.logo ?? null,
       status: entry?.connected ? "connected" : "pending",
@@ -217,7 +226,7 @@ export async function chooseFocus(
   await post(deps, target, [
     {
       kind: "text",
-      text: `${named} are already on your account. They just need you to sign in. Cards should pop up in a second.`,
+      text: `${named} are a good place to start. Connect them here and I’ll use what you already have.`,
     },
   ]);
   await post(deps, target, cards);

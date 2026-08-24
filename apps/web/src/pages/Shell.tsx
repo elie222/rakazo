@@ -1649,6 +1649,7 @@ export function ShellPage() {
           onReply={setReplyTarget}
           memberName={resolveTranscriptMemberName}
           onRefresh={refreshActiveThread}
+          onBotChanged={refreshBots}
           onAddRoutine={addSkillRoutine}
           voiceReady={Boolean(voiceStatus?.ready)}
           speakingMessageId={speakingMessageId}
@@ -2343,6 +2344,7 @@ const Transcript = memo(function Transcript({
   onReply,
   memberName,
   onRefresh,
+  onBotChanged,
   onAddRoutine,
   voiceReady,
   speakingMessageId,
@@ -2361,6 +2363,7 @@ const Transcript = memo(function Transcript({
   onReply: (message: ThreadMessage) => void;
   memberName?: (botId: string | undefined) => string | undefined;
   onRefresh: () => Promise<void>;
+  onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speakingMessageId: string | null;
@@ -2408,6 +2411,7 @@ const Transcript = memo(function Transcript({
               message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
             }
             onRefresh={onRefresh}
+            onBotChanged={onBotChanged}
             onAddRoutine={onAddRoutine}
             voiceReady={voiceReady}
             speaking={speakingMessageId === message.id}
@@ -2787,6 +2791,7 @@ const MessageView = memo(function MessageView({
   memberName,
   replyPreview,
   onRefresh,
+  onBotChanged,
   onAddRoutine,
   voiceReady,
   speaking,
@@ -2801,6 +2806,7 @@ const MessageView = memo(function MessageView({
   memberName?: (botId: string | undefined) => string | undefined;
   replyPreview?: ThreadMessage;
   onRefresh: () => Promise<void>;
+  onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
   speaking: boolean;
@@ -2992,7 +2998,7 @@ const MessageView = memo(function MessageView({
         if (block.kind === "choice") {
           const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
           if (!botId) return null;
-          return <ChoiceCard key={i} botId={botId} block={block} />;
+          return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
         }
         if (block.kind === "app_connect") {
           const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
@@ -3813,9 +3819,11 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
 function ChoiceCard({
   botId,
   block,
+  onBotChanged,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
+  onBotChanged: () => Promise<void>;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3825,6 +3833,7 @@ function ChoiceCard({
     setError(null);
     try {
       await rpc.onboarding.choose({ botId, optionId });
+      await onBotChanged().catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this choice");
       setPending(false);
@@ -3923,7 +3932,11 @@ function AppConnectCard({
     }
   }
   return (
-    <BuiCard className="w-[min(420px,80%)] px-4 py-3.5">
+    <BuiCard
+      role="group"
+      aria-label={`${block.name} connection`}
+      className="w-[min(420px,80%)] px-4 py-3.5"
+    >
       <div className="flex items-center gap-3.5">
         {block.logo ? (
           <img
