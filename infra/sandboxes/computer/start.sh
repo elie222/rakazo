@@ -77,6 +77,37 @@ if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
 fi
 websockify --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &
 
+# Join the tailnet so bots can reach grok-bot / Studio / VMs.
+TAILSCALE_DIR="$AGENT_HOME/tailscale"
+mkdir -p "$TAILSCALE_DIR/state"
+chmod 700 "$TAILSCALE_DIR" "$TAILSCALE_DIR/state" 2>/dev/null || true
+if command -v tailscaled >/dev/null 2>&1; then
+  if ! pgrep -x tailscaled >/dev/null 2>&1; then
+    TS_TUN=tailscale0
+    if [[ ! -e /dev/net/tun ]]; then
+      TS_TUN=userspace-networking
+    fi
+    tailscaled --statedir="$TAILSCALE_DIR/state" --tun="$TS_TUN" >/tmp/rakazo/tailscaled.log 2>&1 &
+    sleep 1
+  fi
+  if [[ -s "$TAILSCALE_DIR/auth.key" ]] && command -v tailscale >/dev/null 2>&1; then
+    AUTH=$(tr -d ' \n' < "$TAILSCALE_DIR/auth.key")
+    case "$AUTH" in
+      *ephemeral=*) ;;
+      *) AUTH="${AUTH}?ephemeral=false&preauthorized=true" ;;
+    esac
+    HOSTN="${TAILSCALE_HOSTNAME:-rakazo}"
+    UP_ARGS=(--auth-key="$AUTH" --hostname="$HOSTN" --accept-dns=false)
+    if [[ -s "$TAILSCALE_DIR/advertise-tags" ]]; then
+      TAGS=$(tr -d ' \n' < "$TAILSCALE_DIR/advertise-tags")
+      if [[ -n "$TAGS" ]]; then
+        UP_ARGS+=(--advertise-tags="$TAGS")
+      fi
+    fi
+    tailscale up "${UP_ARGS[@]}" >/tmp/rakazo/tailscale-up.log 2>&1 || true
+  fi
+fi
+
 while kill -0 "$XVFB_PID" 2>/dev/null; do
   sleep 2
 done

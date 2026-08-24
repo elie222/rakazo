@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu-core \
     dbus-x11 \
+    curl \
+    iptables \
+    iproute2 \
+  && curl -fsSL https://tailscale.com/install.sh | sh \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /etc/rakazo/fluxbox \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \

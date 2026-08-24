@@ -79,6 +79,10 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
+      CapAdd: ["NET_ADMIN", "NET_RAW"],
+      Devices: [
+        { PathOnHost: "/dev/net/tun", PathInContainer: "/dev/net/tun", CgroupPermissions: "rwm" },
+      ],
     },
     WorkingDir: "/home/rakazo",
   };
