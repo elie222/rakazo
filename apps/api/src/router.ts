@@ -106,6 +106,7 @@ import {
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
+import { listWorkspaceRuns } from "./runs.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
@@ -2731,6 +2732,11 @@ export function createRouter(deps: RouterDeps) {
     search: {
       query: authed.search.query.handler(async ({ context, input }) => ({
         hits: await queryWorkspaceSearch(deps.prisma, context.actor, input.q),
+      })),
+    },
+    runs: {
+      list: authed.runs.list.handler(async ({ context, input }) => ({
+        runs: await listWorkspaceRuns(deps.prisma, context.actor, input.filter),
       })),
     },
     voice: {

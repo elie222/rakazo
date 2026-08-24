@@ -122,6 +122,7 @@ import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { WindowChrome } from "./WindowChrome";
+import { ActivityList } from "./ActivityList";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
@@ -1484,7 +1485,15 @@ export function ShellPage() {
               onSelect={(hit) => void jumpToSearchHit(hit)}
             />
           ) : (
-            sidebarGroups.map((group) => (
+            <>
+              <ActivityList
+                onOpenRun={(run) => {
+                  setMobileSidebarOpen(false);
+                  if (run.groupId) navigate(`/app/g/${run.groupId}`);
+                  else navigate(`/app/${run.botId}`);
+                }}
+              />
+              {sidebarGroups.map((group) => (
               <div key={group.key} data-sidebar-group={group.key}>
                 {group.title ? (
                   <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
@@ -1545,7 +1554,8 @@ export function ShellPage() {
                   </button>
                 ))}
               </div>
-            ))
+            ))}
+            </>
           )}
           {!showWorkspaceSearch
             ? groups.map((group) => (

@@ -1,4 +1,4 @@
-import type { SearchHit } from "@rakazo/contracts";
+import type { RunActivityRow, SearchHit } from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -30,8 +30,13 @@ import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox
 import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
-import { queryWorkspaceSearch } from "../lib/search";
+import {
+  activityStatusLabel,
+  fetchWorkspaceActivity,
+  formatActivityRelativeTime,
+} from "../lib/activity";
 import { mobileSearchDestination } from "../lib/search-destination";
+import { queryWorkspaceSearch } from "../lib/search";
 
 const FALLBACK_COLOR = "#9B5CF6";
 
@@ -55,6 +60,10 @@ export default function Home() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
+    active: [],
+    recent: [],
+  });
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -100,6 +109,24 @@ export default function Home() {
     useCallback(() => {
       if (hasSession) void loadBots();
     }, [hasSession, loadBots]),
+  );
+
+  const loadActivity = useCallback(async () => {
+    if (!hasSession || searching || query.trim()) {
+      setActivity({ active: [], recent: [] });
+      return;
+    }
+    try {
+      setActivity(await fetchWorkspaceActivity());
+    } catch {
+      setActivity({ active: [], recent: [] });
+    }
+  }, [hasSession, query, searching]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadActivity();
+    }, [loadActivity]),
   );
 
   useEffect(() => {
@@ -225,11 +252,19 @@ export default function Home() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void refreshBots()}
+            onRefresh={() => {
+              void refreshBots();
+              void loadActivity();
+            }}
             tintColor={native.secondaryLabel}
             colors={["#8E8E93"]}
             progressBackgroundColor="#1C1C1E"
           />
+        }
+        ListHeaderComponent={
+          !searching && !query.trim() && (activity.active.length > 0 || activity.recent.length > 0) ? (
+            <ActivitySection activity={activity} />
+          ) : null
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
@@ -279,6 +314,64 @@ export default function Home() {
         />
       ) : null}
     </View>
+  );
+}
+
+function ActivitySection({
+  activity,
+}: {
+  activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
+}) {
+  const router = useRouter();
+  const openRun = (run: RunActivityRow) => {
+    if (run.groupId) {
+      router.push({ pathname: "/group-thread", params: { groupId: run.groupId, name: run.groupName ?? "Group" } });
+      return;
+    }
+    router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
+  };
+
+  return (
+    <View style={styles.activitySection}>
+      {activity.active.length > 0 ? (
+        <>
+          <Text style={styles.sectionHeading}>Now</Text>
+          {activity.active.map((run) => (
+            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+          ))}
+        </>
+      ) : null}
+      {activity.recent.length > 0 ? (
+        <>
+          <Text style={[styles.sectionHeading, activity.active.length > 0 && styles.activityGap]}>
+            Recent
+          </Text>
+          {activity.recent.map((run) => (
+            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
+  const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+      <View style={styles.activityDot} />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.name} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.time}>{formatActivityRelativeTime(run.updatedAt)}</Text>
+        </View>
+        <Text style={styles.preview} numberOfLines={1}>
+          {run.promptSnippet || activityStatusLabel(run.status)} · {activityStatusLabel(run.status)}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -556,6 +649,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  activitySection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#2C2C2E",
+    marginBottom: 4,
+    paddingBottom: 4,
+  },
+  activityGap: {
+    paddingTop: 16,
+  },
+  activityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#8B5CF6",
+    marginTop: 6,
   },
   groupAvatar: {
     width: 48,
