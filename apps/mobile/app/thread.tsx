@@ -365,7 +365,7 @@ export default function Thread() {
                 markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
-                if (!jumpScrollTarget.current) {
+                if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
                   void refresh().catch(() => undefined);
                 }
               }
@@ -376,7 +376,7 @@ export default function Thread() {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
         }
         if (abort.signal.aborted) break;
-        if (!jumpScrollTarget.current) {
+        if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
           await refresh().catch(() => undefined);
         }
         await abortableDelay(retryMs, abort.signal);
