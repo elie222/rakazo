@@ -319,7 +319,7 @@ function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
           <Text style={styles.time}>{hit.kind}</Text>
         </View>
         <Text style={styles.preview} numberOfLines={2}>
-          {hit.botName} · {hit.snippet}
+          {hit.groupName ?? hit.botName} · {hit.snippet}
         </Text>
       </View>
     </Pressable>

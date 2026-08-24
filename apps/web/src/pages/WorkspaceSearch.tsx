@@ -19,7 +19,7 @@ export function WorkspaceSearchResults({
     <div className="flex flex-col gap-0.5">
       {hits.map((hit) => (
         <button
-          key={`${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`}
+          key={`${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`}
           type="button"
           onClick={() => onSelect(hit)}
           className="rounded-xl px-2.5 py-[11px] text-left hover:bg-[#131315]"
@@ -31,7 +31,7 @@ export function WorkspaceSearchResults({
             </span>
           </div>
           <div className="mt-0.5 truncate text-[13px] text-[#85858A]">
-            {hit.botName} · {hit.snippet}
+            {hit.groupName ?? hit.botName} · {hit.snippet}
           </div>
         </button>
       ))}

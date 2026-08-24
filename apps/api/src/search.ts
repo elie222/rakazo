@@ -18,7 +18,8 @@ export async function queryWorkspaceSearch(
   function push(hit: SearchHit) {
     const key = [
       hit.kind,
-      hit.botId,
+      hit.botId ?? "",
+      hit.groupId ?? "",
       hit.messageId ?? "",
       hit.artifactId ?? "",
       hit.routineId ?? "",
@@ -52,12 +53,29 @@ export async function queryWorkspaceSearch(
     });
   }
 
+  const groups = await prisma.chatGroup.findMany({
+    where: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      name: { contains: query, mode: "insensitive" },
+    },
+    take: SEARCH_LIMIT,
+  });
+  for (const group of groups) {
+    push({
+      kind: "conversation",
+      groupId: group.id,
+      groupName: group.name,
+      title: group.name,
+      snippet: group.name,
+    });
+  }
+
   const artifacts = await prisma.artifact.findMany({
     where: {
       workspaceId: actor.workspaceId,
       userId: actor.userId,
       groupId: null,
-      botId: { not: null },
       name: { contains: query, mode: "insensitive" },
       bot: { archivedAt: null },
     },
@@ -83,6 +101,43 @@ export async function queryWorkspaceSearch(
       kind: "file",
       botId: artifact.botId,
       botName: artifact.bot.name,
+      title: artifact.name,
+      snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+      artifactId: artifact.id,
+      messageId: message?.id,
+      seq: message?.seq,
+    });
+  }
+
+  const groupArtifacts = await prisma.artifact.findMany({
+    where: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      groupId: { not: null },
+      name: { contains: query, mode: "insensitive" },
+    },
+    include: { group: { select: { name: true } } },
+    take: SEARCH_LIMIT,
+  });
+  for (const artifact of groupArtifacts) {
+    if (!artifact.groupId || !artifact.group) continue;
+    const messageRows = await prisma.$queryRaw<Array<{ id: string; seq: number }>>`
+      SELECT m.id, m.seq
+      FROM messages m
+      INNER JOIN threads t ON t.id = m."threadId"
+      WHERE t."workspaceId" = ${actor.workspaceId}
+        AND t."userId" = ${actor.userId}
+        AND t."groupId" = ${artifact.groupId}
+        AND m.blocks::text ILIKE ${`%${artifact.id}%`}
+      ORDER BY m."createdAt" DESC
+      LIMIT 1
+    `;
+    const message = messageRows[0];
+    if (!message) continue;
+    push({
+      kind: "file",
+      groupId: artifact.groupId,
+      groupName: artifact.group.name,
       title: artifact.name,
       snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
       artifactId: artifact.id,
@@ -139,50 +194,107 @@ export async function queryWorkspaceSearch(
   `;
 
   for (const row of messageRows) {
-    const blocks = row.blocks as MessageBlock[];
-    let messageHit = false;
-    for (const block of blocks) {
-      if (block.kind !== "text") continue;
-      const text = block.text;
-      if (matchesSearchQuery(query, text)) {
-        push({
-          kind: "message",
-          botId: row.botId,
-          botName: row.botName,
-          title: row.botName,
-          snippet: snippetAroundMatch(text, query),
-          messageId: row.id,
-          seq: row.seq,
-        });
-        messageHit = true;
-      }
-      for (const url of extractLinksFromText(text)) {
-        if (matchesSearchQuery(query, url)) {
-          push({
-            kind: "link",
-            botId: row.botId,
-            botName: row.botName,
-            title: url,
-            snippet: snippetAroundMatch(text, query),
-            messageId: row.id,
-            seq: row.seq,
-            url,
-          });
-        }
-      }
-    }
-    if (!messageHit && matchesSearchQuery(query, JSON.stringify(blocks))) {
-      push({
-        kind: "message",
-        botId: row.botId,
-        botName: row.botName,
-        title: row.botName,
-        snippet: query,
-        messageId: row.id,
-        seq: row.seq,
-      });
-    }
+    pushMessageHits(row.blocks as MessageBlock[], {
+      botId: row.botId,
+      botName: row.botName,
+      messageId: row.id,
+      seq: row.seq,
+      query,
+      push,
+    });
+  }
+
+  const groupMessageRows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      threadId: string;
+      seq: number;
+      blocks: Prisma.JsonValue;
+      groupId: string;
+      groupName: string;
+    }>
+  >`
+    SELECT m.id, m."threadId", m.seq, m.blocks, g.id AS "groupId", g.name AS "groupName"
+    FROM messages m
+    INNER JOIN threads t ON t.id = m."threadId"
+    INNER JOIN chat_groups g ON g.id = t."groupId"
+    WHERE t."workspaceId" = ${actor.workspaceId}
+      AND t."userId" = ${actor.userId}
+      AND t."groupId" IS NOT NULL
+      AND m.blocks::text ILIKE ${pattern}
+    ORDER BY m."createdAt" DESC
+    LIMIT ${SEARCH_LIMIT}
+  `;
+
+  for (const row of groupMessageRows) {
+    pushMessageHits(row.blocks as MessageBlock[], {
+      groupId: row.groupId,
+      groupName: row.groupName,
+      messageId: row.id,
+      seq: row.seq,
+      query,
+      push,
+    });
   }
 
   return hits.slice(0, SEARCH_LIMIT);
+}
+
+function pushMessageHits(
+  blocks: MessageBlock[],
+  ctx: {
+    botId?: string;
+    botName?: string;
+    groupId?: string;
+    groupName?: string;
+    messageId: string;
+    seq: number;
+    query: string;
+    push: (hit: SearchHit) => void;
+  },
+) {
+  const destination =
+    ctx.groupId && ctx.groupName
+      ? { groupId: ctx.groupId, groupName: ctx.groupName }
+      : { botId: ctx.botId!, botName: ctx.botName! };
+  const title = ctx.groupName ?? ctx.botName ?? "";
+  let messageHit = false;
+  for (const block of blocks) {
+    if (block.kind !== "text") continue;
+    const text = block.text;
+    if (matchesSearchQuery(ctx.query, text)) {
+      ctx.push({
+        kind: "message",
+        ...destination,
+        title,
+        snippet: snippetAroundMatch(text, ctx.query),
+        messageId: ctx.messageId,
+        seq: ctx.seq,
+      });
+      messageHit = true;
+    }
+    for (const url of extractLinksFromText(text)) {
+      if (matchesSearchQuery(ctx.query, url)) {
+        ctx.push({
+          kind: "link",
+          ...destination,
+          title: url,
+          snippet: snippetAroundMatch(text, ctx.query),
+          messageId: ctx.messageId,
+          seq: ctx.seq,
+          url,
+        });
+      }
+    }
+  }
+  if (!messageHit && matchesSearchQuery(ctx.query, JSON.stringify(blocks))) {
+    ctx.push({
+      kind: "message",
+      ...destination,
+      title,
+      snippet: ctx.query,
+      messageId: ctx.messageId,
+      seq: ctx.seq,
+    });
+  }
 }

@@ -94,6 +94,62 @@ describeSearch("workspace search", () => {
     });
     expect(hits.hits).toEqual([]);
   });
+
+  it("finds group conversations, messages, and files", async () => {
+    const cookie = await signup(app, `search-group-${stamp}@rakazo.test`, "Group Search User");
+    const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Alpha",
+      title: "Alpha",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botB = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Beta",
+      title: "Beta",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
+      name: "Squad",
+      botIds: [botA.id, botB.id],
+    });
+    const groupToken = `squad-search-token-${stamp}`;
+    await rpc(app, cookie, "threads/send", { groupId: group.id, text: groupToken });
+    const artifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+      groupId: group.id,
+      name: `squad-notes-${stamp}.txt`,
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("group fixture").toString("base64"),
+    });
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "see attachment",
+      artifactIds: [artifact.id],
+    });
+
+    const squadHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; botId?: string }>;
+    }>(app, cookie, "search/query", { q: "Squad" });
+    expect(squadHits.hits.some((hit) => hit.kind === "conversation" && hit.groupId === group.id)).toBe(
+      true,
+    );
+
+    const messageHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; botId?: string; messageId?: string }>;
+    }>(app, cookie, "search/query", { q: groupToken });
+    const groupMessage = messageHits.hits.find((hit) => hit.kind === "message");
+    expect(groupMessage?.groupId).toBe(group.id);
+    expect(groupMessage?.botId).toBeUndefined();
+
+    const fileHits = await rpc<{
+      hits: Array<{ kind: string; groupId?: string; artifactId?: string }>;
+    }>(app, cookie, "search/query", { q: `squad-notes-${stamp}` });
+    const groupFile = fileHits.hits.find((hit) => hit.kind === "file");
+    expect(groupFile?.groupId).toBe(group.id);
+    expect(groupFile?.artifactId).toBe(artifact.id);
+  });
 });
 
 async function signup(app: App, email: string, name: string) {

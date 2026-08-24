@@ -25,4 +25,20 @@ describe("mobileSearchDestination", () => {
       params: { botId: "bot-1", botName: "Scout", routineId: "routine-1" },
     });
   });
+
+  it("opens group matches in the group thread", () => {
+    const hit: SearchHit = {
+      kind: "message",
+      groupId: "group-1",
+      groupName: "Squad",
+      title: "Squad",
+      snippet: "match",
+      messageId: "message-1",
+      seq: 2,
+    };
+    expect(mobileSearchDestination(hit)).toEqual({
+      pathname: "/group-thread",
+      params: { groupId: "group-1", name: "Squad", messageId: "message-1" },
+    });
+  });
 });
