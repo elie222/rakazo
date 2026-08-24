@@ -1253,6 +1253,11 @@ export function ShellPage() {
     setComputerOpen(false);
   }
 
+  function toggleComputerWindow() {
+    if (computerOpen) closeComputerOverlay();
+    else void openComputer();
+  }
+
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
     await closeComputerOverlay();
@@ -1760,7 +1765,13 @@ export function ShellPage() {
             ) : null}
             {panel === "computer" && active ? (
               <div>
-                <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+                <div
+                  className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]"
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    toggleComputerWindow();
+                  }}
+                >
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                       Maximized
@@ -1790,22 +1801,21 @@ export function ShellPage() {
                   )}
                   <button
                     type="button"
-                    className="absolute inset-0 z-0 cursor-pointer"
-                    aria-label="Maximize computer"
-                    onClick={() => void openComputer()}
-                  />
-                  <button
-                    type="button"
                     className="absolute right-2.5 top-2.5 z-20 grid h-8 w-8 place-items-center rounded-lg border border-[#34343B] bg-[#1A1A1D]/90 text-[#ECECEE] pointer-events-auto"
-                    aria-label="Maximize"
-                    title="Maximize"
+                    aria-label={computerOpen ? "Restore" : "Maximize"}
+                    title={computerOpen ? "Restore" : "Maximize"}
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      void openComputer();
+                      toggleComputerWindow();
                     }}
+                    onDoubleClick={(event) => event.stopPropagation()}
                   >
-                    <Maximize2 size={14} strokeWidth={1.8} />
+                    {computerOpen ? (
+                      <Minimize2 size={14} strokeWidth={1.8} />
+                    ) : (
+                      <Maximize2 size={14} strokeWidth={1.8} />
+                    )}
                   </button>
                 </div>
                 <div className="mt-3 flex items-center justify-between">
@@ -2268,8 +2278,20 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="fixed inset-0 z-50 flex flex-col bg-[#050506]">
-          <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-[#050506]"
+          onDoubleClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            closeComputerOverlay();
+          }}
+        >
+          <div
+            className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              closeComputerOverlay();
+            }}
+          >
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar color={active.color} size={28} />
               {recordingSkill ? (
@@ -2327,7 +2349,13 @@ export function ShellPage() {
               </button>
             </div>
           </div>
-          <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
+          <div
+            className="relative min-h-0 flex-1 bg-[#0E0E10]"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              closeComputerOverlay();
+            }}
+          >
             {computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
                 This bot runs on this computer. There is no separate Linux desktop. Ask it to use
