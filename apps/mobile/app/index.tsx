@@ -216,7 +216,7 @@ export default function Home() {
           if (item.type === "bot") return item.bot.id;
           if (item.type === "group") return `group-${item.group.id}`;
           const hit = item.hit;
-          return `${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
+          return `${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"

@@ -239,8 +239,6 @@ export default function Thread() {
     if (epoch !== historyEpoch.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    if (target.groupId && activeGroupId.current !== target.groupId) return;
-    if (target.botId && activeBotId.current !== target.botId) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       ...threadTarget,
@@ -367,7 +365,9 @@ export default function Thread() {
                 markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
-                void refresh().catch(() => undefined);
+                if (!jumpScrollTarget.current) {
+                  void refresh().catch(() => undefined);
+                }
               }
             },
             abort.signal,
@@ -376,7 +376,9 @@ export default function Thread() {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
         }
         if (abort.signal.aborted) break;
-        await refresh().catch(() => undefined);
+        if (!jumpScrollTarget.current) {
+          await refresh().catch(() => undefined);
+        }
         await abortableDelay(retryMs, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
@@ -388,13 +390,11 @@ export default function Thread() {
 
   useEffect(() => {
     if ((!botId && !groupId) || !messageId) return;
-    void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId })
-      .then(() => {
-        pinnedAroundRef.current = null;
-      })
-      .catch((err) => {
+    void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId }).catch(
+      (err) => {
         setError(err instanceof Error ? err.message : "Could not open message");
-      });
+      },
+    );
   }, [botId, groupId, messageId]);
 
   useEffect(() => {
@@ -550,7 +550,9 @@ export default function Thread() {
             jumpScrollTarget.current ||
             (pinnedAroundRef.current &&
               ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                (pinnedAroundRef.current.groupId && pinnedAroundRef.current.groupId === groupId)))
+                (pinnedAroundRef.current.groupId &&
+                  pinnedAroundRef.current.groupId === groupId))) ||
+            expandedHistoryThread.current === snap?.threadId
           )
             return;
           scroll.current?.scrollToEnd({ animated: false });
@@ -577,6 +579,7 @@ export default function Thread() {
                 animated: true,
               });
               jumpScrollTarget.current = null;
+              pinnedAroundRef.current = null;
             }}
             style={{
               marginTop: 12,
