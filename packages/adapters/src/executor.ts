@@ -254,7 +254,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         credential?.defaultModel ??
         settings?.defaultModelId ??
         (deps.deploymentModelKey
-          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
+          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-vision-exp")
           : "scripted");
       return {
         provider,
