@@ -370,23 +370,13 @@ export function ShellPage() {
     const snap = await rpc.threads.get({ groupId: id });
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id) return snap;
-    const pin = pinnedAroundRef.current;
-    const keepPin = pin?.groupId === id;
-    setSnapshot((prev) => {
-      let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
-      if (keepPin && merged && pin) {
-        merged = {
-          ...merged,
-          messages: pin.messages,
-          olderCursor: pin.olderCursor,
-        };
-      }
-      return merged;
-    });
+    setSnapshot((prev) =>
+      mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
+    );
     setComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
-    if (!keepPin && stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -412,25 +402,15 @@ export function ShellPage() {
     // The epoch check drops a response that raced a conversation clear, which would otherwise
     // re-apply the deleted messages and cursor over the emptied snapshot.
     if (activeBotId.current !== id || epoch !== historyEpoch.current) return snap;
-    const pin = pinnedAroundRef.current;
-    const keepPin = pin?.botId === id;
-    setSnapshot((prev) => {
-      let merged = mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId);
-      if (keepPin && merged && pin) {
-        merged = {
-          ...merged,
-          messages: pin.messages,
-          olderCursor: pin.olderCursor,
-        };
-      }
-      return merged;
-    });
+    setSnapshot((prev) =>
+      mergeThreadSnapshot(prev, snap, expandedHistoryThread.current === snap.threadId),
+    );
     setComputer(snap.computer ?? null);
     setRoutines(routines);
     setRoutinesBotId(id);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
-    if (!keepPin && stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;

@@ -218,22 +218,9 @@ export default function Thread() {
       })
     )
       return next;
-    const pin = pinnedAroundRef.current;
-    setSnap((prev) => {
-      let merged = mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId);
-      if (
-        pin &&
-        merged &&
-        ((pin.botId && pin.botId === targetBotId) || (pin.groupId && pin.groupId === targetGroupId))
-      ) {
-        merged = {
-          ...merged,
-          messages: [...pin.messages],
-          olderCursor: pin.olderCursor,
-        };
-      }
-      return merged;
-    });
+    setSnap((prev) =>
+      mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId),
+    );
     return next;
   }
 
