@@ -169,7 +169,6 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
     Fri: 5,
     Sat: 6,
   };
-  const dowExprSunday = dowExpr === undefined ? "*" : dowExpr.replace(/(^|\s)7(?=\s|$)/g, "$10");
   for (let i = 0; i < 8 * 24 * 60 + 2; i += 1) {
     const fields = formatter.formatToParts(candidate);
     const num = (type: string) => Number(fields.find((part) => part.type === type)?.value ?? "0");
@@ -180,13 +179,39 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
     if (
       matchField(minuteExpr ?? "*", minute, 0, 59) &&
       matchField(hourExpr ?? "*", hour, 0, 23) &&
-      matchField(dowExprSunday, weekday, 0, 6)
+      matchDayOfWeek(dowExpr ?? "*", weekday)
     ) {
       return candidate;
     }
     candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
   }
   return new Date(from.getTime() + 60_000);
+}
+
+// Day-of-week matching where 7 is a Sunday alias for 0. Supported inside
+// plain values, comma lists, and ranges (a range ending in 7 wraps: 5-7
+// means Fri, Sat, Sun).
+function matchDayOfWeek(expr: string, weekday: number): boolean {
+  if (expr === "*") return true;
+  return expr.split(",").some((item) => {
+    const token = item.trim();
+    if (token === "*") return true;
+    if (token.includes("-")) {
+      const [rawStart, rawEnd] = token.split("-");
+      let start = Number(rawStart);
+      let end = Number(rawEnd);
+      if (start === 7) start = 0;
+      if (end === 7) end = 0;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+      return start <= end ? weekday >= start && weekday <= end : weekday >= start || weekday <= end;
+    }
+    if (token.startsWith("*/")) {
+      const step = Number(token.slice(2));
+      return Number.isFinite(step) && step > 0 && weekday % step === 0;
+    }
+    const value = Number(token);
+    return value === weekday || (value === 7 && weekday === 0);
+  });
 }
 
 function parseClock(time: string): { hour: number; minute: number } {

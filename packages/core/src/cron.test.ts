@@ -119,6 +119,14 @@ describe("nextCronDate", () => {
     expect(nextCronDate("0 9 * * 7", from)).toEqual(new Date("2026-08-30T09:00:00.000Z"));
   });
 
+  it("supports day 7 inside composite day expressions", () => {
+    const from = new Date("2026-08-26T12:00:00.000Z"); // Wednesday
+    // 1,7 = Monday and Sunday -> next is Sunday Aug 30.
+    expect(nextCronDate("0 9 * * 1,7", from)).toEqual(new Date("2026-08-30T09:00:00.000Z"));
+    // 5-7 = Friday, Saturday, Sunday -> next is Friday Aug 28.
+    expect(nextCronDate("0 9 * * 5-7", from)).toEqual(new Date("2026-08-28T09:00:00.000Z"));
+  });
+
   it("evaluates the schedule in the routine timezone", () => {
     // 10:00 UTC is 06:00 in New York on the same day, so a 7 AM America/New_York
     // daily slot still fires later the same UTC day.
