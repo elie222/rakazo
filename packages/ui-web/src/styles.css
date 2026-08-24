@@ -1,3 +1,162 @@
 @import "@rakazo/ui-tokens/css";
 
 @source "./**/*.{ts,tsx}";
+
+@keyframes rakazo-avatar-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.rakazo-bot-avatar-ring {
+  animation: rakazo-avatar-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.rakazo-bot-avatar-eyes {
+  animation: var(--rakazo-eye-animation-name) var(--rakazo-eye-animation-duration)
+    var(--rakazo-eye-animation-easing) var(--rakazo-eye-animation-delay) infinite;
+}
+
+@keyframes rakazo-eyes-idle-0 {
+  0%,
+  32%,
+  100% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  35% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  38% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  48%,
+  62% {
+    transform: translate(3px, -0.5px) scaleY(1);
+  }
+  70%,
+  84% {
+    transform: translate(-2.5px, 0.5px) scaleY(1);
+  }
+  89% {
+    transform: translate(0, 0) scaleY(0.12);
+  }
+  91% {
+    transform: translate(0, 0) scaleY(1);
+  }
+}
+
+@keyframes rakazo-eyes-idle-1 {
+  0%,
+  25%,
+  100% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  32%,
+  48% {
+    transform: translate(-3px, -1px) scaleY(1);
+  }
+  54% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  56% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  59% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  61% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  68%,
+  82% {
+    transform: translate(2.5px, 0.5px) scaleY(1);
+  }
+}
+
+@keyframes rakazo-eyes-idle-2 {
+  0%,
+  28%,
+  100% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  36%,
+  52% {
+    transform: translate(0.5px, -1.8px) scaleY(1.05);
+  }
+  58% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  60% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  68%,
+  85% {
+    transform: translate(3px, 0) scaleY(1);
+  }
+  92% {
+    transform: translate(0, 0) scaleY(0.1);
+  }
+  94% {
+    transform: translate(0, 0) scaleY(1);
+  }
+}
+
+@keyframes rakazo-eyes-idle-3 {
+  0%,
+  24%,
+  100% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  30%,
+  46% {
+    transform: translate(-2.5px, 1.2px) scaleY(0.95);
+  }
+  52% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  54% {
+    transform: translate(0, 0) scaleY(1);
+  }
+  62%,
+  78% {
+    transform: translate(2.8px, -1px) scaleY(1);
+  }
+  86% {
+    transform: translate(0, 0) scaleY(0.08);
+  }
+  88% {
+    transform: translate(0, 0) scaleY(1);
+  }
+}
+
+@keyframes rakazo-eyes-working {
+  0% {
+    transform: translate(-4px, 0) scale(0.92, 0.95);
+  }
+  25% {
+    transform: translate(0, -2px) scale(1.08, 1.08);
+  }
+  50% {
+    transform: translate(4px, 0) scale(0.92, 0.95);
+  }
+  75% {
+    transform: translate(0, 2px) scale(1, 0.9);
+  }
+  100% {
+    transform: translate(-4px, 0) scale(0.92, 0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rakazo-bot-avatar-ring,
+  .rakazo-bot-avatar-eyes {
+    animation: none;
+  }
+
+  .rakazo-bot-avatar-visor {
+    transition: none;
+  }
+}

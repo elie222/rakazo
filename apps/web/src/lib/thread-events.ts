@@ -67,6 +67,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
+    event.type === "run.started" ||
     event.type === "run.waiting_input" ||
     isRunTerminalEvent(event)
   );
@@ -87,6 +88,13 @@ export function reduceThreadSnapshot(
       activeRuns: [],
     };
   }
+  if (event.type === "run.started") {
+    return {
+      ...prev,
+      cursor: event.seq,
+      members: updateMemberStatus(prev.members, event.botId, "running"),
+    };
+  }
   if (event.type === "run.waiting_input") {
     const runChanged = Boolean(
       prev.run && prev.run.id === event.runId && prev.run.status !== "waiting_input",
@@ -94,10 +102,12 @@ export function reduceThreadSnapshot(
     const activeRunChanged = prev.activeRuns?.some(
       (candidate) => candidate.id === event.runId && candidate.status !== "waiting_input",
     );
-    if (!runChanged && !activeRunChanged) return prev;
+    const members = updateMemberStatus(prev.members, event.botId, "waiting_input");
+    if (!runChanged && !activeRunChanged && members === prev.members) return prev;
     return {
       ...prev,
       cursor: event.seq,
+      members,
       run: runChanged && prev.run ? { ...prev.run, status: "waiting_input" } : prev.run,
       activeRuns: activeRunChanged
         ? prev.activeRuns?.map((candidate) =>
@@ -108,10 +118,12 @@ export function reduceThreadSnapshot(
   }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
     return {
       ...prev,
       cursor: event.seq,
       messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
       run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
       activeRuns,
     };
@@ -202,6 +214,18 @@ export function reduceThreadSnapshot(
     return { ...prev, cursor: event.seq, messages: [...without, next] };
   }
   return prev;
+}
+
+function updateMemberStatus(
+  members: ThreadSnapshot["members"],
+  botId: string,
+  status: string,
+): ThreadSnapshot["members"] {
+  const member = members?.find((candidate) => candidate.botId === botId);
+  if (!member || member.status === status) return members;
+  return members?.map((candidate) =>
+    candidate.botId === botId ? { ...candidate, status } : candidate,
+  );
 }
 
 export function userHoldsComputerControl(

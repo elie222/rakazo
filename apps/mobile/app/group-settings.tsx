@@ -112,7 +112,7 @@ export default function GroupSettingsScreen() {
               onPress={() => toggle(bot.id)}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }}
             >
-              <BotAvatar color={bot.color} size={34} />
+              <BotAvatar color={bot.color} size={34} status={bot.status} />
               <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>{bot.name}</Text>
               <Text style={{ color: "#6C6C70" }}>{checked ? "✓" : ""}</Text>
             </Pressable>
