@@ -1,4 +1,5 @@
 import type { SearchHit } from "@rakazo/contracts";
+import { CHAT_GROUP_KIND_BOT_DM } from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -139,6 +140,7 @@ export default function Home() {
       ...group.bots.map((bot) => ({ type: "bot" as const, bot })),
     ]);
     for (const group of groups) {
+      if (group.kind === CHAT_GROUP_KIND_BOT_DM) continue;
       items.push({ type: "group", group });
     }
     return items;

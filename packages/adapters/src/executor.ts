@@ -72,7 +72,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
-import { loadBotDmContext, messageBot } from "./bot-dm.js";
+import { loadBotDmContext, messageBot, mirrorBotDmCompletionToWatchThread } from "./bot-dm.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -1831,6 +1831,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          await mirrorBotDmCompletionToWatchThread(deps, {
+            workspaceId: run.workspaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            runId,
+            blocks,
+          });
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "completion",

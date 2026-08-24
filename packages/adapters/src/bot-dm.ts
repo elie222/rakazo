@@ -1,6 +1,7 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { CHAT_GROUP_KIND_BOT_DM } from "@rakazo/contracts";
+import type { Prisma } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -16,6 +17,34 @@ export function botDmPairKey(botA: string, botB: string): string {
 
 function isPairKeyUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+async function publishThreadMessage(
+  tx: Prisma.TransactionClient,
+  input: {
+    workspaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    blocks: MessageBlock[];
+  },
+) {
+  const message = await createThreadMessageInTransaction(tx, {
+    threadId: input.threadId,
+    role: "bot",
+    blocks: input.blocks,
+    botId: input.botId,
+    runId: input.runId,
+  });
+  const event = await appendEventInTransaction(tx, {
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    type: "thread.message.created",
+    runId: input.runId,
+    payload: { messageId: message.id, role: "bot", blocks: input.blocks },
+  });
+  return { message, eventSeq: event.seq };
 }
 
 async function lookupBotDmThread(
@@ -132,6 +161,41 @@ export async function findOrCreateBotDmThread(
   throw new Error("Failed to resolve bot DM thread");
 }
 
+export async function mirrorBotDmCompletionToWatchThread(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  input: {
+    workspaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    blocks: MessageBlock[];
+  },
+) {
+  if (input.blocks.length === 0) return;
+  const thread = await deps.prisma.thread.findUnique({
+    where: { id: input.threadId },
+    select: { group: { select: { kind: true, watchThreadId: true } } },
+  });
+  const group = thread?.group;
+  if (!group || group.kind !== CHAT_GROUP_KIND_BOT_DM) return;
+  const watchThreadId = group.watchThreadId;
+  if (!watchThreadId || watchThreadId === input.threadId) return;
+
+  const eventSeq = await deps.prisma.$transaction(async (tx) => {
+    const published = await publishThreadMessage(tx, {
+      workspaceId: input.workspaceId,
+      threadId: watchThreadId,
+      botId: input.botId,
+      runId: input.runId,
+      blocks: input.blocks,
+    });
+    return published.eventSeq;
+  });
+  await deps.events.notify(watchThreadId, eventSeq).catch((error) => {
+    console.error("bot dm watch-thread mirror notification", error);
+  });
+}
+
 export async function messageBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: {
@@ -173,21 +237,27 @@ export async function messageBot(
     });
     if (!activeSource) return { error: "source run is no longer active" } as const;
 
-    const dmMessage = await createThreadMessageInTransaction(tx, {
+    const dmPublished = await publishThreadMessage(tx, {
+      workspaceId: run.workspaceId,
       threadId: dm.threadId,
-      role: "bot",
-      blocks: [handoffBlock],
       botId: run.botId,
       runId: run.id,
+      blocks: [handoffBlock],
     });
+    let sourceEventSeq = dmPublished.eventSeq;
     if (!sameThread) {
-      await createThreadMessageInTransaction(tx, {
+      await tx.chatGroup.update({
+        where: { id: dm.groupId },
+        data: { watchThreadId: run.threadId },
+      });
+      const sourcePublished = await publishThreadMessage(tx, {
+        workspaceId: run.workspaceId,
         threadId: run.threadId,
-        role: "bot",
-        blocks: [handoffBlock],
         botId: run.botId,
         runId: run.id,
+        blocks: [handoffBlock],
       });
+      sourceEventSeq = sourcePublished.eventSeq;
     }
     const task = await tx.task.create({
       data: {
@@ -208,41 +278,9 @@ export async function messageBot(
         userId: run.userId,
         status: "queued",
         trigger: "user",
-        sourceMessageId: dmMessage.id,
+        sourceMessageId: dmPublished.message.id,
       },
     });
-    const dmEvent = await appendEventInTransaction(tx, {
-      workspaceId: run.workspaceId,
-      threadId: dm.threadId,
-      botId: run.botId,
-      type: "bot.dm",
-      runId: run.id,
-      payload: {
-        messageId: dmMessage.id,
-        groupId: dm.groupId,
-        fromBotId: run.botId,
-        toBotId: resolved.target.id,
-        text: message,
-      },
-    });
-    const sourceEventSeq = sameThread
-      ? dmEvent.seq
-      : (
-          await appendEventInTransaction(tx, {
-            workspaceId: run.workspaceId,
-            threadId: run.threadId,
-            botId: run.botId,
-            type: "bot.dm",
-            runId: run.id,
-            payload: {
-              messageId: dmMessage.id,
-              groupId: dm.groupId,
-              fromBotId: run.botId,
-              toBotId: resolved.target.id,
-              text: message,
-            },
-          })
-        ).seq;
     await touchGroupUpdatedAt(tx, dm.groupId);
     return {
       ok: true as const,
@@ -250,7 +288,7 @@ export async function messageBot(
       threadId: dm.threadId,
       botId: resolved.target.id,
       runId: nextRun.id,
-      dmEventSeq: dmEvent.seq,
+      dmEventSeq: dmPublished.eventSeq,
       sourceEventSeq,
     };
   });

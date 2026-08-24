@@ -183,7 +183,7 @@ export type MobileMessage = {
 
 export type MobileGroup = Pick<
   Group,
-  "id" | "name" | "preview" | "unread" | "updatedAt" | "members"
+  "id" | "name" | "kind" | "preview" | "unread" | "updatedAt" | "members"
 >;
 
 export type MobileSnapshot = {

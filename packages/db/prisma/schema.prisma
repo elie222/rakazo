@@ -295,8 +295,9 @@ model ChatGroup {
   workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId      String
   name        String
-  kind        String   @default("user")
-  pairKey     String?  @unique
+  kind          String   @default("user")
+  pairKey       String?  @unique
+  watchThreadId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   members     ChatGroupMember[]

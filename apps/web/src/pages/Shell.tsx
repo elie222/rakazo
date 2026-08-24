@@ -25,6 +25,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
+  CHAT_GROUP_KIND_BOT_DM,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
@@ -889,8 +890,15 @@ export function ShellPage() {
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
   const resolveTranscriptMemberName = useCallback(
-    (botId: string | undefined) => memberName(transcriptMembers, botId),
-    [transcriptMembers],
+    (botId: string | undefined) => {
+      if (!botId) return undefined;
+      return memberName(transcriptMembers, botId) ?? bots.find((bot) => bot.id === botId)?.name;
+    },
+    [bots, transcriptMembers],
+  );
+  const visibleGroups = useMemo(
+    () => groups.filter((group) => group.kind !== CHAT_GROUP_KIND_BOT_DM),
+    [groups],
   );
   const shellReady =
     initialBotsLoaded &&
@@ -1401,7 +1409,7 @@ export function ShellPage() {
             ))
           )}
           {!showWorkspaceSearch
-            ? groups.map((group) => (
+            ? visibleGroups.map((group) => (
                 <button
                   key={group.id}
                   type="button"
@@ -2893,6 +2901,16 @@ const MessageView = memo(function MessageView({
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? "bot";
           const to = memberName?.(block.toBotId) ?? "bot";
+          if (speakerName) {
+            return (
+              <div key={i} className="flex justify-start">
+                <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+                  <div className="mb-1 text-[12.5px] text-[#85858A]">→ {to}</div>
+                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                </div>
+              </div>
+            );
+          }
           return (
             <div
               key={i}

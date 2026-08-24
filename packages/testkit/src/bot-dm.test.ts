@@ -246,7 +246,7 @@ describeIntegration("bot-to-bot direct messages", () => {
       where: { threadId: first.threadId },
     });
     const beforeEvents = await handles.prisma.event.count({
-      where: { threadId: first.threadId, type: "bot.dm" },
+      where: { threadId: first.threadId, type: "thread.message.created" },
     });
 
     const dmRun = await seedRunningRun({
@@ -276,7 +276,7 @@ describeIntegration("bot-to-bot direct messages", () => {
     ).toBe(beforeCount + 1);
     expect(
       await handles.prisma.event.count({
-        where: { threadId: first.threadId, type: "bot.dm" },
+        where: { threadId: first.threadId, type: "thread.message.created" },
       }),
     ).toBe(beforeEvents + 1);
   });
@@ -302,6 +302,50 @@ describeIntegration("bot-to-bot direct messages", () => {
         },
       }),
     ).toBe(1);
+  });
+
+  it("mirrors the outbound handoff on the sender bot thread", async () => {
+    const cookie = await signup(`bot-dm-watch-${stamp}@rakazo.test`, "Watch Owner");
+    const botA = await createBot(cookie, "Sender");
+    const botB = await createBot(cookie, "Receiver");
+    const me = await rpc<{ userId: string }>(cookie, "me");
+    const run = await seedRunningRun({
+      workspaceId: botA.workspaceId,
+      userId: me.userId,
+      botId: botA.id,
+      threadId: botA.threadId,
+    });
+    const result = await messageBot(
+      {
+        prisma: handles.prisma,
+        events: createThreadEvents(handles.prisma),
+        jobs: handles.jobs,
+      },
+      {
+        id: run.id,
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        userId: run.userId,
+      },
+      { bot_id: botB.id, message: "Ping from Alex" },
+    );
+    expect(result.ok).toBe(true);
+
+    const group = await handles.prisma.chatGroup.findUniqueOrThrow({
+      where: { id: result.groupId },
+      select: { watchThreadId: true },
+    });
+    expect(group.watchThreadId).toBe(botA.threadId);
+
+    const sourceSnap = await rpc<{
+      messages: Array<{ blocks: Array<{ kind?: string; text?: string }> }>;
+    }>(cookie, "threads/get", { botId: botA.id });
+    expect(
+      sourceSnap.messages.some((message) =>
+        message.blocks.some((block) => block.kind === "handoff" && block.text?.includes("Ping")),
+      ),
+    ).toBe(true);
   });
 
   it("rejects self-messages and foreign workspace bots", async () => {
