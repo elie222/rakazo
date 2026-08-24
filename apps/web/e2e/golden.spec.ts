@@ -51,9 +51,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("install the gsc cli and sign in");
   await page.keyboard.press("Enter");
-  await expect(page.getByText(/sign in to continue|protected input/i).first()).toBeVisible({
-    timeout: realSandboxTimeout(90_000, 30_000),
-  });
+  await expect(
+    page.getByText(/handing you the computer|sign in to continue|protected input/i).first(),
+  ).toBeVisible({ timeout: realSandboxTimeout(90_000, 30_000) });
   await expect
     .poll(() => threadRunStatus(page), {
       timeout: realSandboxTimeout(90_000, 30_000),
