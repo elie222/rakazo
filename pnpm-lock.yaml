@@ -667,6 +667,9 @@ importers:
       '@radix-ui/react-slot':
         specifier: ^1.2.3
         version: 1.3.3(@types/react@19.2.18)(react@19.2.3)
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../ui-tokens
@@ -689,6 +692,9 @@ importers:
       '@types/react':
         specifier: ^19.1.12
         version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.1.8
+        version: 19.2.4(@types/react@19.2.18)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3

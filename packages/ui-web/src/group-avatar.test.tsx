@@ -1,4 +1,3 @@
-// @ts-ignore
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GroupAvatar } from "./group-avatar.js";
@@ -10,9 +9,7 @@ describe("GroupAvatar", () => {
   });
 
   it("renders single BotAvatar when 1 member", () => {
-    const html = renderToString(
-      <GroupAvatar members={[{ name: "Harry", color: "#8B5CF6" }]} />,
-    );
+    const html = renderToString(<GroupAvatar members={[{ name: "Harry", color: "#8B5CF6" }]} />);
     expect(html).toContain("rakazo-bot-avatar");
   });
 
@@ -25,8 +22,22 @@ describe("GroupAvatar", () => {
         ]}
       />,
     );
-    const count = (html.match(/rakazo-bot-avatar/g) || []).length;
+    const count = (html.match(/data-working=/g) || []).length;
     expect(count).toBe(2);
+    expect(html).toContain('data-working="false"');
+  });
+
+  it("renders a working member inside a group avatar", () => {
+    const html = renderToString(
+      <GroupAvatar
+        members={[
+          { name: "Sherlock", color: "#8B5CF6", status: "running" },
+          { name: "Elon", color: "#06B6D4", status: "idle" },
+        ]}
+      />,
+    );
+    expect(html).toContain('data-working="true"');
+    expect(html).toContain("rakazo-bot-avatar-ring");
   });
 
   it("renders 3 mini bot avatars for 3 members", () => {
@@ -39,7 +50,7 @@ describe("GroupAvatar", () => {
         ]}
       />,
     );
-    const count = (html.match(/rakazo-bot-avatar/g) || []).length;
+    const count = (html.match(/data-working=/g) || []).length;
     expect(count).toBe(3);
   });
 

@@ -5,8 +5,11 @@ import {
   type Group,
   type GroupMember,
 } from "@rakazo/contracts";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { IsolationError } from "./scope.js";
+
+const activeRunStatuses = [...ACTIVE_RUN_STATUSES];
 
 type GroupRecord = {
   id: string;
@@ -21,7 +24,12 @@ type GroupRecord = {
     messages: Array<{ blocks: unknown }>;
   } | null;
   members: Array<{
-    bot: { id: string; name: string; color: string };
+    bot: {
+      id: string;
+      name: string;
+      color: string;
+      runs: Array<{ status: string }>;
+    };
   }>;
 };
 
@@ -51,6 +59,7 @@ function mapGroup(group: GroupRecord): Group {
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
+      status: member.bot.runs[0]?.status ?? "idle",
     })),
     threadId: group.thread.id,
     preview,
@@ -101,7 +110,21 @@ const groupInclude = {
   },
   members: {
     where: { bot: { archivedAt: null } },
-    include: { bot: { select: { id: true, name: true, color: true } } },
+    include: {
+      bot: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          runs: {
+            where: { status: { in: activeRunStatuses } },
+            orderBy: { createdAt: "desc" as const },
+            take: 1,
+            select: { status: true },
+          },
+        },
+      },
+    },
     orderBy: { createdAt: "asc" as const },
   },
 } as const;

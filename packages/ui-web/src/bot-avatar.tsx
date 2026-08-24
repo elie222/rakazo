@@ -1,49 +1,51 @@
-import { useId } from "react";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { type CSSProperties, memo, useId } from "react";
 import { cn } from "./lib/utils.js";
-
-const ACTIVE_STATUSES = new Set([
-  "queued",
-  "leased",
-  "running",
-  "waiting_input",
-  "waiting_takeover",
-]);
+import "./styles.css";
 
 export interface BotAvatarProps {
   color: string;
   size?: number;
   status?: string;
-  working?: boolean;
   className?: string;
 }
 
-export function BotAvatar({
+export const BotAvatar = memo(function BotAvatar({
   color,
   size = 38,
   status,
-  working,
   className,
 }: BotAvatarProps) {
-  const isWorking =
-    working || (status != null && ACTIVE_STATUSES.has(status));
+  const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(4, Math.round(size * 0.14));
   const eyeH = Math.max(7, Math.round(size * 0.22));
   const eyeRadius = Math.max(2, Math.round(eyeW * 0.5));
-  const eyeGap = Math.max(3, Math.round(size * 0.10));
+  const eyeGap = Math.max(3, Math.round(size * 0.1));
 
-  // Compute a deterministic personality hash per bot color/avatar
   const seed = hashString(color || "#8B5CF6");
   const variant = seed % 4;
   const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
   const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
-  const rawId = useId();
-  const gradId = `spin-grad-${rawId.replace(/[^a-zA-Z0-9-_]/g, "")}`;
+  const gradId = `spin-grad-${useId().replace(/[^a-zA-Z0-9-_]/g, "")}`;
+  const eyeGlow = `0 0 4px #FFFFFF, 0 0 8px #FFFFFF, 0 0 14px ${lightenColor(color, 20)}`;
+  const eyeAnimation = {
+    "--rakazo-eye-animation-name": isWorking
+      ? "rakazo-eyes-working"
+      : `rakazo-eyes-idle-${variant}`,
+    "--rakazo-eye-animation-duration": isWorking ? "1.4s" : `${idleDuration}s`,
+    "--rakazo-eye-animation-easing": isWorking ? "ease-in-out" : "cubic-bezier(0.4, 0, 0.2, 1)",
+    "--rakazo-eye-animation-delay": isWorking ? "0s" : `${idleDelay}s`,
+  } as CSSProperties;
 
   return (
     <div
-      className={cn("rakazo-bot-avatar group relative flex items-center justify-center rounded-full select-none", className)}
+      className={cn(
+        "rakazo-bot-avatar group relative flex items-center justify-center rounded-full select-none",
+        className,
+      )}
+      data-working={isWorking}
       style={{
         width: size,
         height: size,
@@ -54,15 +56,13 @@ export function BotAvatar({
           : `0 2px ${Math.max(4, Math.round(size * 0.15))}px rgba(0,0,0,0.4), inset 0 1px 1.5px rgba(255,255,255,0.4)`,
       }}
     >
-      {/* Vivid Spinning Orbital Ring when working */}
       {isWorking ? (
         <svg
-          className="absolute pointer-events-none"
+          className="rakazo-bot-avatar-ring absolute pointer-events-none"
           style={{
             inset: -4,
             width: size + 8,
             height: size + 8,
-            animation: "rakazo-avatar-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite",
             filter: `drop-shadow(0 0 6px ${color}) drop-shadow(0 0 10px #ffffff)`,
           }}
           viewBox="0 0 48 48"
@@ -88,9 +88,8 @@ export function BotAvatar({
         </svg>
       ) : null}
 
-      {/* Dark glossy visor screen */}
       <div
-        className="relative flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-[1.04]"
+        className="rakazo-bot-avatar-visor relative flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-[1.04]"
         style={{
           width: visorW,
           height: visorH,
@@ -100,49 +99,39 @@ export function BotAvatar({
           border: "1px solid rgba(255,255,255,0.14)",
         }}
       >
-        {/* Subtle glass gloss highlight behind eyes */}
         <div
           className="absolute top-0 inset-x-0 h-[40%] pointer-events-none rounded-t-full"
           style={{
-            background: "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.01) 100%)",
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.01) 100%)",
           }}
         />
 
-        {/* Animated glowing eyes with asynchronous personality movements */}
         <div
-          className="relative z-10 flex items-center justify-center"
+          className="rakazo-bot-avatar-eyes relative z-10 flex items-center justify-center"
           style={{
             gap: eyeGap,
-            animation: isWorking
-              ? "rakazo-eyes-working 1.4s ease-in-out infinite"
-              : `rakazo-eyes-idle-${variant} ${idleDuration}s cubic-bezier(0.4, 0, 0.2, 1) ${idleDelay}s infinite`,
+            ...eyeAnimation,
           }}
         >
-          <span
-            className="block bg-white"
-            style={{
-              width: eyeW,
-              height: eyeH,
-              borderRadius: eyeRadius,
-              backgroundColor: "#FFFFFF",
-              boxShadow: `0 0 4px #FFFFFF, 0 0 8px #FFFFFF, 0 0 14px ${lightenColor(color, 20)}`,
-            }}
-          />
-          <span
-            className="block bg-white"
-            style={{
-              width: eyeW,
-              height: eyeH,
-              borderRadius: eyeRadius,
-              backgroundColor: "#FFFFFF",
-              boxShadow: `0 0 4px #FFFFFF, 0 0 8px #FFFFFF, 0 0 14px ${lightenColor(color, 20)}`,
-            }}
-          />
+          {[0, 1].map((eye) => (
+            <span
+              key={eye}
+              className="block bg-white"
+              style={{
+                width: eyeW,
+                height: eyeH,
+                borderRadius: eyeRadius,
+                backgroundColor: "#FFFFFF",
+                boxShadow: eyeGlow,
+              }}
+            />
+          ))}
         </div>
       </div>
     </div>
   );
-}
+});
 
 function hashString(str: string): number {
   let hash = 0;
@@ -164,7 +153,15 @@ function darkenColor(hex: string, percent: number): string {
 function adjustColor(hex: string, percent: number): string {
   const clean = hex.replace(/^#/, "");
   if (clean.length !== 6 && clean.length !== 3) return hex;
-  const num = parseInt(clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean, 16);
+  const num = parseInt(
+    clean.length === 3
+      ? clean
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : clean,
+    16,
+  );
   if (Number.isNaN(num)) return hex;
   let r = (num >> 16) + Math.round((255 * percent) / 100);
   let g = ((num >> 8) & 0x00ff) + Math.round((255 * percent) / 100);
@@ -174,8 +171,6 @@ function adjustColor(hex: string, percent: number): string {
   b = Math.min(255, Math.max(0, b));
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
-
-import "./styles.css";
 
 export function Wordmark({ className }: { className?: string }) {
   return (

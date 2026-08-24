@@ -1,25 +1,17 @@
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { memo } from "react";
 import { View } from "react-native";
 
-const ACTIVE_STATUSES = new Set([
-  "queued",
-  "leased",
-  "running",
-  "waiting_input",
-  "waiting_takeover",
-]);
-
-export function BotAvatar({
+export const BotAvatar = memo(function BotAvatar({
   color,
   size = 54,
   status,
-  working,
 }: {
   color: string;
   size?: number;
   status?: string;
-  working?: boolean;
 }) {
-  const isWorking = working || (status != null && ACTIVE_STATUSES.has(status));
+  const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(3, Math.round(size * 0.11));
@@ -50,23 +42,18 @@ export function BotAvatar({
           gap,
         }}
       >
-        <View
-          style={{
-            width: eyeW,
-            height: eyeH,
-            borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-            backgroundColor: "#fff",
-          }}
-        />
-        <View
-          style={{
-            width: eyeW,
-            height: eyeH,
-            borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-            backgroundColor: "#fff",
-          }}
-        />
+        {[0, 1].map((eye) => (
+          <View
+            key={eye}
+            style={{
+              width: eyeW,
+              height: eyeH,
+              borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
+              backgroundColor: "#fff",
+            }}
+          />
+        ))}
       </View>
     </View>
   );
-}
+});

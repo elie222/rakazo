@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",

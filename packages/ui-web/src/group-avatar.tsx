@@ -1,3 +1,4 @@
+import { type CSSProperties, memo } from "react";
 import { BotAvatar } from "./bot-avatar.js";
 import { cn } from "./lib/utils.js";
 
@@ -14,21 +15,23 @@ export interface GroupAvatarProps {
   className?: string;
 }
 
-export function GroupAvatar({
+export const GroupAvatar = memo(function GroupAvatar({
   members,
   size = 38,
   className,
 }: GroupAvatarProps) {
-  if (!members || members.length === 0) {
+  const firstMember = members[0];
+  if (!firstMember) {
     return (
       <div
         className={cn(
-          "relative flex items-center justify-center rounded-full bg-[#1A1A1E] text-[#9A9AA2] border border-[#2A2A32]",
+          "rakazo-group-avatar relative flex items-center justify-center rounded-full border border-[#2A2A32] bg-[#1A1A1E] text-[#9A9AA2]",
           className,
         )}
         style={{ width: size, height: size, flex: "none" }}
       >
         <svg
+          aria-hidden="true"
           width={Math.round(size * 0.48)}
           height={Math.round(size * 0.48)}
           viewBox="0 0 24 24"
@@ -50,128 +53,58 @@ export function GroupAvatar({
   if (members.length === 1) {
     return (
       <BotAvatar
-        color={members[0]!.color}
+        color={firstMember.color}
         size={size}
-        status={members[0]!.status}
-        className={className}
+        status={firstMember.status}
+        className={cn("rakazo-group-avatar", className)}
       />
     );
   }
 
-  // 2 Bots layout: Diagonal overlapping mini bot avatars
-  if (members.length === 2) {
-    const miniSize = Math.round(size * 0.65);
-    return (
-      <div
-        className={cn("relative rounded-full select-none", className)}
-        style={{ width: size, height: size, flex: "none" }}
-      >
-        {/* Top-Left Avatar */}
-        <div
-          className="absolute z-10 rounded-full"
-          style={{
-            top: 0,
-            left: 0,
-            boxShadow: "0 0 0 1.5px #121215",
-          }}
-        >
-          <BotAvatar
-            color={members[0]!.color}
-            size={miniSize}
-            status={members[0]!.status}
-          />
-        </div>
-
-        {/* Bottom-Right Avatar */}
-        <div
-          className="absolute z-20 rounded-full"
-          style={{
-            bottom: 0,
-            right: 0,
-            boxShadow: "0 0 0 1.5px #121215",
-          }}
-        >
-          <BotAvatar
-            color={members[1]!.color}
-            size={miniSize}
-            status={members[1]!.status}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // 3+ Bots layout: 3-way mini avatar cluster
-  const miniSize = Math.round(size * 0.54);
-  const extraCount = members.length - 2;
+  const pair = members.length === 2;
+  const miniSize = Math.round(size * (pair ? 0.65 : 0.54));
+  const positions: CSSProperties[] = pair
+    ? [
+        { top: 0, left: 0 },
+        { right: 0, bottom: 0 },
+      ]
+    : [
+        { top: 0, left: (size - miniSize) / 2 },
+        { bottom: 0, left: 0 },
+        { right: 0, bottom: 0 },
+      ];
+  const visibleMembers = members.slice(0, pair || members.length === 3 ? members.length : 2);
 
   return (
     <div
-      className={cn("relative rounded-full select-none", className)}
+      className={cn("rakazo-group-avatar relative rounded-full select-none", className)}
       style={{ width: size, height: size, flex: "none" }}
     >
-      {/* Top Center Avatar */}
-      <div
-        className="absolute z-10 rounded-full -translate-x-1/2"
-        style={{
-          top: 0,
-          left: "50%",
-          boxShadow: "0 0 0 1.5px #121215",
-        }}
-      >
-        <BotAvatar
-          color={members[0]!.color}
-          size={miniSize}
-          status={members[0]!.status}
-        />
-      </div>
-
-      {/* Bottom Left Avatar */}
-      <div
-        className="absolute z-20 rounded-full"
-        style={{
-          bottom: 0,
-          left: 0,
-          boxShadow: "0 0 0 1.5px #121215",
-        }}
-      >
-        <BotAvatar
-          color={members[1]!.color}
-          size={miniSize}
-          status={members[1]!.status}
-        />
-      </div>
-
-      {/* Bottom Right Avatar or +N overflow badge */}
-      {members.length === 3 ? (
+      {visibleMembers.map((member, index) => (
         <div
-          className="absolute z-30 rounded-full"
+          key={member.botId ?? index}
+          className="absolute rounded-full"
           style={{
-            bottom: 0,
-            right: 0,
+            ...positions[index],
+            zIndex: index + 1,
             boxShadow: "0 0 0 1.5px #121215",
           }}
         >
-          <BotAvatar
-            color={members[2]!.color}
-            size={miniSize}
-            status={members[2]!.status}
-          />
+          <BotAvatar color={member.color} size={miniSize} status={member.status} />
         </div>
-      ) : (
+      ))}
+      {members.length > 3 ? (
         <div
-          className="absolute z-30 flex items-center justify-center rounded-full bg-[#202026] text-[#E0E0E6] font-semibold text-[10px]"
+          className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-[#202026] text-[10px] font-semibold text-[#E0E0E6]"
           style={{
-            bottom: 0,
-            right: 0,
             width: miniSize,
             height: miniSize,
             boxShadow: "0 0 0 1.5px #121215",
           }}
         >
-          {`+${extraCount}`}
+          {`+${members.length - 2}`}
         </div>
-      )}
+      ) : null}
     </div>
   );
-}
+});

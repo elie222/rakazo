@@ -57,6 +57,41 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(page).toHaveURL(groupUrl);
   await expect(page.getByPlaceholder("Message Draft team")).toBeVisible();
 
+  const groups = await rpc<
+    Array<{
+      id: string;
+      members: Array<{ botId: string; name: string; color: string; status?: string }>;
+    }>
+  >(page, "groups/list", {});
+  await page.route("**/rpc/groups/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: groups.map((group) => ({
+          ...group,
+          members: group.members.map((member, index) => ({
+            ...member,
+            status: index === 0 ? "running" : "idle",
+          })),
+        })),
+      }),
+    });
+  });
+  await page.reload();
+  const groupAvatar = page
+    .locator("aside")
+    .first()
+    .getByRole("button", { name: /Draft team/ })
+    .locator(".rakazo-group-avatar");
+  await expect(groupAvatar).toBeVisible();
+  await expect(groupAvatar.locator(".rakazo-bot-avatar")).toHaveCount(2);
+  const workingAvatar = groupAvatar.locator('[data-working="true"]');
+  await expect(workingAvatar).toHaveCount(1);
+  await expect(workingAvatar.locator("svg")).toHaveCSS("animation-name", "rakazo-avatar-spin");
+  await captureScreenshot(page, testInfo, "group-avatar-active");
+  await page.unroute("**/rpc/groups/list");
+  await page.reload();
+
   await page.getByTestId("bot-settings-trigger").click();
   const desktopSettings = page.getByTestId("side-panel");
   const groupName = desktopSettings.locator("label:has-text('Name') input");

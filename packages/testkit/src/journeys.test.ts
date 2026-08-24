@@ -1505,6 +1505,14 @@ describeJourneys("required product journeys", () => {
       const run = await prisma.run.findUnique({ where: { id: groupAsk.runId } });
       return run?.status === "waiting_input";
     });
+    const groupsWithActiveMember = await rpc<
+      Array<{ id: string; members: Array<{ botId: string; status?: string }> }>
+    >(app, ada, "groups/list");
+    expect(
+      groupsWithActiveMember
+        .find((listedGroup) => listedGroup.id === group.id)
+        ?.members.find((member) => member.botId === botD.id)?.status,
+    ).toBe("waiting_input");
     const concurrentTask = await prisma.task.create({
       data: {
         workspaceId: botA.workspaceId,

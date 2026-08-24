@@ -15,8 +15,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
-import { GroupAvatar } from "../components/group-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
+import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import {
   loadSessionToken,

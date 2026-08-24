@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { memo } from "react";
+import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { BotAvatar } from "./bot-avatar";
 
 export interface GroupAvatarMember {
@@ -8,14 +9,15 @@ export interface GroupAvatarMember {
   status?: string;
 }
 
-export function GroupAvatar({
+export const GroupAvatar = memo(function GroupAvatar({
   members,
   size = 54,
 }: {
   members: GroupAvatarMember[];
   size?: number;
 }) {
-  if (!members || members.length === 0) {
+  const firstMember = members[0];
+  if (!firstMember) {
     return (
       <View
         style={[
@@ -33,120 +35,46 @@ export function GroupAvatar({
   }
 
   if (members.length === 1) {
-    return (
-      <BotAvatar
-        color={members[0]!.color}
-        size={size}
-        status={members[0]!.status}
-      />
-    );
+    return <BotAvatar color={firstMember.color} size={size} status={firstMember.status} />;
   }
 
-  if (members.length === 2) {
-    const miniSize = Math.round(size * 0.65);
-    return (
-      <View style={{ width: size, height: size, position: "relative" }}>
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            zIndex: 1,
-            borderRadius: miniSize / 2,
-            borderWidth: 1.5,
-            borderColor: "#121215",
-          }}
-        >
-          <BotAvatar
-            color={members[0]!.color}
-            size={miniSize}
-            status={members[0]!.status}
-          />
-        </View>
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            right: 0,
-            zIndex: 2,
-            borderRadius: miniSize / 2,
-            borderWidth: 1.5,
-            borderColor: "#121215",
-          }}
-        >
-          <BotAvatar
-            color={members[1]!.color}
-            size={miniSize}
-            status={members[1]!.status}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  const miniSize = Math.round(size * 0.54);
-  const extraCount = members.length - 2;
+  const pair = members.length === 2;
+  const miniSize = Math.round(size * (pair ? 0.65 : 0.54));
+  const positions: ViewStyle[] = pair
+    ? [
+        { top: 0, left: 0 },
+        { right: 0, bottom: 0 },
+      ]
+    : [
+        { top: 0, left: (size - miniSize) / 2 },
+        { bottom: 0, left: 0 },
+        { right: 0, bottom: 0 },
+      ];
+  const visibleMembers = members.slice(0, pair || members.length === 3 ? members.length : 2);
 
   return (
     <View style={{ width: size, height: size, position: "relative" }}>
-      <View
-        style={{
-          position: "absolute",
-          top: 0,
-          left: (size - miniSize) / 2,
-          zIndex: 1,
-          borderRadius: miniSize / 2,
-          borderWidth: 1.5,
-          borderColor: "#121215",
-        }}
-      >
-        <BotAvatar
-          color={members[0]!.color}
-          size={miniSize}
-          status={members[0]!.status}
-        />
-      </View>
-      <View
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          zIndex: 2,
-          borderRadius: miniSize / 2,
-          borderWidth: 1.5,
-          borderColor: "#121215",
-        }}
-      >
-        <BotAvatar
-          color={members[1]!.color}
-          size={miniSize}
-          status={members[1]!.status}
-        />
-      </View>
-      {members.length === 3 ? (
+      {visibleMembers.map((member, index) => (
         <View
+          key={member.botId ?? index}
           style={{
             position: "absolute",
-            bottom: 0,
-            right: 0,
-            zIndex: 3,
+            ...positions[index],
+            zIndex: index + 1,
             borderRadius: miniSize / 2,
             borderWidth: 1.5,
             borderColor: "#121215",
           }}
         >
-          <BotAvatar
-            color={members[2]!.color}
-            size={miniSize}
-            status={members[2]!.status}
-          />
+          <BotAvatar color={member.color} size={miniSize} status={member.status} />
         </View>
-      ) : (
+      ))}
+      {members.length > 3 ? (
         <View
           style={{
             position: "absolute",
-            bottom: 0,
             right: 0,
+            bottom: 0,
             zIndex: 3,
             width: miniSize,
             height: miniSize,
@@ -159,13 +87,13 @@ export function GroupAvatar({
           }}
         >
           <Text style={{ color: "#E0E0E6", fontSize: 10, fontWeight: "600" }}>
-            +{extraCount}
+            +{members.length - 2}
           </Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   fallback: {
