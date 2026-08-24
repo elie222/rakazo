@@ -49,9 +49,9 @@ export function PluginsOverlay({
 
   async function refresh() {
     const [items, installs, servers] = await Promise.all([
-      rpc.connections.catalog({}),
-      rpc.capabilities.list(),
-      rpc.mcp.servers.list().catch(() => [] as McpServer[]),
+      rpc.connections.catalog({}).catch(() => [] as ConnectionCatalogItem[]),
+      rpc.capabilities.list().catch(() => [] as CapabilityInstall[]),
+      rpc.mcp.servers.list(),
     ]);
     setCatalog(items);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
@@ -427,9 +427,6 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              {sources.length === 0 && mcpServers.length === 0 && !sourceKind ? (
-                <p className="text-[#6C6C70]">No MCP or API tool sources installed yet.</p>
-              ) : null}
               {sources.map((source) => (
                 <div key={source.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
                   <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
