@@ -61,8 +61,9 @@ export async function queryWorkspaceSearch(
     },
     take: SEARCH_LIMIT,
   });
+  const groupConversationHits: SearchHit[] = [];
   for (const group of groups) {
-    push({
+    groupConversationHits.push({
       kind: "conversation",
       groupId: group.id,
       groupName: group.name,
@@ -235,6 +236,10 @@ export async function queryWorkspaceSearch(
       query,
       push,
     });
+  }
+
+  for (const hit of groupConversationHits) {
+    push(hit);
   }
 
   return hits.slice(0, SEARCH_LIMIT);

@@ -386,7 +386,7 @@ export function ShellPage() {
     setComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
-    if (!keepPin && stickToEnd) {
+    if (!keepPin && stickToEnd && expandedHistoryThread.current !== snap.threadId) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -430,7 +430,7 @@ export function ShellPage() {
     setRoutinesBotId(id);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
-    if (!keepPin && stickToEnd) {
+    if (!keepPin && stickToEnd && expandedHistoryThread.current !== snap.threadId) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -737,7 +737,9 @@ export function ShellPage() {
     const pendingJump = searchParams.get("m");
     if (!pendingJump) {
       pinnedAroundRef.current = null;
+      expandedHistoryThread.current = null;
     }
+    historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       const snap = pendingJump
@@ -838,6 +840,8 @@ export function ShellPage() {
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
     // the fetched page would pin deleted messages that every later refresh keeps restoring.
     if (epoch !== historyEpoch.current) return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       ...threadTarget,
@@ -872,6 +876,7 @@ export function ShellPage() {
     const routineId = searchParams.get("routine");
     if (inGroup && groupId && messageId) {
       void jumpToMessage({ groupId, messageId }).finally(() => {
+        pinnedAroundRef.current = null;
         const next = new URLSearchParams(searchParams);
         next.delete("m");
         setSearchParams(next, { replace: true });
@@ -897,6 +902,7 @@ export function ShellPage() {
     }
     if (messageId) {
       void jumpToMessage({ botId: active.id, messageId }).finally(() => {
+        pinnedAroundRef.current = null;
         const next = new URLSearchParams(searchParams);
         next.delete("m");
         setSearchParams(next, { replace: true });

@@ -250,6 +250,10 @@ export default function Thread() {
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
     // the fetched page would pin deleted messages that every later refresh keeps restoring.
     if (epoch !== historyEpoch.current) return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
     expandedHistoryThread.current = page.threadId;
     pinnedAroundRef.current = {
       ...threadTarget,
@@ -333,13 +337,12 @@ export default function Thread() {
     const abort = new AbortController();
     void (async () => {
       const next = messageId
-        ? await rpc<MobileSnapshot>(
-            "threads/get",
-            groupId ? { groupId } : { botId: botId! },
-          ).catch((err: Error) => {
-            setError(err.message);
-            return null;
-          })
+        ? await rpc<MobileSnapshot>("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
+            (err: Error) => {
+              setError(err.message);
+              return null;
+            },
+          )
         : await refresh().catch((err: Error) => {
             setError(err.message);
             return null;
@@ -398,11 +401,13 @@ export default function Thread() {
 
   useEffect(() => {
     if ((!botId && !groupId) || !messageId) return;
-    void applyMessageJump(
-      groupId ? { groupId, messageId } : { botId: botId!, messageId },
-    ).catch((err) => {
-      setError(err instanceof Error ? err.message : "Could not open message");
-    });
+    void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId })
+      .then(() => {
+        pinnedAroundRef.current = null;
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Could not open message");
+      });
   }, [botId, groupId, messageId]);
 
   useEffect(() => {
@@ -558,8 +563,7 @@ export default function Thread() {
             jumpScrollTarget.current ||
             (pinnedAroundRef.current &&
               ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                (pinnedAroundRef.current.groupId &&
-                  pinnedAroundRef.current.groupId === groupId)))
+                (pinnedAroundRef.current.groupId && pinnedAroundRef.current.groupId === groupId)))
           )
             return;
           scroll.current?.scrollToEnd({ animated: false });

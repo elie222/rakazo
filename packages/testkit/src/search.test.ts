@@ -132,9 +132,9 @@ describeSearch("workspace search", () => {
     const squadHits = await rpc<{
       hits: Array<{ kind: string; groupId?: string; botId?: string }>;
     }>(app, cookie, "search/query", { q: "Squad" });
-    expect(squadHits.hits.some((hit) => hit.kind === "conversation" && hit.groupId === group.id)).toBe(
-      true,
-    );
+    expect(
+      squadHits.hits.some((hit) => hit.kind === "conversation" && hit.groupId === group.id),
+    ).toBe(true);
 
     const messageHits = await rpc<{
       hits: Array<{ kind: string; groupId?: string; botId?: string; messageId?: string }>;

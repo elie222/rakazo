@@ -28,4 +28,9 @@ describe("search helpers", () => {
     expect(searchHitThreadTarget({ groupId: "group-1" })).toEqual({ groupId: "group-1" });
     expect(searchHitThreadTarget({ botId: "bot-1" })).toEqual({ botId: "bot-1" });
   });
+
+  it("rejects ambiguous search hit targets", () => {
+    expect(() => searchHitThreadTarget({})).toThrow();
+    expect(() => searchHitThreadTarget({ botId: "bot-1", groupId: "group-1" })).toThrow();
+  });
 });

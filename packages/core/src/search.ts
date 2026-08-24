@@ -35,7 +35,8 @@ export function searchHitThreadTarget(hit: {
   botId?: string;
   groupId?: string;
 }): SearchThreadTarget {
-  if (hit.groupId) return { groupId: hit.groupId };
-  if (hit.botId) return { botId: hit.botId };
-  throw new Error("Search hit must target a bot or group");
+  if (Boolean(hit.botId) === Boolean(hit.groupId)) {
+    throw new Error("Search hit must target exactly one of a bot or group");
+  }
+  return hit.groupId ? { groupId: hit.groupId } : { botId: hit.botId! };
 }
