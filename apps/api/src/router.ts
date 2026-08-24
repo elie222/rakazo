@@ -493,6 +493,8 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -542,6 +544,8 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1916,18 +1920,13 @@ export function createRouter(deps: RouterDeps) {
               });
               if (existing.secretId)
                 await tx.secret.deleteMany({
-                  where: {
-                    id: existing.secretId,
-                    workspaceId: context.actor.workspaceId,
-                    userId: context.actor.userId,
-                  },
+                  where: { id: existing.secretId, workspaceId: context.actor.workspaceId },
                 });
             } else if (clearing && existing.secretId) {
               await tx.secret.deleteMany({
                 where: {
                   id: existing.secretId,
                   workspaceId: context.actor.workspaceId,
-                  userId: context.actor.userId,
                 },
               });
             }
@@ -1949,15 +1948,7 @@ export function createRouter(deps: RouterDeps) {
           await deps.prisma.$transaction([
             deps.prisma.mcpServer.delete({ where: { id: server.id } }),
             ...(server.secretId
-              ? [
-                  deps.prisma.secret.deleteMany({
-                    where: {
-                      id: server.secretId,
-                      workspaceId: context.actor.workspaceId,
-                      userId: context.actor.userId,
-                    },
-                  }),
-                ]
+              ? [deps.prisma.secret.delete({ where: { id: server.secretId } })]
               : []),
           ]);
           return { ok: true as const };
@@ -2085,8 +2076,7 @@ export function createRouter(deps: RouterDeps) {
       oauth: {
         begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
-            const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
-            if (new URL(input.redirectUri).toString() !== expectedRedirect) {
+            if (!isAllowedMcpOauthRedirect(input.redirectUri, deps.env.webOrigin, deps.env.trustedOrigins)) {
               throw new Error("MCP OAuth redirect URI is not allowed");
             }
             return await mcpOAuth.begin({
@@ -2100,12 +2090,16 @@ export function createRouter(deps: RouterDeps) {
             });
           }
         }),
-        complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
+        complete: os.mcp.oauth.complete.handler(async ({ input }) => {
           try {
+            const session = await deps.prisma.mcpOAuthSession.findFirst({
+              where: { id: input.sessionId },
+            });
+            if (!session) throw new Error("MCP OAuth session is invalid or expired");
             await mcpOAuth.complete({
               ...input,
-              workspaceId: context.actor.workspaceId,
-              userId: context.actor.userId,
+              workspaceId: session.workspaceId,
+              userId: session.userId,
             });
             return { ok: true as const };
           } catch (error) {
@@ -2955,4 +2949,34 @@ function withViewOnly(url: string, viewOnly: boolean) {
 
 function duplicateBotName(name: string) {
   return `${name.slice(0, 75)} copy`;
+}
+
+/** Some MCP OAuth providers reject non-localhost HTTP redirects. Allow the app origin,
+ * loopback, and extra origins from TRUSTED_ORIGINS. */
+function isAllowedMcpOauthRedirect(
+  redirectUri: string,
+  webOrigin: string,
+  extraOrigins: string[] = [],
+) {
+  try {
+    const url = new URL(redirectUri);
+    if (url.pathname !== "/mcp/oauth/callback") return false;
+    if (url.protocol === "http:") {
+      return url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    }
+    const allowed = new Set(
+      [webOrigin, ...extraOrigins]
+        .map((origin) => {
+          try {
+            return new URL("/mcp/oauth/callback", origin).toString();
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean),
+    );
+    return allowed.has(url.toString());
+  } catch {
+    return false;
+  }
 }
