@@ -116,10 +116,13 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
+  const activityLabel = run.groupName
+    ? `${label} activity run in ${run.groupName}`
+    : `${label} activity run`;
   return (
     <button
       type="button"
-      aria-label={`Activity for ${title}, ${label}`}
+      aria-label={activityLabel}
       onClick={onOpen}
       className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-[#131315]"
     >

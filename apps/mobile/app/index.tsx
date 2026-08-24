@@ -376,10 +376,13 @@ function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => voi
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const status = activityStatusLabel(run.status);
   const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
+  const activityLabel = run.groupName
+    ? `${status} activity run in ${run.groupName}`
+    : `${status} activity run`;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Activity for ${title}, ${status}`}
+      accessibilityLabel={activityLabel}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
