@@ -1093,6 +1093,19 @@ export function ShellPage() {
       setSending(true);
       setSendError(null);
       try {
+        if (routineMentions.length) {
+          await Promise.all(
+            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
+          );
+          setReplyTarget(null);
+          setPendingAttachments((current) =>
+            current.filter((attachment) => attachment.threadKey !== originThreadKey),
+          );
+          if (botTarget && activeBotId.current === botTarget) {
+            await refreshThreadRef.current(botTarget);
+          }
+          return;
+        }
         const artifactIds: string[] = [];
         for (const pending of attachments) {
           const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
@@ -1126,11 +1139,6 @@ export function ShellPage() {
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
-        }
-        if (routineMentions.length) {
-          await Promise.all(
-            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
-          );
         }
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);

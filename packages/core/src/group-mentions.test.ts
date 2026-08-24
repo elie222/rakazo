@@ -40,11 +40,19 @@ describe("mentionInsertToken", () => {
 });
 
 describe("filterSelectedMentionsByText", () => {
-  it("binds visible tokens to selected mentions in left-to-right order", () => {
+  it("binds picker-selected mentions by full name, including spaces", () => {
+    const group = { kind: "group", id: "g1", name: "Draft team" };
+    const routine = { kind: "routine", id: "r1", name: "Daily digest" };
+    expect(filterSelectedMentionsByText("@Draft team sync up", [group])).toEqual([group]);
+    expect(filterSelectedMentionsByText("@Daily digest check inbox", [routine])).toEqual([routine]);
+    expect(filterSelectedMentionsByText("sync up", [group])).toEqual([]);
+  });
+
+  it("keeps disambiguated duplicate names when each token is visible", () => {
     const first = { kind: "routine", id: "r1", name: "Daily" };
-    const second = { kind: "routine", id: "r2", name: "Daily-c456" };
+    const second = { kind: "routine", id: "r2", name: "Daily-f456" };
     expect(filterSelectedMentionsByText("@Daily check inbox", [first, second])).toEqual([first]);
-    expect(filterSelectedMentionsByText("@Daily @Daily-c456 check inbox", [first, second])).toEqual(
+    expect(filterSelectedMentionsByText("@Daily @Daily-f456 check inbox", [first, second])).toEqual(
       [first, second],
     );
     expect(filterSelectedMentionsByText("check inbox", [first, second])).toEqual([]);

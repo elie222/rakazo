@@ -522,6 +522,23 @@ export default function Thread() {
     setSending(true);
     setError(null);
     try {
+      if (routineMentions.length) {
+        await Promise.all(
+          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
+        );
+        setPendingAttachments((current) =>
+          current.filter((attachment) => attachment.threadKey !== threadKey),
+        );
+        if (isCurrentTarget(currentBotId, currentGroupId)) {
+          setDraft("");
+          setMentionQuery(null);
+          setSelectedMentions([]);
+          setReplyTarget(null);
+          setAttachmentNotice(null);
+          await refresh();
+        }
+        return;
+      }
       const artifactIds: string[] = [];
       for (const pending of attachments) {
         const artifact = await rpc<{ id: string }>("artifacts/create", {
@@ -555,15 +572,15 @@ export default function Thread() {
               },
         );
       }
-      if (routineMentions.length) {
-        await Promise.all(
-          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
-        );
-      }
       setPendingAttachments((current) =>
         current.filter((attachment) => attachment.threadKey !== threadKey),
       );
       if (reroutedToGroup && targetGroupId && mentionedGroup) {
+        setDraft("");
+        setMentionQuery(null);
+        setSelectedMentions([]);
+        setReplyTarget(null);
+        setAttachmentNotice(null);
         router.push({
           pathname: "/group-thread",
           params: { groupId: targetGroupId, name: mentionedGroup.name },

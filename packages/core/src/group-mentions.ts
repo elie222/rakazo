@@ -46,17 +46,7 @@ export function filterSelectedMentionsByText<T extends { name: string }>(
   text: string,
   mentions: readonly T[],
 ): T[] {
-  const remaining = [...mentions];
-  const matched: T[] = [];
-  for (const match of text.matchAll(MENTION_PATTERN)) {
-    const tokenName = match[1]?.toLowerCase();
-    if (!tokenName) continue;
-    const index = remaining.findIndex((mention) => mention.name.trim().toLowerCase() === tokenName);
-    if (index < 0) continue;
-    matched.push(remaining[index]!);
-    remaining.splice(index, 1);
-  }
-  return matched;
+  return mentions.filter((mention) => hasMentionToken(text, mention.name));
 }
 
 export function stripMentionToken(text: string, mentionName: string): string {

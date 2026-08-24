@@ -94,6 +94,75 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(run.task.prompt).toContain("Use these connectors if relevant: Gmail");
   });
 
+  it("delivers a send to a group whose picker name contains a space", async () => {
+    const cookie = await signup(app, `mention-space-group-${stamp}@rakazo.test`, "Space Group");
+    const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "BotA",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botB = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "BotB",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
+      name: "Draft team",
+      botIds: [botA.id, botB.id],
+    });
+    const messageText = "picker-selected Draft team target";
+    await rpc(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: messageText,
+      mentions: [{ kind: "group", id: group.id }],
+    });
+    const groupSnap = await rpc<{
+      messages: Array<{ blocks: Array<{ kind: string; text?: string }> }>;
+    }>(app, cookie, "threads/get", { groupId: group.id });
+    expect(
+      groupSnap.messages.some((message) =>
+        message.blocks.some((block) => block.kind === "text" && block.text?.includes(messageText)),
+      ),
+    ).toBe(true);
+  });
+
+  it("starts only a routine run for a space-named routine mention", async () => {
+    const cookie = await signup(app, `mention-space-routine-${stamp}@rakazo.test`, "Space Routine");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Daily digest",
+      prompt: "Summarize inbox",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const userRunsBefore = await prisma.run.count({
+      where: { botId: bot.id, trigger: "user" },
+    });
+    const routineRunsBefore = await prisma.run.count({
+      where: { botId: bot.id, trigger: "routine" },
+    });
+    await rpc<{ runId: string }>(app, cookie, "routines/testRun", { routineId: routine.id });
+    expect(await prisma.run.count({ where: { botId: bot.id, trigger: "user" } })).toBe(
+      userRunsBefore,
+    );
+    expect(await prisma.run.count({ where: { botId: bot.id, trigger: "routine" } })).toBe(
+      routineRunsBefore + 1,
+    );
+  });
+
   it("lands a group-targeted send in the group transcript, not the 1:1 bot thread", async () => {
     const cookie = await signup(app, `mention-group-${stamp}@rakazo.test`, "Group Owner");
     const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
