@@ -27,25 +27,49 @@ export function parseMentionNames(text: string): string[] {
   return [...names];
 }
 
+export function mentionInsertToken(
+  name: string,
+  id: string,
+  selected: ReadonlyArray<{ name: string; id: string }>,
+): string {
+  const normalized = name.trim();
+  if (!normalized) return normalized;
+  const lower = normalized.toLowerCase();
+  const collision = selected.some(
+    (mention) => mention.name.trim().toLowerCase() === lower && mention.id !== id,
+  );
+  if (!collision) return normalized;
+  return `${normalized}-${id.slice(-4)}`;
+}
+
 export function filterSelectedMentionsByText<T extends { name: string }>(
   text: string,
   mentions: readonly T[],
 ): T[] {
-  const counts = new Map<string, number>();
+  const remaining = [...mentions];
+  const matched: T[] = [];
   for (const match of text.matchAll(MENTION_PATTERN)) {
-    const name = match[1]?.toLowerCase();
-    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    const tokenName = match[1]?.toLowerCase();
+    if (!tokenName) continue;
+    const index = remaining.findIndex((mention) => mention.name.trim().toLowerCase() === tokenName);
+    if (index < 0) continue;
+    matched.push(remaining[index]!);
+    remaining.splice(index, 1);
   }
-  const used = new Map<string, number>();
-  return mentions.filter((mention) => {
-    const key = mention.name.trim().toLowerCase();
-    if (!key) return false;
-    const allowed = counts.get(key) ?? 0;
-    const taken = used.get(key) ?? 0;
-    if (taken >= allowed) return false;
-    used.set(key, taken + 1);
-    return true;
-  });
+  return matched;
+}
+
+export function stripMentionToken(text: string, mentionName: string): string {
+  const normalized = mentionName.trim();
+  if (!normalized) return text.trim();
+  const pattern = new RegExp(
+    `(^|[^\\p{L}\\p{N}_-])@${escapeRegExp(normalized)}(?![\\p{L}\\p{N}_-])`,
+    "giu",
+  );
+  return text
+    .replace(pattern, (_match, prefix: string) => prefix ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function resolveGroupTargetBotIds(input: {

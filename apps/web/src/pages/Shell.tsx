@@ -40,8 +40,10 @@ import {
   isActive,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
+  mentionInsertToken,
   presetFromCron,
   speechFromBlocks,
+  stripMentionToken,
 } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import {
@@ -166,15 +168,6 @@ type MentionTarget = { kind: "bot" | "group" | "routine" | "connection"; id: str
 type MentionOption = MentionTarget & { key: string };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripMentionToken(text: string, mentionName: string): string {
-  const pattern = new RegExp(`(?:^|\\s)@${escapeRegExp(mentionName)}(?=$|\\s|[.,!?;:])`, "gi");
-  return text.replace(pattern, " ").replace(/\s+/g, " ").trim();
-}
 
 export function ShellPage() {
   const { botId, groupId } = useParams();
@@ -343,7 +336,7 @@ export function ShellPage() {
         rpc.botSections.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         rpc.groups.list(),
-        rpc.connections.list(),
+        rpc.connections.list().catch(() => [] as Connection[]),
       ]);
       markOnce("rk:renderer:bots-response");
       setBots(list);
@@ -517,7 +510,11 @@ export function ShellPage() {
           setMemoryProviderConfig(null);
         }
       });
-    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list(), rpc.connections.list()])
+    void Promise.all([
+      takeInitialBootstrap(botId),
+      rpc.groups.list(),
+      rpc.connections.list().catch(() => [] as Connection[]),
+    ])
       .then(([bootstrap, groupList, connectionList]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
@@ -554,7 +551,7 @@ export function ShellPage() {
       .catch(() => {
         if (cancelled) return;
         setBootstrapMe(null);
-        void refreshBots(true);
+        void refreshBots(true).catch(() => undefined);
       });
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
@@ -1110,11 +1107,6 @@ export function ShellPage() {
           );
           artifactIds.push(artifact.id);
         }
-        if (routineMentions.length) {
-          await Promise.all(
-            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
-          );
-        }
         const mentionPayload = mentions?.map((mention) =>
           mention.kind === "bot" ? mention.id : { kind: mention.kind, id: mention.id },
         );
@@ -1134,6 +1126,11 @@ export function ShellPage() {
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
+        }
+        if (routineMentions.length) {
+          await Promise.all(
+            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
+          );
         }
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);
@@ -2612,12 +2609,13 @@ const Composer = memo(function Composer({
   }
 
   function insertMention(mention: MentionOption) {
-    setDraft((current) => current.replace(/@([\w-]*)$/, `@${mention.name} `));
+    const token = mentionInsertToken(mention.name, mention.id, selectedMentions);
+    setDraft((current) => current.replace(/@([\w-]*)$/, `@${token} `));
     if (!(mention.kind === "bot" && mention.id === "everyone")) {
       setSelectedMentions((current) =>
         current.some((selected) => selected.kind === mention.kind && selected.id === mention.id)
           ? current
-          : [...current, { kind: mention.kind, id: mention.id, name: mention.name }],
+          : [...current, { kind: mention.kind, id: mention.id, name: token }],
       );
     }
     setMentionQuery(null);

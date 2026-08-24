@@ -4,7 +4,9 @@ import {
   hasMentionToken,
   inferHandoffTargetBotId,
   inferHandoffTargetName,
+  mentionInsertToken,
   resolveGroupTargetBotIds,
+  stripMentionToken,
 } from "./group-mentions.js";
 
 const members = [
@@ -28,15 +30,32 @@ describe("hasMentionToken", () => {
   });
 });
 
+describe("mentionInsertToken", () => {
+  it("disambiguates duplicate visible names", () => {
+    expect(mentionInsertToken("Daily", "routine-abc123", [])).toBe("Daily");
+    expect(
+      mentionInsertToken("Daily", "routine-def456", [{ name: "Daily", id: "routine-abc123" }]),
+    ).toBe("Daily-f456");
+  });
+});
+
 describe("filterSelectedMentionsByText", () => {
-  it("keeps only as many same-named mentions as appear in text", () => {
-    const mentions = [
-      { kind: "routine", id: "r1", name: "Daily" },
-      { kind: "routine", id: "r2", name: "Daily" },
-    ];
-    expect(filterSelectedMentionsByText("@Daily check inbox", mentions)).toEqual([mentions[0]]);
-    expect(filterSelectedMentionsByText("@Daily @Daily check inbox", mentions)).toEqual(mentions);
-    expect(filterSelectedMentionsByText("check inbox", mentions)).toEqual([]);
+  it("binds visible tokens to selected mentions in left-to-right order", () => {
+    const first = { kind: "routine", id: "r1", name: "Daily" };
+    const second = { kind: "routine", id: "r2", name: "Daily-c456" };
+    expect(filterSelectedMentionsByText("@Daily check inbox", [first, second])).toEqual([first]);
+    expect(filterSelectedMentionsByText("@Daily @Daily-c456 check inbox", [first, second])).toEqual(
+      [first, second],
+    );
+    expect(filterSelectedMentionsByText("check inbox", [first, second])).toEqual([]);
+  });
+});
+
+describe("stripMentionToken", () => {
+  it("uses the same boundaries as hasMentionToken", () => {
+    expect(stripMentionToken("(check @Gmail) now", "Gmail")).toBe("(check ) now");
+    expect(hasMentionToken("(check @Gmail) now", "Gmail")).toBe(true);
+    expect(hasMentionToken("name@Gmail", "Gmail")).toBe(false);
   });
 });
 

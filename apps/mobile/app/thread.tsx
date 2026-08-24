@@ -7,6 +7,8 @@ import {
   isApprovalAskBlock,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
+  mentionInsertToken,
+  stripMentionToken,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -42,15 +44,6 @@ import { playMpeg, speakUtterance } from "../lib/voice";
 type PendingAttachment = PickedAttachment & { threadKey: string };
 type MentionTarget = { kind: "bot" | "group" | "routine" | "connection"; id: string; name: string };
 type MentionOption = MentionTarget & { key: string };
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripMentionToken(text: string, mentionName: string): string {
-  const pattern = new RegExp(`(?:^|\\s)@${escapeRegExp(mentionName)}(?=$|\\s|[.,!?;:])`, "gi");
-  return text.replace(pattern, " ").replace(/\s+/g, " ").trim();
-}
 
 function formatApprovalAnswer(answer: string | undefined): string {
   if (!answer) return "Answered";
@@ -490,12 +483,13 @@ export default function Thread() {
   }
 
   function insertMention(mention: MentionOption) {
-    setDraft((current) => current.replace(/@([\w-]*)$/, `@${mention.name} `));
+    const token = mentionInsertToken(mention.name, mention.id, selectedMentions);
+    setDraft((current) => current.replace(/@([\w-]*)$/, `@${token} `));
     if (!(mention.kind === "bot" && mention.id === "everyone")) {
       setSelectedMentions((current) =>
         current.some((selected) => selected.kind === mention.kind && selected.id === mention.id)
           ? current
-          : [...current, { kind: mention.kind, id: mention.id, name: mention.name }],
+          : [...current, { kind: mention.kind, id: mention.id, name: token }],
       );
     }
     setMentionQuery(null);
@@ -538,11 +532,6 @@ export default function Thread() {
         });
         artifactIds.push(artifact.id);
       }
-      if (routineMentions.length) {
-        await Promise.all(
-          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
-        );
-      }
       const mentionPayload = activeMentions.map((mention) =>
         mention.kind === "bot" ? mention.id : { kind: mention.kind, id: mention.id },
       );
@@ -564,6 +553,11 @@ export default function Thread() {
                 artifactIds: artifactIds.length ? artifactIds : undefined,
                 replyToMessageId: replyTarget?.id,
               },
+        );
+      }
+      if (routineMentions.length) {
+        await Promise.all(
+          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
         );
       }
       setPendingAttachments((current) =>

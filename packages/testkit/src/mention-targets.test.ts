@@ -94,7 +94,7 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(run.task.prompt).toContain("Use these connectors if relevant: Gmail");
   });
 
-  it("lands a 1:1 rerouted @Group send in the group transcript", async () => {
+  it("lands a group-targeted send in the group transcript, not the 1:1 bot thread", async () => {
     const cookie = await signup(app, `mention-group-${stamp}@rakazo.test`, "Group Owner");
     const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "BotA",
