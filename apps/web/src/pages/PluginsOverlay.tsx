@@ -566,7 +566,9 @@ export function PluginsOverlay({
                             role="status"
                             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2"
                           >
-                            <div className="text-sm text-[#ECECEE]">{row.displayName} · pending</div>
+                            <div className="text-sm text-[#ECECEE]">
+                              {row.displayName} · pending
+                            </div>
                             <Button
                               type="button"
                               variant="pill"

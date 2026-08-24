@@ -298,9 +298,7 @@ describe("composio tool mapping", () => {
     )) {
       ambiguousEvents.push(event);
     }
-    expect(ambiguousEvents).toEqual([
-      { type: "error", message: "Choose a gmail account." },
-    ]);
+    expect(ambiguousEvents).toEqual([{ type: "error", message: "Choose a gmail account." }]);
     expect(calls).toHaveLength(2);
 
     const unknownEvents: ConnectorEvent[] = [];
