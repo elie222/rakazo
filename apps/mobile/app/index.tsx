@@ -345,7 +345,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <BotAvatar color={bot.color || FALLBACK_COLOR} />
+      <BotAvatar color={bot.color || FALLBACK_COLOR} status={bot.status} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <View style={styles.titleRow}>

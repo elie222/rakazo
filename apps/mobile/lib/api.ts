@@ -149,6 +149,7 @@ export type MobileBot = Pick<
   | "title"
   | "color"
   | "pinned"
+  | "status"
   | "sectionId"
   | "archivedAt"
   | "unread"
