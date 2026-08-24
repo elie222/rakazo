@@ -70,3 +70,57 @@ describe("thread answer delivery", () => {
     logError.mockRestore();
   });
 });
+
+describe("MCP server deletion", () => {
+  it("does not fail when a concurrent credential rotation already removed the old secret", async () => {
+    const deleteServer = vi.fn().mockResolvedValue({ id: "server-1" });
+    const deleteSecrets = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({ id: "server-1", secretId: "old-secret" }),
+        delete: deleteServer,
+      },
+      secret: { deleteMany: deleteSecrets },
+      $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { matched, response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/mcp/servers/remove", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { id: "server-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(matched).toBe(true);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { ok: true } });
+    expect(deleteServer).toHaveBeenCalledWith({ where: { id: "server-1" } });
+    expect(deleteSecrets).toHaveBeenCalledWith({
+      where: {
+        id: "old-secret",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+      },
+    });
+  });
+});

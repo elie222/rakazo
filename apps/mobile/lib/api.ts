@@ -2,6 +2,7 @@ import type {
   Bot,
   BotSection,
   ComputerMode,
+  Group,
   Me,
   MessageBlock,
   ModelCatalogEntry,
@@ -149,6 +150,7 @@ export type MobileBot = Pick<
   | "title"
   | "color"
   | "pinned"
+  | "status"
   | "sectionId"
   | "archivedAt"
   | "unread"
@@ -179,14 +181,10 @@ export type MobileMessage = {
   blocks: MessageBlock[];
 };
 
-export type MobileGroup = {
-  id: string;
-  name: string;
-  preview: string;
-  unread: boolean;
-  updatedAt: string;
-  members: Array<{ botId: string; name: string; color: string }>;
-};
+export type MobileGroup = Pick<
+  Group,
+  "id" | "name" | "preview" | "unread" | "updatedAt" | "members"
+>;
 
 export type MobileSnapshot = {
   botId?: string;
