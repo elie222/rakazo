@@ -1594,29 +1594,59 @@ export function createRouter(deps: RouterDeps) {
         if (!routine) throw new IsolationError();
         const bot = await repos.getBot(context.actor, routine.botId);
         if (!bot.thread) throw new IsolationError();
-        const task = await deps.prisma.task.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            userId: context.actor.userId,
-            prompt: routine.prompt,
-            status: "queued",
-          },
-        });
-        const run = await deps.prisma.run.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            botId: bot.id,
-            threadId: bot.thread.id,
-            taskId: task.id,
-            userId: context.actor.userId,
-            status: "queued",
-            trigger: "routine",
-          },
-        });
-        await deps.jobs.enqueue(runContinueJob(run.id));
-        return { runId: run.id };
+        const clientNonce = input.clientNonce ? `routine-test:${input.clientNonce}` : undefined;
+        const existingRun = clientNonce
+          ? await deps.prisma.run.findUnique({
+              where: {
+                workspaceId_clientNonce: {
+                  workspaceId: context.actor.workspaceId,
+                  clientNonce,
+                },
+              },
+            })
+          : null;
+        if (existingRun) return { runId: existingRun.id };
+
+        try {
+          const run = await deps.prisma.$transaction(async (tx) => {
+            const task = await tx.task.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId: bot.thread!.id,
+                userId: context.actor.userId,
+                prompt: routine.prompt,
+                status: "queued",
+              },
+            });
+            return tx.run.create({
+              data: {
+                workspaceId: context.actor.workspaceId,
+                botId: bot.id,
+                threadId: bot.thread!.id,
+                taskId: task.id,
+                userId: context.actor.userId,
+                status: "queued",
+                trigger: "routine",
+                clientNonce,
+              },
+            });
+          });
+          await deps.jobs.enqueue(runContinueJob(run.id));
+          return { runId: run.id };
+        } catch (error) {
+          if (!clientNonce) throw error;
+          const winner = await deps.prisma.run.findUnique({
+            where: {
+              workspaceId_clientNonce: {
+                workspaceId: context.actor.workspaceId,
+                clientNonce,
+              },
+            },
+          });
+          if (winner) return { runId: winner.id };
+          throw error;
+        }
       }),
     },
     skills: {

@@ -285,6 +285,7 @@ export function ShellPage() {
   activeBotId.current = inGroup ? undefined : active?.id;
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
+  const routineSendNonceRef = useRef<string | null>(null);
   const screenRequest = useRef(0);
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
@@ -1096,9 +1097,19 @@ export function ShellPage() {
       setSendError(null);
       try {
         if (routineMentions.length) {
+          if (!routineSendNonceRef.current) {
+            routineSendNonceRef.current = crypto.randomUUID();
+          }
+          const sendNonce = routineSendNonceRef.current;
           await Promise.all(
-            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
+            routineMentions.map((routineId) =>
+              rpc.routines.testRun({
+                routineId,
+                clientNonce: `routine-mention:${sendNonce}:${routineId}`,
+              }),
+            ),
           );
+          routineSendNonceRef.current = null;
           setReplyTarget(null);
           setPendingAttachments((current) =>
             current.filter((attachment) => attachment.threadKey !== originThreadKey),

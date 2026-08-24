@@ -37,6 +37,17 @@ describe("mentionInsertToken", () => {
       mentionInsertToken("Daily", "routine-def456", [{ name: "Daily", id: "routine-abc123" }]),
     ).toBe("Daily-f456");
   });
+
+  it("extends the suffix when a disambiguated token is already selected", () => {
+    const selected = [{ name: "Daily-f456", id: "routine-abc123" }];
+    expect(mentionInsertToken("Daily", "routine-abcf456", selected)).toBe("Daily-cf456");
+    expect(
+      filterSelectedMentionsByText("@Daily-cf456 check inbox", [
+        { kind: "routine", id: "routine-abc123", name: "Daily-f456" },
+        { kind: "routine", id: "routine-abcf456", name: "Daily-cf456" },
+      ]),
+    ).toEqual([{ kind: "routine", id: "routine-abcf456", name: "Daily-cf456" }]);
+  });
 });
 
 describe("filterSelectedMentionsByText", () => {

@@ -301,7 +301,14 @@ export const appContract = {
       )
       .output(RoutineSchema),
     remove: oc.input(z.object({ routineId: Id })).output(z.object({ ok: z.literal(true) })),
-    testRun: oc.input(z.object({ routineId: Id })).output(z.object({ runId: Id })),
+    testRun: oc
+      .input(
+        z.object({
+          routineId: Id,
+          clientNonce: z.string().min(1).max(200).optional(),
+        }),
+      )
+      .output(z.object({ runId: Id })),
   },
   skills: {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),

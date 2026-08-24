@@ -80,6 +80,7 @@ export default function Thread() {
   const activeGroupId = useRef(groupId);
   activeGroupId.current = groupId;
   const readVisibleTarget = useRef<string | null>(null);
+  const routineSendNonceRef = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
@@ -523,9 +524,19 @@ export default function Thread() {
     setError(null);
     try {
       if (routineMentions.length) {
+        if (!routineSendNonceRef.current) {
+          routineSendNonceRef.current = crypto.randomUUID();
+        }
+        const sendNonce = routineSendNonceRef.current;
         await Promise.all(
-          routineMentions.map((routineId) => rpc("routines/testRun", { routineId })),
+          routineMentions.map((routineId) =>
+            rpc("routines/testRun", {
+              routineId,
+              clientNonce: `routine-mention:${sendNonce}:${routineId}`,
+            }),
+          ),
         );
+        routineSendNonceRef.current = null;
         setPendingAttachments((current) =>
           current.filter((attachment) => attachment.threadKey !== threadKey),
         );

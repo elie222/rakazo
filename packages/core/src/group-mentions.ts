@@ -27,6 +27,10 @@ export function parseMentionNames(text: string): string[] {
   return [...names];
 }
 
+function selectedMentionNames(selected: ReadonlyArray<{ name: string }>): Set<string> {
+  return new Set(selected.map((mention) => mention.name.trim().toLowerCase()).filter(Boolean));
+}
+
 export function mentionInsertToken(
   name: string,
   id: string,
@@ -35,11 +39,33 @@ export function mentionInsertToken(
   const normalized = name.trim();
   if (!normalized) return normalized;
   const lower = normalized.toLowerCase();
-  const collision = selected.some(
+  const usedNames = selectedMentionNames(selected);
+  const baseCollision = selected.some(
     (mention) => mention.name.trim().toLowerCase() === lower && mention.id !== id,
   );
-  if (!collision) return normalized;
-  return `${normalized}-${id.slice(-4)}`;
+  const defaultSuffixToken = `${normalized}-${id.slice(-4)}`;
+  if (
+    !baseCollision &&
+    !usedNames.has(lower) &&
+    !usedNames.has(defaultSuffixToken.toLowerCase())
+  ) {
+    return normalized;
+  }
+
+  for (let len = 4; len <= id.length; len++) {
+    const token = `${normalized}-${id.slice(-len)}`;
+    if (!usedNames.has(token.toLowerCase())) return token;
+  }
+
+  const fullToken = `${normalized}-${id}`;
+  if (!usedNames.has(fullToken.toLowerCase())) return fullToken;
+
+  for (let len = 1; len <= id.length; len++) {
+    const token = `${normalized}-${id.slice(0, len)}`;
+    if (!usedNames.has(token.toLowerCase())) return token;
+  }
+
+  return fullToken;
 }
 
 export function filterSelectedMentionsByText<T extends { name: string }>(

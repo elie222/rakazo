@@ -67,6 +67,43 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(run.trigger).toBe("routine");
   });
 
+  it("replays routine testRun with the same clientNonce", async () => {
+    const cookie = await signup(app, `mention-routine-replay-${stamp}@rakazo.test`, "Replay Owner");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "ReplayBot",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Replay digest",
+      prompt: "Replay inbox",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const nonce = `routine-mention:${stamp}:replay`;
+    const first = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
+      routineId: routine.id,
+      clientNonce: nonce,
+    });
+    const second = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
+      routineId: routine.id,
+      clientNonce: nonce,
+    });
+    expect(second.runId).toBe(first.runId);
+    expect(
+      await prisma.run.count({
+        where: { clientNonce: `routine-test:${nonce}` },
+      }),
+    ).toBe(1);
+    const replayed = await prisma.run.findUniqueOrThrow({ where: { id: first.runId } });
+    expect(replayed.clientNonce).toBe(`routine-test:${nonce}`);
+  });
+
   it("includes connector intent on a 1:1 send prompt", async () => {
     const cookie = await signup(app, `mention-connector-${stamp}@rakazo.test`, "Connector Owner");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
