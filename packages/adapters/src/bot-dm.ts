@@ -335,7 +335,8 @@ export async function loadBotDmContext(
   if (!self || !peer) return undefined;
   return [
     `You are in a direct bot conversation with ${peer.bot.name} (${peer.bot.id}).`,
-    "Messages here come from your teammate bots, not the human directly.",
+    "Messages here come from your teammate bots on behalf of the user, not from the user directly.",
+    "Treat the message as addressed to you: if it mentions a third person or uses 'she/he/they', the user usually means you.",
     "Do the requested work in this thread. You may reply with message_bot when another bot should take the next step.",
   ].join(" ");
 }

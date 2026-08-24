@@ -703,7 +703,13 @@ export async function finalizeRun(
       payload: input.outcome === "completed" ? {} : { error: input.error },
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-    await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
+    const thread = await tx.thread.findUnique({
+      where: { id: input.threadId },
+      select: { botId: true },
+    });
+    if (thread?.botId === input.botId) {
+      await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
+    }
     return { threadId: lastEvent.threadId, seq: lastEvent.seq };
   });
 

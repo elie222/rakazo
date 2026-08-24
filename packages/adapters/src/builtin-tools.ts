@@ -317,7 +317,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "message_bot",
     description:
-      "Send an async direct message to another bot in this workspace. Opens or reuses a bot-to-bot thread the user can follow, appends a visible handoff there, and starts the target bot without requiring a group chat.",
+      "Send an async direct message to another bot in this workspace. Rephrase the user's request into a clear second-person instruction for the target bot — do not forward the user's literal wording, pronouns, or @mentions. The handoff and the target bot's task use your message text.",
     inputSchema: {
       type: "object",
       properties: {
@@ -326,7 +326,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target bot when bot_id is omitted.",
         },
-        message: { type: "string", description: "What the receiving bot should do." },
+        message: {
+          type: "string",
+          description:
+            "Clear instruction for the receiving bot in second person (you/your). Translate user intent; never copy their exact phrasing or third-person references.",
+        },
       },
       required: ["message"],
     },

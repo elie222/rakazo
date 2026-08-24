@@ -145,7 +145,8 @@ export function createRepos(prisma: PrismaClient) {
               status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
             },
             orderBy: { createdAt: "desc" },
-            take: 1,
+            take: 5,
+            select: { status: true, threadId: true },
           },
           computer: { select: { scope: true } },
         },
@@ -157,7 +158,11 @@ export function createRepos(prisma: PrismaClient) {
           text?: string;
         }>;
         const preview = blocks.find((block) => block.text)?.text ?? "";
-        return mapBot(bot, preview, bot.runs[0]?.status ?? "idle");
+        const homeThreadId = bot.thread?.id;
+        const homeRun = homeThreadId
+          ? bot.runs.find((run) => run.threadId === homeThreadId)
+          : undefined;
+        return mapBot(bot, preview, homeRun?.status ?? "idle");
       });
     },
 
