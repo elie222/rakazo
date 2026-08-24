@@ -109,15 +109,25 @@ describeRunsList("runs.list activity tracker", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await seedRun(prisma, archivedBot.id, "completed", "archived run");
     await rpc(app, cookie, "bots/archive", { botId: archivedBot.id });
-    await seedRun(prisma, visibleBot.id, "completed", "visible run");
+    const olderVisibleAt = new Date(Date.now() - 86_400_000);
+    for (let i = 0; i < 21; i += 1) {
+      await seedRun(
+        prisma,
+        archivedBot.id,
+        "completed",
+        `archived filler ${i}`,
+        new Date(Date.now() - i * 1_000),
+      );
+    }
+    await seedRun(prisma, visibleBot.id, "completed", "visible run", olderVisibleAt);
 
     const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
       filter: "recent",
     });
     expect(recent.runs.some((run) => run.botName === "Archived")).toBe(false);
     expect(recent.runs.some((run) => run.botName === "Visible")).toBe(true);
+    expect(recent.runs.length).toBe(1);
   });
 
   it("returns group runs with groupId for navigation", async () => {
@@ -178,6 +188,7 @@ async function seedRun(
   botId: string,
   status: "queued" | "running" | "completed",
   prompt: string,
+  completedAt?: Date | null,
 ) {
   const thread = await prisma.thread.findUniqueOrThrow({ where: { botId } });
   const task = await prisma.task.create({
@@ -199,7 +210,7 @@ async function seedRun(
       taskId: task.id,
       status,
       trigger: "user",
-      completedAt: status === "completed" ? new Date() : null,
+      completedAt: status === "completed" ? (completedAt ?? new Date()) : null,
     },
   });
 }

@@ -116,9 +116,7 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
-  const activityLabel = run.groupName
-    ? `${label} activity run in ${run.groupName}`
-    : `${label} activity run`;
+  const activityLabel = `${title}, ${label}`;
   return (
     <button
       type="button"
