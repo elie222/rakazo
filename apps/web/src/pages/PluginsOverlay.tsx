@@ -1,4 +1,10 @@
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type {
+  Bot,
+  CapabilityInstall,
+  Connection,
+  ConnectionCatalogItem,
+  ConnectionDefault,
+} from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +38,12 @@ export function PluginsOverlay({
   const [query, setQuery] = useState("");
   const [view, setView] = useState<CatalogView>("all");
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [defaults, setDefaults] = useState<ConnectionDefault[]>([]);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [activeBotId, setActiveBotId] = useState("");
+  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourceName, setSourceName] = useState("");
@@ -45,12 +57,19 @@ export function PluginsOverlay({
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
+    const [items, installs, rows, botRows, defaultRows] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
+      rpc.connections.list(),
+      rpc.bots.list(),
+      rpc.connections.defaults(),
     ]);
     setCatalog(items);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setConnections(rows);
+    setBots(botRows);
+    setDefaults(defaultRows);
+    setActiveBotId((current) => current || botRows[0]?.id || "");
     return items;
   }
 
@@ -65,7 +84,10 @@ export function PluginsOverlay({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const scoped = view === "connected" ? catalog.filter((item) => item.connected) : catalog;
+    const scoped =
+      view === "connected"
+        ? catalog.filter((item) => connectionRows(item).some(isUsableConnection))
+        : catalog;
     if (!needle) return scoped;
     return scoped.filter(
       (item) =>
@@ -73,7 +95,18 @@ export function PluginsOverlay({
         item.slug.toLowerCase().includes(needle) ||
         item.connectorId.toLowerCase().includes(needle),
     );
-  }, [catalog, query, view]);
+  }, [catalog, connections, query, view]);
+
+  function connectionRows(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
+    return connections.filter(
+      (connection) =>
+        connection.connectorId === item.connectorId && connection.provider === item.slug,
+    );
+  }
+
+  function isUsableConnection(connection: Connection) {
+    return connection.status === "connected";
+  }
 
   function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
     setCatalog((prev) => markConnected(prev, item.connectorId, item.slug, connected));
@@ -97,6 +130,7 @@ export function PluginsOverlay({
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
+        await refresh();
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -107,6 +141,7 @@ export function PluginsOverlay({
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
           setItemConnected(item, true);
+          await refresh();
           return;
         }
         await abortableDelay(2_000, controller.signal);
@@ -124,24 +159,60 @@ export function PluginsOverlay({
     }
   }
 
-  async function revoke(item: ConnectionCatalogItem) {
+  async function revokeConnection(row: Connection) {
     setError(null);
-    const key = itemKey(item);
+    const key = `connection:${row.id}`;
     setPending(key);
     try {
-      const rows = await rpc.connections.list();
-      const matches = rows.filter(
-        (entry) => entry.connectorId === item.connectorId && entry.provider === item.slug,
-      );
-      const row =
-        matches.find((entry) => entry.status === "connected") ??
-        matches.find((entry) => entry.status === "pending") ??
-        matches.find((entry) => entry.status === "error");
-      if (!row) throw new Error(`No connection record found for ${item.name}.`);
       await rpc.connections.revoke({ connectionId: row.id });
-      setItemConnected(item, false);
+      setConnections((current) =>
+        current.map((entry) => (entry.id === row.id ? { ...entry, status: "revoked" } : entry)),
+      );
+      setDefaults((current) => current.filter((entry) => entry.connectionId !== row.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not revoke connection");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function renameConnection(row: Connection) {
+    const displayName = labelDrafts[row.id]?.trim();
+    if (!displayName || displayName === row.displayName) return;
+    setPending(`rename:${row.id}`);
+    setError(null);
+    try {
+      const updated = await rpc.connections.rename({ connectionId: row.id, displayName });
+      setConnections((current) => current.map((entry) => (entry.id === row.id ? updated : entry)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save account label");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function setConnectionDefault(row: Connection) {
+    if (!activeBotId) return;
+    setPending(`default:${row.id}`);
+    setError(null);
+    try {
+      const selected = await rpc.connections.setDefault({
+        botId: activeBotId,
+        connectionId: row.id,
+      });
+      setDefaults((current) => [
+        ...current.filter(
+          (entry) =>
+            !(
+              entry.botId === selected.botId &&
+              entry.connectorId === selected.connectorId &&
+              entry.provider === selected.provider
+            ),
+        ),
+        selected,
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not set account default");
     } finally {
       setPending(null);
     }
@@ -413,41 +484,147 @@ export function PluginsOverlay({
               ) : null}
               {visible.map((item) => {
                 const key = itemKey(item);
+                const matches = connectionRows(item);
+                const connectedRows = matches.filter(isUsableConnection);
+                const connected = matches.some(
+                  (row) =>
+                    row.status === "connected" ||
+                    row.status === "pending" ||
+                    row.status === "error",
+                );
+                const expanded = expandedKey === key;
                 return (
-                  <div key={key} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
-                    {item.logo ? (
-                      <img
-                        src={item.logo}
-                        alt=""
-                        className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
-                      />
-                    ) : (
-                      <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold">
-                        {item.name[0]}
+                  <div key={key} className="rounded-[13px] px-3 py-2.5">
+                    <div className="flex items-center gap-4">
+                      {item.logo ? (
+                        <img
+                          src={item.logo}
+                          alt=""
+                          className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
+                        />
+                      ) : (
+                        <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold">
+                          {item.name[0]}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
+                        <div className="text-[13.5px] text-[#7A7A80]">
+                          {item.connectorId} · {item.slug}
+                          {item.noAuth ? " · no auth" : ""}
+                          {connectedRows.length > 1 ? ` · ${connectedRows.length} accounts` : ""}
+                        </div>
                       </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
-                      <div className="text-[13.5px] text-[#7A7A80]">
-                        {item.connectorId} · {item.slug}
-                        {item.noAuth ? " · no auth" : ""}
-                      </div>
+                      {connected ? (
+                        <Button
+                          type="button"
+                          variant="pill"
+                          size="sm"
+                          onClick={() => setExpandedKey(expanded ? null : key)}
+                        >
+                          {expanded ? "Hide accounts" : "Manage accounts"}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="pill"
+                          size="sm"
+                          disabled={pending === key}
+                          onClick={() => void connect(item)}
+                        >
+                          {pending === key ? "Connecting…" : "Connect"}
+                        </Button>
+                      )}
                     </div>
-                    <Button
-                      type="button"
-                      variant="pill"
-                      size="sm"
-                      disabled={pending === key}
-                      onClick={() => void (item.connected ? revoke(item) : connect(item))}
-                    >
-                      {pending === key
-                        ? item.connected
-                          ? "Revoking…"
-                          : "Connecting…"
-                        : item.connected
-                          ? "Revoke"
-                          : "Connect"}
-                    </Button>
+                    {expanded ? (
+                      <div className="mt-3 space-y-3 rounded-[13px] border border-[#2C2C30] bg-[#101012] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-[#ECECEE]">
+                              Connected accounts
+                            </div>
+                            <div className="text-xs text-[#77777D]">
+                              Choose which account this bot should use by default.
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="pill"
+                            size="sm"
+                            onClick={() => void connect(item)}
+                          >
+                            Add another account
+                          </Button>
+                        </div>
+                        {bots.length > 0 ? (
+                          <select
+                            aria-label="Bot default account"
+                            value={activeBotId}
+                            onChange={(event) => setActiveBotId(event.target.value)}
+                            className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2 text-sm text-[#ECECEE] outline-none"
+                          >
+                            {bots.map((bot) => (
+                              <option key={bot.id} value={bot.id}>
+                                {bot.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : null}
+                        {matches.map((row) => {
+                          const isDefault = defaults.some(
+                            (entry) => entry.botId === activeBotId && entry.connectionId === row.id,
+                          );
+                          return (
+                            <div key={row.id} className="flex flex-wrap items-center gap-2">
+                              <input
+                                aria-label={`Label ${row.displayName}`}
+                                value={labelDrafts[row.id] ?? row.displayName}
+                                onChange={(event) =>
+                                  setLabelDrafts((current) => ({
+                                    ...current,
+                                    [row.id]: event.target.value,
+                                  }))
+                                }
+                                className="min-w-[180px] flex-1 rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2 text-sm text-[#ECECEE] outline-none"
+                              />
+                              <Button
+                                type="button"
+                                variant="pill"
+                                size="sm"
+                                disabled={pending === `rename:${row.id}`}
+                                onClick={() => void renameConnection(row)}
+                              >
+                                {pending === `rename:${row.id}` ? "Saving…" : "Save label"}
+                              </Button>
+                              {row.status === "connected" ? (
+                                <Button
+                                  type="button"
+                                  variant="pill"
+                                  size="sm"
+                                  disabled={isDefault || pending === `default:${row.id}`}
+                                  onClick={() => void setConnectionDefault(row)}
+                                >
+                                  {isDefault
+                                    ? "Default"
+                                    : pending === `default:${row.id}`
+                                      ? "Setting…"
+                                      : "Use as default"}
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="pill"
+                                size="sm"
+                                disabled={pending === `connection:${row.id}`}
+                                onClick={() => void revokeConnection(row)}
+                              >
+                                {pending === `connection:${row.id}` ? "Revoking…" : "Revoke"}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

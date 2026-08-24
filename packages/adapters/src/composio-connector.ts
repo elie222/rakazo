@@ -9,6 +9,14 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
+  addComposioAccountParameter,
+  buildComposioMultiAccountOptions,
+  type ComposioAccountRef,
+  composioAccountsFromConnections,
+  resolveComposioAccount,
+  stripComposioAccount,
+} from "./composio-accounts.js";
+import {
   composioToolkitDirectory,
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
@@ -46,7 +54,7 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
       name,
       description: String(fn.description ?? name),
       inputSchema: asObject(fn.parameters) ?? { type: "object", properties: {} },
-      route: { connectorId: "composio", toolName: name },
+      route: { connectorId: "composio", toolName: name, resourceId: toolkitFromTool(raw, name) },
     };
   }
   const name = String(raw.slug ?? raw.name ?? "");
@@ -57,8 +65,19 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
     inputSchema: asObject(raw.inputParameters) ??
       asObject(raw.inputSchema) ??
       asObject(raw.parameters) ?? { type: "object", properties: {} },
-    route: { connectorId: "composio", toolName: name },
+    route: { connectorId: "composio", toolName: name, resourceId: toolkitFromTool(raw, name) },
   };
+}
+
+function toolkitFromTool(raw: Record<string, unknown>, name: string): string | undefined {
+  const toolkit = raw.toolkit ?? raw.toolkitSlug ?? raw.app ?? raw.appSlug;
+  if (typeof toolkit === "string" && toolkit.trim()) return toolkit.trim().toLowerCase();
+  if (toolkit && typeof toolkit === "object") {
+    const slug = (toolkit as Record<string, unknown>).slug;
+    if (typeof slug === "string" && slug.trim()) return slug.trim().toLowerCase();
+  }
+  const prefix = name.split(/[_:.]/, 1)[0]?.trim();
+  return prefix ? prefix.toLowerCase() : undefined;
 }
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
@@ -102,6 +121,15 @@ export async function collectPages<T>(
 
 export function executeSessionKey(toolkits: string[]): string {
   return [...new Set(toolkits.map((slug) => slug.trim()).filter(Boolean))].sort().join(",");
+}
+
+function executeSessionCacheKey(toolkits: string[], accounts: ComposioAccountRef[]): string {
+  const toolkitKey = executeSessionKey(toolkits);
+  const accountKey = accounts
+    .map((account) => `${account.toolkit}:${account.id}`)
+    .sort()
+    .join(",");
+  return `${toolkitKey}|${accountKey}`;
 }
 
 export type PluginConnectionRow = {
@@ -168,6 +196,10 @@ export class ComposioConnector implements ComposioProvider {
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
+  constructor(client?: Composio) {
+    this.client = client;
+  }
+
   describe() {
     return {
       id: "composio",
@@ -190,14 +222,24 @@ export class ComposioConnector implements ComposioProvider {
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
+      multiAccount: {
+        enable: true,
+        maxAccountsPerToolkit: 5,
+        requireExplicitSelection: false,
+      },
     });
     this.catalogSessions.set(userId, session.sessionId);
     return session;
   }
 
-  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
-    const key = executeSessionKey(toolkits);
-    if (!key) return this.sessionFor(userId);
+  async sessionForExecute(
+    userId: string,
+    toolkits: string[],
+    accounts: ComposioAccountRef[] = [],
+  ): Promise<ComposioSession> {
+    const toolkitKey = executeSessionKey(toolkits);
+    const key = executeSessionCacheKey(toolkits, accounts);
+    if (!toolkitKey) return this.sessionFor(userId);
     const composio = this.sdk();
     const existing = this.executeSessions.get(userId);
     if (existing?.key === key) {
@@ -210,8 +252,9 @@ export class ComposioConnector implements ComposioProvider {
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
-      toolkits: key.split(","),
+      toolkits: toolkitKey.split(","),
       sessionPreset: "direct_tools",
+      ...buildComposioMultiAccountOptions(accounts),
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
@@ -261,9 +304,20 @@ export class ComposioConnector implements ComposioProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const toolkits = connectedComposioExternalIds(context);
     if (toolkits.length === 0) return [];
-    const session = await this.sessionForExecute(context.userId, toolkits);
+    const accounts = composioAccountsFromConnections(
+      context.connectedConnections?.filter((connection) => connection.connectorId === "composio"),
+    );
+    const session = await this.sessionForExecute(context.userId, toolkits, accounts);
     const raw = await session.tools();
-    return asConnectorTools(raw);
+    return asConnectorTools(raw).map((tool) => {
+      const toolkit = tool.route?.resourceId;
+      const toolkitAccounts = toolkit
+        ? accounts.filter((account) => account.toolkit === toolkit)
+        : [];
+      return toolkitAccounts.length > 1
+        ? { ...tool, inputSchema: addComposioAccountParameter(tool.inputSchema, toolkitAccounts) }
+        : tool;
+    });
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
@@ -271,8 +325,40 @@ export class ComposioConnector implements ComposioProvider {
       const session = await this.sessionForExecute(
         context.userId,
         connectedComposioExternalIds(context),
+        composioAccountsFromConnections(
+          context.connectedConnections?.filter(
+            (connection) => connection.connectorId === "composio",
+          ),
+        ),
       );
-      const result = await session.execute(call.tool, call.args ?? {});
+      const accounts = composioAccountsFromConnections(
+        context.connectedConnections?.filter((connection) => connection.connectorId === "composio"),
+      );
+      const toolkit = call.route?.resourceId ?? toolkitFromTool({}, call.tool);
+      const selection = stripComposioAccount(call.args ?? {});
+      const defaultSelector = toolkit
+        ? (context.accountDefaults?.[`composio:${toolkit}`] ??
+          context.accountDefaults?.[`composio:${toolkit.toUpperCase()}`])
+        : undefined;
+      const account = toolkit
+        ? resolveComposioAccount(accounts, toolkit, selection.account, defaultSelector)
+        : undefined;
+      if (
+        toolkit &&
+        accounts.filter((candidate) => candidate.toolkit === toolkit).length > 1 &&
+        !account
+      ) {
+        yield {
+          type: "error",
+          message: `Choose a connected ${toolkit} account before running this action.`,
+        };
+        return;
+      }
+      const result = await session.execute(
+        call.tool,
+        selection.args,
+        account ? { account: account.id } : undefined,
+      );
       if (result.error) {
         yield { type: "error", message: sanitizeComposioError(result.error) };
         return;
@@ -330,7 +416,9 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
+    const accountId = /^(?:ca|conn)_/.test(connectionRef)
+      ? connectionRef
+      : await this.connectedAccountId(context.userId, connectionRef);
     if (accountId) await this.sdk().connectedAccounts.delete(accountId);
   }
 

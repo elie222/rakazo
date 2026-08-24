@@ -80,4 +80,21 @@ describe("ComposioEmulator", () => {
       },
     ]);
   });
+
+  it("keeps account refs distinct so revoking one account does not remove the other", async () => {
+    const emulator = new ComposioEmulator();
+    const first = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+    const second = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test" },
+      context,
+    );
+    expect(first.state).not.toBe(second.state);
+    await emulator.revoke(first.state, context);
+    await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(true);
+    await emulator.revoke(second.state, context);
+    await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(false);
+  });
 });

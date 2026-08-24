@@ -235,9 +235,18 @@ export const ConnectionSchema = z.object({
   displayName: z.string(),
   status: z.enum(["pending", "connected", "revoked", "error"]),
   capabilities: z.array(z.string()),
+  isDefault: z.boolean(),
   createdAt: z.string(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+
+export const ConnectionDefaultSchema = z.object({
+  botId: Id,
+  connectionId: Id,
+  connectorId: z.string(),
+  provider: z.string(),
+});
+export type ConnectionDefault = z.infer<typeof ConnectionDefaultSchema>;
 
 export const ConnectionCatalogItemSchema = z.object({
   connectorId: z.string(),

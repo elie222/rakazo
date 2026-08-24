@@ -243,6 +243,29 @@ function connectionContext(
   };
 }
 
+function connectionDto(
+  row: {
+    id: string;
+    connectorId: string;
+    provider: string;
+    displayName: string;
+    status: string;
+    createdAt: Date;
+  },
+  isDefault = false,
+) {
+  return {
+    id: row.id,
+    connectorId: row.connectorId,
+    provider: row.provider,
+    displayName: row.displayName,
+    status: row.status as "pending" | "connected" | "revoked" | "error",
+    capabilities: [],
+    isDefault,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 function mcpAssignmentDto(row: {
   id: string;
   botId: string;
@@ -2194,15 +2217,18 @@ export function createRouter(deps: RouterDeps) {
         const rows = await deps.prisma.connection.findMany({
           where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
         });
-        return rows.map((row) => ({
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        }));
+        const defaults = await deps.prisma.botConnectorDefault.findMany({
+          where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          select: { connectionId: true },
+        });
+        const defaultIds = new Set(defaults.map((item) => item.connectionId));
+        return rows.map((row) => connectionDto(row, defaultIds.has(row.id)));
+      }),
+      defaults: authed.connections.defaults.handler(async ({ context }) => {
+        return deps.prisma.botConnectorDefault.findMany({
+          where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          select: { botId: true, connectionId: true, connectorId: true, provider: true },
+        });
       }),
       begin: authed.connections.begin.handler(async ({ context, input }) => {
         const connector = deps.connectors.managed(input.connectorId);
@@ -2265,21 +2291,27 @@ export function createRouter(deps: RouterDeps) {
             existing.provider,
           );
           if (ready) {
+            const completed = await connector.complete(
+              { state: existing.providerRef ?? existing.provider, code: input.code },
+              connectionContext(context.actor, "connections.complete", context.signal),
+            );
             row = await deps.prisma.connection.update({
               where: { id: existing.id },
-              data: { status: "connected" },
+              data: { status: "connected", providerRef: completed.connectionRef },
             });
           }
         }
-        return {
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        };
+        const isDefault = Boolean(
+          await deps.prisma.botConnectorDefault.findFirst({
+            where: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              connectionId: row.id,
+            },
+            select: { id: true },
+          }),
+        );
+        return connectionDto(row, isDefault);
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
         const row = await deps.prisma.connection.findFirst({
@@ -2298,7 +2330,7 @@ export function createRouter(deps: RouterDeps) {
           }
           try {
             await connector.revoke(
-              row.provider,
+              row.providerRef ?? row.provider,
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
@@ -2313,7 +2345,81 @@ export function createRouter(deps: RouterDeps) {
           },
           data: { status: "revoked" },
         });
+        await deps.prisma.botConnectorDefault.deleteMany({
+          where: {
+            connectionId: input.connectionId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
+        });
         return { ok: true as const };
+      }),
+      rename: authed.connections.rename.handler(async ({ context, input }) => {
+        const row = await deps.prisma.connection.findFirst({
+          where: {
+            id: input.connectionId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!row) throw new IsolationError();
+        const updated = await deps.prisma.connection.update({
+          where: { id: row.id },
+          data: { displayName: input.displayName },
+        });
+        const isDefault = Boolean(
+          await deps.prisma.botConnectorDefault.findFirst({
+            where: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              connectionId: row.id,
+            },
+            select: { id: true },
+          }),
+        );
+        return connectionDto(updated, isDefault);
+      }),
+      setDefault: authed.connections.setDefault.handler(async ({ context, input }) => {
+        const [bot, connection] = await Promise.all([
+          deps.prisma.bot.findFirst({
+            where: {
+              id: input.botId,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              archivedAt: null,
+            },
+            select: { id: true },
+          }),
+          deps.prisma.connection.findFirst({
+            where: {
+              id: input.connectionId,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              status: "connected",
+            },
+            select: { id: true, connectorId: true, provider: true },
+          }),
+        ]);
+        if (!bot || !connection) throw new IsolationError();
+        return deps.prisma.botConnectorDefault.upsert({
+          where: {
+            botId_connectorId_provider: {
+              botId: bot.id,
+              connectorId: connection.connectorId,
+              provider: connection.provider,
+            },
+          },
+          create: {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            botId: bot.id,
+            connectionId: connection.id,
+            connectorId: connection.connectorId,
+            provider: connection.provider,
+          },
+          update: { connectionId: connection.id },
+          select: { botId: true, connectionId: true, connectorId: true, provider: true },
+        });
       }),
     },
     approvalRules: {

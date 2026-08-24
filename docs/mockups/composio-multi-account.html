@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rakazo mockup — multiple connected accounts</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #08080a;
+        color: #ececee;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -20%, #24242b 0, #0b0b0d 52%); }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+
+      .page { min-height: 100vh; padding: 40px 24px; }
+      .stage { max-width: 1160px; margin: 0 auto; }
+      .stage-label { margin: 0 0 12px 4px; color: #85858b; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+      .window {
+        overflow: hidden;
+        border: 1px solid #2a2a31;
+        border-radius: 26px;
+        background: #141416;
+        box-shadow: 0 40px 90px rgba(0, 0, 0, .55);
+      }
+      .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #27272c; padding: 26px 32px 24px; }
+      .title { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.02em; }
+      .subtitle { margin: 5px 0 0; color: #85858b; font-size: 13.5px; }
+      .close { border: 0; background: transparent; color: #85858a; font-size: 22px; }
+      .content { padding: 16px 32px 28px; }
+      .search { width: 100%; border: 1px solid #26262a; border-radius: 13px; background: #101012; color: #ececee; padding: 13px 16px; outline: none; }
+      .tabs { display: flex; gap: 4px; padding-top: 16px; }
+      .tab { border: 0; border-radius: 999px; padding: 7px 14px; color: #7a7a80; background: transparent; font-size: 14px; }
+      .tab.active { color: #f1f1f2; background: #2c2c30; }
+      .app-row { display: flex; align-items: center; gap: 16px; border-radius: 13px; padding: 12px; margin-top: 18px; }
+      .app-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #2c2c30; font-weight: 700; color: #a9b7ff; }
+      .app-main { min-width: 0; flex: 1; }
+      .app-name { color: #ececee; font-size: 15.5px; font-weight: 500; }
+      .app-meta { margin-top: 3px; color: #7a7a80; font-size: 13.5px; }
+      .pill { border: 1px solid #383844; border-radius: 999px; background: transparent; color: #c9c9ce; padding: 7px 13px; font-size: 12px; }
+      .pill:hover, .pill:focus-visible { background: #232327; outline: 2px solid rgba(150, 160, 255, .38); outline-offset: 2px; }
+      .pill.primary { border-color: #5d68d6; background: #454fbb; color: #fff; }
+      .account-panel { margin: 0 12px 6px 70px; border: 1px solid #292930; border-radius: 16px; background: #101012; padding: 8px; }
+      .account-row { display: flex; align-items: center; gap: 12px; border-radius: 12px; padding: 12px; }
+      .account-row:hover { background: #171719; }
+      .account-badge { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #23232a; color: #c7caff; font-size: 12px; font-weight: 700; }
+      .account-info { min-width: 0; flex: 1; }
+      .account-label { color: #ececee; font-size: 14px; }
+      .account-address { margin-top: 3px; color: #77777f; font-size: 12px; }
+      .status { border-radius: 999px; padding: 4px 8px; color: #9de0b8; background: #163124; font-size: 11px; }
+      .status.default { color: #c7caff; background: #282d5e; }
+      .row-action { border: 0; background: transparent; color: #85858a; font-size: 12px; }
+      .row-action:hover { color: #ececee; }
+      .divider { height: 1px; margin: 4px 0; background: #27272c; }
+      .connect-row { display: flex; justify-content: flex-start; padding: 10px 12px 4px 56px; }
+      .empty-state { margin-top: 18px; border: 1px dashed #303038; border-radius: 16px; padding: 30px; color: #77777f; text-align: center; }
+      .flow-scene { display: none; min-height: 226px; }
+      .flow-scene.active { display: block; }
+      .scene-note { margin: 17px 12px 0; color: #606067; font-size: 11px; }
+      .auth-card, .label-card, .run-card { margin: 18px auto 0; max-width: 640px; border: 1px solid #292930; border-radius: 16px; background: #101012; padding: 18px; }
+      .auth-card { text-align: center; }
+      .auth-logo { display: grid; place-items: center; width: 46px; height: 46px; margin: 0 auto 10px; border-radius: 13px; background: #2c2c30; color: #a9b7ff; font-weight: 700; }
+      .card-title { margin: 0; color: #ececee; font-size: 15px; font-weight: 500; }
+      .card-copy { margin: 6px auto 16px; max-width: 430px; color: #77777f; font-size: 12.5px; line-height: 1.5; }
+      .auth-actions { display: flex; justify-content: center; gap: 8px; }
+      .label-form { display: grid; gap: 12px; }
+      .label-help { color: #77777f; font-size: 12px; line-height: 1.5; }
+      .label-input { width: 100%; border: 1px solid #303038; border-radius: 12px; background: #171719; color: #ececee; padding: 10px 12px; outline: none; }
+      .label-input:focus { border-color: #6973df; box-shadow: 0 0 0 3px rgba(105, 115, 223, .16); }
+      .label-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .run-card { display: grid; gap: 12px; }
+      .run-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .run-label { color: #85858b; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+      .run-prompt { color: #ececee; font-size: 14px; }
+      .run-select { display: flex; align-items: center; gap: 10px; border: 1px solid #454fbb; border-radius: 12px; background: #171a34; padding: 11px 12px; }
+      .run-select-copy { min-width: 0; flex: 1; }
+      .run-select-title { color: #ececee; font-size: 13px; }
+      .run-select-meta { margin-top: 3px; color: #9b9ebc; font-size: 11px; }
+
+      .reel { display: grid; grid-template-columns: 1fr 270px; gap: 18px; margin-top: 22px; }
+      .caption-card, .beat-card { border: 1px solid #292930; border-radius: 16px; background: #101012; }
+      .caption-card { padding: 18px 20px; }
+      .caption-kicker { color: #85858b; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+      .caption-title { margin: 7px 0 5px; font-size: 18px; font-weight: 500; }
+      .caption-body { margin: 0; color: #919198; font-size: 13px; line-height: 1.55; }
+      .beat-card { padding: 10px; }
+      .beat { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 10px; background: transparent; color: #85858b; padding: 9px; text-align: left; font-size: 12px; }
+      .beat.active { background: #2c2c30; color: #f1f1f2; }
+      .beat-dot { width: 7px; height: 7px; border-radius: 50%; background: #4b4b53; }
+      .beat.active .beat-dot { background: #9fa8ff; box-shadow: 0 0 0 4px rgba(159, 168, 255, .12); }
+      .reel-controls { display: flex; gap: 8px; margin-top: 12px; }
+      .fine-print { margin: 18px 4px 0; color: #606067; font-size: 11px; }
+      @media (max-width: 780px) {
+        .page { padding: 16px 10px; }
+        .header, .content { padding-left: 18px; padding-right: 18px; }
+        .account-panel { margin-left: 0; }
+        .reel { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="stage">
+        <p class="stage-label">Rakazo design-spec reel · draft</p>
+        <section class="window" aria-label="Rakazo integrations mockup">
+          <header class="header">
+            <div>
+              <h1 class="title">Integrations</h1>
+              <p class="subtitle">Connect apps or add Treg, MCP, and OpenAPI tool sources.</p>
+            </div>
+            <button class="close" aria-label="Close integrations">×</button>
+          </header>
+          <div class="content">
+            <input class="search" aria-label="Search apps" placeholder="Search apps" />
+            <div class="tabs" role="tablist" aria-label="Integration views">
+              <button class="tab">Apps</button>
+              <button class="tab active">Connected</button>
+              <button class="tab">Tool sources</button>
+            </div>
+
+            <div id="flow-scenes">
+              <section class="flow-scene active" data-scene="0" aria-label="Apps view">
+                <div class="app-row">
+                  <div class="app-icon" aria-hidden="true">31</div>
+                  <div class="app-main">
+                    <div class="app-name">Google Calendar</div>
+                    <div class="app-meta">composio · googlecalendar</div>
+                  </div>
+                  <button class="pill primary" data-next="1">Connect</button>
+                </div>
+                <p class="scene-note">Start from Apps, find the provider, and choose Connect.</p>
+              </section>
+
+              <section class="flow-scene" data-scene="1" aria-label="First account connected">
+                <div class="app-row">
+                  <div class="app-icon" aria-hidden="true">31</div>
+                  <div class="app-main">
+                    <div class="app-name">Google Calendar</div>
+                    <div class="app-meta">composio · googlecalendar · 1 account connected</div>
+                  </div>
+                  <button class="pill primary" data-next="2">＋ Add another account</button>
+                </div>
+                <div class="account-panel">
+                  <div class="account-row">
+                    <div class="account-badge">P</div>
+                    <div class="account-info">
+                      <div class="account-label">Personal</div>
+                      <div class="account-address">shrage@gmail.com</div>
+                    </div>
+                    <span class="status default">Default</span>
+                  </div>
+                </div>
+                <p class="scene-note">After the first authorization, the app stays in Connected and offers Add another account.</p>
+              </section>
+
+              <section class="flow-scene" data-scene="2" aria-label="Authorize another account">
+                <div class="auth-card">
+                  <div class="auth-logo">31</div>
+                  <h2 class="card-title">Connect another Google Calendar</h2>
+                  <p class="card-copy">Rakazo opens the provider authorization page. This does not replace your Personal account.</p>
+                  <div class="auth-actions">
+                    <button class="pill" data-next="1">Cancel</button>
+                    <button class="pill primary" data-next="3">Authorize Google</button>
+                  </div>
+                </div>
+                <p class="scene-note">The second Connect action has its own authorization flow and returns to Rakazo when complete.</p>
+              </section>
+
+              <section class="flow-scene" data-scene="3" aria-label="Name the account">
+                <div class="label-card">
+                  <div class="label-form">
+                    <div>
+                      <h2 class="card-title">Name this account</h2>
+                      <p class="label-help">Give it a short label so you can choose it later.</p>
+                    </div>
+                    <input class="label-input" id="account-label-input" value="Work" aria-label="Account label" />
+                    <div class="label-footer">
+                      <span class="account-address">Connected identity · shrag@company.com</span>
+                      <button class="pill primary" data-next="4">Save account</button>
+                    </div>
+                  </div>
+                </div>
+                <p class="scene-note">The label is for Rakazo and the bot. Composio's connected-account ID remains internal.</p>
+              </section>
+
+              <section class="flow-scene" data-scene="4" aria-label="Choose a default account">
+                <div class="app-row">
+                  <div class="app-icon" aria-hidden="true">31</div>
+                  <div class="app-main">
+                    <div class="app-name">Google Calendar</div>
+                    <div class="app-meta">composio · googlecalendar · 2 accounts connected</div>
+                  </div>
+                  <button class="pill" data-next="5">Manage accounts</button>
+                </div>
+                <div class="account-panel">
+                  <div class="account-row">
+                    <div class="account-badge">P</div>
+                    <div class="account-info">
+                      <div class="account-label">Personal</div>
+                      <div class="account-address">shrage@gmail.com</div>
+                    </div>
+                    <span class="status default">Default</span>
+                    <button class="row-action" data-default="personal">Use as default</button>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="account-row">
+                    <div class="account-badge">W</div>
+                    <div class="account-info">
+                      <div class="account-label" id="saved-account-label">Work</div>
+                      <div class="account-address">shrag@company.com</div>
+                    </div>
+                    <span class="status">Connected</span>
+                    <button class="row-action" data-default="work">Use as default</button>
+                  </div>
+                </div>
+                <p class="scene-note">The account list now shows both identities. The bot default can be changed without reconnecting either account.</p>
+              </section>
+
+              <section class="flow-scene" data-scene="5" aria-label="Use the selected account in a bot run">
+                <div class="run-card">
+                  <div class="run-head">
+                    <span class="run-label">Ari · tool selection</span>
+                    <span class="status default">Account required</span>
+                  </div>
+                  <div class="run-prompt">“Put the team meeting on my work calendar.”</div>
+                  <div class="run-select">
+                    <div class="account-badge">W</div>
+                    <div class="run-select-copy">
+                      <div class="run-select-title">Work</div>
+                      <div class="run-select-meta">shrag@company.com · Google Calendar</div>
+                    </div>
+                    <span class="status default">Selected</span>
+                  </div>
+                </div>
+                <p class="scene-note">The bot selects the labeled account for this run; credentials stay inside the connector.</p>
+              </section>
+            </div>
+
+            <div class="reel">
+              <div class="caption-card">
+                <div class="caption-kicker">What the bot will understand</div>
+                <h2 class="caption-title" id="caption-title">Start where you already connect apps</h2>
+                <p class="caption-body" id="caption-body">Open Apps, find Google Calendar, and press Connect. The first account follows the existing Rakazo connection flow.</p>
+                <div class="reel-controls">
+                  <button class="pill" id="previous-button">Previous</button>
+                  <button class="pill primary" id="next-button">Next beat</button>
+                </div>
+              </div>
+              <div class="beat-card" aria-label="Storyboard beats">
+                <button class="beat active" data-beat="0"><span class="beat-dot"></span>Apps → Connect</button>
+                <button class="beat" data-beat="1"><span class="beat-dot"></span>Add another account</button>
+                <button class="beat" data-beat="2"><span class="beat-dot"></span>Authorize provider</button>
+                <button class="beat" data-beat="3"><span class="beat-dot"></span>Label the account</button>
+                <button class="beat" data-beat="4"><span class="beat-dot"></span>Set the default</button>
+                <button class="beat" data-beat="5"><span class="beat-dot"></span>Use it in a run</button>
+              </div>
+            </div>
+            <p class="fine-print">Mockup uses the current Rakazo Integrations overlay language and visual tokens. Provider identities are illustrative.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script>
+      const beats = [
+        ["Start where you already connect apps", "Open Apps, find Google Calendar, and press Connect. The first account follows the existing Rakazo connection flow."],
+        ["Add another account without replacing the first", "Once Personal is connected, the same app row offers Add another account. Your first authorization stays intact."],
+        ["Authorize the second provider identity", "Rakazo opens the provider authorization step for the second account and returns to this setup flow when it succeeds."],
+        ["Give the account a useful name", "Name the new connection Work or Personal so you and the bot can refer to it without seeing provider IDs."],
+        ["Choose the bot default", "Both accounts appear under one app. Set a per-bot default, or change it later without reconnecting."],
+        ["Use the right account during a run", "When a request names Work, Rakazo passes the Work account to Composio and keeps credentials behind the connector."]
+      ];
+      let activeBeat = 0;
+      const title = document.getElementById("caption-title");
+      const body = document.getElementById("caption-body");
+      const beatButtons = [...document.querySelectorAll("[data-beat]")];
+      const scenes = [...document.querySelectorAll("[data-scene]")];
+      function showBeat(index) {
+        activeBeat = (index + beats.length) % beats.length;
+        title.textContent = beats[activeBeat][0];
+        body.textContent = beats[activeBeat][1];
+        beatButtons.forEach((button) => button.classList.toggle("active", Number(button.dataset.beat) === activeBeat));
+        scenes.forEach((scene) => scene.classList.toggle("active", Number(scene.dataset.scene) === activeBeat));
+      }
+      document.getElementById("next-button").addEventListener("click", () => showBeat(activeBeat + 1));
+      document.getElementById("previous-button").addEventListener("click", () => showBeat(activeBeat - 1));
+      beatButtons.forEach((button) => button.addEventListener("click", () => showBeat(Number(button.dataset.beat))));
+      document.querySelectorAll("[data-next]").forEach((button) => button.addEventListener("click", () => showBeat(Number(button.dataset.next))));
+      document.querySelectorAll("[data-default]").forEach((button) => button.addEventListener("click", () => {
+        const selected = button.dataset.default;
+        const scene = button.closest("[data-scene]");
+        scene.querySelectorAll("[data-default]").forEach((candidate) => candidate.textContent = candidate.dataset.default === selected ? "Default" : "Use as default");
+        scene.querySelectorAll(".status").forEach((status) => {
+          if (status.textContent === "Default" || status.textContent === "Connected") status.textContent = "Connected";
+        });
+        button.previousElementSibling.textContent = "Default";
+        button.previousElementSibling.className = "status default";
+        showBeat(4);
+      }));
+      document.getElementById("account-label-input").addEventListener("input", (event) => {
+        document.getElementById("saved-account-label").textContent = event.currentTarget.value || "Work";
+      });
+    </script>
+  </body>
+</html>

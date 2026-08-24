@@ -440,6 +440,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           settings,
           configuredMemory,
           savedSkills,
+          connectorDefaults,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -469,6 +470,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           deps.memoryProviders.resolve(run.workspaceId),
           deps.prisma.taughtSkill.findMany({
             where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+          }),
+          deps.prisma.botConnectorDefault.findMany({
+            where: { botId: run.botId, workspaceId: run.workspaceId, userId: run.userId },
+            select: {
+              connectorId: true,
+              provider: true,
+              connection: { select: { providerRef: true, displayName: true } },
+            },
           }),
         ]);
         runAbortController = new AbortController();
@@ -512,6 +521,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             providerRef: row.providerRef ?? undefined,
           })),
           connectedProviders: connectedComposio.map((row) => row.provider),
+          accountDefaults: Object.fromEntries(
+            connectorDefaults
+              .map(
+                (row) =>
+                  [
+                    `${row.connectorId}:${row.provider}`,
+                    row.connection.providerRef ?? row.connection.displayName,
+                  ] as const,
+              )
+              .filter((entry) => Boolean(entry[1])),
+          ),
         };
         const memoryScope = configuredMemory
           ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)

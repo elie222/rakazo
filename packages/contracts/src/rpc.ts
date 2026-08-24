@@ -14,6 +14,7 @@ import {
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
   ConnectionCatalogItemSchema,
+  ConnectionDefaultSchema,
   ConnectionSchema,
   CreateBotInput,
   CreateGroupInput,
@@ -399,6 +400,7 @@ export const appContract = {
       .input(z.object({ query: z.string().optional(), connectorId: z.string().optional() }))
       .output(z.array(ConnectionCatalogItemSchema)),
     list: oc.output(z.array(ConnectionSchema)),
+    defaults: oc.output(z.array(ConnectionDefaultSchema)),
     begin: oc
       .input(
         z.object({
@@ -412,6 +414,10 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    rename: oc
+      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .output(ConnectionSchema),
+    setDefault: oc.input(z.object({ botId: Id, connectionId: Id })).output(ConnectionDefaultSchema),
   },
   approvalRules: {
     list: oc.output(z.array(ActionApprovalRuleSchema)),

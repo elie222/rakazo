@@ -12,6 +12,8 @@ export interface AdapterContext {
   signal: AbortSignal;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
+  /** Per-bot account selectors keyed as `${connectorId}:${externalId}`. */
+  accountDefaults?: Record<string, string>;
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
   connectedProviders?: string[];
 }

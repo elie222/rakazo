@@ -64,6 +64,18 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
+## Multiple accounts per app
+
+When Composio is enabled, Rakazo can keep multiple accounts for the same app. Open Integrations,
+choose a connected app, then select **Manage accounts** and **Add another account**. After the
+provider authorization returns, save a local label such as `Personal` or `Work`. The label is stored
+in Rakazo; Composio remains the owner of OAuth credentials and connected-account IDs.
+
+Each bot can choose its own default account for an app. If a bot has more than one account and no
+default is set, its run must name the account or ask the user to choose one. Revoking an account
+removes only that connected account. Existing single-account connections continue to work without
+extra configuration.
+
 ## Choosing a computer provider
 
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.

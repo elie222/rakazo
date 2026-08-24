@@ -214,6 +214,72 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     );
   });
 
+  it("keeps two accounts for one Composio app and scopes the bot default to one account", async () => {
+    const cookie = await signup(app, `multi-account-${stamp}@rakazo.test`, "Multi Account");
+    const first = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Personal",
+    });
+    const second = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Work",
+    });
+    const rows = await rpc<Array<{ id: string; displayName: string; status: string }>>(
+      app,
+      cookie,
+      "connections/list",
+    );
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        id: first.connectionId,
+        displayName: "Personal",
+        status: "connected",
+      }),
+    );
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        id: second.connectionId,
+        displayName: "Work",
+        status: "connected",
+      }),
+    );
+
+    const renamed = await rpc<{ displayName: string }>(app, cookie, "connections/rename", {
+      connectionId: second.connectionId,
+      displayName: "Work Calendar",
+    });
+    expect(renamed.displayName).toBe("Work Calendar");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", botInput("Calendar Bot"));
+    await expect(
+      rpc(app, cookie, "connections/setDefault", {
+        botId: bot.id,
+        connectionId: second.connectionId,
+      }),
+    ).resolves.toMatchObject({
+      botId: bot.id,
+      connectionId: second.connectionId,
+      provider: "GMAIL",
+    });
+    await expect(rpc(app, cookie, "connections/defaults")).resolves.toContainEqual(
+      expect.objectContaining({ botId: bot.id, connectionId: second.connectionId }),
+    );
+
+    await rpc(app, cookie, "connections/revoke", { connectionId: first.connectionId });
+    await expect(
+      rpc<Array<{ id: string; status: string }>>(app, cookie, "connections/list"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.connectionId, status: "revoked" }),
+        expect.objectContaining({ id: second.connectionId, status: "connected" }),
+      ]),
+    );
+    await expect(
+      rpc<Array<{ connectionId: string }>>(app, cookie, "connections/defaults"),
+    ).resolves.not.toContainEqual(expect.objectContaining({ connectionId: first.connectionId }));
+  });
+
   it("runs Pipedream connection and MCP tool execution through the product registry", async () => {
     const cookie = await signup(app, `pipedream-${stamp}@rakazo.test`, "Pipedream Connector");
     const actor = await rpc<Actor>(app, cookie, "me");

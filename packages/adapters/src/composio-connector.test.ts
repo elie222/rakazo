@@ -1,7 +1,9 @@
+import type { Composio } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import {
   asConnectorTools,
+  ComposioConnector,
   CompositeConnector,
   collectLogIds,
   collectPages,
@@ -38,6 +40,14 @@ describe("composio tool mapping", () => {
       "HACKERNEWS_GET_USER",
     ]);
     expect(tools[1]?.inputSchema).toMatchObject({ properties: { username: { type: "string" } } });
+  });
+
+  it("keeps the toolkit route so account selection is scoped to the right app", () => {
+    expect(
+      asConnectorTools([
+        { slug: "GMAIL_SEND_EMAIL", toolkit: { slug: "GMAIL" }, inputParameters: {} },
+      ])[0]?.route?.resourceId,
+    ).toBe("gmail");
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
@@ -210,6 +220,88 @@ describe("composio tool mapping", () => {
       { slug: "hackernews", name: "Hacker News", logo: null, connected: false, noAuth: true },
     ];
     expect(filterCatalog(items, "hacker").map((item) => item.slug)).toEqual(["hackernews"]);
+  });
+
+  it("passes the selected connected-account id to Composio without leaking the selector into tool args", async () => {
+    const calls: Array<{
+      config: unknown;
+      tool: string;
+      args: Record<string, unknown>;
+      options: unknown;
+    }> = [];
+    const session = {
+      sessionId: "session-1",
+      execute: async (tool: string, args: Record<string, unknown>, options?: unknown) => {
+        calls.push({ config: undefined, tool, args, options });
+        return { data: { ok: true } };
+      },
+    };
+    const fake = {
+      create: async (_userId: string, config: unknown) => {
+        calls[0] = { config, tool: "", args: {}, options: undefined };
+        return session;
+      },
+      sessions: { use: async () => session },
+    } as unknown as Composio;
+    const connector = new ComposioConnector(fake);
+    const context = {
+      userId: "u",
+      connectedConnections: [
+        {
+          id: "one",
+          connectorId: "composio",
+          externalId: "GMAIL",
+          displayName: "Personal",
+          providerRef: "ca_one",
+        },
+        {
+          id: "two",
+          connectorId: "composio",
+          externalId: "GMAIL",
+          displayName: "Work",
+          providerRef: "ca_two",
+        },
+      ],
+      signal: new AbortController().signal,
+    } as AdapterContext;
+    const events: ConnectorEvent[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: "GMAIL_SEND_EMAIL",
+        args: { account: "Work", to: "hello@example.com" },
+        executionId: "execution-1",
+        route: { connectorId: "composio", toolName: "GMAIL_SEND_EMAIL", resourceId: "gmail" },
+      },
+      context,
+    ))
+      events.push(event);
+    expect(calls[0]?.config).toMatchObject({
+      connectedAccounts: { gmail: ["ca_one", "ca_two"] },
+      multiAccount: { enable: true, requireExplicitSelection: true },
+    });
+    expect(calls[1]).toMatchObject({
+      tool: "GMAIL_SEND_EMAIL",
+      args: { to: "hello@example.com" },
+      options: { account: "ca_two" },
+    });
+    expect(events).toEqual([{ type: "result", data: { data: { ok: true }, logId: "" } }]);
+
+    const ambiguousEvents: ConnectorEvent[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: "GMAIL_SEND_EMAIL",
+        args: { to: "hello@example.com" },
+        executionId: "execution-2",
+        route: { connectorId: "composio", toolName: "GMAIL_SEND_EMAIL", resourceId: "gmail" },
+      },
+      context,
+    )) {
+      ambiguousEvents.push(event);
+    }
+    expect(ambiguousEvents).toEqual([
+      { type: "error", message: "Choose a connected gmail account before running this action." },
+    ]);
+    expect(calls).toHaveLength(2);
   });
 });
 

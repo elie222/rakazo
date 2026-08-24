@@ -98,6 +98,7 @@ model Organization {
   routines    Routine[]
   taughtSkills TaughtSkill[]
   connections Connection[]
+  connectorDefaults BotConnectorDefault[]
   capabilities CapabilityInstall[]
   memoryDocuments MemoryDocument[]
   agentHomes  AgentHome[]
@@ -250,6 +251,7 @@ model Bot {
   runs           Run[]
   mcpServers     BotMcpServer[]
   groupMembers   ChatGroupMember[]
+  connectorDefaults BotConnectorDefault[]
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -540,9 +542,30 @@ model Connection {
   metadata      Json     @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  connectorDefaults BotConnectorDefault[]
 
   @@index([workspaceId, userId, connectorId])
   @@map("connections")
+}
+
+model BotConnectorDefault {
+  id           String     @id @default(cuid())
+  workspaceId  String
+  workspace    Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId       String
+  botId        String
+  bot          Bot        @relation(fields: [botId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connectorId  String
+  provider     String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([botId, connectorId, provider])
+  @@index([workspaceId, userId, botId])
+  @@index([connectionId])
+  @@map("bot_connector_defaults")
 }
 
 model CapabilityInstall {

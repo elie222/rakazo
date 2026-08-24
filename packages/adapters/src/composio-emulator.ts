@@ -20,6 +20,7 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 /** Deterministic, offline Composio catalog and connection emulator for product tests. */
 export class ComposioEmulator implements ComposioProvider {
   private readonly connectedByUser = new Map<string, Set<string>>();
+  private readonly accountIdsByUser = new Map<string, Map<string, string[]>>();
   readonly executions: Array<{
     userId: string;
     tool: string;
@@ -88,7 +89,13 @@ export class ComposioEmulator implements ComposioProvider {
     const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
     connected.add(request.provider);
     this.connectedByUser.set(context.userId, connected);
-    return { authorizationUrl: null, state: request.provider };
+    const accounts = this.accountIdsByUser.get(context.userId) ?? new Map<string, string[]>();
+    const ids = accounts.get(request.provider) ?? [];
+    const id = `${request.provider.toLowerCase()}-account-${ids.length + 1}`;
+    ids.push(id);
+    accounts.set(request.provider, ids);
+    this.accountIdsByUser.set(context.userId, accounts);
+    return { authorizationUrl: null, state: id };
   }
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
@@ -103,6 +110,22 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    this.connectedByUser.get(context.userId)?.delete(connectionRef);
+    const accounts = this.accountIdsByUser.get(context.userId);
+    if (accounts?.has(connectionRef)) {
+      accounts.delete(connectionRef);
+      this.connectedByUser.get(context.userId)?.delete(connectionRef);
+      return;
+    }
+    if (!accounts) return;
+    for (const [provider, providerAccounts] of accounts) {
+      const index = providerAccounts.indexOf(connectionRef);
+      if (index < 0) continue;
+      providerAccounts.splice(index, 1);
+      if (providerAccounts.length === 0) {
+        accounts.delete(provider);
+        this.connectedByUser.get(context.userId)?.delete(provider);
+      }
+      return;
+    }
   }
 }
