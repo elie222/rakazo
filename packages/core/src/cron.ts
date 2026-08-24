@@ -1,3 +1,5 @@
+import { Cron } from "croner";
+
 const WEEKDAYS = "1-5";
 
 export const CRON_FREQS = [
@@ -133,23 +135,25 @@ export function formatCron(cron: string): string {
 }
 
 export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length < 5) {
-    return new Date(from.getTime() + 60_000);
+  if (cron.trim().split(/\s+/).length !== 5) {
+    throw new RangeError("Cron expressions must contain five fields");
   }
-  const [minuteExpr, hourExpr] = parts;
-  const candidate = new Date(from.getTime() + 60_000);
-  candidate.setSeconds(0, 0);
-  for (let i = 0; i < 24 * 60 + 2; i += 1) {
-    const minute = candidate.getUTCMinutes();
-    const hour = candidate.getUTCHours();
-    if (matchField(minuteExpr ?? "*", minute, 0, 59) && matchField(hourExpr ?? "*", hour, 0, 23)) {
-      void timezone;
-      return candidate;
-    }
-    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+  const schedule = new Cron(cron, {
+    paused: true,
+    timezone: validTimezoneOrUtc(timezone),
+  });
+  const next = schedule.nextRun(from);
+  if (!next) throw new RangeError(`Cron expression has no future run: ${cron}`);
+  return next;
+}
+
+function validTimezoneOrUtc(timezone: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    return timezone;
+  } catch {
+    return "UTC";
   }
-  return new Date(from.getTime() + 60_000);
 }
 
 function parseClock(time: string): { hour: number; minute: number } {
@@ -176,20 +180,4 @@ function stepValue(expr: string): number | null {
 
 function isInt(expr: string): boolean {
   return /^\d+$/.test(expr);
-}
-
-function matchField(expr: string, value: number, min: number, max: number): boolean {
-  if (expr === "*") return true;
-  if (expr.startsWith("*/")) {
-    const step = Number(expr.slice(2));
-    return Number.isFinite(step) && step > 0 && value % step === 0;
-  }
-  if (expr.includes("-")) {
-    const [a, b] = expr.split("-").map(Number);
-    return value >= (a ?? min) && value <= (b ?? max);
-  }
-  if (expr.includes(",")) {
-    return expr.split(",").map(Number).includes(value);
-  }
-  return Number(expr) === value;
 }

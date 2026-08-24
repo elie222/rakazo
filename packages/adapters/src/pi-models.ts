@@ -2,6 +2,10 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
+import {
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  registerOpenAiCompatibleCatalog,
+} from "./pi-openai-compatible-provider.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -26,7 +30,7 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = registerLocalProvider(builtinModels());
+  const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -49,7 +53,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
         billing,
         auth,
         oauthLabel,
-        authHint: signInMeta?.hint,
+        authHint:
+          provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
       });
@@ -86,6 +91,9 @@ function catalogBilling(
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
     return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+  }
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return "Runs on a URL you control. Rakazo does not pay for model usage.";
   }
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;

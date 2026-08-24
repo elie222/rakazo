@@ -19,6 +19,7 @@ import {
   applyTeachingDesktopInput,
   archiveBot,
   buildMcpCredentialBlob,
+  buildModelConnectPlaintext,
   type ComposioProvider,
   ComputerBusyError,
   type ComputerExecutionLease,
@@ -34,10 +35,12 @@ import {
   listPiCatalog,
   McpOAuthBroker,
   type MemoryProviderResolver,
+  modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
   prepareApiInstall,
   prepareMemoryProviderConnection,
+  probeOpenAiCompatibleModels,
   provisionComputer,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
@@ -62,6 +65,7 @@ import {
   type ComputerStatus,
   type McpServer,
   type Me,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -371,23 +375,57 @@ export function createRouter(deps: RouterDeps) {
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        return rows.map((row) => ({
-          id: row.id,
-          provider: row.provider,
-          label: row.label,
-          hasKey: true,
-          isDefault: row.isDefault,
-        }));
+        const compatibleRows = rows.filter((row) => row.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+        const secrets = compatibleRows.length
+          ? await deps.prisma.secret.findMany({
+              where: {
+                id: { in: compatibleRows.map((row) => row.secretId) },
+                userId: context.actor.userId,
+                workspaceId: context.actor.workspaceId,
+              },
+              select: { id: true, ciphertext: true },
+            })
+          : [];
+        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
+        return rows.map((row) => {
+          const ciphertext = ciphertextById.get(row.secretId);
+          if (!ciphertext) return modelCredentialDto(row);
+          try {
+            return modelCredentialDto(row, deps.secrets.load(ciphertext));
+          } catch {
+            return modelCredentialDto(row);
+          }
+        });
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        let plaintext: string;
+        try {
+          plaintext = buildModelConnectPlaintext(input);
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Invalid model connection",
+          });
+        }
         return persistModelCredential(deps, context.actor, {
           provider: input.provider,
-          plaintext: input.apiKey,
+          plaintext,
           label: input.label,
           modelId: input.modelId,
           signal: context.signal,
         });
       }),
+      probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
+        async ({ context, input }) => {
+          try {
+            const models = await probeOpenAiCompatibleModels(input, fetch, context.signal);
+            return { models };
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Could not list models",
+            });
+          }
+        },
+      ),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         return deps.oauthLogins.begin({
           userId: context.actor.userId,
@@ -1455,6 +1493,7 @@ export function createRouter(deps: RouterDeps) {
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        const nextRunAt = nextRoutineDate(input.cron, input.timezone);
         const row = await deps.prisma.routine.create({
           data: {
             workspaceId: context.actor.workspaceId,
@@ -1466,7 +1505,7 @@ export function createRouter(deps: RouterDeps) {
             timezone: input.timezone,
             notify: input.notify,
             active: input.active,
-            nextRunAt: input.active ? nextCronDate(input.cron, new Date(), input.timezone) : null,
+            nextRunAt: input.active ? nextRunAt : null,
           },
         });
         if (bot.thread) {
@@ -1499,11 +1538,11 @@ export function createRouter(deps: RouterDeps) {
           (!existing.active && active) ||
           (input.cron !== undefined && input.cron !== existing.cron) ||
           (input.timezone !== undefined && input.timezone !== existing.timezone);
-        const nextRunAt = !active
-          ? null
-          : scheduleChanged || !existing.nextRunAt
-            ? nextCronDate(cron, new Date(), timezone)
-            : existing.nextRunAt;
+        const recalculatedNextRunAt =
+          scheduleChanged || (active && !existing.nextRunAt)
+            ? nextRoutineDate(cron, timezone)
+            : null;
+        const nextRunAt = !active ? null : (recalculatedNextRunAt ?? existing.nextRunAt);
         const row = await deps.prisma.routine.update({
           where: { id: existing.id },
           data: {
@@ -2788,13 +2827,7 @@ async function persistModelCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return {
-    id: cred.id,
-    provider: cred.provider,
-    label: cred.label,
-    hasKey: true,
-    isDefault: true,
-  };
+  return modelCredentialDto(cred, input.plaintext);
 }
 
 async function requireWorkspaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
@@ -2905,6 +2938,14 @@ function serializeWorkspaceMemoryConfig(config: {
 
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw signal.reason ?? new Error("Request cancelled");
+}
+
+function nextRoutineDate(cron: string, timezone: string): Date {
+  try {
+    return nextCronDate(cron, new Date(), timezone);
+  } catch {
+    throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
+  }
 }
 
 function mapRoutine(row: {

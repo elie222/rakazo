@@ -433,8 +433,48 @@ export const ModelCredentialSchema = z.object({
   label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
+  baseUrl: z.string().optional(),
+  modelId: z.string().optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
+
+export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
+
+export const ModelConnectInputSchema = z
+  .object({
+    provider: z.string(),
+    apiKey: z.string().optional(),
+    baseUrl: z.string().optional(),
+    label: z.string().optional(),
+    modelId: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+      if (!value.baseUrl?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Base URL is required for OpenAI-compatible models",
+          path: ["baseUrl"],
+        });
+      }
+      if (!value.modelId?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Model id is required for OpenAI-compatible models",
+          path: ["modelId"],
+        });
+      }
+      return;
+    }
+    if (!value.apiKey || value.apiKey.trim().length < 8) {
+      ctx.addIssue({
+        code: "custom",
+        message: "API key must contain at least 8 characters",
+        path: ["apiKey"],
+      });
+    }
+  });
+export type ModelConnectInput = z.infer<typeof ModelConnectInputSchema>;
 
 export const ModelOAuthSignInModeSchema = z.enum(["device-code", "auth-url"]);
 export type ModelOAuthSignInMode = z.infer<typeof ModelOAuthSignInModeSchema>;

@@ -37,6 +37,7 @@
           "microphonePermission": false
         }
       ],
+      "expo-sharing",
       "./plugins/with-worklets-headers"
     ],
     "ios": {
