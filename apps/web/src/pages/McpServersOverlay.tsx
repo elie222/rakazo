@@ -5,9 +5,15 @@ import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
 function oauthStatusText(server: McpServer): string {
-  if (server.oauthStatus === "connected") return "OAuth connected";
-  if (server.oauthStatus === "reconnect") return "Authorization expired — reconnect required";
-  return server.hasSecret ? "Encrypted static credential saved" : "No credential saved";
+  if (server.oauthStatus === "connected" || server.transport === "stdio") return "Connected";
+  if (server.oauthStatus === "reconnect") return "Disconnected";
+  return "Disconnected";
+}
+
+function oauthStatusClass(server: McpServer): string {
+  return server.oauthStatus === "connected" || server.transport === "stdio"
+    ? "text-[#3DDC84]"
+    : "text-[#F05252]";
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
@@ -406,9 +412,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       <p className="mt-1 text-xs text-[#77777F]">
                         {server.endpoint ?? server.command ?? server.slug}
                       </p>
-                      <p
-                        className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-[#F0A15A]" : "text-[#6E778A]"}`}
-                      >
+                      <p className={`mt-2 text-[11px] ${oauthStatusClass(server)}`}>
                         {oauthStatusText(server)}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">

@@ -8,6 +8,15 @@ import { rpc } from "../lib/rpc";
 type CatalogView = "all" | "connected" | "sources";
 type SourceKind = "treg" | "mcp" | "api";
 
+function mcpConnectionStatus(server: McpServer) {
+  const ok = server.oauthStatus === "connected" || server.transport === "stdio";
+  return {
+    ok,
+    label: ok ? "Connected" : "Disconnected",
+    className: ok ? "text-[#3DDC84]" : "text-[#F05252]",
+  };
+}
+
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
 }
@@ -355,11 +364,9 @@ export function PluginsOverlay({
                       </span>
                     </div>
                     <div className="truncate text-[13.5px] text-[#7A7A80]">
-                      {server.oauthStatus === "connected"
-                        ? "Connected"
-                        : server.oauthStatus === "reconnect"
-                          ? "Needs reconnection"
-                          : "Needs authorization"}
+                      <span className={mcpConnectionStatus(server).className}>
+                        {mcpConnectionStatus(server).label}
+                      </span>
                       {" · "}
                       {server.endpoint ?? server.command ?? server.slug}
                     </div>

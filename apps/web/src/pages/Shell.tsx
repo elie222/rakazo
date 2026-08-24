@@ -3450,8 +3450,16 @@ function BotSettings({
               <li key={server.id} className="flex items-center justify-between gap-2">
                 <span>
                   <span className="block text-[13.5px] text-[#ECECEE]">{server.name}</span>
-                  <span className="block text-[11px] text-[#85858A]">
-                    {server.oauthStatus === "connected" ? "Connected" : "Needs authorization"}
+                  <span
+                    className={`block text-[11px] ${
+                      server.oauthStatus === "connected" || server.transport === "stdio"
+                        ? "text-[#3DDC84]"
+                        : "text-[#F05252]"
+                    }`}
+                  >
+                    {server.oauthStatus === "connected" || server.transport === "stdio"
+                      ? "Connected"
+                      : "Disconnected"}
                   </span>
                 </span>
                 {server.oauthStatus !== "connected" ? (
