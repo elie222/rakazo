@@ -543,7 +543,7 @@ export function PluginsOverlay({
                             disabled={pendingRows.length > 0}
                             onClick={() => void connect(item)}
                           >
-                            {pendingRows.length > 0 ? "Connection in progress" : "Add account"}
+                            {pendingRows.length > 0 ? "Connecting…" : "Add account"}
                           </Button>
                         </div>
                         {bots.length > 0 ? (
@@ -566,15 +566,7 @@ export function PluginsOverlay({
                             role="status"
                             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2"
                           >
-                            <div>
-                              <div className="text-sm text-[#ECECEE]">
-                                {row.displayName} is waiting to connect
-                              </div>
-                              <div className="text-xs text-[#77777D]">
-                                Finish the sign-in window, or cancel this attempt before adding
-                                another account.
-                              </div>
-                            </div>
+                            <div className="text-sm text-[#ECECEE]">{row.displayName} · pending</div>
                             <Button
                               type="button"
                               variant="pill"

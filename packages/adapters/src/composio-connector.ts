@@ -352,6 +352,10 @@ export class ComposioConnector implements ComposioProvider {
       const account = toolkit
         ? resolveComposioAccount(accounts, toolkit, selection.account, defaultSelector)
         : undefined;
+      if (toolkit && selection.account && !account) {
+        yield { type: "error", message: `Unknown ${toolkit} account.` };
+        return;
+      }
       if (toolkit && accountsForComposioToolkit(accounts, toolkit).length > 1 && !account) {
         yield {
           type: "error",

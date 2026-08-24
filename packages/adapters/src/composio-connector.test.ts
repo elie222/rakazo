@@ -302,6 +302,21 @@ describe("composio tool mapping", () => {
       { type: "error", message: "Choose a gmail account." },
     ]);
     expect(calls).toHaveLength(2);
+
+    const unknownEvents: ConnectorEvent[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: "GMAIL_SEND_EMAIL",
+        args: { account: "Missing", to: "hello@example.com" },
+        executionId: "execution-3",
+        route: { connectorId: "composio", toolName: "GMAIL_SEND_EMAIL", resourceId: "gmail" },
+      },
+      context,
+    )) {
+      unknownEvents.push(event);
+    }
+    expect(unknownEvents).toEqual([{ type: "error", message: "Unknown gmail account." }]);
+    expect(calls).toHaveLength(2);
   });
 
   it("checks the exact connected account before completing a multi-account authorization", async () => {

@@ -2249,8 +2249,7 @@ export function createRouter(deps: RouterDeps) {
         });
         if (pending) {
           throw new ORPCError("CONFLICT", {
-            message:
-              "Finish or cancel the current connection attempt before adding another account.",
+            message: "Finish or cancel the open connection first.",
           });
         }
         const row = await deps.prisma.connection.create({
