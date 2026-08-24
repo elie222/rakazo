@@ -125,8 +125,10 @@ export function PluginsOverlay({
         provider: item.slug,
         displayName: item.name,
       });
-      if (started.authorizationUrl)
+      if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
+        if (!controller.signal.aborted) await refresh();
+      }
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
@@ -147,7 +149,7 @@ export function PluginsOverlay({
         await abortableDelay(2_000, controller.signal);
       }
       if (controller.signal.aborted) return;
-      setError(`Connection to ${item.name} is still pending. You can close this and check again.`);
+      setError(`${item.name} is still pending.`);
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Could not connect");

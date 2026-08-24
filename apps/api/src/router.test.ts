@@ -253,11 +253,11 @@ describe("duplicate connection completion", () => {
       providerRef: "ca-existing",
       status: "connected",
     };
-    const update = vi.fn().mockResolvedValue(pending);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const prisma = {
       connection: {
         findFirst: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(active),
-        update,
+        updateMany,
       },
       botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
@@ -296,9 +296,86 @@ describe("duplicate connection completion", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith({
-      where: { id: pending.id },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: pending.id,
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        status: { in: ["pending", "error"] },
+      },
       data: { status: "revoked" },
     });
+  });
+
+  it("does not restore a connection that was revoked during completion", async () => {
+    const pending = {
+      id: "pending-connection",
+      connectorId: "composio",
+      provider: "googlecalendar",
+      providerRef: "ca-new",
+      displayName: "Google Calendar",
+      status: "pending",
+      createdAt: new Date("2026-08-24T00:00:00.000Z"),
+    };
+    const revoked = { ...pending, status: "revoked" };
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(revoked);
+    const prisma = {
+      connection: {
+        findFirst,
+        updateMany,
+        findFirstOrThrow: vi.fn(),
+      },
+      botConnectorDefault: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: {
+        managed: vi.fn().mockReturnValue({
+          connectionReady: vi.fn().mockResolvedValue(true),
+          complete: vi.fn().mockResolvedValue({ connectionRef: "ca-new" }),
+        }),
+      },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: pending.id } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).not.toBe(200);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: pending.id,
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        status: { in: ["pending", "error"] },
+      },
+      data: { status: "connected", providerRef: "ca-new" },
+    });
+    expect(prisma.connection.findFirstOrThrow).not.toHaveBeenCalled();
   });
 });

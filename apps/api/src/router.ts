@@ -2252,16 +2252,26 @@ export function createRouter(deps: RouterDeps) {
             message: "Finish or cancel the open connection first.",
           });
         }
-        const row = await deps.prisma.connection.create({
-          data: {
-            workspaceId: context.actor.workspaceId,
-            userId: context.actor.userId,
-            connectorId: input.connectorId,
-            provider: input.provider,
-            displayName: input.displayName,
-            status: "pending",
-          },
-        });
+        let row;
+        try {
+          row = await deps.prisma.connection.create({
+            data: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              connectorId: input.connectorId,
+              provider: input.provider,
+              displayName: input.displayName,
+              status: "pending",
+            },
+          });
+        } catch (error) {
+          if ((error as { code?: string }).code === "P2002") {
+            throw new ORPCError("CONFLICT", {
+              message: "Finish or cancel the open connection first.",
+            });
+          }
+          throw error;
+        }
         try {
           const auth = await connector.begin(
             { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
@@ -2323,16 +2333,41 @@ export function createRouter(deps: RouterDeps) {
               },
             });
             if (duplicate) {
-              await deps.prisma.connection.update({
-                where: { id: existing.id },
+              await deps.prisma.connection.updateMany({
+                where: {
+                  id: existing.id,
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                  status: { in: ["pending", "error"] },
+                },
                 data: { status: "revoked" },
               });
               row = duplicate;
             } else {
-              row = await deps.prisma.connection.update({
-                where: { id: existing.id },
+              const updated = await deps.prisma.connection.updateMany({
+                where: {
+                  id: existing.id,
+                  workspaceId: context.actor.workspaceId,
+                  userId: context.actor.userId,
+                  status: { in: ["pending", "error"] },
+                },
                 data: { status: "connected", providerRef: completed.connectionRef },
               });
+              if (updated.count === 0) {
+                const current = await deps.prisma.connection.findFirst({
+                  where: {
+                    id: existing.id,
+                    workspaceId: context.actor.workspaceId,
+                    userId: context.actor.userId,
+                  },
+                });
+                if (!current || current.status === "revoked") throw new IsolationError();
+                row = current;
+              } else {
+                row = await deps.prisma.connection.findFirstOrThrow({
+                  where: { id: existing.id },
+                });
+              }
             }
           }
         }

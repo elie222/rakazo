@@ -545,6 +545,8 @@ model Connection {
   connectorDefaults BotConnectorDefault[]
 
   @@index([workspaceId, userId, connectorId])
+  // Partial unique index connections_workspaceId_userId_connectorId_provider_pending_key
+  // is created in SQL: one pending connection per workspace/user/connector/provider.
   @@map("connections")
 }
 
