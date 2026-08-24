@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@rakazo/ui-tokens/css";
+@import "@rakazo/ui-web/styles.css";
 @import "@fontsource-variable/geist/wght.css";
 
 @source "../../packages/ui-web/src/**/*.{ts,tsx}";
