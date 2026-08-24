@@ -70,11 +70,18 @@ const threadTarget = z
     }
   });
 
+const structuredMentionTarget = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("bot"), id: Id }),
+  z.object({ kind: z.literal("group"), id: Id }),
+  z.object({ kind: z.literal("routine"), id: Id }),
+  z.object({ kind: z.literal("connection"), id: Id }),
+]);
+
 const threadSendInput = threadTarget
   .safeExtend({
     text: z.string().optional(),
     artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
-    mentions: z.array(Id).max(GROUP_MEMBER_MAX).optional(),
+    mentions: z.array(z.union([Id, structuredMentionTarget])).max(64).optional(),
     replyToMessageId: Id.optional(),
     clientNonce: z.string().min(1).max(200).optional(),
   })

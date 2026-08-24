@@ -2,6 +2,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
   BotSection,
+  Connection,
   ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
@@ -161,7 +162,19 @@ type PendingAttachment = {
   previewUrl?: string;
 };
 
+type MentionTarget = { kind: "bot" | "group" | "routine" | "connection"; id: string; name: string };
+type MentionOption = MentionTarget & { key: string };
+
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripMentionToken(text: string, mentionName: string): string {
+  const pattern = new RegExp(`(?:^|\\s)@${escapeRegExp(mentionName)}(?=$|\\s|[.,!?;:])`, "gi");
+  return text.replace(pattern, " ").replace(/\s+/g, " ").trim();
+}
 
 export function ShellPage() {
   const { botId, groupId } = useParams();
@@ -186,6 +199,8 @@ export function ShellPage() {
   const [panel, setPanel] = useState<Panel>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
+  const [groupRoutines, setGroupRoutines] = useState<Routine[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
   const [taughtSkillsBotId, setTaughtSkillsBotId] = useState<string | null>(null);
   const [teachBusy, setTeachBusy] = useState(false);
@@ -323,16 +338,18 @@ export function ShellPage() {
   const refreshBots = useCallback(
     async (includeArchived = false) => {
       markOnce("rk:renderer:bots-request-start");
-      const [list, sections, archived, groupList] = await Promise.all([
+      const [list, sections, archived, groupList, connectionList] = await Promise.all([
         rpc.bots.list(),
         rpc.botSections.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         rpc.groups.list(),
+        rpc.connections.list(),
       ]);
       markOnce("rk:renderer:bots-response");
       setBots(list);
       setBotSections(sections);
       setGroups(groupList);
+      setConnections(connectionList.filter((connection) => connection.status === "connected"));
       setInitialBotsLoaded(true);
       if (archived) setArchivedBots(archived);
       if (
@@ -374,6 +391,7 @@ export function ShellPage() {
     setComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
+    setGroupRoutines([]);
     if (stickToEnd) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
@@ -416,6 +434,7 @@ export function ShellPage() {
     setComputer(snap.computer ?? null);
     setRoutines(routines);
     setRoutinesBotId(id);
+    setGroupRoutines([]);
     setTaughtSkills(skills);
     setTaughtSkillsBotId(id);
     if (!keepPin && stickToEnd) {
@@ -498,14 +517,15 @@ export function ShellPage() {
           setMemoryProviderConfig(null);
         }
       });
-    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
-      .then(([bootstrap, groupList]) => {
+    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list(), rpc.connections.list()])
+      .then(([bootstrap, groupList, connectionList]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
         setGroups(groupList);
+        setConnections(connectionList.filter((connection) => connection.status === "connected"));
         setInitialBotsLoaded(true);
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
@@ -877,6 +897,22 @@ export function ShellPage() {
     replyTarget && activeSnapshot?.messages.some((message) => message.id === replyTarget.id)
       ? replyTarget
       : null;
+  useEffect(() => {
+    if (!inGroup || !activeSnapshot?.members?.length) return;
+    let cancelled = false;
+    const memberIds = [...new Set(activeSnapshot.members.map((member) => member.botId))];
+    void Promise.all(memberIds.map((memberId) => rpc.routines.list({ botId: memberId })))
+      .then((rows) => {
+        if (cancelled) return;
+        setGroupRoutines(rows.flat());
+      })
+      .catch(() => {
+        if (!cancelled) setGroupRoutines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSnapshot?.threadId, inGroup]);
   const currentRuns = activeThreadRuns(activeSnapshot);
   const answerableAskMessageId = latestAnswerableAskMessageId(activeSnapshot);
   const transcriptRunning = currentRuns.some((run) =>
@@ -888,6 +924,53 @@ export function ShellPage() {
     [active?.id, groupId, inGroup],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
+  const composerMentionOptions = useMemo<MentionOption[]>(() => {
+    const options: MentionOption[] = [];
+    if (inGroup) {
+      for (const member of activeSnapshot?.members ?? activeGroup?.members ?? []) {
+        options.push({
+          key: `bot:${member.botId}`,
+          kind: "bot",
+          id: member.botId,
+          name: member.name,
+        });
+      }
+      options.push({ key: "bot:everyone", kind: "bot", id: "everyone", name: "everyone" });
+    } else if (active) {
+      options.push({ key: `bot:${active.id}`, kind: "bot", id: active.id, name: active.name });
+    }
+    for (const group of groups) {
+      if (group.id === groupId) continue;
+      options.push({ key: `group:${group.id}`, kind: "group", id: group.id, name: group.name });
+    }
+    for (const routine of inGroup ? groupRoutines : routines) {
+      options.push({
+        key: `routine:${routine.id}`,
+        kind: "routine",
+        id: routine.id,
+        name: routine.name,
+      });
+    }
+    for (const connection of connections) {
+      options.push({
+        key: `connection:${connection.id}`,
+        kind: "connection",
+        id: connection.id,
+        name: connection.displayName,
+      });
+    }
+    return options;
+  }, [
+    active,
+    activeGroup?.members,
+    activeSnapshot?.members,
+    connections,
+    groupId,
+    groupRoutines,
+    groups,
+    inGroup,
+    routines,
+  ]);
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -984,13 +1067,28 @@ export function ShellPage() {
     setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
   }, []);
   const sendMessage = useCallback(
-    async (text: string, mentions?: string[]) => {
-      const botTarget = activeBotId.current;
-      const groupTarget = activeGroupId.current;
-      if ((!botTarget && !groupTarget) || sending) return;
-      const attachments = attachmentsForThread(pendingAttachments, groupTarget ?? botTarget);
-      const trimmed = text.trim();
-      if (!trimmed && attachments.length === 0) return;
+    async (text: string, mentions?: MentionTarget[]) => {
+      const initialBotTarget = activeBotId.current;
+      const initialGroupTarget = activeGroupId.current;
+      if ((!initialBotTarget && !initialGroupTarget) || sending) return;
+      const originThreadKey = initialGroupTarget ?? initialBotTarget;
+      let botTarget = initialBotTarget;
+      let groupTarget = initialGroupTarget;
+      const mentionedGroup = mentions?.find((mention) => mention.kind === "group");
+      const reroutedToGroup = Boolean(!initialGroupTarget && mentionedGroup);
+      if (reroutedToGroup && mentionedGroup) {
+        groupTarget = mentionedGroup.id;
+        botTarget = undefined;
+      }
+      const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
+      let trimmed = text.trim();
+      for (const mention of mentions ?? []) {
+        if (mention.kind !== "bot") trimmed = stripMentionToken(trimmed, mention.name);
+      }
+      const routineMentions = [...new Set((mentions ?? [])
+        .filter((mention) => mention.kind === "routine")
+        .map((mention) => mention.id))];
+      if (!trimmed && attachments.length === 0 && routineMentions.length === 0) return;
       setSending(true);
       setSendError(null);
       try {
@@ -1008,18 +1106,27 @@ export function ShellPage() {
           );
           artifactIds.push(artifact.id);
         }
-        if (groupTarget) {
+        if (routineMentions.length) {
+          await Promise.all(
+            routineMentions.map((routineId) => rpc.routines.testRun({ routineId })),
+          );
+        }
+        const mentionPayload = mentions?.map((mention) =>
+          mention.kind === "bot" ? mention.id : { kind: mention.kind, id: mention.id },
+        );
+        if (groupTarget && (trimmed || attachments.length > 0)) {
           await rpc.threads.send({
             groupId: groupTarget,
             text: trimmed || undefined,
-            mentions: mentions?.length ? mentions : undefined,
+            mentions: mentionPayload?.length ? mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
-        } else if (botTarget) {
+        } else if (botTarget && (trimmed || attachments.length > 0)) {
           await rpc.threads.send({
             botId: botTarget,
             text: trimmed || undefined,
+            mentions: mentionPayload?.length ? mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
@@ -1027,23 +1134,29 @@ export function ShellPage() {
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) =>
-          current.filter((attachment) => attachment.threadKey !== (groupTarget ?? botTarget)),
+          current.filter((attachment) => attachment.threadKey !== originThreadKey),
         );
+        if (reroutedToGroup && groupTarget) {
+          setAttachmentNotice(null);
+          navigate(`/app/g/${groupTarget}`);
+          return;
+        }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
         if (botTarget && activeBotId.current === botTarget) setAttachmentNotice(null);
         if (groupTarget) await refreshGroupThreadRef.current(groupTarget);
         else if (botTarget) await refreshThreadRef.current(botTarget);
       } catch (error) {
-        if (groupTarget && activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
-        } else if (botTarget && activeBotId.current === botTarget) {
+        const onOriginThread =
+          (initialGroupTarget && activeGroupId.current === initialGroupTarget) ||
+          (initialBotTarget && activeBotId.current === initialBotTarget);
+        if (onOriginThread) {
           setSendError(error instanceof Error ? error.message : "Failed to send message");
         }
       } finally {
         setSending(false);
       }
     },
-    [activeReplyTarget?.id, pendingAttachments, sending],
+    [activeReplyTarget?.id, navigate, pendingAttachments, sending],
   );
   const followUpMessage = useCallback(async (text: string) => {
     const id = activeBotId.current;
@@ -1685,14 +1798,7 @@ export function ShellPage() {
           onStop={stopRun}
           replyTarget={activeReplyTarget}
           onClearReply={() => setReplyTarget(null)}
-          mentionMembers={
-            inGroup
-              ? (activeSnapshot?.members ?? activeGroup?.members)?.map((member) => ({
-                  botId: member.botId,
-                  name: member.name,
-                }))
-              : undefined
-          }
+          mentionOptions={composerMentionOptions}
           dictating={dictating}
           transcribe={Boolean(voiceStatus?.transcribe)}
           onDictateStart={(onFinal) => {
@@ -2462,7 +2568,7 @@ const Composer = memo(function Composer({
   onStop,
   replyTarget,
   onClearReply,
-  mentionMembers,
+  mentionOptions: mentionCatalog,
   dictating,
   transcribe,
   onDictateStart,
@@ -2479,11 +2585,11 @@ const Composer = memo(function Composer({
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | null) => void | Promise<void>;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
-  onSend: (text: string, mentions?: string[]) => Promise<void>;
+  onSend: (text: string, mentions?: MentionTarget[]) => Promise<void>;
   onStop: () => Promise<void>;
   replyTarget?: ThreadMessage | null;
   onClearReply?: () => void;
-  mentionMembers?: Array<{ botId: string; name: string }>;
+  mentionOptions?: MentionOption[];
   dictating: boolean;
   transcribe: boolean;
   onDictateStart: (onFinal: (text: string) => void) => void;
@@ -2491,48 +2597,45 @@ const Composer = memo(function Composer({
 }) {
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [selectedMentions, setSelectedMentions] = useState<Array<{ botId: string; name: string }>>(
-    [],
-  );
+  const [selectedMentions, setSelectedMentions] = useState<MentionTarget[]>([]);
   const canSend = draft.trim().length > 0 || pendingAttachments.length > 0;
 
   function updateDraft(value: string) {
     setDraft(value);
     setSelectedMentions((current) =>
-      current.filter((member) => hasMentionToken(value, member.name)),
+      current.filter((mention) => hasMentionToken(value, mention.name)),
     );
     const match = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(match ? (match[1] ?? "") : null);
   }
 
-  function insertMention(member: { botId: string; name: string }) {
-    setDraft((current) => current.replace(/@([\w-]*)$/, `@${member.name} `));
-    if (member.botId !== "everyone") {
+  function insertMention(mention: MentionOption) {
+    setDraft((current) => current.replace(/@([\w-]*)$/, `@${mention.name} `));
+    if (!(mention.kind === "bot" && mention.id === "everyone")) {
       setSelectedMentions((current) =>
-        current.some((selected) => selected.botId === member.botId)
+        current.some((selected) => selected.kind === mention.kind && selected.id === mention.id)
           ? current
-          : [...current, member],
+          : [...current, { kind: mention.kind, id: mention.id, name: mention.name }],
       );
     }
     setMentionQuery(null);
   }
 
   const mentionOptions = useMemo(() => {
-    if (mentionQuery === null || !mentionMembers?.length) return [];
+    if (mentionQuery === null || !mentionCatalog?.length) return [];
     const query = mentionQuery.toLowerCase();
-    const options = mentionMembers.filter((member) => member.name.toLowerCase().startsWith(query));
-    if ("everyone".startsWith(query)) {
-      options.unshift({ botId: "everyone", name: "everyone" });
-    }
+    const options = mentionCatalog.filter((mention) =>
+      mention.name.toLowerCase().startsWith(query),
+    );
     return options.slice(0, 8);
-  }, [mentionMembers, mentionQuery]);
+  }, [mentionCatalog, mentionQuery]);
 
   function send() {
     if (!canSend || sending || disabled) return;
     const text = draft;
     setDraft("");
     setMentionQuery(null);
-    const mentions = selectedMentions.map((member) => member.botId);
+    const mentions = [...selectedMentions];
     setSelectedMentions([]);
     void onSend(text, mentions);
   }
@@ -2596,14 +2699,14 @@ const Composer = memo(function Composer({
       ) : null}
       {mentionOptions.length ? (
         <div className="mb-2 overflow-hidden rounded-[14px] border border-[#26262A] bg-[#17171A]">
-          {mentionOptions.map((member) => (
+          {mentionOptions.map((mention) => (
             <button
-              key={member.botId}
+              key={mention.key}
               type="button"
-              onClick={() => insertMention(member)}
+              onClick={() => insertMention(mention)}
               className="block w-full px-4 py-2 text-left text-[14px] text-[#ECECEE] hover:bg-[#1F1F22]"
             >
-              @{member.name}
+              @{mention.name}
             </button>
           ))}
         </div>

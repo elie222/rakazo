@@ -47,6 +47,50 @@ export type ThreadTarget =
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued"]);
+type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connection"; id: string };
+
+function splitMentionTargets(mentions: MentionTargetInput[] | undefined) {
+  const botMentionIds = new Set<string>();
+  const groupMentionIds = new Set<string>();
+  const routineMentionIds = new Set<string>();
+  const connectionMentionIds = new Set<string>();
+  for (const mention of mentions ?? []) {
+    if (typeof mention === "string") {
+      botMentionIds.add(mention);
+      continue;
+    }
+    if (mention.kind === "bot") botMentionIds.add(mention.id);
+    if (mention.kind === "group") groupMentionIds.add(mention.id);
+    if (mention.kind === "routine") routineMentionIds.add(mention.id);
+    if (mention.kind === "connection") connectionMentionIds.add(mention.id);
+  }
+  return {
+    botMentionIds: [...botMentionIds],
+    groupMentionIds: [...groupMentionIds],
+    routineMentionIds: [...routineMentionIds],
+    connectionMentionIds: [...connectionMentionIds],
+  };
+}
+
+async function resolveConnectedConnectionDisplayNames(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  connectionIds: string[],
+) {
+  if (!connectionIds.length) return [];
+  const rows = await tx.connection.findMany({
+    where: {
+      id: { in: connectionIds },
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      status: "connected",
+    },
+    select: { id: true, displayName: true },
+  });
+  if (rows.length !== connectionIds.length) throw new IsolationError();
+  const byId = new Map(rows.map((row) => [row.id, row.displayName]));
+  return connectionIds.map((id) => byId.get(id) ?? "connector");
+}
 
 function sendRunClientNonce(
   clientNonce: string | undefined,
@@ -342,7 +386,7 @@ export async function sendThreadMessage(
   input: {
     text?: string;
     artifactIds?: string[];
-    mentions?: string[];
+    mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     clientNonce?: string;
   },
@@ -361,11 +405,17 @@ export async function sendThreadMessage(
       }
 
       if (target.kind === "bot") {
+        const mentionTargets = splitMentionTargets(input.mentions);
         const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
           { prisma: tx },
           actor,
           target.botId,
           input.artifactIds,
+        );
+        const connectionNames = await resolveConnectedConnectionDisplayNames(
+          tx,
+          actor,
+          mentionTargets.connectionMentionIds,
         );
         const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
         const message = await createThreadMessageInTransaction(tx, {
@@ -381,7 +431,7 @@ export async function sendThreadMessage(
             botId: target.botId,
             threadId: target.threadId,
             userId: actor.userId,
-            prompt: buildSendPrompt(input.text, artifacts),
+            prompt: buildSendPrompt(input.text, artifacts, connectionNames),
             status: "queued",
           },
         });
@@ -422,10 +472,11 @@ export async function sendThreadMessage(
 
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
+      const mentionTargets = splitMentionTargets(input.mentions);
       const targetBotIds = resolveGroupTargetBotIds({
         text: input.text ?? "",
         members: members.map((member) => ({ id: member.botId, name: member.name })),
-        explicitMentions: input.mentions,
+        explicitMentions: mentionTargets.botMentionIds,
       });
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx },
@@ -433,6 +484,11 @@ export async function sendThreadMessage(
         target.groupId,
         memberBotIds,
         input.artifactIds,
+      );
+      const connectionNames = await resolveConnectedConnectionDisplayNames(
+        tx,
+        actor,
+        mentionTargets.connectionMentionIds,
       );
       const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
       const message = await createThreadMessageInTransaction(tx, {
@@ -450,7 +506,7 @@ export async function sendThreadMessage(
             botId,
             threadId: target.threadId,
             userId: actor.userId,
-            prompt: buildSendPrompt(input.text, artifacts),
+            prompt: buildSendPrompt(input.text, artifacts, connectionNames),
             status: "queued",
           },
         });

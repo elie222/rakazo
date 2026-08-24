@@ -1,5 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { Connection, Group, MessageBlock, Routine } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
@@ -9,7 +9,7 @@ import {
   latestAnswerableAskMessageId,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { AskActions } from "../components/AskActions";
 import {
@@ -40,6 +40,17 @@ import {
 import { playMpeg, speakUtterance } from "../lib/voice";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
+type MentionTarget = { kind: "bot" | "group" | "routine" | "connection"; id: string; name: string };
+type MentionOption = MentionTarget & { key: string };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripMentionToken(text: string, mentionName: string): string {
+  const pattern = new RegExp(`(?:^|\\s)@${escapeRegExp(mentionName)}(?=$|\\s|[.,!?;:])`, "gi");
+  return text.replace(pattern, " ").replace(/\s+/g, " ").trim();
+}
 
 function formatApprovalAnswer(answer: string | undefined): string {
   if (!answer) return "Answered";
@@ -85,9 +96,10 @@ export default function Thread() {
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [selectedMentions, setSelectedMentions] = useState<Array<{ botId: string; name: string }>>(
-    [],
-  );
+  const [selectedMentions, setSelectedMentions] = useState<MentionTarget[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
@@ -98,17 +110,45 @@ export default function Thread() {
     null,
   );
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
+  const mentionCatalog = useMemo<MentionOption[]>(() => {
+    const options: MentionOption[] = [];
+    if (inGroup) {
+      for (const member of snap?.members ?? []) {
+        options.push({
+          key: `bot:${member.botId}`,
+          kind: "bot",
+          id: member.botId,
+          name: member.name,
+        });
+      }
+      options.push({ key: "bot:everyone", kind: "bot", id: "everyone", name: "everyone" });
+    } else if (botId) {
+      options.push({ key: `bot:${botId}`, kind: "bot", id: botId, name: name || "bot" });
+    }
+    for (const group of groups) {
+      if (group.id === groupId) continue;
+      options.push({ key: `group:${group.id}`, kind: "group", id: group.id, name: group.name });
+    }
+    for (const routine of routines) {
+      options.push({ key: `routine:${routine.id}`, kind: "routine", id: routine.id, name: routine.name });
+    }
+    for (const connection of connections) {
+      if (connection.status !== "connected") continue;
+      options.push({
+        key: `connection:${connection.id}`,
+        kind: "connection",
+        id: connection.id,
+        name: connection.displayName,
+      });
+    }
+    return options;
+  }, [botId, connections, groupId, groups, inGroup, name, routines, snap?.members]);
   const mentionOptions =
-    inGroup && mentionQuery !== null
-      ? [
-          ...((snap?.members ?? []).filter((member) =>
-            member.name.toLowerCase().startsWith(mentionQuery.toLowerCase()),
-          ) ?? []),
-          ...("everyone".startsWith(mentionQuery.toLowerCase())
-            ? [{ botId: "everyone", name: "everyone", color: "#85858A" }]
-            : []),
-        ].slice(0, 8)
-      : [];
+    mentionQuery === null
+      ? []
+      : mentionCatalog
+          .filter((option) => option.name.toLowerCase().startsWith(mentionQuery.toLowerCase()))
+          .slice(0, 8);
 
   function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
     return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
@@ -398,34 +438,87 @@ export default function Thread() {
     setError(null);
   }, [threadKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void rpc<Group[]>("groups/list")
+      .then((rows) => {
+        if (!cancelled) setGroups(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setGroups([]);
+      });
+    void rpc<Connection[]>("connections/list")
+      .then((rows) => {
+        if (!cancelled) setConnections(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setConnections([]);
+      });
+    const routineBotIds = inGroup
+      ? [...new Set((snap?.members ?? []).map((member) => member.botId))]
+      : botId
+        ? [botId]
+        : [];
+    if (!routineBotIds.length) {
+      setRoutines([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void Promise.all(routineBotIds.map((id) => rpc<Routine[]>("routines/list", { botId: id })))
+      .then((rows) => {
+        if (!cancelled) setRoutines(rows.flat());
+      })
+      .catch(() => {
+        if (!cancelled) setRoutines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, inGroup, snap?.threadId]);
+
   function updateDraft(value: string) {
     setDraft(value);
     setSelectedMentions((current) =>
-      current.filter((member) => hasMentionToken(value, member.name)),
+      current.filter((mention) => hasMentionToken(value, mention.name)),
     );
     const match = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(match ? (match[1] ?? "") : null);
   }
 
-  function insertMention(member: { botId: string; name: string }) {
-    setDraft((current) => current.replace(/@([\w-]*)$/, `@${member.name} `));
-    if (member.botId !== "everyone") {
+  function insertMention(mention: MentionOption) {
+    setDraft((current) => current.replace(/@([\w-]*)$/, `@${mention.name} `));
+    if (!(mention.kind === "bot" && mention.id === "everyone")) {
       setSelectedMentions((current) =>
-        current.some((selected) => selected.botId === member.botId)
+        current.some((selected) => selected.kind === mention.kind && selected.id === mention.id)
           ? current
-          : [...current, member],
+          : [...current, { kind: mention.kind, id: mention.id, name: mention.name }],
       );
     }
     setMentionQuery(null);
   }
 
   async function send() {
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || sending) return;
+    const currentBotId = botId;
+    const currentGroupId = groupId;
+    if ((!currentBotId && !currentGroupId) || sending) return;
+    let targetBotId = currentBotId;
+    let targetGroupId = currentGroupId;
+    const mentionedGroup = selectedMentions.find((mention) => mention.kind === "group");
+    const reroutedToGroup = Boolean(!currentGroupId && mentionedGroup);
+    if (reroutedToGroup && mentionedGroup) {
+      targetGroupId = mentionedGroup.id;
+      targetBotId = undefined;
+    }
     const attachments = attachmentsForThread(pendingAttachments, threadKey);
-    const text = draft.trim();
-    if (!text && attachments.length === 0) return;
+    let text = draft.trim();
+    for (const mention of selectedMentions) {
+      if (mention.kind !== "bot") text = stripMentionToken(text, mention.name);
+    }
+    const routineMentions = [...new Set(
+      selectedMentions.filter((mention) => mention.kind === "routine").map((mention) => mention.id),
+    )];
+    if (!text && attachments.length === 0 && routineMentions.length === 0) return;
     setSending(true);
     setError(null);
     try {
@@ -439,29 +532,43 @@ export default function Thread() {
         });
         artifactIds.push(artifact.id);
       }
-      await rpc(
-        "threads/send",
-        targetGroupId
-          ? {
-              groupId: targetGroupId,
-              text: text || undefined,
-              mentions: selectedMentions.length
-                ? selectedMentions.map((member) => member.botId)
-                : undefined,
-              artifactIds: artifactIds.length ? artifactIds : undefined,
-              replyToMessageId: replyTarget?.id,
-            }
-          : {
-              botId: targetBotId!,
-              text: text || undefined,
-              artifactIds: artifactIds.length ? artifactIds : undefined,
-              replyToMessageId: replyTarget?.id,
-            },
+      if (routineMentions.length) {
+        await Promise.all(routineMentions.map((routineId) => rpc("routines/testRun", { routineId })));
+      }
+      const mentionPayload = selectedMentions.map((mention) =>
+        mention.kind === "bot" ? mention.id : { kind: mention.kind, id: mention.id },
       );
+      if (text || artifactIds.length > 0) {
+        await rpc(
+          "threads/send",
+          targetGroupId
+            ? {
+                groupId: targetGroupId,
+                text: text || undefined,
+                mentions: mentionPayload.length ? mentionPayload : undefined,
+                artifactIds: artifactIds.length ? artifactIds : undefined,
+                replyToMessageId: replyTarget?.id,
+              }
+            : {
+                botId: targetBotId!,
+                text: text || undefined,
+                mentions: mentionPayload.length ? mentionPayload : undefined,
+                artifactIds: artifactIds.length ? artifactIds : undefined,
+                replyToMessageId: replyTarget?.id,
+              },
+        );
+      }
       setPendingAttachments((current) =>
         current.filter((attachment) => attachment.threadKey !== threadKey),
       );
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
+      if (reroutedToGroup && targetGroupId && mentionedGroup) {
+        router.push({
+          pathname: "/group-thread",
+          params: { groupId: targetGroupId, name: mentionedGroup.name },
+        });
+        return;
+      }
+      if (isCurrentTarget(currentBotId, currentGroupId)) {
         setDraft("");
         setMentionQuery(null);
         setSelectedMentions([]);
@@ -470,7 +577,7 @@ export default function Thread() {
         await refresh();
       }
     } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
+      if (isCurrentTarget(currentBotId, currentGroupId)) {
         setError(err instanceof Error ? err.message : "Failed to send message");
       }
     } finally {
@@ -704,7 +811,7 @@ export default function Thread() {
         >
           {mentionOptions.map((member) => (
             <Pressable
-              key={member.botId}
+              key={member.key}
               accessibilityLabel={`Mention ${member.name}`}
               onPress={() => insertMention(member)}
               style={{ paddingHorizontal: 14, paddingVertical: 10 }}
