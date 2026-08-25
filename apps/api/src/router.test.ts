@@ -88,6 +88,7 @@ describe("computer.peek", () => {
       overrides.connectScreen ??
       vi.fn().mockResolvedValue({ url: "https://sandbox.test/vnc.html", close: async () => {} });
     const leaseFindUnique = overrides.leaseFindUnique ?? vi.fn();
+    const enqueue = vi.fn().mockResolvedValue(undefined);
     const prisma = {
       bot: { findFirst: overrides.botFindFirst ?? vi.fn().mockResolvedValue(null) },
       computerExecutionLease: { findUnique: leaseFindUnique },
@@ -95,6 +96,7 @@ describe("computer.peek", () => {
     const deps = {
       prisma,
       sandbox: { connectScreen },
+      jobs: { enqueue },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -104,7 +106,13 @@ describe("computer.peek", () => {
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
-    return { deps, connectScreen, leaseFindUnique, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      deps,
+      connectScreen,
+      leaseFindUnique,
+      enqueue,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   async function callPeek(
