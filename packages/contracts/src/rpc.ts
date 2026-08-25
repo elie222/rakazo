@@ -13,6 +13,7 @@ import {
   BotSectionSchema,
   CapabilityInstallSchema,
   ComputerModeSchema,
+  ComputerPeekSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
   ConnectionCatalogItemSchema,
@@ -267,6 +268,9 @@ export const appContract = {
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    /** Read-only peek at ANY other bot's currently assigned computer — for
+        a view-only picker, never reassigns anything. */
+    peek: oc.input(z.object({ targetBotId: Id })).output(ComputerPeekSchema),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
