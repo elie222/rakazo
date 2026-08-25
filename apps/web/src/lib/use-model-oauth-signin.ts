@@ -63,7 +63,14 @@ export function useModelOAuthSignIn(options: {
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
-    await onFinishedRef.current(controller);
+    // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
+    // is not reported as a failed sign-in (finishOAuth already persisted).
+    try {
+      await onFinishedRef.current(controller);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      onErrorRef.current(err instanceof Error ? err.message : "Connected, but could not refresh");
+    }
   }
 
   async function submitOAuthCode(captured?: string, login?: ModelOAuthBegin) {
