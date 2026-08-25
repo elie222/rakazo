@@ -535,6 +535,39 @@ export const RunSchema = z.object({
 });
 export type Run = z.infer<typeof RunSchema>;
 
+export const BoardItemSchema = z.object({
+  id: Id,
+  taskId: Id,
+  botId: Id,
+  botName: z.string(),
+  botColor: z.string(),
+  threadId: Id,
+  prompt: z.string(),
+  status: RunStatus,
+  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill"]),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  updatedAt: z.string(),
+  computerScope: ComputerModeSchema.nullable(),
+  computerState: z.enum(["stopped", "booting", "running", "suspended", "error"]).nullable(),
+});
+export type BoardItem = z.infer<typeof BoardItemSchema>;
+
+export const UpcomingRoutineSchema = z.object({
+  id: Id,
+  botId: Id,
+  botName: z.string(),
+  botColor: z.string(),
+  name: z.string(),
+  prompt: z.string(),
+  crons: z.array(z.string()).min(1),
+  timezone: z.string(),
+  nextRunAt: z.string().nullable(),
+});
+export type UpcomingRoutine = z.infer<typeof UpcomingRoutineSchema>;
+
 export const ThreadMessagePageSchema = z.object({
   threadId: Id,
   messages: z.array(ThreadMessageSchema),

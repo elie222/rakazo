@@ -8,6 +8,7 @@ import {
   AppBootstrapSchema,
   ArtifactSchema,
   ArtifactWithContentSchema,
+  BoardItemSchema,
   BotMcpServerSchema,
   BotSchema,
   BotSectionSchema,
@@ -44,6 +45,7 @@ import {
   TeachRecordingEventSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
+  UpcomingRoutineSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
   UpdateGroupInput,
@@ -300,6 +302,20 @@ export const appContract = {
       .output(RoutineSchema),
     remove: oc.input(z.object({ routineId: Id })).output(z.object({ ok: z.literal(true) })),
     testRun: oc.input(z.object({ routineId: Id })).output(z.object({ runId: Id })),
+  },
+  board: {
+    list: oc
+      .input(
+        z
+          .object({
+            limit: z.number().int().min(1).max(500).optional(),
+            upcomingLimit: z.number().int().min(1).max(200).optional(),
+          })
+          .optional(),
+      )
+      .output(
+        z.object({ items: z.array(BoardItemSchema), upcoming: z.array(UpcomingRoutineSchema) }),
+      ),
   },
   scratchpad: {
     list: oc

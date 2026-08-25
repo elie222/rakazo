@@ -1713,6 +1713,77 @@ export function createRouter(deps: RouterDeps) {
         return { runId: run.id };
       }),
     },
+    board: {
+      // Only in-flight work (active runs) plus what's scheduled next (active
+      // routines) — this stays naturally bounded since active runs always
+      // resolve to a terminal state and drop off. No completed/failed history
+      // here; that already lives in each bot's own chat.
+      list: authed.board.list.handler(async ({ context, input }) => {
+        const [runs, routines] = await Promise.all([
+          deps.prisma.run.findMany({
+            where: {
+              workspaceId: context.actor.workspaceId,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
+              bot: { archivedAt: null },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: input?.limit ?? 200,
+            include: {
+              task: { select: { prompt: true } },
+              bot: {
+                select: {
+                  name: true,
+                  color: true,
+                  computer: { select: { scope: true, state: true } },
+                },
+              },
+            },
+          }),
+          deps.prisma.routine.findMany({
+            where: {
+              workspaceId: context.actor.workspaceId,
+              active: true,
+              nextRunAt: { not: null },
+              bot: { archivedAt: null },
+            },
+            orderBy: { nextRunAt: "asc" },
+            take: input?.upcomingLimit ?? 50,
+            include: { bot: { select: { name: true, color: true } } },
+          }),
+        ]);
+        return {
+          items: runs.map((run) => ({
+            id: run.id,
+            taskId: run.taskId,
+            botId: run.botId,
+            botName: run.bot.name,
+            botColor: run.bot.color,
+            threadId: run.threadId,
+            prompt: run.task.prompt,
+            status: run.status as never,
+            trigger: run.trigger as never,
+            error: run.error,
+            createdAt: run.createdAt.toISOString(),
+            startedAt: run.startedAt?.toISOString() ?? null,
+            completedAt: run.completedAt?.toISOString() ?? null,
+            updatedAt: run.updatedAt.toISOString(),
+            computerScope: (run.bot.computer?.scope as never) ?? null,
+            computerState: (run.bot.computer?.state as never) ?? null,
+          })),
+          upcoming: routines.map((routine) => ({
+            id: routine.id,
+            botId: routine.botId,
+            botName: routine.bot.name,
+            botColor: routine.bot.color,
+            name: routine.name,
+            prompt: routine.prompt,
+            crons: routine.crons,
+            timezone: routine.timezone,
+            nextRunAt: routine.nextRunAt?.toISOString() ?? null,
+          })),
+        };
+      }),
+    },
     scratchpad: {
       list: authed.scratchpad.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);

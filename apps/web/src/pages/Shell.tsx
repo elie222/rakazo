@@ -56,6 +56,7 @@ import {
   ChevronLeft,
   Cpu,
   Gauge,
+  LayoutGrid,
   LogOut,
   Menu,
   Mic,
@@ -1650,6 +1651,16 @@ export function ShellPage() {
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          onClick={() => navigate("/app/board")}
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
+        >
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+            <LayoutGrid size={15} strokeWidth={1.7} />
+          </span>
+          <span className="text-[14.5px] text-[#C9C9CE]">Board</span>
+        </button>
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
