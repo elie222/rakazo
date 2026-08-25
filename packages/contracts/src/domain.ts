@@ -515,6 +515,15 @@ export const ComputerStatusSchema = z.object({
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 
+export const ComputerPeekSchema = z.object({
+  mode: ComputerModeSchema,
+  /** False when that computer has never been provisioned for this bot/workspace. */
+  exists: z.boolean(),
+  state: z.enum(["stopped", "booting", "running", "suspended", "error"]).nullable(),
+  url: z.string().nullable(),
+});
+export type ComputerPeek = z.infer<typeof ComputerPeekSchema>;
+
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 

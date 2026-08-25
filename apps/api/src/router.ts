@@ -1440,6 +1440,47 @@ export function createRouter(deps: RouterDeps) {
           ),
         };
       }),
+      /**
+       * Read-only look at ANY other bot's currently assigned computer — for
+       * the computer-pane picker, which is a view toggle, not a
+       * reassignment or takeover. Never boots, provisions, or mutates
+       * anything: a stopped/never-used computer just reports
+       * { exists, state } with a null screen.
+       */
+      peek: authed.computer.peek.handler(async ({ context, input }) => {
+        const target = await repos.getBot(context.actor, input.targetBotId);
+        const mode = target.computer?.scope === "dedicated" ? "dedicated" : "team";
+        const other = target.computer;
+        if (!other) return { mode, exists: false, state: null, url: null };
+        if (!other.providerRef || (other.state !== "running" && other.state !== "booting")) {
+          return { mode, exists: true, state: other.state as never, url: null };
+        }
+        const session = await deps.sandbox
+          .connectScreen(
+            toComputerRef(other),
+            { view: "stream", interactive: false },
+            await computerScreenContext(deps.prisma, context.actor, other.id, target.id, "peek"),
+          )
+          .catch(() => ({ url: null }));
+        if (!session.url) {
+          return { mode, exists: true, state: other.state as never, url: null };
+        }
+        const viewUrl = withViewOnly(session.url, true);
+        return {
+          mode,
+          exists: true,
+          state: other.state as never,
+          url: addScreenProxyCapability(
+            viewUrl,
+            deps.env.screenProxySecret,
+            deps.env.webOrigin,
+            undefined,
+            {
+              proxyExternal: other.kind === "box",
+            },
+          ),
+        };
+      }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer?.state === "running" && bot.computer.providerRef) {

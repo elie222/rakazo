@@ -4,6 +4,7 @@ import type {
   Bot,
   BotSection,
   ComputerMode,
+  ComputerPeek,
   ComputerReleaseReason,
   ComputerStatus,
   Group,
@@ -264,6 +265,15 @@ export function ShellPage() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
+  // Read-only look at any OTHER bot's currently assigned computer —
+  // reassigning this bot's own computer happens in Settings instead.
+  const [peek, setPeek] = useState<ComputerPeek | null>(null);
+  const [peekTarget, setPeekTarget] = useState<{ id: string; name: string; color: string } | null>(
+    null,
+  );
+  const [peekLoading, setPeekLoading] = useState(false);
+  const [peekMenuOpen, setPeekMenuOpen] = useState(false);
+  const peekRequest = useRef(0);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -701,6 +711,9 @@ export function ShellPage() {
     if (!searchParams.get("m")) {
       pinnedAroundRef.current = null;
     }
+    setPeek(null);
+    setPeekTarget(null);
+    setPeekMenuOpen(false);
     screenRequest.current += 1;
     setScreenUrl(null);
     expandedHistoryThread.current = null;
@@ -1409,6 +1422,32 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
+  // Read-only: shows another bot's live screen without touching which
+  // computer this bot is actually assigned to, or that bot's own state.
+  async function peekBot(bot: { id: string; name: string; color: string }) {
+    setPeekMenuOpen(false);
+    const id = ++peekRequest.current;
+    setPeekTarget(bot);
+    setPeekLoading(true);
+    try {
+      const result = await rpc.computer.peek({ targetBotId: bot.id });
+      if (id !== peekRequest.current) return;
+      setPeek(result);
+    } catch {
+      if (id !== peekRequest.current) return;
+      setPeek({ mode: "team", exists: false, state: null, url: null });
+    } finally {
+      if (id === peekRequest.current) setPeekLoading(false);
+    }
+  }
+
+  function clearPeek() {
+    peekRequest.current += 1;
+    setPeek(null);
+    setPeekTarget(null);
+    setPeekLoading(false);
+  }
+
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
@@ -1930,7 +1969,58 @@ export function ShellPage() {
                       ? (computer?.state ?? active.status)
                       : "group"}
                 </span>
-                <div className="flex gap-3.5">
+                <div className="flex items-center gap-3.5">
+                  {active && panel === "computer" ? (
+                    peekTarget ? (
+                      <button
+                        type="button"
+                        aria-label="Back to your computer"
+                        title="Back to your computer"
+                        onClick={clearPeek}
+                        className="max-w-[120px] truncate rounded-full border border-[#26262A] px-2.5 py-1 text-[11px] leading-none text-[#85858A] transition-colors hover:text-[#ECECEE]"
+                      >
+                        {peekLoading ? "…" : peekTarget.name}
+                      </button>
+                    ) : (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          aria-label="View another agent's computer"
+                          title="View another agent's computer (read only)"
+                          onClick={() => setPeekMenuOpen((open) => !open)}
+                          className="rounded-full border border-[#26262A] px-2.5 py-1 text-[11px] leading-none text-[#85858A] transition-colors hover:text-[#ECECEE]"
+                        >
+                          View…
+                        </button>
+                        {peekMenuOpen ? (
+                          <div className="app-no-drag absolute end-0 top-full z-20 mt-2 max-h-[240px] min-w-[180px] overflow-y-auto rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
+                            {bots.filter((bot) => !bot.archivedAt && bot.id !== active.id)
+                              .length === 0 ? (
+                              <div className="px-3.5 py-2 text-[13px] text-[#6C6C70]">
+                                No other agents yet
+                              </div>
+                            ) : (
+                              bots
+                                .filter((bot) => !bot.archivedAt && bot.id !== active.id)
+                                .map((bot) => (
+                                  <button
+                                    key={bot.id}
+                                    type="button"
+                                    onClick={() =>
+                                      void peekBot({ id: bot.id, name: bot.name, color: bot.color })
+                                    }
+                                    className="flex w-full items-center gap-2 px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1F1F22]"
+                                  >
+                                    <BotAvatar color={bot.color} size={18} />
+                                    <span className="min-w-0 flex-1 truncate">{bot.name}</span>
+                                  </button>
+                                ))
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  ) : null}
                   {active ? (
                     <button
                       type="button"
@@ -1954,7 +2044,27 @@ export function ShellPage() {
             {panel === "computer" && active ? (
               <div>
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
-                  {computerOpen ? (
+                  {peek ? (
+                    embeddableScreenUrl(peek.url) ? (
+                      <iframe
+                        title="Other computer preview (view only)"
+                        src={embeddableScreenUrl(peek.url) ?? undefined}
+                        sandbox={screenIframeSandbox(peek.url)}
+                        className="h-full w-full border-0 bg-black"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    ) : (
+                      <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                        {peek.exists
+                          ? computerPlaceholder(
+                              peek.state ?? undefined,
+                              false,
+                              computerLabel(peek.mode, peekTarget?.name ?? active.name),
+                            )
+                          : "Never used yet"}
+                      </div>
+                    )
+                  ) : computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                       Open in full window
                     </div>
@@ -1981,26 +2091,30 @@ export function ShellPage() {
                       )}
                     </div>
                   )}
-                  <button
-                    type="button"
-                    className="absolute inset-0 cursor-pointer"
-                    aria-label="Open computer"
-                    onClick={() => void openComputer()}
-                  />
+                  {peek ? null : (
+                    <button
+                      type="button"
+                      className="absolute inset-0 cursor-pointer"
+                      aria-label="Open computer"
+                      onClick={() => void openComputer()}
+                    />
+                  )}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <span className="min-w-0 text-[13.5px] text-[#85858A]">
-                    {hasControl
-                      ? "You have control"
-                      : computerError
-                        ? computerError
-                        : computer?.busyBotName
-                          ? `${computer.busyBotName} is using it`
-                          : computer?.state === "suspended"
-                            ? "Asleep"
-                            : computerLabel(computer?.mode, active.name)}
+                    {peek
+                      ? `Viewing ${computerLabel(peek.mode, peekTarget?.name ?? active.name)} — view only`
+                      : hasControl
+                        ? "You have control"
+                        : computerError
+                          ? computerError
+                          : computer?.busyBotName
+                            ? `${computer.busyBotName} is using it`
+                            : computer?.state === "suspended"
+                              ? "Asleep"
+                              : computerLabel(computer?.mode, active.name)}
                   </span>
-                  {hasControl ? (
+                  {peek ? null : hasControl ? (
                     <ComputerReleaseActions
                       takeoverRequested={computer?.takeoverRequested ?? false}
                       onRelease={releaseComputer}
