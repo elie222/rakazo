@@ -746,14 +746,30 @@ function ModelPicker({
   }
 
   function moveHighlight(index: number) {
-    setHighlightedIndex((index + filteredOptions.length) % filteredOptions.length);
+    const count = filteredOptions.length;
+    if (count === 0) return;
+    const next = ((index % count) + count) % count;
+    setHighlightedIndex(next);
+    optionRefs.current[next]?.focus();
   }
 
   function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlightedIndex(0);
-      optionRefs.current[0]?.focus();
+      if (filteredOptions.length === 0) return;
+      const next =
+        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
+          ? highlightedIndex
+          : 0;
+      moveHighlight(next);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (filteredOptions.length === 0) return;
+      const index =
+        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
+          ? highlightedIndex
+          : 0;
+      choose(index);
     } else if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
@@ -775,7 +791,7 @@ function ModelPicker({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setOpen(true);
-      setHighlightedIndex(filteredOptions.length - 1);
+      setHighlightedIndex(Math.max(0, filteredOptions.length - 1));
     }
   }
 
@@ -788,10 +804,10 @@ function ModelPicker({
       moveHighlight(index - 1);
     } else if (event.key === "Home") {
       event.preventDefault();
-      setHighlightedIndex(0);
+      moveHighlight(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      setHighlightedIndex(filteredOptions.length - 1);
+      moveHighlight(filteredOptions.length - 1);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       choose(index);
