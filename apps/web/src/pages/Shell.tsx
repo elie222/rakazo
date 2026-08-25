@@ -126,6 +126,9 @@ const AccountSettingsOverlay = lazy(() =>
 const ModelSettingsOverlay = lazy(() =>
   import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
 );
+const PeerMessagesOverlay = lazy(() =>
+  import("./PeerMessagesOverlay").then((module) => ({ default: module.PeerMessagesOverlay })),
+);
 const PluginsOverlay = lazy(() =>
   import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
@@ -184,6 +187,7 @@ export function ShellPage() {
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  const [peerMessagesOpen, setPeerMessagesOpen] = useState(false);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
@@ -1676,6 +1680,7 @@ export function ShellPage() {
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
+          onOpenPeerMessages={() => setPeerMessagesOpen(true)}
           memberName={resolveTranscriptMemberName}
           onRefresh={refreshActiveThread}
           onBotChanged={refreshBots}
@@ -2247,6 +2252,13 @@ export function ShellPage() {
           />
         ) : null}
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
+        {peerMessagesOpen ? (
+          <PeerMessagesOverlay
+            botName={active?.name ?? "This bot"}
+            messages={activeSnapshot?.messages ?? []}
+            onClose={() => setPeerMessagesOpen(false)}
+          />
+        ) : null}
         {voiceOpen ? (
           <VoiceSettingsOverlay
             onClose={() => {
@@ -2399,6 +2411,7 @@ const Transcript = memo(function Transcript({
   onOpenBot,
   onAnswer,
   onReply,
+  onOpenPeerMessages,
   memberName,
   onRefresh,
   onBotChanged,
@@ -2418,6 +2431,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  onOpenPeerMessages: () => void;
   memberName?: (botId: string | undefined) => string | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
@@ -2461,6 +2475,7 @@ const Transcript = memo(function Transcript({
             message={message}
             canAnswer={message.id === answerableAskMessageId}
             onOpenBot={onOpenBot}
+            onOpenPeerMessages={onOpenPeerMessages}
             onAnswer={onAnswer}
             speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
             memberName={memberName}
@@ -2849,6 +2864,7 @@ const MessageView = memo(function MessageView({
   message,
   onAnswer,
   onOpenBot,
+  onOpenPeerMessages,
   speakerName,
   memberName,
   replyPreview,
@@ -2864,6 +2880,7 @@ const MessageView = memo(function MessageView({
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
+  onOpenPeerMessages: () => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   replyPreview?: ThreadMessage;
@@ -2966,20 +2983,15 @@ const MessageView = memo(function MessageView({
           const sent = block.kind === "bot_message_sent";
           const peer = sent ? block.toBotName : block.fromBotName;
           return (
-            <div key={i} className={`flex ${sent ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[74%] rounded-[20px] border border-[#26262A] px-[18px] py-3 ${
-                  sent ? "bg-[#141416]" : "bg-[#101012]"
-                }`}
-              >
-                <div className="mb-1 text-[12.5px] text-[#85858A]">
-                  {sent ? `→ ${peer}` : `← ${peer}`}
-                </div>
-                <div className="text-[15.5px] leading-[1.5] text-[#DFDFE2]" dir="auto">
-                  <ChatMarkdown>{block.text}</ChatMarkdown>
-                </div>
-              </div>
-            </div>
+            <button
+              key={i}
+              type="button"
+              onClick={onOpenPeerMessages}
+              className="flex items-center justify-center gap-2 self-center rounded-full border border-[#26262A] px-3 py-1 text-[13px] text-[#85858A] hover:bg-[#161618]"
+            >
+              <span>↔</span>
+              <span>{sent ? `Messaged ${peer}` : `Message from ${peer}`}</span>
+            </button>
           );
         }
         if (block.kind === "meta") {
