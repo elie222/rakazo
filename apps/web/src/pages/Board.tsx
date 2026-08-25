@@ -1,4 +1,4 @@
-import type { BoardItem, ComputerMode, RunStatus, UpcomingRoutine } from "@rakazo/contracts";
+import type { BoardItem, RunStatus, UpcomingRoutine } from "@rakazo/contracts";
 import { formatCron } from "@rakazo/core";
 import { BotAvatar } from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
@@ -6,14 +6,6 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { LoadingState } from "../components/beautiful-ui/primitives";
 import { rpc } from "../lib/rpc";
-
-const COMPUTER_STATE_COLOR: Record<string, string> = {
-  running: "#3FB950",
-  booting: "#E6A700",
-  suspended: "#6C6C70",
-  stopped: "#55555A",
-  error: "#EF6461",
-};
 
 const POLL_MS = 8_000;
 
@@ -193,28 +185,10 @@ function BoardCard({ item, onOpen }: { item: BoardItem; onOpen: () => void }) {
             ◷
           </span>
         ) : null}
-        <ComputerBadge scope={item.computerScope} state={item.computerState} />
       </div>
       <p className="line-clamp-3 text-[13.5px] leading-[1.4] text-[#C9C9CE]">{item.prompt}</p>
       <span className="text-[11.5px] text-[#6C6C70]">{relativeTime(item.updatedAt)}</span>
     </button>
-  );
-}
-
-function ComputerBadge({ scope, state }: { scope: ComputerMode | null; state: string | null }) {
-  if (!scope || !state) return null;
-  return (
-    <span
-      className="flex shrink-0 items-center gap-1 rounded-full border border-[#1E1E22] px-1.5 py-0.5 text-[10.5px] text-[#85858A]"
-      title={`${scope === "team" ? "Team" : "Private"} computer — ${state}`}
-    >
-      <span
-        className="h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: COMPUTER_STATE_COLOR[state] ?? "#55555A" }}
-        aria-hidden="true"
-      />
-      {scope === "team" ? "Team" : "Private"}
-    </span>
   );
 }
 
