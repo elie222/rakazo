@@ -124,8 +124,8 @@ export default function Home() {
       if (requestId !== activityRequestId.current) return;
       setActivity(next);
     } catch {
+      // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
-      setActivity({ active: [], recent: [] });
     }
   }, [hasSession, query, searching]);
 
