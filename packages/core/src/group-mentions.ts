@@ -61,7 +61,10 @@ export function mentionInsertToken(
     if (!usedNames.has(token.toLowerCase())) return token;
   }
 
-  return fullToken;
+  for (let index = 2; ; index++) {
+    const token = `${normalized}-${index}`;
+    if (!usedNames.has(token.toLowerCase())) return token;
+  }
 }
 
 export function filterSelectedMentionsByText<T extends { name: string }>(

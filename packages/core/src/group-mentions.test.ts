@@ -48,6 +48,15 @@ describe("mentionInsertToken", () => {
       ]),
     ).toEqual([{ kind: "routine", id: "routine-abcf456", name: "Daily-cf456" }]);
   });
+
+  it("uses a numeric fallback when every id-based token is taken", () => {
+    const selected = [
+      { name: "Daily-ab", id: "routine-1" },
+      { name: "Daily-a", id: "routine-2" },
+      { name: "Daily-b", id: "routine-3" },
+    ];
+    expect(mentionInsertToken("Daily", "ab", selected)).toBe("Daily-2");
+  });
 });
 
 describe("filterSelectedMentionsByText", () => {

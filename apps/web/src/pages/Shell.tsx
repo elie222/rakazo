@@ -285,7 +285,7 @@ export function ShellPage() {
   activeBotId.current = inGroup ? undefined : active?.id;
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
-  const routineSendNonceRef = useRef<string | null>(null);
+  const routineSendNonceRef = useRef<{ commandKey: string; nonce: string } | null>(null);
   const screenRequest = useRef(0);
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
@@ -1097,10 +1097,14 @@ export function ShellPage() {
       setSendError(null);
       try {
         if (routineMentions.length) {
-          if (!routineSendNonceRef.current) {
-            routineSendNonceRef.current = crypto.randomUUID();
+          const routineCommandKey = `${originThreadKey}:${routineMentions.slice().sort().join(",")}`;
+          let sendNonce: string;
+          if (routineSendNonceRef.current?.commandKey === routineCommandKey) {
+            sendNonce = routineSendNonceRef.current.nonce;
+          } else {
+            sendNonce = crypto.randomUUID();
+            routineSendNonceRef.current = { commandKey: routineCommandKey, nonce: sendNonce };
           }
-          const sendNonce = routineSendNonceRef.current;
           await Promise.all(
             routineMentions.map((routineId) =>
               rpc.routines.testRun({
@@ -1109,7 +1113,6 @@ export function ShellPage() {
               }),
             ),
           );
-          routineSendNonceRef.current = null;
           setReplyTarget(null);
           setPendingAttachments((current) =>
             current.filter((attachment) => attachment.threadKey !== originThreadKey),
@@ -1117,6 +1120,7 @@ export function ShellPage() {
           if (botTarget && activeBotId.current === botTarget) {
             await refreshThreadRef.current(botTarget);
           }
+          routineSendNonceRef.current = null;
           return;
         }
         const artifactIds: string[] = [];

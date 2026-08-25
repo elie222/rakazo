@@ -10,6 +10,7 @@ import {
   mentionInsertToken,
   stripMentionToken,
 } from "@rakazo/core";
+import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -80,7 +81,7 @@ export default function Thread() {
   const activeGroupId = useRef(groupId);
   activeGroupId.current = groupId;
   const readVisibleTarget = useRef<string | null>(null);
-  const routineSendNonceRef = useRef<string | null>(null);
+  const routineSendNonceRef = useRef<{ commandKey: string; nonce: string } | null>(null);
   const threadKey = groupId ?? botId;
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
@@ -524,10 +525,14 @@ export default function Thread() {
     setError(null);
     try {
       if (routineMentions.length) {
-        if (!routineSendNonceRef.current) {
-          routineSendNonceRef.current = crypto.randomUUID();
+        const routineCommandKey = `${threadKey}:${routineMentions.slice().sort().join(",")}`;
+        let sendNonce: string;
+        if (routineSendNonceRef.current?.commandKey === routineCommandKey) {
+          sendNonce = routineSendNonceRef.current.nonce;
+        } else {
+          sendNonce = Crypto.randomUUID();
+          routineSendNonceRef.current = { commandKey: routineCommandKey, nonce: sendNonce };
         }
-        const sendNonce = routineSendNonceRef.current;
         await Promise.all(
           routineMentions.map((routineId) =>
             rpc("routines/testRun", {
@@ -536,7 +541,6 @@ export default function Thread() {
             }),
           ),
         );
-        routineSendNonceRef.current = null;
         setPendingAttachments((current) =>
           current.filter((attachment) => attachment.threadKey !== threadKey),
         );
@@ -548,6 +552,7 @@ export default function Thread() {
           setAttachmentNotice(null);
           await refresh();
         }
+        routineSendNonceRef.current = null;
         return;
       }
       const artifactIds: string[] = [];
