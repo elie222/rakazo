@@ -52,6 +52,7 @@ import {
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import {
   ArrowUp,
+  Bell,
   Box,
   ChevronLeft,
   Cpu,
@@ -95,6 +96,7 @@ import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
+import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
@@ -118,6 +120,7 @@ import {
   userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
+import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
@@ -240,6 +243,14 @@ export function ShellPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [activityMode, setActivityMode] = useState(readActivityMode);
+  const toggleActivityMode = useCallback(() => {
+    setActivityMode((on) => {
+      const next = !on;
+      writeActivityMode(next);
+      return next;
+    });
+  }, []);
   const [botMenu, setBotMenu] = useState<{
     botId: string;
     position: ContextMenuPosition;
@@ -1445,7 +1456,25 @@ export function ShellPage() {
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
-          <div className="relative">
+          <div className="relative flex items-center gap-2.5">
+            <button
+              type="button"
+              aria-label="Activity"
+              aria-pressed={activityMode}
+              title="Activity"
+              data-activity-mode={activityMode ? "on" : "off"}
+              onClick={toggleActivityMode}
+              className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
+                activityMode ? "bg-[#4C8DFF] text-white" : "text-[#7A7A80] hover:text-[#C9C9CE]"
+              }`}
+            >
+              <Bell
+                size={15}
+                strokeWidth={1.8}
+                fill={activityMode ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+            </button>
             <button
               type="button"
               onClick={() => setCreateMenuOpen((open) => !open)}
@@ -1497,68 +1526,79 @@ export function ShellPage() {
               onSelect={(hit) => void jumpToSearchHit(hit)}
             />
           ) : (
-            sidebarGroups.map((group) => (
-              <div key={group.key} data-sidebar-group={group.key}>
-                {group.title ? (
-                  <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
-                    {group.title}
-                  </div>
-                ) : null}
-                {group.bots.map((bot) => (
-                  <button
-                    key={bot.id}
-                    type="button"
-                    onClick={() => {
-                      setMobileSidebarOpen(false);
-                      navigate(`/app/${bot.id}`);
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setBotMenu({
-                        botId: bot.id,
-                        position: { x: event.clientX, y: event.clientY },
-                      });
-                    }}
-                    className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                    style={{
-                      background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
-                    }}
-                  >
-                    <BotAvatar color={bot.color} size={38} status={bot.status} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span
+            <>
+              {activityMode ? (
+                <ActivityList
+                  onOpenRun={(run) => {
+                    setMobileSidebarOpen(false);
+                    if (run.groupId) navigate(`/app/g/${run.groupId}`);
+                    else navigate(`/app/${run.botId}`);
+                  }}
+                />
+              ) : null}
+              {sidebarGroups.map((group) => (
+                <div key={group.key} data-sidebar-group={group.key}>
+                  {group.title ? (
+                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
+                      {group.title}
+                    </div>
+                  ) : null}
+                  {group.bots.map((bot) => (
+                    <button
+                      key={bot.id}
+                      type="button"
+                      onClick={() => {
+                        setMobileSidebarOpen(false);
+                        navigate(`/app/${bot.id}`);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setBotMenu({
+                          botId: bot.id,
+                          position: { x: event.clientX, y: event.clientY },
+                        });
+                      }}
+                      className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
+                      style={{
+                        background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                      }}
+                    >
+                      <BotAvatar color={bot.color} size={38} status={bot.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span
+                            dir="auto"
+                            className={`truncate text-[15px] text-[#ECECEE] ${
+                              bot.unread ? "font-semibold" : "font-medium"
+                            }`}
+                          >
+                            {bot.name}
+                            {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
+                            {bot.status === "idle" ? "" : bot.status}
+                            {bot.unread ? (
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                              />
+                            ) : null}
+                          </span>
+                        </div>
+                        <div
                           dir="auto"
-                          className={`truncate text-[15px] text-[#ECECEE] ${
-                            bot.unread ? "font-semibold" : "font-medium"
+                          className={`mt-0.5 truncate text-[13.5px] ${
+                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                           }`}
                         >
-                          {bot.name}
-                          {bot.unread ? <span className="sr-only"> (unread)</span> : null}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? "" : bot.status}
-                          {bot.unread ? (
-                            <span
-                              aria-hidden="true"
-                              className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                            />
-                          ) : null}
-                        </span>
+                          {bot.preview || bot.title}
+                        </div>
                       </div>
-                      <div
-                        dir="auto"
-                        className={`mt-0.5 truncate text-[13.5px] ${
-                          bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                        }`}
-                      >
-                        {bot.preview || bot.title}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ))
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </>
           )}
           {!showWorkspaceSearch
             ? groups.map((group) => (
