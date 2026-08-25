@@ -72,7 +72,8 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
       setActiveRuns([]);
       setRecentRuns([]);
     } finally {
-      if (generation === refreshGeneration.current) setLoading(false);
+      // Clear loading even for stale polls so >15s RPCs cannot stick on "Loading…".
+      setLoading(false);
     }
   }, []);
 
