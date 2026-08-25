@@ -1,5 +1,6 @@
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
+import { uiCopy } from "../../lib/ui-copy";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
@@ -37,14 +38,14 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
                 : "border-[#26262A] text-[#85858A]"
             }`}
           >
-            {option === "cloud" ? "Cloud" : "Local"}
+            {option === "cloud" ? uiCopy("Cloud") : uiCopy("Local")}
           </button>
         ))}
       </div>
 
       {mode === "local" ? (
         <label className="mt-4 block text-[13.5px] text-[#85858A]">
-          Base URL
+          {uiCopy("Base URL")}
           <input
             value={baseUrl}
             disabled={busy}
@@ -56,7 +57,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
       ) : null}
 
       <label className="mt-4 block text-[13.5px] text-[#85858A]">
-        {mode === "cloud" ? "Organization API key" : "Instance API key"}
+        {mode === "cloud" ? uiCopy("Organization API key") : uiCopy("Instance API key")}
         <input
           value={apiKey}
           disabled={busy}
@@ -76,7 +77,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
         onClick={() => void connect()}
         className="mt-5"
       >
-        {busy ? "Connecting…" : "Connect"}
+        {busy ? uiCopy("Connecting…") : uiCopy("Connect")}
       </Button>
     </>
   );

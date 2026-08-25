@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { uiCopy } from "../lib/ui-copy";
 import { WindowChrome } from "./WindowChrome";
 
 export function WelcomePage() {
@@ -17,16 +18,16 @@ export function WelcomePage() {
           <div className="text-[76px] leading-none tracking-[-0.03em] text-white">Rakazo</div>
         </div>
         <p className="max-w-[600px] text-center text-[27px] leading-[1.4] text-[#E4E4E6]">
-          Your team of always-on agents
+          {uiCopy("Your team of always-on agents")}
           <br />
-          that you can give real work to.
+          {uiCopy("that you can give real work to.")}
         </p>
         <button
           type="button"
           onClick={() => navigate("/sign-in")}
           className="app-no-drag rounded-full bg-[#1B1B1F] px-[34px] py-[15px] text-[19px] text-[#F2F2F3] transition hover:scale-[1.04] hover:bg-[#26262B]"
         >
-          Sign in&nbsp;&nbsp;→
+          {uiCopy("Sign in")}&nbsp;&nbsp;→
         </button>
       </div>
     </div>

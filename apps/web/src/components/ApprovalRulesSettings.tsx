@@ -1,17 +1,18 @@
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 function describeRule(rule: ActionApprovalRule) {
   const target =
     rule.matchKind === "category"
-      ? `${rule.matchValue} actions`
+      ? rule.matchValue
       : rule.matchKind === "connector"
-        ? `${rule.matchValue} connector`
+        ? rule.matchValue
         : rule.matchValue;
   return rule.effect === "require_approval"
-    ? `Ask before ${target}`
-    : `Allow ${target} without asking`;
+    ? uiCopy("Ask before {target}", { values: { target } })
+    : uiCopy("Allow {target} without asking", { values: { target } });
 }
 
 export function ApprovalRulesSettings() {
@@ -26,7 +27,7 @@ export function ApprovalRulesSettings() {
     try {
       setRules(await rpc.approvalRules.list());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load approval rules");
+      setError(err instanceof Error ? err.message : uiCopy("Could not load approval rules"));
     } finally {
       setLoading(false);
     }
@@ -58,7 +59,7 @@ export function ApprovalRulesSettings() {
       });
       setRules((current) => [...current, saved]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save rule");
+      setError(err instanceof Error ? err.message : uiCopy("Could not save rule"));
     } finally {
       setSavingPreset(null);
     }
@@ -70,16 +71,17 @@ export function ApprovalRulesSettings() {
       await rpc.approvalRules.remove({ id });
       setRules((current) => current.filter((rule) => rule.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove rule");
+      setError(err instanceof Error ? err.message : uiCopy("Could not remove rule"));
     }
   }
 
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
-      <h3 className="text-[15px] font-medium text-[#ECECEE]">Action confirmations</h3>
+      <h3 className="text-[15px] font-medium text-[#ECECEE]">{uiCopy("Action confirmations")}</h3>
       <p className="mt-2 text-[13.5px] leading-[1.5] text-[#85858A]">
-        Bots act without asking by default. Add an exception only when you want to review a type of
-        action first. These preferences apply across all your bots.
+        {uiCopy(
+          "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.",
+        )}
       </p>
       <div className="mt-4 flex flex-col items-start gap-2">
         <button
@@ -88,7 +90,7 @@ export function ApprovalRulesSettings() {
           onClick={() => void setPreset("email")}
           className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14px] text-[#C9C9CE] disabled:opacity-50"
         >
-          Ask before sending external email
+          {uiCopy("Ask before sending external email")}
         </button>
         <button
           type="button"
@@ -96,14 +98,16 @@ export function ApprovalRulesSettings() {
           onClick={() => void setPreset("purchase")}
           className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14px] text-[#C9C9CE] disabled:opacity-50"
         >
-          Ask before purchases
+          {uiCopy("Ask before purchases")}
         </button>
       </div>
       {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
       {loading ? (
-        <p className="mt-4 text-[13px] text-[#85858A]">Loading rules…</p>
+        <p className="mt-4 text-[13px] text-[#85858A]">{uiCopy("Loading rules…")}</p>
       ) : rules.length === 0 ? (
-        <p className="mt-4 text-[13px] text-[#85858A]">No exceptions. Actions run automatically.</p>
+        <p className="mt-4 text-[13px] text-[#85858A]">
+          {uiCopy("No exceptions. Actions run automatically.")}
+        </p>
       ) : (
         <ul className="mt-4 space-y-2">
           {rules.map((rule) => (
@@ -117,7 +121,7 @@ export function ApprovalRulesSettings() {
                 onClick={() => void removeRule(rule.id)}
                 className="text-[13px] text-[#85858A]"
               >
-                Remove
+                {uiCopy("Remove")}
               </button>
             </li>
           ))}

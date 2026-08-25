@@ -25,6 +25,8 @@ import {
   waitForModelOAuth,
 } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
+import { localizeModelCopy } from "../lib/ui-model-copy";
 
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -107,7 +109,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void refresh()
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not load model settings"),
+        setError(err instanceof Error ? err.message : uiCopy("Could not load model settings")),
       )
       .finally(() => setLoading(false));
     return () => {
@@ -221,7 +223,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : "Could not reach this model server");
+      setError(err instanceof Error ? err.message : uiCopy("Could not reach this model server"));
     } finally {
       if (requestId === probeRequestIdRef.current) setProbing(false);
     }
@@ -237,9 +239,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     try {
       await rpc.models.setDefault({ provider: selected.provider, modelId: activeModelId });
       await refresh();
-      setNotice(isOpenAiCompatible ? "Model updated." : `Now using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? uiCopy("Model updated.")
+          : uiCopy("Now using {name}.", { values: { name: selected.label } }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the default model");
+      setError(err instanceof Error ? err.message : uiCopy("Could not change the default model"));
     } finally {
       setPending(null);
     }
@@ -275,9 +281,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setApiKey("");
       await refresh();
       detailScrollRef.current?.scrollTo({ top: 0 });
-      setNotice(isOpenAiCompatible ? "Saved." : `Connected and using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? uiCopy("Saved.")
+          : uiCopy("Connected and using {name}.", { values: { name: selected.label } }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect this provider");
+      setError(err instanceof Error ? err.message : uiCopy("Could not connect this provider"));
     } finally {
       setPending(null);
     }
@@ -324,7 +334,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
+      setError(err instanceof Error ? err.message : uiCopy("Could not start sign-in"));
       setOauth(null);
     } finally {
       if (!waitingForCode) {
@@ -360,7 +370,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
         retryable = true;
         setPasteCode(code);
       }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+      setError(err instanceof Error ? err.message : uiCopy("Could not finish sign-in"));
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
@@ -379,14 +389,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       <div className="flex h-[min(760px,100%)] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">Models</div>
+            <div className="text-2xl font-medium text-[#F1F1F2]">{uiCopy("Models")}</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {loading ? "Loading model catalog…" : "Choose which connected model Rakazo uses."}
+              {loading
+                ? uiCopy("Loading model catalog…")
+                : uiCopy("Choose which connected model Rakazo uses.")}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close model settings"
+            aria-label={uiCopy("Close model settings")}
             onClick={handleClose}
             className="text-[#85858A]"
           >
@@ -396,27 +408,29 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="mx-6 mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-3 sm:mx-8">
           <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-            Active model
+            {uiCopy("Active model")}
           </div>
           <div className="mt-1 text-[16px] text-[#F1F1F2]">
-            {currentEntry?.label ?? me?.defaultModel ?? "Deployment default"}
+            {currentEntry?.label ?? me?.defaultModel ?? uiCopy("Deployment default")}
           </div>
           <div className="mt-1 text-[13px] text-[#85858A]">
-            {currentEntry?.providerName ?? me?.defaultProvider ?? "Configured by deployment"}
+            {currentEntry?.providerName ??
+              me?.defaultProvider ??
+              uiCopy("Configured by deployment")}
           </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
           <div className="flex min-h-0 shrink-0 flex-col md:w-[310px]">
-            <div className="mb-3 text-[13.5px] text-[#85858A]">Providers</div>
+            <div className="mb-3 text-[13.5px] text-[#85858A]">{uiCopy("Providers")}</div>
             <label className="sr-only" htmlFor="model-provider-search">
-              Search providers
+              {uiCopy("Search providers")}
             </label>
             <input
               id="model-provider-search"
               value={providerQuery}
               onChange={(event) => setProviderQuery(event.target.value)}
-              placeholder="Search providers"
+              placeholder={uiCopy("Search providers")}
               className="w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none placeholder:text-[#6C6C70] focus:border-[#4A4A50]"
             />
             <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-[13px] border border-[#26262A] md:min-h-0 md:max-h-none md:flex-1">
@@ -442,13 +456,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         </span>
                       </span>
                       {connected ? (
-                        <span className="text-[12px] text-[#4ECB71]">Connected</span>
+                        <span className="text-[12px] text-[#4ECB71]">{uiCopy("Connected")}</span>
                       ) : null}
                     </button>
                   );
                 })
               ) : (
-                <p className="px-3.5 py-4 text-[13px] text-[#85858A]">No providers found.</p>
+                <p className="px-3.5 py-4 text-[13px] text-[#85858A]">
+                  {uiCopy("No providers found.")}
+                </p>
               )}
             </div>
           </div>
@@ -462,18 +478,20 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   {isOpenAiCompatible ? (
                     <>
                       <label className="block">
-                        Server URL
+                        {uiCopy("Server URL")}
                         <input
                           value={baseUrl}
                           onChange={(event) => updateBaseUrl(event.target.value)}
-                          aria-label="OpenAI-compatible server URL"
+                          aria-label={uiCopy("OpenAI-compatible server URL")}
                           placeholder="http://127.0.0.1:8000/v1"
                           autoComplete="off"
                           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                         />
                       </label>
                       <details className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
-                        <summary className="w-fit cursor-pointer select-none">Setup help</summary>
+                        <summary className="w-fit cursor-pointer select-none">
+                          {uiCopy("Setup help")}
+                        </summary>
                         <p className="mt-1">{OPENAI_COMPATIBLE_BASE_URL_HINT}</p>
                       </details>
                       <div className="mt-3 flex items-center gap-2">
@@ -484,11 +502,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           disabled={busy || probing || !effectiveBaseUrl}
                           onClick={() => void probeServerModels()}
                         >
-                          {probing ? "Finding…" : "Find models"}
+                          {probing ? uiCopy("Finding…") : uiCopy("Find models")}
                         </Button>
                       </div>
                       <div className="mt-4 block">
-                        <span>Model</span>
+                        <span>{uiCopy("Model")}</span>
                         {probeModels.length && probeModels.includes(modelId) ? (
                           <div className="relative mt-2">
                             <select
@@ -500,7 +518,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                                 setError(null);
                                 setNotice(null);
                               }}
-                              aria-label="Models from server"
+                              aria-label={uiCopy("Models from server")}
                               className="w-full appearance-none rounded-[11px] border border-[#26262A] bg-[#101012] py-3 pl-3.5 pr-11 text-sm text-[#ECECEE]"
                             >
                               {probeModels.map((id) => (
@@ -508,7 +526,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                                   {id}
                                 </option>
                               ))}
-                              <option value="">Other model…</option>
+                              <option value="">{uiCopy("Other model…")}</option>
                             </select>
                             <span
                               aria-hidden="true"
@@ -527,7 +545,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               setError(null);
                               setNotice(null);
                             }}
-                            aria-label="Model id"
+                            aria-label={uiCopy("Model id")}
                             placeholder="exact-model-id"
                             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
                           />
@@ -538,14 +556,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                             className="mt-2 text-[13px] text-[#85858A] underline"
                             onClick={() => setModelId(probeModels[0] ?? "")}
                           >
-                            Use a found model
+                            {uiCopy("Use a found model")}
                           </button>
                         ) : null}
                       </div>
                     </>
                   ) : (
                     <>
-                      <span>Model</span>
+                      <span>{uiCopy("Model")}</span>
                       <ModelPicker
                         options={modelsForProvider}
                         value={selected.id}
@@ -562,22 +580,26 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 </div>
                 {!isOpenAiCompatible ? (
                   <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
-                    {selected.billing}
+                    {localizeModelCopy(selected.billing)}
                   </p>
                 ) : null}
 
                 {!isOpenAiCompatible ? (
                   <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                     <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-                      Personal credential
+                      {uiCopy("Personal credential")}
                     </div>
                     <div className="mt-1 text-[15px] text-[#ECECEE]">
-                      {credential ? `Connected · ${credential.label}` : "Not connected"}
+                      {credential
+                        ? `${uiCopy("Connected")} · ${credential.label}`
+                        : uiCopy("Not connected")}
                     </div>
                     <div className="mt-1 text-[13px] text-[#85858A]">
                       {credential
-                        ? "Your key or subscription token is stored securely and is never shown here."
-                        : "Connect this provider to use it as your personal model."}
+                        ? uiCopy(
+                            "Your key or subscription token is stored securely and is never shown here.",
+                          )
+                        : uiCopy("Connect this provider to use it as your personal model.")}
                     </div>
                   </div>
                 ) : null}
@@ -589,7 +611,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         {oauth.mode === "auth-url" ? (
                           <>
                             <p className="text-sm leading-[1.5] text-[#85858A]">
-                              Finish signing in at{" "}
+                              {uiCopy("Finish signing in at")}{" "}
                               <a
                                 href={oauth.verificationUri}
                                 target="_blank"
@@ -598,13 +620,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               >
                                 {new URL(oauth.verificationUri).hostname}
                               </a>
-                              . The final page may not load; paste its URL or code here.
+                              {uiCopy(". The final page may not load; paste its URL or code here.")}
                             </p>
                             <div className="mt-3 flex items-center gap-2">
                               <input
                                 value={pasteCode}
                                 onChange={(e) => setPasteCode(e.target.value)}
-                                aria-label="Authorization code or callback URL"
+                                aria-label={uiCopy("Authorization code or callback URL")}
                                 autoComplete="off"
                                 spellCheck={false}
                                 placeholder="http://localhost:53692/callback?code=…"
@@ -617,15 +639,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                                 disabled={!pasteCode.trim()}
                                 onClick={() => void submitOAuthCode()}
                               >
-                                Submit
+                                {uiCopy("Submit")}
                               </Button>
                             </div>
-                            <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                            <p className="mt-2 text-sm text-[#85858A]">
+                              {uiCopy("Waiting for sign-in…")}
+                            </p>
                           </>
                         ) : (
                           <>
                             <p className="text-sm leading-[1.5] text-[#85858A]">
-                              Enter this code at{" "}
+                              {uiCopy("Enter this code at")}{" "}
                               <a
                                 href={oauth.verificationUri}
                                 target="_blank"
@@ -638,7 +662,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                             <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
                               {oauth.userCode}
                             </p>
-                            <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                            <p className="mt-2 text-sm text-[#85858A]">
+                              {uiCopy("Waiting for sign-in…")}
+                            </p>
                           </>
                         )}
                       </div>
@@ -650,7 +676,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         disabled={busy}
                         onClick={() => void startSubscriptionSignIn()}
                       >
-                        {oauthPending ? "Starting…" : (selected.oauthLabel ?? "Sign in")}
+                        {oauthPending
+                          ? uiCopy("Starting…")
+                          : selected.oauthLabel
+                            ? localizeModelCopy(selected.oauthLabel)
+                            : uiCopy("Sign in")}
                       </Button>
                     )}
                   </div>
@@ -660,12 +690,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   <div className="mt-5">
                     {isOpenAiCompatible ? (
                       <details className="text-[13.5px] text-[#85858A]">
-                        <summary className="w-fit cursor-pointer select-none">API key</summary>
+                        <summary className="w-fit cursor-pointer select-none">
+                          {uiCopy("API key")}
+                        </summary>
                         <input
-                          aria-label="API key"
+                          aria-label={uiCopy("API key")}
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
-                          placeholder="Optional"
+                          placeholder={uiCopy("Optional")}
                           type="password"
                           autoComplete="new-password"
                           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
@@ -674,10 +706,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     ) : (
                       <label className="block text-[13.5px] text-[#85858A]">
                         {credential
-                          ? "Replace API key"
+                          ? uiCopy("Replace API key")
                           : subscriptionSignIn
-                            ? "Or connect an API key"
-                            : "API key"}
+                            ? uiCopy("Or connect an API key")
+                            : uiCopy("API key")}
                         <input
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
@@ -700,20 +732,21 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       className="mt-3"
                     >
                       {pending === "connect"
-                        ? "Saving…"
+                        ? uiCopy("Saving…")
                         : isOpenAiCompatible
-                          ? "Save"
+                          ? uiCopy("Save")
                           : credential
-                            ? "Replace API key"
-                            : "Connect API key"}
+                            ? uiCopy("Replace API key")
+                            : uiCopy("Connect API key")}
                     </Button>
                   </div>
                 ) : null}
 
                 {selected.auth === "oauth" && !subscriptionSignIn ? (
                   <p className="mt-5 text-sm leading-[1.5] text-[#85858A]">
-                    This subscription sign-in is not available in Rakazo yet. Use a deployment
-                    credential or choose another provider.
+                    {uiCopy(
+                      "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
+                    )}
                   </p>
                 ) : null}
 
@@ -726,15 +759,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       disabled={busy || (isOpenAiCompatible && !modelId.trim())}
                       onClick={() => void setModelDefault()}
                     >
-                      {pending === "default" ? "Switching…" : "Use this model"}
+                      {pending === "default" ? uiCopy("Switching…") : uiCopy("Use this model")}
                     </Button>
                   </div>
                 ) : null}
               </>
             ) : loading ? (
-              <p className="text-[#85858A]">Loading model catalog…</p>
+              <p className="text-[#85858A]">{uiCopy("Loading model catalog…")}</p>
             ) : (
-              <p className="text-[#85858A]">No model catalog is available.</p>
+              <p className="text-[#85858A]">{uiCopy("No model catalog is available.")}</p>
             )}
           </div>
         </div>
@@ -841,7 +874,7 @@ function ModelPicker({
         ref={triggerRef}
         type="button"
         role="combobox"
-        aria-label="Model"
+        aria-label={uiCopy("Model")}
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -858,7 +891,7 @@ function ModelPicker({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="Model options"
+          aria-label={uiCopy("Model options")}
           className="rk-scroll absolute left-0 right-0 top-full z-20 mt-2 max-h-60 overflow-y-auto rounded-[11px] border border-[#26262A] bg-[#101012] p-1 shadow-[0_20px_45px_rgba(0,0,0,.55)]"
         >
           {options.map((option, index) => (

@@ -109,6 +109,8 @@ import {
   userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
+import { localizeAgentActivity } from "../lib/ui-activity";
+import { uiCopy } from "../lib/ui-copy";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
@@ -1039,9 +1041,9 @@ export function ShellPage() {
         else if (botTarget) await refreshThreadRef.current(botTarget);
       } catch (error) {
         if (groupTarget && activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
+          setSendError(error instanceof Error ? error.message : uiCopy("Failed to send message"));
         } else if (botTarget && activeBotId.current === botTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
+          setSendError(error instanceof Error ? error.message : uiCopy("Failed to send message"));
         }
       } finally {
         setSending(false);
@@ -1064,7 +1066,7 @@ export function ShellPage() {
         await rpc.threads.stop({ groupId: groupTarget });
       } catch (error) {
         if (activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to stop");
+          setSendError(error instanceof Error ? error.message : uiCopy("Failed to stop"));
         }
         return;
       }
@@ -1077,7 +1079,7 @@ export function ShellPage() {
       await rpc.threads.stop({ botId: botTarget });
     } catch (error) {
       if (activeBotId.current === botTarget) {
-        setSendError(error instanceof Error ? error.message : "Failed to stop");
+        setSendError(error instanceof Error ? error.message : uiCopy("Failed to stop"));
       }
       return;
     }
@@ -1282,7 +1284,7 @@ export function ShellPage() {
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
 
-  const userName = session.data?.user.name ?? "You";
+  const userName = session.data?.user.name ?? uiCopy("You");
   const initials = userName
     .split(" ")
     .map((p) => p[0])
@@ -1302,7 +1304,7 @@ export function ShellPage() {
       {mobileSidebarOpen ? (
         <button
           type="button"
-          aria-label="Close navigation"
+          aria-label={uiCopy("Close navigation")}
           onClick={() => setMobileSidebarOpen(false)}
           className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
         />
@@ -1319,7 +1321,7 @@ export function ShellPage() {
               type="button"
               onClick={() => setCreateMenuOpen((open) => !open)}
               className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
-              title="Create"
+              title={uiCopy("Create")}
             >
               +
             </button>
@@ -1333,7 +1335,7 @@ export function ShellPage() {
                     setPanel("create");
                   }}
                 >
-                  New bot
+                  {uiCopy("New bot")}
                 </button>
                 <button
                   type="button"
@@ -1343,7 +1345,7 @@ export function ShellPage() {
                     setPanel("create-group");
                   }}
                 >
-                  New group
+                  {uiCopy("New group")}
                 </button>
               </div>
             ) : null}
@@ -1354,7 +1356,7 @@ export function ShellPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
+            placeholder={uiCopy("Search")}
             className="w-full bg-transparent outline-none"
           />
         </div>
@@ -1403,7 +1405,7 @@ export function ShellPage() {
                           }`}
                         >
                           {bot.name}
-                          {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                          {bot.unread ? <span className="sr-only"> (읽지 않음)</span> : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
                           {bot.status === "idle" ? "" : bot.status}
@@ -1483,7 +1485,7 @@ export function ShellPage() {
                 onClick={() => setArchivedOpen((open) => !open)}
                 className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
               >
-                <span>Archived</span>
+                <span>{uiCopy("Archived")}</span>
                 <span>{archivedBots.length}</span>
               </button>
               {archivedOpen
@@ -1507,7 +1509,7 @@ export function ShellPage() {
                       </button>
                       <button
                         type="button"
-                        aria-label={`Delete ${bot.name}`}
+                        aria-label={uiCopy("Delete {name}", { values: { name: bot.name } })}
                         onClick={() => setDeleteTarget(bot)}
                         className="text-[12.5px] text-[#FF5364]"
                       >
@@ -1527,14 +1529,14 @@ export function ShellPage() {
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">Integrations</span>
+          <span className="text-[14.5px] text-[#C9C9CE]">{uiCopy("Integrations")}</span>
         </button>
         <div className="relative">
           {menuOpen ? (
             <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
               <button
                 type="button"
-                aria-label="Settings"
+                aria-label={uiCopy("Settings")}
                 onClick={() => {
                   setMenuOpen(false);
                   setAccountSettingsOpen(true);
@@ -1542,7 +1544,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Settings</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  {uiCopy("Settings")}
+                </span>
               </button>
               <button
                 type="button"
@@ -1553,7 +1557,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Models</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  {uiCopy("Models")}
+                </span>
               </button>
               <button
                 type="button"
@@ -1564,7 +1570,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Memory</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  {uiCopy("Memory")}
+                </span>
               </button>
               <button
                 type="button"
@@ -1575,7 +1583,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Voice</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  {uiCopy("Voice")}
+                </span>
               </button>
               <button
                 type="button"
@@ -1585,7 +1595,9 @@ export function ShellPage() {
                 }}
               >
                 <Gauge size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Weekly usage</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  {uiCopy("Weekly usage")}
+                </span>
               </button>
               {usage ? (
                 <p className="px-3 pb-2 text-[12.5px] text-[#85858A]">
@@ -1598,7 +1610,7 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <LogOut size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="text-[14.5px] text-[#ECECEE]">Log out</span>
+                <span className="text-[14.5px] text-[#ECECEE]">{uiCopy("Log out")}</span>
               </button>
             </div>
           ) : null}
@@ -1621,7 +1633,7 @@ export function ShellPage() {
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
-              aria-label="Open navigation"
+              aria-label={uiCopy("Open navigation")}
               onClick={() => setMobileSidebarOpen(true)}
               className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
             >
@@ -1644,8 +1656,8 @@ export function ShellPage() {
               <span className="min-w-0">
                 <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
                   {inGroup
-                    ? (activeGroup?.name ?? activeSnapshot?.groupName ?? "Group")
-                    : (active?.name ?? "Select a bot")}
+                    ? (activeGroup?.name ?? activeSnapshot?.groupName ?? uiCopy("Group"))
+                    : (active?.name ?? uiCopy("Select a bot"))}
                 </span>
               </span>
             </button>
@@ -1654,8 +1666,8 @@ export function ShellPage() {
             {!inGroup && active ? (
               <button
                 type="button"
-                title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
-                aria-label="Call"
+                title={voiceStatus?.ready ? uiCopy("Call") : uiCopy("Set up voice to call")}
+                aria-label={uiCopy("Call")}
                 onClick={() => {
                   if (!voiceStatus?.ready) {
                     setVoiceOpen(true);
@@ -1672,7 +1684,7 @@ export function ShellPage() {
             {!inGroup ? (
               <button
                 type="button"
-                title="Agent computer"
+                title={uiCopy("Computer")}
                 onClick={() => setPanel((p) => (p === "computer" ? null : "computer"))}
                 className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
                 style={{ background: panel ? "#1B1B1E" : "transparent" }}
@@ -1704,7 +1716,7 @@ export function ShellPage() {
         />
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
-            Teaching in progress — stop teaching before sending a new message.
+            {uiCopy("Teaching in progress — stop teaching before sending a new message.")}
           </div>
         ) : null}
         <Composer
@@ -1763,7 +1775,7 @@ export function ShellPage() {
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-[#85858A]">
                   {panel === "settings"
-                    ? "Settings"
+                    ? uiCopy("Settings")
                     : active
                       ? (computer?.state ?? active.status)
                       : "group"}
@@ -1772,7 +1784,9 @@ export function ShellPage() {
                   {active ? (
                     <button
                       type="button"
-                      aria-label={panel === "settings" ? "Show computer" : "Show settings"}
+                      aria-label={
+                        panel === "settings" ? uiCopy("Show computer") : uiCopy("Show settings")
+                      }
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={
                         panel === "settings"
@@ -1783,7 +1797,11 @@ export function ShellPage() {
                       <Settings size={16} strokeWidth={1.7} />
                     </button>
                   ) : null}
-                  <button type="button" aria-label="Close panel" onClick={() => setPanel(null)}>
+                  <button
+                    type="button"
+                    aria-label={uiCopy("Close panel")}
+                    onClick={() => setPanel(null)}
+                  >
                     <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
@@ -1794,16 +1812,17 @@ export function ShellPage() {
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full window
+                      {uiCopy("Open in full window")}
                     </div>
                   ) : computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
-                      This bot runs on this computer, not a Linux desktop. Shell and files use your
-                      home folder.
+                      {uiCopy(
+                        "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder.",
+                      )}
                     </div>
                   ) : computer?.state === "running" && embeddedScreenUrl ? (
                     <iframe
-                      title="Bot screen preview"
+                      title={uiCopy("Bot screen preview")}
                       src={embeddedScreenUrl}
                       sandbox={screenIframeSandbox(embeddedScreenUrl)}
                       className="h-full w-full border-0 bg-black"
@@ -1822,18 +1841,20 @@ export function ShellPage() {
                   <button
                     type="button"
                     className="absolute inset-0 cursor-pointer"
-                    aria-label="Open computer"
+                    aria-label={uiCopy("Open computer")}
                     onClick={() => void openComputer()}
                   />
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13.5px] text-[#85858A]">
                     {computer?.busyBotName
-                      ? `${computer.busyBotName} is using it`
+                      ? uiCopy("{name} is using it", {
+                          values: { name: computer.busyBotName },
+                        })
                       : hasControl
-                        ? "You have control"
+                        ? uiCopy("You have control")
                         : computer?.state === "suspended"
-                          ? "Asleep"
+                          ? uiCopy("Asleep")
                           : computerLabel(computer?.mode, active.name)}
                   </span>
                   {hasControl ? (
@@ -1848,11 +1869,13 @@ export function ShellPage() {
                       size="sm"
                       onClick={() => void openComputer()}
                     >
-                      Take control
+                      {uiCopy("Take control")}
                     </Button>
                   )}
                 </div>
-                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
+                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">
+                  {uiCopy("Routines")}
+                </div>
                 {activeRoutines.map((routine) => (
                   <button
                     key={routine.id}
@@ -1884,7 +1907,7 @@ export function ShellPage() {
                   }}
                   className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
                 >
-                  + New routine
+                  + {uiCopy("New routine")}
                 </button>
                 {active ? (
                   <TeachComputerSection
@@ -1986,13 +2009,15 @@ export function ShellPage() {
                   >
                     <ChevronLeft size={18} strokeWidth={1.8} />
                   </button>
-                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
+                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">
+                    {uiCopy("Routine")}
+                  </div>
                   <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
                     <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
                 <label className="text-[14px] text-[#85858A]">
-                  Name
+                  {uiCopy("Name")}
                   <input
                     value={routineDraft.name}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
@@ -2000,7 +2025,7 @@ export function ShellPage() {
                   />
                 </label>
                 <label className="mt-5 block text-[14px] text-[#85858A]">
-                  Instruction
+                  {uiCopy("Instruction")}
                   <textarea
                     value={routineDraft.prompt}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
@@ -2009,7 +2034,7 @@ export function ShellPage() {
                   />
                 </label>
                 <div className="mt-5 text-[14px] text-[#85858A]">
-                  When to run
+                  {uiCopy("When to run")}
                   <Suspense fallback={null}>
                     <RoutineSchedule
                       value={routineDraft.schedule}
@@ -2057,7 +2082,7 @@ export function ShellPage() {
                           return;
                         }
                         setRoutineError(
-                          error instanceof Error ? error.message : "Could not save routine",
+                          error instanceof Error ? error.message : uiCopy("Could not save routine"),
                         );
                         return;
                       } finally {
@@ -2080,7 +2105,7 @@ export function ShellPage() {
                     }}
                     className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
                   >
-                    {savingRoutine ? "Saving…" : "Save"}
+                    {savingRoutine ? uiCopy("Saving…") : uiCopy("Save")}
                   </button>
                   {editingRoutine?.botId === active.id ? (
                     <>
@@ -2104,7 +2129,7 @@ export function ShellPage() {
                         }}
                         className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40"
                       >
-                        {runningRoutine ? "Running…" : "Run now"}
+                        {runningRoutine ? uiCopy("Running…") : uiCopy("Run now")}
                       </button>
                       <button
                         type="button"
@@ -2112,7 +2137,7 @@ export function ShellPage() {
                         onClick={() => setDeleteRoutineTarget(editingRoutine)}
                         className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364] disabled:opacity-40"
                       >
-                        Delete routine
+                        {uiCopy("Delete routine")}
                       </button>
                     </>
                   ) : null}
@@ -2331,7 +2356,7 @@ export function ShellPage() {
               )}
               {!recordingSkill && hasControl ? (
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
-                  You have control
+                  {uiCopy("You have control")}
                 </span>
               ) : null}
             </div>
@@ -2341,11 +2366,11 @@ export function ShellPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-label="Stop"
+                  aria-label={uiCopy("Stop")}
                   data-testid="computer-overlay-stop"
                   onClick={() => void stopRun()}
                 >
-                  Stop
+                  {uiCopy("Stop")}
                 </Button>
               ) : null}
               {recordingSkill ? (
@@ -2362,13 +2387,13 @@ export function ShellPage() {
                   size="sm"
                   onClick={() => void bootComputer({ takeControl: true, overlay: false })}
                 >
-                  Take control
+                  {uiCopy("Take control")}
                 </Button>
               )}
               <button
                 type="button"
                 className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
-                aria-label="Close computer"
+                aria-label={uiCopy("Close computer")}
                 onClick={() => setComputerOpen(false)}
               >
                 <X size={16} strokeWidth={1.8} />
@@ -2386,13 +2411,14 @@ export function ShellPage() {
           <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
             {computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
-                This bot runs on this computer. There is no separate Linux desktop. Ask it to use
-                the shell; working directories under your home folder are allowed.
+                {uiCopy(
+                  "This bot runs on this computer. There is no separate Linux desktop. Ask it to use the shell; working directories under your home folder are allowed.",
+                )}
               </div>
             ) : computer?.state === "running" && embeddedScreenUrl ? (
               <>
                 <iframe
-                  title="Bot screen"
+                  title={uiCopy("Bot screen")}
                   src={embeddedScreenUrl}
                   sandbox={screenIframeSandbox(embeddedScreenUrl)}
                   className="h-full w-full border-0 bg-black"
@@ -2414,7 +2440,7 @@ export function ShellPage() {
             ) : (
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                 {computer?.state === "suspended"
-                  ? "Computer is asleep"
+                  ? uiCopy("Computer is asleep")
                   : computerLabel(computer?.mode, active.name)}
               </div>
             )}
@@ -2481,18 +2507,18 @@ const Transcript = memo(function Transcript({
           onClick={() => void onLoadOlder()}
           className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
         >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
+          {loadingOlder ? uiCopy("Loading…") : uiCopy("Load earlier messages")}
         </button>
       ) : null}
       {messages.map((message) => (
         <div key={message.id} data-message-id={message.id} className="group/message relative">
           <button
             type="button"
-            aria-label="Reply"
+            aria-label={uiCopy("Reply")}
             onClick={() => onReply(message)}
             className="absolute end-0 top-0 rounded px-2 py-1 text-[12px] text-[#85858A] opacity-0 group-hover/message:opacity-100 hover:text-[#ECECEE] focus:opacity-100"
           >
-            Reply
+            {uiCopy("Reply")}
           </button>
           <MessageView
             artifactTarget={artifactTarget}
@@ -2634,14 +2660,14 @@ const Composer = memo(function Composer({
       {replyTarget ? (
         <div className="mb-3 flex items-start justify-between gap-3 rounded-[14px] border border-[#26262A] bg-[#17171A] px-4 py-2 text-[13px] text-[#C9C9CE]">
           <div className="min-w-0">
-            <div className="text-[#85858A]">Replying to</div>
+            <div className="text-[#85858A]">{uiCopy("Replying to")}</div>
             <div dir="auto" className="truncate">
               {previewMessageText(replyTarget)}
             </div>
           </div>
           <button
             type="button"
-            aria-label="Cancel reply"
+            aria-label={uiCopy("Cancel reply")}
             onClick={onClearReply}
             className="text-[#85858A]"
           >
@@ -2675,7 +2701,9 @@ const Composer = memo(function Composer({
               </span>
               <button
                 type="button"
-                aria-label={`Remove ${attachment.file.name}`}
+                aria-label={uiCopy("Remove {name}", {
+                  values: { name: attachment.file.name },
+                })}
                 onClick={() => onRemoveAttachment(attachment)}
                 className="text-[#85858A] hover:text-[#ECECEE]"
               >
@@ -2710,7 +2738,7 @@ const Composer = memo(function Composer({
         />
         <button
           type="button"
-          aria-label="Attach file"
+          aria-label={uiCopy("Attach file")}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
           className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
@@ -2719,7 +2747,7 @@ const Composer = memo(function Composer({
         </button>
         <button
           type="button"
-          aria-label={dictating ? "Stop dictation" : "Dictate"}
+          aria-label={dictating ? uiCopy("Stop dictation") : uiCopy("Dictate")}
           onMouseDown={(event) => {
             event.preventDefault();
             onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
@@ -2738,7 +2766,7 @@ const Composer = memo(function Composer({
               ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
               : "border-[#26262A] text-[#9A9AA0]"
           }`}
-          title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+          title={transcribe ? uiCopy("Hold to talk") : uiCopy("Hold to talk (on-device dictation)")}
         >
           <Mic size={16} strokeWidth={1.8} />
         </button>
@@ -2752,8 +2780,16 @@ const Composer = memo(function Composer({
             }
           }}
           disabled={disabled}
-          placeholder={activeName ? `Message ${activeName}` : "Message…"}
-          aria-label={activeName ? `Message ${activeName}` : "Message"}
+          placeholder={
+            activeName
+              ? uiCopy("Message {name}", { values: { name: activeName } })
+              : uiCopy("Message…")
+          }
+          aria-label={
+            activeName
+              ? uiCopy("Message {name}", { values: { name: activeName } })
+              : uiCopy("Message")
+          }
           name="chat-message"
           autoComplete="off"
           dir="auto"
@@ -2762,7 +2798,7 @@ const Composer = memo(function Composer({
         {running ? (
           <button
             type="button"
-            aria-label="Stop"
+            aria-label={uiCopy("Stop")}
             onClick={() => void onStop()}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
           >
@@ -2771,7 +2807,7 @@ const Composer = memo(function Composer({
         ) : (
           <button
             type="button"
-            aria-label="Send"
+            aria-label={uiCopy("Send")}
             disabled={sending || !canSend || disabled}
             onClick={send}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
@@ -2792,9 +2828,9 @@ function previewMessageText(message: ThreadMessage): string {
     .trim();
   if (text) return text;
   if (message.blocks.some((block) => block.kind === "image" || block.kind === "file")) {
-    return "Attachment";
+    return uiCopy("Attachment");
   }
-  return "Message";
+  return uiCopy("Message");
 }
 
 function firstThreadRoute(
@@ -2836,10 +2872,10 @@ function ComputerReleaseActions({
   return (
     <div className="flex items-center gap-2">
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
-        Skip
+        {uiCopy("Skip")}
       </Button>
       <Button type="button" size="sm" onClick={() => void onRelease("done")}>
-        I’m done
+        {uiCopy("I’m done")}
       </Button>
     </div>
   );
@@ -2871,7 +2907,7 @@ function ToolSteps({
               className="truncate text-[14px]"
               style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
             >
-              {step.label}
+              {localizeAgentActivity(step.label)}
               {step.count > 1 ? ` ×${step.count}` : ""}
             </span>
           </div>
@@ -2960,7 +2996,9 @@ const MessageView = memo(function MessageView({
               if (block.kind === "text" || block.kind === "progress") {
                 return (
                   <div key={i}>
-                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                    <ChatMarkdown streaming={block.kind === "progress"}>
+                      {block.kind === "progress" ? localizeAgentActivity(block.text) : block.text}
+                    </ChatMarkdown>
                   </div>
                 );
               }
@@ -2969,11 +3007,11 @@ const MessageView = memo(function MessageView({
             {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
               <button
                 type="button"
-                aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                aria-label={speaking ? uiCopy("Stop speaking") : uiCopy("Speak this reply")}
                 onClick={onSpeak}
                 className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
               >
-                {speaking ? "Stop" : "Speak"}
+                {speaking ? uiCopy("Stop") : uiCopy("Speak")}
               </button>
             ) : null}
           </div>
@@ -3018,7 +3056,7 @@ const MessageView = memo(function MessageView({
                 className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
                 dir="auto"
               >
-                <ChatMarkdown streaming>{block.text}</ChatMarkdown>
+                <ChatMarkdown streaming>{localizeAgentActivity(block.text)}</ChatMarkdown>
               </div>
             </div>
           );
@@ -3062,7 +3100,7 @@ const MessageView = memo(function MessageView({
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
-                  {running ? "subagent" : block.status}
+                  {running ? uiCopy("subagent") : block.status === "failed" ? "실패" : "완료"}
                 </span>
               </div>
               <div className="mt-2 text-[13.5px] text-[#85858A]">{block.task}</div>
@@ -3098,18 +3136,18 @@ const MessageView = memo(function MessageView({
                   }}
                 >
                   {block.status === "archived"
-                    ? "archived"
+                    ? uiCopy("archived")
                     : block.status === "deleted"
-                      ? "deleted"
-                      : "bot"}
+                      ? uiCopy("deleted")
+                      : uiCopy("bot")}
                 </span>
               </div>
               <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
                 {removed
                   ? block.status === "archived"
-                    ? "Archived. Chat, memory, and files kept."
-                    : "Removed with chat, computer, and memory."
-                  : block.title || "Opened its thread."}
+                    ? uiCopy("Archived. Chat, memory, and files kept.")
+                    : uiCopy("Removed with chat, computer, and memory.")
+                  : block.title || uiCopy("Opened its thread.")}
               </div>
             </button>
           );
@@ -3202,11 +3240,11 @@ const MessageView = memo(function MessageView({
                 {voiceReady ? (
                   <button
                     type="button"
-                    aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                    aria-label={speaking ? uiCopy("Stop speaking") : uiCopy("Speak this reply")}
                     onClick={onSpeak}
                     className="mt-2 text-[12px] text-[#85858A] hover:text-[#ECECEE]"
                   >
-                    {speaking ? "Stop" : "Speak"}
+                    {speaking ? uiCopy("Stop") : uiCopy("Speak")}
                   </button>
                 ) : null}
               </div>
@@ -3253,7 +3291,7 @@ const MessageView = memo(function MessageView({
               className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]">Computer</span>
+                <span className="text-[15px] font-medium text-[#ECECEE]">{uiCopy("Computer")}</span>
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
                   {block.state}
                 </span>
@@ -3279,7 +3317,7 @@ function ComputerModePicker({
 }) {
   return (
     <div className="mt-4">
-      <div className="text-[14px] text-[#85858A]">Computer</div>
+      <div className="text-[14px] text-[#85858A]">{uiCopy("Computer")}</div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         {(["team", "dedicated"] as const).map((mode) => (
           <button
@@ -3293,7 +3331,7 @@ function ComputerModePicker({
                 : "border-[#26262A] text-[#85858A]"
             }`}
           >
-            {mode === "team" ? "Team" : "Private"}
+            {mode === "team" ? uiCopy("Team") : uiCopy("Private")}
           </button>
         ))}
       </div>
@@ -3327,7 +3365,7 @@ function CreateBotForm({
     try {
       await onCreate({ name, title, description, computerMode });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create bot");
+      setError(err instanceof Error ? err.message : uiCopy("Could not create bot"));
     } finally {
       setSubmitting(false);
     }
@@ -3336,8 +3374,8 @@ function CreateBotForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">New bot</span>
-        <button type="button" aria-label="Cancel new bot" onClick={onCancel}>
+        <span className="text-[13.5px] text-[#85858A]">{uiCopy("New bot")}</span>
+        <button type="button" aria-label={uiCopy("Cancel new bot")} onClick={onCancel}>
           <X size={16} strokeWidth={1.8} />
         </button>
       </div>
@@ -3347,32 +3385,32 @@ function CreateBotForm({
         </p>
       ) : null}
       <label className="mt-6 block text-[14px] text-[#85858A]">
-        Name
+        {uiCopy("Name")}
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Name this bot"
+          placeholder={uiCopy("Name this bot")}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Title
+        {uiCopy("Title")}
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Describe what this bot does"
+          placeholder={uiCopy("Describe what this bot does")}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Description
+        {uiCopy("Description")}
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What this bot is for"
+          placeholder={uiCopy("What this bot is for")}
           rows={4}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
@@ -3384,7 +3422,7 @@ function CreateBotForm({
         onClick={() => void handleSubmit()}
         className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
       >
-        {submitting ? "Creating…" : "Create"}
+        {submitting ? uiCopy("Creating…") : uiCopy("Create")}
       </button>
     </div>
   );
@@ -3436,7 +3474,7 @@ function BotSettings({
         <BotAvatar color={bot.color} size={64} status={bot.status} />
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
-        Name
+        {uiCopy("Name")}
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
@@ -3445,7 +3483,7 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Title
+        {uiCopy("Title")}
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
@@ -3454,7 +3492,7 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Description
+        {uiCopy("Description")}
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
@@ -3466,13 +3504,13 @@ function BotSettings({
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
-          Memory scope
+          {uiCopy("Memory scope")}
           <div className="mt-2 flex gap-2">
             {(
               [
-                { value: null, label: "Inherit default" },
-                { value: "isolated" as const, label: "Isolated" },
-                { value: "shared" as const, label: "Shared" },
+                { value: null, label: uiCopy("Inherit default") },
+                { value: "isolated" as const, label: uiCopy("Isolated") },
+                { value: "shared" as const, label: uiCopy("Shared") },
               ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
             ).map((option) => (
               <button
@@ -3498,17 +3536,17 @@ function BotSettings({
           checked={autoSpeak}
           onChange={(event) => setAutoSpeak(event.target.checked)}
         />
-        Read replies aloud
+        {uiCopy("Read replies aloud")}
       </label>
       {voices.length ? (
         <label className="mt-4 block text-[14px] text-[#85858A]">
-          Voice
+          {uiCopy("Voice")}
           <select
             value={voiceId}
             onChange={(event) => setVoiceId(event.target.value)}
             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
           >
-            <option value="">Account default</option>
+            <option value="">{uiCopy("Account default")}</option>
             {voices.map((voice) => (
               <option key={voice.id} value={voice.id}>
                 {voice.label}
@@ -3535,22 +3573,24 @@ function BotSettings({
               autoSpeak,
               voiceId: voiceId || null,
             })
-              .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
+              .catch((err) =>
+                setError(err instanceof Error ? err.message : uiCopy("Could not save")),
+              )
               .finally(() => setSaving(false));
           }}
           className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
         >
-          Save
+          {uiCopy("Save")}
         </button>
         <button
           type="button"
           onClick={() => void onExport()}
           className="text-[14px] text-[#85858A]"
         >
-          Export
+          {uiCopy("Export")}
         </button>
         <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
-          Clear conversation
+          {uiCopy("Clear conversation")}
         </button>
       </div>
     </div>
@@ -3599,19 +3639,21 @@ function NewBotSectionDialog({
           setSaving(true);
           setError(null);
           void onConfirm(trimmed).catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : "Could not create section");
+            setError(err instanceof Error ? err.message : uiCopy("Could not create section"));
             setSaving(false);
           });
         }}
       >
         <h2 id="new-bot-section-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          New section
+          {uiCopy("New section")}
         </h2>
         <p className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          Create a section and move {bot.name} into it.
+          {uiCopy("Create a section and move {name} into it.", {
+            values: { name: bot.name },
+          })}
         </p>
         <label className="mt-4 block text-[13.5px] text-[#C9C9CE]">
-          Name
+          {uiCopy("Name")}
           <input
             maxLength={60}
             value={name}
@@ -3627,14 +3669,14 @@ function NewBotSectionDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            {uiCopy("Cancel")}
           </button>
           <button
             type="submit"
             disabled={saving || !name.trim()}
             className="rounded-[10px] bg-[#F1F1EF] px-3.5 py-2 text-[14px] font-medium text-[#17171A] disabled:opacity-40"
           >
-            {saving ? "Creating…" : "Create"}
+            {saving ? uiCopy("Creating…") : uiCopy("Create")}
           </button>
         </div>
       </form>
@@ -3679,14 +3721,15 @@ function ClearConversationDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Clear {bot.name}’s conversation?
+          {uiCopy("Clear {name}’s conversation?", { values: { name: bot.name } })}
         </h2>
         <p
           id="clear-conversation-description"
           className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
         >
-          This permanently removes every message and stops current work. The bot, computer, memory,
-          and routines are kept.
+          {uiCopy(
+            "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept.",
+          )}
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
@@ -3696,7 +3739,7 @@ function ClearConversationDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            {uiCopy("Cancel")}
           </button>
           <button
             type="button"
@@ -3705,13 +3748,15 @@ function ClearConversationDialog({
               setClearing(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not clear conversation");
+                setError(
+                  err instanceof Error ? err.message : uiCopy("Could not clear conversation"),
+                );
                 setClearing(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {clearing ? "Clearing…" : "Clear"}
+            {clearing ? uiCopy("Clearing…") : uiCopy("Clear")}
           </button>
         </div>
       </div>
@@ -3757,14 +3802,17 @@ function DeleteBotDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="delete-bot-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Delete {bot.name}?
+          {uiCopy("Delete {name}?", { values: { name: bot.name } })}
         </h2>
         <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          Its conversation, files, and routines will be permanently deleted. Bots it created stay in
-          your list.
+          {uiCopy(
+            "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list.",
+          )}
         </p>
         <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">What about its memories?</legend>
+          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">
+            {uiCopy("What about its memories?")}
+          </legend>
           <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
             <input
               type="radio"
@@ -3773,9 +3821,9 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(false)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">Keep memories</span>
+              <span className="block text-[14px] text-[#ECECEE]">{uiCopy("Keep memories")}</span>
               <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
-                Move them to your shared memory.
+                {uiCopy("Move them to your shared memory.")}
               </span>
             </span>
           </label>
@@ -3787,9 +3835,11 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(true)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">Delete memories too</span>
+              <span className="block text-[14px] text-[#ECECEE]">
+                {uiCopy("Delete memories too")}
+              </span>
               <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
-                This cannot be undone.
+                {uiCopy("This cannot be undone.")}
               </span>
             </span>
           </label>
@@ -3802,7 +3852,7 @@ function DeleteBotDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            {uiCopy("Cancel")}
           </button>
           <button
             type="button"
@@ -3811,13 +3861,13 @@ function DeleteBotDialog({
               setDeleting(true);
               setError(null);
               void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not delete bot");
+                setError(err instanceof Error ? err.message : uiCopy("Could not delete bot"));
                 setDeleting(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? uiCopy("Deleting…") : uiCopy("Delete")}
           </button>
         </div>
       </div>
@@ -3862,10 +3912,10 @@ function DeleteRoutineDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Delete {routine.name}?
+          {uiCopy("Delete {name}?", { values: { name: routine.name } })}
         </h2>
         <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          This cannot be undone.
+          {uiCopy("This cannot be undone.")}
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
@@ -3875,7 +3925,7 @@ function DeleteRoutineDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            {uiCopy("Cancel")}
           </button>
           <button
             type="button"
@@ -3884,13 +3934,13 @@ function DeleteRoutineDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not delete routine");
+                setError(err instanceof Error ? err.message : uiCopy("Could not delete routine"));
                 setDeleting(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? uiCopy("Deleting…") : uiCopy("Delete")}
           </button>
         </div>
       </div>
@@ -3930,15 +3980,17 @@ function computerPlaceholder(
   booting: boolean,
   label: string,
 ) {
-  if (state === "booting" || booting) return "Booting live desktop…";
+  if (state === "booting" || booting) return uiCopy("Booting live desktop…");
   if (state === "running") return label;
-  if (state === "suspended") return "Computer is asleep — take control to wake it";
-  if (state === "error") return "Computer failed to boot";
-  return "Computer is stopped";
+  if (state === "suspended") return uiCopy("Computer is asleep — take control to wake it");
+  if (state === "error") return uiCopy("Computer failed to boot");
+  return uiCopy("Computer is stopped");
 }
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
-  return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+  return mode === "dedicated"
+    ? uiCopy("{name}’s computer", { values: { name: botName } })
+    : uiCopy("Team Computer");
 }
 
 function ChoiceCard({
@@ -3960,7 +4012,7 @@ function ChoiceCard({
       await rpc.onboarding.choose({ botId, optionId });
       await onBotChanged().catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save this choice");
+      setError(err instanceof Error ? err.message : uiCopy("Could not save this choice"));
       setPending(false);
     }
   }
@@ -4044,10 +4096,12 @@ function AppConnectCard({
         }
         await abortableDelay(2_000, controller.signal);
       }
-      if (!controller.signal.aborted) setError("Authorization timed out. Please try again.");
+      if (!controller.signal.aborted) {
+        setError(uiCopy("Authorization timed out. Please try again."));
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : "Could not authorize this app");
+        setError(error instanceof Error ? error.message : uiCopy("Could not authorize this app"));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -4083,10 +4137,10 @@ function AppConnectCard({
           </span>
         </span>
         {status === "connected" ? (
-          <SuccessPop label="Connected" />
+          <SuccessPop label={uiCopy("Connected")} />
         ) : (
           <BuiButton disabled={busy} onClick={() => void authorize()}>
-            {busy ? "Waiting…" : "Authorize"}
+            {busy ? uiCopy("Waiting…") : uiCopy("Authorize")}
           </BuiButton>
         )}
       </div>
@@ -4138,7 +4192,9 @@ function ChartCanvas({
         setError(null);
         ref.current.replaceChildren(parts.plotted);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not render chart");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : uiCopy("Could not render chart"));
+        }
       }
     })();
     return () => {
@@ -4197,7 +4253,7 @@ function McpApprovalCard({
 
   async function authorize() {
     if (!botId) {
-      setError("This server cannot be assigned without a bot.");
+      setError(uiCopy("This server cannot be assigned without a bot."));
       return;
     }
     setState("connecting");
@@ -4213,7 +4269,7 @@ function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId });
       setState("connected");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not approve this server");
+      setError(err instanceof Error ? err.message : uiCopy("Could not approve this server"));
       setState("pending");
     }
   }
@@ -4226,7 +4282,7 @@ function McpApprovalCard({
           M
         </span>
         <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
-          Connect MCP server “{name}”
+          {uiCopy("Connect MCP server “{name}”", { values: { name } })}
         </span>
       </div>
       <p className="mt-1.5 truncate text-[12px]" style={{ color: "var(--bui-ink-3)" }}>
@@ -4236,8 +4292,10 @@ function McpApprovalCard({
         <>
           <p className="mt-2 text-[13px] leading-[1.5]" style={{ color: "var(--bui-ink-2)" }}>
             {needsOAuth
-              ? "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
-              : "Approve this server to let your agent use its tools."}
+              ? uiCopy(
+                  "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.",
+                )
+              : uiCopy("Approve this server to let your agent use its tools.")}
           </p>
           {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
           <div className="mt-3 flex gap-2">
@@ -4246,20 +4304,26 @@ function McpApprovalCard({
               disabled={state === "connecting"}
               onClick={() => void authorize()}
             >
-              {state === "connecting" ? "Connecting…" : needsOAuth ? "Authorize" : "Approve"}
+              {state === "connecting"
+                ? uiCopy("Connecting…")
+                : needsOAuth
+                  ? uiCopy("Authorize")
+                  : uiCopy("Approve")}
             </BuiButton>
-            <BuiButton onClick={() => setState("dismissed")}>Not now</BuiButton>
+            <BuiButton onClick={() => setState("dismissed")}>{uiCopy("Not now")}</BuiButton>
           </div>
         </>
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label="Connected — its tools are available from your next message." />
+          <SuccessPop
+            label={uiCopy("Connected — its tools are available from your next message.")}
+          />
         </div>
       ) : null}
       {state === "dismissed" ? (
         <p className="mt-2 text-[13px] text-[#85858A]">
-          Dismissed — reconnect anytime from MCP settings.
+          {uiCopy("Dismissed — reconnect anytime from MCP settings.")}
         </p>
       ) : null}
     </BuiCard>
@@ -4325,7 +4389,7 @@ function ChartBlockView({
               <span className="text-[13px] text-[#85858A]">{name}</span>
               <button
                 type="button"
-                aria-label="Close chart"
+                aria-label={uiCopy("Close chart")}
                 onClick={() => setExpanded(false)}
                 className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
               >
@@ -4424,7 +4488,7 @@ function ArtifactImage({
       {open && src ? (
         <button
           type="button"
-          aria-label="Close image preview"
+          aria-label={uiCopy("Close image preview")}
           className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
           onClick={() => setOpen(false)}
         >

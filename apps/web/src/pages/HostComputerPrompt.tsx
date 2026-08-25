@@ -2,6 +2,7 @@ import type { Me } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
   const desktop = desktopBridge();
@@ -9,7 +10,7 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mac = desktop?.platform === "darwin";
-  const hostLabel = mac ? "this Mac" : "this computer";
+  const hostLabel = mac ? uiCopy("this Mac") : uiCopy("this computer");
 
   useEffect(() => {
     if (!desktop) return;
@@ -34,7 +35,7 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
       await rpc.deployment.update({ computerHost });
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save that choice");
+      setError(err instanceof Error ? err.message : uiCopy("Could not save that choice"));
     } finally {
       setPending(false);
     }
@@ -43,12 +44,19 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-[#050506]/80 px-6">
       <div className="w-[440px] rounded-[20px] border border-[#26262A] bg-[#121214] p-6">
-        <h2 className="text-[22px] font-medium text-[#F1F1F2]">Where should bots run?</h2>
+        <h2 className="text-[22px] font-medium text-[#F1F1F2]">
+          {uiCopy("Where should bots run?")}
+        </h2>
         <p className="mt-2 text-[14px] leading-relaxed text-[#85858A]">
-          Docker is the default: bots use a shared Team Computer.
+          {uiCopy("Docker is the default: bots use a shared Team Computer.")}
           {mac
-            ? " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
-            : ` Your OS will not ask for extra permission if you let bots run on ${hostLabel} — they run as you.`}
+            ? ` ${uiCopy(
+                "macOS will not ask for extra permission if you let bots run on this Mac — they run as you.",
+              )}`
+            : ` ${uiCopy(
+                "Your OS will not ask for extra permission if you let bots run on {name} — they run as you.",
+                { values: { name: hostLabel } },
+              )}`}
         </p>
         {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
         <div className="mt-5 flex flex-col gap-2">
@@ -58,7 +66,7 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             onClick={() => void choose("docker")}
             className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
           >
-            Docker (recommended)
+            {uiCopy("Docker (recommended)")}
           </button>
           <button
             type="button"
@@ -66,12 +74,14 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             onClick={() => void choose("this-mac")}
             className="rounded-[11px] border border-[#26262A] px-5 py-2.5 text-[#ECECEE] disabled:opacity-40"
           >
-            Use {hostLabel}
+            {uiCopy("Use {name}", { values: { name: hostLabel } })}
           </button>
         </div>
         <p className="mt-3 text-[12px] leading-relaxed text-[#6C6C70]">
-          {mac ? "This Mac" : "This computer"} runs shell commands with your account, including
-          files in your home folder. Do not turn it on for a shared or public server.
+          {uiCopy(
+            "{name} runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server.",
+            { values: { name: mac ? uiCopy("This Mac") : uiCopy("This computer") } },
+          )}
         </p>
       </div>
     </div>

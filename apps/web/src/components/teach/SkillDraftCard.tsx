@@ -2,6 +2,7 @@ import type { SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { useEffect, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { uiCopy } from "../../lib/ui-copy";
 
 type SkillDraftBlock = {
   kind: "skill_draft";
@@ -74,16 +75,16 @@ export function SkillDraftCard({
       data-testid="skill-draft-card"
       className="w-[min(520px,92%)] rounded-[20px] border border-[#242428] bg-[#141417] px-[18px] py-4"
     >
-      <div className="text-[15px] font-medium text-[#ECECEE]">Draft skill</div>
+      <div className="text-[15px] font-medium text-[#ECECEE]">{uiCopy("Draft skill")}</div>
       <div className="mt-1 text-[13.5px] text-[#85858A]">{block.goal}</div>
-      {fieldLabel("skill-draft-name", "Name")}
+      {fieldLabel("skill-draft-name", uiCopy("Name"))}
       <input
         id="skill-draft-name"
         value={name}
         onChange={(event) => setName(event.target.value)}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-when", "When to use")}
+      {fieldLabel("skill-draft-when", uiCopy("When to use"))}
       <textarea
         id="skill-draft-when"
         value={playbook.whenToUse}
@@ -91,7 +92,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-inputs", "Inputs")}
+      {fieldLabel("skill-draft-inputs", uiCopy("Inputs"))}
       <textarea
         id="skill-draft-inputs"
         value={playbook.inputs.join("\n")}
@@ -104,7 +105,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-steps", "Steps")}
+      {fieldLabel("skill-draft-steps", uiCopy("Steps"))}
       <textarea
         id="skill-draft-steps"
         value={playbook.steps.join("\n")}
@@ -117,7 +118,7 @@ export function SkillDraftCard({
         rows={5}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-check", "How to check")}
+      {fieldLabel("skill-draft-check", uiCopy("How to check"))}
       <textarea
         id="skill-draft-check"
         value={playbook.howToCheck}
@@ -125,7 +126,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-return", "What to return")}
+      {fieldLabel("skill-draft-return", uiCopy("What to return"))}
       <textarea
         id="skill-draft-return"
         value={playbook.whatToReturn}
@@ -133,7 +134,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-approval", "Approval boundaries")}
+      {fieldLabel("skill-draft-approval", uiCopy("Approval boundaries"))}
       <textarea
         id="skill-draft-approval"
         value={playbook.approvalBoundaries}
@@ -141,7 +142,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-failure", "Failure handling")}
+      {fieldLabel("skill-draft-failure", uiCopy("Failure handling"))}
       <textarea
         id="skill-draft-failure"
         value={playbook.failureHandling}
@@ -156,7 +157,7 @@ export function SkillDraftCard({
           onClick={() => void saveDraft()}
           className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[14px] text-[#17171A] disabled:opacity-40"
         >
-          {saved ? "Saved" : busy ? "Saving…" : "Save"}
+          {saved ? uiCopy("Saved") : busy ? uiCopy("Saving…") : uiCopy("Save")}
         </button>
         <button
           type="button"

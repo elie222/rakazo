@@ -3,16 +3,21 @@ import { deriveMcpSlug } from "@rakazo/core";
 import { useEffect, useState } from "react";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 function oauthStatusText(server: McpServer): string {
-  if (server.oauthStatus === "connected") return "OAuth connected";
-  if (server.oauthStatus === "reconnect") return "Authorization expired — reconnect required";
-  return server.hasSecret ? "Encrypted static credential saved" : "No credential saved";
+  if (server.oauthStatus === "connected") return uiCopy("OAuth connected");
+  if (server.oauthStatus === "reconnect") {
+    return uiCopy("Authorization expired — reconnect required");
+  }
+  return server.hasSecret
+    ? uiCopy("Encrypted static credential saved")
+    : uiCopy("No credential saved");
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
-  if (pending) return "Connecting…";
-  return server.oauthStatus === "none" ? "Connect OAuth" : "Reconnect OAuth";
+  if (pending) return uiCopy("Connecting…");
+  return server.oauthStatus === "none" ? uiCopy("Connect OAuth") : uiCopy("Reconnect OAuth");
 }
 
 export function McpServersOverlay({ onClose }: { onClose: () => void }) {
@@ -54,7 +59,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void refresh().catch((err: unknown) =>
-      setError(err instanceof Error ? err.message : "Could not load MCP servers"),
+      setError(err instanceof Error ? err.message : uiCopy("Could not load MCP servers")),
     );
   }, []);
 
@@ -142,7 +147,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setArgs("");
       setSelectedBotIds([]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add MCP server");
+      setError(err instanceof Error ? err.message : uiCopy("Could not add MCP server"));
     } finally {
       setSaving(false);
     }
@@ -166,7 +171,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       }
       setOauthPending((current) => (current === server.id ? null : current));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start OAuth");
+      setError(err instanceof Error ? err.message : uiCopy("Could not start OAuth"));
       setOauthPending(null);
     }
   }
@@ -182,7 +187,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       const updated = await rpc.mcp.assignments.replace({ botId, assignments: next });
       setBotAssignments((map) => ({ ...map, [botId]: updated }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update agent access");
+      setError(err instanceof Error ? err.message : uiCopy("Could not update agent access"));
     }
   }
 
@@ -197,7 +202,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       await rpc.mcp.servers.remove({ id: server.id });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete MCP server");
+      setError(err instanceof Error ? err.message : uiCopy("Could not delete MCP server"));
     }
   }
 
@@ -208,7 +213,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       await rpc.mcp.oauth.disconnect({ serverId: server.id });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect OAuth");
+      setError(err instanceof Error ? err.message : uiCopy("Could not disconnect OAuth"));
     } finally {
       setOauthPending(null);
     }
@@ -218,18 +223,18 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-6">
       <section
         className="flex max-h-full w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#2A2A31] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
-        aria-label="MCP servers"
+        aria-label={uiCopy("MCP servers")}
       >
         <header className="flex items-start justify-between border-b border-[#27272C] px-8 py-6">
           <div>
-            <h1 className="text-2xl font-medium text-[#F1F1F2]">MCP servers</h1>
+            <h1 className="text-2xl font-medium text-[#F1F1F2]">{uiCopy("MCP servers")}</h1>
             <p className="mt-1 text-[13.5px] text-[#85858B]">
-              Connect remote or local tool servers and choose which agents can use them.
+              {uiCopy("Connect remote or local tool servers and choose which agents can use them.")}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close MCP servers"
+            aria-label={uiCopy("Close MCP servers")}
             onClick={onClose}
             className="text-xl text-[#85858A]"
           >
@@ -243,13 +248,14 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
         ) : null}
         <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
           <div className="rounded-2xl border border-[#292930] bg-[#101012] p-5">
-            <h2 className="text-[15px] font-medium text-[#ECECEE]">Add a server</h2>
+            <h2 className="text-[15px] font-medium text-[#ECECEE]">{uiCopy("Add a server")}</h2>
             <p className="mb-5 mt-1 text-xs text-[#77777F]">
-              OAuth will be available for providers that support browser authorization. Static
-              headers work today.
+              {uiCopy(
+                "OAuth will be available for providers that support browser authorization. Static headers work today.",
+              )}
             </p>
             <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-name">
-              Server name
+              {uiCopy("Server name")}
             </label>
             <input
               id="mcp-name"
@@ -280,7 +286,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             {transport === "stdio" ? (
               <>
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-command">
-                  Command
+                  {uiCopy("Command")}
                 </label>
                 <input
                   id="mcp-command"
@@ -290,7 +296,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
                 />
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-args">
-                  Arguments
+                  {uiCopy("Arguments")}
                 </label>
                 <input
                   id="mcp-args"
@@ -303,7 +309,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             ) : (
               <>
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-endpoint">
-                  Server URL
+                  {uiCopy("Server URL")}
                 </label>
                 <input
                   id="mcp-endpoint"
@@ -315,30 +321,30 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </>
             )}
             <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-secret">
-              Access token (optional)
+              {uiCopy("Access token (optional)")}
             </label>
             <input
               id="mcp-secret"
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="Stored encrypted"
+              placeholder={uiCopy("Stored encrypted")}
               className="mb-3 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
             />
             {transport !== "stdio" ? (
               <div className="grid grid-cols-[.7fr_1fr] gap-2">
                 <input
-                  aria-label="Header name"
+                  aria-label={uiCopy("Header name")}
                   value={headerName}
                   onChange={(e) => setHeaderName(e.target.value)}
                   className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
                 />
                 <input
-                  aria-label="Header value"
+                  aria-label={uiCopy("Header value")}
                   type="password"
                   value={headerValue}
                   onChange={(e) => setHeaderValue(e.target.value)}
-                  placeholder="Optional header value"
+                  placeholder={uiCopy("Optional header value")}
                   className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
                 />
               </div>
@@ -349,17 +355,18 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               onClick={() => void addServer()}
               className="mt-5 w-full rounded-xl bg-[#7785FF] px-4 py-3 text-sm font-semibold text-[#090A12] disabled:opacity-50"
             >
-              {saving ? "Adding…" : "Add server"}
+              {saving ? uiCopy("Adding…") : uiCopy("Add server")}
             </button>
           </div>
           <div className="space-y-5">
             <div>
               <h2 className="text-[15px] font-medium text-[#ECECEE]">
-                Agent access for new servers
+                {uiCopy("Agent access for new servers")}
               </h2>
               <p className="mt-1 text-xs text-[#77777F]">
-                Applies when you click Add server. Use the agent chips on each server card to change
-                access at any time — the agent picks it up on its next message.
+                {uiCopy(
+                  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.",
+                )}
               </p>
               <div className="mt-3 space-y-2">
                 {bots.map((bot) => (
@@ -385,11 +392,13 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </div>
             </div>
             <div>
-              <h2 className="text-[15px] font-medium text-[#ECECEE]">Configured servers</h2>
+              <h2 className="text-[15px] font-medium text-[#ECECEE]">
+                {uiCopy("Configured servers")}
+              </h2>
               <div className="mt-3 space-y-2">
                 {servers.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F]">
-                    No MCP servers yet.
+                    {uiCopy("No MCP servers yet.")}
                   </p>
                 ) : (
                   servers.map((server) => (
@@ -412,7 +421,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         {oauthStatusText(server)}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-[#77777F]">Agents:</span>
+                        <span className="text-[11px] text-[#77777F]">{uiCopy("Agents:")}</span>
                         {bots.map((bot) => {
                           const assigned = (botAssignments[bot.id] ?? []).some(
                             (entry) => entry.serverId === server.id,
@@ -448,7 +457,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 onClick={() => void disconnectOAuth(server)}
                                 className="rounded-lg border border-[#34343B] px-3 py-2 text-xs text-[#B9B9C0]"
                               >
-                                Disconnect
+                                {uiCopy("Disconnect")}
                               </button>
                             ) : null}
                           </>
@@ -458,7 +467,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           onClick={() => void deleteServer(server)}
                           className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[#34343B] text-[#B9B9C0]"}`}
                         >
-                          {confirmingDelete === server.id ? "Confirm delete" : "Delete"}
+                          {confirmingDelete === server.id
+                            ? uiCopy("Confirm delete")
+                            : uiCopy("Delete")}
                         </button>
                       </div>
                     </div>

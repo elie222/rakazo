@@ -2,6 +2,7 @@ import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from 
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
@@ -42,7 +43,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void refresh()
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not load voice settings"),
+        setError(err instanceof Error ? err.message : uiCopy("Could not load voice settings")),
       )
       .finally(() => setLoading(false));
   }, []);
@@ -68,9 +69,11 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
       });
       setApiKey("");
       await refresh(selected.id);
-      setNotice(`Connected ${selected.name}.`);
+      setNotice(uiCopy("Connected {name}.", { values: { name: selected.name } }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect this voice provider");
+      setError(
+        err instanceof Error ? err.message : uiCopy("Could not connect this voice provider"),
+      );
     } finally {
       setPending(null);
     }
@@ -85,7 +88,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
       await rpc.voice.setVoice({ voiceId: nextVoiceId, provider: selected?.id });
       await refresh(selected?.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save that voice");
+      setError(err instanceof Error ? err.message : uiCopy("Could not save that voice"));
     } finally {
       setPending(null);
     }
@@ -102,9 +105,9 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
         setError(speaker.state.error);
         return;
       }
-      setNotice("If you heard that, voice is ready.");
+      setNotice(uiCopy("If you heard that, voice is ready."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not play a test clip");
+      setError(err instanceof Error ? err.message : uiCopy("Could not play a test clip"));
     } finally {
       setPending(null);
     }
@@ -118,16 +121,18 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">Voice</div>
+            <div className="text-2xl font-medium text-[#F1F1F2]">{uiCopy("Voice")}</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
               {loading
-                ? "Loading voice providers…"
-                : "Bring your own key. The provider is swappable; your bots keep the same speak and call buttons."}
+                ? uiCopy("Loading voice providers…")
+                : uiCopy(
+                    "Bring your own key. The provider is swappable; your bots keep the same speak and call buttons.",
+                  )}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close voice settings"
+            aria-label={uiCopy("Close voice settings")}
             onClick={onClose}
             className="text-[#85858A]"
           >
@@ -137,23 +142,25 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="mx-6 mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-3 sm:mx-8">
           <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-            Active voice
+            {uiCopy("Active voice")}
           </div>
           <div className="mt-1 text-[16px] text-[#F1F1F2]">
             {status?.ready
               ? voiceOptions.find((voice) => voice.id === status.voiceId)?.label || status.voiceId
               : status?.configured
-                ? "Pick a voice"
-                : "Not configured"}
+                ? uiCopy("Pick a voice")
+                : uiCopy("Not configured")}
           </div>
           <div className="mt-1 text-[13px] text-[#85858A]">
-            {selected?.name ?? status?.provider ?? "Connect ElevenLabs, OpenAI, or Cartesia"}
+            {selected?.name ??
+              status?.provider ??
+              uiCopy("Connect ElevenLabs, OpenAI, or Cartesia")}
           </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
           <div className="flex min-h-0 shrink-0 flex-col md:w-[280px]">
-            <div className="mb-3 text-[13.5px] text-[#85858A]">Providers</div>
+            <div className="mb-3 text-[13.5px] text-[#85858A]">{uiCopy("Providers")}</div>
             <div className="rk-scroll overflow-y-auto rounded-[13px] border border-[#26262A]">
               {catalog.map((entry) => {
                 const connected = credentials.some((cred) => cred.provider === entry.id);
@@ -177,11 +184,11 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                         {entry.name}
                       </span>
                       <span className="mt-0.5 block text-[12px] text-[#6C6C70]">
-                        {entry.transcribe ? "Speak + transcribe" : "Speak only"}
+                        {entry.transcribe ? uiCopy("Speak + transcribe") : uiCopy("Speak only")}
                       </span>
                     </span>
                     {connected ? (
-                      <span className="text-[12px] text-[#4ECB71]">Connected</span>
+                      <span className="text-[12px] text-[#4ECB71]">{uiCopy("Connected")}</span>
                     ) : null}
                   </button>
                 );
@@ -197,24 +204,30 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                 <p className="text-[13.5px] leading-[1.5] text-[#85858A]">{selected.description}</p>
                 <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-                    Personal credential
+                    {uiCopy("Personal credential")}
                   </div>
                   <div className="mt-1 text-[15px] text-[#ECECEE]">
-                    {credential ? `Connected · ${selected.name}` : "Not connected"}
+                    {credential
+                      ? `${uiCopy("Connected")} · ${selected.name}`
+                      : uiCopy("Not connected")}
                   </div>
                   <div className="mt-1 text-[13px] text-[#85858A]">
-                    Keys stay on the server. The app only learns whether a provider is configured.
+                    {uiCopy(
+                      "Keys stay on the server. The app only learns whether a provider is configured.",
+                    )}
                   </div>
                 </div>
 
                 <label className="mt-5 block text-[13.5px] text-[#85858A]">
-                  API key
+                  {uiCopy("API key")}
                   <input
                     type="password"
                     autoComplete="new-password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={credential ? "Paste a replacement key" : "Paste your API key"}
+                    placeholder={
+                      credential ? uiCopy("Paste a replacement key") : uiCopy("Paste your API key")
+                    }
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none"
                   />
                 </label>
@@ -224,13 +237,17 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                   disabled={busy || apiKey.trim().length < 8}
                   onClick={() => void connectKey()}
                 >
-                  {pending === "connect" ? "Connecting…" : credential ? "Replace key" : "Connect"}
+                  {pending === "connect"
+                    ? uiCopy("Connecting…")
+                    : credential
+                      ? uiCopy("Replace key")
+                      : uiCopy("Connect")}
                 </Button>
 
                 {credential ? (
                   <>
                     <label className="mt-6 block text-[13.5px] text-[#85858A]">
-                      Voice
+                      {uiCopy("Voice")}
                       <select
                         value={voiceId}
                         onChange={(event) => void chooseVoice(event.target.value)}
@@ -250,7 +267,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       onClick={() => void testVoice()}
                       className="mt-4 text-[14px] text-[#C9C9CE] disabled:opacity-40"
                     >
-                      {pending === "test" ? "Playing…" : "Hear a sample"}
+                      {pending === "test" ? uiCopy("Playing…") : uiCopy("Hear a sample")}
                     </button>
                   </>
                 ) : null}

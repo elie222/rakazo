@@ -3,6 +3,7 @@ import { narrateTool, speechFromBlocks, spokenDecision } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { dictation } from "../lib/dictation";
 import { speaker } from "../lib/tts";
+import { uiCopy } from "../lib/ui-copy";
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -66,7 +67,7 @@ export function CallView({
         onFinal: (text) => void handleTranscript(text),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Microphone failed");
+      setError(err instanceof Error ? err.message : uiCopy("Microphone failed"));
     }
   }
 
@@ -91,7 +92,7 @@ export function CallView({
         await onSend(text);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send that");
+      setError(err instanceof Error ? err.message : uiCopy("Could not send that"));
       void listen();
     }
   }
@@ -195,13 +196,19 @@ export function CallView({
         data-testid="call-view"
         className="w-full max-w-[420px] rounded-[24px] border border-[#2A2A2F] bg-[#141416] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]"
       >
-        <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">Call</div>
+        <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">
+          {uiCopy("Call")}
+        </div>
         <div className="mt-2 text-[22px] font-medium text-[#F1F1F2]">{botName}</div>
         <div className="mt-5 text-[15px] text-[#C9C9CE]">
-          {phase === "listening" ? "Listening…" : phase === "speaking" ? "Speaking…" : "Working…"}
+          {phase === "listening"
+            ? uiCopy("Listening…")
+            : phase === "speaking"
+              ? uiCopy("Speaking…")
+              : uiCopy("Working…")}
         </div>
         <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-[#85858A]">
-          {phase === "listening" ? heard || "Say something. Silence sends it." : caption}
+          {phase === "listening" ? heard || uiCopy("Say something. Silence sends it.") : caption}
         </p>
         {error ? <p className="mt-2 text-[13px] text-[#C94244]">{error}</p> : null}
         <div className="mt-6 flex justify-center gap-3">
@@ -220,7 +227,9 @@ export function CallView({
             Hang up
           </button>
         </div>
-        <p className="mt-4 text-[12px] text-[#6C6C70]">Space interrupts · Esc hangs up</p>
+        <p className="mt-4 text-[12px] text-[#6C6C70]">
+          {uiCopy("Space interrupts · Esc hangs up")}
+        </p>
       </div>
     </div>
   );

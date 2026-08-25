@@ -3,6 +3,7 @@ import { abortableDelay } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 type CatalogView = "all" | "connected" | "sources";
 type SourceKind = "treg" | "mcp" | "api";
@@ -57,7 +58,7 @@ export function PluginsOverlay({
   useEffect(() => {
     void refresh()
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not load integrations"),
+        setError(err instanceof Error ? err.message : uiCopy("Could not load integrations")),
       )
       .finally(() => setLoading(false));
     return () => connectionAttempt.current?.abort();
@@ -115,7 +116,7 @@ export function PluginsOverlay({
       setError(`Connection to ${item.name} is still pending. You can close this and check again.`);
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof Error ? err.message : "Could not connect");
+      setError(err instanceof Error ? err.message : uiCopy("Could not connect"));
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -141,7 +142,7 @@ export function PluginsOverlay({
       await rpc.connections.revoke({ connectionId: row.id });
       setItemConnected(item, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not revoke connection");
+      setError(err instanceof Error ? err.message : uiCopy("Could not revoke connection"));
     } finally {
       setPending(null);
     }
@@ -183,7 +184,7 @@ export function PluginsOverlay({
       setSourceKind(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not install connector");
+      setError(err instanceof Error ? err.message : uiCopy("Could not install connector"));
     } finally {
       setPending(null);
     }
@@ -196,7 +197,7 @@ export function PluginsOverlay({
       await rpc.capabilities.remove({ id: install.id });
       setSources((current) => current.filter((source) => source.id !== install.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove connector");
+      setError(err instanceof Error ? err.message : uiCopy("Could not remove connector"));
     } finally {
       setPending(null);
     }
@@ -207,9 +208,9 @@ export function PluginsOverlay({
       <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
         <div className="flex items-start justify-between px-8 pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">Integrations</div>
+            <div className="text-2xl font-medium text-[#F1F1F2]">{uiCopy("Integrations")}</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              Connect apps or add Treg, MCP, and OpenAPI tool sources.
+              {uiCopy("Connect apps or add Treg, MCP, and OpenAPI tool sources.")}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -224,7 +225,7 @@ export function PluginsOverlay({
             ) : null}
             <button
               type="button"
-              aria-label="Close integrations"
+              aria-label={uiCopy("Close integrations")}
               onClick={onClose}
               className="text-[#85858A]"
             >
@@ -235,13 +236,13 @@ export function PluginsOverlay({
 
         <div className="flex flex-wrap gap-2 px-8 pt-4">
           <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
-            Add Treg
+            {uiCopy("Add Treg")}
           </Button>
           <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
-            Add MCP server
+            {uiCopy("Add MCP server")}
           </Button>
           <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
-            Add OpenAPI
+            {uiCopy("Add OpenAPI")}
           </Button>
         </div>
 
@@ -250,13 +251,17 @@ export function PluginsOverlay({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search apps"
+              placeholder={uiCopy("Search apps")}
               className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
             />
           </div>
         ) : null}
 
-        <div role="tablist" aria-label="Integration views" className="flex gap-1 px-8 pt-4">
+        <div
+          role="tablist"
+          aria-label={uiCopy("Integration views")}
+          className="flex gap-1 px-8 pt-4"
+        >
           {(["all", "connected", "sources"] as const).map((option) => (
             <button
               key={option}
@@ -274,7 +279,11 @@ export function PluginsOverlay({
                   : "text-[#7A7A80] hover:text-[#C8C8CC]"
               }`}
             >
-              {option === "all" ? "Apps" : option === "connected" ? "Connected" : "Tool sources"}
+              {option === "all"
+                ? uiCopy("Apps")
+                : option === "connected"
+                  ? uiCopy("Connected")
+                  : uiCopy("Tool sources")}
             </button>
           ))}
         </div>
@@ -285,7 +294,7 @@ export function PluginsOverlay({
           className="rk-scroll flex-1 overflow-y-auto px-8 py-6"
         >
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
-          {loading ? <p className="text-[#6C6C70]">Loading integrations…</p> : null}
+          {loading ? <p className="text-[#6C6C70]">{uiCopy("Loading integrations…")}</p> : null}
 
           {view === "sources" ? (
             <div className="space-y-4">
@@ -293,15 +302,15 @@ export function PluginsOverlay({
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
                   <div className="text-base font-medium text-[#ECECEE]">
                     {sourceKind === "treg"
-                      ? "Connect Treg"
+                      ? uiCopy("Connect Treg")
                       : sourceKind === "mcp"
-                        ? "Add remote MCP server"
-                        : "Import OpenAPI JSON"}
+                        ? uiCopy("Add remote MCP server")
+                        : uiCopy("Import OpenAPI JSON")}
                   </div>
                   <input
                     value={sourceName}
                     onChange={(event) => setSourceName(event.target.value)}
-                    placeholder="Display name"
+                    placeholder={uiCopy("Display name")}
                     className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
                   />
                   {sourceKind !== "treg" ? (
@@ -322,16 +331,16 @@ export function PluginsOverlay({
                       onChange={(event) => setAuthType(event.target.value as typeof authType)}
                       className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
                     >
-                      <option value="none">No authentication</option>
-                      <option value="bearer">Bearer token</option>
-                      <option value="header">API key header</option>
+                      <option value="none">{uiCopy("No authentication")}</option>
+                      <option value="bearer">{uiCopy("Bearer token")}</option>
+                      <option value="header">{uiCopy("API key header")}</option>
                     </select>
                   ) : null}
                   {authType === "header" && sourceKind !== "treg" ? (
                     <input
                       value={authName}
                       onChange={(event) => setAuthName(event.target.value)}
-                      placeholder="Header name"
+                      placeholder={uiCopy("Header name")}
                       className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
                     />
                   ) : null}
@@ -341,13 +350,14 @@ export function PluginsOverlay({
                       autoComplete="new-password"
                       value={credential}
                       onChange={(event) => setCredential(event.target.value)}
-                      placeholder={sourceKind === "treg" ? "Treg token" : "Credential"}
+                      placeholder={sourceKind === "treg" ? "Treg token" : uiCopy("Credential")}
                       className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
                     />
                   ) : null}
                   <p className="text-xs leading-5 text-[#707077]">
-                    Rakazo verifies the source before saving it. Credentials are encrypted and are
-                    never returned to clients or exposed to the model.
+                    {uiCopy(
+                      "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model.",
+                    )}
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -357,7 +367,9 @@ export function PluginsOverlay({
                       disabled={pending === "install-source"}
                       onClick={() => void installSource()}
                     >
-                      {pending === "install-source" ? "Verifying…" : "Verify and add"}
+                      {pending === "install-source"
+                        ? uiCopy("Verifying…")
+                        : uiCopy("Verify and add")}
                     </Button>
                     <Button
                       type="button"
@@ -365,14 +377,16 @@ export function PluginsOverlay({
                       size="sm"
                       onClick={() => setSourceKind(null)}
                     >
-                      Cancel
+                      {uiCopy("Cancel")}
                     </Button>
                   </div>
                 </div>
               ) : null}
 
               {sources.length === 0 && !sourceKind ? (
-                <p className="text-[#6C6C70]">No MCP or API tool sources installed yet.</p>
+                <p className="text-[#6C6C70]">
+                  {uiCopy("No MCP or API tool sources installed yet.")}
+                </p>
               ) : null}
               {sources.map((source) => (
                 <div key={source.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
@@ -383,7 +397,7 @@ export function PluginsOverlay({
                     <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
                     <div className="truncate text-[13.5px] text-[#7A7A80]">
                       {source.kind.toUpperCase()} · {source.source} ·{" "}
-                      {source.secretConfigured ? "credential saved" : "no auth"}
+                      {source.secretConfigured ? uiCopy("credential saved") : uiCopy("no auth")}
                     </div>
                   </div>
                   <Button
@@ -393,7 +407,7 @@ export function PluginsOverlay({
                     disabled={pending === source.id}
                     onClick={() => void removeSource(source)}
                   >
-                    {pending === source.id ? "Removing…" : "Remove"}
+                    {pending === source.id ? uiCopy("Removing…") : uiCopy("Remove")}
                   </Button>
                 </div>
               ))}
@@ -402,13 +416,16 @@ export function PluginsOverlay({
             <>
               {!loading && catalog.length === 0 ? (
                 <p className="text-[#6C6C70]">
-                  No managed app catalog is configured on this deployment. You can still add Treg,
-                  MCP, or OpenAPI sources.
+                  {uiCopy(
+                    "No managed app catalog is configured on this deployment. You can still add Treg, MCP, or OpenAPI sources.",
+                  )}
                 </p>
               ) : null}
               {!loading && catalog.length > 0 && visible.length === 0 ? (
                 <p className="text-[#6C6C70]">
-                  {query.trim() ? "No apps match your search." : "No connected apps yet."}
+                  {query.trim()
+                    ? uiCopy("No apps match your search.")
+                    : uiCopy("No connected apps yet.")}
                 </p>
               ) : null}
               {visible.map((item) => {
@@ -430,7 +447,7 @@ export function PluginsOverlay({
                       <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
                       <div className="text-[13.5px] text-[#7A7A80]">
                         {item.connectorId} · {item.slug}
-                        {item.noAuth ? " · no auth" : ""}
+                        {item.noAuth ? ` · ${uiCopy("no auth")}` : ""}
                       </div>
                     </div>
                     <Button
@@ -442,11 +459,11 @@ export function PluginsOverlay({
                     >
                       {pending === key
                         ? item.connected
-                          ? "Revoking…"
-                          : "Connecting…"
+                          ? uiCopy("Revoking…")
+                          : uiCopy("Connecting…")
                         : item.connected
-                          ? "Revoke"
-                          : "Connect"}
+                          ? uiCopy("Revoke")
+                          : uiCopy("Connect")}
                     </Button>
                   </div>
                 );

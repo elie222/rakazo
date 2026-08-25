@@ -1,6 +1,7 @@
 import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { useMemo, useState } from "react";
+import { uiCopy } from "../lib/ui-copy";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (
@@ -83,7 +84,7 @@ export function CreateGroupForm({
     try {
       await onCreate({ name: name.trim(), botIds: selected });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create group");
+      setError(cause instanceof Error ? cause.message : uiCopy("Could not create group"));
     } finally {
       setSubmitting(false);
     }
@@ -92,8 +93,8 @@ export function CreateGroupForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">New group</span>
-        <button type="button" aria-label="Cancel new group" onClick={onCancel}>
+        <span className="text-[13.5px] text-[#85858A]">{uiCopy("New group")}</span>
+        <button type="button" aria-label={uiCopy("Cancel new group")} onClick={onCancel}>
           ✕
         </button>
       </div>
@@ -103,16 +104,18 @@ export function CreateGroupForm({
         </p>
       ) : null}
       <label className="block text-[14px] text-[#85858A]">
-        Name
+        {uiCopy("Name")}
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Name this group"
+          placeholder={uiCopy("Name this group")}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <div className="mt-5 text-[14px] text-[#85858A]">
-        Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        {uiCopy("Members (pick {min}–{max})", {
+          values: { min: GROUP_MEMBER_MIN, max: GROUP_MEMBER_MAX },
+        })}
       </div>
       <MemberPicker
         bots={bots}
@@ -125,7 +128,7 @@ export function CreateGroupForm({
         disabled={submitting || !validSelection(name, selected)}
         onClick={() => void create()}
       >
-        {submitting ? "Creating…" : "Create group"}
+        {submitting ? uiCopy("Creating…") : uiCopy("Create group")}
       </Button>
     </div>
   );
@@ -175,7 +178,7 @@ export function GroupSettings({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">Group settings</span>
+        <span className="text-[13.5px] text-[#85858A]">{uiCopy("Group settings")}</span>
       </div>
       {error ? (
         <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
@@ -183,7 +186,7 @@ export function GroupSettings({
         </p>
       ) : null}
       <label className="block text-[14px] text-[#85858A]">
-        Name
+        {uiCopy("Name")}
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -191,7 +194,9 @@ export function GroupSettings({
         />
       </label>
       <div className="mt-5 text-[14px] text-[#85858A]">
-        Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        {uiCopy("Members ({min}–{max})", {
+          values: { min: GROUP_MEMBER_MIN, max: GROUP_MEMBER_MAX },
+        })}
       </div>
       <MemberPicker
         bots={bots}
@@ -204,7 +209,7 @@ export function GroupSettings({
         disabled={pending !== null || !validSelection(name, selected)}
         onClick={() => void mutate("save", save)}
       >
-        {pending === "save" ? "Saving…" : "Save"}
+        {pending === "save" ? uiCopy("Saving…") : uiCopy("Save")}
       </Button>
       <button
         type="button"
@@ -212,7 +217,7 @@ export function GroupSettings({
         onClick={() => void mutate("remove", onRemove)}
         className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B] disabled:opacity-40"
       >
-        {pending === "remove" ? "Deleting…" : "Delete group"}
+        {pending === "remove" ? uiCopy("Deleting…") : uiCopy("Delete group")}
       </button>
     </div>
   );

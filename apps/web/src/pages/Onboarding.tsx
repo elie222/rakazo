@@ -16,6 +16,8 @@ import {
   waitForModelOAuth,
 } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
+import { localizeModelCopy } from "../lib/ui-model-copy";
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -109,7 +111,9 @@ export function OnboardingPage() {
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const subscriptionSignIn = selected?.signIn !== undefined;
   const acceptsKey = selected?.auth !== "oauth";
-  const signInLabel = selected?.oauthLabel ?? "Sign in";
+  const signInLabel = selected?.oauthLabel
+    ? localizeModelCopy(selected.oauthLabel)
+    : uiCopy("Sign in");
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl,
     modelId,
@@ -155,7 +159,7 @@ export function OnboardingPage() {
       setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : "Could not reach this model server");
+      setError(err instanceof Error ? err.message : uiCopy("Could not reach this model server"));
     } finally {
       if (requestId === probeRequestIdRef.current) setProbing(false);
     }
@@ -182,7 +186,7 @@ export function OnboardingPage() {
       }
       setStep("bot");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save model");
+      setError(err instanceof Error ? err.message : uiCopy("Could not save model"));
     }
   }
 
@@ -223,7 +227,7 @@ export function OnboardingPage() {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
+      setError(err instanceof Error ? err.message : uiCopy("Could not start sign-in"));
       setOauth(null);
     } finally {
       if (!waitingForCode) {
@@ -259,7 +263,7 @@ export function OnboardingPage() {
         retryable = true;
         setPasteCode(code);
       }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+      setError(err instanceof Error ? err.message : uiCopy("Could not finish sign-in"));
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
@@ -283,22 +287,22 @@ export function OnboardingPage() {
       await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
       navigate(`/app/${bot.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create your bot");
+      setError(err instanceof Error ? err.message : uiCopy("Could not create your bot"));
     }
   }
 
   return (
     <div className="flex min-h-full items-center justify-center bg-[#0D0D0E] px-6">
       <div className="w-[560px]">
-        {step === "loading" ? <p className="text-[#85858A]">Loading…</p> : null}
+        {step === "loading" ? <p className="text-[#85858A]">{uiCopy("Loading…")}</p> : null}
         {step === "model" ? (
           <div>
-            <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
-            <p className="mt-2 text-[#85858A]">Choose a model to get started.</p>
+            <h1 className="text-[32px] font-medium text-[#F1F1F2]">{uiCopy("Connect a model")}</h1>
+            <p className="mt-2 text-[#85858A]">{uiCopy("Choose a model to get started.")}</p>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search providers and models"
+              placeholder={uiCopy("Search providers and models")}
               className="mt-8 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             />
             <div className="mt-3 max-h-48 overflow-y-auto rounded-[11px] border border-[#26262A]">
@@ -334,18 +338,20 @@ export function OnboardingPage() {
               {isOpenAiCompatible ? (
                 <>
                   <label className="block">
-                    Server URL
+                    {uiCopy("Server URL")}
                     <input
                       value={baseUrl}
                       onChange={(e) => updateBaseUrl(e.target.value)}
-                      aria-label="OpenAI-compatible server URL"
+                      aria-label={uiCopy("OpenAI-compatible server URL")}
                       placeholder="http://127.0.0.1:8000/v1"
                       autoComplete="off"
                       className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                     />
                   </label>
                   <details className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
-                    <summary className="w-fit cursor-pointer select-none">Setup help</summary>
+                    <summary className="w-fit cursor-pointer select-none">
+                      {uiCopy("Setup help")}
+                    </summary>
                     <p className="mt-1">{OPENAI_COMPATIBLE_BASE_URL_HINT}</p>
                   </details>
                   <div className="mt-3">
@@ -355,17 +361,17 @@ export function OnboardingPage() {
                       onClick={() => void probeServerModels()}
                       className="rounded-[11px] border border-[#26262A] px-4 py-2 text-sm text-[#ECECEE] disabled:opacity-40"
                     >
-                      {probing ? "Finding…" : "Find models"}
+                      {probing ? uiCopy("Finding…") : uiCopy("Find models")}
                     </button>
                   </div>
                   <div className="mt-4 block">
-                    <span>Model</span>
+                    <span>{uiCopy("Model")}</span>
                     {probeModels.length && probeModels.includes(modelId) ? (
                       <div className="relative mt-2">
                         <select
                           value={modelId}
                           onChange={(e) => setModelId(e.target.value)}
-                          aria-label="Models from server"
+                          aria-label={uiCopy("Models from server")}
                           className="w-full appearance-none rounded-[11px] border border-[#26262A] bg-transparent py-3 pl-3.5 pr-11 text-[#ECECEE]"
                         >
                           {probeModels.map((id) => (
@@ -373,7 +379,7 @@ export function OnboardingPage() {
                               {id}
                             </option>
                           ))}
-                          <option value="">Other model…</option>
+                          <option value="">{uiCopy("Other model…")}</option>
                         </select>
                         <span
                           aria-hidden="true"
@@ -386,7 +392,7 @@ export function OnboardingPage() {
                       <input
                         value={modelId}
                         onChange={(e) => setModelId(e.target.value)}
-                        aria-label="Model id"
+                        aria-label={uiCopy("Model id")}
                         placeholder="exact-model-id"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                       />
@@ -397,21 +403,21 @@ export function OnboardingPage() {
                         className="mt-2 text-[13px] text-[#85858A] underline"
                         onClick={() => setModelId(probeModels[0] ?? "")}
                       >
-                        Use a found model
+                        {uiCopy("Use a found model")}
                       </button>
                     ) : null}
                   </div>
                 </>
               ) : (
                 <>
-                  <span>Model</span>
+                  <span>{uiCopy("Model")}</span>
                   <select
                     value={selected?.id ?? modelId}
                     onChange={(e) => {
                       cancelOAuthAttempt();
                       setModelId(e.target.value);
                     }}
-                    aria-label="Model"
+                    aria-label={uiCopy("Model")}
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                   >
                     {modelsForProvider.map((entry) => (
@@ -424,7 +430,9 @@ export function OnboardingPage() {
               )}
             </div>
             {!isOpenAiCompatible ? (
-              <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
+              <p className="mt-2 text-[13px] text-[#85858A]">
+                {selected?.billing ? localizeModelCopy(selected.billing) : null}
+              </p>
             ) : null}
             {subscriptionSignIn ? (
               <div className="mt-4">
@@ -433,7 +441,7 @@ export function OnboardingPage() {
                     {oauth.mode === "auth-url" ? (
                       <>
                         <p className="text-sm text-[#85858A]">
-                          Finish signing in at{" "}
+                          {uiCopy("Finish signing in at")}{" "}
                           <a
                             href={oauth.verificationUri}
                             target="_blank"
@@ -442,13 +450,13 @@ export function OnboardingPage() {
                           >
                             {new URL(oauth.verificationUri).hostname}
                           </a>
-                          . The final page may not load; paste its URL or code here.
+                          {uiCopy(". The final page may not load; paste its URL or code here.")}
                         </p>
                         <div className="mt-3 flex items-center gap-2">
                           <input
                             value={pasteCode}
                             onChange={(e) => setPasteCode(e.target.value)}
-                            aria-label="Authorization code or callback URL"
+                            aria-label={uiCopy("Authorization code or callback URL")}
                             autoComplete="off"
                             spellCheck={false}
                             placeholder="http://localhost:53692/callback?code=…"
@@ -460,15 +468,17 @@ export function OnboardingPage() {
                             onClick={() => void submitOAuthCode()}
                             className="rounded-[11px] bg-[#F1F1EF] px-4 py-2.5 text-[#17171A] disabled:opacity-40"
                           >
-                            Submit
+                            {uiCopy("Submit")}
                           </button>
                         </div>
-                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                        <p className="mt-2 text-sm text-[#85858A]">
+                          {uiCopy("Waiting for sign-in…")}
+                        </p>
                       </>
                     ) : (
                       <>
                         <p className="text-sm text-[#85858A]">
-                          Enter this code at{" "}
+                          {uiCopy("Enter this code at")}{" "}
                           <a
                             href={oauth.verificationUri}
                             target="_blank"
@@ -481,7 +491,9 @@ export function OnboardingPage() {
                         <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
                           {oauth.userCode}
                         </p>
-                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                        <p className="mt-2 text-sm text-[#85858A]">
+                          {uiCopy("Waiting for sign-in…")}
+                        </p>
                       </>
                     )}
                   </div>
@@ -492,7 +504,7 @@ export function OnboardingPage() {
                     onClick={() => void startSubscriptionSignIn()}
                     className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
                   >
-                    {oauthPending ? "Starting…" : signInLabel}
+                    {oauthPending ? uiCopy("Starting…") : signInLabel}
                   </button>
                 )}
               </div>
@@ -500,12 +512,14 @@ export function OnboardingPage() {
             {acceptsKey ? (
               isOpenAiCompatible ? (
                 <details className="mt-4 text-sm text-[#85858A]">
-                  <summary className="w-fit cursor-pointer select-none">API key</summary>
+                  <summary className="w-fit cursor-pointer select-none">
+                    {uiCopy("API key")}
+                  </summary>
                   <input
-                    aria-label="API key"
+                    aria-label={uiCopy("API key")}
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
-                    placeholder="Optional"
+                    placeholder={uiCopy("Optional")}
                     type="password"
                     autoComplete="new-password"
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
@@ -513,7 +527,7 @@ export function OnboardingPage() {
                 </details>
               ) : (
                 <label className="mt-4 block text-sm text-[#85858A]">
-                  {subscriptionSignIn ? "Or paste an API key" : "API key"}
+                  {subscriptionSignIn ? uiCopy("Or paste an API key") : uiCopy("API key")}
                   <input
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
@@ -526,8 +540,9 @@ export function OnboardingPage() {
               )
             ) : subscriptionSignIn ? null : (
               <p className="mt-4 text-sm text-[#85858A]">
-                This provider cannot paste a key here. Skip if this deployment already has
-                credentials.
+                {uiCopy(
+                  "This provider cannot paste a key here. Skip if this deployment already has credentials.",
+                )}
               </p>
             )}
             {notice ? <p className="mt-3 text-sm text-[#4ECB71]">{notice}</p> : null}
@@ -539,7 +554,7 @@ export function OnboardingPage() {
                 onClick={() => void saveModel()}
                 className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
               >
-                Continue
+                {uiCopy("Continue")}
               </button>
               <button
                 type="button"
@@ -549,38 +564,40 @@ export function OnboardingPage() {
                 }}
                 className="text-[#85858A]"
               >
-                Skip for now
+                {uiCopy("Skip for now")}
               </button>
             </div>
           </div>
         ) : null}
         {step === "bot" ? (
           <div>
-            <h1 className="text-[32px] font-medium text-[#F1F1F2]">Create your first bot</h1>
+            <h1 className="text-[32px] font-medium text-[#F1F1F2]">
+              {uiCopy("Create your first bot")}
+            </h1>
             <label className="mt-8 block text-sm text-[#85858A]">
-              Name
+              {uiCopy("Name")}
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Name this bot"
+                placeholder={uiCopy("Name this bot")}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
             <label className="mt-4 block text-sm text-[#85858A]">
-              Title
+              {uiCopy("Title")}
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Describe what this bot does"
+                placeholder={uiCopy("Describe what this bot does")}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
             <label className="mt-4 block text-sm text-[#85858A]">
-              Description
+              {uiCopy("Description")}
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What this bot is for"
+                placeholder={uiCopy("What this bot is for")}
                 rows={4}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
@@ -592,7 +609,7 @@ export function OnboardingPage() {
               onClick={() => void createBot()}
               className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
             >
-              Continue
+              {uiCopy("Continue")}
             </button>
           </div>
         ) : null}

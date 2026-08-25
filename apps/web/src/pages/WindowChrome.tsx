@@ -1,4 +1,5 @@
 import { desktopBridge, windowChromeKind } from "../lib/desktop";
+import { uiCopy } from "../lib/ui-copy";
 
 export function WindowChrome() {
   const desktop = desktopBridge();
@@ -14,19 +15,19 @@ export function WindowChrome() {
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#FF5F57]"
-        aria-label="Close"
+        aria-label={uiCopy("Close")}
         onClick={() => void desktop?.window.close()}
       />
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#FEBC2E]"
-        aria-label="Minimize"
+        aria-label={uiCopy("Minimize")}
         onClick={() => void desktop?.window.minimize()}
       />
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#28C840]"
-        aria-label="Fullscreen"
+        aria-label={uiCopy("Fullscreen")}
         onClick={() => void desktop?.window.toggleMaximize()}
       />
     </div>

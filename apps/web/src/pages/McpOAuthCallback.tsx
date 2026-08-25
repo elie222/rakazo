@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
+import { uiCopy } from "../lib/ui-copy";
 
 // The window.open name set by the OAuth popup flow. Providers whose login
 // pages send COOP sever window.opener mid-flow, but the window name survives,
@@ -18,7 +19,7 @@ export function McpOAuthCallbackPage() {
     const code = params.get("code");
     const state = params.get("state");
     if (!code || !state) {
-      setError(params.get("error_description") ?? "OAuth authorization was cancelled.");
+      setError(params.get("error_description") ?? uiCopy("OAuth authorization was cancelled."));
       return;
     }
     if (handledState.current === state) return;
@@ -37,7 +38,7 @@ export function McpOAuthCallbackPage() {
         navigate("/app?mcp_oauth=connected", { replace: true });
       })
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Could not complete OAuth"),
+        setError(err instanceof Error ? err.message : uiCopy("Could not complete OAuth")),
       );
   }, [navigate, params]);
   const showReturn = Boolean(error) && window.name !== POPUP_NAME;
@@ -45,7 +46,11 @@ export function McpOAuthCallbackPage() {
     <div className="grid min-h-screen place-items-center bg-[#050506] p-6 text-center">
       <div>
         <div className="text-lg text-[#F1F1F2]">
-          {error ? "OAuth connection failed" : done ? "Connected" : "Finishing MCP connection…"}
+          {error
+            ? uiCopy("OAuth connection failed")
+            : done
+              ? uiCopy("Connected")
+              : uiCopy("Finishing MCP connection…")}
         </div>
         {error ? <p className="mt-2 max-w-md text-sm text-[#85858B]">{error}</p> : null}
         {showReturn ? (
@@ -54,13 +59,13 @@ export function McpOAuthCallbackPage() {
             onClick={() => navigate("/app")}
             className="mt-5 rounded-xl bg-[#7785FF] px-4 py-2 text-sm font-semibold text-[#090A12]"
           >
-            Return to Rakazo
+            {uiCopy("Return to Rakazo")}
           </button>
         ) : (
           <p className="mt-2 text-sm text-[#85858B]">
             {error || done
-              ? "You can close this window."
-              : "You can close this tab if it does not redirect automatically."}
+              ? uiCopy("You can close this window.")
+              : uiCopy("You can close this tab if it does not redirect automatically.")}
           </p>
         )}
       </div>

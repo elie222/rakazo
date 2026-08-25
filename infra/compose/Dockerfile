@@ -4,6 +4,8 @@ WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @rakazo/db generate
+ARG VITE_DEFAULT_UI_LOCALE
+ENV VITE_DEFAULT_UI_LOCALE=$VITE_DEFAULT_UI_LOCALE
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
 ARG GIT_SHA

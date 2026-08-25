@@ -1,6 +1,7 @@
 import type { ComputerStatus, TaughtSkill } from "@rakazo/contracts";
 import { useMemo, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { uiCopy } from "../../lib/ui-copy";
 import { TeachRecordingChrome } from "./TeachRecordingChrome";
 
 export function TeachComputerSection({
@@ -68,12 +69,14 @@ export function TeachComputerSection({
 
   return (
     <div className="mt-[30px]">
-      <div className="mb-3 text-[14px] text-[#85858A]">Teach a task</div>
+      <div className="mb-3 text-[14px] text-[#85858A]">{uiCopy("Teach a task")}</div>
       {!teachAvailable ? (
         <div className="rounded-[11px] border border-[#232326] px-3 py-3 text-[13.5px] leading-[1.5] text-[#6C6C70]">
           {computer?.kind === "desktop"
-            ? "Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks, but not screen recording."
-            : "Open the computer view on web or desktop to teach a task."}
+            ? uiCopy(
+                "Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks, but not screen recording.",
+              )
+            : uiCopy("Open the computer view on web or desktop to teach a task.")}
         </div>
       ) : recording ? (
         <TeachRecordingChrome
@@ -85,7 +88,7 @@ export function TeachComputerSection({
       ) : goalOpen ? (
         <div className="rounded-[11px] border border-[#232326] bg-[#121214] px-3 py-3">
           <label htmlFor="teach-goal-input" className="text-[13px] text-[#85858A]">
-            What result will you demonstrate?
+            {uiCopy("What result will you demonstrate?")}
           </label>
           <textarea
             id="teach-goal-input"
@@ -94,7 +97,9 @@ export function TeachComputerSection({
             onChange={(event) => setGoal(event.target.value)}
             rows={3}
             className="mt-2 w-full rounded-[10px] border border-[#26262A] bg-[#0E0E10] px-3 py-2 text-[14px] text-[#ECECEE] outline-none"
-            placeholder="Export this week's list from the CRM and drop it in the shared folder"
+            placeholder={uiCopy(
+              "Export this week's list from the CRM and drop it in the shared folder",
+            )}
           />
           <div className="mt-3 flex gap-2">
             <button
@@ -103,14 +108,14 @@ export function TeachComputerSection({
               onClick={() => void startTeaching()}
               className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[14px] text-[#17171A] disabled:opacity-40"
             >
-              {busy ? "Starting…" : "Start recording"}
+              {busy ? uiCopy("Starting…") : uiCopy("Start recording")}
             </button>
             <button
               type="button"
               onClick={() => setGoalOpen(false)}
               className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
             >
-              Cancel
+              {uiCopy("Cancel")}
             </button>
           </div>
         </div>
@@ -121,13 +126,13 @@ export function TeachComputerSection({
           onClick={() => setGoalOpen(true)}
           className="flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
         >
-          + Teach a task
+          + {uiCopy("Teach a task")}
         </button>
       )}
 
       {saved.length > 0 ? (
         <>
-          <div className="mt-[22px] mb-3 text-[14px] text-[#85858A]">Saved skills</div>
+          <div className="mt-[22px] mb-3 text-[14px] text-[#85858A]">{uiCopy("Saved skills")}</div>
           {saved.map((skill) => (
             <div key={skill.id} className="mb-2 rounded-[11px] border border-[#232326] px-3 py-3">
               <div className="text-[14px] text-[#ECECEE]">{skill.name || skill.goal}</div>
@@ -146,14 +151,14 @@ export function TeachComputerSection({
                   }}
                   className="rounded-[11px] border border-[#26262A] px-3 py-1.5 text-[13px] text-[#ECECEE]"
                 >
-                  Test
+                  {uiCopy("Test")}
                 </button>
                 <button
                   type="button"
                   onClick={() => onAddRoutine(skill)}
                   className="rounded-[11px] border border-[#26262A] px-3 py-1.5 text-[13px] text-[#ECECEE]"
                 >
-                  Add to routine
+                  {uiCopy("Add to routine")}
                 </button>
                 <button
                   type="button"

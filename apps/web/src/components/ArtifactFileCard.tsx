@@ -7,6 +7,7 @@ import {
   downloadArtifactBytes,
   fetchArtifactBytes,
 } from "../lib/artifact-open";
+import { uiCopy } from "../lib/ui-copy";
 
 type ArtifactFileCardProps = {
   target: ArtifactTarget;
@@ -154,14 +155,14 @@ function MarkdownPreview({
           const markdown = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           setState({ status: "ready", bytes, markdown });
         } catch {
-          setState({ status: "error", message: "This file is not valid UTF-8 Markdown." });
+          setState({ status: "error", message: uiCopy("This file is not valid UTF-8 Markdown.") });
         }
       })
       .catch((error) => {
         if (cancelled) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : "Could not load this file.",
+          message: error instanceof Error ? error.message : uiCopy("Could not load this file."),
         });
       });
     return () => {
@@ -174,7 +175,7 @@ function MarkdownPreview({
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Close preview"
+        aria-label={uiCopy("Close preview")}
         onClick={onClose}
         className="absolute inset-0 cursor-default"
       />
@@ -214,7 +215,7 @@ function MarkdownPreview({
           <button
             ref={closeButton}
             type="button"
-            aria-label="Close preview"
+            aria-label={uiCopy("Close preview")}
             onClick={onClose}
             className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-[#1D1D20] hover:text-[#ECECEE]"
           >
@@ -229,7 +230,7 @@ function MarkdownPreview({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-[#D5D5D8] sm:px-12 sm:py-12">
             {state.status === "loading" ? (
-              <div className="text-[#85858A]">Loading preview…</div>
+              <div className="text-[#85858A]">{uiCopy("Loading preview…")}</div>
             ) : state.status === "error" ? (
               <div className="rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-3 text-[#F1A8A8]">
                 {state.message}

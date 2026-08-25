@@ -1,4 +1,5 @@
 import type { SearchHit } from "@rakazo/contracts";
+import { uiCopy } from "../lib/ui-copy";
 
 export function WorkspaceSearchResults({
   hits,
@@ -10,10 +11,10 @@ export function WorkspaceSearchResults({
   onSelect: (hit: SearchHit) => void;
 }) {
   if (loading) {
-    return <div className="px-3 py-4 text-[14px] text-[#85858A]">Searching…</div>;
+    return <div className="px-3 py-4 text-[14px] text-[#85858A]">{uiCopy("Searching…")}</div>;
   }
   if (!hits.length) {
-    return <div className="px-3 py-4 text-[14px] text-[#85858A]">No results</div>;
+    return <div className="px-3 py-4 text-[14px] text-[#85858A]">{uiCopy("No results")}</div>;
   }
   return (
     <div className="flex flex-col gap-0.5">

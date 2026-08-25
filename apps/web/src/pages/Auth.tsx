@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { uiCopy } from "../lib/ui-copy";
 
 export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const navigate = useNavigate();
@@ -9,7 +10,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const title = mode === "in" ? "Sign in to Rakazo" : "Create your Rakazo";
+  const title = mode === "in" ? uiCopy("Sign in to Rakazo") : uiCopy("Create your Rakazo");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,7 +26,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         : await authClient.signIn.email({ email, password });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "Could not continue");
+      setError(result.error.message ?? uiCopy("Could not continue"));
       return;
     }
     navigate(mode === "up" ? "/onboarding" : "/app");
@@ -41,41 +42,41 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
         {mode === "up" ? (
           <label className="mb-4 w-full text-[16px] text-[#6E6E68]">
-            Name
+            {uiCopy("Name")}
             <input
               id="name"
               name="name"
               autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder={uiCopy("Your name")}
               className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1B1B1E] outline-none"
             />
           </label>
         ) : null}
         <label className="w-full text-[16px] text-[#6E6E68]">
-          Email
+          {uiCopy("Email")}
           <input
             id="email"
             name="email"
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Your email address"
+            placeholder={uiCopy("Your email address")}
             type="email"
             required
             className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1B1B1E] outline-none"
           />
         </label>
         <label className="mt-4 w-full text-[16px] text-[#6E6E68]">
-          Password
+          {uiCopy("Password")}
           <input
             id={mode === "in" ? "current-password" : "new-password"}
             name="password"
             autoComplete={mode === "in" ? "current-password" : "new-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder={uiCopy("Password")}
             type="password"
             required
             minLength={8}
@@ -88,21 +89,25 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
           disabled={pending}
           className="mt-3 w-full rounded-[13px] bg-[#121215] py-[18px] text-center text-[17px] font-medium text-[#FBFBF9] hover:bg-[#26262B]"
         >
-          {pending ? "Working…" : mode === "in" ? "Continue with email" : "Create account"}
+          {pending
+            ? uiCopy("Working…")
+            : mode === "in"
+              ? uiCopy("Continue with email")
+              : uiCopy("Create account")}
         </button>
         <p className="mt-[30px] text-[16px] text-[#8C8C86]">
           {mode === "in" ? (
             <>
-              Don’t have an account?{" "}
+              {uiCopy("Don’t have an account?")}{" "}
               <Link to="/sign-up" className="font-medium text-[#1B1B1E]">
-                Sign up
+                {uiCopy("Sign up")}
               </Link>
             </>
           ) : (
             <>
-              Already have an account?{" "}
+              {uiCopy("Already have an account?")}{" "}
               <Link to="/sign-in" className="font-medium text-[#1B1B1E]">
-                Sign in
+                {uiCopy("Sign in")}
               </Link>
             </>
           )}

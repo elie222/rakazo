@@ -2,6 +2,7 @@ import { lazy, Suspense, useLayoutEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { authClient } from "./lib/auth";
 import { markAfterPaint, markOnce } from "./lib/performance";
+import { uiCopy } from "./lib/ui-copy";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -30,7 +31,7 @@ export function App() {
         className="grid h-full place-items-center text-[#6C6C70]"
         data-rakazo-app-state="session-pending"
       >
-        Loading…
+        {uiCopy("Loading…")}
       </div>
     );
   }
@@ -94,7 +95,7 @@ function ShellSkeleton() {
       <main className="flex flex-1 flex-col">
         <div className="h-[74px] border-b border-[#141416]" />
         <div className="flex flex-1 items-center justify-center text-[14px] text-[#55555A]">
-          Opening your workspace…
+          {uiCopy("Opening your workspace…")}
         </div>
         <div className="mx-6 mb-6 h-[54px] rounded-full border border-[#202023] bg-[#131315]" />
       </main>

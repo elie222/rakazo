@@ -1,5 +1,6 @@
 import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
+import { uiCopy } from "../../lib/ui-copy";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
 
 export interface MemoryProviderConnectionDraft {
@@ -24,10 +25,12 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
   {
     id: "supermemory",
     name: "Supermemory",
-    description: "Add semantic recall alongside native MEMORY.md memory.",
+    description: uiCopy("Add semantic recall alongside native MEMORY.md memory."),
     SettingsForm: SupermemorySettingsForm,
     connectedLabel: (config) =>
-      config.settings.mode === "cloud" ? "Supermemory Cloud" : `Local · ${config.settings.baseUrl}`,
+      config.settings.mode === "cloud"
+        ? "Supermemory Cloud"
+        : `${uiCopy("Local")} · ${config.settings.baseUrl}`,
   },
 ];
 
