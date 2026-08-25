@@ -43,6 +43,7 @@ import {
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
+  progressMessageId,
   SLASH_ACTIONS,
   type SlashActionId,
   serializeComposerPrompt,
@@ -207,6 +208,14 @@ export function ShellPage() {
   const computerRef = useRef<ComputerStatus | null>(null);
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
+  // First-seen timestamp per progress/steps message id, so a terminal event
+  // can't clear one before it's been visible for MIN_PROGRESS_VISIBLE_MS —
+  // a tool call fast enough to complete before the browser paints a frame
+  // would otherwise strip the "working…" chip before anyone ever sees it.
+  // Capped so a message whose terminal event never reaches this client (SSE
+  // drop mid-run, tab backgrounded through a reconnect, bot archived
+  // mid-run) doesn't leave its entry here forever.
+  const progressFirstSeenRef = useRef(new Map<string, number>());
 
   function commitSnapshot(next: ThreadSnapshot | null) {
     snapshotRef.current = next;
@@ -696,6 +705,36 @@ export function ShellPage() {
     };
   }, [active?.id, markBotReadIfVisible]);
 
+  const MIN_PROGRESS_VISIBLE_MS = 700;
+  const PROGRESS_FIRST_SEEN_LIMIT = 200;
+
+  function trackProgressVisible(event: ProductEvent) {
+    if (event.type !== "agent.tool.called" && event.type !== "thread.progress") return;
+    const id = progressMessageId(event);
+    if (!progressFirstSeenRef.current.has(id)) {
+      progressFirstSeenRef.current.set(id, Date.now());
+      if (progressFirstSeenRef.current.size > PROGRESS_FIRST_SEEN_LIMIT) {
+        const oldest = progressFirstSeenRef.current.keys().next().value;
+        if (oldest !== undefined) progressFirstSeenRef.current.delete(oldest);
+      }
+    }
+  }
+
+  async function waitForProgressMinVisible(event: ProductEvent, signal: AbortSignal) {
+    if (!isRunTerminalEvent(event)) return;
+    const id = progressMessageId(event);
+    const firstSeen = progressFirstSeenRef.current.get(id);
+    progressFirstSeenRef.current.delete(id);
+    if (firstSeen === undefined) return;
+    const live = snapshotRef.current?.messages.find((message) => message.id === id);
+    const hasVisibleProgress = live?.blocks.some(
+      (block) => block.kind === "steps" || (block.kind === "progress" && block.text),
+    );
+    if (!hasVisibleProgress) return;
+    const remaining = MIN_PROGRESS_VISIBLE_MS - (Date.now() - firstSeen);
+    if (remaining > 0) await abortableDelay(remaining, signal);
+  }
+
   useEffect(() => {
     if (!active) return;
     if (!searchParams.get("m")) {
@@ -724,6 +763,9 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
+            trackProgressVisible(event);
+            await waitForProgressMinVisible(event, abort.signal);
+            if (abort.signal.aborted) break;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
@@ -816,6 +858,9 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
+            trackProgressVisible(event);
+            await waitForProgressMinVisible(event, abort.signal);
+            if (abort.signal.aborted) break;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
