@@ -24,12 +24,38 @@ const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
     {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "Inbox Zero Inc.",
+      alternateName: "Rakazo",
+      url: `${SITE_URL}/`,
+      logo: `${SITE_URL}/brand/rakazo-mark.svg`,
+      email: "hello@rakazo.com",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "customer support",
+        email: "hello@rakazo.com",
+        url: `${SITE_URL}/support/`,
+        availableLanguage: "English",
+      },
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: "131 Continental Dr, Suite 305",
+        addressLocality: "Newark",
+        addressRegion: "DE",
+        postalCode: "19713",
+        addressCountry: "US",
+      },
+      sameAs: [GITHUB_URL, "https://www.getinboxzero.com/"],
+    },
+    {
       "@type": "WebSite",
       "@id": `${SITE_URL}/#website`,
       url: `${SITE_URL}/`,
       name: SITE_NAME,
       description: SITE_DESCRIPTION,
       inLanguage: "en",
+      publisher: { "@id": `${SITE_URL}/#organization` },
     },
     {
       "@type": "SoftwareApplication",
@@ -43,6 +69,7 @@ const structuredData = {
       isAccessibleForFree: true,
       codeRepository: GITHUB_URL,
       license: `${GITHUB_URL}/blob/main/LICENSE`,
+      provider: { "@id": `${SITE_URL}/#organization` },
       offers: {
         "@type": "Offer",
         price: "0",

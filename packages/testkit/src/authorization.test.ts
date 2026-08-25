@@ -117,6 +117,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
       ["routines/remove", { routineId: "missing-routine" }],
       ["routines/testRun", { routineId: "missing-routine" }],
+      ["scratchpad/list", { botId: "missing-bot" }],
+      ["scratchpad/create", { botId: "missing-bot", title: "Nope" }],
+      ["scratchpad/update", { itemId: "missing-item", title: "Nope" }],
+      ["scratchpad/remove", { itemId: "missing-item" }],
       ["skills/list", { botId: "missing-bot" }],
       ["skills/get", { skillId: "missing-skill" }],
       ["skills/start", { botId: "missing-bot", goal: "Demonstrate export" }],
@@ -193,6 +197,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       "routines/create",
       routineInput(ownerBot.id),
     );
+    const ownerScratchpad = await rpc<{ id: string }>(app, owner, "scratchpad/create", {
+      botId: ownerBot.id,
+      title: "Owner open work",
+      notes: "private",
+    });
     const ownerSkill = await handles.prisma.taughtSkill.create({
       data: {
         workspaceId: ownerActor.workspaceId,
@@ -301,6 +310,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/heartbeat", { botId: ownerBot.id }],
       ["routines/list", { botId: ownerBot.id }],
       ["routines/create", routineInput(ownerBot.id)],
+      ["scratchpad/list", { botId: ownerBot.id }],
+      ["scratchpad/create", { botId: ownerBot.id, title: "Stolen item" }],
       ["skills/list", { botId: ownerBot.id }],
       ["skills/start", { botId: ownerBot.id, goal: "Intruder demo" }],
       ["artifacts/list", { botId: ownerBot.id }],
@@ -355,6 +366,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      ["scratchpad/update", { itemId: ownerScratchpad.id, title: "Stolen item" }],
+      ["scratchpad/remove", { itemId: ownerScratchpad.id }],
       ["skills/get", { skillId: ownerSkill.id }],
       [
         "skills/appendEvent",
@@ -409,6 +422,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.routine.findUniqueOrThrow({ where: { id: ownerRoutine.id } }),
     ).toMatchObject({ name: "Owner Routine" });
+    expect(
+      await handles.prisma.scratchpadItem.findUniqueOrThrow({ where: { id: ownerScratchpad.id } }),
+    ).toMatchObject({ title: "Owner open work", notes: "private" });
     expect(
       await handles.prisma.memoryDocument.findUniqueOrThrow({ where: { id: ownerMemory.id } }),
     ).toMatchObject({ content: "owner-only-memory" });
@@ -574,6 +590,64 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(missing.status).toBeGreaterThanOrEqual(400);
     expect(await missing.text()).toMatch(/credential/i);
+  });
+
+  it("validates per-bot model overrides against connected providers and catalog", async () => {
+    const cookie = await signup(app, `bot-model-${stamp}@rakazo.test`, "Bot Model");
+    const bot = await rpc<
+      Bot & {
+        modelProvider: string | null;
+        modelId: string | null;
+        thinkingLevel: string | null;
+      }
+    >(app, cookie, "bots/create", botInput("Model Bot"));
+    await rpc(app, cookie, "models/connect", {
+      provider: "xai",
+      apiKey: "fake-xai-key-not-real",
+      label: "xAI",
+      modelId: "grok-4.6",
+    });
+
+    const updated = await rpc<
+      Bot & {
+        modelProvider: string | null;
+        modelId: string | null;
+        thinkingLevel: string | null;
+      }
+    >(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+      thinkingLevel: "high",
+    });
+    expect(updated).toMatchObject({
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+      thinkingLevel: "high",
+    });
+
+    const unknown = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "xai",
+      modelId: "not-a-real-grok",
+    });
+    expect(unknown.status).toBeGreaterThanOrEqual(400);
+    expect(await unknown.text()).toMatch(/unknown model/i);
+
+    const disconnected = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelProvider: "anthropic",
+      modelId: "claude-opus-4-6",
+    });
+    expect(disconnected.status).toBeGreaterThanOrEqual(400);
+    expect(await disconnected.text()).toMatch(/connect/i);
+
+    const partialClear = await raw(app, cookie, "bots/update", {
+      botId: bot.id,
+      modelId: null,
+    });
+    expect(partialClear.status).toBeGreaterThanOrEqual(400);
+    expect(await partialClear.text()).toMatch(/both be set or both cleared/i);
   });
 
   it("chooses the newest duplicate provider credential when selecting a default", async () => {

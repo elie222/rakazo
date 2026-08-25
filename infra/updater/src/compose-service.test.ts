@@ -6,6 +6,7 @@ import { parse } from "yaml";
 
 interface ComposeService {
   image?: string;
+  profiles?: string[];
   ports?: unknown[];
   networks?: string[];
   volumes?: string[];
@@ -33,6 +34,10 @@ describe("the updater compose service", () => {
     expect(updater.image).toMatch(/updater/);
   });
 
+  it("is opt-in because it grants root-equivalent Docker access", () => {
+    expect(updater.profiles).toEqual(["updater"]);
+  });
+
   it("publishes nothing on the host", () => {
     expect(updater.ports).toBeUndefined();
   });
@@ -55,9 +60,13 @@ describe("the updater compose service", () => {
 
   it("is bind-mounted at the same path it has on the host", () => {
     const mount = (updater.volumes ?? []).find((volume) => volume.includes("RAKAZO_DEPLOY_DIR"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    const deployDir = "${RAKAZO_DEPLOY_DIR:-/srv/rakazo}";
     const separatorIndex = mount?.indexOf("}:${") ?? -1;
     const source = separatorIndex < 0 ? undefined : mount?.slice(0, separatorIndex + 1);
     const destination = separatorIndex < 0 ? undefined : mount?.slice(separatorIndex + 2);
+    expect(updater.environment?.RAKAZO_DEPLOY_DIR).toBe(deployDir);
+    expect(mount).toBe(`${deployDir}:${deployDir}`);
     expect(source).toBe(destination);
   });
 
@@ -89,7 +98,8 @@ describe("the updater compose service", () => {
 
   it("does not load the application env_file into the root-equivalent process", () => {
     expect(updater.env_file).toBeUndefined();
-    expect(updater.environment?.RAKAZO_UPDATER_TOKEN).toContain("RAKAZO_UPDATER_TOKEN");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.RAKAZO_UPDATER_TOKEN).toBe("${RAKAZO_UPDATER_TOKEN:-}");
   });
 
   it("does not let the api container reach the Docker socket to update itself", () => {

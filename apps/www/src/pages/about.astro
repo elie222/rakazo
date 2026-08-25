@@ -1,0 +1,42 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { fetchGithubStars, formatStarCount } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { DOCS_URL, GITHUB_URL } from "../site";
+
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+---
+
+<BaseLayout
+  title="About · Rakazo"
+  description="How Rakazo is building an open source Grok Bot alternative that people can understand and control."
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="privacy-copy">
+      <h1>About Rakazo</h1>
+      <p>
+        Rakazo is an open source Grok Bot alternative for persistent AI teammates: bots that can use a browser and shell,
+        remember the work around a job, run routines on a schedule, and ask for approval when they reach a
+        boundary. It is designed for practical operational work rather than one-off chat.
+      </p>
+      <h2>Why we are building it</h2>
+      <p>
+        Useful agents should be understandable and controllable by the people who run them. Rakazo keeps
+        routines in readable Markdown, supports multiple model providers, records actions in an audit log, and
+        lets operators keep model keys, browser sessions, and deployment infrastructure under their own
+        control. The same bots and routines work across the web, desktop, and mobile clients.
+      </p>
+      <h2>Open by default</h2>
+      <p>
+        Rakazo is maintained by Inbox Zero Inc. and released under the Apache-2.0 license. The project accepts
+        public issues and contributions on <a href={GITHUB_URL}>GitHub</a>. To run Rakazo on your own
+        infrastructure, start with the <a href={DOCS_URL}>self-hosting guide</a>. For product or account help,
+        email <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>.
+      </p>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

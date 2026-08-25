@@ -15,3 +15,14 @@ export function findDefaultModelCredential(
     orderBy: newestModelCredentialOrder,
   });
 }
+
+export function findModelCredential(
+  prisma: PrismaClient,
+  scope: { userId: string; workspaceId: string },
+  provider: string,
+) {
+  return prisma.userModelCredential.findFirst({
+    where: { userId: scope.userId, workspaceId: scope.workspaceId, provider },
+    orderBy: newestModelCredentialOrder,
+  });
+}
