@@ -63,6 +63,123 @@ function takeLiveMessage(
   return { previous, remaining };
 }
 
+/** Minimum time a painted progress/steps chip should stay on screen. */
+export const MIN_PROGRESS_VISIBLE_MS = 700;
+/** Cap first-seen entries so a drop/reconnect cannot grow the map forever. */
+export const PROGRESS_FIRST_SEEN_LIMIT = 200;
+
+export function liveProgressIsVisible(message: ThreadMessage): boolean {
+  return message.blocks.some(
+    (block) => block.kind === "steps" || (block.kind === "progress" && Boolean(block.text)),
+  );
+}
+
+export function noteProgressFirstSeen(
+  messages: readonly ThreadMessage[],
+  firstSeen: Map<string, number>,
+  now: number,
+  limit = PROGRESS_FIRST_SEEN_LIMIT,
+): void {
+  for (const message of messages) {
+    if (!message.id.startsWith("progress:") || !liveProgressIsVisible(message)) continue;
+    if (firstSeen.has(message.id)) continue;
+    firstSeen.set(message.id, now);
+    while (firstSeen.size > limit) {
+      const oldest = firstSeen.keys().next().value;
+      if (oldest === undefined) break;
+      firstSeen.delete(oldest);
+    }
+  }
+}
+
+/**
+ * Keep a just-painted live progress/steps chip when an event or refresh would strip it
+ * before MIN_PROGRESS_VISIBLE_MS. Terminal run state and durable messages still apply;
+ * only the live-message removal is deferred.
+ */
+export function retainMinVisibleLiveProgress(
+  previous: ThreadSnapshot | null,
+  next: ThreadSnapshot | null,
+  firstSeen: Map<string, number>,
+  now = Date.now(),
+  minVisibleMs = MIN_PROGRESS_VISIBLE_MS,
+): { snapshot: ThreadSnapshot | null; clearAfterMs: Array<{ id: string; delayMs: number }> } {
+  if (!next) return { snapshot: next, clearAfterMs: [] };
+  noteProgressFirstSeen(next.messages, firstSeen, now);
+  if (!previous || previous.threadId !== next.threadId) {
+    return { snapshot: next, clearAfterMs: [] };
+  }
+
+  // thread.cleared wipes durable history; never reattach live chips onto an empty transcript.
+  const previousHadDurable = previous.messages.some(
+    (message) => !isTransientThreadMessage(message),
+  );
+  const nextHasDurable = next.messages.some((message) => !isTransientThreadMessage(message));
+  if (previousHadDurable && !nextHasDurable) {
+    for (const message of previous.messages) {
+      if (message.id.startsWith("progress:")) firstSeen.delete(message.id);
+    }
+    return { snapshot: next, clearAfterMs: [] };
+  }
+
+  const nextIds = new Set(next.messages.map((message) => message.id));
+  const held: ThreadMessage[] = [];
+  const clearAfterMs: Array<{ id: string; delayMs: number }> = [];
+
+  for (const message of previous.messages) {
+    if (!message.id.startsWith("progress:") || nextIds.has(message.id)) continue;
+    if (!liveProgressIsVisible(message)) continue;
+    const seenAt = firstSeen.get(message.id);
+    if (seenAt === undefined) continue;
+
+    // Ask pauses must not leave "working…" beside waiting_input cards.
+    const runId = message.runId;
+    const nextRun = runId
+      ? (next.activeRuns?.find((candidate) => candidate.id === runId) ??
+        (next.run?.id === runId ? next.run : undefined))
+      : undefined;
+    if (nextRun?.status === "waiting_input") {
+      firstSeen.delete(message.id);
+      continue;
+    }
+
+    const remaining = minVisibleMs - (now - seenAt);
+    if (remaining <= 0) {
+      firstSeen.delete(message.id);
+      continue;
+    }
+    held.push(message);
+    clearAfterMs.push({ id: message.id, delayMs: remaining });
+  }
+
+  if (held.length === 0) return { snapshot: next, clearAfterMs: [] };
+  return {
+    snapshot: { ...next, messages: insertHeldLiveProgress(next.messages, held) },
+    clearAfterMs,
+  };
+}
+
+function isTransientThreadMessage(message: ThreadMessage): boolean {
+  return message.id.startsWith("progress:") || message.id.startsWith("subagent:");
+}
+
+function insertHeldLiveProgress(
+  messages: readonly ThreadMessage[],
+  held: readonly ThreadMessage[],
+): ThreadMessage[] {
+  const next = [...messages];
+  for (const live of held) {
+    if (next.some((message) => message.id === live.id)) continue;
+    const durableIndex = next.findIndex(
+      (message) =>
+        Boolean(live.runId) && message.runId === live.runId && !message.id.startsWith("progress:"),
+    );
+    if (durableIndex >= 0) next.splice(durableIndex, 0, live);
+    else next.push(live);
+  }
+  return next;
+}
+
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
   "booting",

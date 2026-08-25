@@ -11,11 +11,13 @@ import {
   computerPanelAutoBoot,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
+  MIN_PROGRESS_VISIBLE_MS,
   mergeThreadSnapshot,
   prependThreadMessagePage,
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  retainMinVisibleLiveProgress,
   userHoldsComputerControl,
 } from "./thread-events.js";
 
@@ -1133,6 +1135,133 @@ describe("computer event reduction", () => {
     expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
     expect(computerPanelAutoBoot("booting")).toBe("wait");
     expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  });
+});
+
+describe("min-visible live progress retention", () => {
+  it("keeps a just-painted chip when a durable answer would strip it", () => {
+    const run = threadRun("run-1");
+    const live = {
+      ...message("progress:run-1", [
+        { kind: "steps" as const, steps: [{ label: "Schedule", count: 1 }] },
+      ]),
+      runId: run.id,
+    };
+    const previous: ThreadSnapshot = { ...snapshot([live]), run, activeRuns: [run] };
+    const firstSeen = new Map<string, number>([[live.id, 1_000]]);
+    const durable = {
+      ...message("msg-1", [{ kind: "text", text: "Done" }], 5),
+      runId: run.id,
+    };
+    const reduced = reduceThreadSnapshot(
+      previous,
+      event({
+        type: "thread.message.created",
+        seq: 5,
+        runId: run.id,
+        payload: { messageId: durable.id, role: "bot", blocks: durable.blocks },
+      }),
+    );
+
+    expect(reduced?.messages.map((item) => item.id)).toEqual(["msg-1"]);
+
+    const held = retainMinVisibleLiveProgress(previous, reduced, firstSeen, 1_100);
+    expect(held.snapshot?.messages.map((item) => item.id)).toEqual(["progress:run-1", "msg-1"]);
+    expect(held.clearAfterMs).toEqual([
+      { id: "progress:run-1", delayMs: MIN_PROGRESS_VISIBLE_MS - 100 },
+    ]);
+    expect(held.snapshot?.run).toEqual(run);
+  });
+
+  it("applies terminal run state immediately while holding only the chip", () => {
+    const run = threadRun("run-1");
+    const live = {
+      ...message("progress:run-1", [{ kind: "progress" as const, text: "working…" }]),
+      runId: run.id,
+    };
+    const previous: ThreadSnapshot = { ...snapshot([live]), run, activeRuns: [run] };
+    const firstSeen = new Map<string, number>([[live.id, 2_000]]);
+    const terminal = reduceThreadSnapshot(
+      previous,
+      event({ type: "run.completed", seq: 9, runId: run.id }),
+    );
+
+    expect(terminal?.run).toBeNull();
+    expect(terminal?.messages).toEqual([]);
+
+    const held = retainMinVisibleLiveProgress(previous, terminal, firstSeen, 2_050);
+    expect(held.snapshot?.run).toBeNull();
+    expect(held.snapshot?.messages.map((item) => item.id)).toEqual(["progress:run-1"]);
+    expect(held.clearAfterMs[0]?.delayMs).toBe(MIN_PROGRESS_VISIBLE_MS - 50);
+  });
+
+  it("does not hold beside waiting_input and does not hold after a thread clear", () => {
+    const run = threadRun("run-1");
+    const live = {
+      ...message("progress:run-1", [{ kind: "progress" as const, text: "working…" }]),
+      runId: run.id,
+    };
+    const withHistory: ThreadSnapshot = {
+      ...snapshot([message("m-1", [{ kind: "text", text: "hi" }], 1), live]),
+      run,
+      activeRuns: [run],
+    };
+    const firstSeen = new Map<string, number>([[live.id, 3_000]]);
+
+    const waiting = reduceThreadSnapshot(
+      { ...snapshot([live]), run, activeRuns: [run] },
+      event({ type: "run.waiting_input", seq: 6, runId: run.id }),
+    );
+    const waitingHeld = retainMinVisibleLiveProgress(
+      { ...snapshot([live]), run, activeRuns: [run] },
+      waiting,
+      firstSeen,
+      3_010,
+    );
+    expect(waitingHeld.snapshot?.messages).toEqual([]);
+    expect(waitingHeld.clearAfterMs).toEqual([]);
+
+    firstSeen.set(live.id, 3_000);
+    const cleared = reduceThreadSnapshot(
+      withHistory,
+      event({ type: "thread.cleared", seq: 12, runId: undefined }),
+    );
+    const clearedHeld = retainMinVisibleLiveProgress(withHistory, cleared, firstSeen, 3_010);
+    expect(clearedHeld.snapshot?.messages).toEqual([]);
+    expect(clearedHeld.clearAfterMs).toEqual([]);
+  });
+
+  it("survives a refresh that would otherwise clobber a held chip", () => {
+    const run = threadRun("run-1");
+    const live = {
+      ...message("progress:run-1", [
+        { kind: "steps" as const, steps: [{ label: "Tool", count: 1 }] },
+      ]),
+      runId: run.id,
+    };
+    const durable = {
+      ...message("msg-1", [{ kind: "text", text: "Answer" }], 8),
+      runId: run.id,
+    };
+    const previous: ThreadSnapshot = {
+      ...snapshot([live, durable]),
+      cursor: 10,
+      run: null,
+      activeRuns: [],
+    };
+    const refresh: ThreadSnapshot = {
+      ...snapshot([durable]),
+      cursor: 10,
+      run: null,
+      activeRuns: [],
+    };
+    const firstSeen = new Map<string, number>([[live.id, 4_000]]);
+    const reconciled = reconcileRefreshedThread(previous, refresh, null);
+    expect(reconciled.snapshot.messages.map((item) => item.id)).toEqual(["msg-1"]);
+
+    const held = retainMinVisibleLiveProgress(previous, reconciled.snapshot, firstSeen, 4_200);
+    expect(held.snapshot?.messages.map((item) => item.id)).toEqual(["progress:run-1", "msg-1"]);
+    expect(held.clearAfterMs[0]?.delayMs).toBe(MIN_PROGRESS_VISIBLE_MS - 200);
   });
 });
 

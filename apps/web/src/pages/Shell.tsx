@@ -43,7 +43,6 @@ import {
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   presetFromCron,
-  progressMessageId,
   SLASH_ACTIONS,
   type SlashActionId,
   serializeComposerPrompt,
@@ -116,6 +115,7 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  retainMinVisibleLiveProgress,
   userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
@@ -208,18 +208,57 @@ export function ShellPage() {
   const computerRef = useRef<ComputerStatus | null>(null);
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
-  // First-seen timestamp per progress/steps message id, so a terminal event
-  // can't clear one before it's been visible for MIN_PROGRESS_VISIBLE_MS —
-  // a tool call fast enough to complete before the browser paints a frame
-  // would otherwise strip the "working…" chip before anyone ever sees it.
-  // Capped so a message whose terminal event never reaches this client (SSE
-  // drop mid-run, tab backgrounded through a reconnect, bot archived
-  // mid-run) doesn't leave its entry here forever.
+  // First-seen timestamp per progress/steps message id. Commit retains a
+  // just-painted chip for MIN_PROGRESS_VISIBLE_MS when events/refreshes would
+  // strip it — without stalling the SSE subscribe loop. Capped so a message
+  // whose clear never reaches this client doesn't linger forever.
   const progressFirstSeenRef = useRef(new Map<string, number>());
+  const progressClearTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  function clearProgressHold(id: string) {
+    progressFirstSeenRef.current.delete(id);
+    const timer = progressClearTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      progressClearTimersRef.current.delete(id);
+    }
+  }
+
+  function dropLiveProgressHolds(messages: readonly ThreadMessage[]) {
+    for (const message of messages) {
+      if (message.id.startsWith("progress:")) clearProgressHold(message.id);
+    }
+  }
+
+  function dropAllProgressHolds() {
+    for (const timer of progressClearTimersRef.current.values()) clearTimeout(timer);
+    progressClearTimersRef.current.clear();
+    progressFirstSeenRef.current.clear();
+  }
 
   function commitSnapshot(next: ThreadSnapshot | null) {
-    snapshotRef.current = next;
-    setSnapshot(next);
+    const { snapshot, clearAfterMs } = retainMinVisibleLiveProgress(
+      snapshotRef.current,
+      next,
+      progressFirstSeenRef.current,
+    );
+    snapshotRef.current = snapshot;
+    setSnapshot(snapshot);
+    for (const { id, delayMs } of clearAfterMs) {
+      const existing = progressClearTimersRef.current.get(id);
+      if (existing !== undefined) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        progressClearTimersRef.current.delete(id);
+        progressFirstSeenRef.current.delete(id);
+        const current = snapshotRef.current;
+        if (!current?.messages.some((message) => message.id === id)) return;
+        commitSnapshot({
+          ...current,
+          messages: current.messages.filter((message) => message.id !== id),
+        });
+      }, delayMs);
+      progressClearTimersRef.current.set(id, timer);
+    }
   }
 
   function commitComputer(next: ComputerStatus | null) {
@@ -705,35 +744,11 @@ export function ShellPage() {
     };
   }, [active?.id, markBotReadIfVisible]);
 
-  const MIN_PROGRESS_VISIBLE_MS = 700;
-  const PROGRESS_FIRST_SEEN_LIMIT = 200;
-
-  function trackProgressVisible(event: ProductEvent) {
-    if (event.type !== "agent.tool.called" && event.type !== "thread.progress") return;
-    const id = progressMessageId(event);
-    if (!progressFirstSeenRef.current.has(id)) {
-      progressFirstSeenRef.current.set(id, Date.now());
-      if (progressFirstSeenRef.current.size > PROGRESS_FIRST_SEEN_LIMIT) {
-        const oldest = progressFirstSeenRef.current.keys().next().value;
-        if (oldest !== undefined) progressFirstSeenRef.current.delete(oldest);
-      }
-    }
-  }
-
-  async function waitForProgressMinVisible(event: ProductEvent, signal: AbortSignal) {
-    if (!isRunTerminalEvent(event)) return;
-    const id = progressMessageId(event);
-    const firstSeen = progressFirstSeenRef.current.get(id);
-    progressFirstSeenRef.current.delete(id);
-    if (firstSeen === undefined) return;
-    const live = snapshotRef.current?.messages.find((message) => message.id === id);
-    const hasVisibleProgress = live?.blocks.some(
-      (block) => block.kind === "steps" || (block.kind === "progress" && block.text),
-    );
-    if (!hasVisibleProgress) return;
-    const remaining = MIN_PROGRESS_VISIBLE_MS - (Date.now() - firstSeen);
-    if (remaining > 0) await abortableDelay(remaining, signal);
-  }
+  useEffect(() => {
+    return () => {
+      dropAllProgressHolds();
+    };
+  }, []);
 
   useEffect(() => {
     if (!active) return;
@@ -744,6 +759,7 @@ export function ShellPage() {
     setScreenUrl(null);
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
+    dropAllProgressHolds();
     const abort = new AbortController();
     void (async () => {
       const primed = bootstrappedThread.current;
@@ -763,9 +779,6 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            trackProgressVisible(event);
-            await waitForProgressMinVisible(event, abort.signal);
-            if (abort.signal.aborted) break;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
@@ -818,6 +831,7 @@ export function ShellPage() {
     if (!groupId || !activeGroup) return;
     manuallyUnread.current.delete(activeGroup.id);
     readVisibleGroups.current.delete(groupId);
+    dropAllProgressHolds();
     const markVisibleGroupRead = () => {
       if (
         document.visibilityState !== "visible" ||
@@ -858,9 +872,6 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            trackProgressVisible(event);
-            await waitForProgressMinVisible(event, abort.signal);
-            if (abort.signal.aborted) break;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
@@ -1212,9 +1223,11 @@ export function ShellPage() {
       }
       // Stop has no terminal event; clear run UI before refresh races with in-flight gets.
       if (activeGroupId.current === groupTarget) {
-        updateSnapshot((prev) =>
-          prev && prev.groupId === groupTarget ? clearActiveThreadRuns(prev) : prev,
-        );
+        updateSnapshot((prev) => {
+          if (!prev || prev.groupId !== groupTarget) return prev;
+          dropLiveProgressHolds(prev.messages);
+          return clearActiveThreadRuns(prev);
+        });
       }
       await refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
       return;
@@ -1235,6 +1248,7 @@ export function ShellPage() {
     if (activeBotId.current === botTarget) {
       updateSnapshot((prev) => {
         if (!prev || (prev.botId !== botTarget && prev.botId)) return prev;
+        dropLiveProgressHolds(prev.messages);
         return clearActiveThreadRuns(prev);
       });
       const currentComputer = computerRef.current;
