@@ -1005,12 +1005,6 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
     },
-    runs: {
-      cancel: authed.runs.cancel.handler(async ({ context, input }) => {
-        const result = await cancelRun(deps, context.actor, input.runId);
-        return result;
-      }),
-    },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
         computerStatus(deps, context.actor, input.botId),
@@ -2745,6 +2739,10 @@ export function createRouter(deps: RouterDeps) {
       list: authed.runs.list.handler(async ({ context, input }) => ({
         runs: await listWorkspaceRuns(deps.prisma, context.actor, input.filter),
       })),
+      cancel: authed.runs.cancel.handler(async ({ context, input }) => {
+        const result = await cancelRun(deps, context.actor, input.runId);
+        return result;
+      }),
     },
     voice: {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
