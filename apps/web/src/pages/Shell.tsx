@@ -8,10 +8,13 @@ import type {
   Group,
   Me,
   MessageBlock,
+  ModelCatalogEntry,
+  ModelCredential,
   ProductEvent,
   Routine,
   SearchHit,
   TaughtSkill,
+  ThinkingLevel,
   ThreadMessage,
   ThreadSnapshot,
   VoiceInfo,
@@ -147,6 +150,9 @@ const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
+const ScratchpadSection = lazy(() =>
+  import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
+);
 
 type Panel =
   | "computer"
@@ -3526,6 +3532,9 @@ function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     voiceId?: string | null;
+    modelProvider?: string | null;
+    modelId?: string | null;
+    thinkingLevel?: ThinkingLevel | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -3538,6 +3547,14 @@ function BotSettings({
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [modelKey, setModelKey] = useState(
+    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
+  );
+  const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
+  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
+  const [modelMetaReady, setModelMetaReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -3546,7 +3563,70 @@ function BotSettings({
       .voices({})
       .then(setVoices)
       .catch(() => setVoices([]));
+    void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
+      .then(([nextCredentials, nextCatalog, nextMe]) => {
+        setCredentials(nextCredentials);
+        setCatalog(nextCatalog);
+        setMe(nextMe);
+        // Only mark ready on success — a failed catalog load must not clear
+        // an existing thinkingLevel override on save.
+        setModelMetaReady(true);
+      })
+      .catch(() => undefined);
   }, []);
+
+  const connectedOptions: Array<{
+    key: string;
+    provider: string;
+    modelId: string;
+    label: string;
+  }> = [];
+  const seenOptions = new Set<string>();
+  for (const credential of credentials) {
+    const providerModels = catalog.filter(
+      (entry) => entry.provider === credential.provider && !entry.placeholder,
+    );
+    const credentialInCatalog = Boolean(
+      credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
+    );
+    // Catalog providers expand to every model for that connection. Free-form
+    // credentials (model id not in the catalog) stay a single connected pair.
+    const options =
+      credential.modelId && !credentialInCatalog
+        ? [
+            {
+              key: modelOptionKey(credential.provider, credential.modelId),
+              provider: credential.provider,
+              modelId: credential.modelId,
+              label: `${credential.label} · ${credential.modelId}`,
+            },
+          ]
+        : providerModels.map((entry) => ({
+            key: modelOptionKey(entry.provider, entry.id),
+            provider: entry.provider,
+            modelId: entry.id,
+            label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+          }));
+    for (const option of options) {
+      if (seenOptions.has(option.key)) continue;
+      seenOptions.add(option.key);
+      connectedOptions.push(option);
+    }
+  }
+
+  const effectiveProvider = modelKey
+    ? parseModelOptionKey(modelKey)?.provider
+    : (me?.defaultProvider ?? null);
+  const effectiveModelId = modelKey
+    ? parseModelOptionKey(modelKey)?.modelId
+    : (me?.defaultModel ?? null);
+  const effectiveEntry =
+    effectiveProvider && effectiveModelId
+      ? catalog.find(
+          (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
+        )
+      : undefined;
+  const thinkingOptions = (effectiveEntry?.thinkingLevels ?? []).filter((level) => level !== "off");
 
   return (
     <div data-testid="bot-settings">
@@ -3581,60 +3661,114 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
-      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-      {memoryProviderConfigured ? (
-        <div className="mt-4 text-[14px] text-[#85858A]">
-          Memory scope
-          <div className="mt-2 flex gap-2">
-            {(
-              [
-                { value: null, label: "Inherit default" },
-                { value: "isolated" as const, label: "Isolated" },
-                { value: "shared" as const, label: "Shared" },
-              ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
-            ).map((option) => (
-              <button
-                key={option.label}
-                type="button"
-                aria-pressed={memoryScope === option.value}
-                onClick={() => setMemoryScope(option.value)}
-                className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
-                  memoryScope === option.value
-                    ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
-                    : "border-[#26262A] text-[#85858A]"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
-        <input
-          type="checkbox"
-          checked={autoSpeak}
-          onChange={(event) => setAutoSpeak(event.target.checked)}
-        />
-        Read replies aloud
-      </label>
-      {voices.length ? (
+      <details data-testid="bot-settings-advanced" className="group mt-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
+          <span className="text-[#85858A]">Advanced</span>
+          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+            ›
+          </span>
+        </summary>
+        <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+        <Suspense fallback={null}>
+          <ScratchpadSection botId={bot.id} />
+        </Suspense>
         <label className="mt-4 block text-[14px] text-[#85858A]">
-          Voice
+          Model
           <select
-            value={voiceId}
-            onChange={(event) => setVoiceId(event.target.value)}
+            value={modelKey}
+            onChange={(event) => {
+              setModelKey(event.target.value);
+              setThinkingLevel("");
+            }}
             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
           >
-            <option value="">Account default</option>
-            {voices.map((voice) => (
-              <option key={voice.id} value={voice.id}>
-                {voice.label}
+            <option value="">
+              Workspace default
+              {me?.defaultModel
+                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+                : ""}
+            </option>
+            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
+              <option value={modelKey}>{parseModelOptionKey(modelKey)?.modelId ?? modelKey}</option>
+            ) : null}
+            {connectedOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
               </option>
             ))}
           </select>
         </label>
-      ) : null}
+        {thinkingOptions.length ? (
+          <label className="mt-4 block text-[14px] text-[#85858A]">
+            Thinking
+            <select
+              value={thinkingLevel}
+              onChange={(event) => setThinkingLevel(event.target.value)}
+              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+            >
+              <option value="">Default (medium)</option>
+              {thinkingOptions.map((level) => (
+                <option key={level} value={level}>
+                  {thinkingLevelLabel(level)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {memoryProviderConfigured ? (
+          <div className="mt-4 text-[14px] text-[#85858A]">
+            Memory scope
+            <div className="mt-2 flex gap-2">
+              {(
+                [
+                  { value: null, label: "Inherit default" },
+                  { value: "isolated" as const, label: "Isolated" },
+                  { value: "shared" as const, label: "Shared" },
+                ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
+              ).map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  aria-pressed={memoryScope === option.value}
+                  onClick={() => setMemoryScope(option.value)}
+                  className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
+                    memoryScope === option.value
+                      ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
+                      : "border-[#26262A] text-[#85858A]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
+          <input
+            type="checkbox"
+            checked={autoSpeak}
+            onChange={(event) => setAutoSpeak(event.target.checked)}
+          />
+          Read replies aloud
+        </label>
+        {voices.length ? (
+          <label className="mt-4 block text-[14px] text-[#85858A]">
+            Voice
+            <select
+              value={voiceId}
+              onChange={(event) => setVoiceId(event.target.value)}
+              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+            >
+              <option value="">Account default</option>
+              {voices.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </details>
       {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
@@ -3643,6 +3777,7 @@ function BotSettings({
           onClick={() => {
             setSaving(true);
             setError(null);
+            const selected = modelKey ? parseModelOptionKey(modelKey) : null;
             void onSave({
               name,
               title,
@@ -3652,6 +3787,17 @@ function BotSettings({
               memoryScope,
               autoSpeak,
               voiceId: voiceId || null,
+              modelProvider: selected?.provider ?? null,
+              modelId: selected?.modelId ?? null,
+              // Only clear thinking when catalog metadata is available; otherwise
+              // preserve the stored override if models.list failed or is still loading.
+              ...(modelMetaReady
+                ? {
+                    thinkingLevel: thinkingOptions.length
+                      ? ((thinkingLevel || null) as ThinkingLevel | null)
+                      : null,
+                  }
+                : {}),
             })
               .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
               .finally(() => setSaving(false));
@@ -3673,6 +3819,30 @@ function BotSettings({
       </div>
     </div>
   );
+}
+
+function modelOptionKey(provider: string, modelId: string) {
+  return `${provider}::${modelId}`;
+}
+
+function thinkingLevelLabel(level: ThinkingLevel) {
+  if (level === "xhigh") return "Extra high";
+  return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
+}
+
+function parseModelOptionKey(key: string) {
+  const separator = key.indexOf("::");
+  if (separator <= 0) return null;
+  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
+}
+
+function catalogLabel(
+  catalog: ModelCatalogEntry[],
+  provider: string | null | undefined,
+  modelId: string,
+) {
+  if (!provider) return undefined;
+  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
 }
 
 function NewBotSectionDialog({

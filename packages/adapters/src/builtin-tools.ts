@@ -242,6 +242,74 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "scratchpad_list",
+    description:
+      "List this bot's scratchpad / open-work items (todos and parked work). By default omits completed items.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        includeDone: {
+          type: "boolean",
+          description: "When true, include completed items.",
+        },
+      },
+    },
+  },
+  {
+    name: "scratchpad_add",
+    description:
+      "Add an open-work item to this bot's scratchpad. Use for todos or parked work that should outlive this turn. Not a reminder or schedule.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short title for the item." },
+        status: {
+          type: "string",
+          enum: ["open", "parked", "done"],
+          description: "Defaults to open.",
+        },
+        notes: { type: "string", description: "Optional notes." },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "scratchpad_update",
+    description: "Update a scratchpad item's title, status, or notes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string" },
+        title: { type: "string" },
+        status: { type: "string", enum: ["open", "parked", "done"] },
+        notes: { type: "string" },
+      },
+      required: ["itemId"],
+    },
+  },
+  {
+    name: "scratchpad_complete",
+    description: "Mark a scratchpad item done.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string" },
+      },
+      required: ["itemId"],
+    },
+  },
+  {
+    name: "scratchpad_remove",
+    description: "Permanently remove a scratchpad item.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string" },
+      },
+      required: ["itemId"],
+    },
+  },
+  {
     name: "schedule_create",
     description:
       'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.',

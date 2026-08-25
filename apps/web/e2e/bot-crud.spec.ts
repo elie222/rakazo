@@ -60,7 +60,21 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(descriptionInput).toHaveValue(
     "Finds reliable sources and turns them into concise briefs.",
   );
+  const settings = page.getByTestId("bot-settings");
+  const modelSelect = settings.locator("label:has-text('Model') select");
+  const teamComputer = settings.getByRole("button", { name: "Team" });
+  const openWork = settings.getByTestId("bot-scratchpad");
+  await expect(teamComputer).toBeHidden();
+  await expect(modelSelect).toBeHidden();
+  await expect(openWork).toBeHidden();
+  await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "27a-settings-panel");
+  await settings.getByText("Advanced", { exact: true }).click();
+  await expect(teamComputer).toBeVisible();
+  await expect(openWork).toBeVisible();
+  await expect(modelSelect).toBeVisible();
+  await expect(modelSelect).toContainText("Workspace default");
+  await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await page.getByRole("button", { name: "Show computer" }).click();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");
   await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();

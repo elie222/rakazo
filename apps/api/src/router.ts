@@ -32,9 +32,12 @@ import {
   enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
+  isScratchpadStatus,
   listPiCatalog,
+  listScratchpadItems,
   McpOAuthBroker,
   type MemoryProviderResolver,
+  mapScratchpadItem,
   modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
@@ -536,6 +539,9 @@ export function createRouter(deps: RouterDeps) {
           notifyOnFinish: source.notifyOnFinish,
           color: source.color,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+          modelProvider: source.modelProvider,
+          modelId: source.modelId,
+          thinkingLevel: source.thinkingLevel,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -559,7 +565,7 @@ export function createRouter(deps: RouterDeps) {
         return duplicate;
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
-        await repos.getBot(context.actor, input.botId);
+        const existing = await repos.getBot(context.actor, input.botId);
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -570,6 +576,46 @@ export function createRouter(deps: RouterDeps) {
             select: { id: true },
           });
           if (!section) throw new IsolationError();
+        }
+        if (input.modelProvider && input.modelId) {
+          const credential = await deps.prisma.userModelCredential.findFirst({
+            where: {
+              userId: context.actor.userId,
+              workspaceId: context.actor.workspaceId,
+              provider: input.modelProvider,
+            },
+            orderBy: newestModelCredentialOrder,
+          });
+          if (!credential) {
+            throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
+          }
+          const knownModels = [...listPiCatalog(), scriptedCatalogEntry];
+          const inCatalog = knownModels.some(
+            (item) => item.provider === input.modelProvider && item.id === input.modelId,
+          );
+          if (!inCatalog && credential.defaultModel !== input.modelId) {
+            throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
+          }
+        }
+        const thinkingLevel = input.thinkingLevel;
+        if (input.thinkingLevel) {
+          const provider =
+            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
+          const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
+          const me = await meDto(deps, context.actor);
+          const effectiveProvider = provider ?? me.defaultProvider;
+          const effectiveModelId = modelId ?? me.defaultModel;
+          if (effectiveProvider && effectiveModelId) {
+            const entry = listPiCatalog().find(
+              (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
+            );
+            const allowed = entry?.thinkingLevels;
+            if (allowed && !allowed.includes(input.thinkingLevel)) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: `Thinking level must be one of: ${allowed.join(", ")}`,
+              });
+            }
+          }
         }
         await deps.prisma.bot.update({
           where: { id: input.botId },
@@ -585,6 +631,10 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            ...(input.modelProvider !== undefined
+              ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
+              : {}),
+            ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1654,6 +1704,68 @@ export function createRouter(deps: RouterDeps) {
         });
         await deps.jobs.enqueue(runContinueJob(run.id));
         return { runId: run.id };
+      }),
+    },
+    scratchpad: {
+      list: authed.scratchpad.list.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        return listScratchpadItems(
+          { prisma: deps.prisma },
+          {
+            workspaceId: context.actor.workspaceId,
+            botId: input.botId,
+            status: input.status,
+            includeDone: input.includeDone ?? false,
+          },
+        );
+      }),
+      create: authed.scratchpad.create.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const row = await deps.prisma.scratchpadItem.create({
+          data: {
+            workspaceId: context.actor.workspaceId,
+            botId: input.botId,
+            userId: context.actor.userId,
+            title: input.title.trim(),
+            status: input.status,
+            notes: input.notes.trim(),
+          },
+        });
+        return mapScratchpadItem(row);
+      }),
+      update: authed.scratchpad.update.handler(async ({ context, input }) => {
+        const existing = await deps.prisma.scratchpadItem.findFirst({
+          where: {
+            id: input.itemId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!existing) throw new IsolationError();
+        if (input.status !== undefined && !isScratchpadStatus(input.status)) {
+          throw new ORPCError("BAD_REQUEST", { message: "Invalid scratchpad status." });
+        }
+        const row = await deps.prisma.scratchpadItem.update({
+          where: { id: existing.id },
+          data: {
+            ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            ...(input.notes !== undefined ? { notes: input.notes.trim() } : {}),
+          },
+        });
+        return mapScratchpadItem(row);
+      }),
+      remove: authed.scratchpad.remove.handler(async ({ context, input }) => {
+        const existing = await deps.prisma.scratchpadItem.findFirst({
+          where: {
+            id: input.itemId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!existing) throw new IsolationError();
+        await deps.prisma.scratchpadItem.delete({ where: { id: existing.id } });
+        return { ok: true as const };
       }),
     },
     skills: {

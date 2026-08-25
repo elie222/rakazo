@@ -127,6 +127,7 @@ export interface CompactHistoryDeps {
   resolveModel?: (scope: {
     userId: string;
     workspaceId: string;
+    botId?: string;
   }) => Promise<AgentRunRequest["model"]>;
 }
 
@@ -241,7 +242,11 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const model = deps.resolveModel
-    ? await deps.resolveModel({ userId: thread.userId, workspaceId: thread.workspaceId })
+    ? await deps.resolveModel({
+        userId: thread.userId,
+        workspaceId: thread.workspaceId,
+        botId: thread.botId,
+      })
     : deps.deploymentModelKey
       ? {
           provider: "openrouter",

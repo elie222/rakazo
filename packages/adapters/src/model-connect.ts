@@ -39,6 +39,7 @@ export function modelCredentialDto(
     label: row.label,
     hasKey: true,
     isDefault: row.isDefault,
+    ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
   };
   if (row.provider !== CONTRACT_OPENAI_COMPAT || !plaintext) return credential;
   const parsed = parseModelSecret(plaintext);

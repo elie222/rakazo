@@ -48,6 +48,8 @@ export * from "./pipedream-connector.js";
 export * from "./realtime.js";
 export * from "./remote-mcp.js";
 export * from "./sandbox-factory.js";
+export * from "./scratchpad-context.js";
+export * from "./scratchpad-tools.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";

@@ -50,6 +50,22 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
     getModel: (_provider: string, modelId: string) => {
       if (modelId === "reasoning-model") return { provider: "test", id: modelId, reasoning: true };
       if (modelId === "plain-model") return { provider: "test", id: modelId, reasoning: false };
+      if (modelId === "grok-4.6") {
+        return {
+          provider: "xai",
+          id: modelId,
+          reasoning: true,
+          thinkingLevelMap: {
+            off: null,
+            minimal: null,
+            low: "low",
+            medium: "medium",
+            high: "high",
+            xhigh: "xhigh",
+            max: null,
+          },
+        };
+      }
       return undefined;
     },
     streamSimple: () => {
@@ -74,6 +90,7 @@ async function runWithModel(
   modelId: string,
   provider = "test",
   signal = new AbortController().signal,
+  thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null,
 ) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
@@ -85,7 +102,7 @@ async function runWithModel(
       instructions: "",
       history: [],
       tools: [],
-      model: { provider, id: modelId },
+      model: { provider, id: modelId, thinkingLevel },
       executeTool: vi.fn(async () => ({ ok: true })),
     },
     {
@@ -115,6 +132,11 @@ describe("Pi agent thinking level", () => {
     const levels = await runWithModel("reasoning-model");
     expect(levels).toEqual(["medium", "medium"]);
     expect(levels.every((level) => level !== "off")).toBe(true);
+  });
+
+  it("honors a per-bot thinking level on reasoning models", async () => {
+    const levels = await runWithModel("grok-4.6", "xai", new AbortController().signal, "high");
+    expect(levels).toEqual(["high", "high"]);
   });
 
   it("keeps reasoning off for the main agent and subagent", async () => {
