@@ -146,6 +146,16 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
       async () => (await rpc<{ state: string }>(page, "computer/status", { botId: chiefId })).state,
     )
     .toBe("running");
+  await expect
+    .poll(
+      async () =>
+        (
+          await rpc<{ busyBotName: string | null }>(page, "computer/status", {
+            botId: chiefId,
+          })
+        ).busyBotName,
+    )
+    .not.toBeNull();
 
   const takeover = await rpcResponse(page, "computer/takeover", { botId: chiefId });
   expect(takeover.ok).toBe(false);
@@ -154,13 +164,31 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
 
-  await rpc(page, "threads/stop", { botId: chiefId });
+  await page.getByTitle("Agent computer").click();
+  const takeControl = page.getByRole("button", { name: /Take control/i }).first();
+  await expect(takeControl).toBeDisabled();
+  await expect(page.getByText(/is using it/i).first()).toBeVisible();
+  await captureScreenshot(page, testInfo, "48b-take-control-blocked-while-busy");
+
+  // Stop through the shell so the client refreshes computer status (API stop alone
+  // does not emit a terminal thread event).
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   await waitForIdle(page, chiefId);
   await expect
-    .poll(async () => (await rpcResponse(page, "computer/takeover", { botId: chiefId })).ok)
-    .toBe(true);
-  await page.getByTitle("Agent computer").click();
-  await expect(page.getByText("You have control", { exact: true })).toBeVisible();
+    .poll(
+      async () =>
+        (
+          await rpc<{ busyBotName: string | null }>(page, "computer/status", {
+            botId: chiefId,
+          })
+        ).busyBotName,
+    )
+    .toBeNull();
+  await expect(takeControl).toBeEnabled();
+  await takeControl.click();
+  await expect(
+    page.getByTestId("side-panel").getByText("You have control", { exact: true }),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "49-team-computer-takeover-after-stop");
   await rpc(page, "computer/release", { botId: chiefId });
 });

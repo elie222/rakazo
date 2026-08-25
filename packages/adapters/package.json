@@ -26,9 +26,10 @@
     "d3-dsv": "^3.0.1",
     "graphile-worker": "^0.17.3",
     "jsdom": "^30.0.1",
+    "koffi": "^2.9.0",
     "pg": "^8.16.3",
-    "undici": "^7.22.0",
     "sharp": "^0.35.3",
+    "undici": "^7.22.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {

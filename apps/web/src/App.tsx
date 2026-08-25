@@ -1,7 +1,14 @@
-import { lazy, Suspense, useLayoutEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { BuiButton, LoadingState } from "./components/beautiful-ui/primitives";
 import { authClient } from "./lib/auth";
 import { markAfterPaint, markOnce } from "./lib/performance";
+import {
+  holdUnreachableGate,
+  sessionGate,
+  sessionRetryDelayMs,
+  showSessionUnavailable,
+} from "./lib/session-gate";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -17,56 +24,124 @@ const WelcomePage = lazy(() =>
 
 export function App() {
   const session = authClient.useSession();
+  const gate = sessionGate(session);
+  const [holdingUnreachable, setHoldingUnreachable] = useState(false);
+  const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
+  if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
+
   useLayoutEffect(() => {
     if (session.isPending) return;
     markOnce("rk:renderer:session-committed");
     markAfterPaint("rk:renderer:session-painted");
   }, [session.isPending]);
-  if (session.isPending) {
+
+  if (showSessionUnavailable(gate, nextHolding)) {
+    return <SessionUnavailable refetch={session.refetch} />;
+  }
+  if (gate === "loading") {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (
-      <div className="grid h-full place-items-center text-[#6C6C70]">Loading…</div>
+      <div
+        className="grid h-full place-items-center text-[#6C6C70]"
+        data-rakazo-app-state="session-pending"
+      >
+        Loading…
+      </div>
     );
   }
+
   const user = session.data?.user;
   return (
-    <Suspense fallback={<div className="h-full bg-[#050506]" />}>
-      <Routes>
-        <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
-        <Route
-          path="/sign-in"
-          element={user ? <Navigate to="/app" replace /> : <AuthPage mode="in" />}
-        />
-        <Route
-          path="/sign-up"
-          element={user ? <Navigate to="/onboarding" replace /> : <AuthPage mode="up" />}
-        />
-        <Route
-          path="/onboarding"
-          element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
-        />
-        <Route
-          path="/mcp/oauth/callback"
-          element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
-        />
-        <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
-        <Route
-          path="/app/g/:groupId"
-          element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-        />
-        <Route
-          path="/app/:botId"
-          element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-        />
-      </Routes>
-    </Suspense>
+    <div className="h-full" data-rakazo-app-state="ready">
+      <Suspense fallback={<div className="h-full bg-[#050506]" />}>
+        <Routes>
+          <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+          <Route
+            path="/sign-in"
+            element={user ? <Navigate to="/app" replace /> : <AuthPage mode="in" />}
+          />
+          <Route
+            path="/sign-up"
+            element={user ? <Navigate to="/onboarding" replace /> : <AuthPage mode="up" />}
+          />
+          <Route
+            path="/onboarding"
+            element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/mcp/oauth/callback"
+            element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
+          <Route
+            path="/app/g/:groupId"
+            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/app/:botId"
+            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+          />
+        </Routes>
+      </Suspense>
+    </div>
+  );
+}
+
+/**
+ * A session lookup that never reached the server is not a sign-out, so the app
+ * waits and retries here instead of routing to sign-in and stranding a signed-in
+ * user. Better Auth only polls once a session exists, so the retry lives here.
+ */
+function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
+  const [attempt, setAttempt] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
+  const retryImmediately = useRef(false);
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+
+  useEffect(() => {
+    let cancelled = false;
+    const delay = retryImmediately.current ? 0 : sessionRetryDelayMs(attempt);
+    retryImmediately.current = false;
+    const timer = setTimeout(() => {
+      void refetchRef.current().finally(() => {
+        if (!cancelled) setAttempt((value) => value + 1);
+      });
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [attempt, retryKey]);
+
+  return (
+    <div className="grid h-full place-items-center bg-[#050506] px-6 text-center">
+      <div className="flex flex-col items-center">
+        <LoadingState label="Reconnecting" />
+        <p className="mt-3 text-[13.5px] text-[#6C6C70]">Can&apos;t reach the server.</p>
+        <div className="mt-4">
+          <BuiButton
+            onClick={() => {
+              retryImmediately.current = true;
+              setAttempt(0);
+              setRetryKey((key) => key + 1);
+            }}
+          >
+            Retry now
+          </BuiButton>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function ShellSkeleton() {
   return (
-    <div className="flex h-full overflow-hidden bg-[#050506]">
+    <div
+      className="flex h-full overflow-hidden bg-[#050506]"
+      data-rakazo-app-state="session-pending"
+    >
       <aside className="hidden w-[316px] shrink-0 border-e border-[#171719] bg-[#0B0B0C] px-3.5 pt-16 md:block">
         <div className="h-10 rounded-xl bg-[#141416]" />
         <div className="mt-5 space-y-2 px-1">

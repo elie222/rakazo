@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
+    />
+    <title>Set up Rakazo</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <span class="titlebar-name">Rakazo</span>
+      <button id="quit" class="titlebar-quit" type="button" title="Quit Rakazo">Quit</button>
+    </header>
+
+    <main class="shell">
+      <h1 class="heading">Welcome to Rakazo</h1>
+      <p class="subheading">Choose which server this app should use.</p>
+
+      <form id="setup" class="card" novalidate>
+        <fieldset class="choices">
+          <legend class="sr-only">Instance</legend>
+
+          <label class="choice" for="mode-new">
+            <input id="mode-new" type="radio" name="mode" value="new" checked />
+            <span class="choice-body">
+              <span class="choice-title">This computer</span>
+              <span class="choice-note">Local Rakazo stack.</span>
+            </span>
+          </label>
+
+          <label class="choice" for="mode-existing">
+            <input id="mode-existing" type="radio" name="mode" value="existing" />
+            <span class="choice-body">
+              <span class="choice-title">Existing instance</span>
+              <span class="choice-note">A server you already run.</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <section id="panel-new" class="panel">
+          <label class="field-label" for="local-url">Local address</label>
+          <input id="local-url" class="field" type="text" spellcheck="false" autocomplete="off" />
+          <p class="hint">If it isn’t running yet, start with <code>pnpm dev</code>.</p>
+        </section>
+
+        <section id="panel-existing" class="panel" hidden>
+          <label class="field-label" for="server-url">Server address</label>
+          <input
+            id="server-url"
+            class="field"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="https://rakazo.example.com"
+          />
+          <p class="hint">Same address you open in a browser.</p>
+        </section>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="actions">
+          <button id="check" class="button button-secondary" type="button">Check connection</button>
+          <button id="continue" class="button button-primary" type="submit">Continue</button>
+        </div>
+      </form>
+
+      <p class="footnote">Change later from the Rakazo menu (⌘/Ctrl+Shift+K).</p>
+    </main>
+
+    <script src="setup.js"></script>
+  </body>
+</html>
