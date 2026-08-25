@@ -1470,6 +1470,7 @@ export function createRouter(deps: RouterDeps) {
         if (!session.url) {
           return { mode, exists: true, state: other.state as never, url: null };
         }
+        scheduleComputerSleep(deps.jobs, other.id);
         const viewUrl = withViewOnly(session.url, true);
         return {
           mode,
