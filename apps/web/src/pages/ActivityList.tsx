@@ -56,9 +56,14 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
   const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const refreshGeneration = useRef(0);
+  const inFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    const generation = ++refreshGeneration.current;
+    // Skip overlapping ticks so a slow poll cannot be invalidated (stuck Loading)
+    // or finish after a newer start and clear loading early (empty flash).
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const generation = refreshGeneration.current;
     try {
       const [active, recent] = await Promise.all([
         rpc.runs.list({ filter: "active" }),
@@ -72,8 +77,8 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
       setActiveRuns([]);
       setRecentRuns([]);
     } finally {
-      // Clear loading even for stale polls so >15s RPCs cannot stick on "Loading…".
-      setLoading(false);
+      inFlight.current = false;
+      if (generation === refreshGeneration.current) setLoading(false);
     }
   }, []);
 
