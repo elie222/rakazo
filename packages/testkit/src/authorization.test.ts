@@ -781,7 +781,7 @@ function routineInput(botId: string) {
     botId,
     name: "Owner Routine",
     prompt: "owner-only prompt",
-    cron: "0 9 * * 1",
+    crons: ["0 9 * * 1"],
     timezone: "UTC",
     notify: false,
     active: false,

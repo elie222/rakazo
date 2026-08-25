@@ -59,7 +59,7 @@ describeSearch("workspace search", () => {
       botId: bot.id,
       name: "Weekly fixture",
       prompt: "check the fixture",
-      cron: "0 9 * * 1",
+      crons: ["0 9 * * 1"],
       timezone: "UTC",
       active: true,
       notify: true,
