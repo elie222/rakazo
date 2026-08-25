@@ -65,7 +65,6 @@ export function OnboardingPage() {
       .catch(() => setStep("bot"));
     return () => {
       probeRequestIdRef.current += 1;
-      cancelOAuthAttempt(false);
     };
   }, []);
 

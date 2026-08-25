@@ -162,7 +162,7 @@ export function useModelOAuthSignIn(options: {
     }
   }
 
-  useEffect(() => releaseOAuthCapture, []);
+  useEffect(() => () => cancelOAuthAttempt(false), []);
 
   return {
     oauth,

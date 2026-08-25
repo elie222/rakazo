@@ -107,7 +107,6 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     return () => {
       refreshRevisionRef.current += 1;
       probeRequestIdRef.current += 1;
-      cancelOAuthAttempt(false);
     };
   }, []);
 
