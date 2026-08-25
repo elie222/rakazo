@@ -1680,14 +1680,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMessage(deps, run, "bot", [
                 { kind: "computer", state: "Ready", text: safeReason },
               ]);
-              await deps.events.append({
-                workspaceId: run.workspaceId,
-                threadId: thread.id,
-                botId: bot.id,
-                type: "computer.takeover.requested",
-                runId,
-                payload: { reason: safeReason },
-              });
               await deps.prisma.computer.updateMany({
                 where: { id: storedComputer.id },
                 data: {
@@ -1703,22 +1695,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
-              const paused = await deps.prisma.run.updateMany({
-                where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-                data: {
-                  status: "waiting_takeover",
-                  leaseOwner: null,
-                  leaseExpiresAt: null,
-                  checkpoint: null,
-                },
+              const paused = await deps.events.pauseRunForTakeover({
+                workspaceId: run.workspaceId,
+                threadId: run.threadId,
+                botId: run.botId,
+                runId,
+                attemptId: attempt.id,
+                leaseOwner: workerId,
+                leaseFence: fence,
+                reason: safeReason,
               });
-              if (paused.count !== 1) return;
+              if (!paused) return;
               retainComputerLease = true;
-              await deps.prisma.attempt.update({
-                where: { id: attempt.id },
-                data: { status: "waiting_takeover", finishedAt: new Date() },
-              });
-              await clearRunProgress(deps, runId);
               await notifyRun(deps, run, {
                 kind: "takeover",
                 title: `${bot.name} needs you on the screen`,
@@ -2095,10 +2083,6 @@ async function requeueComputerRun(
     ...runContinueJob(runId),
     availableAt: new Date(Date.now() + computerRetryDelay(fence)),
   });
-}
-
-async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void> {
-  await deps.prisma.event.deleteMany({ where: { runId, type: "thread.progress" } });
 }
 
 function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {

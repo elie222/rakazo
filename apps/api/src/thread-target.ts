@@ -25,7 +25,7 @@ import {
   resolveGroupSendAttachments,
   resolveSendAttachments,
 } from "./artifacts.js";
-import { toComputerStatus } from "./computer-status.js";
+import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 
@@ -211,7 +211,7 @@ export async function threadSnapshot(
   target: ThreadTarget,
 ): Promise<ThreadSnapshot> {
   if (target.kind === "bot") {
-    const [messagePage, last, run] = await Promise.all([
+    const [messagePage, last, run, busyBotName] = await Promise.all([
       loadMessagePage(deps.prisma, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
       deps.prisma.event.findFirst({
         where: { threadId: target.threadId },
@@ -224,6 +224,11 @@ export async function threadSnapshot(
           status: { in: [...ACTIVE_RUN_STATUSES] },
         },
         orderBy: { createdAt: "desc" },
+      }),
+      resolveBusyBotName(deps.prisma, {
+        computerId: target.bot.computer?.id,
+        botId: target.botId,
+        botName: target.bot.name,
       }),
     ]);
     const liveEvents = run
@@ -243,7 +248,7 @@ export async function threadSnapshot(
       messages: messagesWithLiveEvents(messagePage.messages, liveEvents),
       olderCursor: messagePage.olderCursor,
       run: run ? mapRun(run) : null,
-      computer: toComputerStatus(target.botId, target.bot.computer),
+      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
     };
   }
 
