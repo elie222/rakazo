@@ -127,18 +127,11 @@ jobs:
 
       - name: Deploy successful main revision
         env:
-          PRODUCTION_DEPLOY_DIR: ${{ vars.PRODUCTION_DEPLOY_DIR }}
           SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
           SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
         run: |
-          test -n "$PRODUCTION_DEPLOY_DIR"
           test -n "$SSH_HOST"
           test -n "$SSH_USER"
-          case "$PRODUCTION_DEPLOY_DIR" in
-            /*) ;;
-            *) echo "PRODUCTION_DEPLOY_DIR must be an absolute path" >&2; exit 1 ;;
-          esac
-          printf -v remote_deploy_dir '%q' "$PRODUCTION_DEPLOY_DIR"
           ssh -F /dev/null \
             -i "$HOME/.ssh/rakazo-production" \
             -o BatchMode=yes \
@@ -146,4 +139,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$SSH_USER@$SSH_HOST" "RAKAZO_DEPLOY_DIR=$remote_deploy_dir deploy-main"
+            "$SSH_USER@$SSH_HOST" deploy-main

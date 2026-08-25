@@ -55,9 +55,13 @@ describe("the updater compose service", () => {
 
   it("is bind-mounted at the same path it has on the host", () => {
     const mount = (updater.volumes ?? []).find((volume) => volume.includes("RAKAZO_DEPLOY_DIR"));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    const deployDir = "${RAKAZO_DEPLOY_DIR:-/srv/rakazo}";
     const separatorIndex = mount?.indexOf("}:${") ?? -1;
     const source = separatorIndex < 0 ? undefined : mount?.slice(0, separatorIndex + 1);
     const destination = separatorIndex < 0 ? undefined : mount?.slice(separatorIndex + 2);
+    expect(updater.environment?.RAKAZO_DEPLOY_DIR).toBe(deployDir);
+    expect(mount).toBe(`${deployDir}:${deployDir}`);
     expect(source).toBe(destination);
   });
 

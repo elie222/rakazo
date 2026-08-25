@@ -119,10 +119,11 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
-   `RAKAZO_HOST`, the three public origins, `RAKAZO_DEPLOY_DIR`, and `RAKAZO_UPDATER_TOKEN`. Use
-   URL-safe random values for database credentials. The updater token must be a dedicated random
-   string (at least 32 characters) that differs from `BETTER_AUTH_SECRET` and
-   `SANDBOX_SUPERVISOR_TOKEN`; without it `up --wait` fails because the sidecar refuses to start.
+   `RAKAZO_HOST`, the three public origins, and `RAKAZO_UPDATER_TOKEN`. Set `RAKAZO_DEPLOY_DIR` when
+   the checkout is not at the supported Linux default, `/srv/rakazo`. Use URL-safe random values for
+   database credentials. The updater token must be a dedicated random string (at least 32 characters)
+   that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`; without it `up --wait`
+   fails because the sidecar refuses to start.
 3. Keep registration allowlisted while the service is private:
 
 ```env
@@ -139,9 +140,8 @@ SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
-# Absolute path of this checkout as the Docker daemon sees it. Required: the updater sidecar is
-# bind-mounted at exactly this path so Compose resolves the same bind mounts inside the container
-# that it does from your shell. See "The deploy directory must be one path" below.
+# Absolute path of this checkout as the Docker daemon sees it. /srv/rakazo is the Linux default;
+# set this explicitly for every other layout. See "The deploy directory must be one path" below.
 RAKAZO_DEPLOY_DIR=/srv/rakazo
 RAKAZO_IMAGE_TAG=local
 # Dedicated updater credential (not BETTER_AUTH_SECRET / SANDBOX_SUPERVISOR_TOKEN).
@@ -299,7 +299,8 @@ untracked source tree fails closed before anything runs (the application Dockerf
 ### The deploy directory must be one path
 
 `RAKAZO_DEPLOY_DIR` is bind-mounted into the updater at the same path it is read from
-(`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. When the
+(`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. Production
+Compose defaults both sides to `/srv/rakazo`; set the variable for any other layout. When the
 updater runs `docker compose -p <project> --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
 the Compose CLI *inside* the container expands this file's relative bind mounts — `../../.env`,
 `./Caddyfile.prod` — against that path and hands the results to the daemon. The daemon has to be
@@ -315,7 +316,8 @@ The value therefore has to be the path **the daemon** sees, which is not always 
 sees:
 
 - **Linux.** The daemon shares the host filesystem, so the checkout path is the answer:
-  `RAKAZO_DEPLOY_DIR=/srv/rakazo`. This is the supported production layout.
+  `/srv/rakazo` is the default and supported production layout. Set `RAKAZO_DEPLOY_DIR` explicitly
+  when the checkout is elsewhere.
 - **Docker Desktop (Windows/macOS).** The daemon runs in a VM that mounts your drive somewhere else.
   On Windows, `C:` appears at `/run/desktop/mnt/host/c`, so a checkout at `C:\Users\you\rakazo` is
   `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`. Host Git may use `core.autocrlf=true`; the updater ignores CR-only diffs so that does not block `/apply`. Verify the mount before deploying:
