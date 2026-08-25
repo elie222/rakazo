@@ -2865,7 +2865,7 @@ function ComputerReleaseActions({
   if (!takeoverRequested) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        Release
+        {uiCopy("Release")}
       </Button>
     );
   }

@@ -1,6 +1,7 @@
 import { resolveUiLanguage } from "./ui-copy";
 
 const exactKoreanActivity: Readonly<Record<string, string>> = {
+  Remember: "기억",
   "Rendering a chart": "차트 만드는 중",
   "Looking at the screen": "화면 확인 중",
   "Operating the computer": "컴퓨터 조작 중",

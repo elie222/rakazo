@@ -3,6 +3,7 @@ import { localizeAgentActivity } from "./ui-activity";
 
 describe("localizeAgentActivity", () => {
   it("localizes built-in tool activity while preserving paths", () => {
+    expect(localizeAgentActivity("Remember", "ko-KR")).toBe("기억");
     expect(localizeAgentActivity("Saving a note to memory", "ko-KR")).toBe("기억해두는 중");
     expect(localizeAgentActivity("Reading /srv/data/notes.md", "ko-KR")).toBe(
       "/srv/data/notes.md 읽는 중",

@@ -124,6 +124,7 @@ export const koreanAdvancedCopy = {
   Speak: "읽기",
   Skip: "건너뛰기",
   "I’m done": "조작 끝내기",
+  Release: "제어권 돌려주기",
   Team: "팀 공용",
   Private: "Bot 전용",
   Group: "그룹",
