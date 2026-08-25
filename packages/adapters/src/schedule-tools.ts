@@ -3,6 +3,7 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   cronFromPreset,
   isOneShotRoutineCron,
+  isOneShotRoutineCrons,
   nextCronDate,
   ONCE_ROUTINE_CRON,
 } from "@rakazo/core";
@@ -190,7 +191,7 @@ export async function createScheduleFromTool(
       userId: input.userId,
       name,
       prompt,
-      cron: resolved.cron,
+      crons: [resolved.cron],
       timezone,
       notify: true,
       active: true,
@@ -229,7 +230,7 @@ export async function createScheduleFromTool(
     ok: true as const,
     routineId: row.id,
     name: row.name,
-    cron: row.cron,
+    cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     oneShot: resolved.oneShot,
   };
@@ -248,10 +249,10 @@ export async function listSchedulesFromTool(
       routineId: row.id,
       name: row.name,
       prompt: row.prompt,
-      cron: row.cron,
+      crons: row.crons,
       active: row.active,
       nextRunAt: row.nextRunAt?.toISOString() ?? null,
-      oneShot: isOneShotRoutineCron(row.cron),
+      oneShot: isOneShotRoutineCrons(row.crons),
     })),
   };
 }

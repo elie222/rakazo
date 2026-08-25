@@ -14,7 +14,7 @@ test("routine editing updates in place, preserves timezone, and deletion persist
     botId,
     name: "Tokyo check-in",
     prompt: "Send the original update",
-    cron: "0 9 * * *",
+    crons: ["0 9 * * *"],
     timezone: "Asia/Tokyo",
     active: true,
     notify: true,
@@ -39,7 +39,7 @@ test("routine editing updates in place, preserves timezone, and deletion persist
   expect(updated).toMatchObject({
     name: "Weekday check-in",
     prompt: "Send the revised update",
-    cron: "0 9 * * 1-5",
+    crons: ["0 9 * * 1-5"],
     timezone: "Asia/Tokyo",
   });
   expect(updated?.nextRunAt).not.toBeNull();
@@ -145,7 +145,7 @@ test("switching bots while a routine save is pending does not reopen stale state
       botId: firstBotId,
       name: "First routine",
       prompt: "First prompt",
-      cron: "0 9 * * *",
+      crons: ["0 9 * * *"],
       timezone: "UTC",
       active: true,
       notify: true,
@@ -154,7 +154,7 @@ test("switching bots while a routine save is pending does not reopen stale state
       botId: secondBot.id,
       name: "Second routine",
       prompt: "Second prompt",
-      cron: "0 9 * * *",
+      crons: ["0 9 * * *"],
       timezone: "UTC",
       active: true,
       notify: true,

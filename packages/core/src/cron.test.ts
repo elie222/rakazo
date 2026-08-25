@@ -4,7 +4,9 @@ import {
   cronFromPreset,
   describeCronPreset,
   formatCron,
+  isOneShotRoutineCrons,
   nextCronDate,
+  nextCronDateAcross,
   ONCE_ROUTINE_CRON,
   presetFromCron,
   resolveRoutineNextRunAt,
@@ -187,5 +189,36 @@ describe("nextCronDate", () => {
     expect(() => nextCronDate("61 25 * * *", from)).toThrow();
     expect(() => nextCronDate("not-a-cron", from)).toThrow();
     expect(() => nextCronDate("0 0 9 * * *", from)).toThrow();
+  });
+});
+
+describe("isOneShotRoutineCrons", () => {
+  it("is one-shot only for a single @once schedule", () => {
+    expect(isOneShotRoutineCrons([ONCE_ROUTINE_CRON])).toBe(true);
+    expect(isOneShotRoutineCrons(["0 9 * * *"])).toBe(false);
+    expect(isOneShotRoutineCrons([ONCE_ROUTINE_CRON, "0 9 * * *"])).toBe(false);
+    expect(isOneShotRoutineCrons([])).toBe(false);
+  });
+});
+
+describe("nextCronDateAcross", () => {
+  it("returns the nearest next run across every recurring schedule", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross(["0 9 * * *", "0 15 * * *"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("ignores @once entries and schedules that fail to parse", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross([ONCE_ROUTINE_CRON, "0 9 * * *", "not-a-cron"], from, "UTC")).toEqual(
+      new Date("2026-08-24T09:00:00.000Z"),
+    );
+  });
+
+  it("returns null when nothing is a valid recurring schedule", () => {
+    const from = new Date("2026-08-24T00:00:00.000Z");
+    expect(nextCronDateAcross([ONCE_ROUTINE_CRON], from, "UTC")).toBeNull();
+    expect(nextCronDateAcross(["not-a-cron"], from, "UTC")).toBeNull();
   });
 });

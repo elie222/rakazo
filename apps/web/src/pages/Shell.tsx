@@ -146,8 +146,8 @@ const MemorySettingsOverlay = lazy(() =>
     default: module.MemorySettingsOverlay,
   })),
 );
-const RoutineSchedule = lazy(() =>
-  import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedule })),
+const RoutineSchedules = lazy(() =>
+  import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedules })),
 );
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
@@ -254,7 +254,7 @@ export function ShellPage() {
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
-    schedule: defaultCronPreset(),
+    schedules: [defaultCronPreset()],
   });
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
@@ -934,7 +934,7 @@ export function ShellPage() {
         setRoutineDraft({
           name: routine.name,
           prompt: routine.prompt,
-          schedule: presetFromCron(routine.cron),
+          schedules: routine.crons.map(presetFromCron),
         });
         setPanel("routine");
       } else {
@@ -1228,7 +1228,7 @@ export function ShellPage() {
     await refreshThreadRef.current(id);
   }, []);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
-    setRoutineDraft({ name, prompt, schedule: defaultCronPreset() });
+    setRoutineDraft({ name, prompt, schedules: [defaultCronPreset()] });
     setEditingRoutine(null);
     setPanel("routine");
   }, []);
@@ -2019,32 +2019,54 @@ export function ShellPage() {
                   )}
                 </div>
                 <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
-                {activeRoutines.map((routine) => (
-                  <button
-                    key={routine.id}
-                    type="button"
-                    onClick={() => {
-                      setRoutineDraft({
-                        name: routine.name,
-                        prompt: routine.prompt,
-                        schedule: presetFromCron(routine.cron),
-                      });
-                      setEditingRoutine(routine);
-                      setPanel("routine");
-                    }}
-                    className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
-                  >
-                    <span className="text-[#E65707]">◷</span>
-                    <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]" dir="auto">
-                      {routine.name}
-                    </span>
-                    <span className="text-[13px] text-[#6C6C70]">{formatCron(routine.cron)}</span>
-                  </button>
-                ))}
+                {activeRoutines.map((routine) => {
+                  const routineRunning =
+                    snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
+                  return (
+                    <div
+                      key={routine.id}
+                      className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoutineDraft({
+                            name: routine.name,
+                            prompt: routine.prompt,
+                            schedules: routine.crons.map(presetFromCron),
+                          });
+                          setEditingRoutine(routine);
+                          setPanel("routine");
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-start"
+                      >
+                        <span className="text-[#E65707]">◷</span>
+                        <span
+                          className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[#ECECEE]"
+                          dir="auto"
+                        >
+                          {routine.name}
+                        </span>
+                        <span className="shrink-0 text-[13px] text-[#6C6C70]">
+                          {routine.crons.map(formatCron).join(" · ")}
+                        </span>
+                      </button>
+                      {routineRunning ? (
+                        <button
+                          type="button"
+                          onClick={() => void stopRun()}
+                          className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
+                        >
+                          Running · Stop
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 <button
                   type="button"
                   onClick={() => {
-                    setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
+                    setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
                     setEditingRoutine(null);
                     setPanel("routine");
                   }}
@@ -2065,7 +2087,7 @@ export function ShellPage() {
                       setRoutineDraft({
                         name: skill.name || skill.goal.slice(0, 80),
                         prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-                        schedule: defaultCronPreset(),
+                        schedules: [defaultCronPreset()],
                       });
                       setEditingRoutine(null);
                       setPanel("routine");
@@ -2177,9 +2199,9 @@ export function ShellPage() {
                 <div className="mt-5 text-[14px] text-[#85858A]">
                   When to run
                   <Suspense fallback={null}>
-                    <RoutineSchedule
-                      value={routineDraft.schedule}
-                      onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
+                    <RoutineSchedules
+                      value={routineDraft.schedules}
+                      onChange={(schedules) => setRoutineDraft((s) => ({ ...s, schedules }))}
                     />
                   </Suspense>
                 </div>
@@ -2197,19 +2219,20 @@ export function ShellPage() {
                       setSavingRoutine(true);
                       setRoutineError(null);
                       try {
+                        const crons = routineDraft.schedules.map(cronFromPreset);
                         if (targetRoutine) {
                           await rpc.routines.update({
                             routineId: targetRoutine.id,
                             name: routineDraft.name || "Routine",
                             prompt: routineDraft.prompt || "Check in.",
-                            cron: cronFromPreset(routineDraft.schedule),
+                            crons,
                           });
                         } else {
                           await rpc.routines.create({
                             botId: targetBotId,
                             name: routineDraft.name || "Routine",
                             prompt: routineDraft.prompt || "Check in.",
-                            cron: cronFromPreset(routineDraft.schedule),
+                            crons,
                             timezone: "UTC",
                             active: true,
                             notify: true,

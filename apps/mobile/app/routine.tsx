@@ -67,7 +67,8 @@ export default function RoutineDetail() {
               {routine.name}
             </Text>
             <Text style={{ color: routine.active ? "#4ECB71" : "#85858A", fontSize: 14 }}>
-              {routine.active ? "Active" : "Paused"} · {routine.cron} · {routine.timezone}
+              {routine.active ? "Active" : "Paused"} · {routine.crons.join(", ")} ·{" "}
+              {routine.timezone}
             </Text>
           </View>
           <View style={{ gap: 8 }}>

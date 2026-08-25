@@ -291,7 +291,7 @@ export const appContract = {
           routineId: Id,
           name: z.string().optional(),
           prompt: z.string().optional(),
-          cron: z.string().optional(),
+          crons: z.array(z.string().min(1)).min(1).optional(),
           timezone: z.string().optional(),
           active: z.boolean().optional(),
           notify: z.boolean().optional(),

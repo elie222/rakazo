@@ -4,6 +4,7 @@ import {
   type CronPreset,
   type CronUnit,
   cronFromPreset,
+  defaultCronPreset,
   describeCronPreset,
 } from "@rakazo/core";
 
@@ -22,7 +23,60 @@ const TIMES = [
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
 
-export function RoutineSchedule({
+export function RoutineSchedules({
+  value,
+  onChange,
+}: {
+  value: CronPreset[];
+  onChange: (next: CronPreset[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {value.map((preset, index) => (
+        // Presets carry no stable id — index is the only key available, and
+        // rows never reorder (only append/remove at the end), so it's safe.
+        <div key={index} className="flex items-start gap-2">
+          <div className="flex-1">
+            <RoutineSchedule
+              value={preset}
+              onChange={(next) => onChange(value.map((p, i) => (i === index ? next : p)))}
+            />
+          </div>
+          {value.length > 1 ? (
+            <button
+              type="button"
+              aria-label="Remove this schedule"
+              onClick={() => onChange(value.filter((_, i) => i !== index))}
+              className="mt-3 shrink-0 text-[#85858A] hover:text-[#ECECEE]"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, defaultCronPreset()])}
+        className="text-[13.5px] text-[#9A9AA0] hover:text-[#ECECEE]"
+      >
+        + Add another schedule
+      </button>
+    </div>
+  );
+}
+
+function RoutineSchedule({
   value,
   onChange,
 }: {

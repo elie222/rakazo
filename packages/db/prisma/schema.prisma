@@ -434,6 +434,8 @@ model Run {
   clientNonce   String?
   sourceMessageId String?
   sourceMessage Message?  @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  routineId     String?
+  routine       Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime  @default(now())
@@ -448,6 +450,7 @@ model Run {
   @@index([workspaceId, botId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  @@index([routineId])
   @@map("runs")
 }
 
@@ -493,7 +496,7 @@ model Routine {
   userId      String
   name        String
   prompt      String
-  cron        String
+  crons       String[]
   timezone    String    @default("UTC")
   active      Boolean   @default(false)
   notify      Boolean   @default(true)
@@ -501,6 +504,7 @@ model Routine {
   nextRunAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  runs        Run[]
 
   @@index([active, nextRunAt])
   @@index([workspaceId, botId])

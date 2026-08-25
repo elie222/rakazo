@@ -330,6 +330,7 @@ function mapRun(run: {
   taskId: string;
   status: string;
   trigger: string;
+  routineId: string | null;
   modelProvider: string | null;
   modelId: string | null;
   error: string | null;
@@ -344,6 +345,7 @@ function mapRun(run: {
     taskId: run.taskId,
     status: run.status as never,
     trigger: run.trigger as never,
+    routineId: run.routineId,
     modelProvider: run.modelProvider,
     modelId: run.modelId,
     error: run.error,

@@ -8,6 +8,13 @@ export function isOneShotRoutineCron(cron: string): boolean {
   return cron.trim() === ONCE_ROUTINE_CRON;
 }
 
+// A routine is one-shot only when it has exactly one schedule and that
+// schedule is @once — a mix of @once plus recurring schedules doesn't make
+// sense (the one-shot slot would never get a "next run" to compute).
+export function isOneShotRoutineCrons(crons: string[]): boolean {
+  return crons.length === 1 && isOneShotRoutineCron(crons[0] ?? "");
+}
+
 export const CRON_FREQS = [
   "Every hour",
   "Every day",
@@ -172,6 +179,25 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   const next = schedule.nextRun(from);
   if (!next) throw new RangeError(`Cron expression has no future run: ${cron}`);
   return next;
+}
+
+// Nearest next run across every recurring schedule on a routine. Ignores
+// @once slots (they don't recur) and any schedule that fails to parse —
+// callers validate each cron before it's saved, so a bad one here is
+// unexpected input, not something that should crash the wakeup path.
+export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"): Date | null {
+  let earliest: Date | null = null;
+  for (const cron of crons) {
+    if (isOneShotRoutineCron(cron)) continue;
+    let next: Date;
+    try {
+      next = nextCronDate(cron, from, timezone);
+    } catch {
+      continue;
+    }
+    if (!earliest || next < earliest) earliest = next;
+  }
+  return earliest;
 }
 
 function validTimezoneOrUtc(timezone: string): string {
