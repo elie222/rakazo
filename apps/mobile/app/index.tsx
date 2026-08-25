@@ -1,7 +1,7 @@
-import type { SearchHit } from "@rakazo/contracts";
+import type { RunActivityRow, SearchHit } from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,12 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
+import {
+  activityStatusLabel,
+  fetchWorkspaceActivity,
+  formatActivityRelativeTime,
+} from "../lib/activity";
+import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import {
   loadSessionToken,
   type MobileBot,
@@ -55,6 +61,24 @@ export default function Home() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [activityMode, setActivityMode] = useState(false);
+  const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
+    active: [],
+    recent: [],
+  });
+  const activityRequestId = useRef(0);
+
+  useEffect(() => {
+    void loadActivityMode().then(setActivityMode);
+  }, []);
+
+  const toggleActivityMode = useCallback(() => {
+    setActivityMode((on) => {
+      const next = !on;
+      void saveActivityMode(next);
+      return next;
+    });
+  }, []);
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -100,6 +124,45 @@ export default function Home() {
     useCallback(() => {
       if (hasSession) void loadBots();
     }, [hasSession, loadBots]),
+  );
+
+  const loadActivity = useCallback(async () => {
+    if (!hasSession || !activityMode || searching || query.trim()) {
+      activityRequestId.current += 1;
+      setActivity({ active: [], recent: [] });
+      return;
+    }
+    const requestId = ++activityRequestId.current;
+    try {
+      const next = await fetchWorkspaceActivity();
+      if (requestId !== activityRequestId.current) return;
+      setActivity(next);
+    } catch {
+      // Keep the last good snapshot on transient RPC failures; only drop stale responses.
+      if (requestId !== activityRequestId.current) return;
+    }
+  }, [activityMode, hasSession, query, searching]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasSession || !activityMode || searching || query.trim()) return;
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const tick = async () => {
+        await loadActivity();
+        if (!cancelled) {
+          timer = setTimeout(() => void tick(), 15_000);
+        }
+      };
+
+      void tick();
+      return () => {
+        cancelled = true;
+        activityRequestId.current += 1;
+        if (timer !== undefined) clearTimeout(timer);
+      };
+    }, [activityMode, hasSession, loadActivity, query, searching]),
   );
 
   useEffect(() => {
@@ -165,6 +228,19 @@ export default function Home() {
         </CircleButton>
         <View style={styles.headerActions}>
           <CircleButton
+            accessibilityLabel="Activity"
+            active={activityMode}
+            accent
+            onPress={toggleActivityMode}
+          >
+            <NativeSymbol
+              ios={activityMode ? "bell.fill" : "bell"}
+              android={activityMode ? "notifications" : "notifications-outline"}
+              size={17}
+              color={activityMode ? "#FFFFFF" : "#8E8E93"}
+            />
+          </CircleButton>
+          <CircleButton
             accessibilityLabel="Search"
             active={searching}
             onPress={() =>
@@ -225,11 +301,22 @@ export default function Home() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void refreshBots()}
+            onRefresh={() => {
+              void refreshBots();
+              void loadActivity();
+            }}
             tintColor={native.secondaryLabel}
             colors={["#8E8E93"]}
             progressBackgroundColor="#1C1C1E"
           />
+        }
+        ListHeaderComponent={
+          activityMode &&
+          !searching &&
+          !query.trim() &&
+          (activity.active.length > 0 || activity.recent.length > 0) ? (
+            <ActivitySection activity={activity} />
+          ) : null
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
@@ -282,24 +369,99 @@ export default function Home() {
   );
 }
 
+function ActivitySection({
+  activity,
+}: {
+  activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
+}) {
+  const router = useRouter();
+  const openRun = (run: RunActivityRow) => {
+    if (run.groupId) {
+      router.push({
+        pathname: "/group-thread",
+        params: { groupId: run.groupId, name: run.groupName ?? "Group" },
+      });
+      return;
+    }
+    router.push({ pathname: "/thread", params: { botId: run.botId, name: run.botName } });
+  };
+
+  return (
+    <View style={styles.activitySection}>
+      {activity.active.length > 0 ? (
+        <>
+          <Text style={styles.sectionHeading}>Now</Text>
+          {activity.active.map((run) => (
+            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+          ))}
+        </>
+      ) : null}
+      {activity.recent.length > 0 ? (
+        <>
+          <Text style={[styles.sectionHeading, activity.active.length > 0 && styles.activityGap]}>
+            Recent
+          </Text>
+          {activity.recent.map((run) => (
+            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
+  const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
+  const status = activityStatusLabel(run.status);
+  const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
+  const activityLabel = `${title}, ${status}`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={activityLabel}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.activityDot} />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.name} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.time}>{formatActivityRelativeTime(run.updatedAt)}</Text>
+        </View>
+        <Text style={styles.preview} numberOfLines={1}>
+          {preview}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function CircleButton({
   children,
   onPress,
   accessibilityLabel,
   active = false,
+  accent = false,
 }: {
   children: ReactNode;
   onPress: () => void;
   accessibilityLabel: string;
   active?: boolean;
+  accent?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected: active }}
       onPress={onPress}
       hitSlop={4}
-      style={({ pressed }) => [styles.circleButton, (active || pressed) && styles.circlePressed]}
+      style={({ pressed }) => [
+        styles.circleButton,
+        accent && active ? styles.circleAccent : (active || pressed) && styles.circlePressed,
+      ]}
     >
       {children}
     </Pressable>
@@ -446,6 +608,9 @@ const styles = StyleSheet.create({
   circlePressed: {
     backgroundColor: "#3A3A3C",
   },
+  circleAccent: {
+    backgroundColor: "#4C8DFF",
+  },
   profileInitials: {
     color: native.label,
     fontSize: 15,
@@ -556,6 +721,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  activitySection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#2C2C2E",
+    marginBottom: 4,
+    paddingBottom: 4,
+  },
+  activityGap: {
+    paddingTop: 16,
+  },
+  activityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#8B5CF6",
+    marginTop: 6,
   },
   groupAvatar: {
     width: 48,

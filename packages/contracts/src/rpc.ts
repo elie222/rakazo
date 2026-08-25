@@ -56,6 +56,7 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
@@ -523,6 +524,9 @@ export const appContract = {
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
+  },
+  runs: {
+    list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
