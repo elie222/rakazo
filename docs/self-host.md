@@ -158,10 +158,11 @@ curl --fail https://app.example.com/health
 ```
 
 **Build, do not pull, for a first deployment.** `RAKAZO_IMAGE_TAG` ships as `local`, a tag no
-registry serves, so the commands above build `api`, `worker`, `web`, and `updater` from the checkout
-you just cloned. Running `docker compose … pull` first — as earlier versions of this page told you
-to — fails outright with `error from registry: denied` whenever the tag you are on has not been
-published, and there is nothing to fall back to.
+registry serves, so the commands above build `api`, `worker`, and `web` from the checkout you just
+cloned. The opt-in command under [Updater sidecar](#updater-sidecar) builds `updater` when needed.
+Running `docker compose … pull` first — as earlier versions of this page told you to — fails outright
+with `error from registry: denied` whenever the tag you are on has not been published, and there is
+nothing to fall back to.
 
 Passing `GIT_SHA` is what makes `GET /health` report a `"revision"`; a locally built image has no
 other way to know its commit. Prebuilt images from the registry bake it in at publish time, so when
