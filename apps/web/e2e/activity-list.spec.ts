@@ -13,35 +13,48 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await signup(page, `activity-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
 
+  const aside = page.locator("aside").first();
+  const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
+  await expect(activityToggle).toHaveAttribute("aria-pressed", "false");
+  await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Loading activity…")).toHaveCount(0);
+  await expect(aside.locator("[data-sidebar-group]").getByText("Chief").first()).toBeVisible();
+  await captureScreenshot(page, testInfo, "57-activity-mode-off");
+
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
   await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
 
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
+
   // Remount ActivityList so the first poll sees the in-flight run (15s interval otherwise).
   await page.reload();
+  await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
-  const aside = page.locator("aside").first();
   await expect(aside.getByText("Now", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
-  await captureScreenshot(page, testInfo, "57-activity-now");
+  await captureScreenshot(page, testInfo, "58-activity-now");
 
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
 
   await page.reload();
+  await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
   await expect(aside.getByText("Recent", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/Cancelled|keep working/i);
   await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "58-activity-recent");
+  await captureScreenshot(page, testInfo, "59-activity-recent");
 
   await page.getByPlaceholder("Search").fill("Chief");
   await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);

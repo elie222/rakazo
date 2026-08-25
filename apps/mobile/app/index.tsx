@@ -23,6 +23,7 @@ import {
   fetchWorkspaceActivity,
   formatActivityRelativeTime,
 } from "../lib/activity";
+import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import {
   loadSessionToken,
   type MobileBot,
@@ -60,11 +61,24 @@ export default function Home() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
     active: [],
     recent: [],
   });
   const activityRequestId = useRef(0);
+
+  useEffect(() => {
+    void loadActivityMode().then(setActivityMode);
+  }, []);
+
+  const toggleActivityMode = useCallback(() => {
+    setActivityMode((on) => {
+      const next = !on;
+      void saveActivityMode(next);
+      return next;
+    });
+  }, []);
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -113,7 +127,7 @@ export default function Home() {
   );
 
   const loadActivity = useCallback(async () => {
-    if (!hasSession || searching || query.trim()) {
+    if (!hasSession || !activityMode || searching || query.trim()) {
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
       return;
@@ -127,18 +141,18 @@ export default function Home() {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
     }
-  }, [hasSession, query, searching]);
+  }, [activityMode, hasSession, query, searching]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!hasSession || searching || query.trim()) return;
+      if (!hasSession || !activityMode || searching || query.trim()) return;
       void loadActivity();
       const timer = setInterval(() => void loadActivity(), 15_000);
       return () => {
         activityRequestId.current += 1;
         clearInterval(timer);
       };
-    }, [hasSession, loadActivity, query, searching]),
+    }, [activityMode, hasSession, loadActivity, query, searching]),
   );
 
   useEffect(() => {
@@ -203,6 +217,18 @@ export default function Home() {
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
         <View style={styles.headerActions}>
+          <CircleButton
+            accessibilityLabel="Activity"
+            active={activityMode}
+            onPress={toggleActivityMode}
+          >
+            <NativeSymbol
+              ios={activityMode ? "bell.fill" : "bell"}
+              android={activityMode ? "notifications" : "notifications-outline"}
+              size={17}
+              color={activityMode ? "#ECECEE" : "#fff"}
+            />
+          </CircleButton>
           <CircleButton
             accessibilityLabel="Search"
             active={searching}
@@ -274,6 +300,7 @@ export default function Home() {
           />
         }
         ListHeaderComponent={
+          activityMode &&
           !searching &&
           !query.trim() &&
           (activity.active.length > 0 || activity.recent.length > 0) ? (
@@ -415,6 +442,7 @@ function CircleButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected: active }}
       onPress={onPress}
       hitSlop={4}
       style={({ pressed }) => [styles.circleButton, (active || pressed) && styles.circlePressed]}
