@@ -92,7 +92,6 @@ export function BoardPage() {
           <ChevronLeft size={20} strokeWidth={1.8} />
         </button>
         <h1 className="text-[16px] font-medium text-[#F1F1F2]">Board</h1>
-        <span className="text-[13px] text-[#6C6C70]">What's active, and what's next.</span>
       </div>
       {error ? (
         <p role="alert" className="px-5 py-3 text-[13px] text-[#EF6461]">
@@ -197,14 +196,7 @@ function BoardCard({ item, onOpen }: { item: BoardItem; onOpen: () => void }) {
         <ComputerBadge scope={item.computerScope} state={item.computerState} />
       </div>
       <p className="line-clamp-3 text-[13.5px] leading-[1.4] text-[#C9C9CE]">{item.prompt}</p>
-      <div className="flex items-center justify-between">
-        <span className="text-[11.5px] text-[#6C6C70]">{relativeTime(item.updatedAt)}</span>
-        {item.status === "failed" && item.error ? (
-          <span className="truncate text-[11.5px] text-[#EF6461]" title={item.error}>
-            {item.error}
-          </span>
-        ) : null}
-      </div>
+      <span className="text-[11.5px] text-[#6C6C70]">{relativeTime(item.updatedAt)}</span>
     </button>
   );
 }
