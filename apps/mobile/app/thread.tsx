@@ -860,6 +860,35 @@ function MessageBubble({
       </View>
     );
   }
+  const peerMessage = message.blocks.find(
+    (
+      block,
+    ): block is Extract<MessageBlock, { kind: "bot_message_sent" | "bot_message_received" }> =>
+      block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+  );
+  if (peerMessage) {
+    const sent = peerMessage.kind === "bot_message_sent";
+    const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
+    return (
+      <View
+        style={{
+          maxWidth: "90%",
+          alignSelf: sent ? "flex-end" : "flex-start",
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "#26262A",
+          backgroundColor: sent ? "#141416" : "#101012",
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+        }}
+      >
+        <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 4 }}>
+          {sent ? `→ ${peer}` : `← ${peer}`}
+        </Text>
+        <Text style={{ color: "#DFDFE2", fontSize: 15.5, lineHeight: 23 }}>{peerMessage.text}</Text>
+      </View>
+    );
+  }
   const special = message.blocks.find(
     (block) => block.kind === "subagent" || block.kind === "child_bot",
   );

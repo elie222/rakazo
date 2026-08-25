@@ -6,6 +6,7 @@ export const DELEGATION_TOOL_NAMES = new Set([
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
+  "message_bot",
 ]);
 
 export const builtinAgentTools: ConnectorTool[] = [
@@ -346,6 +347,23 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
       },
       required: ["confirm_name"],
+    },
+  },
+  {
+    name: "message_bot",
+    description:
+      "Send a message to one of the user's other bots. Asynchronous: this returns as soon as the message is sent, and any reply arrives later as a new message that wakes you. Never wait for a reply in this turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_id: { type: "string", description: "Target bot id from your teammate list." },
+        confirm_name: {
+          type: "string",
+          description: "Exact name of the target bot when bot_id is omitted.",
+        },
+        message: { type: "string", description: "What to send." },
+      },
+      required: ["message"],
     },
   },
   {

@@ -2962,6 +2962,26 @@ const MessageView = memo(function MessageView({
             </div>
           );
         }
+        if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
+          const sent = block.kind === "bot_message_sent";
+          const peer = sent ? block.toBotName : block.fromBotName;
+          return (
+            <div key={i} className={`flex ${sent ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[74%] rounded-[20px] border border-[#26262A] px-[18px] py-3 ${
+                  sent ? "bg-[#141416]" : "bg-[#101012]"
+                }`}
+              >
+                <div className="mb-1 text-[12.5px] text-[#85858A]">
+                  {sent ? `→ ${peer}` : `← ${peer}`}
+                </div>
+                <div className="text-[15.5px] leading-[1.5] text-[#DFDFE2]" dir="auto">
+                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                </div>
+              </div>
+            </div>
+          );
+        }
         if (block.kind === "meta") {
           return (
             <div

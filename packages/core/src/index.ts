@@ -2,6 +2,7 @@ export * from "./action-approval.js";
 export * from "./answerable-ask.js";
 export * from "./async.js";
 export * from "./attachments.js";
+export * from "./bot-messages.js";
 export * from "./bot-sections.js";
 export * from "./cron.js";
 export * from "./events.js";
