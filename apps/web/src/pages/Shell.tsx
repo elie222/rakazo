@@ -1165,7 +1165,9 @@ export function ShellPage() {
           setPendingAttachments((current) =>
             current.filter((attachment) => attachment.threadKey !== originThreadKey),
           );
-          if (botTarget && activeBotId.current === botTarget) {
+          if (groupTarget && activeGroupId.current === groupTarget) {
+            await refreshGroupThreadRef.current(groupTarget);
+          } else if (botTarget && activeBotId.current === botTarget) {
             await refreshThreadRef.current(botTarget);
           }
           routineSendNonceRef.current = null;
