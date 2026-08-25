@@ -179,6 +179,11 @@ export function ShellPage() {
   const { botId, groupId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Mirrors searchParams for effects that only need to read it once on run,
+  // not re-run on every unrelated query-param change (e.g. the SSE subscribe
+  // effect below, which should only restart when the active bot changes).
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
   const session = authClient.useSession();
   const [groups, setGroups] = useState<Group[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
@@ -207,6 +212,31 @@ export function ShellPage() {
   const computerRef = useRef<ComputerStatus | null>(null);
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
+  // Last-known computer/screen per bot, so switching back to an already-seen
+  // bot paints its computer pane instantly instead of blanking it while the
+  // thread + screen RPCs round-trip again (see refreshThread / refreshComputerScreen).
+  const computerCacheRef = useRef(
+    new Map<string, { computer: ComputerStatus | null; screenUrl: string | null }>(),
+  );
+  // Caps computerCacheRef so a long session that opens many distinct bots
+  // over time doesn't accumulate one entry per bot forever. Re-inserting on
+  // every update keeps Map iteration order as least-recently-used first, so
+  // eviction drops the bot that's been out of view longest.
+  const COMPUTER_CACHE_LIMIT = 20;
+
+  function cacheComputerFor(
+    botId: string,
+    patch: Partial<{ computer: ComputerStatus | null; screenUrl: string | null }>,
+  ) {
+    const cache = computerCacheRef.current;
+    const prev = cache.get(botId) ?? { computer: null, screenUrl: null };
+    cache.delete(botId);
+    cache.set(botId, { ...prev, ...patch });
+    if (cache.size > COMPUTER_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+  }
 
   function commitSnapshot(next: ThreadSnapshot | null) {
     snapshotRef.current = next;
@@ -460,6 +490,7 @@ export function ShellPage() {
     }
     commitSnapshot(merged);
     commitComputer(reconciled.computer);
+    cacheComputerFor(id, { computer: reconciled.computer });
     if (!keepPin && stickToEnd) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
@@ -497,6 +528,7 @@ export function ShellPage() {
       return null;
     }
     setScreenUrl(screen.url);
+    cacheComputerFor(id, { screenUrl: screen.url });
     return screen.url;
   }
 
@@ -698,11 +730,19 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
-    if (!searchParams.get("m")) {
+    if (!searchParamsRef.current.get("m")) {
       pinnedAroundRef.current = null;
     }
     screenRequest.current += 1;
-    setScreenUrl(null);
+    const cached = computerCacheRef.current.get(active.id);
+    if (cached) {
+      // Paint the last-known computer instantly; refreshThread/refreshComputerScreen
+      // below still run and reconcile with fresh data in the background.
+      setScreenUrl(cached.screenUrl);
+      commitComputer(cached.computer);
+    } else {
+      setScreenUrl(null);
+    }
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
@@ -770,7 +810,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible, searchParams]);
+  }, [active?.id, markBotReadIfVisible]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
