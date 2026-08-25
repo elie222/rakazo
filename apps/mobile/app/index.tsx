@@ -64,7 +64,7 @@ export default function Home() {
     active: [],
     recent: [],
   });
-  const activityGeneration = useRef(0);
+  const activityRequestId = useRef(0);
 
   const loadBots = useCallback(async () => {
     setError(null);
@@ -114,17 +114,17 @@ export default function Home() {
 
   const loadActivity = useCallback(async () => {
     if (!hasSession || searching || query.trim()) {
-      activityGeneration.current += 1;
+      activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
       return;
     }
-    const generation = activityGeneration.current;
+    const requestId = ++activityRequestId.current;
     try {
       const next = await fetchWorkspaceActivity();
-      if (generation !== activityGeneration.current) return;
+      if (requestId !== activityRequestId.current) return;
       setActivity(next);
     } catch {
-      if (generation !== activityGeneration.current) return;
+      if (requestId !== activityRequestId.current) return;
       setActivity({ active: [], recent: [] });
     }
   }, [hasSession, query, searching]);
@@ -135,7 +135,7 @@ export default function Home() {
       void loadActivity();
       const timer = setInterval(() => void loadActivity(), 15_000);
       return () => {
-        activityGeneration.current += 1;
+        activityRequestId.current += 1;
         clearInterval(timer);
       };
     }, [hasSession, loadActivity, query, searching]),
