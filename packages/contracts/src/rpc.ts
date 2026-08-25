@@ -18,6 +18,7 @@ import {
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
+  CreateScratchpadItemInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
   GROUP_MEMBER_MAX,
@@ -33,6 +34,8 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   RoutineSchema,
+  ScratchpadItemSchema,
+  ScratchpadItemStatusSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -293,6 +296,29 @@ export const appContract = {
       .output(RoutineSchema),
     remove: oc.input(z.object({ routineId: Id })).output(z.object({ ok: z.literal(true) })),
     testRun: oc.input(z.object({ routineId: Id })).output(z.object({ runId: Id })),
+  },
+  scratchpad: {
+    list: oc
+      .input(
+        z.object({
+          botId: Id,
+          status: ScratchpadItemStatusSchema.optional(),
+          includeDone: z.boolean().optional(),
+        }),
+      )
+      .output(z.array(ScratchpadItemSchema)),
+    create: oc.input(CreateScratchpadItemInput).output(ScratchpadItemSchema),
+    update: oc
+      .input(
+        z.object({
+          itemId: Id,
+          title: z.string().min(1).max(200).optional(),
+          status: ScratchpadItemStatusSchema.optional(),
+          notes: z.string().max(4_000).optional(),
+        }),
+      )
+      .output(ScratchpadItemSchema),
+    remove: oc.input(z.object({ itemId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   skills: {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),

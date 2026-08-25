@@ -96,7 +96,7 @@ This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
 and automatic HTTPS through Caddy. It uses E2B for bot computers, so the VM never exposes a Docker
-supervisor or browser containers.
+supervisor or browser containers. The root-equivalent updater sidecar is an explicit opt-in profile.
 
 Before deploying to a new Ubuntu host, create and verify a key-only `deploy` account, then apply the
 idempotent host-hardening baseline. It disables SSH passwords and root login, rate-limits SSH, allows
@@ -119,10 +119,10 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
-   `RAKAZO_HOST`, the three public origins, `RAKAZO_DEPLOY_DIR`, and `RAKAZO_UPDATER_TOKEN`. Use
-   URL-safe random values for database credentials. The updater token must be a dedicated random
-   string (at least 32 characters) that differs from `BETTER_AUTH_SECRET` and
-   `SANDBOX_SUPERVISOR_TOKEN`; without it `up --wait` fails because the sidecar refuses to start.
+   `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
+   the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
+   If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
+   characters) that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`.
 3. Keep registration allowlisted while the service is private:
 
 ```env
@@ -139,13 +139,12 @@ SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
-# Absolute path of this checkout as the Docker daemon sees it. Required: the updater sidecar is
-# bind-mounted at exactly this path so Compose resolves the same bind mounts inside the container
-# that it does from your shell. See "The deploy directory must be one path" below.
+# Absolute path of this checkout as the Docker daemon sees it. /srv/rakazo is the Linux default;
+# set this explicitly for every other layout. See "The deploy directory must be one path" below.
 RAKAZO_DEPLOY_DIR=/srv/rakazo
 RAKAZO_IMAGE_TAG=local
-# Dedicated updater credential (not BETTER_AUTH_SECRET / SANDBOX_SUPERVISOR_TOKEN).
-RAKAZO_UPDATER_TOKEN=replace-with-32-plus-character-updater-token
+# Optional: required only with `--profile updater`.
+# RAKAZO_UPDATER_TOKEN=replace-with-32-plus-character-updater-token
 ```
 
 4. Build the images from your checkout and start the stack, then verify its public health endpoint:
@@ -159,10 +158,11 @@ curl --fail https://app.example.com/health
 ```
 
 **Build, do not pull, for a first deployment.** `RAKAZO_IMAGE_TAG` ships as `local`, a tag no
-registry serves, so the commands above build `api`, `worker`, `web`, and `updater` from the checkout
-you just cloned. Running `docker compose … pull` first — as earlier versions of this page told you
-to — fails outright with `error from registry: denied` whenever the tag you are on has not been
-published, and there is nothing to fall back to.
+registry serves, so the commands above build `api`, `worker`, and `web` from the checkout you just
+cloned. The opt-in command under [Updater sidecar](#updater-sidecar) builds `updater` when needed.
+Running `docker compose … pull` first — as earlier versions of this page told you to — fails outright
+with `error from registry: denied` whenever the tag you are on has not been published, and there is
+nothing to fall back to.
 
 Passing `GIT_SHA` is what makes `GET /health` report a `"revision"`; a locally built image has no
 other way to know its commit. Prebuilt images from the registry bake it in at publish time, so when
@@ -269,8 +269,16 @@ and refuses the official path until a stable `vX.Y.Z` exists.
 
 ### Updater sidecar
 
-Compose production deployments include an `updater` service on a private `control` network. It
-exposes `/health`, `/state`, `/plan`, `/apply`, and `/rollback` at `http://updater:7092` with
+Compose production deployments offer an opt-in `updater` profile on a private `control` network.
+Normal deployments do not start it or require its credential. To enable it, set a dedicated
+`RAKAZO_UPDATER_TOKEN` and explicitly start the profile:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  --profile updater up -d --build updater
+```
+
+It exposes `/health`, `/state`, `/plan`, `/apply`, and `/rollback` at `http://updater:7092` with
 `RAKAZO_UPDATER_TOKEN`. Operator CLI upgrades above do not need it; the sidecar is for automated
 apply/rollback over that private HTTP API.
 
@@ -299,7 +307,8 @@ untracked source tree fails closed before anything runs (the application Dockerf
 ### The deploy directory must be one path
 
 `RAKAZO_DEPLOY_DIR` is bind-mounted into the updater at the same path it is read from
-(`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. When the
+(`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`), and that is load-bearing rather than tidy. Production
+Compose defaults both sides to `/srv/rakazo`; set the variable for any other layout. When the
 updater runs `docker compose -p <project> --file $RAKAZO_DEPLOY_DIR/infra/compose/docker-compose.prod.yml up -d`,
 the Compose CLI *inside* the container expands this file's relative bind mounts — `../../.env`,
 `./Caddyfile.prod` — against that path and hands the results to the daemon. The daemon has to be
@@ -315,14 +324,15 @@ The value therefore has to be the path **the daemon** sees, which is not always 
 sees:
 
 - **Linux.** The daemon shares the host filesystem, so the checkout path is the answer:
-  `RAKAZO_DEPLOY_DIR=/srv/rakazo`. This is the supported production layout.
+  `/srv/rakazo` is the default and supported production layout. Set `RAKAZO_DEPLOY_DIR` explicitly
+  when the checkout is elsewhere.
 - **Docker Desktop (Windows/macOS).** The daemon runs in a VM that mounts your drive somewhere else.
   On Windows, `C:` appears at `/run/desktop/mnt/host/c`, so a checkout at `C:\Users\you\rakazo` is
   `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`. Host Git may use `core.autocrlf=true`; the updater ignores CR-only diffs so that does not block `/apply`. Verify the mount before deploying:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
+  --profile updater run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
 ```
 
   That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows
@@ -345,9 +355,9 @@ as that allows:
 - The Docker CLI lives only in the updater image. The api, worker, and web containers keep
   `cap_drop: ALL` and no socket.
 
-Set `RAKAZO_UPDATER_TOKEN` to a dedicated random value (at least 32 characters in production). It
-must differ from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`. Drop the `updater` service if
-you would rather not have the capability at all.
+Enabling the `updater` profile requires `RAKAZO_UPDATER_TOKEN` to be a dedicated random value (at
+least 32 characters in production). It must differ from `BETTER_AUTH_SECRET` and
+`SANDBOX_SUPERVISOR_TOKEN`. Leave the profile disabled if you would rather not grant the capability.
 
 ## What “Rakazo Cloud” still needs
 

@@ -49,6 +49,21 @@ describe("contracts", () => {
     expect(UpdateBotInput.safeParse({ botId: "bot-1", name: "   " }).success).toBe(false);
   });
 
+  it("rejects partial model override clears on bot update", () => {
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", modelId: null }).success).toBe(false);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", modelProvider: null }).success).toBe(false);
+    expect(
+      UpdateBotInput.safeParse({ botId: "bot-1", modelProvider: null, modelId: null }).success,
+    ).toBe(true);
+    expect(
+      UpdateBotInput.safeParse({
+        botId: "bot-1",
+        modelProvider: "xai",
+        modelId: "grok-4.6",
+      }).success,
+    ).toBe(true);
+  });
+
   it("normalizes group names and rejects duplicate members", () => {
     expect(CreateGroupInput.parse({ name: "  Draft team  ", botIds: ["bot-1", "bot-2"] })).toEqual({
       name: "Draft team",

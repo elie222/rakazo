@@ -29,4 +29,23 @@ describe("modelCredentialDto", () => {
       modelId: "qwen3-4b",
     });
   });
+
+  it("exposes defaultModel as modelId for provider credentials", () => {
+    expect(
+      modelCredentialDto({
+        id: "cred-2",
+        provider: "xai",
+        label: "xAI",
+        isDefault: false,
+        defaultModel: "grok-4.6",
+      }),
+    ).toEqual({
+      id: "cred-2",
+      provider: "xai",
+      label: "xAI",
+      hasKey: true,
+      isDefault: false,
+      modelId: "grok-4.6",
+    });
+  });
 });

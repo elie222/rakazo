@@ -14,10 +14,12 @@
     "@astrojs/react": "^6.0.2",
     "@astrojs/sitemap": "3.7.3",
     "@rakazo/ui-web": "workspace:*",
+    "@vercel/functions": "3.9.5",
     "astro": "^7.2.1",
     "posthog-js": "1.417.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",

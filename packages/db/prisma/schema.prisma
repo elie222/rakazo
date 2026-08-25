@@ -96,6 +96,7 @@ model Organization {
   tasks       Task[]
   runs        Run[]
   routines    Routine[]
+  scratchpadItems ScratchpadItem[]
   taughtSkills TaughtSkill[]
   connections Connection[]
   capabilities CapabilityInstall[]
@@ -239,7 +240,11 @@ model Bot {
   computerSwitching Boolean @default(false)
   voiceId        String?
   autoSpeak      Boolean  @default(false)
+  modelProvider  String?
+  modelId        String?
+  thinkingLevel  String?
   routines       Routine[]
+  scratchpadItems ScratchpadItem[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
   agentHome      AgentHome?
@@ -504,6 +509,24 @@ model Routine {
   @@index([active, nextRunAt])
   @@index([workspaceId, botId])
   @@map("routines")
+}
+
+model ScratchpadItem {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  title       String
+  status      String   @default("open")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, botId, status])
+  @@index([workspaceId, botId, updatedAt])
+  @@map("scratchpad_items")
 }
 
 model TaughtSkill {

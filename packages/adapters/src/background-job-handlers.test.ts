@@ -66,6 +66,8 @@ describe("createBackgroundJobHandlers", () => {
       provider: "openrouter",
       id: "deepseek/deepseek-v4-flash-0731",
       apiKey: "deployment-key",
+      baseUrl: undefined,
+      thinkingLevel: null,
       oauth: undefined,
     });
   });
@@ -90,6 +92,8 @@ describe("createBackgroundJobHandlers", () => {
       provider: "local",
       id: "qwen3:4b",
       apiKey: undefined,
+      baseUrl: undefined,
+      thinkingLevel: null,
       oauth: undefined,
     });
   });
