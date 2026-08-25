@@ -45,9 +45,7 @@ describe("Docker sandbox", () => {
       { type: "stderr", data: "command timed out after 75 ms\n" },
       { type: "exit", code: 124 },
     ]);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      "x-rakazo-screen-id": "bot",
-    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
@@ -67,7 +65,6 @@ describe("Docker sandbox", () => {
         headers: expect.objectContaining({
           authorization: "Bearer test-token",
           "x-rakazo-bot-id": "home-bot",
-          "x-rakazo-screen-id": "bot",
           "x-rakazo-screen-lease-id": "run-1:1",
           "x-rakazo-workspace-id": "workspace",
         }),
