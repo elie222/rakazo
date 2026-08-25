@@ -13,6 +13,9 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_takeover",
   "run_subagent",
   "spawn_bot",
+  "schedule_create",
+  "schedule_list",
+  "schedule_cancel",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set(["destination.write", "delete_bot", "archive_bot"]);

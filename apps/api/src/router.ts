@@ -71,6 +71,7 @@ import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
   containsSecret,
+  isOneShotRoutineCron,
   nextCronDate,
 } from "@rakazo/core";
 import {
@@ -1492,8 +1493,18 @@ export function createRouter(deps: RouterDeps) {
         return listRoutinesDto(deps, context.actor, input.botId);
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
+        if (input.active && isOneShotRoutineCron(input.cron)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "One-shot schedules must be created from chat.",
+          });
+        }
         const bot = await repos.getBot(context.actor, input.botId);
-        const nextRunAt = nextRoutineDate(input.cron, input.timezone);
+        // Validate recurring cron even when inactive; @once has no next date.
+        let nextRunAt: Date | null = null;
+        if (!isOneShotRoutineCron(input.cron)) {
+          const computedNextRunAt = nextRoutineDate(input.cron, input.timezone);
+          nextRunAt = input.active ? computedNextRunAt : null;
+        }
         const row = await deps.prisma.routine.create({
           data: {
             workspaceId: context.actor.workspaceId,
@@ -1505,7 +1516,7 @@ export function createRouter(deps: RouterDeps) {
             timezone: input.timezone,
             notify: input.notify,
             active: input.active,
-            nextRunAt: input.active ? nextRunAt : null,
+            nextRunAt,
           },
         });
         if (bot.thread) {
@@ -1534,15 +1545,31 @@ export function createRouter(deps: RouterDeps) {
         const active = input.active ?? existing.active;
         const cron = input.cron ?? existing.cron;
         const timezone = input.timezone ?? existing.timezone;
+        if (active && isOneShotRoutineCron(cron)) {
+          if (!isOneShotRoutineCron(existing.cron)) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "One-shot schedules must be created from chat.",
+            });
+          }
+          if (!existing.nextRunAt) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "One-shot schedules cannot be reactivated after they fire.",
+            });
+          }
+        }
         const scheduleChanged =
           (!existing.active && active) ||
           (input.cron !== undefined && input.cron !== existing.cron) ||
           (input.timezone !== undefined && input.timezone !== existing.timezone);
         const recalculatedNextRunAt =
-          scheduleChanged || (active && !existing.nextRunAt)
+          !isOneShotRoutineCron(cron) && (scheduleChanged || (active && !existing.nextRunAt))
             ? nextRoutineDate(cron, timezone)
             : null;
-        const nextRunAt = !active ? null : (recalculatedNextRunAt ?? existing.nextRunAt);
+        const nextRunAt = !active
+          ? null
+          : isOneShotRoutineCron(cron)
+            ? existing.nextRunAt
+            : (recalculatedNextRunAt ?? existing.nextRunAt);
         const row = await deps.prisma.routine.update({
           where: { id: existing.id },
           data: {
