@@ -96,7 +96,7 @@ This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
 and automatic HTTPS through Caddy. It uses E2B for bot computers, so the VM never exposes a Docker
-supervisor or browser containers.
+supervisor or browser containers. The root-equivalent updater sidecar is an explicit opt-in profile.
 
 Before deploying to a new Ubuntu host, create and verify a key-only `deploy` account, then apply the
 idempotent host-hardening baseline. It disables SSH passwords and root login, rate-limits SSH, allows
@@ -119,11 +119,10 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
-   `RAKAZO_HOST`, the three public origins, and `RAKAZO_UPDATER_TOKEN`. Set `RAKAZO_DEPLOY_DIR` when
-   the checkout is not at the supported Linux default, `/srv/rakazo`. Use URL-safe random values for
-   database credentials. The updater token must be a dedicated random string (at least 32 characters)
-   that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`; without it `up --wait`
-   fails because the sidecar refuses to start.
+   `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
+   the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
+   If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
+   characters) that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`.
 3. Keep registration allowlisted while the service is private:
 
 ```env
@@ -144,8 +143,8 @@ DATA_DIR=/data
 # set this explicitly for every other layout. See "The deploy directory must be one path" below.
 RAKAZO_DEPLOY_DIR=/srv/rakazo
 RAKAZO_IMAGE_TAG=local
-# Dedicated updater credential (not BETTER_AUTH_SECRET / SANDBOX_SUPERVISOR_TOKEN).
-RAKAZO_UPDATER_TOKEN=replace-with-32-plus-character-updater-token
+# Optional: required only with `--profile updater`.
+# RAKAZO_UPDATER_TOKEN=replace-with-32-plus-character-updater-token
 ```
 
 4. Build the images from your checkout and start the stack, then verify its public health endpoint:
@@ -269,8 +268,16 @@ and refuses the official path until a stable `vX.Y.Z` exists.
 
 ### Updater sidecar
 
-Compose production deployments include an `updater` service on a private `control` network. It
-exposes `/health`, `/state`, `/plan`, `/apply`, and `/rollback` at `http://updater:7092` with
+Compose production deployments offer an opt-in `updater` profile on a private `control` network.
+Normal deployments do not start it or require its credential. To enable it, set a dedicated
+`RAKAZO_UPDATER_TOKEN` and explicitly start the profile:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  --profile updater up -d --build updater
+```
+
+It exposes `/health`, `/state`, `/plan`, `/apply`, and `/rollback` at `http://updater:7092` with
 `RAKAZO_UPDATER_TOKEN`. Operator CLI upgrades above do not need it; the sidecar is for automated
 apply/rollback over that private HTTP API.
 
@@ -324,7 +331,7 @@ sees:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
+  --profile updater run --rm updater git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1
 ```
 
   That must print your checkout's HEAD. The two tempting wrong answers both fail: a native Windows
@@ -347,9 +354,9 @@ as that allows:
 - The Docker CLI lives only in the updater image. The api, worker, and web containers keep
   `cap_drop: ALL` and no socket.
 
-Set `RAKAZO_UPDATER_TOKEN` to a dedicated random value (at least 32 characters in production). It
-must differ from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`. Drop the `updater` service if
-you would rather not have the capability at all.
+Enabling the `updater` profile requires `RAKAZO_UPDATER_TOKEN` to be a dedicated random value (at
+least 32 characters in production). It must differ from `BETTER_AUTH_SECRET` and
+`SANDBOX_SUPERVISOR_TOKEN`. Leave the profile disabled if you would rather not grant the capability.
 
 ## What “Rakazo Cloud” still needs
 

@@ -6,6 +6,7 @@ import { parse } from "yaml";
 
 interface ComposeService {
   image?: string;
+  profiles?: string[];
   ports?: unknown[];
   networks?: string[];
   volumes?: string[];
@@ -31,6 +32,10 @@ describe("the updater compose service", () => {
   it("exists and runs the updater image", () => {
     expect(updater).toBeDefined();
     expect(updater.image).toMatch(/updater/);
+  });
+
+  it("is opt-in because it grants root-equivalent Docker access", () => {
+    expect(updater.profiles).toEqual(["updater"]);
   });
 
   it("publishes nothing on the host", () => {
@@ -93,7 +98,8 @@ describe("the updater compose service", () => {
 
   it("does not load the application env_file into the root-equivalent process", () => {
     expect(updater.env_file).toBeUndefined();
-    expect(updater.environment?.RAKAZO_UPDATER_TOKEN).toContain("RAKAZO_UPDATER_TOKEN");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.RAKAZO_UPDATER_TOKEN).toBe("${RAKAZO_UPDATER_TOKEN:-}");
   });
 
   it("does not let the api container reach the Docker socket to update itself", () => {

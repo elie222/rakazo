@@ -144,13 +144,14 @@ services:
       api:
         condition: service_healthy
 
-  # The updater holds the Docker socket, which is root-equivalent on the host, so it is deliberately
-  # the narrowest service here: no `ports` (nothing on the host), only the dedicated `control`
-  # network shared with the API, and no `env_file` — secrets stay in the bind-mounted `.env` that
-  # Compose reads for interpolation, not in this process. Caddy has no route to it. The API reaches
-  # it as http://updater:7092 with the shared token. It is also the one service the update never
-  # recreates, because it is the process performing the update.
+  # The updater holds the Docker socket, which is root-equivalent on the host, so it is opt-in and
+  # deliberately the narrowest service here: no `ports` (nothing on the host), only the dedicated
+  # `control` network shared with the API, and no `env_file` — secrets stay in the bind-mounted
+  # `.env` that Compose reads for interpolation, not in this process. Caddy has no route to it. The
+  # API reaches it as http://updater:7092 with the shared token. It is also the one service the
+  # update never recreates, because it is the process performing the update.
   updater:
+    profiles: [updater]
     # Pinned separately from the application image: the updater does not recreate itself, so moving
     # its own version is an operator action, not something an update can do underneath itself.
     image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-local}
@@ -168,7 +169,9 @@ services:
     mem_limit: 1g
     environment:
       NODE_ENV: production
-      RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:?Set RAKAZO_UPDATER_TOKEN in .env}
+      # Keep interpolation optional so deployments that do not enable this profile need no token.
+      # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
+      RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
