@@ -103,6 +103,17 @@ export function computerNetworkNameFor(botId: string) {
   return `rakazo-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
 }
 
+/** Current and prior network names used by this PR, for delete cleanup. */
+export function computerNetworkNamesForCleanup(botId: string) {
+  const safe = sanitizeIdentifier(botId);
+  const digest = createHash("sha256").update(botId).digest("hex");
+  return [
+    computerNetworkNameFor(botId),
+    `rakazo-computer-${safe}`,
+    `rakazo-computer-${safe.slice(0, 32)}-${digest.slice(0, 8)}`,
+  ];
+}
+
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
 }

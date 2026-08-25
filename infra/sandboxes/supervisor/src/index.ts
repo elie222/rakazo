@@ -13,6 +13,7 @@ import { z } from "zod";
 import {
   COMPUTER_IMAGE,
   computerNetworkNameFor,
+  computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
   resolveScreenPublishTarget,
@@ -732,10 +733,12 @@ async function ensureBotNetwork(botId: string) {
 }
 
 async function removeBotNetwork(botId: string) {
-  await docker
-    .getNetwork(computerNetworkNameFor(botId))
-    .remove()
-    .catch(() => undefined);
+  for (const name of computerNetworkNamesForCleanup(botId)) {
+    await docker
+      .getNetwork(name)
+      .remove()
+      .catch(() => undefined);
+  }
 }
 
 const botLifecycleLocks = new Map<string, Promise<unknown>>();

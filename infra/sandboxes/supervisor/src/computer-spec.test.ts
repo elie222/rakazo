@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPUTER_IMAGE,
   computerNetworkNameFor,
+  computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
   resolveScreenPublishTarget,
@@ -80,6 +81,14 @@ describe("graphical computer spec", () => {
   it("keeps sanitized network names unique when botIds only differ by stripped characters", () => {
     expect(computerNetworkNameFor("a/b")).not.toBe(computerNetworkNameFor("ab"));
     expect(computerNetworkNameFor("a/b")).toBe(computerNetworkNameFor("a/b"));
+  });
+
+  it("lists prior network name variants for cleanup", () => {
+    const names = computerNetworkNamesForCleanup("bot_1");
+    expect(names[0]).toBe(computerNetworkNameFor("bot_1"));
+    expect(names).toContain("rakazo-computer-bot_1");
+    expect(names.some((name) => /-[0-9a-f]{8}$/.test(name))).toBe(true);
+    expect(names.some((name) => /-[0-9a-f]{32}$/.test(name))).toBe(true);
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {
