@@ -1449,12 +1449,18 @@ export function ShellPage() {
               aria-label="Activity"
               aria-pressed={activityMode}
               title="Activity"
+              data-activity-mode={activityMode ? "on" : "off"}
               onClick={toggleActivityMode}
-              className={`app-no-drag flex items-center justify-center ${
-                activityMode ? "text-[#ECECEE]" : "text-[#7A7A80] hover:text-[#C9C9CE]"
+              className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
+                activityMode ? "bg-[#4C8DFF] text-white" : "text-[#7A7A80] hover:text-[#C9C9CE]"
               }`}
             >
-              <Bell size={16} strokeWidth={1.8} aria-hidden="true" />
+              <Bell
+                size={15}
+                strokeWidth={1.8}
+                fill={activityMode ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
             </button>
             <button
               type="button"

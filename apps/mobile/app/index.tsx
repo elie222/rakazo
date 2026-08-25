@@ -220,13 +220,14 @@ export default function Home() {
           <CircleButton
             accessibilityLabel="Activity"
             active={activityMode}
+            accent
             onPress={toggleActivityMode}
           >
             <NativeSymbol
               ios={activityMode ? "bell.fill" : "bell"}
               android={activityMode ? "notifications" : "notifications-outline"}
               size={17}
-              color={activityMode ? "#ECECEE" : "#fff"}
+              color={activityMode ? "#FFFFFF" : "#8E8E93"}
             />
           </CircleButton>
           <CircleButton
@@ -432,11 +433,13 @@ function CircleButton({
   onPress,
   accessibilityLabel,
   active = false,
+  accent = false,
 }: {
   children: ReactNode;
   onPress: () => void;
   accessibilityLabel: string;
   active?: boolean;
+  accent?: boolean;
 }) {
   return (
     <Pressable
@@ -445,7 +448,10 @@ function CircleButton({
       accessibilityState={{ selected: active }}
       onPress={onPress}
       hitSlop={4}
-      style={({ pressed }) => [styles.circleButton, (active || pressed) && styles.circlePressed]}
+      style={({ pressed }) => [
+        styles.circleButton,
+        accent && active ? styles.circleAccent : (active || pressed) && styles.circlePressed,
+      ]}
     >
       {children}
     </Pressable>
@@ -591,6 +597,9 @@ const styles = StyleSheet.create({
   },
   circlePressed: {
     backgroundColor: "#3A3A3C",
+  },
+  circleAccent: {
+    backgroundColor: "#4C8DFF",
   },
   profileInitials: {
     color: native.label,
