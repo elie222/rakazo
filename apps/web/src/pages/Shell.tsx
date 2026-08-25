@@ -3486,6 +3486,68 @@ const MessageView = memo(function MessageView({
             </button>
           );
         }
+        if (block.kind === "delegated_task") {
+          const failed = block.status === "failed" || block.status === "cancelled";
+          const done = block.status === "completed";
+          const running = !failed && !done;
+          return (
+            <div
+              key={i}
+              className="group relative w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A]"
+            >
+              <button
+                type="button"
+                onClick={() => onOpenBot(block.botId)}
+                className="w-full px-[18px] py-4 text-start"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="min-w-0 truncate text-[15px] font-medium text-[#ECECEE]"
+                    dir="auto"
+                  >
+                    {block.botName}
+                  </span>
+                  <span
+                    className="shrink-0 rounded-full px-[11px] py-1 text-[13px]"
+                    style={{
+                      background: failed
+                        ? "rgba(230,87,7,.14)"
+                        : done
+                          ? "rgba(48,162,75,.14)"
+                          : "rgba(245,160,60,.14)",
+                      color: failed ? "#E65707" : done ? "#4ECB71" : "#F5A03C",
+                      animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+                    }}
+                  >
+                    {block.status.replace("_", " ")}
+                  </span>
+                </div>
+                <div className="mt-2 text-[13.5px] text-[#85858A]" dir="auto">
+                  {block.prompt}
+                </div>
+                {block.summary ? (
+                  <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
+                    <ChatMarkdown>{block.summary}</ChatMarkdown>
+                  </div>
+                ) : null}
+              </button>
+              {running ? (
+                <button
+                  type="button"
+                  aria-label={`Cancel ${block.botName}'s task`}
+                  title="Cancel this delegated task"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void rpc.runs.cancel({ runId: block.runId }).catch(() => undefined);
+                  }}
+                  className="absolute right-2 top-2 rounded-full p-1 text-[#55555A] opacity-0 hover:bg-[#232326] hover:text-[#EF6461] group-hover:opacity-100"
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+              ) : null}
+            </div>
+          );
+        }
         if (block.kind === "choice") {
           const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
           if (!botId) return null;

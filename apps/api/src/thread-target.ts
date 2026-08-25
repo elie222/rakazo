@@ -1,12 +1,18 @@
 import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
-import { toComputerRef } from "@rakazo/adapters";
+import { notifyDelegationOrigin, toComputerRef } from "@rakazo/adapters";
 import {
   type Actor,
   GROUP_MEMBER_MIN,
   type GroupMember,
+  type MessageBlock,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, projectMessages, resolveGroupTargetBotIds } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  blocksToAgentHistoryText,
+  projectMessages,
+  resolveGroupTargetBotIds,
+} from "@rakazo/core";
 import {
   appendEventInTransaction,
   createGroupRepos,
@@ -323,6 +329,143 @@ function messagesWithLiveEvents(
   return [...persisted, ...live];
 }
 
+const DELEGATION_CONTEXT_MESSAGES = 6;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * "@BotB" anywhere in Bot A's 1:1 chat, typed by the user, delegates the task
+ * to an existing peer bot rather than sending to Bot A — "@BotB do X" at the
+ * start, or "do X @BotB" / "can you ask @BotB to do X" mid-sentence, all
+ * match. Matched against every other bot's exact name (longest first, so
+ * "Chief of Staff" wins over a hypothetical "Chief") as a whole word: the
+ * mention must be preceded by start-of-string/whitespace and followed by
+ * end-of-string/whitespace/punctuation, so "@Bot" inside "@BotFoo" doesn't
+ * false-match. The matched "@BotB" token is replaced with the bare bot name
+ * so the remaining text still reads as a natural instruction; if nothing is
+ * left after that, it's not a delegation and falls through to a normal
+ * message.
+ */
+export async function resolveDelegationTarget(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  originBotId: string,
+  text: string | undefined,
+): Promise<{ botId: string; botName: string; threadId: string; prompt: string } | null> {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed.includes("@")) return null;
+  const candidates = await tx.bot.findMany({
+    where: { workspaceId: actor.workspaceId, archivedAt: null, id: { not: originBotId } },
+    select: { id: true, name: true, thread: { select: { id: true } } },
+  });
+  const withThread = candidates
+    .filter((candidate) => candidate.thread)
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const candidate of withThread) {
+    const pattern = new RegExp(`(^|\\s)@${escapeRegExp(candidate.name)}(?=$|[\\s.,!?;:])`, "i");
+    if (!pattern.test(trimmed)) continue;
+    const prompt = trimmed
+      .replace(pattern, (_match, lead) => `${lead}${candidate.name}`)
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!prompt || prompt.toLowerCase() === candidate.name.toLowerCase()) continue;
+    return { botId: candidate.id, botName: candidate.name, threadId: candidate.thread!.id, prompt };
+  }
+  return null;
+}
+
+async function buildDelegationContext(
+  tx: Prisma.TransactionClient,
+  threadId: string,
+): Promise<string> {
+  const recent = await tx.message.findMany({
+    where: { threadId },
+    orderBy: { seq: "desc" },
+    take: DELEGATION_CONTEXT_MESSAGES,
+    select: { role: true, blocks: true },
+  });
+  const lines = recent
+    .reverse()
+    .map((message) => {
+      const text = blocksToAgentHistoryText(message.blocks as MessageBlock[]);
+      return text ? `${message.role}: ${text}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+  return lines.join("\n");
+}
+
+/**
+ * Creates the delegated bot's own Task/Run (same create-then-enqueue shape as
+ * routine wakeups and group handoffs) plus a "delegated_task" card message in
+ * the origin thread that a later run.started/completed/failed hook mirrors
+ * live status into (see notifyDelegationOrigin in packages/adapters).
+ */
+async function createDelegatedRun(
+  tx: Prisma.TransactionClient,
+  params: {
+    actor: Actor;
+    originBotId: string;
+    originThreadId: string;
+    targetBotId: string;
+    targetBotName: string;
+    targetThreadId: string;
+    prompt: string;
+  },
+) {
+  const context = await buildDelegationContext(tx, params.originThreadId);
+  const enrichedPrompt = context
+    ? `${params.prompt}\n\n(Delegated from another bot's conversation. Recent context:\n${context})`
+    : params.prompt;
+
+  const task = await tx.task.create({
+    data: {
+      workspaceId: params.actor.workspaceId,
+      botId: params.targetBotId,
+      threadId: params.targetThreadId,
+      userId: params.actor.userId,
+      prompt: enrichedPrompt,
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      workspaceId: params.actor.workspaceId,
+      botId: params.targetBotId,
+      threadId: params.targetThreadId,
+      taskId: task.id,
+      userId: params.actor.userId,
+      status: "queued",
+      trigger: "spawn",
+      delegatedFromThreadId: params.originThreadId,
+    },
+  });
+
+  const cardBlock: MessageBlock = {
+    kind: "delegated_task",
+    taskId: task.id,
+    runId: run.id,
+    botId: params.targetBotId,
+    botName: params.targetBotName,
+    prompt: params.prompt,
+    status: "queued",
+    summary: null,
+  };
+  const cardMessage = await createThreadMessageInTransaction(tx, {
+    threadId: params.originThreadId,
+    role: "bot",
+    botId: params.originBotId,
+    blocks: [cardBlock],
+  });
+  await tx.run.update({
+    where: { id: run.id },
+    data: { delegatedFromMessageId: cardMessage.id },
+  });
+
+  return { run, cardMessageId: cardMessage.id, cardBlocks: [cardBlock] as MessageBlock[] };
+}
+
 function mapRun(run: {
   id: string;
   botId: string;
@@ -397,6 +540,40 @@ export async function sendThreadMessage(
           replyToMessageId: input.replyToMessageId,
           clientNonce: input.clientNonce,
         });
+
+        const delegated = await resolveDelegationTarget(tx, actor, target.botId, input.text);
+        if (delegated) {
+          const userEvent = await appendEventInTransaction(tx, {
+            workspaceId: actor.workspaceId,
+            threadId: target.threadId,
+            botId: target.botId,
+            type: "thread.message.created",
+            payload: {
+              messageId: message.id,
+              role: "user",
+              blocks,
+              replyToMessageId: input.replyToMessageId,
+            },
+          });
+          const created = await createDelegatedRun(tx, {
+            actor,
+            originBotId: target.botId,
+            originThreadId: target.threadId,
+            targetBotId: delegated.botId,
+            targetBotName: delegated.botName,
+            targetThreadId: delegated.threadId,
+            prompt: delegated.prompt,
+          });
+          const cardEvent = await appendEventInTransaction(tx, {
+            workspaceId: actor.workspaceId,
+            threadId: target.threadId,
+            botId: target.botId,
+            type: "thread.message.created",
+            payload: { messageId: created.cardMessageId, role: "bot", blocks: created.cardBlocks },
+          });
+          return { message, runs: [created.run], eventSeq: Math.max(userEvent.seq, cardEvent.seq) };
+        }
+
         const task = await tx.task.create({
           data: {
             workspaceId: actor.workspaceId,
@@ -620,6 +797,79 @@ export async function stopThreadRuns(
       runId: { in: activeRuns.map((run) => run.id) },
     },
   });
+}
+
+/**
+ * Cancels a single run, leaving any other active run on the same thread
+ * untouched — unlike stopThreadRuns, which cancels every active run on the
+ * thread at once. Needed so an accidental duplicate @mention delegation
+ * (two Task/Run pairs queued on the same target bot) can be cleaned up
+ * without killing the run that's actually meant to keep going.
+ */
+export async function cancelRun(
+  deps: {
+    prisma: PrismaClient;
+    sandbox: import("@rakazo/adapter-kit").SandboxProvider;
+    events: ThreadEvents;
+  },
+  actor: Actor,
+  runId: string,
+): Promise<{ ok: true } | { ok: false; reason: "not_found" | "not_active" }> {
+  const run = await deps.prisma.run.findFirst({
+    where: { id: runId, bot: { workspaceId: actor.workspaceId, userId: actor.userId } },
+    select: {
+      id: true,
+      status: true,
+      botId: true,
+      workspaceId: true,
+      delegatedFromThreadId: true,
+      delegatedFromMessageId: true,
+      bot: {
+        select: {
+          computer: {
+            select: {
+              id: true,
+              homeKey: true,
+              kind: true,
+              providerRef: true,
+              executionRunId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!run) return { ok: false, reason: "not_found" };
+  if (!ACTIVE_RUN_STATUSES.includes(run.status as (typeof ACTIVE_RUN_STATUSES)[number])) {
+    return { ok: false, reason: "not_active" };
+  }
+  await deps.prisma.run.update({
+    where: { id: run.id },
+    data: { status: "cancelled", completedAt: new Date() },
+  });
+  const computer = run.bot.computer;
+  if (computer && computer.executionRunId === run.id) {
+    await deps.prisma.computerExecutionLease.deleteMany({ where: { botId: run.botId } });
+    await deps.prisma.computer.update({
+      where: { id: computer.id },
+      data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
+    });
+    if (computer.providerRef) {
+      await deps.sandbox
+        .releaseScreen?.(toComputerRef(computer), {
+          operationId: "stop",
+          traceId: "stop",
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          botId: run.botId,
+          signal: new AbortController().signal,
+        })
+        .catch(() => undefined);
+    }
+  }
+  await deps.prisma.event.deleteMany({ where: { type: "thread.progress", runId: run.id } });
+  await notifyDelegationOrigin(deps, run, "cancelled");
+  return { ok: true };
 }
 
 export async function setThreadUnreadState(

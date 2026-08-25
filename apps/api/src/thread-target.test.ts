@@ -1,8 +1,13 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { stopThreadRuns, type ThreadTarget, threadSnapshot } from "./thread-target.js";
+import {
+  resolveDelegationTarget,
+  stopThreadRuns,
+  type ThreadTarget,
+  threadSnapshot,
+} from "./thread-target.js";
 
 describe("threadSnapshot", () => {
   it("reloads tool-only live messages for an active run", async () => {
@@ -131,5 +136,88 @@ describe("stopThreadRuns", () => {
       expect.objectContaining({ providerRef: "computer-b" }),
       expect.objectContaining({ workspaceId: "workspace-1", userId: "user-1", botId: "bot-b" }),
     );
+  });
+});
+
+describe("resolveDelegationTarget", () => {
+  const actor = { workspaceId: "workspace-1", userId: "user-1" } as Actor;
+
+  function txWithBots(bots: Array<{ id: string; name: string; hasThread?: boolean }>) {
+    return {
+      bot: {
+        findMany: vi.fn().mockResolvedValue(
+          bots.map((bot) => ({
+            id: bot.id,
+            name: bot.name,
+            thread: bot.hasThread === false ? null : { id: `thread-${bot.id}` },
+          })),
+        ),
+      },
+    } as unknown as Prisma.TransactionClient;
+  }
+
+  it("matches an @mention at the start of the message", async () => {
+    const tx = txWithBots([{ id: "bot-sarah", name: "Sarah" }]);
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "@Sarah check email");
+    expect(result).toEqual({
+      botId: "bot-sarah",
+      botName: "Sarah",
+      threadId: "thread-bot-sarah",
+      prompt: "Sarah check email",
+    });
+  });
+
+  it("matches an @mention in the middle of a sentence", async () => {
+    const tx = txWithBots([{ id: "bot-sarah", name: "Sarah" }]);
+    const result = await resolveDelegationTarget(
+      tx,
+      actor,
+      "bot-origin",
+      "Can you see what @Sarah is upto",
+    );
+    expect(result).toEqual({
+      botId: "bot-sarah",
+      botName: "Sarah",
+      threadId: "thread-bot-sarah",
+      prompt: "Can you see what Sarah is upto",
+    });
+  });
+
+  it("does not match @BotFoo when the bot is named Bot", async () => {
+    const tx = txWithBots([{ id: "bot-1", name: "Bot" }]);
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "ping @BotFoo now");
+    expect(result).toBeNull();
+  });
+
+  it("prefers the longest matching name", async () => {
+    const tx = txWithBots([
+      { id: "bot-chief", name: "Chief" },
+      { id: "bot-chief-of-staff", name: "Chief of Staff" },
+    ]);
+    const result = await resolveDelegationTarget(
+      tx,
+      actor,
+      "bot-origin",
+      "@Chief of Staff please review this",
+    );
+    expect(result?.botId).toBe("bot-chief-of-staff");
+  });
+
+  it("returns null for a bare mention with no task text", async () => {
+    const tx = txWithBots([{ id: "bot-sarah", name: "Sarah" }]);
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "@Sarah");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the mentioned bot has no thread", async () => {
+    const tx = txWithBots([{ id: "bot-sarah", name: "Sarah", hasThread: false }]);
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "@Sarah check email");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the text has no @ at all", async () => {
+    const tx = txWithBots([{ id: "bot-sarah", name: "Sarah" }]);
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "just a normal message");
+    expect(result).toBeNull();
   });
 });

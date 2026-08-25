@@ -111,6 +111,7 @@ import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
+  cancelRun,
   resolveThreadTarget,
   sendThreadMessage,
   setThreadUnreadState,
@@ -1001,6 +1002,12 @@ export function createRouter(deps: RouterDeps) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await setThreadUnreadState(deps.prisma, context.actor, target, true);
         return { ok: true as const };
+      }),
+    },
+    runs: {
+      cancel: authed.runs.cancel.handler(async ({ context, input }) => {
+        const result = await cancelRun(deps, context.actor, input.runId);
+        return result;
       }),
     },
     computer: {

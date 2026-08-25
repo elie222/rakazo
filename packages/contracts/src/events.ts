@@ -150,6 +150,27 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
+    /** An @mention delegation to an existing peer bot — its own Task/Run runs
+        in that bot's own thread; this card mirrors its live status back here. */
+    kind: z.literal("delegated_task"),
+    taskId: Id,
+    runId: Id,
+    botId: Id,
+    botName: z.string(),
+    prompt: z.string(),
+    status: z.enum([
+      "queued",
+      "leased",
+      "running",
+      "waiting_input",
+      "waiting_takeover",
+      "completed",
+      "failed",
+      "cancelled",
+    ]),
+    summary: z.string().nullable(),
+  }),
+  z.object({
     kind: z.literal("skill_draft"),
     skillId: Id,
     name: z.string(),

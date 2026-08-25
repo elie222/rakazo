@@ -268,6 +268,63 @@ async function persistLivePluginConnections(
   }
 }
 
+// A verbose agent's final text often front-loads step-by-step narration and
+// puts the actual outcome at the end, so a head-truncated summary can cut
+// off before the conclusion. Prefer the tail when the text is over the
+// limit — the last `limit` chars, trimmed to a whole word.
+function summarizeTail(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const tail = text.slice(-limit);
+  const spaceIndex = tail.indexOf(" ");
+  const trimmed = spaceIndex === -1 ? tail : tail.slice(spaceIndex + 1);
+  return `…${trimmed}`;
+}
+
+/**
+ * Mirrors a delegated run's status into the "delegated_task" card left in the
+ * origin bot's thread by createDelegatedRun (apps/api/src/thread-target.ts),
+ * so that card updates live as Bot B's run progresses instead of staying
+ * frozen at "queued". A no-op for any run that wasn't a delegation.
+ */
+export async function notifyDelegationOrigin(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  run: {
+    workspaceId: string;
+    botId: string;
+    delegatedFromThreadId: string | null;
+    delegatedFromMessageId: string | null;
+  },
+  status: "running" | "completed" | "failed" | "cancelled",
+  summary?: string,
+) {
+  if (!run.delegatedFromThreadId || !run.delegatedFromMessageId) return;
+  try {
+    const existing = await deps.prisma.message.findUnique({
+      where: { id: run.delegatedFromMessageId },
+      select: { blocks: true },
+    });
+    const blocks = existing?.blocks as MessageBlock[] | undefined;
+    const existingBlock = blocks?.[0];
+    if (!existing || existingBlock?.kind !== "delegated_task") return;
+    const nextBlocks: MessageBlock[] = [
+      { ...existingBlock, status, summary: summary ?? existingBlock.summary },
+    ];
+    await deps.prisma.message.update({
+      where: { id: run.delegatedFromMessageId },
+      data: { blocks: nextBlocks as never },
+    });
+    await deps.events.append({
+      workspaceId: run.workspaceId,
+      threadId: run.delegatedFromThreadId,
+      botId: run.botId,
+      type: "thread.message.updated",
+      payload: { messageId: run.delegatedFromMessageId, role: "bot", blocks: nextBlocks },
+    });
+  } catch (error) {
+    console.error("delegation status update failed", error);
+  }
+}
+
 export function createRunExecutor(deps: ExecutorDeps) {
   return {
     async resolveModel(scope: {
@@ -655,6 +712,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           runId,
           payload: { trigger: run.trigger },
         });
+        await notifyDelegationOrigin(deps, run, "running");
 
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
@@ -1978,6 +2036,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   outcome: "completed",
                   blocks: [{ kind: "text", text: stuckText }],
                 });
+                await notifyDelegationOrigin(deps, run, "completed", summarizeTail(stuckText, 240));
                 runAbortController?.abort();
                 return;
               }
@@ -2104,6 +2163,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          await notifyDelegationOrigin(deps, run, "completed", summarizeTail(text, 240));
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "completion",
@@ -2163,6 +2223,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          await notifyDelegationOrigin(deps, run, "failed", message.slice(0, 240));
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "failure",

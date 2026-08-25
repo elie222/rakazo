@@ -225,6 +225,16 @@ export const appContract = {
     markRead: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
   },
+  runs: {
+    /** Cancels one run without touching any other active run on the same
+        thread — unlike threads.stop, which cancels every active run on a
+        thread at once. Used to clean up an accidental duplicate delegation. */
+    cancel: oc
+      .input(z.object({ runId: Id }))
+      .output(
+        z.object({ ok: z.boolean(), reason: z.enum(["not_found", "not_active"]).optional() }),
+      ),
+  },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),

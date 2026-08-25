@@ -434,6 +434,12 @@ model Run {
   clientNonce   String?
   sourceMessageId String?
   sourceMessage Message?  @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  // A run created by an @mention delegation from another bot's own thread
+  // tracks that origin so its status can be mirrored back into a live card
+  // there. Plain columns, no foreign key: the origin thread/message can
+  // belong to a different bot than this run's own.
+  delegatedFromThreadId  String?
+  delegatedFromMessageId String?
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime  @default(now())
