@@ -53,6 +53,21 @@ describe("computer screen readiness", () => {
     }
   });
 
+  it("does not treat HTTP error responses as ready", async () => {
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 503;
+      res.end("starting");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    try {
+      await expect(waitForScreenReady("127.0.0.1", address.port, 700)).resolves.toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+
   it("times out instead of hanging when nothing is listening", async () => {
     const server = net.createServer();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

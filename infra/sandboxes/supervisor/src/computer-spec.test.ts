@@ -69,12 +69,17 @@ describe("graphical computer spec", () => {
       homePath: "/var/rakazo/homes/bot_isolation",
       networkMode,
     });
-    expect(networkMode).toBe("rakazo-computer-bot_isolation");
+    expect(networkMode).toMatch(/^rakazo-computer-bot_isolation-[0-9a-f]{8}$/);
     expect(options.HostConfig.NetworkMode).toBe(networkMode);
     expect(options.HostConfig.PortBindings["6080/tcp"]).toEqual([
       { HostIp: "127.0.0.1", HostPort: "0" },
     ]);
     expect(options.ExposedPorts["6080/tcp"]).toEqual({});
+  });
+
+  it("keeps sanitized network names unique when botIds only differ by stripped characters", () => {
+    expect(computerNetworkNameFor("a/b")).not.toBe(computerNetworkNameFor("ab"));
+    expect(computerNetworkNameFor("a/b")).toBe(computerNetworkNameFor("a/b"));
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {
