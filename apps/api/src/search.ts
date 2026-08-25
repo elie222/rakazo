@@ -239,7 +239,11 @@ export async function queryWorkspaceSearch(
     });
   }
 
-  for (const hit of groupConversationHits.slice(0, CONVERSATION_HIT_LIMIT)) {
+  const groupsToAdd = groupConversationHits.slice(0, CONVERSATION_HIT_LIMIT);
+  if (hits.length + groupsToAdd.length > SEARCH_LIMIT) {
+    hits.length = SEARCH_LIMIT - groupsToAdd.length;
+  }
+  for (const hit of groupsToAdd) {
     push(hit);
   }
 
