@@ -753,23 +753,21 @@ function ModelPicker({
     optionRefs.current[next]?.focus();
   }
 
+  function activeOptionIndex() {
+    return highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
+      ? highlightedIndex
+      : 0;
+  }
+
   function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       if (filteredOptions.length === 0) return;
-      const next =
-        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
-          ? highlightedIndex
-          : 0;
-      moveHighlight(next);
+      moveHighlight(activeOptionIndex());
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (filteredOptions.length === 0) return;
-      const index =
-        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
-          ? highlightedIndex
-          : 0;
-      choose(index);
+      choose(activeOptionIndex());
     } else if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
