@@ -118,11 +118,11 @@ import {
   userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
+import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { WindowChrome } from "./WindowChrome";
-import { ActivityList } from "./ActivityList";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
@@ -1494,67 +1494,67 @@ export function ShellPage() {
                 }}
               />
               {sidebarGroups.map((group) => (
-              <div key={group.key} data-sidebar-group={group.key}>
-                {group.title ? (
-                  <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
-                    {group.title}
-                  </div>
-                ) : null}
-                {group.bots.map((bot) => (
-                  <button
-                    key={bot.id}
-                    type="button"
-                    onClick={() => {
-                      setMobileSidebarOpen(false);
-                      navigate(`/app/${bot.id}`);
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setBotMenu({
-                        botId: bot.id,
-                        position: { x: event.clientX, y: event.clientY },
-                      });
-                    }}
-                    className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                    style={{
-                      background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
-                    }}
-                  >
-                    <BotAvatar color={bot.color} size={38} status={bot.status} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span
+                <div key={group.key} data-sidebar-group={group.key}>
+                  {group.title ? (
+                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
+                      {group.title}
+                    </div>
+                  ) : null}
+                  {group.bots.map((bot) => (
+                    <button
+                      key={bot.id}
+                      type="button"
+                      onClick={() => {
+                        setMobileSidebarOpen(false);
+                        navigate(`/app/${bot.id}`);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setBotMenu({
+                          botId: bot.id,
+                          position: { x: event.clientX, y: event.clientY },
+                        });
+                      }}
+                      className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
+                      style={{
+                        background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                      }}
+                    >
+                      <BotAvatar color={bot.color} size={38} status={bot.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span
+                            dir="auto"
+                            className={`truncate text-[15px] text-[#ECECEE] ${
+                              bot.unread ? "font-semibold" : "font-medium"
+                            }`}
+                          >
+                            {bot.name}
+                            {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
+                            {bot.status === "idle" ? "" : bot.status}
+                            {bot.unread ? (
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                              />
+                            ) : null}
+                          </span>
+                        </div>
+                        <div
                           dir="auto"
-                          className={`truncate text-[15px] text-[#ECECEE] ${
-                            bot.unread ? "font-semibold" : "font-medium"
+                          className={`mt-0.5 truncate text-[13.5px] ${
+                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                           }`}
                         >
-                          {bot.name}
-                          {bot.unread ? <span className="sr-only"> (unread)</span> : null}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                          {bot.status === "idle" ? "" : bot.status}
-                          {bot.unread ? (
-                            <span
-                              aria-hidden="true"
-                              className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                            />
-                          ) : null}
-                        </span>
+                          {bot.preview || bot.title}
+                        </div>
                       </div>
-                      <div
-                        dir="auto"
-                        className={`mt-0.5 truncate text-[13.5px] ${
-                          bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                        }`}
-                      >
-                        {bot.preview || bot.title}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ))}
+                    </button>
+                  ))}
+                </div>
+              ))}
             </>
           )}
           {!showWorkspaceSearch
