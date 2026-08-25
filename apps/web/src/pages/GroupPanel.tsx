@@ -46,12 +46,14 @@ function MemberPicker({
             key={bot.id}
             type="button"
             onClick={() => toggle(bot.id)}
-            className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left ${
+            className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start ${
               checked ? "bg-[#1A1A1D]" : "hover:bg-[#141416]"
             }`}
           >
             <BotAvatar color={bot.color} size={32} status={bot.status} />
-            <span className="flex-1 text-[15px] text-[#ECECEE]">{bot.name}</span>
+            <span className="flex-1 text-[15px] text-[#ECECEE]" dir="auto">
+              {bot.name}
+            </span>
             <span className="text-[13px] text-[#6C6C70]">{checked ? "✓" : ""}</span>
           </button>
         );

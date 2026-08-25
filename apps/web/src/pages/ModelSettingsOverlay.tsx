@@ -428,7 +428,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       key={group.id}
                       type="button"
                       onClick={() => chooseProvider(group.id)}
-                      className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-left last:border-0 ${
+                      className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-start last:border-0 ${
                         group.id === provider ? "bg-[#1A1A1D]" : "hover:bg-[#161618]"
                       }`}
                     >
@@ -845,7 +845,7 @@ function ModelPicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-left text-[#ECECEE] outline-none focus-visible:border-[#4A4A50]"
+        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50]"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >
@@ -871,7 +871,7 @@ function ModelPicker({
               role="option"
               aria-selected={option.id === value}
               tabIndex={index === highlightedIndex ? 0 : -1}
-              className={`w-full rounded-[8px] px-3 py-2 text-left text-[13.5px] text-[#ECECEE] outline-none hover:bg-[#1A1A1D] focus-visible:bg-[#1A1A1D] ${
+              className={`w-full rounded-[8px] px-3 py-2 text-start text-[13.5px] text-[#ECECEE] outline-none hover:bg-[#1A1A1D] focus-visible:bg-[#1A1A1D] ${
                 option.id === value ? "bg-[#1A1A1D]" : ""
               }`}
               onClick={() => choose(index)}

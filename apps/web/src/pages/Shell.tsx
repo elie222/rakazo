@@ -1419,12 +1419,12 @@ export function ShellPage() {
           type="button"
           aria-label="Close navigation"
           onClick={() => setMobileSidebarOpen(false)}
-          className="absolute inset-y-0 right-0 left-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
+          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 left-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[#171719] bg-[#0B0B0C] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         }`}
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
@@ -1439,10 +1439,10 @@ export function ShellPage() {
               +
             </button>
             {createMenuOpen ? (
-              <div className="app-no-drag absolute right-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
+              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-left text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create");
@@ -1452,7 +1452,7 @@ export function ShellPage() {
                 </button>
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-left text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create-group");
@@ -1503,7 +1503,7 @@ export function ShellPage() {
                         position: { x: event.clientX, y: event.clientY },
                       });
                     }}
-                    className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-left"
+                    className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
                     style={{
                       background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
                     }}
@@ -1512,6 +1512,7 @@ export function ShellPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span
+                          dir="auto"
                           className={`truncate text-[15px] text-[#ECECEE] ${
                             bot.unread ? "font-semibold" : "font-medium"
                           }`}
@@ -1530,6 +1531,7 @@ export function ShellPage() {
                         </span>
                       </div>
                       <div
+                        dir="auto"
                         className={`mt-0.5 truncate text-[13.5px] ${
                           bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                         }`}
@@ -1551,7 +1553,7 @@ export function ShellPage() {
                     setMobileSidebarOpen(false);
                     navigate(`/app/g/${group.id}`);
                   }}
-                  className="flex gap-3 rounded-xl px-2.5 py-[11px] text-left"
+                  className="flex gap-3 rounded-xl px-2.5 py-[11px] text-start"
                   style={{
                     background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
                   }}
@@ -1567,7 +1569,8 @@ export function ShellPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span
-                        className={`text-[15px] text-[#ECECEE] ${
+                        dir="auto"
+                        className={`min-w-0 truncate text-[15px] text-[#ECECEE] ${
                           group.unread ? "font-semibold" : "font-medium"
                         }`}
                       >
@@ -1580,7 +1583,7 @@ export function ShellPage() {
                         />
                       ) : null}
                     </div>
-                    <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                    <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
                       {group.members.map((member) => member.name).join(", ")}
                     </div>
                   </div>
@@ -1602,7 +1605,10 @@ export function ShellPage() {
                 ? archivedBots.map((bot) => (
                     <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
                       <BotAvatar color={bot.color} size={28} status={bot.status} />
-                      <span className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]">
+                      <span
+                        className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]"
+                        dir="auto"
+                      >
                         {bot.name}
                       </span>
                       <button
@@ -1640,7 +1646,7 @@ export function ShellPage() {
         </button>
         <div className="relative">
           {menuOpen ? (
-            <div className="absolute bottom-14 left-3 right-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
+            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
               <button
                 type="button"
                 aria-label="Settings"
@@ -1651,7 +1657,7 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">⚙</span>
-                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Settings</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Settings</span>
               </button>
               <button
                 type="button"
@@ -1662,7 +1668,7 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Models</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Models</span>
               </button>
               <button
                 type="button"
@@ -1673,7 +1679,7 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">◇</span>
-                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Memory</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Memory</span>
               </button>
               <button
                 type="button"
@@ -1684,7 +1690,7 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Voice</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Voice</span>
               </button>
               <button
                 type="button"
@@ -1694,7 +1700,7 @@ export function ShellPage() {
                 }}
               >
                 <Gauge size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Weekly usage</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Weekly usage</span>
               </button>
               {usage ? (
                 <p className="px-3 pb-2 text-[12.5px] text-[#85858A]">
@@ -1751,7 +1757,7 @@ export function ShellPage() {
                 <BotAvatar color={active.color} size={26} status={active.status} />
               ) : null}
               <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
+                <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? "Group")
                     : (active?.name ?? "Select a bot")}
@@ -1850,9 +1856,9 @@ export function ShellPage() {
       <aside
         data-testid="side-panel"
         data-panel={panel ?? "closed"}
-        className={`absolute inset-y-0 right-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-150 ease-out md:relative ${
+        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-150 ease-out md:relative ${
           panel && (active || activeGroup)
-            ? "w-full max-w-[384px] border-l border-[#141416] md:w-[384px] md:max-w-none"
+            ? "w-full max-w-[384px] border-s border-[#141416] md:w-[384px] md:max-w-none"
             : "pointer-events-none w-0"
         }`}
       >
@@ -1971,7 +1977,7 @@ export function ShellPage() {
                     className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
                   >
                     <span className="text-[#E65707]">◷</span>
-                    <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
+                    <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]" dir="auto">
                       {routine.name}
                     </span>
                     <span className="text-[13px] text-[#6C6C70]">{formatCron(routine.cron)}</span>
@@ -2166,6 +2172,13 @@ export function ShellPage() {
                         routineSavePending.current = false;
                         setSavingRoutine(false);
                       }
+                      if (
+                        routineSaveRequest.current !== saveRequest ||
+                        activeBotId.current !== targetBotId
+                      ) {
+                        return;
+                      }
+                      await refreshThread(targetBotId).catch(() => undefined);
                       if (
                         routineSaveRequest.current === saveRequest &&
                         activeBotId.current === targetBotId
@@ -2420,7 +2433,7 @@ export function ShellPage() {
                   variant="overlay"
                 />
               ) : (
-                <span className="truncate text-[15.5px] font-medium text-[#ECECEE]">
+                <span className="truncate text-[15.5px] font-medium text-[#ECECEE]" dir="auto">
                   {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
@@ -2565,7 +2578,7 @@ const Transcript = memo(function Transcript({
             type="button"
             aria-label="Reply"
             onClick={() => onReply(message)}
-            className="absolute right-0 top-0 rounded px-2 py-1 text-[12px] text-[#85858A] opacity-0 group-hover/message:opacity-100 hover:text-[#ECECEE] focus:opacity-100"
+            className="absolute end-0 top-0 rounded px-2 py-1 text-[12px] text-[#85858A] opacity-0 group-hover/message:opacity-100 hover:text-[#ECECEE] focus:opacity-100"
           >
             Reply
           </button>
@@ -2706,7 +2719,9 @@ const Composer = memo(function Composer({
         <div className="mb-3 flex items-start justify-between gap-3 rounded-[14px] border border-[#26262A] bg-[#17171A] px-4 py-2 text-[13px] text-[#C9C9CE]">
           <div className="min-w-0">
             <div className="text-[#85858A]">Replying to</div>
-            <div className="truncate">{previewMessageText(replyTarget)}</div>
+            <div dir="auto" className="truncate">
+              {previewMessageText(replyTarget)}
+            </div>
           </div>
           <button
             type="button"
@@ -2739,7 +2754,9 @@ const Composer = memo(function Composer({
               ) : (
                 <Paperclip size={14} strokeWidth={1.8} />
               )}
-              <span className="max-w-[180px] truncate">{attachment.file.name}</span>
+              <span className="max-w-[180px] truncate" dir="auto">
+                {attachment.file.name}
+              </span>
               <button
                 type="button"
                 aria-label={`Remove ${attachment.file.name}`}
@@ -2759,14 +2776,14 @@ const Composer = memo(function Composer({
               key={mention.key}
               type="button"
               onClick={() => insertMention(mention)}
-              className="block w-full px-4 py-2 text-left text-[14px] text-[#ECECEE] hover:bg-[#1F1F22]"
+              className="block w-full px-4 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1F1F22]"
             >
-              @{mention.name}
+              <span dir="auto">@{mention.name}</span>
             </button>
           ))}
         </div>
       ) : null}
-      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
+      <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3">
         <input
           ref={fileInputRef}
           type="file"
@@ -2823,6 +2840,7 @@ const Composer = memo(function Composer({
           aria-label={activeName ? `Message ${activeName}` : "Message"}
           name="chat-message"
           autoComplete="off"
+          dir="auto"
           className="flex-1 bg-transparent text-[15.5px] text-[#E9E9EA] outline-none disabled:opacity-40"
         />
         {running ? (
@@ -2988,10 +3006,15 @@ const MessageView = memo(function MessageView({
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-[#85858A]">{speakerName}</div>
+        <div className="mb-1 text-[12.5px] font-medium text-[#85858A]" dir="auto">
+          {speakerName}
+        </div>
       ) : null}
       {replyPreview ? (
-        <div className="mb-2 max-w-[74%] rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-[12.5px] text-[#85858A]">
+        <div
+          className="mb-2 max-w-[74%] rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-[12.5px] text-[#85858A]"
+          dir="auto"
+        >
           {previewMessageText(replyPreview)}
         </div>
       ) : null}
@@ -3002,16 +3025,20 @@ const MessageView = memo(function MessageView({
       <>
         {messageContext}
         <div className="flex justify-start">
-          <div className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+          <div
+            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+            dir="auto"
+          >
             {message.blocks.map((block, i) => {
               if (block.kind === "steps") {
                 const isCurrentBlock = isLive && i === message.blocks.length - 1;
                 return (
-                  <ToolSteps
-                    key={i}
-                    steps={block.steps}
-                    currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
-                  />
+                  <div key={i} dir="ltr">
+                    <ToolSteps
+                      steps={block.steps}
+                      currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
+                    />
+                  </div>
                 );
               }
               if (block.kind === "text" || block.kind === "progress") {
@@ -3071,7 +3098,10 @@ const MessageView = memo(function MessageView({
         if (block.kind === "progress") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+              <div
+                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                dir="auto"
+              >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
               </div>
             </div>
@@ -3080,7 +3110,10 @@ const MessageView = memo(function MessageView({
         if (block.kind === "steps") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3">
+              <div
+                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3"
+                dir="ltr"
+              >
                 <ToolSteps
                   steps={block.steps}
                   currentIndex={isLive ? block.steps.length - 1 : undefined}
@@ -3098,7 +3131,9 @@ const MessageView = memo(function MessageView({
               className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-[#ECECEE]">{block.name}</span>
+                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                  {block.name}
+                </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
@@ -3133,10 +3168,12 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-left disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]">{block.name}</span>
+                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                  {block.name}
+                </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
@@ -3151,12 +3188,12 @@ const MessageView = memo(function MessageView({
                       : "bot"}
                 </span>
               </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+              <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
                 {removed
                   ? block.status === "archived"
-                    ? "Archived this bot. Its chat, memory, and files are preserved."
-                    : "Removed this bot, including its chat, computer, and memory."
-                  : block.title || "Opened its own thread. Tap to switch."}
+                    ? "Archived. Chat, memory, and files kept."
+                    : "Removed with chat, computer, and memory."
+                  : block.title || "Opened its thread."}
               </div>
             </button>
           );
@@ -3229,7 +3266,10 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text" && message.role === "user") {
           return (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]">
+              <div
+                className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]"
+                dir="auto"
+              >
                 {block.text}
               </div>
             </div>
@@ -3238,7 +3278,10 @@ const MessageView = memo(function MessageView({
         if (block.kind === "text") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+              <div
+                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                dir="auto"
+              >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
                 {voiceReady ? (
                   <button
@@ -4022,7 +4065,7 @@ function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-left disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
               >
                 <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
                   {option.letter}
@@ -4343,7 +4386,7 @@ function ChartBlockView({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="absolute right-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+          className="absolute end-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
         >
           Expand
         </button>

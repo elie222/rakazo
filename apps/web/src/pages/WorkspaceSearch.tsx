@@ -22,15 +22,17 @@ export function WorkspaceSearchResults({
           key={`${hit.kind}-${hit.botId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`}
           type="button"
           onClick={() => onSelect(hit)}
-          className="rounded-xl px-2.5 py-[11px] text-left hover:bg-[#131315]"
+          className="rounded-xl px-2.5 py-[11px] text-start hover:bg-[#131315]"
         >
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[15px] font-medium text-[#ECECEE]">{hit.title}</span>
+            <span className="truncate text-[15px] font-medium text-[#ECECEE]" dir="auto">
+              {hit.title}
+            </span>
             <span className="shrink-0 text-[12px] uppercase tracking-wide text-[#6C6C70]">
               {hit.kind}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[13px] text-[#85858A]">
+          <div className="mt-0.5 truncate text-[13px] text-[#85858A]" dir="auto">
             {hit.botName} · {hit.snippet}
           </div>
         </button>

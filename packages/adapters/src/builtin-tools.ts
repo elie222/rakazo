@@ -242,6 +242,58 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "schedule_create",
+    description:
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Short label shown in Routines." },
+        prompt: {
+          type: "string",
+          description: "What the bot should do when the schedule fires.",
+        },
+        cron: { type: "string", description: "5-field cron for repeating schedules." },
+        every: { type: "number", description: "Repeat interval amount for repeating schedules." },
+        unit: {
+          type: "string",
+          enum: ["minutes", "hours", "days"],
+          description: "Unit for every (minimum 1 minute).",
+        },
+        runAt: {
+          type: "string",
+          description: "ISO datetime for a one-shot schedule.",
+        },
+        delayMinutes: {
+          type: "number",
+          description: "Minutes from now for a one-shot schedule.",
+        },
+        delaySeconds: {
+          type: "number",
+          description: "Seconds from now for a one-shot schedule (may be under one minute).",
+        },
+        timezone: { type: "string", description: "IANA timezone (default UTC)." },
+      },
+      required: ["name", "prompt"],
+    },
+  },
+  {
+    name: "schedule_list",
+    description: "List this bot's active and inactive schedules (routines).",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "schedule_cancel",
+    description: "Cancel a schedule by routineId or exact name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        routineId: { type: "string" },
+        name: { type: "string" },
+      },
+    },
+  },
+  {
     name: "run_subagent",
     description:
       "Run a short-lived helper inside this turn only. It is not a bot: no list entry, no thread, no computer of its own, and it disappears when this turn ends. Never call this because the user asked to create a bot — that is spawn_bot, and spawn_bot alone.",

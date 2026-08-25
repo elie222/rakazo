@@ -93,6 +93,8 @@
   padding: 0.08em 0.32em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .rk-chat-markdown pre {
@@ -102,6 +104,8 @@
   border-radius: 0.75em;
   background: #0e0e10;
   padding: 0.8em 0.9em;
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .rk-chat-markdown pre code {

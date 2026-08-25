@@ -26,6 +26,7 @@
     "expo-font": "~57.0.1",
     "expo-image-picker": "~57.0.13",
     "expo-linking": "~57.0.7",
+    "expo-localization": "~57.0.1",
     "expo-notifications": "~57.0.14",
     "expo-router": "~57.0.16",
     "expo-secure-store": "~57.0.1",

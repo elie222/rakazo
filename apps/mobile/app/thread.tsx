@@ -882,6 +882,7 @@ export default function Thread() {
             borderRadius: 20,
             paddingHorizontal: 14,
             height: 44,
+            writingDirection: "auto",
           }}
         />
         <Pressable
@@ -1069,9 +1070,9 @@ function MessageBubble({
         <Text style={{ color: "#A8A8AD", marginTop: 8, fontSize: 14.5, lineHeight: 21 }}>
           {removed
             ? special.status === "archived"
-              ? "Archived this bot. Its chat, memory, and files are preserved."
-              : "Removed this bot, including its chat, computer, and memory."
-            : special.title || "Opened its own thread. Tap to switch."}
+              ? "Archived. Chat, memory, and files kept."
+              : "Removed with chat, computer, and memory."
+            : special.title || "Opened its thread."}
         </Text>
       </Pressable>
     );
