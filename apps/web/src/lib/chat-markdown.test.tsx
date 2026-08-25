@@ -32,4 +32,14 @@ describe("ChatMarkdown", () => {
     expect(html).toContain("const live = true;");
     expect(html).toContain("rk-chat-markdown-cursor");
   });
+
+  it("renders a copy button alongside each code block", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"```ts\nconst value = 1;\n```"}</ChatMarkdown>,
+    );
+
+    expect(html).toContain("rk-chat-markdown-pre-wrap");
+    expect(html).toContain('aria-label="Copy code"');
+    expect(html).toContain("rk-chat-markdown-copy");
+  });
 });

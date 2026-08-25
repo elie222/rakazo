@@ -2,7 +2,7 @@ name: rakazo-prod
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -23,6 +23,13 @@ services:
       retries: 20
 
   api:
+    # The tag is what the updater moves. `docker compose pull` fetches it, `up -d` recreates onto
+    # it, and the previous tag stays in .env so a rollback is one redeploy rather than a rebuild.
+    #
+    # The default tag is `local`, which no registry serves, so a fresh install builds from the
+    # checkout via `up -d --build` instead of failing on a `pull` of an image that does not exist
+    # yet. Once a release is published, pin RAKAZO_IMAGE_TAG to it and the pull path takes over.
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
@@ -49,7 +56,7 @@ services:
       SANDBOX_PROVIDER: e2b
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
-      GIT_SHA: ${GIT_SHA:-}
+      RAKAZO_UPDATER_URL: http://updater:7092
     expose:
       - "3100"
     volumes:
@@ -57,6 +64,7 @@ services:
     networks:
       - app
       - data
+      - control
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,9 +79,12 @@ services:
       retries: 20
 
   worker:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/worker", "start"]
     init: true
@@ -104,9 +115,12 @@ services:
         condition: service_healthy
 
   web:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     init: true
@@ -130,8 +144,58 @@ services:
       api:
         condition: service_healthy
 
+  # The updater holds the Docker socket, which is root-equivalent on the host, so it is deliberately
+  # the narrowest service here: no `ports` (nothing on the host), only the dedicated `control`
+  # network shared with the API, and no `env_file` — secrets stay in the bind-mounted `.env` that
+  # Compose reads for interpolation, not in this process. Caddy has no route to it. The API reaches
+  # it as http://updater:7092 with the shared token. It is also the one service the update never
+  # recreates, because it is the process performing the update.
+  updater:
+    # Pinned separately from the application image: the updater does not recreate itself, so moving
+    # its own version is an operator action, not something an update can do underneath itself.
+    image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: infra/updater/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+    restart: unless-stopped
+    init: true
+    user: root
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    environment:
+      NODE_ENV: production
+      RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:?Set RAKAZO_UPDATER_TOKEN in .env}
+      RAKAZO_UPDATER_HOST: "0.0.0.0"
+      RAKAZO_UPDATER_PORT: "7092"
+      RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      # `-p` is available to Compose interpolation but is not injected into containers unless it is
+      # declared here. The sidecar must target the project the operator actually started.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}
+      # Must equal the host path it is mounted from, or Compose would derive a different project
+      # name and every relative bind mount in this file would resolve somewhere else.
+      RAKAZO_DEPLOY_DIR: ${RAKAZO_DEPLOY_DIR:?Set RAKAZO_DEPLOY_DIR to the absolute path of this checkout}
+      RAKAZO_COMPOSE_FILE: infra/compose/docker-compose.prod.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${RAKAZO_DEPLOY_DIR:?Set RAKAZO_DEPLOY_DIR to the absolute path of this checkout}:${RAKAZO_DEPLOY_DIR:?Set RAKAZO_DEPLOY_DIR to the absolute path of this checkout}
+    networks:
+      - control
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7092/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   caddy:
-    image: caddy:2
+    image: caddy:2@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d
     restart: unless-stopped
     read_only: true
     security_opt:
@@ -170,5 +234,6 @@ volumes:
 networks:
   edge:
   app:
+  control:
   data:
     internal: true

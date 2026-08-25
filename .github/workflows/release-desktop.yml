@@ -1,0 +1,324 @@
+name: release-desktop
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Stable releases must validate and publish serially. Per-tag concurrency would let an older
+  # release validate before a newer one publishes, then overwrite GitHub's "latest" pointer.
+  group: release-desktop-stable
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate stable release
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag, version, ancestry, and monotonicity
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_REF_TYPE" != "tag" ]]; then
+            echo "Desktop releases must run from a tag, including manual dispatches." >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Desktop releases use the stable vMAJOR.MINOR.PATCH channel." >&2
+            exit 1
+          fi
+
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "Tag $RELEASE_TAG does not match desktop version $version." >&2
+            exit 1
+          fi
+
+          tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "The workflow revision does not match the tagged commit." >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$tag_sha" origin/main; then
+            echo "Desktop releases must point to a commit already on main." >&2
+            exit 1
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "A release already exists for $RELEASE_TAG; refusing to replace it." >&2
+            exit 1
+          fi
+
+          latest_tag="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' |
+              sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' |
+              sort -V |
+              tail -n 1
+          )"
+          if [[ -n "$latest_tag" ]]; then
+            highest="$(printf '%s\n%s\n' "$latest_tag" "$RELEASE_TAG" | sort -V | tail -n 1)"
+            if [[ "$highest" != "$RELEASE_TAG" || "$latest_tag" == "$RELEASE_TAG" ]]; then
+              echo "$RELEASE_TAG must be newer than published release $latest_tag." >&2
+              exit 1
+            fi
+          fi
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build signed ${{ matrix.artifact }} artifacts
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            artifact: macos
+          - os: windows-2022
+            artifact: windows
+          - os: ubuntu-24.04
+            artifact: linux
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Build renderer and Electron main process
+        run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
+        env:
+          RAKAZO_ALLOW_DEV_SECRETS: "1"
+
+      - name: Require macOS signing and notarization credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+      - name: Package signed and notarized universal macOS app
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >-
+          pnpm --filter @rakazo/desktop exec electron-builder
+          --mac --universal --publish never -c.forceCodeSigning=true
+      - name: Verify macOS signature, notarization ticket, and update feed
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="apps/desktop/out/mac-universal/Rakazo.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
+          grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
+          grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
+
+      - name: Require Windows signing credentials
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$WIN_CSC_LINK"
+          test -n "$WIN_CSC_KEY_PASSWORD"
+      - name: Package signed x64 Windows app
+        if: runner.os == 'Windows'
+        env:
+          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
+        run: >-
+          pnpm --filter @rakazo/desktop exec electron-builder
+          --win --x64 --publish never -c.forceCodeSigning=true
+      - name: Verify Windows Authenticode signature and publisher-bound update feed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $executables = @(
+            Get-ChildItem "apps/desktop/out/*.exe"
+            Get-ChildItem "apps/desktop/out/win-unpacked/*.exe"
+          )
+          if ($executables.Count -lt 2) { throw "Windows installer or application was not created." }
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($executable.Name) signature is $($signature.Status)."
+            }
+          }
+          $config = "apps/desktop/out/win-unpacked/resources/app-update.yml"
+          if (-not (Select-String -Path $config -Pattern '^publisherName:' -Quiet)) {
+            throw "Windows update config is not bound to the signing publisher."
+          }
+          $feed = Get-Content -Raw $config
+          foreach ($expected in @("provider: github", "owner: elie222", "repo: rakazo")) {
+            if ($feed -notmatch "(?m)^$([regex]::Escape($expected))\r?$") {
+              throw "Windows update config missing '$expected'."
+            }
+          }
+
+      - name: Package x64 Linux AppImage
+        if: runner.os == 'Linux'
+        run: >-
+          pnpm --filter @rakazo/desktop exec electron-builder
+          --linux --x64 --publish never
+      - name: Verify Linux update feed is pinned to the official GitHub channel
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          config="apps/desktop/out/linux-unpacked/resources/app-update.yml"
+          if [[ ! -f "$config" ]]; then
+            config="$(find apps/desktop/out -name app-update.yml -print -quit)"
+          fi
+          test -n "$config"
+          test -f "$config"
+          grep -Fqx "provider: github" "$config"
+          grep -Fqx "owner: elie222" "$config"
+          grep -Fqx "repo: rakazo" "$config"
+          test -f apps/desktop/out/latest-linux.yml
+          grep -Fqx "version: $RELEASE_VERSION" apps/desktop/out/latest-linux.yml
+
+      - name: Retain installers and updater metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-${{ matrix.artifact }}-${{ needs.validate.outputs.sha }}
+          path: |
+            apps/desktop/out/*.AppImage
+            apps/desktop/out/*.blockmap
+            apps/desktop/out/*.dmg
+            apps/desktop/out/*.exe
+            apps/desktop/out/latest*.yml
+            apps/desktop/out/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Attest and publish complete release
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-*-${{ needs.validate.outputs.sha }}
+          path: release-artifacts
+          merge-multiple: true
+      - name: Verify the complete stable update feed
+        env:
+          RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          if [[ "$(git rev-parse "${RELEASE_TAG}^{commit}")" != "$RELEASE_SHA" ]]; then
+            echo "The release tag moved after the build started." >&2
+            exit 1
+          fi
+
+          test -f release-artifacts/latest.yml
+          test -f release-artifacts/latest-mac.yml
+          test -f release-artifacts/latest-linux.yml
+          compgen -G 'release-artifacts/*.dmg' >/dev/null
+          compgen -G 'release-artifacts/*.zip' >/dev/null
+          compgen -G 'release-artifacts/*.exe' >/dev/null
+          compgen -G 'release-artifacts/*.AppImage' >/dev/null
+          feeds=(
+            release-artifacts/latest.yml
+            release-artifacts/latest-mac.yml
+            release-artifacts/latest-linux.yml
+          )
+          for feed in "${feeds[@]}"; do
+            grep -Fqx "version: $RELEASE_VERSION" "$feed"
+          done
+
+          (
+            cd release-artifacts
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 |
+              sort -z |
+              xargs -0 sha256sum > SHA256SUMS
+          )
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release-artifacts/*
+      - name: Create draft and upload every platform
+        id: create_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: >-
+          gh release create "$RELEASE_TAG" release-artifacts/*
+          --draft --generate-notes --title "Rakazo $RELEASE_TAG" --verify-tag
+      - name: Publish the completed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Remove an incomplete draft
+        if: failure() && steps.create_release.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        shell: bash
+        run: |
+          if [[ "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq .draft 2>/dev/null)" == "true" ]]; then
+            gh release delete "$RELEASE_TAG" --yes
+          fi

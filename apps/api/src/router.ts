@@ -93,7 +93,11 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
-import { toComputerStatus } from "./computer-status.js";
+import {
+  executionBlocksUserTakeover,
+  resolveBusyBotName,
+  toComputerStatus,
+} from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -1102,23 +1106,29 @@ export function createRouter(deps: RouterDeps) {
         const executionLease = await deps.prisma.computerExecutionLease.findUnique({
           where: { computerId_botId: { computerId: bot.computer.id, botId: bot.id } },
         });
-        const executionLeaseActive = Boolean(
-          executionLease && executionLease.expiresAt.getTime() > Date.now(),
-        );
         const executionRun = executionLease
           ? await deps.prisma.run.findUnique({
               where: { id: executionLease.runId },
               select: { botId: true, status: true },
             })
           : null;
+        const waitingForTakeover =
+          executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+        if (
+          executionBlocksUserTakeover({
+            hasLease: Boolean(executionLease),
+            leaseExpiresAt: executionLease?.expiresAt,
+            runStatus: executionRun?.status,
+          })
+        ) {
+          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+        }
+        const executionLeaseActive = Boolean(
+          executionLease && executionLease.expiresAt.getTime() > Date.now(),
+        );
         const executionRunActive = Boolean(
           executionRun && ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status),
         );
-        const waitingForTakeover =
-          executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
-        if (executionLease && !waitingForTakeover && (executionLeaseActive || executionRunActive)) {
-          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
-        }
         if (executionLease && !executionLeaseActive && !executionRunActive) {
           await deps.prisma.computerExecutionLease.deleteMany({
             where: { id: executionLease.id },
@@ -2710,7 +2720,12 @@ async function computerStatus(
   if (await expireStaleComputerControl(deps, bot.computer)) {
     bot = await repos.getBot(actor, botId);
   }
-  return toComputerStatus(botId, bot.computer);
+  const busyBotName = await resolveBusyBotName(deps.prisma, {
+    computerId: bot.computer?.id,
+    botId,
+    botName: bot.name,
+  });
+  return toComputerStatus(botId, bot.computer, busyBotName);
 }
 
 async function expireStaleComputerControl(

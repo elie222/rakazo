@@ -15,16 +15,9 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  cancelModelOAuthAttempt,
-  finishModelOAuthAttempt,
-  type ModelCatalogEntry,
-  type ModelCredential,
-  type ModelOAuthBegin,
-  providerHint,
-  waitForModelOAuth,
-} from "../lib/model-auth";
+import { type ModelCatalogEntry, type ModelCredential, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
+import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
 export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -38,32 +31,33 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
-  const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
-  const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
-  const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
-  const oauthAbortRef = useRef<AbortController | null>(null);
-  const oauthLoginIdRef = useRef<string | null>(null);
-  const oauthCodeSubmittingRef = useRef(false);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
   const probeRequestIdRef = useRef(0);
+  const selectedLabelRef = useRef<string | undefined>(undefined);
 
-  function cancelOAuthAttempt(resetState = true) {
-    const loginId = oauthLoginIdRef.current;
-    oauthLoginIdRef.current = null;
-    cancelModelOAuthAttempt(oauthAbortRef, () => {
-      if (resetState) {
-        setOauth(null);
-        setOauthPending(false);
-      }
-    });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-  }
+  const {
+    oauth,
+    pasteCode,
+    setPasteCode,
+    oauthPending,
+    cancelOAuthAttempt,
+    startSubscriptionSignIn,
+    submitOAuthCode,
+  } = useModelOAuthSignIn({
+    onClearError: () => setError(null),
+    onError: setError,
+    onFinished: async (controller) => {
+      await refresh();
+      if (controller.signal.aborted) return;
+      setNotice(`Connected and using ${selectedLabelRef.current ?? "this model"}.`);
+    },
+  });
 
   async function refresh() {
     const refreshRevision = ++refreshRevisionRef.current;
@@ -113,7 +107,6 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     return () => {
       refreshRevisionRef.current += 1;
       probeRequestIdRef.current += 1;
-      cancelOAuthAttempt(false);
     };
   }, []);
 
@@ -142,6 +135,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }, [groups, providerQuery]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  selectedLabelRef.current = selected?.label;
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
@@ -283,95 +277,19 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal);
-    if (controller.signal.aborted) return;
-    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
-    if (controller.signal.aborted) return;
-    oauthLoginIdRef.current = null;
-    setOauth(null);
-    await refresh();
-    if (controller.signal.aborted) return;
-    setNotice(`Connected and using ${selected?.label ?? "this model"}.`);
-  }
-
-  async function startSubscriptionSignIn() {
-    if (!selected) return;
-    setError(null);
-    setNotice(null);
-    setOauthPending(true);
-    const controller = new AbortController();
-    oauthAbortRef.current = controller;
-    let waitingForCode = false;
-    try {
-      const started = await rpc.models.beginOAuth(
-        {
-          provider: selected.provider,
-          modelId: selected.id,
-          label: selected.providerName ?? selected.provider,
-        },
-        { signal: controller.signal },
-      );
-      if (controller.signal.aborted) return;
-      oauthLoginIdRef.current = started.loginId;
-      setPasteCode("");
-      setOauth(started);
-      window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      const loginId = oauthLoginIdRef.current;
-      oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
-      setOauth(null);
-    } finally {
-      if (!waitingForCode) {
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
-      }
-    }
-  }
-
-  async function submitOAuthCode() {
-    if (oauth?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
-    const controller = oauthAbortRef.current;
-    const code = pasteCode.trim();
-    if (!controller || !code) return;
-    oauthCodeSubmittingRef.current = true;
-    setPasteCode("");
-    setError(null);
-    let submitted = false;
-    let retryable = false;
-    try {
-      await rpc.models.submitOAuthCode(
-        { loginId: oauth.loginId, code },
-        { signal: controller.signal },
-      );
-      submitted = true;
-      await finishSubscriptionSignIn(oauth.loginId, controller);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      if (submitted) {
-        oauthLoginIdRef.current = null;
-        setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: oauth.loginId }).catch(() => undefined);
-      } else {
-        retryable = true;
-        setPasteCode(code);
-      }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
-    } finally {
-      oauthCodeSubmittingRef.current = false;
-      if (!retryable) {
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
-      }
-    }
-  }
-
   function handleClose() {
     cancelOAuthAttempt(false);
     onClose();
+  }
+
+  function beginSelectedSubscriptionSignIn() {
+    if (!selected) return;
+    setNotice(null);
+    void startSubscriptionSignIn({
+      provider: selected.provider,
+      modelId: selected.id,
+      label: selected.providerName ?? selected.provider,
+    });
   }
 
   return (
@@ -648,7 +566,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         variant="outline"
                         size="sm"
                         disabled={busy}
-                        onClick={() => void startSubscriptionSignIn()}
+                        onClick={() => beginSelectedSubscriptionSignIn()}
                       >
                         {oauthPending ? "Starting…" : (selected.oauthLabel ?? "Sign in")}
                       </Button>

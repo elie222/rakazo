@@ -1,0 +1,134 @@
+name: publish-server-image
+
+# Release tags publish the source-addressed image used by in-app updates plus the human-readable
+# semver tags. Main publishes `edge`. Pull requests build with a read-only token and an isolated
+# cache, so untrusted code can validate the images without receiving package-publish authority.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/publish-server-image.yml"
+      - "apps/**"
+      - "infra/compose/**"
+      - "infra/updater/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # docker/metadata-action otherwise truncates commit tags to seven collision-prone characters.
+  DOCKER_METADATA_SHORT_SHA_LENGTH: 40
+
+concurrency:
+  group: publish-server-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate ${{ matrix.name }} image
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: app
+            dockerfile: infra/compose/Dockerfile
+          - name: updater
+            dockerfile: infra/updater/Dockerfile
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          tags: type=sha,prefix=sha-
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
+          provenance: false
+          sbom: false
+
+  publish:
+    name: Publish ${{ matrix.name }} image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only the updater image contains the Docker CLI; the application image stays unprivileged.
+          - name: app
+            dockerfile: infra/compose/Dockerfile
+          - name: updater
+            dockerfile: infra/updater/Dockerfile
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          # A fork can publish only to its own namespace; no credential can redirect this value.
+          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GET /health can report the exact source commit without a deployment-supplied override.
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: mode=max
+          sbom: true
+      - name: Attest the published image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

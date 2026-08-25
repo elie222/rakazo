@@ -1,0 +1,25 @@
+{
+  "name": "@rakazo/updater",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. infra/updater/src"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.1",
+    "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
+    "hono": "^4.9.6",
+    "tsx": "^4.20.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10",
+    "yaml": "^2.8.3"
+  }
+}

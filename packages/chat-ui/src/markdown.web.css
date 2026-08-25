@@ -116,6 +116,43 @@
   white-space: pre;
 }
 
+.rk-chat-markdown-pre-wrap {
+  position: relative;
+  margin: 0.65em 0;
+}
+
+.rk-chat-markdown .rk-chat-markdown-pre-wrap pre {
+  margin: 0;
+}
+
+.rk-chat-markdown-copy {
+  position: absolute;
+  top: 0.5em;
+  right: 0.5em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75em;
+  height: 1.75em;
+  border: 1px solid #34343a;
+  border-radius: 0.4em;
+  background: #17171a;
+  color: #b8b8bd;
+  opacity: 0;
+  transition: opacity 0.12s;
+  cursor: pointer;
+}
+
+.rk-chat-markdown-pre-wrap:hover .rk-chat-markdown-copy,
+.rk-chat-markdown-copy:focus-visible {
+  opacity: 1;
+}
+
+.rk-chat-markdown-copy:hover {
+  background: #202024;
+  color: #f3f3f4;
+}
+
 .rk-chat-markdown blockquote {
   border-left: 3px solid #55555c;
   padding-left: 0.85em;
