@@ -876,6 +876,16 @@ function MessageBubble({
     return (
       <Pressable
         onPress={() => setPeerExpanded((expanded) => !expanded)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          sent
+            ? peerExpanded
+              ? `Hide message to ${peer}`
+              : `Show message to ${peer}`
+            : peerExpanded
+              ? `Hide message from ${peer}`
+              : `Show message from ${peer}`
+        }
         style={{ paddingVertical: 4 }}
       >
         <Text style={{ color: "#85858A", fontSize: 13.5, textAlign: "center" }}>

@@ -188,6 +188,7 @@ export function ShellPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [peerMessagesOpen, setPeerMessagesOpen] = useState(false);
+  const [peerMessagesFocusId, setPeerMessagesFocusId] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
@@ -1680,7 +1681,10 @@ export function ShellPage() {
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
-          onOpenPeerMessages={() => setPeerMessagesOpen(true)}
+          onOpenPeerMessages={(peerBotId) => {
+            setPeerMessagesFocusId(peerBotId);
+            setPeerMessagesOpen(true);
+          }}
           memberName={resolveTranscriptMemberName}
           onRefresh={refreshActiveThread}
           onBotChanged={refreshBots}
@@ -2256,7 +2260,11 @@ export function ShellPage() {
           <PeerMessagesOverlay
             botName={active?.name ?? "This bot"}
             messages={activeSnapshot?.messages ?? []}
-            onClose={() => setPeerMessagesOpen(false)}
+            initialPeerBotId={peerMessagesFocusId}
+            onClose={() => {
+              setPeerMessagesOpen(false);
+              setPeerMessagesFocusId(null);
+            }}
           />
         ) : null}
         {voiceOpen ? (
@@ -2431,7 +2439,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
-  onOpenPeerMessages: () => void;
+  onOpenPeerMessages: (peerBotId: string) => void;
   memberName?: (botId: string | undefined) => string | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
@@ -2880,7 +2888,7 @@ const MessageView = memo(function MessageView({
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
-  onOpenPeerMessages: () => void;
+  onOpenPeerMessages: (peerBotId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   replyPreview?: ThreadMessage;
@@ -2982,15 +2990,18 @@ const MessageView = memo(function MessageView({
         if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
           const sent = block.kind === "bot_message_sent";
           const peer = sent ? block.toBotName : block.fromBotName;
+          const peerBotId = sent ? block.toBotId : block.fromBotId;
+          const label = sent ? `Messaged ${peer}` : `Message from ${peer}`;
           return (
             <button
               key={i}
               type="button"
-              onClick={onOpenPeerMessages}
+              aria-label={label}
+              onClick={() => onOpenPeerMessages(peerBotId)}
               className="flex items-center justify-center gap-2 self-center rounded-full border border-[#26262A] px-3 py-1 text-[13px] text-[#85858A] hover:bg-[#161618]"
             >
-              <span>↔</span>
-              <span>{sent ? `Messaged ${peer}` : `Message from ${peer}`}</span>
+              <span aria-hidden>↔</span>
+              <span>{label}</span>
             </button>
           );
         }
