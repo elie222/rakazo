@@ -199,7 +199,7 @@ export function markdownResponse(
       "Cache-Control": "public, max-age=0, must-revalidate",
       "Content-Language": "en",
       "Content-Type": "text/markdown; charset=utf-8",
-      Link: '<https://rakazo.com/llms.txt>; rel="describedby"; type="text/plain"',
+      Link: '</llms.txt>; rel="describedby"; type="text/plain"',
       Vary: "Accept, Accept-Encoding",
     },
   });

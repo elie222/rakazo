@@ -36,6 +36,8 @@ describe("agent content negotiation", () => {
     expect(getMarkdownAlternate("/")).toBe("/index.md");
     expect(getMarkdownAlternate("/support/")).toBe("/support.md");
     expect(getMarkdownDocument("/missing")).toBeUndefined();
+    expect(getMarkdownAlternate("/missing")).toBeUndefined();
+    expect(getMarkdownAlternate("/changelog")).toBeUndefined();
   });
 
   it("publishes specific when-to-use instructions for agents", () => {
@@ -48,6 +50,9 @@ describe("agent content negotiation", () => {
     const response = markdownResponse("# Rakazo\n");
     expect(response.headers.get("content-type")).toBe(
       "text/markdown; charset=utf-8",
+    );
+    expect(response.headers.get("link")).toBe(
+      '</llms.txt>; rel="describedby"; type="text/plain"',
     );
     expect(response.headers.get("vary")).toBe("Accept, Accept-Encoding");
     await expect(response.text()).resolves.toBe("# Rakazo\n");
