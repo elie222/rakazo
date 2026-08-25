@@ -1641,12 +1641,19 @@ export function ShellPage() {
   }, [computerOpen]);
 
   useEffect(() => {
-    if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
-    const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
+    if (panel !== "computer" && !computerOpen) return;
+    // While peeking, keep the *target* computer awake — heartbeats otherwise only
+    // touch the active bot, so a long-lived peek of an idle dedicated/team machine
+    // would still hit the sleep job and drop the preview.
+    const heartbeatBotId = peekTarget?.id ?? active?.id;
+    if (!heartbeatBotId) return;
+    if (!peekTarget && computer?.state !== "running") return;
+    const ping = () =>
+      void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch(() => undefined);
     ping();
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);
-  }, [panel, computerOpen, active?.id, computer?.state]);
+  }, [panel, computerOpen, active?.id, computer?.state, peekTarget?.id]);
 
   async function openComputer() {
     if (!active) return;
