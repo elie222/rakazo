@@ -947,10 +947,12 @@ export function ShellPage() {
     if (inGroup) {
       if (!groupId || !snapshot || snapshot.groupId !== groupId) return;
       if (initiallyScrolledThread.current === snapshot.threadId) return;
+      if (expandedHistoryThread.current === snapshot.threadId) return;
       if (pin?.groupId === groupId) return;
     } else {
       if (!active || !snapshot || snapshot.botId !== active.id) return;
       if (initiallyScrolledThread.current === snapshot.threadId) return;
+      if (expandedHistoryThread.current === snapshot.threadId) return;
       if (pin?.botId === active.id) return;
     }
     const element = messageScroll.current;

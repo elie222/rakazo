@@ -3,6 +3,7 @@ import { extractLinksFromText, matchesSearchQuery, snippetAroundMatch } from "@r
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
+const CONVERSATION_HIT_LIMIT = 5;
 
 export async function queryWorkspaceSearch(
   prisma: PrismaClient,
@@ -43,7 +44,7 @@ export async function queryWorkspaceSearch(
     },
     take: SEARCH_LIMIT,
   });
-  for (const bot of bots) {
+  for (const bot of bots.slice(0, CONVERSATION_HIT_LIMIT)) {
     push({
       kind: "conversation",
       botId: bot.id,
@@ -238,7 +239,7 @@ export async function queryWorkspaceSearch(
     });
   }
 
-  for (const hit of groupConversationHits) {
+  for (const hit of groupConversationHits.slice(0, CONVERSATION_HIT_LIMIT)) {
     push(hit);
   }
 
