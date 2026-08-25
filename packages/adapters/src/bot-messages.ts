@@ -76,6 +76,12 @@ export async function messageBot(
 
   const targetThreadId = target.thread.id;
   const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message });
+  const outboundBlock: MessageBlock = {
+    kind: "bot_message_sent",
+    toBotId: target.id,
+    toBotName: target.name,
+    text: message,
+  };
   const committed = await deps.prisma.$transaction(async (tx) => {
     const senderStillRunning = await tx.run.findFirst({
       where: {
@@ -105,6 +111,15 @@ export async function messageBot(
       role: "user",
       blocks: [inboundBlock],
     });
+    // Echo into the sender's chat in the same transaction so a failed notify
+    // cannot leave one side delivered and the other blank.
+    const outbound = await createThreadMessageInTransaction(tx, {
+      threadId: run.threadId,
+      role: "bot",
+      blocks: [outboundBlock],
+      botId: run.botId,
+      runId: run.id,
+    });
     const task = await tx.task.create({
       data: {
         workspaceId: run.workspaceId,
@@ -129,7 +144,7 @@ export async function messageBot(
       select: { id: true },
     });
     await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
-    const event = await appendEventInTransaction(tx, {
+    const inboundEvent = await appendEventInTransaction(tx, {
       workspaceId: run.workspaceId,
       threadId: targetThreadId,
       botId: target.id,
@@ -137,12 +152,28 @@ export async function messageBot(
       runId: nextRun.id,
       payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
     });
-    return { ok: true as const, runId: nextRun.id, eventSeq: event.seq };
+    const outboundEvent = await appendEventInTransaction(tx, {
+      workspaceId: run.workspaceId,
+      threadId: run.threadId,
+      botId: run.botId,
+      type: "thread.message.created",
+      runId: run.id,
+      payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
+    });
+    return {
+      ok: true as const,
+      runId: nextRun.id,
+      targetEventSeq: inboundEvent.seq,
+      senderEventSeq: outboundEvent.seq,
+    };
   });
   if (!committed.ok) return committed;
 
-  await deps.events.notify(targetThreadId, committed.eventSeq).catch((error) => {
+  await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
     console.error("bot message realtime notification", error);
+  });
+  await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
+    console.error("bot message sender echo notification", error);
   });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     // The queued run is durable; the job reconciler repairs a missed wake.

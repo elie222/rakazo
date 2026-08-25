@@ -87,6 +87,8 @@ describe("messaging another bot", () => {
       }),
     );
     expect(harness.notify).toHaveBeenCalledWith("thread-target", 7);
+    expect(harness.notify).toHaveBeenCalledWith("thread-sender", 7);
+    expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 

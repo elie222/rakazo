@@ -1430,31 +1430,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               {
                 bot_id: args.bot_id ? String(args.bot_id) : undefined,
                 confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
-                message: String(args.message ?? ""),
+                message: redactSecrets(String(args.message ?? ""), runSecrets),
               },
             );
             if (!sent.ok) return finish({ error: sent.error });
-            try {
-              // Echo into the sender's own chat so the user can see what it said.
-              await publishMessage(
-                deps,
-                run,
-                "bot",
-                redactBlocks(
-                  [
-                    {
-                      kind: "bot_message_sent",
-                      toBotId: sent.botId,
-                      toBotName: sent.name,
-                      text: sent.delivered,
-                    },
-                  ],
-                  runSecrets,
-                ),
-              );
-            } catch (error) {
-              console.error("bot message echo", error);
-            }
             return finish({ ok: true, botId: sent.botId, name: sent.name, note: sent.note });
           }
           if (name === "handoff_to_bot") {

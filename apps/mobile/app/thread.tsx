@@ -885,7 +885,7 @@ function MessageBubble({
         <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 4 }}>
           {sent ? `→ ${peer}` : `← ${peer}`}
         </Text>
-        <Text style={{ color: "#DFDFE2", fontSize: 15.5, lineHeight: 23 }}>{peerMessage.text}</Text>
+        <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
       </View>
     );
   }
