@@ -135,10 +135,6 @@ app.post("/computers", async (c) => {
     const screenUrl = await publishedScreenUrl(container);
     return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
   } catch (error) {
-    if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
-      const leftover = await findBotContainer(body.botId, body.workspaceId).catch(() => undefined);
-      if (!leftover) await removeBotNetwork(body.botId);
-    }
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: message }, 500);
   }
@@ -637,7 +633,7 @@ export async function waitForScreenReady(host: string, port: number, timeoutMs: 
       const req = http.get({ host, port, path: "/embed.html", timeout: 1_500 }, (res) => {
         res.resume();
         const status = res.statusCode ?? 0;
-        resolve(status >= 200 && status < 400);
+        resolve(status >= 200 && status < 300);
       });
       req.once("timeout", () => {
         req.destroy();
