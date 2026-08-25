@@ -2,40 +2,122 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { peerConversations } from "../lib/peer-messages";
+import { rpc } from "../lib/rpc";
+
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Bot-to-bot traffic lives here rather than in the thread: it is the bots
  * working, not the conversation the user is having.
  */
 export function PeerMessagesOverlay({
+  botId,
   botName,
-  messages,
+  messages: initialMessages,
+  olderCursor: initialOlderCursor,
   initialPeerBotId,
   onClose,
 }: {
+  botId: string;
   botName: string;
   messages: readonly ThreadMessage[];
+  olderCursor: number | null;
   initialPeerBotId?: string | null;
   onClose: () => void;
 }) {
-  const conversations = useMemo(() => peerConversations(messages), [messages]);
+  const [messages, setMessages] = useState<readonly ThreadMessage[]>(initialMessages);
+  const [historyReady, setHistoryReady] = useState(initialOlderCursor == null);
   const [selectedId, setSelectedId] = useState<string | null>(initialPeerBotId ?? null);
+  const conversations = useMemo(
+    () => (historyReady ? peerConversations(messages) : []),
+    [historyReady, messages],
+  );
   const selected =
     conversations.find((conversation) => conversation.peerBotId === selectedId) ?? conversations[0];
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // Overlay remounts each time it opens; page older history once from that snapshot.
+  const loadRef = useRef({ botId, initialMessages, initialOlderCursor });
+
+  useEffect(() => {
+    let cancelled = false;
+    const { botId: id, initialMessages: seed, initialOlderCursor: older } = loadRef.current;
+    if (older == null) {
+      setMessages(seed);
+      setHistoryReady(true);
+      return;
+    }
+    setHistoryReady(false);
+    void (async () => {
+      let before: number | null = older;
+      let collected: ThreadMessage[] = [...seed];
+      while (before != null) {
+        const page = await rpc.threads.messages({ botId: id, before });
+        if (cancelled) return;
+        collected = [...page.messages, ...collected];
+        before = page.olderCursor;
+      }
+      if (cancelled) return;
+      setMessages(collected);
+      setHistoryReady(true);
+    })().catch(() => {
+      if (cancelled) return;
+      // Fall back to whatever the thread already has rather than claiming none.
+      setMessages(seed);
+      setHistoryReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const shell = document.querySelector<HTMLElement>('[data-testid="shell-root"]');
+    const inerted: HTMLElement[] = [];
+    if (shell) {
+      for (const child of Array.from(shell.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        // Skip our host (and do nothing if the panel ref is not ready yet).
+        if (!panelRef.current || child.contains(panelRef.current)) continue;
+        if (child.inert) continue;
+        child.inert = true;
+        inerted.push(child);
+      }
+    }
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCloseRef.current();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     panelRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      for (const element of inerted) element.inert = false;
       previousFocus?.focus();
     };
   }, []);
@@ -56,11 +138,13 @@ export function PeerMessagesOverlay({
               Bot messages
             </div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {conversations.length === 0
-                ? `${botName} has not messaged another bot yet.`
-                : `${botName} · ${conversations.length} ${
-                    conversations.length === 1 ? "peer" : "peers"
-                  }`}
+              {!historyReady
+                ? "Loading peer messages…"
+                : conversations.length === 0
+                  ? `${botName} has not messaged another bot yet.`
+                  : `${botName} · ${conversations.length} ${
+                      conversations.length === 1 ? "peer" : "peers"
+                    }`}
             </p>
           </div>
           <button
@@ -73,7 +157,11 @@ export function PeerMessagesOverlay({
           </button>
         </div>
 
-        {conversations.length === 0 ? (
+        {!historyReady ? (
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
+            Loading peer messages…
+          </div>
+        ) : conversations.length === 0 ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
             When {botName} messages another bot, the exchange shows up here instead of in the chat.
           </div>

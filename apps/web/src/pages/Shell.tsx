@@ -2256,10 +2256,12 @@ export function ShellPage() {
           />
         ) : null}
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
-        {peerMessagesOpen ? (
+        {peerMessagesOpen && active ? (
           <PeerMessagesOverlay
-            botName={active?.name ?? "This bot"}
+            botId={active.id}
+            botName={active.name}
             messages={activeSnapshot?.messages ?? []}
+            olderCursor={activeSnapshot?.olderCursor ?? null}
             initialPeerBotId={peerMessagesFocusId}
             onClose={() => {
               setPeerMessagesOpen(false);

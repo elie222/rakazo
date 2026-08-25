@@ -20,10 +20,19 @@ function deps(
     senderRunning?: boolean;
     alreadyDelivered?: unknown;
     targetArchived?: boolean;
+    /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
+    uniqueConflictOnCommit?: boolean;
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
   const notify = vi.fn().mockResolvedValue(undefined);
+  const messageFindUnique = vi
+    .fn()
+    .mockImplementation(async (args: { where?: { threadId_clientNonce?: unknown } }) =>
+      args?.where?.threadId_clientNonce
+        ? (options.alreadyDelivered ?? null)
+        : { blocks: options.hopBlocks ?? [] },
+    );
   const tx = {
     run: {
       findFirst: vi
@@ -37,6 +46,7 @@ function deps(
     },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
+      findUnique: messageFindUnique,
       create: vi.fn().mockResolvedValue({ id: "message-1", seq: 1 }),
       update: vi.fn().mockResolvedValue({}),
     },
@@ -53,16 +63,13 @@ function deps(
           ],
         ),
     },
-    message: {
-      findUnique: vi
-        .fn()
-        .mockImplementation(async (args: { where?: { threadId_clientNonce?: unknown } }) =>
-          args?.where?.threadId_clientNonce
-            ? (options.alreadyDelivered ?? null)
-            : { blocks: options.hopBlocks ?? [] },
-        ),
-    },
-    $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
+    message: { findUnique: messageFindUnique },
+    $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
+      if (options.uniqueConflictOnCommit) {
+        throw Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      }
+      return fn(tx);
+    }),
   } as unknown as PrismaClient;
   return {
     deps: { prisma, events: { notify }, jobs: { enqueue } } as unknown as Pick<
@@ -260,5 +267,23 @@ describe("hardening", () => {
     expect(sent).toMatchObject({ ok: false });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
     expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("treats a delivery-key unique conflict as a replay", async () => {
+    const harness = deps({ uniqueConflictOnCommit: true });
+    // After both retries miss and the loser hits P2002, the winner is visible.
+    (harness.deps.prisma.message.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "message-winner",
+    });
+
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+      deliveryKey: "call-1",
+    });
+
+    expect(sent).toMatchObject({ ok: true, replayed: true, botId: "bot-target" });
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.notify).not.toHaveBeenCalled();
   });
 });
