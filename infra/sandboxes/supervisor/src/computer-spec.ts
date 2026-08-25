@@ -101,6 +101,31 @@ export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
 }
 
+/**
+ * Decide which host:port clients (and readiness probes) should use.
+ *
+ * Per-bot NetworkMode isolation must not change this: a container always has a
+ * docker-internal IP on its network, but browsers cannot load that 172.x
+ * address. Only the internal compose topology may return the container IP;
+ * the default topology must keep using the published host mapping.
+ */
+export function resolveScreenPublishTarget(input: {
+  screenNetwork: string | undefined;
+  networkMode: string | null | undefined;
+  networks: Record<string, { IPAddress?: string } | undefined> | null | undefined;
+  hostPort: string | undefined;
+  containerPort: string;
+  screenHost?: string;
+}): { host: string; port: string } | undefined {
+  if (input.screenNetwork === "internal") {
+    const address = input.networkMode ? input.networks?.[input.networkMode]?.IPAddress : undefined;
+    if (address) return { host: address, port: input.containerPort };
+    return undefined;
+  }
+  if (input.hostPort) return { host: input.screenHost ?? SCREEN_HOST, port: input.hostPort };
+  return undefined;
+}
+
 export function xdotoolCommand(input: SandboxInput): string[] {
   if (input.kind === "key") {
     const key = mapKey(input.key);

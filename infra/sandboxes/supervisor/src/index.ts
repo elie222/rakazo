@@ -15,6 +15,7 @@ import {
   computerNetworkNameFor,
   containerCreateOptions,
   containerNameFor,
+  resolveScreenPublishTarget,
   SCREEN_HOST,
   screenPorts,
   screenUrlFor,
@@ -652,30 +653,22 @@ async function publishedScreenUrl(
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
-    if (process.env.SANDBOX_SCREEN_NETWORK === "internal") {
-      const networkMode = info.HostConfig.NetworkMode;
-      const address = networkMode
-        ? info.NetworkSettings?.Networks?.[networkMode]?.IPAddress
-        : undefined;
-      if (address) {
-        const ready = await waitForScreenReady(
-          address,
-          Number(containerPort),
-          SCREEN_READY_TIMEOUT_MS,
-        );
-        if (!ready) throw new Error("computer screen did not become ready in time");
-        return screenUrlFor(containerPort, address);
-      }
-    }
-    const hostPort = info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort;
-    if (hostPort) {
+    const target = resolveScreenPublishTarget({
+      screenNetwork: process.env.SANDBOX_SCREEN_NETWORK,
+      networkMode: info.HostConfig.NetworkMode,
+      networks: info.NetworkSettings?.Networks,
+      hostPort: info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort,
+      containerPort,
+      screenHost: SCREEN_HOST,
+    });
+    if (target) {
       const ready = await waitForScreenReady(
-        SCREEN_HOST,
-        Number(hostPort),
+        target.host,
+        Number(target.port),
         SCREEN_READY_TIMEOUT_MS,
       );
       if (!ready) throw new Error("computer screen did not become ready in time");
-      return screenUrlFor(hostPort);
+      return screenUrlFor(target.port, target.host);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
