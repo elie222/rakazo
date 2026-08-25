@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { onDesktopOAuthCallback } from "../lib/desktop";
+import { oauthStateOf, onDesktopOAuthCallback } from "../lib/desktop";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
@@ -50,11 +50,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
+  const oauthCaptureRef = useRef<(() => void) | null>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
   const probeRequestIdRef = useRef(0);
 
+  function releaseOAuthCapture() {
+    oauthCaptureRef.current?.();
+    oauthCaptureRef.current = null;
+  }
+
   function cancelOAuthAttempt(resetState = true) {
+    releaseOAuthCapture();
     const loginId = oauthLoginIdRef.current;
     oauthLoginIdRef.current = null;
     cancelModelOAuthAttempt(oauthAbortRef, () => {
@@ -317,6 +324,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
+      if (started.mode === "auth-url") {
+        // Subscribe before the popup exists: a provider that is already
+        // authorized can redirect before React commits the state above.
+        releaseOAuthCapture();
+        oauthCaptureRef.current = onDesktopOAuthCallback(
+          (code) => void submitOAuthCode(code, started),
+          oauthStateOf(started.verificationUri),
+        );
+      }
       window.open(started.verificationUri, "_blank", "noopener,noreferrer");
       waitingForCode = started.mode === "auth-url";
       if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
@@ -334,13 +350,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
-  useEffect(() => {
-    if (oauth?.mode !== "auth-url") return;
-    return onDesktopOAuthCallback((code) => void submitOAuthCode(code));
-  }, [oauth]);
+  useEffect(() => releaseOAuthCapture, []);
 
-  async function submitOAuthCode(captured?: string) {
-    if (oauth?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
+  async function submitOAuthCode(captured?: string, login?: ModelOAuthBegin) {
+    const attempt = login ?? oauth;
+    if (attempt?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
     const controller = oauthAbortRef.current;
     const code = (captured ?? pasteCode).trim();
     if (!controller || !code) return;
@@ -351,17 +365,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     let retryable = false;
     try {
       await rpc.models.submitOAuthCode(
-        { loginId: oauth.loginId, code },
+        { loginId: attempt.loginId, code },
         { signal: controller.signal },
       );
       submitted = true;
-      await finishSubscriptionSignIn(oauth.loginId, controller);
+      await finishSubscriptionSignIn(attempt.loginId, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: oauth.loginId }).catch(() => undefined);
+        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
       } else {
         retryable = true;
         setPasteCode(code);
@@ -370,6 +384,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
+        releaseOAuthCapture();
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }
     }

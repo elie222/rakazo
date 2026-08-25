@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { desktopOAuthCode, type RakazoDesktop, windowChromeKind } from "./desktop.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  desktopOAuthCode,
+  oauthStateOf,
+  onDesktopOAuthCallback,
+  type RakazoDesktop,
+  type RakazoDesktopOAuthCallback,
+  windowChromeKind,
+} from "./desktop.js";
 
 function desktop(platform: string): RakazoDesktop {
   return {
@@ -47,5 +54,62 @@ describe("captured OAuth callbacks", () => {
 
   it("sends a bare code when the provider redirects without state", () => {
     expect(desktopOAuthCode({ code: "ac_123" })).toBe("ac_123");
+  });
+});
+
+describe("attempt correlation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function bridgeEmitting() {
+    let emit: (callback: RakazoDesktopOAuthCallback) => void = () => undefined;
+    const unsubscribe = vi.fn();
+    vi.stubGlobal("window", {
+      rakazoDesktop: {
+        ...desktop("linux"),
+        oauth: {
+          onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => {
+            emit = listener;
+            return unsubscribe;
+          },
+        },
+      },
+    });
+    return { emit: (c: RakazoDesktopOAuthCallback) => emit(c), unsubscribe };
+  }
+
+  it("reads the attempt state out of the authorize URL", () => {
+    expect(oauthStateOf("https://claude.ai/oauth/authorize?code=true&state=verifier_456")).toBe(
+      "verifier_456",
+    );
+    expect(oauthStateOf("https://claude.ai/oauth/authorize?code=true")).toBeUndefined();
+    expect(oauthStateOf("not a url")).toBeUndefined();
+  });
+
+  it("ignores a code captured for a different attempt", () => {
+    const { emit } = bridgeEmitting();
+    const received: string[] = [];
+    onDesktopOAuthCallback((code) => received.push(code), "verifier_456");
+
+    emit({ code: "stale", state: "verifier_000" });
+    expect(received).toEqual([]);
+
+    emit({ code: "ac_123", state: "verifier_456" });
+    expect(received).toEqual(["ac_123#verifier_456"]);
+  });
+
+  it("accepts any code when the provider carries no state to correlate on", () => {
+    const { emit } = bridgeEmitting();
+    const received: string[] = [];
+    onDesktopOAuthCallback((code) => received.push(code));
+
+    emit({ code: "ac_123" });
+    expect(received).toEqual(["ac_123"]);
+  });
+
+  it("no-ops in a browser without the desktop bridge", () => {
+    vi.stubGlobal("window", {});
+    const received: string[] = [];
+    expect(() => onDesktopOAuthCallback((code) => received.push(code))()).not.toThrow();
+    expect(received).toEqual([]);
   });
 });
