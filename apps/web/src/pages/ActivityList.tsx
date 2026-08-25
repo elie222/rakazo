@@ -74,10 +74,11 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
         setActiveRuns([]);
         setRecentRuns([]);
       } finally {
-        if (cancelled) return;
-        setLoading(false);
-        // Schedule the next poll after the previous settles — no overlap.
-        timer = window.setTimeout(() => void tick(), 15_000);
+        if (!cancelled) {
+          setLoading(false);
+          // Schedule the next poll after the previous settles — no overlap.
+          timer = window.setTimeout(() => void tick(), 15_000);
+        }
       }
     };
 
