@@ -15,6 +15,14 @@ export function isOneShotRoutineCrons(crons: string[]): boolean {
   return crons.length === 1 && isOneShotRoutineCron(crons[0] ?? "");
 }
 
+// True when @once is combined with any other schedule — never valid, since
+// the one-shot slot has no "next run" to compute and would sit inert
+// forever. Callers that persist crons must reject this rather than let
+// isOneShotRoutineCrons quietly classify the array as recurring.
+export function hasMixedOneShotSchedule(crons: string[]): boolean {
+  return crons.length > 1 && crons.some(isOneShotRoutineCron);
+}
+
 export const CRON_FREQS = [
   "Every hour",
   "Every day",
@@ -182,9 +190,12 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
 }
 
 // Nearest next run across every recurring schedule on a routine. Ignores
-// @once slots (they don't recur) and any schedule that fails to parse —
-// callers validate each cron before it's saved, so a bad one here is
-// unexpected input, not something that should crash the wakeup path.
+// @once slots (they don't recur) and any schedule that fails to parse. Only
+// the wakeup path (packages/adapters/src/executor.ts) should use this —
+// legacy or hand-edited records may carry a stale cron, and skipping it
+// there is safer than crashing the wakeup job. Anything that persists a
+// routine's crons must reject malformed input instead — see
+// nextCronDateAcrossStrict.
 export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"): Date | null {
   let earliest: Date | null = null;
   for (const cron of crons) {
@@ -195,6 +206,24 @@ export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"
     } catch {
       continue;
     }
+    if (!earliest || next < earliest) earliest = next;
+  }
+  return earliest;
+}
+
+// Same as nextCronDateAcross, but throws on the first malformed recurring
+// cron instead of silently skipping it. Use this before persisting a
+// routine's crons — a partially-invalid array should be rejected outright,
+// not saved with the bad entry quietly never firing.
+export function nextCronDateAcrossStrict(
+  crons: string[],
+  from: Date,
+  timezone = "UTC",
+): Date | null {
+  let earliest: Date | null = null;
+  for (const cron of crons) {
+    if (isOneShotRoutineCron(cron)) continue;
+    const next = nextCronDate(cron, from, timezone);
     if (!earliest || next < earliest) earliest = next;
   }
   return earliest;

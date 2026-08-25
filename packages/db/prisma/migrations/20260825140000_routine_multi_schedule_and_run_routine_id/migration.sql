@@ -7,6 +7,7 @@ ALTER TABLE "routines" DROP COLUMN "cron";
 
 -- Tracks which routine fired a given run, so the routine list can show a
 -- live "Running" badge and the run can be linked back to its schedule.
+-- The index and foreign key are added in later migrations, each as the
+-- sole statement in its file, so CONCURRENTLY/NOT VALID actually apply
+-- instead of running inside this file's implicit transaction.
 ALTER TABLE "runs" ADD COLUMN "routineId" TEXT;
-CREATE INDEX "runs_routineId_idx" ON "runs"("routineId");
-ALTER TABLE "runs" ADD CONSTRAINT "runs_routineId_fkey" FOREIGN KEY ("routineId") REFERENCES "routines"("id") ON DELETE SET NULL ON UPDATE CASCADE;

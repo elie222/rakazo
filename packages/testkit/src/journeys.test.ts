@@ -2161,6 +2161,37 @@ describeJourneys("required product journeys", () => {
     );
     expect(connector.records.length).toBeGreaterThan(recordsBefore);
   });
+
+  it("22: a routine schedule with any malformed or mixed one-shot cron is rejected", async () => {
+    const cookie = await signup(app, `routine-crons-j-${stamp}@rakazo.test`, "Routine Crons");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Scheduler",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const partiallyInvalid = await raw(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Bad schedule",
+      prompt: "check the fixture",
+      crons: ["0 9 * * *", "not-a-cron"],
+      timezone: "UTC",
+      notify: false,
+      active: true,
+    });
+    expect(partiallyInvalid.status).toBeGreaterThanOrEqual(400);
+    const mixedOneShot = await raw(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Mixed schedule",
+      prompt: "check the fixture",
+      crons: ["@once", "0 9 * * *"],
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    expect(mixedOneShot.status).toBeGreaterThanOrEqual(400);
+  });
 });
 
 type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };

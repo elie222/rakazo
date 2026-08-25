@@ -75,8 +75,9 @@ import {
   AttachmentValidationError,
   containsSecret,
   expandSkillReferencesInPrompt,
+  hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
-  nextCronDateAcross,
+  nextCronDateAcrossStrict,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -1556,6 +1557,11 @@ export function createRouter(deps: RouterDeps) {
         return listRoutinesDto(deps, context.actor, input.botId);
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
+        if (hasMixedOneShotSchedule(input.crons)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A one-time schedule can't be combined with other schedules.",
+          });
+        }
         if (input.active && isOneShotRoutineCrons(input.crons)) {
           throw new ORPCError("BAD_REQUEST", {
             message: "One-shot schedules must be created from chat.",
@@ -1608,6 +1614,11 @@ export function createRouter(deps: RouterDeps) {
         const active = input.active ?? existing.active;
         const crons = input.crons ?? existing.crons;
         const timezone = input.timezone ?? existing.timezone;
+        if (hasMixedOneShotSchedule(crons)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A one-time schedule can't be combined with other schedules.",
+          });
+        }
         if (active && isOneShotRoutineCrons(crons)) {
           if (!isOneShotRoutineCrons(existing.crons)) {
             throw new ORPCError("BAD_REQUEST", {
@@ -3117,7 +3128,12 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 function nextRoutineDate(crons: string[], timezone: string): Date {
-  const next = nextCronDateAcross(crons, new Date(), timezone);
+  let next: Date | null;
+  try {
+    next = nextCronDateAcrossStrict(crons, new Date(), timezone);
+  } catch {
+    throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
+  }
   if (!next) throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
   return next;
 }
