@@ -220,4 +220,47 @@ describe("resolveDelegationTarget", () => {
     const result = await resolveDelegationTarget(tx, actor, "bot-origin", "just a normal message");
     expect(result).toBeNull();
   });
+
+  it("does not match a bot owned by a different userId in the same workspace", async () => {
+    // Same workspace, other member's bot named Sarah — Prisma would exclude it via userId.
+    const findMany = vi.fn().mockImplementation(async ({ where }) => {
+      const bots = [
+        {
+          id: "bot-sarah-other",
+          name: "Sarah",
+          userId: "user-2",
+          thread: { id: "thread-bot-sarah-other" },
+        },
+        {
+          id: "bot-sarah-own",
+          name: "Other",
+          userId: "user-1",
+          thread: { id: "thread-bot-sarah-own" },
+        },
+      ];
+      return bots
+        .filter(
+          (bot) =>
+            bot.userId === where.userId &&
+            where.workspaceId === actor.workspaceId &&
+            bot.id !== where.id.not,
+        )
+        .map(({ id, name, thread }) => ({ id, name, thread }));
+    });
+    const tx = { bot: { findMany } } as unknown as Prisma.TransactionClient;
+
+    const result = await resolveDelegationTarget(tx, actor, "bot-origin", "@Sarah check email");
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          workspaceId: "workspace-1",
+          userId: "user-1",
+          archivedAt: null,
+          id: { not: "bot-origin" },
+        }),
+      }),
+    );
+    expect(result).toBeNull();
+  });
 });

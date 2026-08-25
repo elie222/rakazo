@@ -357,7 +357,12 @@ export async function resolveDelegationTarget(
   const trimmed = (text ?? "").trim();
   if (!trimmed.includes("@")) return null;
   const candidates = await tx.bot.findMany({
-    where: { workspaceId: actor.workspaceId, archivedAt: null, id: { not: originBotId } },
+    where: {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      archivedAt: null,
+      id: { not: originBotId },
+    },
     select: { id: true, name: true, thread: { select: { id: true } } },
   });
   const withThread = candidates
