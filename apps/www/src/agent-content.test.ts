@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ABOUT_MARKDOWN,
   AGENT_INSTRUCTIONS,
+  HOME_MARKDOWN,
   getMarkdownAlternate,
   getMarkdownDocument,
   markdownResponse,
@@ -41,6 +43,9 @@ describe("agent content negotiation", () => {
   });
 
   it("publishes specific when-to-use instructions for agents", () => {
+    expect(HOME_MARKDOWN).toContain("open source Grok Bot alternative");
+    expect(ABOUT_MARKDOWN).toContain("open source Grok Bot alternative");
+    expect(AGENT_INSTRUCTIONS).toContain("open source Grok Bot alternative");
     expect(AGENT_INSTRUCTIONS).toContain("## When to use Rakazo");
     expect(AGENT_INSTRUCTIONS).toContain("## How an agent should use Rakazo");
     expect(AGENT_INSTRUCTIONS).toContain("Self-hosting is available now");
