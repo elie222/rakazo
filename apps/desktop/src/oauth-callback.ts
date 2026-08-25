@@ -1,11 +1,11 @@
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
-export type OAuthCallback = { code: string; state?: string };
+import type { RakazoDesktopOAuthCallback } from "@rakazo/contracts";
 
 export type OAuthCallbackFromOptions = {
   /** App renderer origins — their `/callback` routes must not be treated as paste-flow codes. */
   excludeOrigins?: readonly string[];
 };
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
  * Providers that sign in through a loopback redirect — Anthropic sends the
@@ -18,7 +18,7 @@ export type OAuthCallbackFromOptions = {
 export function oauthCallbackFrom(
   url: string,
   options: OAuthCallbackFromOptions = {},
-): OAuthCallback | undefined {
+): RakazoDesktopOAuthCallback | undefined {
   let target: URL;
   try {
     target = new URL(url);

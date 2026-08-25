@@ -7,16 +7,9 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { oauthStateOf, onDesktopOAuthCallback } from "../lib/desktop";
-import {
-  cancelModelOAuthAttempt,
-  finishModelOAuthAttempt,
-  type ModelCatalogEntry,
-  type ModelOAuthBegin,
-  providerHint,
-  waitForModelOAuth,
-} from "../lib/model-auth";
+import { type ModelCatalogEntry, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
+import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -35,34 +28,23 @@ export function OnboardingPage() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
-  const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
-  const oauthAbortRef = useRef<AbortController | null>(null);
-  const oauthLoginIdRef = useRef<string | null>(null);
-  const oauthCodeSubmittingRef = useRef(false);
-  const oauthCaptureRef = useRef<(() => void) | null>(null);
   const probeRequestIdRef = useRef(0);
 
-  function releaseOAuthCapture(expected?: (() => void) | null) {
-    if (expected !== undefined && oauthCaptureRef.current !== expected) return;
-    oauthCaptureRef.current?.();
-    oauthCaptureRef.current = null;
-  }
-
-  function cancelOAuthAttempt(resetState = true) {
-    releaseOAuthCapture();
-    oauthCodeSubmittingRef.current = false;
-    const loginId = oauthLoginIdRef.current;
-    oauthLoginIdRef.current = null;
-    cancelModelOAuthAttempt(oauthAbortRef, () => {
-      if (resetState) {
-        setOauth(null);
-        setOauthPending(false);
-      }
-    });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-  }
+  const {
+    oauth,
+    pasteCode,
+    setPasteCode,
+    oauthPending,
+    cancelOAuthAttempt,
+    startSubscriptionSignIn,
+    submitOAuthCode,
+  } = useModelOAuthSignIn({
+    onClearError: () => setError(null),
+    onError: setError,
+    onFinished: () => {
+      setStep("bot");
+    },
+  });
 
   useEffect(() => {
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
@@ -196,105 +178,12 @@ export function OnboardingPage() {
     }
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal);
-    if (controller.signal.aborted) return;
-    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
-    if (controller.signal.aborted) return;
-    oauthLoginIdRef.current = null;
-    setOauth(null);
-    setStep("bot");
-  }
-
-  async function startSubscriptionSignIn() {
-    setError(null);
-    setOauthPending(true);
-    const controller = new AbortController();
-    oauthAbortRef.current = controller;
-    let waitingForCode = false;
-    try {
-      const started = await rpc.models.beginOAuth(
-        {
-          provider,
-          modelId,
-          label: selected?.providerName ?? provider,
-        },
-        { signal: controller.signal },
-      );
-      if (controller.signal.aborted) return;
-      oauthLoginIdRef.current = started.loginId;
-      setPasteCode("");
-      setOauth(started);
-      if (started.mode === "auth-url") {
-        // Subscribe before the popup exists: a provider that is already
-        // authorized can redirect before React commits the state above.
-        releaseOAuthCapture();
-        oauthCaptureRef.current = onDesktopOAuthCallback(
-          (code) => void submitOAuthCode(code, started),
-          oauthStateOf(started.verificationUri),
-        );
-      }
-      window.open(started.verificationUri, "_blank", "noopener,noreferrer");
-      waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      const loginId = oauthLoginIdRef.current;
-      oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
-      setOauth(null);
-    } finally {
-      if (!waitingForCode) {
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
-      }
-    }
-  }
-
-  useEffect(() => releaseOAuthCapture, []);
-
-  async function submitOAuthCode(captured?: string, login?: ModelOAuthBegin) {
-    const attempt = login ?? oauth;
-    if (attempt?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
-    const controller = oauthAbortRef.current;
-    const capture = oauthCaptureRef.current;
-    const code = (captured ?? pasteCode).trim();
-    if (!controller || !code) return;
-    oauthCodeSubmittingRef.current = true;
-    setPasteCode("");
-    setError(null);
-    let submitted = false;
-    let retryable = false;
-    try {
-      await rpc.models.submitOAuthCode(
-        { loginId: attempt.loginId, code },
-        { signal: controller.signal },
-      );
-      submitted = true;
-      await finishSubscriptionSignIn(attempt.loginId, controller);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      if (submitted) {
-        oauthLoginIdRef.current = null;
-        setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
-      } else {
-        retryable = true;
-        setPasteCode(code);
-      }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
-    } finally {
-      // A cancelled attempt may already have started another sign-in; do not clear
-      // its submitting guard or the newer desktop callback is dropped.
-      if (oauthAbortRef.current === controller) {
-        oauthCodeSubmittingRef.current = false;
-      }
-      if (!retryable) {
-        // Only drop this attempt's listener — a newer sign-in may already own the ref.
-        releaseOAuthCapture(capture);
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
-      }
-    }
+  function beginSelectedSubscriptionSignIn() {
+    void startSubscriptionSignIn({
+      provider,
+      modelId,
+      label: selected?.providerName ?? provider,
+    });
   }
 
   async function createBot() {
@@ -518,7 +407,7 @@ export function OnboardingPage() {
                   <button
                     type="button"
                     disabled={oauthPending}
-                    onClick={() => void startSubscriptionSignIn()}
+                    onClick={() => beginSelectedSubscriptionSignIn()}
                     className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
                   >
                     {oauthPending ? "Starting…" : signInLabel}
