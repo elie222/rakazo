@@ -139,9 +139,13 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
             {formatRelativeTime(run.updatedAt)}
           </span>
         </div>
-        <div className="mt-0.5 flex items-baseline justify-between gap-2">
-          <span className="truncate text-[13px] text-[#85858A]">{run.promptSnippet || label}</span>
-          <span className="shrink-0 text-[12px]" style={{ color: statusColor(run.status) }}>
+        <div className="mt-0.5 flex items-baseline gap-2">
+          {run.promptSnippet ? (
+            <span className="min-w-0 flex-1 truncate text-[13px] text-[#85858A]">
+              {run.promptSnippet}
+            </span>
+          ) : null}
+          <span className="ms-auto shrink-0 text-[12px]" style={{ color: statusColor(run.status) }}>
             {label}
           </span>
         </div>

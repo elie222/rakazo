@@ -146,11 +146,21 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       if (!hasSession || !activityMode || searching || query.trim()) return;
-      void loadActivity();
-      const timer = setInterval(() => void loadActivity(), 15_000);
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const tick = async () => {
+        await loadActivity();
+        if (!cancelled) {
+          timer = setTimeout(() => void tick(), 15_000);
+        }
+      };
+
+      void tick();
       return () => {
+        cancelled = true;
         activityRequestId.current += 1;
-        clearInterval(timer);
+        if (timer !== undefined) clearTimeout(timer);
       };
     }, [activityMode, hasSession, loadActivity, query, searching]),
   );
