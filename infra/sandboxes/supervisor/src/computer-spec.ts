@@ -99,7 +99,7 @@ export function computerNetworkNameFor(botId: string) {
   // Keep distinct botIds on distinct networks even when sanitization collapses
   // characters (e.g. "a/b" and "ab"). Do not change containerNameFor — that
   // name must stay stable so an existing computer can resume.
-  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 8);
+  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 32);
   return `rakazo-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
 }
 

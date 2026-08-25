@@ -69,7 +69,7 @@ describe("graphical computer spec", () => {
       homePath: "/var/rakazo/homes/bot_isolation",
       networkMode,
     });
-    expect(networkMode).toMatch(/^rakazo-computer-bot_isolation-[0-9a-f]{8}$/);
+    expect(networkMode).toMatch(/^rakazo-computer-bot_isolation-[0-9a-f]{32}$/);
     expect(options.HostConfig.NetworkMode).toBe(networkMode);
     expect(options.HostConfig.PortBindings["6080/tcp"]).toEqual([
       { HostIp: "127.0.0.1", HostPort: "0" },
