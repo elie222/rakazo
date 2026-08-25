@@ -52,6 +52,7 @@ export function OnboardingPage() {
 
   function cancelOAuthAttempt(resetState = true) {
     releaseOAuthCapture();
+    oauthCodeSubmittingRef.current = false;
     const loginId = oauthLoginIdRef.current;
     oauthLoginIdRef.current = null;
     cancelModelOAuthAttempt(oauthAbortRef, () => {
@@ -283,7 +284,11 @@ export function OnboardingPage() {
       }
       setError(err instanceof Error ? err.message : "Could not finish sign-in");
     } finally {
-      oauthCodeSubmittingRef.current = false;
+      // A cancelled attempt may already have started another sign-in; do not clear
+      // its submitting guard or the newer desktop callback is dropped.
+      if (oauthAbortRef.current === controller) {
+        oauthCodeSubmittingRef.current = false;
+      }
       if (!retryable) {
         // Only drop this attempt's listener — a newer sign-in may already own the ref.
         releaseOAuthCapture(capture);
