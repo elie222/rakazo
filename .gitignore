@@ -36,3 +36,5 @@ verify-report
 .last-deployed-revision
 design/
 PRODUCT_PLAN.md
+.amqrc
+.agent-mail/
