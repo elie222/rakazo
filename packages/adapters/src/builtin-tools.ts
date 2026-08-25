@@ -241,6 +241,31 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["content"],
     },
   },
+  // Semantic-memory tools: exposed by selectMemoryTools() only when a
+  // workspace memory provider is configured (which hides `remember`).
+  {
+    name: "save_memory",
+    description:
+      "Store a durable fact in this bot's semantic memory (preferences, decisions, recurring context). Use for anything worth recalling in future conversations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "recall_memory",
+    description: "Semantically search this bot's durable memory for facts relevant to a query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+      },
+      required: ["query"],
+    },
+  },
   {
     name: "scratchpad_list",
     description:
