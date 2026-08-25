@@ -45,7 +45,7 @@ export async function messageBot(
     sourceMessageId?: string | null;
   },
   sender: { id: string; name: string },
-  input: { bot_id?: string; confirm_name?: string; message: string },
+  input: { bot_id?: string; confirm_name?: string; message: string; deliveryKey?: string },
 ) {
   const message = clampBotMessage(String(input.message ?? ""));
   if (!message) return { ok: false as const, error: "message is required" };
@@ -75,6 +75,27 @@ export async function messageBot(
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
 
   const targetThreadId = target.thread.id;
+
+  // A tool call can be re-executed after a lease expiry, so a delivery has to be
+  // replayable: without this the recipient is messaged twice and woken twice.
+  const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
+  if (deliveryKey) {
+    const already = await deps.prisma.message.findUnique({
+      where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
+      select: { id: true },
+    });
+    if (already) {
+      return {
+        ok: true as const,
+        botId: target.id,
+        name: target.name,
+        delivered: message,
+        replayed: true as const,
+        note: `Already sent to ${target.name} in this turn; it was not sent again.`,
+      };
+    }
+  }
+
   const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message });
   const outboundBlock: MessageBlock = {
     kind: "bot_message_sent",
@@ -96,6 +117,20 @@ export async function messageBot(
     });
     if (!senderStillRunning) return { ok: false as const, error: "source run is no longer active" };
 
+    // Re-read the target inside the transaction: it can be archived between
+    // resolving it above and committing here.
+    const stillAddressable = await tx.bot.findFirst({
+      where: {
+        id: target.id,
+        workspaceId: run.workspaceId,
+        userId: run.userId,
+        archivedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!stillAddressable)
+      return { ok: false as const, error: `${target.name} is no longer available` };
+
     const inboundBlock: MessageBlock = {
       kind: "bot_message_received",
       fromBotId: sender.id,
@@ -110,6 +145,7 @@ export async function messageBot(
       threadId: targetThreadId,
       role: "user",
       blocks: [inboundBlock],
+      clientNonce: deliveryKey,
     });
     // Echo into the sender's chat in the same transaction so a failed notify
     // cannot leave one side delivered and the other blank.

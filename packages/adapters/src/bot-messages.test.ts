@@ -13,7 +13,15 @@ const run = {
 };
 const sender = { id: "bot-sender", name: "Researcher" };
 
-function deps(options: { bots?: unknown[]; hopBlocks?: unknown[]; senderRunning?: boolean } = {}) {
+function deps(
+  options: {
+    bots?: unknown[];
+    hopBlocks?: unknown[];
+    senderRunning?: boolean;
+    alreadyDelivered?: unknown;
+    targetArchived?: boolean;
+  } = {},
+) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
   const notify = vi.fn().mockResolvedValue(undefined);
   const tx = {
@@ -23,6 +31,9 @@ function deps(options: { bots?: unknown[]; hopBlocks?: unknown[]; senderRunning?
         .mockResolvedValue(options.senderRunning === false ? null : { id: "run-1" }),
       findUnique: vi.fn().mockResolvedValue({ status: "running" }),
       create: vi.fn().mockResolvedValue({ id: "run-2" }),
+    },
+    bot: {
+      findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
     },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
@@ -43,7 +54,13 @@ function deps(options: { bots?: unknown[]; hopBlocks?: unknown[]; senderRunning?
         ),
     },
     message: {
-      findUnique: vi.fn().mockResolvedValue({ blocks: options.hopBlocks ?? [] }),
+      findUnique: vi
+        .fn()
+        .mockImplementation(async (args: { where?: { threadId_clientNonce?: unknown } }) =>
+          args?.where?.threadId_clientNonce
+            ? (options.alreadyDelivered ?? null)
+            : { blocks: options.hopBlocks ?? [] },
+        ),
     },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
   } as unknown as PrismaClient;
@@ -193,5 +210,55 @@ describe("hop lookup", () => {
       },
     } as unknown as PrismaClient;
     expect(await currentBotMessageHop(prisma, "message-1")).toBe(3);
+  });
+});
+
+describe("hardening", () => {
+  it("does not deliver twice when the tool call is re-executed", async () => {
+    const harness = deps({ alreadyDelivered: { id: "message-1" } });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+      deliveryKey: "call-1",
+    });
+
+    expect(sent).toMatchObject({ ok: true, replayed: true, botId: "bot-target" });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("stamps the delivery so a retry can recognise it", async () => {
+    const harness = deps();
+    await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+      deliveryKey: "call-1",
+    });
+    expect(harness.tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ clientNonce: "bot-message:call-1" }),
+      }),
+    );
+  });
+
+  it("still delivers when the caller supplies no delivery key", async () => {
+    const harness = deps();
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+    });
+    expect(sent.ok).toBe(true);
+    expect(harness.tx.run.create).toHaveBeenCalled();
+  });
+
+  it("does not deliver to a bot archived while the message was being sent", async () => {
+    const harness = deps({ targetArchived: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+    });
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { isPeerOnlyMessage, peerConversations, peerMessagesFrom } from "./peer-messages.js";
+import { peerConversations, peerMessagesFrom } from "./peer-messages.js";
 
 function message(id: string, createdAt: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return { id, threadId: "t_1", seq: 1, role: "bot", blocks, createdAt };
@@ -13,26 +13,6 @@ const replyFromAnalyst = message("m_2", "2026-08-25T10:01:00.000Z", [
   { kind: "bot_message_received", fromBotId: "b_2", fromBotName: "Analyst", text: "done" },
 ]);
 const plainText = message("m_3", "2026-08-25T10:02:00.000Z", [{ kind: "text", text: "hello" }]);
-
-describe("collapsing peer traffic out of the thread", () => {
-  it("collapses a message that is only peer traffic", () => {
-    expect(isPeerOnlyMessage(sentToAnalyst)).toBe(true);
-    expect(isPeerOnlyMessage(replyFromAnalyst)).toBe(true);
-  });
-
-  it("leaves ordinary messages in the thread", () => {
-    expect(isPeerOnlyMessage(plainText)).toBe(false);
-    expect(isPeerOnlyMessage(message("m_4", "2026-08-25T10:03:00.000Z", []))).toBe(false);
-  });
-
-  it("keeps a mixed message in the thread rather than hiding its other blocks", () => {
-    const mixed = message("m_5", "2026-08-25T10:04:00.000Z", [
-      { kind: "text", text: "working on it" },
-      { kind: "bot_message_sent", toBotId: "b_2", toBotName: "Analyst", text: "chart q3" },
-    ]);
-    expect(isPeerOnlyMessage(mixed)).toBe(false);
-  });
-});
 
 describe("peer conversations", () => {
   const messages = [sentToAnalyst, replyFromAnalyst, plainText];

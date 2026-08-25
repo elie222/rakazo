@@ -106,11 +106,11 @@ export function PeerMessagesOverlay({
             </div>
 
             <div className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-[16px] border border-[#26262A] bg-[#101012] p-4">
-              {selected?.messages.map((peerMessage) => {
+              {selected?.messages.map((peerMessage, index) => {
                 const sent = peerMessage.direction === "sent";
                 return (
                   <div
-                    key={`${peerMessage.messageId}-${peerMessage.createdAt}-${peerMessage.direction}`}
+                    key={`${peerMessage.messageId}-${index}`}
                     className={`mb-2.5 flex ${sent ? "justify-end" : "justify-start"}`}
                   >
                     <div
