@@ -14,6 +14,10 @@ const socialImage = new URL("/og-image.png", SITE_URL).toString();
 const structuredDataJson = structuredData
   ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
   : null;
+const markdownAlternate =
+  Astro.url.pathname === "/"
+    ? "/index.md"
+    : `${Astro.url.pathname.replace(/\/$/, "")}.md`;
 ---
 
 <!doctype html>
@@ -41,6 +45,7 @@ const structuredDataJson = structuredData
     <meta name="twitter:image" content={socialImage} />
     <meta name="twitter:image:alt" content="Rakazo — AI teammates you actually own. Your keys, your model, your machine." />
     <link rel="canonical" href={canonical} />
+    <link rel="alternate" type="text/markdown" href={markdownAlternate} />
     <link rel="sitemap" href="/sitemap-index.xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
