@@ -2283,8 +2283,8 @@ export function ShellPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          aria-label="View another agent's computer"
-                          title="View another agent's computer (read only)"
+                          aria-label="View another computer"
+                          title="View another computer"
                           onClick={() => setPeekMenuOpen((open) => !open)}
                           className="rounded-full border border-[#26262A] px-2.5 py-1 text-[11px] leading-none text-[#85858A] transition-colors hover:text-[#ECECEE]"
                         >
@@ -2403,7 +2403,7 @@ export function ShellPage() {
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <span className="min-w-0 text-[13.5px] text-[#85858A]">
                     {peek
-                      ? `Viewing ${computerLabel(peek.mode, peekTarget?.name ?? active.name)} — view only`
+                      ? `Viewing ${peekTarget?.name ?? active.name} (read only)`
                       : hasControl
                         ? t`You have control`
                         : computerError

@@ -1457,11 +1457,14 @@ export function createRouter(deps: RouterDeps) {
         if (!other.providerRef || (other.state !== "running" && other.state !== "booting")) {
           return { mode, exists: true, state: other.state as never, url: null };
         }
+        // Peek is strictly view-only: never attach the target bot's execution
+        // lease. computerScreenContext would set screenLeaseId and let the
+        // supervisor overwrite or reject the shared screen assignment.
         const session = await deps.sandbox
           .connectScreen(
             toComputerRef(other),
             { view: "stream", interactive: false },
-            await computerScreenContext(deps.prisma, context.actor, other.id, target.id, "peek"),
+            computerContext(context.actor, target.id, "peek"),
           )
           .catch(() => ({ url: null }));
         if (!session.url) {
