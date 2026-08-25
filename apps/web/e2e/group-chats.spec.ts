@@ -96,10 +96,11 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     });
   });
   await page.reload();
+  // Anchor ^ so Now/Recent activity rows ("Bot · Draft team, …") do not match.
   const groupAvatar = page
     .locator("aside")
     .first()
-    .getByRole("button", { name: /Draft team/ })
+    .getByRole("button", { name: /^Draft team/ })
     .locator(".rakazo-group-avatar");
   await expect(groupAvatar).toBeVisible();
   await expect(groupAvatar.locator(".rakazo-bot-avatar")).toHaveCount(2);
@@ -116,9 +117,9 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const groupName = desktopSettings.locator("label:has-text('Name') input");
   await groupName.fill("Unsaved Draft team name");
   const sidebar = page.locator("aside").first();
-  await sidebar.getByRole("button", { name: /Review team/ }).click();
+  await sidebar.getByRole("button", { name: /^Review team/ }).click();
   await expect(groupName).toHaveValue("Review team");
-  await sidebar.getByRole("button", { name: /Draft team/ }).click();
+  await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(groupName).toHaveValue("Draft team");
   await page.route("**/rpc/groups/update", async (route) => route.abort("failed"));
   await desktopSettings.getByRole("button", { name: "Save", exact: true }).click();
@@ -130,9 +131,9 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page
     .getByRole("textbox", { name: "Message Draft team" })
     .fill("@Researcher unfinished draft");
-  await sidebar.getByRole("button", { name: /Review team/ }).click();
+  await sidebar.getByRole("button", { name: /^Review team/ }).click();
   await expect(page.getByRole("textbox", { name: "Message Review team" })).toHaveValue("");
-  await sidebar.getByRole("button", { name: /Draft team/ }).click();
+  await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(page.getByRole("textbox", { name: "Message Draft team" })).toHaveValue("");
 
   const composer = page.getByRole("textbox", { name: "Message Draft team" });
@@ -212,14 +213,14 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     await reviewSnapshotReleased;
     await route.continue();
   });
-  await sidebar.getByRole("button", { name: /Review team/ }).click();
+  await sidebar.getByRole("button", { name: /^Review team/ }).click();
   await reviewSnapshotIntercepted;
   await expect(page).toHaveURL(new RegExp(`/app/g/${reviewGroup.id}$`));
   await expect(page.getByTestId("transcript")).not.toContainText("Answered: Paris");
   releaseReviewSnapshot();
   await expect(page.getByRole("textbox", { name: "Message Review team" })).toBeVisible();
   await page.unroute("**/rpc/threads/get");
-  await sidebar.getByRole("button", { name: /Draft team/ }).click();
+  await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
 
   await composer.fill(
