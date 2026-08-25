@@ -43,10 +43,10 @@ export function AccountSettingsOverlay({
         <div className="flex items-start justify-between gap-6">
           <div>
             <h2 id="account-settings-title" className="text-2xl font-medium text-[#F1F1F2]">
-              Settings
+              {uiCopy("Settings")}
             </h2>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              Account preferences apply across all your bots.
+              {uiCopy("Account preferences apply across all your bots.")}
             </p>
           </div>
           <button
@@ -73,7 +73,7 @@ export function AccountSettingsOverlay({
             <span>
               <span className="block text-[15px] text-[#ECECEE]">{uiCopy("Advanced")}</span>
               <span className="mt-1 block text-[12.5px] text-[#6C6C70]">
-                Optional controls most people never need
+                {uiCopy("Optional controls most people never need")}
               </span>
             </span>
             <span aria-hidden="true" className="transition-transform group-open:rotate-90">

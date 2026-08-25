@@ -151,6 +151,9 @@ export const koreanCoreCopy = {
   "Saving…": "저장 중…",
   Send: "보내기",
   Settings: "설정",
+  "Account preferences apply across all your bots.":
+    "이 설정은 내가 만든 모든 Bot에 똑같이 적용됩니다.",
+  "Optional controls most people never need": "필요할 때만 쓰는 세부 설정",
   "Set up voice to call": "통화하려면 음성을 먼저 설정하세요",
   "Show computer": "컴퓨터 보기",
   "Show settings": "설정 보기",

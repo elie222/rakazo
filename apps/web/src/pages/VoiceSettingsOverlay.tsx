@@ -3,6 +3,7 @@ import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { uiCopy } from "../lib/ui-copy";
+import { localizeVoiceCopy } from "../lib/ui-voice-copy";
 
 export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
@@ -201,7 +202,9 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
             {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
             {selected ? (
               <>
-                <p className="text-[13.5px] leading-[1.5] text-[#85858A]">{selected.description}</p>
+                <p className="text-[13.5px] leading-[1.5] text-[#85858A]">
+                  {localizeVoiceCopy(selected.description)}
+                </p>
                 <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
                     {uiCopy("Personal credential")}

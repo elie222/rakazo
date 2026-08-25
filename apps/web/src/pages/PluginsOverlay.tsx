@@ -220,7 +220,7 @@ export function PluginsOverlay({
                 onClick={onOpenMcp}
                 className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
               >
-                MCP servers
+                {uiCopy("MCP servers")}
               </button>
             ) : null}
             <button

@@ -7,6 +7,8 @@ const exactKoreanModelCopy: Readonly<Record<string, string>> = {
   "Sign in with GitHub Copilot": "GitHub Copilot으로 로그인",
   "Sign in with SuperGrok or X Premium": "SuperGrok 또는 X Premium으로 로그인",
   "Sign in with Claude Pro/Max": "Claude Pro/Max로 로그인",
+  "Claude Pro/Max / key": "Claude Pro/Max 또는 API 키",
+  "SuperGrok / key": "SuperGrok 또는 API 키",
   "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.":
     "서버 관리자가 설정한 인프라에서 실행됩니다. Rakazo에서 별도 모델 사용료가 발생하지 않습니다.",
   "Runs on a URL you control. Rakazo does not pay for model usage.":

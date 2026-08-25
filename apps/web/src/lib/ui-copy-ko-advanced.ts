@@ -125,6 +125,8 @@ export const koreanAdvancedCopy = {
   Skip: "건너뛰기",
   "I’m done": "조작 끝내기",
   Release: "제어권 돌려주기",
+  "{count} model": "모델 {count}개",
+  "{count} models": "모델 {count}개",
   Team: "팀 공용",
   Private: "Bot 전용",
   Group: "그룹",

@@ -451,8 +451,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           {group.name}
                         </span>
                         <span className="mt-0.5 block text-[12px] text-[#6C6C70]">
-                          {group.entries.length} model{group.entries.length === 1 ? "" : "s"} ·{" "}
-                          {providerHint(group.entries[0]!)}
+                          {uiCopy(group.entries.length === 1 ? "{count} model" : "{count} models", {
+                            values: { count: group.entries.length },
+                          })}{" "}
+                          · {providerHint(group.entries[0]!)}
                         </span>
                       </span>
                       {connected ? (
