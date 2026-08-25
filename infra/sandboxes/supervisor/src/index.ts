@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -11,8 +12,10 @@ import { Hono } from "hono";
 import { z } from "zod";
 import {
   COMPUTER_IMAGE,
+  computerNetworkNameFor,
   containerCreateOptions,
   containerNameFor,
+  SCREEN_HOST,
   screenPorts,
   screenUrlFor,
   xdotoolCommand,
@@ -96,7 +99,7 @@ app.post("/computers", async (c) => {
     });
     await ensureComputerImage();
     const runtimeInfo = await inspectSupervisorContainer();
-    const networkMode = computerNetworkMode(runtimeInfo);
+    const networkMode = await computerNetworkName(body.botId, runtimeInfo);
     const serviceHomePath = path.resolve(body.homePath);
     assertBotHomePath(serviceHomePath, body.botId);
     await mkdir(serviceHomePath, { recursive: true });
@@ -477,14 +480,14 @@ app.post("/computers/:id/stop", async (c) => {
 
 app.delete("/computers/:id", async (c) => {
   const id = c.req.param("id");
+  const botId = c.req.header("x-rakazo-bot-id");
   try {
-    const { container } = await managedContainer(
-      id,
-      c.req.header("x-rakazo-bot-id"),
-      c.req.header("x-rakazo-workspace-id"),
-    );
+    const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-workspace-id"));
     await container.remove({ force: true }).catch(() => undefined);
     clearComputerScreenRegistry(computerScreens, id);
+    if (botId && process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
+      await removeBotNetwork(botId);
+    }
     return c.json({ ok: true });
   } catch {
     return c.json({ error: "computer not found" }, 404);
@@ -606,6 +609,42 @@ function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo
   if (!dataMount?.Source) return serviceHomePath;
   return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
+const SCREEN_READY_TIMEOUT_MS = 45_000;
+
+// Docker publishes a container's port mapping (or assigns its internal IP)
+// almost immediately on start, well before the process inside the container
+// is actually listening on it (Xvfb, the browser, x11vnc, then websockify
+// all start in sequence — see infra/sandboxes/computer/start.sh). Returning
+// the URL as soon as the mapping exists lets the frontend iframe race the
+// container's own boot sequence and hit "socket hang up" on first load.
+//
+// A bare TCP connect isn't a strong enough signal either: it only proves the
+// port is accepting connections, not that websockify is actually up and
+// serving — the same race can still slip through between "port open" and
+// "websockify ready" (e.g. right after setInteractiveScreen starts a new
+// x11vnc/websockify pair on the control port for a takeover). An HTTP GET
+// against the same embed.html path the browser will load only succeeds once
+// websockify itself is answering requests, closing that gap too.
+export async function waitForScreenReady(host: string, port: number, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const ready = await new Promise<boolean>((resolve) => {
+      const req = http.get({ host, port, path: "/embed.html", timeout: 1_500 }, (res) => {
+        res.resume();
+        resolve(true);
+      });
+      req.once("timeout", () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.once("error", () => resolve(false));
+    });
+    if (ready) return true;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 async function publishedScreenUrl(
   container: Docker.Container,
   initialInfo?: Docker.ContainerInspectInfo,
@@ -618,10 +657,26 @@ async function publishedScreenUrl(
       const address = networkMode
         ? info.NetworkSettings?.Networks?.[networkMode]?.IPAddress
         : undefined;
-      if (address) return screenUrlFor(containerPort, address);
+      if (address) {
+        const ready = await waitForScreenReady(
+          address,
+          Number(containerPort),
+          SCREEN_READY_TIMEOUT_MS,
+        );
+        if (!ready) throw new Error("computer screen did not become ready in time");
+        return screenUrlFor(containerPort, address);
+      }
     }
     const hostPort = info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort;
-    if (hostPort) return screenUrlFor(hostPort);
+    if (hostPort) {
+      const ready = await waitForScreenReady(
+        SCREEN_HOST,
+        Number(hostPort),
+        SCREEN_READY_TIMEOUT_MS,
+      );
+      if (!ready) throw new Error("computer screen did not become ready in time");
+      return screenUrlFor(hostPort);
+    }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("computer screen port was not published");
@@ -641,9 +696,40 @@ async function setInteractiveScreen(
   if (result.code !== 0) throw new Error(result.stderr || "control screen failed to start");
 }
 
-function computerNetworkMode(info: Docker.ContainerInspectInfo | undefined) {
-  if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") return undefined;
-  return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
+// Each bot's computer gets its own Docker network so containers cannot reach
+// one another (Docker's default "bridge" network allows any container to
+// dial any other container's exposed ports, which would let one bot's
+// computer reach another bot's desktop/VNC endpoint with no authentication).
+async function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
+  if (process.env.SANDBOX_SCREEN_NETWORK === "internal") {
+    // The supervisor itself runs in this shared network in that topology and
+    // needs to address child containers by their in-network IP, so children
+    // stay on the supervisor's network rather than an isolated one.
+    return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
+  }
+  return ensureBotNetwork(botId);
+}
+
+async function ensureBotNetwork(botId: string) {
+  const name = computerNetworkNameFor(botId);
+  try {
+    await docker.getNetwork(name).inspect();
+  } catch {
+    await docker
+      .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
+      .catch((error) => {
+        // Another concurrent provision request may have created it first.
+        if (!/already exists/i.test(String(error))) throw error;
+      });
+  }
+  return name;
+}
+
+async function removeBotNetwork(botId: string) {
+  await docker
+    .getNetwork(computerNetworkNameFor(botId))
+    .remove()
+    .catch(() => undefined);
 }
 
 async function inspectSupervisorContainer() {

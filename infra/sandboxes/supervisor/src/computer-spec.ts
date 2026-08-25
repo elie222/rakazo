@@ -1,6 +1,6 @@
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 export const TEAM_SCREEN_LIMIT = 8;
-const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 
 export function screenPorts(index: number) {
   if (index < 0 || index >= TEAM_SCREEN_LIMIT) {
@@ -84,9 +84,17 @@ export function containerCreateOptions(input: ComputerCreateInput) {
   };
 }
 
-export function containerNameFor(botId: string) {
+export function sanitizeIdentifier(botId: string) {
   const safe = botId.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 40);
-  return `rakazo-bot-${safe || "box"}`;
+  return safe || "box";
+}
+
+export function containerNameFor(botId: string) {
+  return `rakazo-bot-${sanitizeIdentifier(botId)}`;
+}
+
+export function computerNetworkNameFor(botId: string) {
+  return `rakazo-computer-${sanitizeIdentifier(botId)}`;
 }
 
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
