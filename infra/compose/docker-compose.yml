@@ -99,6 +99,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
+      args:
+        VITE_DEFAULT_UI_LOCALE: ${VITE_DEFAULT_UI_LOCALE:-}
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       API_PROXY_TARGET: http://api:3100
