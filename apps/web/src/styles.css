@@ -50,12 +50,17 @@ body,
   background-position: right 8px center;
   border: 0;
   border-radius: 8px;
-  padding: 7px 26px 7px 11px;
+  padding-block: 7px;
+  padding-inline: 11px 26px;
   color: #ececee;
   font: inherit;
   font-size: 14px;
   cursor: pointer;
   outline: none;
+}
+
+[dir="rtl"] .rk-schedule-select {
+  background-position: left 8px center;
 }
 
 @keyframes rkPulse {

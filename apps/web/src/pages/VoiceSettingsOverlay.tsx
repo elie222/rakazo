@@ -168,7 +168,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       setNotice(null);
                       void refresh(entry.id);
                     }}
-                    className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-left last:border-0 ${
+                    className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-start last:border-0 ${
                       entry.id === provider ? "bg-[#1A1A1D]" : "hover:bg-[#161618]"
                     }`}
                   >

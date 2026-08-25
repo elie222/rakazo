@@ -20,6 +20,7 @@
       "expo-router",
       "expo-secure-store",
       "expo-audio",
+      "expo-localization",
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
       [
@@ -71,6 +72,7 @@
     },
     "extra": {
       "router": {},
+      "supportsRTL": true,
       "eas": {
         "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
       }

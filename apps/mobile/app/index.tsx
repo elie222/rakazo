@@ -460,6 +460,7 @@ const styles = StyleSheet.create({
     color: native.label,
     paddingHorizontal: 12,
     fontSize: 17,
+    writingDirection: "auto",
   },
   error: {
     color: native.secondaryLabel,
@@ -513,6 +514,7 @@ const styles = StyleSheet.create({
     color: native.label,
     fontSize: 17,
     fontWeight: "600",
+    writingDirection: "auto",
   },
   tag: {
     flexShrink: 1,
@@ -525,6 +527,7 @@ const styles = StyleSheet.create({
     color: native.secondaryLabel,
     fontSize: 11,
     fontWeight: "500",
+    writingDirection: "auto",
   },
   time: {
     color: native.secondaryLabel,
@@ -534,6 +537,7 @@ const styles = StyleSheet.create({
     color: native.secondaryLabel,
     fontSize: 15,
     lineHeight: 20,
+    writingDirection: "auto",
   },
   unreadPreview: {
     color: native.label,

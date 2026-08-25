@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { loadApiBase } from "../lib/api";
+import { applyMobileUiDirection } from "../lib/ui-direction";
+
+applyMobileUiDirection();
 
 export default function Layout() {
   const [ready, setReady] = useState(false);

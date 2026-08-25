@@ -5,7 +5,9 @@ import {
   describeCronPreset,
   formatCron,
   nextCronDate,
+  ONCE_ROUTINE_CRON,
   presetFromCron,
+  resolveRoutineNextRunAt,
 } from "./cron.js";
 
 function preset(partial: Partial<CronPreset> & Pick<CronPreset, "freq">): CronPreset {
@@ -40,6 +42,9 @@ describe("cronFromPreset", () => {
   it("keeps advanced expressions", () => {
     expect(cronFromPreset(preset({ freq: "Advanced", cron: "0 10 15 * *" }))).toBe("0 10 15 * *");
     expect(cronFromPreset(preset({ freq: "Advanced", cron: "" }))).toBe("*/3 * * * *");
+    expect(cronFromPreset(preset({ freq: "Advanced", cron: ONCE_ROUTINE_CRON }))).toBe(
+      ONCE_ROUTINE_CRON,
+    );
   });
 });
 
@@ -86,6 +91,25 @@ describe("presetFromCron", () => {
       freq: "Advanced",
       cron: "30 14 15 * *",
     });
+    expect(presetFromCron(ONCE_ROUTINE_CRON)).toMatchObject({
+      freq: "Advanced",
+      cron: ONCE_ROUTINE_CRON,
+    });
+  });
+});
+
+describe("resolveRoutineNextRunAt", () => {
+  it("preserves existing nextRunAt for one-shot routines", () => {
+    const existing = new Date("2030-01-01T09:00:00.000Z");
+    expect(resolveRoutineNextRunAt(ONCE_ROUTINE_CRON, new Date(), "UTC", existing)).toEqual(
+      existing,
+    );
+    expect(resolveRoutineNextRunAt(ONCE_ROUTINE_CRON, new Date(), "UTC", null)).toBeNull();
+  });
+
+  it("computes cron schedules for repeating routines", () => {
+    const next = resolveRoutineNextRunAt("*/1 * * * *", new Date(), "UTC", null);
+    expect(next?.getTime()).toBeGreaterThan(Date.now());
   });
 });
 
@@ -94,6 +118,7 @@ describe("formatCron", () => {
     expect(formatCron("0 9 * * 1")).toBe("Every Monday at 9:00 AM");
     expect(formatCron("0 8 * * 1-5")).toBe("Weekdays at 8:00 AM");
     expect(formatCron("*/15 * * * *")).toBe("Every 15 minutes");
+    expect(formatCron(ONCE_ROUTINE_CRON)).toBe("One-time");
     expect(describeCronPreset(preset({ freq: "Every hour" }))).toEqual({
       lead: "Every hour",
       detail: "",
