@@ -1,5 +1,5 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 function formatRelativeTime(iso: string, now = new Date()): string {
@@ -55,41 +55,38 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
   const [activeRuns, setActiveRuns] = useState<RunActivityRow[]>([]);
   const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const refreshGeneration = useRef(0);
-  const inFlight = useRef(false);
-
-  const refresh = useCallback(async () => {
-    // Skip overlapping ticks so a slow poll cannot be invalidated (stuck Loading)
-    // or finish after a newer start and clear loading early (empty flash).
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const generation = refreshGeneration.current;
-    try {
-      const [active, recent] = await Promise.all([
-        rpc.runs.list({ filter: "active" }),
-        rpc.runs.list({ filter: "recent" }),
-      ]);
-      if (generation !== refreshGeneration.current) return;
-      setActiveRuns(active.runs);
-      setRecentRuns(recent.runs);
-    } catch {
-      if (generation !== refreshGeneration.current) return;
-      setActiveRuns([]);
-      setRecentRuns([]);
-    } finally {
-      inFlight.current = false;
-      if (generation === refreshGeneration.current) setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15_000);
-    return () => {
-      refreshGeneration.current += 1;
-      window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async () => {
+      try {
+        const [active, recent] = await Promise.all([
+          rpc.runs.list({ filter: "active" }),
+          rpc.runs.list({ filter: "recent" }),
+        ]);
+        if (cancelled) return;
+        setActiveRuns(active.runs);
+        setRecentRuns(recent.runs);
+      } catch {
+        if (cancelled) return;
+        setActiveRuns([]);
+        setRecentRuns([]);
+      } finally {
+        if (cancelled) return;
+        setLoading(false);
+        // Schedule the next poll after the previous settles — no overlap.
+        timer = window.setTimeout(() => void tick(), 15_000);
+      }
     };
-  }, [refresh]);
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
 
   if (loading) {
     return <div className="px-2.5 py-2 text-[13px] text-[#6C6C70]">Loading activity…</div>;
