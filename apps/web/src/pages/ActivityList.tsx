@@ -70,9 +70,8 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
         setActiveRuns(active.runs);
         setRecentRuns(recent.runs);
       } catch {
+        // Keep the last good snapshot on transient RPC failures.
         if (cancelled) return;
-        setActiveRuns([]);
-        setRecentRuns([]);
       } finally {
         if (!cancelled) {
           setLoading(false);
