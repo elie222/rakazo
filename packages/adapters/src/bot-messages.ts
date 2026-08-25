@@ -2,6 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
+  buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
   resolveBotAddress,
@@ -101,7 +102,7 @@ export async function messageBot(
         botId: target.id,
         threadId: targetThreadId,
         userId: run.userId,
-        prompt: message,
+        prompt: buildBotMessageWakePrompt({ from: sender, text: message }),
         status: "queued",
       },
     });

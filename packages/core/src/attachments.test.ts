@@ -94,3 +94,18 @@ describe("attachment helpers", () => {
     expect(attachmentsForBot(attachments, undefined)).toEqual([]);
   });
 });
+
+describe("peer message history", () => {
+  it("keeps attribution so a later turn knows a bot spoke, not the user", () => {
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "bot_message_received", fromBotId: "b_1", fromBotName: "Researcher", text: "hi" },
+      ]),
+    ).toBe("[from Researcher] hi");
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "bot_message_sent", toBotId: "b_2", toBotName: "Analyst", text: "chart it" },
+      ]),
+    ).toBe("[to Analyst] chart it");
+  });
+});

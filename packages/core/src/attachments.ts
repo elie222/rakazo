@@ -95,6 +95,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
+      // Keep attribution on peer messages: without it a later turn cannot tell
+      // which lines came from another bot rather than the user.
+      if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
+      if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
       if ("text" in block && typeof block.text === "string") return block.text;
       return "";
     })

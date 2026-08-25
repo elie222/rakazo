@@ -3,6 +3,7 @@ import {
   BOT_MESSAGE_MAX_HOPS,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageHopExhausted,
+  buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
   renderBotDirectory,
@@ -92,5 +93,34 @@ describe("directory", () => {
 
   it("says nothing when a bot has no teammates", () => {
     expect(renderBotDirectory([])).toBeUndefined();
+  });
+});
+
+describe("inbound wake prompt", () => {
+  const prompt = buildBotMessageWakePrompt({
+    from: { id: "b_1", name: "Researcher" },
+    text: "Q3 numbers are in /data/q3.csv",
+  });
+
+  it("names the sender so the recipient knows who to answer", () => {
+    expect(prompt).toContain("Researcher");
+    expect(prompt).toContain("b_1");
+  });
+
+  it("says this is a bot, not the user typing", () => {
+    expect(prompt).toContain("not the user typing");
+  });
+
+  it("carries the message itself", () => {
+    expect(prompt).toContain("Q3 numbers are in /data/q3.csv");
+  });
+
+  it("tells the recipient how to reply, which is the only way back", () => {
+    expect(prompt).toContain("message_bot");
+    expect(prompt).toContain("bot_id b_1");
+  });
+
+  it("does not demand a reply for an FYI", () => {
+    expect(prompt).toContain("staying silent is fine");
   });
 });
