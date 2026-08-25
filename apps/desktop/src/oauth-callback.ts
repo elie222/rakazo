@@ -2,6 +2,11 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export type OAuthCallback = { code: string; state?: string };
 
+export type OAuthCallbackFromOptions = {
+  /** App renderer origins — their `/callback` routes must not be treated as paste-flow codes. */
+  excludeOrigins?: readonly string[];
+};
+
 /**
  * Providers that sign in through a loopback redirect — Anthropic sends the
  * browser to `http://localhost:53692/callback` — return the authorization code
@@ -10,7 +15,10 @@ export type OAuthCallback = { code: string; state?: string };
  * Electron window has no address bar. The main process still sees the
  * navigation, so it reads the code from there.
  */
-export function oauthCallbackFrom(url: string): OAuthCallback | undefined {
+export function oauthCallbackFrom(
+  url: string,
+  options: OAuthCallbackFromOptions = {},
+): OAuthCallback | undefined {
   let target: URL;
   try {
     target = new URL(url);
@@ -19,8 +27,9 @@ export function oauthCallbackFrom(url: string): OAuthCallback | undefined {
   }
   if (target.protocol !== "http:" && target.protocol !== "https:") return undefined;
   if (!LOOPBACK_HOSTS.has(target.hostname)) return undefined;
-  const code = target.searchParams.get("code");
+  if (options.excludeOrigins?.includes(target.origin)) return undefined;
+  const code = target.searchParams.get("code")?.trim();
   if (!code) return undefined;
-  const state = target.searchParams.get("state");
-  return state === null ? { code } : { code, state };
+  const state = target.searchParams.get("state")?.trim();
+  return state ? { code, state } : { code };
 }

@@ -57,6 +57,7 @@ function createWindow() {
   mainWindow = win;
   // OAuth flows open the provider's authorize page via window.open; give that
   // popup a normal framed window and keep every non-http target closed.
+  const appOrigin = new URL(WEB_URL).origin;
   win.webContents.setWindowOpenHandler(({ url }) => {
     let target: URL;
     try {
@@ -64,7 +65,6 @@ function createWindow() {
     } catch {
       return { action: "deny" };
     }
-    const appOrigin = new URL(WEB_URL).origin;
     if (
       target.protocol !== "https:" &&
       !(target.protocol === "http:" && target.origin === appOrigin)
@@ -92,15 +92,21 @@ function createWindow() {
   // the user on a blank window holding the authorization code in a URL they
   // cannot read. Capture it here and hand it to the app instead.
   win.webContents.on("did-create-window", (popup) => {
-    const capture = (details: Electron.Event, url: string) => {
-      const callback = oauthCallbackFrom(url);
+    const capture = (details: {
+      preventDefault: () => void;
+      url: string;
+      isMainFrame?: boolean;
+    }) => {
+      // will-redirect can fire for iframes; only the top-level callback counts.
+      if (details.isMainFrame === false) return;
+      const callback = oauthCallbackFrom(details.url, { excludeOrigins: [appOrigin] });
       if (!callback) return;
       details.preventDefault();
       if (!win.isDestroyed()) win.webContents.send("desktop.oauth.callback", callback);
       if (!popup.isDestroyed()) popup.close();
     };
-    popup.webContents.on("will-redirect", (details) => capture(details, details.url));
-    popup.webContents.on("will-navigate", (details) => capture(details, details.url));
+    popup.webContents.on("will-redirect", (details) => capture(details));
+    popup.webContents.on("will-navigate", (details) => capture(details));
   });
   win.on("close", (event) => {
     if (
