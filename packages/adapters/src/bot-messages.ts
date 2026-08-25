@@ -75,9 +75,17 @@ export async function messageBot(
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
 
   const targetThreadId = target.thread.id;
+  const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message });
   const committed = await deps.prisma.$transaction(async (tx) => {
     const senderStillRunning = await tx.run.findFirst({
-      where: { id: run.id, status: "running" },
+      where: {
+        id: run.id,
+        workspaceId: run.workspaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        userId: run.userId,
+        status: "running",
+      },
       select: { id: true },
     });
     if (!senderStillRunning) return { ok: false as const, error: "source run is no longer active" };
@@ -90,7 +98,8 @@ export async function messageBot(
       hop,
     };
     // Delivered as a user-role turn: for the recipient this is the prompt that
-    // woke it, exactly like a person typing in its chat.
+    // woke it. The stored block keeps the raw text for the UI; the task prompt
+    // names the sender and marks the body untrusted.
     const inbound = await createThreadMessageInTransaction(tx, {
       threadId: targetThreadId,
       role: "user",
@@ -102,7 +111,7 @@ export async function messageBot(
         botId: target.id,
         threadId: targetThreadId,
         userId: run.userId,
-        prompt: buildBotMessageWakePrompt({ from: sender, text: message }),
+        prompt: wakePrompt,
         status: "queued",
       },
     });

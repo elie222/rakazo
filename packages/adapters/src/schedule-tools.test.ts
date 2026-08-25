@@ -87,7 +87,12 @@ describe("resolveScheduleTiming", () => {
 });
 
 describe("filterBuiltinToolsForThread", () => {
-  const tools = [{ name: "handoff_to_bot" }, { name: "schedule_create" }, { name: "remember" }];
+  const tools = [
+    { name: "handoff_to_bot" },
+    { name: "message_bot" },
+    { name: "schedule_create" },
+    { name: "remember" },
+  ];
 
   it("keeps handoff only in groups and hides schedule tools outside 1:1", () => {
     expect(filterBuiltinToolsForThread(tools, "group-1").map((tool) => tool.name)).toEqual([
@@ -95,6 +100,7 @@ describe("filterBuiltinToolsForThread", () => {
       "remember",
     ]);
     expect(filterBuiltinToolsForThread(tools, null).map((tool) => tool.name)).toEqual([
+      "message_bot",
       "schedule_create",
       "remember",
     ]);

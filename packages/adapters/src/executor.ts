@@ -1436,14 +1436,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!sent.ok) return finish({ error: sent.error });
             try {
               // Echo into the sender's own chat so the user can see what it said.
-              await publishMessage(deps, run, "bot", [
-                {
-                  kind: "bot_message_sent",
-                  toBotId: sent.botId,
-                  toBotName: sent.name,
-                  text: sent.delivered,
-                },
-              ]);
+              await publishMessage(
+                deps,
+                run,
+                "bot",
+                redactBlocks(
+                  [
+                    {
+                      kind: "bot_message_sent",
+                      toBotId: sent.botId,
+                      toBotName: sent.name,
+                      text: sent.delivered,
+                    },
+                  ],
+                  runSecrets,
+                ),
+              );
             } catch (error) {
               console.error("bot message echo", error);
             }
@@ -2154,11 +2162,15 @@ async function clearRunProgress(deps: ExecutorDeps, runId: string): Promise<void
 }
 
 function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
-  return blocks.map((block) =>
-    block.kind === "text"
-      ? { kind: "text" as const, text: redactSecrets(block.text, secrets) }
-      : block,
-  );
+  return blocks.map((block) => {
+    if (block.kind === "text") {
+      return { kind: "text" as const, text: redactSecrets(block.text, secrets) };
+    }
+    if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
+      return { ...block, text: redactSecrets(block.text, secrets) };
+    }
+    return block;
+  });
 }
 
 async function publishMessage(

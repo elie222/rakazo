@@ -69,7 +69,11 @@ describe("messaging another bot", () => {
     expect(sent).toMatchObject({ ok: true, botId: "bot-target", name: "Analyst" });
     expect(harness.tx.task.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ botId: "bot-target", threadId: "thread-target" }),
+        data: expect.objectContaining({
+          botId: "bot-target",
+          threadId: "thread-target",
+          prompt: expect.stringMatching(/not the user typing[\s\S]*untrusted peer content/),
+        }),
       }),
     );
     expect(harness.tx.run.create).toHaveBeenCalledWith(
