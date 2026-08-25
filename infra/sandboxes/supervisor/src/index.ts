@@ -98,42 +98,47 @@ app.post("/computers", async (c) => {
       botId: body.botId,
       workspaceId: body.workspaceId,
     });
-    await ensureComputerImage();
-    const runtimeInfo = await inspectSupervisorContainer();
-    const networkMode = await computerNetworkName(body.botId, runtimeInfo);
-    const serviceHomePath = path.resolve(body.homePath);
-    assertBotHomePath(serviceHomePath, body.botId);
-    await mkdir(serviceHomePath, { recursive: true });
-    const homePath = hostHomePath(serviceHomePath, runtimeInfo);
-    const existing = await findBotContainer(body.botId, body.workspaceId);
-    if (existing) {
-      const info = await existing.inspect();
-      const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
-      if (
-        info.Image !== desired.Id ||
-        (networkMode && info.HostConfig.NetworkMode !== networkMode)
-      ) {
-        await existing.remove({ force: true }).catch(() => undefined);
-      } else {
-        if (!info.State.Running) await existing.start();
-        const screenUrl = await publishedScreenUrl(existing, info.State.Running ? info : undefined);
-        return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+    return await withBotLifecycleLock(body.botId, async () => {
+      await ensureComputerImage();
+      const runtimeInfo = await inspectSupervisorContainer();
+      const networkMode = await computerNetworkName(body.botId, runtimeInfo);
+      const serviceHomePath = path.resolve(body.homePath);
+      assertBotHomePath(serviceHomePath, body.botId);
+      await mkdir(serviceHomePath, { recursive: true });
+      const homePath = hostHomePath(serviceHomePath, runtimeInfo);
+      const existing = await findBotContainer(body.botId, body.workspaceId);
+      if (existing) {
+        const info = await existing.inspect();
+        const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
+        if (
+          info.Image !== desired.Id ||
+          (networkMode && info.HostConfig.NetworkMode !== networkMode)
+        ) {
+          await existing.remove({ force: true }).catch(() => undefined);
+        } else {
+          if (!info.State.Running) await existing.start();
+          const screenUrl = await publishedScreenUrl(
+            existing,
+            info.State.Running ? info : undefined,
+          );
+          return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+        }
       }
-    }
-    const name = containerNameFor(body.botId);
-    const container = await docker.createContainer(
-      containerCreateOptions({
-        name,
-        image: COMPUTER_IMAGE,
-        botId: body.botId,
-        workspaceId: body.workspaceId,
-        homePath,
-        networkMode,
-      }),
-    );
-    await container.start();
-    const screenUrl = await publishedScreenUrl(container);
-    return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
+      const name = containerNameFor(body.botId);
+      const container = await docker.createContainer(
+        containerCreateOptions({
+          name,
+          image: COMPUTER_IMAGE,
+          botId: body.botId,
+          workspaceId: body.workspaceId,
+          homePath,
+          networkMode,
+        }),
+      );
+      await container.start();
+      const screenUrl = await publishedScreenUrl(container);
+      return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: message }, 500);
@@ -483,13 +488,20 @@ app.delete("/computers/:id", async (c) => {
   const id = c.req.param("id");
   const botId = c.req.header("x-rakazo-bot-id");
   try {
-    const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-workspace-id"));
-    await container.remove({ force: true }).catch(() => undefined);
-    clearComputerScreenRegistry(computerScreens, id);
-    if (botId && process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
-      await removeBotNetwork(botId);
-    }
-    return c.json({ ok: true });
+    if (!botId) throw new Error("missing computer identity");
+    return await withBotLifecycleLock(botId, async () => {
+      const { container } = await managedContainer(
+        id,
+        botId,
+        c.req.header("x-rakazo-workspace-id"),
+      );
+      await container.remove({ force: true }).catch(() => undefined);
+      clearComputerScreenRegistry(computerScreens, id);
+      if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
+        await removeBotNetwork(botId);
+      }
+      return c.json({ ok: true });
+    });
   } catch {
     return c.json({ error: "computer not found" }, 404);
   }
@@ -724,6 +736,27 @@ async function removeBotNetwork(botId: string) {
     .getNetwork(computerNetworkNameFor(botId))
     .remove()
     .catch(() => undefined);
+}
+
+const botLifecycleLocks = new Map<string, Promise<unknown>>();
+
+// Serialize create/delete for one bot so DELETE cannot remove a per-bot network
+// while POST still needs it between ensureBotNetwork and container attach.
+async function withBotLifecycleLock<T>(botId: string, task: () => Promise<T>): Promise<T> {
+  const previous = botLifecycleLocks.get(botId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const current = previous.catch(() => undefined).then(() => gate);
+  botLifecycleLocks.set(botId, current);
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (botLifecycleLocks.get(botId) === current) botLifecycleLocks.delete(botId);
+  }
 }
 
 async function inspectSupervisorContainer() {
