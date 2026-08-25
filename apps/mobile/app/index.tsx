@@ -118,7 +118,7 @@ export default function Home() {
       setActivity({ active: [], recent: [] });
       return;
     }
-    const generation = ++activityGeneration.current;
+    const generation = activityGeneration.current;
     try {
       const next = await fetchWorkspaceActivity();
       if (generation !== activityGeneration.current) return;
