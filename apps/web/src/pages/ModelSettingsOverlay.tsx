@@ -55,7 +55,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const selectionRevisionRef = useRef(0);
   const probeRequestIdRef = useRef(0);
 
-  function releaseOAuthCapture() {
+  function releaseOAuthCapture(expected?: (() => void) | null) {
+    if (expected !== undefined && oauthCaptureRef.current !== expected) return;
     oauthCaptureRef.current?.();
     oauthCaptureRef.current = null;
   }
@@ -356,6 +357,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     const attempt = login ?? oauth;
     if (attempt?.mode !== "auth-url" || oauthCodeSubmittingRef.current) return;
     const controller = oauthAbortRef.current;
+    const capture = oauthCaptureRef.current;
     const code = (captured ?? pasteCode).trim();
     if (!controller || !code) return;
     oauthCodeSubmittingRef.current = true;
@@ -384,7 +386,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
-        releaseOAuthCapture();
+        // Only drop this attempt's listener — a newer sign-in may already own the ref.
+        releaseOAuthCapture(capture);
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }
     }
