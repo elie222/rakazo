@@ -95,6 +95,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "file") {
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
+      if (block.kind === "delegated_task") {
+        const outcome = block.summary ? `${block.status}: ${block.summary}` : block.status;
+        return `[delegated to ${block.botName}: "${block.prompt}" — ${outcome}]`;
+      }
       if ("text" in block && typeof block.text === "string") return block.text;
       return "";
     })

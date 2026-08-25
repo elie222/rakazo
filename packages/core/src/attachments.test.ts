@@ -44,6 +44,33 @@ describe("attachment helpers", () => {
         },
       ]),
     ).toBe("hello\n[image: shot.png]\n[file: brief.pdf (application/pdf, 99 bytes)]");
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "delegated_task",
+          taskId: "t1",
+          runId: "r1",
+          botId: "b1",
+          botName: "Researcher",
+          prompt: "find comps",
+          status: "completed",
+          summary: "found 3 comps",
+        },
+        {
+          kind: "delegated_task",
+          taskId: "t2",
+          runId: "r2",
+          botId: "b2",
+          botName: "Writer",
+          prompt: "draft the memo",
+          status: "running",
+          summary: null,
+        },
+      ]),
+    ).toBe(
+      '[delegated to Researcher: "find comps" — completed: found 3 comps]\n' +
+        '[delegated to Writer: "draft the memo" — running]',
+    );
   });
 
   it("infers attachment mime types from extensions", () => {
