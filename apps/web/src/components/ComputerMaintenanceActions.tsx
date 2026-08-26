@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { useState } from "react";
 import { rpc } from "../lib/rpc";
@@ -16,6 +17,7 @@ export function ComputerMaintenanceActions({
   onChanged: () => Promise<void>;
   compact?: boolean;
 }) {
+  const { t } = useLingui();
   const [pending, setPending] = useState<Action | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function ComputerMaintenanceActions({
       setConfirmReset(false);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update computer");
+      setError(err instanceof Error ? err.message : t`Could not update computer`);
     } finally {
       setPending(null);
     }
@@ -52,25 +54,27 @@ export function ComputerMaintenanceActions({
       <div className={compact ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}>
         {showRecover ? (
           <BuiButton disabled={busy || pending !== null} onClick={() => void run("recover")}>
-            {pending === "recover" ? "Recovering…" : "Recover computer"}
+            {pending === "recover" ? <Trans>Recovering…</Trans> : <Trans>Recover computer</Trans>}
           </BuiButton>
         ) : null}
         {showReset ? (
           <BuiButton disabled={busy || pending !== null} onClick={() => setConfirmReset(true)}>
-            {pending === "reset" ? "Resetting…" : "Reset computer"}
+            {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
           </BuiButton>
         ) : null}
         {showUpdate ? (
           <BuiButton disabled={busy || pending !== null} onClick={() => void run("update")}>
-            {pending === "update" ? "Updating…" : "Update computer"}
+            {pending === "update" ? <Trans>Updating…</Trans> : <Trans>Update computer</Trans>}
           </BuiButton>
         ) : null}
       </div>
       {!compact ? (
         <p className="text-[13px] leading-[1.45] text-[#6C6C70]">
-          Recover replaces an unreachable computer and keeps files in the saved workspace. Reset
-          restores the last saved workspace and loses unsaved work. Update rebuilds with the latest
-          image and keeps the saved workspace.
+          <Trans>
+            Recover replaces an unreachable computer and keeps files in the saved workspace. Reset
+            restores the last saved workspace and loses unsaved work. Update rebuilds with the latest
+            image and keeps the saved workspace.
+          </Trans>
         </p>
       ) : null}
       {error ? <p className="text-[13px] text-[#E65707]">{error}</p> : null}
@@ -81,18 +85,22 @@ export function ComputerMaintenanceActions({
           aria-modal="true"
         >
           <BuiCard className="w-full max-w-[420px] border border-[#232326] p-5">
-            <div className="text-[16px] font-medium text-[#ECECEE]">Reset computer?</div>
+            <div className="text-[16px] font-medium text-[#ECECEE]">
+              <Trans>Reset computer?</Trans>
+            </div>
             <p className="mt-2 text-[14px] leading-[1.5] text-[#85858A]">
-              Restore the last saved workspace. Unsaved work on the computer is lost.
+              <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <BuiButton onClick={() => setConfirmReset(false)}>Cancel</BuiButton>
+              <BuiButton onClick={() => setConfirmReset(false)}>
+                <Trans>Cancel</Trans>
+              </BuiButton>
               <BuiButton
                 tone="accent"
                 disabled={pending !== null}
                 onClick={() => void run("reset")}
               >
-                Reset
+                <Trans>Reset</Trans>
               </BuiButton>
             </div>
           </BuiCard>
