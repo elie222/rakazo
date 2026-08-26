@@ -539,7 +539,7 @@
   "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.": "Bu sunucu tarayıcıyla oturum açar. Agent'larının araçlarını kullanabilmesi için yetkilendir — bir açılır pencere açılacak.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "Bu abonelik girişi Rakazo'da henüz kullanılamıyor. Bir dağıtım kimlik bilgisi kullan veya başka bir sağlayıcı seç.",
   "Time of day": "Günün saati",
-  "Title": "Unvan",
+  "Title": "Başlık",
   "Tool sources": "Araç kaynakları",
   "Treg token": "Treg token'ı",
   "Type your answer": "Yanıtını yaz",

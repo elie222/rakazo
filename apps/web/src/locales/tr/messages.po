@@ -2391,7 +2391,7 @@ msgstr "Günün saati"
 #: src/pages/Shell.tsx:4251
 #: src/pages/Shell.tsx:4414
 msgid "Title"
-msgstr "Unvan"
+msgstr "Başlık"
 
 #: src/pages/PluginsOverlay.tsx:286
 msgid "Tool sources"
