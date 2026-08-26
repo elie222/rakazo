@@ -1364,11 +1364,24 @@ function MessageBubble({
 }) {
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
+  const appConnectBlocks = message.blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "app_connect" }> =>
+      block.kind === "app_connect",
+  );
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
       block.kind === "ask" && !isApprovalAskBlock(block),
   );
-  if (ask) return <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />;
+  if (ask) {
+    return (
+      <View style={{ gap: 8, width: "100%" }}>
+        <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={botId} block={block} />
+        ))}
+      </View>
+    );
+  }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
     const from = memberName(members, handoff.fromBotId) ?? "bot";
@@ -1510,10 +1523,6 @@ function MessageBubble({
       </Pressable>
     );
   }
-  const appConnectBlocks = message.blocks.filter(
-    (block): block is Extract<MessageBlock, { kind: "app_connect" }> =>
-      block.kind === "app_connect",
-  );
   if (appConnectBlocks.length > 0 && appConnectBlocks.length === message.blocks.length) {
     return (
       <View style={{ gap: 8, width: "100%" }}>
