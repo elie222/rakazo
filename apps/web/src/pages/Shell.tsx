@@ -200,7 +200,9 @@ function readCollapsedSidebarSections(): Set<string> {
   try {
     const value = window.localStorage.getItem(COLLAPSED_SIDEBAR_SECTIONS_KEY);
     const keys: unknown = value ? JSON.parse(value) : [];
-    return new Set(Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : []);
+    return new Set(
+      Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [],
+    );
   } catch {
     return new Set();
   }
@@ -222,7 +224,9 @@ export function ShellPage() {
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(readCollapsedSidebarSections);
+  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(
+    readCollapsedSidebarSections,
+  );
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1817,74 +1821,79 @@ export function ShellPage() {
                         className="flex w-full items-center justify-between rounded-lg px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70] hover:bg-[#1A1A1D] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#8B5CF6]"
                         onClick={() => toggleSidebarSection(group.key)}
                         aria-expanded={!collapsed}
-                        aria-label={collapsed ? t`Expand ${group.title}` : t`Collapse ${group.title}`}
+                        aria-label={
+                          collapsed ? t`Expand ${group.title}` : t`Collapse ${group.title}`
+                        }
                       >
                         <span>{group.title}</span>
                         <ChevronDown
                           size={15}
                           strokeWidth={1.8}
-                          className={collapsed ? "-rotate-90 transition-transform" : "transition-transform"}
+                          className={
+                            collapsed ? "-rotate-90 transition-transform" : "transition-transform"
+                          }
                           aria-hidden="true"
                         />
                       </button>
                     ) : null}
-                    {!collapsed && group.bots.map((bot) => (
-                    <button
-                      key={bot.id}
-                      type="button"
-                      onClick={() => {
-                        setMobileSidebarOpen(false);
-                        navigate(`/app/${bot.id}`);
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setBotMenu({
-                          botId: bot.id,
-                          position: { x: event.clientX, y: event.clientY },
-                        });
-                      }}
-                      className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                      style={{
-                        background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
-                      }}
-                    >
-                      <BotAvatar color={bot.color} size={38} status={bot.status} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span
-                            dir="auto"
-                            className={`truncate text-[15px] text-[#ECECEE] ${
-                              bot.unread ? "font-semibold" : "font-medium"
-                            }`}
-                          >
-                            {bot.name}
-                            {bot.unread ? (
-                              <span className="sr-only">
-                                <Trans> (unread)</Trans>
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                            {bot.status === "idle" ? "" : bot.status}
-                            {bot.unread ? (
-                              <span
-                                aria-hidden="true"
-                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                              />
-                            ) : null}
-                          </span>
-                        </div>
-                        <div
-                          dir="auto"
-                          className={`mt-0.5 truncate text-[13.5px] ${
-                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                          }`}
+                    {!collapsed &&
+                      group.bots.map((bot) => (
+                        <button
+                          key={bot.id}
+                          type="button"
+                          onClick={() => {
+                            setMobileSidebarOpen(false);
+                            navigate(`/app/${bot.id}`);
+                          }}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setBotMenu({
+                              botId: bot.id,
+                              position: { x: event.clientX, y: event.clientY },
+                            });
+                          }}
+                          className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
+                          style={{
+                            background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                          }}
                         >
-                          {bot.preview || bot.title}
-                        </div>
-                      </div>
-                    </button>
-                    ))}
+                          <BotAvatar color={bot.color} size={38} status={bot.status} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span
+                                dir="auto"
+                                className={`truncate text-[15px] text-[#ECECEE] ${
+                                  bot.unread ? "font-semibold" : "font-medium"
+                                }`}
+                              >
+                                {bot.name}
+                                {bot.unread ? (
+                                  <span className="sr-only">
+                                    <Trans> (unread)</Trans>
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
+                                {bot.status === "idle" ? "" : bot.status}
+                                {bot.unread ? (
+                                  <span
+                                    aria-hidden="true"
+                                    className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                  />
+                                ) : null}
+                              </span>
+                            </div>
+                            <div
+                              dir="auto"
+                              className={`mt-0.5 truncate text-[13.5px] ${
+                                bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                              }`}
+                            >
+                              {bot.preview || bot.title}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
                   </div>
                 );
               })}
