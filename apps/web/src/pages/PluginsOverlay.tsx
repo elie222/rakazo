@@ -296,6 +296,11 @@ export function PluginsOverlay({
               if (!(event.currentTarget as HTMLDetailsElement).open) {
                 setSourceKind(null);
                 setSourceError(null);
+                setSourceName("");
+                setSourceUrl("");
+                setCredential("");
+                setAuthType("none");
+                setAuthName("x-api-key");
               }
             }}
           >

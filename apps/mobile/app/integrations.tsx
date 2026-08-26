@@ -52,6 +52,10 @@ export default function Integrations() {
     setAdvancedOpen(false);
     setSourceKind(null);
     setSourceError(null);
+    setName("");
+    setUrl("");
+    setCredential("");
+    setRequiresAuth(true);
   }
 
   async function connect(item: ConnectionCatalogItem) {
