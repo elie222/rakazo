@@ -30,6 +30,11 @@ describe("toComputerStatus", () => {
     expect(toComputerStatus("bot-1", computer).busyBotName).toBeNull();
     expect(toComputerStatus("bot-1", computer, "Writer").busyBotName).toBe("Writer");
   });
+
+  it("hides update on desktop computers", () => {
+    expect(toComputerStatus("bot-1", { kind: "desktop", state: "running", scope: "team", controlHolder: "none", homeRevision: "r1" }).updateAvailable).toBe(false);
+    expect(toComputerStatus("bot-1", { kind: "e2b", state: "running", scope: "team", controlHolder: "none", homeRevision: "r1" }).updateAvailable).toBe(true);
+  });
 });
 
 describe("executionBlocksUserTakeover", () => {

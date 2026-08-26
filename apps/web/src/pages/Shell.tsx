@@ -106,6 +106,7 @@ import {
 } from "../components/beautiful-ui/primitives";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
+import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
@@ -1533,16 +1534,21 @@ export function ShellPage() {
     takeControl,
     overlay,
     force = false,
+    action = "boot",
   }: {
     takeControl: boolean;
     overlay: boolean;
     force?: boolean;
+    action?: "boot" | "recover";
   }) {
     if (!active) return;
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     try {
-      if (needsBoot) await rpc.computer.boot({ botId: active.id });
+      if (needsBoot) {
+        if (action === "recover") await rpc.computer.recover({ botId: active.id });
+        else await rpc.computer.boot({ botId: active.id });
+      }
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
       setComputerError(null);
@@ -1581,6 +1587,7 @@ export function ShellPage() {
         takeControl: false,
         overlay: action === "boot",
         force: true,
+        action: action === "recover-screen" ? "recover" : "boot",
       }).catch(() => undefined);
     })();
     return () => {
@@ -2326,6 +2333,18 @@ export function ShellPage() {
                     </Button>
                   )}
                 </div>
+                {computer?.state === "error" ||
+                computer?.state === "stopped" ||
+                (computer?.state === "running" && !embeddedScreenUrl) ? (
+                  <ComputerMaintenanceActions
+                    botId={active.id}
+                    computer={computer}
+                    compact
+                    onChanged={async () => {
+                      await refreshThread(active.id);
+                    }}
+                  />
+                ) : null}
                 <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">
                   <Trans>Routines</Trans>
                 </div>
@@ -2448,6 +2467,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                computer={computer}
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
@@ -2472,6 +2492,9 @@ export function ShellPage() {
                   URL.revokeObjectURL(url);
                 }}
                 onClear={() => setClearTarget(active)}
+                onComputerChanged={async () => {
+                  await refreshThread(active.id);
+                }}
               />
             ) : null}
             {panel === "routine" && active ? (
@@ -4283,12 +4306,15 @@ function CreateBotForm({
 
 function BotSettings({
   bot,
+  computer,
   memoryProviderConfigured,
   onSave,
   onExport,
   onClear,
+  onComputerChanged,
 }: {
   bot: Bot;
+  computer: ComputerStatus | null;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
@@ -4305,6 +4331,7 @@ function BotSettings({
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
+  onComputerChanged: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const [name, setName] = useState(bot.name);
@@ -4586,6 +4613,11 @@ function BotSettings({
         <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
           <Trans>Clear conversation</Trans>
         </button>
+        <ComputerMaintenanceActions
+          botId={bot.id}
+          computer={computer}
+          onChanged={onComputerChanged}
+        />
       </div>
     </div>
   );

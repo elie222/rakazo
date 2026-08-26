@@ -11,11 +11,17 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
+  ComputerBusyError,
+  computerSupportsUpdate,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
+  replaceComputer,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { LocalAgentHomeStore } from "./home.js";
 
 const context = {
   operationId: "test",
@@ -537,3 +543,117 @@ function leasePrisma(options: {
     findUniqueOrThrow,
   };
 }
+
+describe("computer replacement", () => {
+  it("exposes update availability by sandbox kind", () => {
+    expect(computerSupportsUpdate("e2b")).toBe(true);
+    expect(computerSupportsUpdate("desktop")).toBe(false);
+  });
+
+  it("replaces a wedged computer and restores the durable home", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-replace-"));
+    const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-replace-home-"));
+    const home = new LocalAgentHomeStore(homeRoot);
+    const sandbox = new FakeSandboxProvider();
+    const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+    await sandbox.writeFile(
+      first,
+      { path: "notes/keep.txt", content: new TextEncoder().encode("saved") },
+      context,
+    );
+    const revision = await checkpointComputerWorkspace(home, sandbox, "bot-1", first, context);
+
+    const computerRecord = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: first.providerRef,
+      kind: "fake",
+      scope: "dedicated",
+      state: "running",
+      controlLeaseId: null,
+      homeRevision: revision,
+    };
+    const findUniqueOrThrow = vi
+      .fn()
+      .mockResolvedValueOnce(computerRecord)
+      .mockResolvedValueOnce({ ...computerRecord, state: "stopped", providerRef: null })
+      .mockResolvedValue({
+        ...computerRecord,
+        state: "stopped",
+        providerRef: null,
+      });
+    const updateMany = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValue({ count: 1 });
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      computer: { findUniqueOrThrow, updateMany, update },
+      computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    const destroy = vi.spyOn(sandbox, "destroy");
+    try {
+      const ref = await replaceComputer(
+        {
+          prisma,
+          sandbox,
+          home,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        "recover",
+        context,
+      );
+      expect(destroy).toHaveBeenCalledOnce();
+      expect(ref.fresh).toBe(true);
+      expect(
+        new TextDecoder().decode(await sandbox.readFile(ref, "notes/keep.txt", context)),
+      ).toBe("saved");
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(homeRoot, { recursive: true, force: true });
+    } catch (error) {
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(homeRoot, { recursive: true, force: true });
+      throw error;
+    }
+  });
+
+  it("rejects replacement while another team bot holds the computer", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "team",
+          state: "running",
+          controlLeaseId: null,
+        }),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "other-run" }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "reset",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+  });
+});

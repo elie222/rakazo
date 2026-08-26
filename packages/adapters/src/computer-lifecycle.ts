@@ -6,10 +6,16 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { screenLeaseId } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
 import { type PrismaClient, parseComputerMode, type ThreadEvents } from "@rakazo/db";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
-import { ensureComputerWorkspaceLayout, restoreComputerWorkspace } from "./computer-workspace.js";
+import {
+  checkpointAndRecordComputerWorkspace,
+  ensureComputerWorkspaceLayout,
+  restoreComputerWorkspace,
+} from "./computer-workspace.js";
+import { toComputerRef } from "./computer-support.js";
+import { isUnrecoverableSandboxError } from "./e2b-sandbox.js";
 import { resolveAgentHomePath } from "./home.js";
 
 const EXECUTION_LEASE_MS = 5 * 60_000;
@@ -367,4 +373,112 @@ export async function releaseComputerExecutionLease(
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+export type ComputerReplaceMode = "recover" | "reset" | "update";
+
+export function computerSupportsUpdate(kind: string): boolean {
+  return kind !== "desktop";
+}
+
+export async function replaceComputer(
+  deps: {
+    prisma: PrismaClient;
+    sandbox: SandboxProvider;
+    home: AgentHomeStore;
+    jobs: JobPublisher;
+    events: ThreadEvents;
+    dataDir?: string;
+  },
+  computerId: string,
+  mode: ComputerReplaceMode,
+  context: AdapterContext,
+  controlHolder: "bot" | "none" = "none",
+): Promise<ComputerRef> {
+  let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+  if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
+    await expireComputerControl(deps, existing.id, existing.controlLeaseId);
+    existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+    if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
+      throw new Error("computer control revocation is still in progress");
+    }
+  }
+  if (existing.state === "booting" || existing.state === "suspending") {
+    throw new ComputerBusyError();
+  }
+  const botId = context.botId;
+  if (!botId) throw new Error("computer replacement requires a bot id");
+
+  const previousState = existing.state;
+  if (existing.state !== "stopped" && existing.state !== "suspended") {
+    const now = new Date();
+    const claimed = await deps.prisma.computer.updateMany({
+      where: {
+        id: computerId,
+        state: { notIn: ["booting", "suspending", "stopped", "suspended"] },
+        executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
+      },
+      data: { state: "suspending" },
+    });
+    if (claimed.count !== 1) throw new ComputerBusyError();
+    const otherRun = await deps.prisma.run.findFirst({
+      where: {
+        botId: { not: botId },
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+        bot: { computerId },
+      },
+      select: { id: true },
+    });
+    if (otherRun) {
+      await deps.prisma.computer.updateMany({
+        where: { id: computerId, state: "suspending" },
+        data: { state: previousState },
+      });
+      throw new ComputerBusyError();
+    }
+  }
+
+  const oldRef = existing.providerRef ? toComputerRef(existing) : null;
+  try {
+    if (oldRef && existing.state === "running") {
+      try {
+        await checkpointAndRecordComputerWorkspace(deps, existing, oldRef, context);
+      } catch (error) {
+        if (mode === "reset") throw error;
+        if (!isUnrecoverableSandboxError(error)) throw error;
+      }
+    }
+    if (oldRef) {
+      await deps.sandbox.releaseScreen?.(oldRef, context).catch(() => undefined);
+      try {
+        await deps.sandbox.destroy(oldRef, context);
+      } catch (error) {
+        if (mode !== "recover" && !isUnrecoverableSandboxError(error)) throw error;
+      }
+    }
+    await deps.prisma.computerExecutionLease.deleteMany({
+      where: { computerId, botId },
+    });
+    await deps.prisma.computer.update({
+      where: { id: computerId },
+      data: {
+        state: "stopped",
+        providerRef: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
+    });
+    return provisionComputer(deps, computerId, context, controlHolder);
+  } catch (error) {
+    await deps.prisma.computer
+      .updateMany({
+        where: { id: computerId },
+        data: { state: "error" },
+      })
+      .catch(() => undefined);
+    throw error;
+  }
 }

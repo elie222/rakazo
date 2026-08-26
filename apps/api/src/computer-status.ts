@@ -70,10 +70,11 @@ export function toComputerStatus(
         ? computer.state
         : "stopped";
   const screen = computerScreenSize(computer?.kind);
+  const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   return {
     botId,
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
-    kind: (computer?.kind ?? "fake") as ComputerStatus["kind"],
+    kind,
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
     controlBotId: computer?.controlBotId ?? null,
@@ -83,5 +84,6 @@ export function toComputerStatus(
     screenHeight: screen.height,
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
+    updateAvailable: kind !== "desktop",
   };
 }

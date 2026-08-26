@@ -9,7 +9,9 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import { type MobileBot, rpc } from "../lib/api";
+import type { ComputerStatus } from "@rakazo/contracts";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
@@ -23,18 +25,23 @@ export default function BotSettingsScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!botId) return;
-    void rpc<BotSettingsRecord>("bots/get", { botId })
-      .then((next) => {
+    void Promise.all([
+      rpc<BotSettingsRecord>("bots/get", { botId }),
+      rpc<ComputerStatus>("computer/status", { botId }).catch(() => null),
+    ])
+      .then(([next, status]) => {
         setBot(next);
         setName(next.name);
         setTitle(next.title);
         setDescription(next.description ?? "");
         setComputerMode(next.computerMode);
+        setComputer(status);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load bot"));
   }, [botId]);
@@ -132,6 +139,14 @@ export default function BotSettingsScreen() {
           }}
         />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+        <ComputerMaintenanceActions
+          botId={botId}
+          computer={computer}
+          onChanged={async () => {
+            const status = await rpc<ComputerStatus>("computer/status", { botId });
+            setComputer(status);
+          }}
+        />
         {error ? <Text style={{ color: "#E65707", marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}
