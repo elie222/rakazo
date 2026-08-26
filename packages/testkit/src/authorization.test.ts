@@ -348,21 +348,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
     );
 
-    const ownerShareManifest = await rpc<ShareManifest>(app, owner, "bots/shareManifest", {
-      botId: ownerBot.id,
-    });
-    const intruderImported = await rpc<Bot>(app, intruder, "bots/importShare", {
-      manifest: ownerShareManifest,
-    });
-    expect(intruderImported.id).not.toBe(ownerBot.id);
-    const importedRow = await handles.prisma.bot.findUniqueOrThrow({
-      where: { id: intruderImported.id },
-    });
-    expect(importedRow.userId).toBe(intruderActor.userId);
-    expect(importedRow.workspaceId).toBe(intruderActor.workspaceId);
-    const ownerRow = await handles.prisma.bot.findUniqueOrThrow({ where: { id: ownerBot.id } });
-    expect(importedRow.computerId).not.toBe(ownerRow.computerId);
-
     const ownerBot2 = await rpc<Bot>(app, owner, "bots/create", botInput("Owner Bot Two"));
     const ownerGroup = await rpc<{ id: string }>(app, owner, "groups/create", {
       name: "Owner Group",
@@ -436,6 +421,21 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await rpc<{ hits: unknown[] }>(app, intruder, "search/query", { q: ownerBot.name }),
     ).toEqual({ hits: [] });
+
+    const ownerShareManifest = await rpc<ShareManifest>(app, owner, "bots/shareManifest", {
+      botId: ownerBot.id,
+    });
+    const intruderImported = await rpc<Bot>(app, intruder, "bots/importShare", {
+      manifest: ownerShareManifest,
+    });
+    expect(intruderImported.id).not.toBe(ownerBot.id);
+    const importedRow = await handles.prisma.bot.findUniqueOrThrow({
+      where: { id: intruderImported.id },
+    });
+    expect(importedRow.userId).toBe(intruderActor.userId);
+    expect(importedRow.workspaceId).toBe(intruderActor.workspaceId);
+    const ownerRow = await handles.prisma.bot.findUniqueOrThrow({ where: { id: ownerBot.id } });
+    expect(importedRow.computerId).not.toBe(ownerRow.computerId);
 
     // These endpoints are deliberately idempotent for unknown IDs. Success must not mutate
     // a row in a different workspace or disclose whether it exists.

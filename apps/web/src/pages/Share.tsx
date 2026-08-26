@@ -1,6 +1,6 @@
+import type { ShareManifest } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import type { ShareManifest } from "@rakazo/contracts";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
 
@@ -15,13 +15,26 @@ export function SharePage() {
 
   useEffect(() => {
     if (!token) {
+      setManifest(null);
       setError("Share link not found");
       return;
     }
+    let cancelled = false;
+    setManifest(null);
+    setError(null);
     void rpc.share
       .preview({ token })
-      .then(setManifest)
-      .catch((err) => setError(err instanceof Error ? err.message : "Share link not found"));
+      .then((next) => {
+        if (!cancelled) setManifest(next);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Share link not found");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   async function addToWorkspace() {
@@ -50,7 +63,9 @@ export function SharePage() {
     return (
       <div className="grid h-full place-items-center bg-[#050506] px-6 text-center">
         <p className="text-[15px] text-[#85858A]">{error}</p>
-        <Link to="/" className="mt-4 text-[14px] text-[#ECECEE]">Home</Link>
+        <Link to="/" className="mt-4 text-[14px] text-[#ECECEE]">
+          Home
+        </Link>
       </div>
     );
   }
@@ -89,7 +104,9 @@ export function SharePage() {
         >
           <summary className="cursor-pointer text-[14px] text-[#85858A]">Details</summary>
           {manifest.instructions ? (
-            <p className="mt-3 text-[14px] leading-relaxed text-[#B8B8BC]">{manifest.instructions}</p>
+            <p className="mt-3 text-[14px] leading-relaxed text-[#B8B8BC]">
+              {manifest.instructions}
+            </p>
           ) : (
             <p className="mt-3 text-[14px] text-[#6C6C70]">No extra instructions.</p>
           )}
@@ -98,7 +115,9 @@ export function SharePage() {
           Configuration only — no computer, logins, files, or chat history.
         </p>
         {error ? (
-          <p role="alert" className="mt-4 text-[13px] text-[#C94244]">{error}</p>
+          <p role="alert" className="mt-4 text-[13px] text-[#C94244]">
+            {error}
+          </p>
         ) : null}
         <div className="mt-8 flex flex-col gap-3">
           {user ? (
@@ -118,7 +137,9 @@ export function SharePage() {
               Sign in to add
             </Link>
           )}
-          <Link to="/" className="text-center text-[14px] text-[#85858A]">Back</Link>
+          <Link to="/" className="text-center text-[14px] text-[#85858A]">
+            Back
+          </Link>
         </div>
       </div>
     </div>

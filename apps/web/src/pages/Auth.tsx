@@ -31,7 +31,11 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
     }
     const next = new URLSearchParams(window.location.search).get("next");
     const destination =
-      next?.startsWith("/") && !next.startsWith("//") ? next : mode === "up" ? "/onboarding" : "/app";
+      next?.startsWith("/") && !next.startsWith("//")
+        ? next
+        : mode === "up"
+          ? "/onboarding"
+          : "/app";
     navigate(destination);
   }
 

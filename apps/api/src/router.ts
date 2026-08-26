@@ -70,8 +70,8 @@ import {
   type Me,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseShareManifestPayload,
-  ShareManifestSchema,
   type ShareManifest,
+  ShareManifestSchema,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -3300,7 +3300,10 @@ async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   return rows.map(mapRoutine);
 }
 
-async function loadShareManifestSnapshot(prisma: PrismaClient, token: string): Promise<ShareManifest> {
+async function loadShareManifestSnapshot(
+  prisma: PrismaClient,
+  token: string,
+): Promise<ShareManifest> {
   const row = await prisma.botShare.findUnique({ where: { token } });
   if (!row || row.revokedAt || row.expiresAt <= new Date()) {
     throw new ORPCError("NOT_FOUND", { message: "Share link not found" });
@@ -3321,6 +3324,7 @@ async function importShareManifest(
       message: error instanceof Error ? error.message : "Invalid share manifest",
     });
   }
+  validateShareRoutineTemplates(manifest.routines);
   const bot = await repos.createBot(actor, {
     name: manifest.name,
     title: manifest.title,
@@ -3330,7 +3334,8 @@ async function importShareManifest(
     color: manifest.color,
     computerMode: manifest.computerMode,
   });
-  if (manifest.routines.length) {
+  if (!manifest.routines.length) return bot;
+  try {
     await deps.prisma.routine.createMany({
       data: manifest.routines.map((routine) => ({
         workspaceId: actor.workspaceId,
@@ -3345,8 +3350,55 @@ async function importShareManifest(
         nextRunAt: null,
       })),
     });
+  } catch (error) {
+    const row = await deps.prisma.bot.findFirst({
+      where: { id: bot.id, workspaceId: actor.workspaceId, userId: actor.userId },
+      select: { id: true, workspaceId: true, name: true, archivedAt: true, computerId: true },
+    });
+    if (row) {
+      await destroyBot(
+        {
+          prisma: deps.prisma,
+          sandbox: deps.sandbox,
+          home: deps.home,
+          jobs: deps.jobs,
+          artifacts: deps.artifacts,
+          dataDir: deps.dataDir,
+        },
+        row,
+        {
+          operationId: "import-share-cleanup",
+          traceId: "import-share-cleanup",
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          signal: new AbortController().signal,
+        },
+        { deleteMemories: true },
+      ).catch(() => undefined);
+    }
+    throw error instanceof ORPCError
+      ? error
+      : new ORPCError("BAD_REQUEST", { message: "Could not import share routines" });
   }
   return bot;
+}
+
+function validateShareRoutineTemplates(routines: ShareManifest["routines"]) {
+  for (const routine of routines) {
+    if (hasMixedOneShotSchedule(routine.crons)) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "A one-time schedule can't be combined with other schedules.",
+      });
+    }
+    if (!isOneShotRoutineCrons(routine.crons)) {
+      try {
+        const next = nextCronDateAcrossStrict(routine.crons, new Date(), routine.timezone);
+        if (!next) throw new Error("invalid cron");
+      } catch {
+        throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
+      }
+    }
+  }
 }
 
 function shareBotConfigFromRecord(bot: {

@@ -1,7 +1,4 @@
-import {
-  parseShareManifestPayload,
-  type ShareManifest,
-} from "@rakazo/contracts";
+import { parseShareManifestPayload, type ShareManifest } from "@rakazo/contracts";
 import * as DocumentPicker from "expo-document-picker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -157,7 +154,9 @@ export default function ShareImportScreen() {
             opacity: pending ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: "#17171A", fontSize: 16 }}>{pending ? "Importing…" : "Import"}</Text>
+          <Text style={{ color: "#17171A", fontSize: 16 }}>
+            {pending ? "Importing…" : "Import"}
+          </Text>
         </Pressable>
       </ScrollView>
     </>

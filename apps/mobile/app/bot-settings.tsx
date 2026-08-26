@@ -142,6 +142,8 @@ export default function BotSettingsScreen() {
           Configuration only — not your computer, logins, files, or chat history.
         </Text>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Share JSON"
           onPress={() => {
             if (!botId || shareBusy) return;
             setShareBusy(true);
@@ -166,6 +168,8 @@ export default function BotSettingsScreen() {
           <Text style={{ color: "#ECECEE" }}>Share JSON</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Create share link"
           onPress={() => {
             if (!botId || shareBusy) return;
             setShareBusy(true);
@@ -176,7 +180,9 @@ export default function BotSettingsScreen() {
                 setShareToken(token);
                 setShareNotice("Share link created");
               })
-              .catch((err) => setError(err instanceof Error ? err.message : "Could not create link"))
+              .catch((err) =>
+                setError(err instanceof Error ? err.message : "Could not create link"),
+              )
               .finally(() => setShareBusy(false));
           }}
           disabled={shareBusy || !bot}
@@ -194,6 +200,8 @@ export default function BotSettingsScreen() {
         </Pressable>
         {shareLink ? (
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Share link"
             onPress={() => void Share.share({ message: shareLink })}
             style={{ marginTop: 8 }}
           >
@@ -202,6 +210,8 @@ export default function BotSettingsScreen() {
         ) : null}
         {shareToken ? (
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Revoke share link"
             onPress={() => {
               if (!shareToken || shareBusy) return;
               setShareBusy(true);
@@ -221,7 +231,9 @@ export default function BotSettingsScreen() {
             <Text style={{ color: "#E65707", fontSize: 14 }}>Revoke link</Text>
           </Pressable>
         ) : null}
-        {shareNotice ? <Text style={{ color: "#6C6C70", marginTop: 8, fontSize: 13 }}>{shareNotice}</Text> : null}
+        {shareNotice ? (
+          <Text style={{ color: "#6C6C70", marginTop: 8, fontSize: 13 }}>{shareNotice}</Text>
+        ) : null}
         {error ? <Text style={{ color: "#E65707", marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}

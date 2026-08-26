@@ -1,20 +1,14 @@
 import {
   type Bot,
-  type ShareManifest,
   SHARE_MANIFEST_VERSION,
+  type ShareManifest,
   type ShareRoutineTemplate,
 } from "@rakazo/contracts";
 
 export function buildShareManifest(
   bot: Pick<
     Bot,
-    | "name"
-    | "title"
-    | "description"
-    | "instructions"
-    | "color"
-    | "notifyOnFinish"
-    | "computerMode"
+    "name" | "title" | "description" | "instructions" | "color" | "notifyOnFinish" | "computerMode"
   >,
   routines: ShareRoutineTemplate[] = [],
 ): ShareManifest {
