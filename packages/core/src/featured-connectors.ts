@@ -4,9 +4,8 @@ export const FEATURED_CONNECTOR_IDS = [
   "gmail",
   "google-calendar",
   "google-drive",
-  "outlook",
-  "microsoft-teams",
-  "salesforce",
+  "slack",
+  "notion",
 ] as const;
 
 export type FeaturedConnectorId = (typeof FEATURED_CONNECTOR_IDS)[number];
@@ -15,18 +14,16 @@ export const FEATURED_CONNECTOR_LABELS: Record<FeaturedConnectorId, string> = {
   gmail: "Gmail",
   "google-calendar": "Google Calendar",
   "google-drive": "Google Drive",
-  outlook: "Outlook",
-  "microsoft-teams": "Microsoft Teams",
-  salesforce: "Salesforce",
+  slack: "Slack",
+  notion: "Notion",
 };
 
 const FEATURED_ALIASES: Record<FeaturedConnectorId, readonly string[]> = {
   gmail: ["gmail", "googlemail", "google mail"],
   "google-calendar": ["googlecalendar", "google calendar", "google_calendar", "gcal"],
   "google-drive": ["googledrive", "google drive", "google_drive", "gdrive"],
-  outlook: ["outlook", "microsoft outlook", "microsoft_outlook", "ms outlook"],
-  "microsoft-teams": ["teams", "microsoft teams", "microsoft_teams", "msteams", "ms teams"],
-  salesforce: ["salesforce", "sfdc"],
+  slack: ["slack", "slackbot"],
+  notion: ["notion", "notion.so"],
 };
 
 export type FeaturedConnectorTile = {

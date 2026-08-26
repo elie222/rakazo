@@ -32,25 +32,37 @@ describe("featured connectors", () => {
     expect(matchFeaturedConnectorId("googledrive")).toBe("google-drive");
   });
 
+  it("maps slack and notion catalog aliases", () => {
+    expect(matchFeaturedConnectorId("slack")).toBe("slack");
+    expect(matchFeaturedConnectorId("slackbot")).toBe("slack");
+    expect(matchFeaturedConnectorId("SLACK")).toBe("slack");
+    expect(matchFeaturedConnectorId("notion")).toBe("notion");
+    expect(matchFeaturedConnectorId("notion.so")).toBe("notion");
+    expect(matchFeaturedConnectorId("NOTION")).toBe("notion");
+    expect(featuredConnectorProvidersMatch("slack", "slackbot")).toBe(true);
+    expect(featuredConnectorProvidersMatch("notion", "notion.so")).toBe(true);
+  });
+
   it("returns null for unknown catalog entries", () => {
-    expect(matchFeaturedConnectorId("notion")).toBeNull();
-    expect(resolveFeaturedCatalogItem("gmail", [item("notion", "Notion")])).toBeUndefined();
+    expect(matchFeaturedConnectorId("salesforce")).toBeNull();
+    expect(matchFeaturedConnectorId("outlook")).toBeNull();
+    expect(resolveFeaturedCatalogItem("gmail", [item("github", "GitHub")])).toBeUndefined();
   });
 
   it("resolves featured rows from slug or display name", () => {
     const catalog = [
       item("gmail", "Gmail"),
-      item("microsoft_outlook", "Microsoft Outlook"),
-      item("salesforce", "Salesforce"),
+      item("slackbot", "Slack"),
+      item("NOTION", "Notion"),
     ];
     expect(resolveFeaturedCatalogItem("gmail", catalog)?.slug).toBe("gmail");
-    expect(resolveFeaturedCatalogItem("outlook", catalog)?.slug).toBe("microsoft_outlook");
-    expect(resolveFeaturedCatalogItem("salesforce", catalog)?.slug).toBe("salesforce");
+    expect(resolveFeaturedCatalogItem("slack", catalog)?.slug).toBe("slackbot");
+    expect(resolveFeaturedCatalogItem("notion", catalog)?.slug).toBe("NOTION");
   });
 
   it("marks all featured tiles missing when the catalog is empty", () => {
     const tiles = buildFeaturedConnectorTiles([]);
-    expect(tiles).toHaveLength(6);
+    expect(tiles).toHaveLength(5);
     expect(tiles.every((tile) => !tile.item && !tile.missing)).toBe(true);
   });
 
