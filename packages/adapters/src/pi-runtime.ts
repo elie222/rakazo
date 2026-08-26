@@ -219,11 +219,25 @@ export class PiAgentRuntime implements AgentRuntime {
           signal.removeEventListener("abort", onAbort);
         }
 
+        // Budget abort stops the agent underneath the model, which leaves
+        // errorMessage set. Treat that as a soft stop so the turn still ends
+        // with a durable assistant message instead of a failed run.
+        const budgetExceeded = host.toolCallBudget.exceeded;
         const error = agent.state.errorMessage;
-        if (error) {
+        if (error && !budgetExceeded) {
           throw new Error(sanitizeError(error));
         }
-        if (!streamed) {
+        if (budgetExceeded) {
+          const budgetMessage = toolCallBudgetExceededMessage(MAX_TOOL_CALLS_PER_TURN);
+          if (streamed.trim()) {
+            const suffix = `\n\n${budgetMessage}`;
+            queue.push({ type: "text", text: suffix });
+            streamed += suffix;
+          } else {
+            queue.push({ type: "text", text: budgetMessage });
+            streamed = budgetMessage;
+          }
+        } else if (!streamed) {
           const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
           queue.push({ type: "text", text: fallback });
           streamed = fallback;
@@ -857,6 +871,10 @@ interface ToolHost {
   abortTurn(): void;
   signal: AbortSignal;
   depth: number;
+}
+
+function toolCallBudgetExceededMessage(limit: number) {
+  return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
 }
 
 function consumeToolCall(host: ToolHost): boolean {
