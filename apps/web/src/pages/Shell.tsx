@@ -65,6 +65,7 @@ import {
   Box,
   ChevronLeft,
   Clock,
+  Copy,
   Cpu,
   Gauge,
   LogOut,
@@ -75,6 +76,7 @@ import {
   Phone,
   Plus,
   Puzzle,
+  Reply,
   Settings,
   Square,
   Volume2,
@@ -1093,6 +1095,11 @@ export function ShellPage() {
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
   );
+  const replyTargetName = activeReplyTarget
+    ? activeReplyTarget.role === "user"
+      ? t`You`
+      : (resolveTranscriptMemberName(activeReplyTarget.botId) ?? active?.name ?? t`Bot`)
+    : undefined;
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
@@ -2167,6 +2174,7 @@ export function ShellPage() {
           onSend={sendMessage}
           onStop={stopRun}
           replyTarget={activeReplyTarget}
+          replyTargetName={replyTargetName}
           onClearReply={() => setReplyTarget(null)}
           mentionTargets={composerMentionTargets}
           agentSkills={agentSkills}
@@ -3011,14 +3019,7 @@ const Transcript = memo(function Transcript({
       ) : null}
       {messages.map((message) => (
         <div key={message.id} data-message-id={message.id} className="group/message relative">
-          <button
-            type="button"
-            aria-label={t`Reply`}
-            onClick={() => onReply(message)}
-            className="absolute end-0 top-0 rounded px-2 py-1 text-[12px] text-[#85858A] opacity-0 group-hover/message:opacity-100 hover:text-[#ECECEE] focus:opacity-100"
-          >
-            <Trans>Reply</Trans>
-          </button>
+          <MessageHoverActions message={message} onReply={onReply} />
           <MessageView
             artifactTarget={artifactTarget}
             message={message}
@@ -3031,6 +3032,11 @@ const Transcript = memo(function Transcript({
             replyPreview={
               message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
             }
+            onJumpToMessage={(messageId) => {
+              document
+                .querySelector(`[data-message-id="${messageId}"]`)
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
             onRefresh={onRefresh}
             onBotChanged={onBotChanged}
             onAddRoutine={onAddRoutine}
@@ -3074,6 +3080,7 @@ const Composer = memo(function Composer({
   onSend,
   onStop,
   replyTarget,
+  replyTargetName,
   onClearReply,
   mentionTargets,
   agentSkills,
@@ -3098,6 +3105,7 @@ const Composer = memo(function Composer({
   onSend: (text: string, mentions?: ComposerMention[]) => Promise<void>;
   onStop: () => Promise<void>;
   replyTarget?: ThreadMessage | null;
+  replyTargetName?: string;
   onClearReply?: () => void;
   mentionTargets?: ComposerMention[];
   agentSkills?: AgentSkillCatalogEntry[];
@@ -3235,6 +3243,7 @@ const Composer = memo(function Composer({
 
   const showComposerPlaceholder =
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
+  const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
 
   return (
     <div className="relative z-30 px-3 pb-4 pt-3 md:px-6 md:pb-6">
@@ -3244,22 +3253,18 @@ const Composer = memo(function Composer({
         </div>
       ) : null}
       {replyTarget ? (
-        <div className="mb-3 flex items-start justify-between gap-3 rounded-[14px] border border-[#26262A] bg-[#17171A] px-4 py-2 text-[13px] text-[#C9C9CE]">
-          <div className="min-w-0">
-            <div className="text-[#85858A]">
-              <Trans>Replying to</Trans>
-            </div>
-            <div dir="auto" className="truncate">
-              {previewMessageText(replyTarget)}
-            </div>
-          </div>
+        <div
+          data-testid="reply-chip"
+          className="mb-2 flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+        >
+          <span className="min-w-0 flex-1 truncate text-[#85858A]">{t`Replying to ${replyName}`}</span>
           <button
             type="button"
             aria-label={t`Cancel reply`}
             onClick={onClearReply}
-            className="text-[#85858A]"
+            className="shrink-0 text-[#85858A] hover:text-[#ECECEE]"
           >
-            ✕
+            <X size={13} strokeWidth={2} />
           </button>
         </div>
       ) : null}
@@ -3583,6 +3588,62 @@ function previewMessageText(message: ThreadMessage): string {
   return t`Message`;
 }
 
+/** Plain message text for clipboard copy — text/ask/progress only, no chrome. */
+function copyableMessageText(message: ThreadMessage): string {
+  return message.blocks
+    .map((block) => {
+      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask") {
+        return block.text;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function MessageHoverActions({
+  message,
+  onReply,
+}: {
+  message: ThreadMessage;
+  onReply: (message: ThreadMessage) => void;
+}) {
+  const { t } = useLingui();
+  // Streaming progress bubbles keep hover free for selection / stop clicks.
+  if (message.id.startsWith("progress:")) return null;
+
+  function copyMessage() {
+    const text = copyableMessageText(message);
+    if (!text || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(text).catch(() => undefined);
+  }
+
+  return (
+    <div
+      data-testid="message-hover-actions"
+      className="pointer-events-none absolute end-0 -top-1 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+    >
+      <button
+        type="button"
+        aria-label={t`Reply`}
+        onClick={() => onReply(message)}
+        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+      >
+        <Reply size={14} strokeWidth={1.8} />
+      </button>
+      <button
+        type="button"
+        aria-label={t`Copy`}
+        onClick={copyMessage}
+        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+      >
+        <Copy size={14} strokeWidth={1.8} />
+      </button>
+    </div>
+  );
+}
+
 function firstThreadRoute(
   bots: readonly Pick<Bot, "id">[],
   groups: readonly Pick<Group, "id">[],
@@ -3681,6 +3742,7 @@ const MessageView = memo(function MessageView({
   speakerName,
   memberName,
   replyPreview,
+  onJumpToMessage,
   onRefresh,
   onBotChanged,
   onAddRoutine,
@@ -3697,6 +3759,7 @@ const MessageView = memo(function MessageView({
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   replyPreview?: ThreadMessage;
+  onJumpToMessage?: (messageId: string) => void;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
@@ -3720,12 +3783,16 @@ const MessageView = memo(function MessageView({
         </div>
       ) : null}
       {replyPreview ? (
-        <div
-          className="mb-2 max-w-[74%] rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-[12.5px] text-[#85858A]"
+        <button
+          type="button"
+          data-testid="reply-parent-preview"
+          aria-label={t`Jump to replied message`}
+          onClick={() => onJumpToMessage?.(replyPreview.id)}
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-start text-[12.5px] text-[#85858A] hover:border-[#34343B] hover:text-[#C9C9CE]"
           dir="auto"
         >
           {previewMessageText(replyPreview)}
-        </div>
+        </button>
       ) : null}
     </>
   );

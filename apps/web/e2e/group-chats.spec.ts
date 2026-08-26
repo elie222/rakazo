@@ -189,11 +189,12 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.getByRole("button", { name: "Send answer" }).click();
   await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  const replyButton = transcript.getByRole("button", { name: "Reply" }).first();
-  await replyButton.focus();
-  await expect(replyButton).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Replying to", { exact: true })).toBeVisible();
+  const firstMessage = transcript.locator("[data-message-id]").first();
+  await firstMessage.hover();
+  const replyButton = firstMessage.getByRole("button", { name: "Reply" });
+  await expect(replyButton).toBeVisible();
+  await replyButton.click();
+  await expect(page.getByTestId("reply-chip")).toContainText(/Replying to/);
   await page.getByRole("button", { name: "Cancel reply" }).click();
 
   let releaseReviewSnapshot!: () => void;
