@@ -29,8 +29,14 @@ test("model dropdown search and provider group headers", async ({ page }, testIn
   await captureScreenshot(page, testInfo, "model-picker-dropdown-groups");
 
   await modelSearch.fill("claude");
-  await expect(page.getByRole("option").first()).toBeVisible();
+  const optionTexts = await page.getByRole("option").allTextContents();
+  expect(optionTexts.length).toBeGreaterThan(0);
+  expect(optionTexts.every((text) => /claude/i.test(text))).toBe(true);
   await expect(page.getByText("No matching models")).toBeHidden();
 
   await captureScreenshot(page, testInfo, "model-picker-dropdown-filtered");
+
+  await modelSearch.fill("no-model-matches-this");
+  await expect(page.getByText("No matching models")).toBeVisible();
+  await expect(page.getByRole("option")).toHaveCount(0);
 });
