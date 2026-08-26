@@ -1,9 +1,11 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
 import { BuiButton } from "../components/beautiful-ui/primitives";
 import { rpc } from "../lib/rpc";
 
 export function ScratchpadSection({ botId }: { botId: string }) {
+  const { t } = useLingui();
   const [items, setItems] = useState<ScratchpadItem[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,10 +48,10 @@ export function ScratchpadSection({ botId }: { botId: string }) {
       try {
         await refresh();
       } catch {
-        setError("Saved, but list refresh failed");
+        setError(t`Saved, but list refresh failed`);
       }
     } catch {
-      setError("Could not add");
+      setError(t`Could not add`);
     } finally {
       setBusy(false);
     }
@@ -68,10 +70,10 @@ export function ScratchpadSection({ botId }: { botId: string }) {
       try {
         await refresh();
       } catch {
-        setError("Saved, but list refresh failed");
+        setError(t`Saved, but list refresh failed`);
       }
     } catch {
-      setError("Could not update");
+      setError(t`Could not update`);
     } finally {
       setBusy(false);
     }
@@ -87,10 +89,10 @@ export function ScratchpadSection({ botId }: { botId: string }) {
       try {
         await refresh();
       } catch {
-        setError("Removed, but list refresh failed");
+        setError(t`Removed, but list refresh failed`);
       }
     } catch {
-      setError("Could not remove");
+      setError(t`Could not remove`);
     } finally {
       setBusy(false);
     }
@@ -98,9 +100,13 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <div className="mb-3 text-[14px] text-[#85858A]">Open work</div>
+      <div className="mb-3 text-[14px] text-[#85858A]">
+        <Trans>Open work</Trans>
+      </div>
       {items.length === 0 ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">None yet</div>
+        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">
+          <Trans>None yet</Trans>
+        </div>
       ) : (
         items.map((item) => (
           <div
@@ -109,7 +115,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           >
             <button
               type="button"
-              aria-label={item.status === "done" ? "Reopen" : "Complete"}
+              aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
               disabled={busy}
               onClick={() => void setStatus(item, item.status === "done" ? "open" : "done")}
               className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[#3A3A40] text-[10px] leading-none text-[#E65707]"
@@ -133,27 +139,27 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             {item.status === "open" ? (
               <button
                 type="button"
-                aria-label="Park"
+                aria-label={t`Park`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "parked")}
                 className="shrink-0 text-[12px] text-[#7A7A80]"
               >
-                Park
+                <Trans>Park</Trans>
               </button>
             ) : item.status === "parked" ? (
               <button
                 type="button"
-                aria-label="Reopen"
+                aria-label={t`Reopen`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "open")}
                 className="shrink-0 text-[12px] text-[#7A7A80]"
               >
-                Open
+                <Trans>Open</Trans>
               </button>
             ) : null}
             <button
               type="button"
-              aria-label="Remove"
+              aria-label={t`Remove`}
               disabled={busy}
               onClick={() => void removeItem(item)}
               className="shrink-0 text-[12px] text-[#7A7A80]"
@@ -173,13 +179,13 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Add item"
-          aria-label="New open-work item"
+          placeholder={t`Add item`}
+          aria-label={t`New open-work item`}
           maxLength={200}
           className="min-w-0 flex-1 rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2 text-[14px] text-[#ECECEE] placeholder:text-[#55555A]"
         />
         <BuiButton disabled={busy || !draft.trim()} onClick={() => void addItem()}>
-          Add
+          <Trans>Add</Trans>
         </BuiButton>
       </form>
       {error ? <div className="mt-2 px-2.5 text-[13px] text-[#C45C5C]">{error}</div> : null}

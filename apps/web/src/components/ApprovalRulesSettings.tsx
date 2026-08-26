@@ -1,20 +1,30 @@
+import { t } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-function describeRule(rule: ActionApprovalRule) {
-  const target =
-    rule.matchKind === "category"
-      ? `${rule.matchValue} actions`
-      : rule.matchKind === "connector"
-        ? `${rule.matchValue} connector`
-        : rule.matchValue;
-  return rule.effect === "require_approval"
-    ? `Ask before ${target}`
-    : `Allow ${target} without asking`;
+function describeRule(rule: ActionApprovalRule): string {
+  if (rule.effect === "require_approval") {
+    if (rule.matchKind === "category") {
+      if (rule.matchValue === "email") return t`Ask before email actions`;
+      if (rule.matchValue === "purchase") return t`Ask before purchase actions`;
+      return t`Ask before ${rule.matchValue} actions`;
+    }
+    if (rule.matchKind === "connector") return t`Ask before ${rule.matchValue} connector`;
+    return t`Ask before ${rule.matchValue}`;
+  }
+  if (rule.matchKind === "category") {
+    if (rule.matchValue === "email") return t`Allow email actions without asking`;
+    if (rule.matchValue === "purchase") return t`Allow purchase actions without asking`;
+    return t`Allow ${rule.matchValue} actions without asking`;
+  }
+  if (rule.matchKind === "connector") return t`Allow ${rule.matchValue} connector without asking`;
+  return t`Allow ${rule.matchValue} without asking`;
 }
 
 export function ApprovalRulesSettings() {
+  const { t } = useLingui();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingPreset, setSavingPreset] = useState<"email" | "purchase" | null>(null);
@@ -26,7 +36,7 @@ export function ApprovalRulesSettings() {
     try {
       setRules(await rpc.approvalRules.list());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load approval rules");
+      setError(err instanceof Error ? err.message : t`Could not load approval rules`);
     } finally {
       setLoading(false);
     }
@@ -58,7 +68,7 @@ export function ApprovalRulesSettings() {
       });
       setRules((current) => [...current, saved]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save rule");
+      setError(err instanceof Error ? err.message : t`Could not save rule`);
     } finally {
       setSavingPreset(null);
     }
@@ -70,16 +80,20 @@ export function ApprovalRulesSettings() {
       await rpc.approvalRules.remove({ id });
       setRules((current) => current.filter((rule) => rule.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove rule");
+      setError(err instanceof Error ? err.message : t`Could not remove rule`);
     }
   }
 
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
-      <h3 className="text-[15px] font-medium text-[#ECECEE]">Action confirmations</h3>
+      <h3 className="text-[15px] font-medium text-[#ECECEE]">
+        <Trans>Action confirmations</Trans>
+      </h3>
       <p className="mt-2 text-[13.5px] leading-[1.5] text-[#85858A]">
-        Bots act without asking by default. Add an exception only when you want to review a type of
-        action first. These preferences apply across all your bots.
+        <Trans>
+          Bots act without asking by default. Add an exception only when you want to review a type
+          of action first. These preferences apply across all your bots.
+        </Trans>
       </p>
       <div className="mt-4 flex flex-col items-start gap-2">
         <button
@@ -88,7 +102,7 @@ export function ApprovalRulesSettings() {
           onClick={() => void setPreset("email")}
           className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14px] text-[#C9C9CE] disabled:opacity-50"
         >
-          Ask before sending external email
+          <Trans>Ask before sending external email</Trans>
         </button>
         <button
           type="button"
@@ -96,14 +110,18 @@ export function ApprovalRulesSettings() {
           onClick={() => void setPreset("purchase")}
           className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14px] text-[#C9C9CE] disabled:opacity-50"
         >
-          Ask before purchases
+          <Trans>Ask before purchases</Trans>
         </button>
       </div>
       {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
       {loading ? (
-        <p className="mt-4 text-[13px] text-[#85858A]">Loading rules…</p>
+        <p className="mt-4 text-[13px] text-[#85858A]">
+          <Trans>Loading rules…</Trans>
+        </p>
       ) : rules.length === 0 ? (
-        <p className="mt-4 text-[13px] text-[#85858A]">No exceptions. Actions run automatically.</p>
+        <p className="mt-4 text-[13px] text-[#85858A]">
+          <Trans>No exceptions. Actions run automatically.</Trans>
+        </p>
       ) : (
         <ul className="mt-4 space-y-2">
           {rules.map((rule) => (
@@ -117,7 +135,7 @@ export function ApprovalRulesSettings() {
                 onClick={() => void removeRule(rule.id)}
                 className="text-[13px] text-[#85858A]"
               >
-                Remove
+                <Trans>Remove</Trans>
               </button>
             </li>
           ))}

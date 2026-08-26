@@ -1,5 +1,5 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
-  OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -7,11 +7,13 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type ModelCatalogEntry, providerHint } from "../lib/model-auth";
+import { localizedProviderHint } from "../lib/localized-provider-hint";
+import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
 export function OnboardingPage() {
+  const { t } = useLingui();
   const navigate = useNavigate();
   const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -100,7 +102,7 @@ export function OnboardingPage() {
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const subscriptionSignIn = selected?.signIn !== undefined;
   const acceptsKey = selected?.auth !== "oauth";
-  const signInLabel = selected?.oauthLabel ?? "Sign in";
+  const signInLabel = selected?.oauthLabel ?? t`Sign in`;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl,
     modelId,
@@ -146,7 +148,7 @@ export function OnboardingPage() {
       setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : "Could not reach this model server");
+      setError(err instanceof Error ? err.message : t`Could not reach this model server`);
     } finally {
       if (requestId === probeRequestIdRef.current) setProbing(false);
     }
@@ -173,7 +175,7 @@ export function OnboardingPage() {
       }
       setStep("bot");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save model");
+      setError(err instanceof Error ? err.message : t`Could not save model`);
     }
   }
 
@@ -200,22 +202,31 @@ export function OnboardingPage() {
       await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
       navigate(`/app/${bot.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create your bot");
+      setError(err instanceof Error ? err.message : t`Could not create your bot`);
     }
   }
 
   return (
     <div className="flex min-h-full items-center justify-center bg-[#0D0D0E] px-6">
       <div className="w-[560px]">
-        {step === "loading" ? <p className="text-[#85858A]">Loading…</p> : null}
+        {step === "loading" ? (
+          <p className="text-[#85858A]">
+            <Trans>Loading…</Trans>
+          </p>
+        ) : null}
         {step === "model" ? (
           <div>
-            <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
-            <p className="mt-2 text-[#85858A]">Choose a model to get started.</p>
+            <h1 className="text-[32px] font-medium text-[#F1F1F2]">
+              <Trans>Connect a model</Trans>
+            </h1>
+            <p className="mt-2 text-[#85858A]">
+              <Trans>Choose a model to get started.</Trans>
+            </p>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search providers and models"
+              aria-label={t`Search providers and models`}
+              placeholder={t`Search providers and models`}
               className="mt-8 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             />
             <div className="mt-3 max-h-48 overflow-y-auto rounded-[11px] border border-[#26262A]">
@@ -243,7 +254,7 @@ export function OnboardingPage() {
                   <span className="text-[15px] text-[#ECECEE]">
                     {entry.providerName ?? entry.provider}
                   </span>
-                  <span className="text-[12px] text-[#85858A]">{providerHint(entry)}</span>
+                  <span className="text-[12px] text-[#85858A]">{localizedProviderHint(entry)}</span>
                 </button>
               ))}
             </div>
@@ -251,19 +262,23 @@ export function OnboardingPage() {
               {isOpenAiCompatible ? (
                 <>
                   <label className="block">
-                    Server URL
+                    <Trans>Server URL</Trans>
                     <input
                       value={baseUrl}
                       onChange={(e) => updateBaseUrl(e.target.value)}
-                      aria-label="OpenAI-compatible server URL"
+                      aria-label={t`OpenAI-compatible server URL`}
                       placeholder="http://127.0.0.1:8000/v1"
                       autoComplete="off"
                       className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                     />
                   </label>
                   <details className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
-                    <summary className="w-fit cursor-pointer select-none">Setup help</summary>
-                    <p className="mt-1">{OPENAI_COMPATIBLE_BASE_URL_HINT}</p>
+                    <summary className="w-fit cursor-pointer select-none">
+                      <Trans>Setup help</Trans>
+                    </summary>
+                    <p className="mt-1">
+                      {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+                    </p>
                   </details>
                   <div className="mt-3">
                     <button
@@ -272,17 +287,19 @@ export function OnboardingPage() {
                       onClick={() => void probeServerModels()}
                       className="rounded-[11px] border border-[#26262A] px-4 py-2 text-sm text-[#ECECEE] disabled:opacity-40"
                     >
-                      {probing ? "Finding…" : "Find models"}
+                      {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
                     </button>
                   </div>
                   <div className="mt-4 block">
-                    <span>Model</span>
+                    <span>
+                      <Trans>Model</Trans>
+                    </span>
                     {probeModels.length && probeModels.includes(modelId) ? (
                       <div className="relative mt-2">
                         <select
                           value={modelId}
                           onChange={(e) => setModelId(e.target.value)}
-                          aria-label="Models from server"
+                          aria-label={t`Models from server`}
                           className="w-full appearance-none rounded-[11px] border border-[#26262A] bg-transparent py-3 pl-3.5 pr-11 text-[#ECECEE]"
                         >
                           {probeModels.map((id) => (
@@ -290,7 +307,9 @@ export function OnboardingPage() {
                               {id}
                             </option>
                           ))}
-                          <option value="">Other model…</option>
+                          <option value="">
+                            <Trans>Other model…</Trans>
+                          </option>
                         </select>
                         <span
                           aria-hidden="true"
@@ -303,7 +322,7 @@ export function OnboardingPage() {
                       <input
                         value={modelId}
                         onChange={(e) => setModelId(e.target.value)}
-                        aria-label="Model id"
+                        aria-label={t`Model id`}
                         placeholder="exact-model-id"
                         className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                       />
@@ -314,21 +333,23 @@ export function OnboardingPage() {
                         className="mt-2 text-[13px] text-[#85858A] underline"
                         onClick={() => setModelId(probeModels[0] ?? "")}
                       >
-                        Use a found model
+                        <Trans>Use a found model</Trans>
                       </button>
                     ) : null}
                   </div>
                 </>
               ) : (
                 <>
-                  <span>Model</span>
+                  <span>
+                    <Trans>Model</Trans>
+                  </span>
                   <select
                     value={selected?.id ?? modelId}
                     onChange={(e) => {
                       cancelOAuthAttempt();
                       setModelId(e.target.value);
                     }}
-                    aria-label="Model"
+                    aria-label={t`Model`}
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                   >
                     {modelsForProvider.map((entry) => (
@@ -350,22 +371,24 @@ export function OnboardingPage() {
                     {oauth.mode === "auth-url" ? (
                       <>
                         <p className="text-sm text-[#85858A]">
-                          Finish signing in at{" "}
-                          <a
-                            href={oauth.verificationUri}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#ECECEE] underline"
-                          >
-                            {new URL(oauth.verificationUri).hostname}
-                          </a>
-                          . The final page may not load; paste its URL or code here.
+                          <Trans>
+                            Finish signing in at{" "}
+                            <a
+                              href={oauth.verificationUri}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[#ECECEE] underline"
+                            >
+                              {new URL(oauth.verificationUri).hostname}
+                            </a>
+                            . The final page may not load; paste its URL or code here.
+                          </Trans>
                         </p>
                         <div className="mt-3 flex items-center gap-2">
                           <input
                             value={pasteCode}
                             onChange={(e) => setPasteCode(e.target.value)}
-                            aria-label="Authorization code or callback URL"
+                            aria-label={t`Authorization code or callback URL`}
                             autoComplete="off"
                             spellCheck={false}
                             placeholder="http://localhost:53692/callback?code=…"
@@ -377,28 +400,34 @@ export function OnboardingPage() {
                             onClick={() => void submitOAuthCode()}
                             className="rounded-[11px] bg-[#F1F1EF] px-4 py-2.5 text-[#17171A] disabled:opacity-40"
                           >
-                            Submit
+                            <Trans>Submit</Trans>
                           </button>
                         </div>
-                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                        <p className="mt-2 text-sm text-[#85858A]">
+                          <Trans>Waiting for sign-in…</Trans>
+                        </p>
                       </>
                     ) : (
                       <>
                         <p className="text-sm text-[#85858A]">
-                          Enter this code at{" "}
-                          <a
-                            href={oauth.verificationUri}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#ECECEE] underline"
-                          >
-                            {oauth.verificationUri.replace(/^https:\/\//, "")}
-                          </a>
+                          <Trans>
+                            Enter this code at{" "}
+                            <a
+                              href={oauth.verificationUri}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[#ECECEE] underline"
+                            >
+                              {oauth.verificationUri.replace(/^https:\/\//, "")}
+                            </a>
+                          </Trans>
                         </p>
                         <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
                           {oauth.userCode}
                         </p>
-                        <p className="mt-2 text-sm text-[#85858A]">Waiting for sign-in…</p>
+                        <p className="mt-2 text-sm text-[#85858A]">
+                          <Trans>Waiting for sign-in…</Trans>
+                        </p>
                       </>
                     )}
                   </div>
@@ -409,7 +438,7 @@ export function OnboardingPage() {
                     onClick={() => beginSelectedSubscriptionSignIn()}
                     className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
                   >
-                    {oauthPending ? "Starting…" : signInLabel}
+                    {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
                   </button>
                 )}
               </div>
@@ -417,12 +446,14 @@ export function OnboardingPage() {
             {acceptsKey ? (
               isOpenAiCompatible ? (
                 <details className="mt-4 text-sm text-[#85858A]">
-                  <summary className="w-fit cursor-pointer select-none">API key</summary>
+                  <summary className="w-fit cursor-pointer select-none">
+                    <Trans>API key</Trans>
+                  </summary>
                   <input
-                    aria-label="API key"
+                    aria-label={t`API key`}
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
-                    placeholder="Optional"
+                    placeholder={t`Optional`}
                     type="password"
                     autoComplete="new-password"
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
@@ -430,7 +461,7 @@ export function OnboardingPage() {
                 </details>
               ) : (
                 <label className="mt-4 block text-sm text-[#85858A]">
-                  {subscriptionSignIn ? "Or paste an API key" : "API key"}
+                  {subscriptionSignIn ? <Trans>Or paste an API key</Trans> : <Trans>API key</Trans>}
                   <input
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
@@ -443,8 +474,10 @@ export function OnboardingPage() {
               )
             ) : subscriptionSignIn ? null : (
               <p className="mt-4 text-sm text-[#85858A]">
-                This provider cannot paste a key here. Skip if this deployment already has
-                credentials.
+                <Trans>
+                  This provider cannot paste a key here. Skip if this deployment already has
+                  credentials.
+                </Trans>
               </p>
             )}
             {notice ? <p className="mt-3 text-sm text-[#4ECB71]">{notice}</p> : null}
@@ -456,7 +489,7 @@ export function OnboardingPage() {
                 onClick={() => void saveModel()}
                 className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
               >
-                Continue
+                <Trans>Continue</Trans>
               </button>
               <button
                 type="button"
@@ -466,38 +499,40 @@ export function OnboardingPage() {
                 }}
                 className="text-[#85858A]"
               >
-                Skip for now
+                <Trans>Skip for now</Trans>
               </button>
             </div>
           </div>
         ) : null}
         {step === "bot" ? (
           <div>
-            <h1 className="text-[32px] font-medium text-[#F1F1F2]">Create your first bot</h1>
+            <h1 className="text-[32px] font-medium text-[#F1F1F2]">
+              <Trans>Create your first bot</Trans>
+            </h1>
             <label className="mt-8 block text-sm text-[#85858A]">
-              Name
+              <Trans>Name</Trans>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Name this bot"
+                placeholder={t`Name this bot`}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
             <label className="mt-4 block text-sm text-[#85858A]">
-              Title
+              <Trans>Title</Trans>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Describe what this bot does"
+                placeholder={t`Describe what this bot does`}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
             <label className="mt-4 block text-sm text-[#85858A]">
-              Description
+              <Trans>Description</Trans>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What this bot is for"
+                placeholder={t`What this bot is for`}
                 rows={4}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
@@ -509,7 +544,7 @@ export function OnboardingPage() {
               onClick={() => void createBot()}
               className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
             >
-              Continue
+              <Trans>Continue</Trans>
             </button>
           </div>
         ) : null}

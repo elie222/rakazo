@@ -1,3 +1,6 @@
+import { i18n } from "@lingui/core";
+import { t } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { Download, FileText, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -17,6 +20,7 @@ type ArtifactFileCardProps = {
 };
 
 export function ArtifactFileCard(props: ArtifactFileCardProps) {
+  const { t } = useLingui();
   const markdown = props.mimeType === "text/markdown";
   const previewButton = useRef<HTMLButtonElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -27,7 +31,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
     try {
       await downloadArtifact(props.target, props.artifactId, props.name, props.mimeType);
     } catch {
-      setDownloadError(`Could not download ${props.name}. Try again.`);
+      setDownloadError(t`Could not download ${props.name}. Try again.`);
     }
   }
 
@@ -61,7 +65,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           <button
             ref={previewButton}
             type="button"
-            aria-label={`Preview ${props.name}`}
+            aria-label={t`Preview ${props.name}`}
             onClick={() => setPreviewOpen(true)}
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#222226]"
           >
@@ -77,8 +81,8 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           </button>
           <button
             type="button"
-            aria-label={`Download ${props.name}`}
-            title={`Download ${props.name}`}
+            aria-label={t`Download ${props.name}`}
+            title={t`Download ${props.name}`}
             onClick={() => void startDownload()}
             className="grid w-14 shrink-0 place-items-center border-l border-[#343438] text-[#9A9AA0] hover:bg-[#222226] hover:text-[#ECECEE]"
           >
@@ -99,6 +103,7 @@ function MarkdownPreview({
   mimeType,
   onClose,
 }: ArtifactFileCardProps & { onClose: () => void }) {
+  const { t } = useLingui();
   const titleId = useId();
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -154,27 +159,27 @@ function MarkdownPreview({
           const markdown = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           setState({ status: "ready", bytes, markdown });
         } catch {
-          setState({ status: "error", message: "This file is not valid UTF-8 Markdown." });
+          setState({ status: "error", message: t`This file is not valid UTF-8 Markdown.` });
         }
       })
       .catch((error) => {
         if (cancelled) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : "Could not load this file.",
+          message: error instanceof Error ? error.message : t`Could not load this file.`,
         });
       });
     return () => {
       cancelled = true;
     };
-  }, [artifactId, targetBotId, targetGroupId]);
+  }, [artifactId, targetBotId, targetGroupId, t]);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-5 backdrop-blur-sm">
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Close preview"
+        aria-label={t`Close preview`}
         onClick={onClose}
         className="absolute inset-0 cursor-default"
       />
@@ -194,8 +199,8 @@ function MarkdownPreview({
           </h2>
           <button
             type="button"
-            aria-label={`Download ${name}`}
-            title={`Download ${name}`}
+            aria-label={t`Download ${name}`}
+            title={t`Download ${name}`}
             onClick={() =>
               void (async () => {
                 setDownloadError(null);
@@ -203,7 +208,7 @@ function MarkdownPreview({
                   if (state.status === "ready") downloadArtifactBytes(name, mimeType, state.bytes);
                   else await downloadArtifact(target, artifactId, name, mimeType);
                 } catch {
-                  setDownloadError(`Could not download ${name}. Try again.`);
+                  setDownloadError(t`Could not download ${name}. Try again.`);
                 }
               })()
             }
@@ -214,7 +219,7 @@ function MarkdownPreview({
           <button
             ref={closeButton}
             type="button"
-            aria-label="Close preview"
+            aria-label={t`Close preview`}
             onClick={onClose}
             className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-[#1D1D20] hover:text-[#ECECEE]"
           >
@@ -229,7 +234,9 @@ function MarkdownPreview({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-[#D5D5D8] sm:px-12 sm:py-12">
             {state.status === "loading" ? (
-              <div className="text-[#85858A]">Loading preview…</div>
+              <div className="text-[#85858A]">
+                <Trans>Loading preview…</Trans>
+              </div>
             ) : state.status === "error" ? (
               <div className="rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-3 text-[#F1A8A8]">
                 {state.message}
@@ -253,7 +260,13 @@ function DownloadError({ message }: { message: string }) {
 }
 
 function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  const locale = i18n.locale || "en";
+  if (size < 1024) return t`${size} B`;
+  const format = (value: number) =>
+    new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(value);
+  if (size < 1024 * 1024) return t`${format(size / 1024)} KB`;
+  return t`${format(size / (1024 * 1024))} MB`;
 }

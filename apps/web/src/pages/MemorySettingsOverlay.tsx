@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
@@ -20,7 +21,7 @@ function ScopePicker({
 }) {
   return (
     <div className="text-[13.5px] text-[#85858A]">
-      Default scope
+      <Trans>Default scope</Trans>
       <div className="mt-2 flex gap-2">
         {(["isolated", "shared"] as const).map((option) => (
           <button
@@ -35,7 +36,7 @@ function ScopePicker({
                 : "border-[#26262A] text-[#85858A]"
             }`}
           >
-            {option === "isolated" ? "Isolated" : "Shared"}
+            {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
           </button>
         ))}
       </div>
@@ -52,6 +53,7 @@ export function MemorySettingsOverlay({
   config: WorkspaceMemoryConfig | null | undefined;
   onConfigChange: (config: WorkspaceMemoryConfig | null) => void;
 }) {
+  const { t } = useLingui();
   const defaultRegistration = defaultMemoryProviderSettings();
   const [selectedProvider, setSelectedProvider] = useState(
     config?.provider ?? defaultRegistration.id,
@@ -89,7 +91,7 @@ export function MemorySettingsOverlay({
       onConfigChange(next);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Could not connect ${registration.name}`);
+      setError(err instanceof Error ? err.message : t`Could not connect ${registration.name}`);
       return false;
     } finally {
       setPending(null);
@@ -103,7 +105,7 @@ export function MemorySettingsOverlay({
       await rpc.memory.disconnectProvider();
       onConfigChange(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect memory provider");
+      setError(err instanceof Error ? err.message : t`Could not disconnect memory provider`);
     } finally {
       setPending(null);
     }
@@ -117,7 +119,7 @@ export function MemorySettingsOverlay({
       const next = await rpc.memory.setDefaultScope({ defaultMemoryScope: scope });
       onConfigChange(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update the default memory scope");
+      setError(err instanceof Error ? err.message : t`Could not update the default memory scope`);
     } finally {
       setPending(null);
     }
@@ -128,14 +130,18 @@ export function MemorySettingsOverlay({
       <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">Memory</div>
+            <div className="text-2xl font-medium text-[#F1F1F2]">
+              <Trans>Memory</Trans>
+            </div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {registration?.description ?? "Manage the workspace semantic memory provider."}
+              {registration?.description ?? (
+                <Trans>Manage the workspace semantic memory provider.</Trans>
+              )}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close memory settings"
+            aria-label={t`Close memory settings`}
             disabled={busy}
             onClick={onClose}
             className="text-[#85858A] disabled:opacity-40"
@@ -148,11 +154,13 @@ export function MemorySettingsOverlay({
           {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
 
           {config === undefined ? (
-            <p className="text-sm text-[#85858A]">Loading memory settings…</p>
+            <p className="text-sm text-[#85858A]">
+              <Trans>Loading memory settings…</Trans>
+            </p>
           ) : config ? (
             <div className="rounded-[13px] border border-[#26262A] px-4 py-3">
               <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
-                Connected
+                <Trans>Connected</Trans>
               </div>
               <div className="mt-1 text-[15px] text-[#ECECEE]">
                 {registration?.connectedLabel(config) ?? config.provider}
@@ -172,14 +180,18 @@ export function MemorySettingsOverlay({
                 onClick={() => void disconnect()}
                 className="mt-3"
               >
-                {pending === "disconnect" ? "Disconnecting…" : "Disconnect"}
+                {pending === "disconnect" ? (
+                  <Trans>Disconnecting…</Trans>
+                ) : (
+                  <Trans>Disconnect</Trans>
+                )}
               </Button>
             </div>
           ) : registration ? (
             <>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
                 <label className="mb-4 block text-[13.5px] text-[#85858A]">
-                  Provider
+                  <Trans>Provider</Trans>
                   <select
                     value={selectedProvider}
                     disabled={busy}
@@ -203,7 +215,7 @@ export function MemorySettingsOverlay({
             </>
           ) : (
             <p className="text-sm text-[#C94244]">
-              The selected memory provider is not available in this build.
+              <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
         </div>

@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import { useEffect, useState } from "react";
@@ -5,17 +7,18 @@ import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
 function oauthStatusText(server: McpServer): string {
-  if (server.oauthStatus === "connected") return "OAuth connected";
-  if (server.oauthStatus === "reconnect") return "Authorization expired — reconnect required";
-  return server.hasSecret ? "Encrypted static credential saved" : "No credential saved";
+  if (server.oauthStatus === "connected") return t`OAuth connected`;
+  if (server.oauthStatus === "reconnect") return t`Authorization expired — reconnect required`;
+  return server.hasSecret ? t`Encrypted static credential saved` : t`No credential saved`;
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
-  if (pending) return "Connecting…";
-  return server.oauthStatus === "none" ? "Connect OAuth" : "Reconnect OAuth";
+  if (pending) return t`Connecting…`;
+  return server.oauthStatus === "none" ? t`Connect OAuth` : t`Reconnect OAuth`;
 }
 
 export function McpServersOverlay({ onClose }: { onClose: () => void }) {
+  const { t } = useLingui();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const [botAssignments, setBotAssignments] = useState<Record<string, BotMcpServer[]>>({});
@@ -54,7 +57,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void refresh().catch((err: unknown) =>
-      setError(err instanceof Error ? err.message : "Could not load MCP servers"),
+      setError(err instanceof Error ? err.message : t`Could not load MCP servers`),
     );
   }, []);
 
@@ -80,15 +83,15 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   async function addServer() {
     setError(null);
     if (!name.trim()) {
-      setError("Add a server name.");
+      setError(t`Add a server name.`);
       return;
     }
     if (transport !== "stdio" && !endpoint.trim()) {
-      setError("Add an HTTPS server URL.");
+      setError(t`Add an HTTPS server URL.`);
       return;
     }
     if (transport === "stdio" && !command.trim()) {
-      setError("Add a stdio command.");
+      setError(t`Add a stdio command.`);
       return;
     }
     setSaving(true);
@@ -142,7 +145,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setArgs("");
       setSelectedBotIds([]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add MCP server");
+      setError(err instanceof Error ? err.message : t`Could not add MCP server`);
     } finally {
       setSaving(false);
     }
@@ -157,16 +160,16 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       await refresh();
       if (result === "connected") return;
       if (result === "already_connected") {
-        setError("This server is already connected. Disconnect it first to authorize again.");
+        setError(t`This server is already connected. Disconnect it first to authorize again.`);
         return;
       }
       if (result === "authorization_not_requested") {
-        setError("This server did not request browser authorization.");
+        setError(t`This server did not request browser authorization.`);
         return;
       }
       setOauthPending((current) => (current === server.id ? null : current));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start OAuth");
+      setError(err instanceof Error ? err.message : t`Could not start OAuth`);
       setOauthPending(null);
     }
   }
@@ -182,7 +185,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       const updated = await rpc.mcp.assignments.replace({ botId, assignments: next });
       setBotAssignments((map) => ({ ...map, [botId]: updated }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update agent access");
+      setError(err instanceof Error ? err.message : t`Could not update agent access`);
     }
   }
 
@@ -197,7 +200,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       await rpc.mcp.servers.remove({ id: server.id });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete MCP server");
+      setError(err instanceof Error ? err.message : t`Could not delete MCP server`);
     }
   }
 
@@ -208,7 +211,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       await rpc.mcp.oauth.disconnect({ serverId: server.id });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect OAuth");
+      setError(err instanceof Error ? err.message : t`Could not disconnect OAuth`);
     } finally {
       setOauthPending(null);
     }
@@ -218,18 +221,22 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-6">
       <section
         className="flex max-h-full w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#2A2A31] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
-        aria-label="MCP servers"
+        aria-label={t`MCP servers`}
       >
         <header className="flex items-start justify-between border-b border-[#27272C] px-8 py-6">
           <div>
-            <h1 className="text-2xl font-medium text-[#F1F1F2]">MCP servers</h1>
+            <h1 className="text-2xl font-medium text-[#F1F1F2]">
+              <Trans>MCP servers</Trans>
+            </h1>
             <p className="mt-1 text-[13.5px] text-[#85858B]">
-              Connect remote or local tool servers and choose which agents can use them.
+              <Trans>
+                Connect remote or local tool servers and choose which agents can use them.
+              </Trans>
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close MCP servers"
+            aria-label={t`Close MCP servers`}
             onClick={onClose}
             className="text-xl text-[#85858A]"
           >
@@ -243,13 +250,17 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
         ) : null}
         <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
           <div className="rounded-2xl border border-[#292930] bg-[#101012] p-5">
-            <h2 className="text-[15px] font-medium text-[#ECECEE]">Add a server</h2>
+            <h2 className="text-[15px] font-medium text-[#ECECEE]">
+              <Trans>Add a server</Trans>
+            </h2>
             <p className="mb-5 mt-1 text-xs text-[#77777F]">
-              OAuth will be available for providers that support browser authorization. Static
-              headers work today.
+              <Trans>
+                OAuth will be available for providers that support browser authorization. Static
+                headers work today.
+              </Trans>
             </p>
             <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-name">
-              Server name
+              <Trans>Server name</Trans>
             </label>
             <input
               id="mcp-name"
@@ -280,7 +291,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             {transport === "stdio" ? (
               <>
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-command">
-                  Command
+                  <Trans>Command</Trans>
                 </label>
                 <input
                   id="mcp-command"
@@ -290,7 +301,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
                 />
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-args">
-                  Arguments
+                  <Trans>Arguments</Trans>
                 </label>
                 <input
                   id="mcp-args"
@@ -303,7 +314,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             ) : (
               <>
                 <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-endpoint">
-                  Server URL
+                  <Trans>Server URL</Trans>
                 </label>
                 <input
                   id="mcp-endpoint"
@@ -315,30 +326,30 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </>
             )}
             <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-secret">
-              Access token (optional)
+              <Trans>Access token (optional)</Trans>
             </label>
             <input
               id="mcp-secret"
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="Stored encrypted"
+              placeholder={t`Stored encrypted`}
               className="mb-3 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
             />
             {transport !== "stdio" ? (
               <div className="grid grid-cols-[.7fr_1fr] gap-2">
                 <input
-                  aria-label="Header name"
+                  aria-label={t`Header name`}
                   value={headerName}
                   onChange={(e) => setHeaderName(e.target.value)}
                   className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
                 />
                 <input
-                  aria-label="Header value"
+                  aria-label={t`Header value`}
                   type="password"
                   value={headerValue}
                   onChange={(e) => setHeaderValue(e.target.value)}
-                  placeholder="Optional header value"
+                  placeholder={t`Optional header value`}
                   className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
                 />
               </div>
@@ -349,17 +360,19 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               onClick={() => void addServer()}
               className="mt-5 w-full rounded-xl bg-[#7785FF] px-4 py-3 text-sm font-semibold text-[#090A12] disabled:opacity-50"
             >
-              {saving ? "Adding…" : "Add server"}
+              {saving ? <Trans>Adding…</Trans> : <Trans>Add server</Trans>}
             </button>
           </div>
           <div className="space-y-5">
             <div>
               <h2 className="text-[15px] font-medium text-[#ECECEE]">
-                Agent access for new servers
+                <Trans>Agent access for new servers</Trans>
               </h2>
               <p className="mt-1 text-xs text-[#77777F]">
-                Applies when you click Add server. Use the agent chips on each server card to change
-                access at any time — the agent picks it up on its next message.
+                <Trans>
+                  Applies when you click Add server. Use the agent chips on each server card to
+                  change access at any time — the agent picks it up on its next message.
+                </Trans>
               </p>
               <div className="mt-3 space-y-2">
                 {bots.map((bot) => (
@@ -385,11 +398,13 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </div>
             </div>
             <div>
-              <h2 className="text-[15px] font-medium text-[#ECECEE]">Configured servers</h2>
+              <h2 className="text-[15px] font-medium text-[#ECECEE]">
+                <Trans>Configured servers</Trans>
+              </h2>
               <div className="mt-3 space-y-2">
                 {servers.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F]">
-                    No MCP servers yet.
+                    <Trans>No MCP servers yet.</Trans>
                   </p>
                 ) : (
                   servers.map((server) => (
@@ -412,7 +427,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         {oauthStatusText(server)}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-[#77777F]">Agents:</span>
+                        <span className="text-[11px] text-[#77777F]">
+                          <Trans>Agents:</Trans>
+                        </span>
                         {bots.map((bot) => {
                           const assigned = (botAssignments[bot.id] ?? []).some(
                             (entry) => entry.serverId === server.id,
@@ -448,7 +465,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 onClick={() => void disconnectOAuth(server)}
                                 className="rounded-lg border border-[#34343B] px-3 py-2 text-xs text-[#B9B9C0]"
                               >
-                                Disconnect
+                                <Trans>Disconnect</Trans>
                               </button>
                             ) : null}
                           </>
@@ -458,7 +475,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           onClick={() => void deleteServer(server)}
                           className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[#34343B] text-[#B9B9C0]"}`}
                         >
-                          {confirmingDelete === server.id ? "Confirm delete" : "Delete"}
+                          {confirmingDelete === server.id ? (
+                            <Trans>Confirm delete</Trans>
+                          ) : (
+                            <Trans>Delete</Trans>
+                          )}
                         </button>
                       </div>
                     </div>

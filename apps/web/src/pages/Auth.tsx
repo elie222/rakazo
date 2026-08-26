@@ -1,15 +1,18 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../lib/auth";
 
 export function AuthPage({ mode }: { mode: "in" | "up" }) {
+  const { t } = useLingui();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const title = mode === "in" ? "Sign in to Rakazo" : "Create your Rakazo";
+  const title =
+    mode === "in" ? <Trans>Sign in to Rakazo</Trans> : <Trans>Create your Rakazo</Trans>;
   const preservedSearch = window.location.search;
 
   async function submit(e: React.FormEvent) {
@@ -26,7 +29,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         : await authClient.signIn.email({ email, password });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "Could not continue");
+      setError(result.error.message ?? t`Could not continue`);
       return;
     }
     const next = new URLSearchParams(window.location.search).get("next");
@@ -49,41 +52,41 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
         {mode === "up" ? (
           <label className="mb-4 w-full text-[16px] text-[#6E6E68]">
-            Name
+            <Trans>Name</Trans>
             <input
               id="name"
               name="name"
               autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder={t`Your name`}
               className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1B1B1E] outline-none"
             />
           </label>
         ) : null}
         <label className="w-full text-[16px] text-[#6E6E68]">
-          Email
+          <Trans>Email</Trans>
           <input
             id="email"
             name="email"
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Your email address"
+            placeholder={t`Your email address`}
             type="email"
             required
             className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1B1B1E] outline-none"
           />
         </label>
         <label className="mt-4 w-full text-[16px] text-[#6E6E68]">
-          Password
+          <Trans>Password</Trans>
           <input
             id={mode === "in" ? "current-password" : "new-password"}
             name="password"
             autoComplete={mode === "in" ? "current-password" : "new-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder={t`Password`}
             type="password"
             required
             minLength={8}
@@ -96,21 +99,27 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
           disabled={pending}
           className="mt-3 w-full rounded-[13px] bg-[#121215] py-[18px] text-center text-[17px] font-medium text-[#FBFBF9] hover:bg-[#26262B]"
         >
-          {pending ? "Working…" : mode === "in" ? "Continue with email" : "Create account"}
+          {pending ? (
+            <Trans>Working…</Trans>
+          ) : mode === "in" ? (
+            <Trans>Continue with email</Trans>
+          ) : (
+            <Trans>Create account</Trans>
+          )}
         </button>
         <p className="mt-[30px] text-[16px] text-[#8C8C86]">
           {mode === "in" ? (
             <>
-              Don’t have an account?{" "}
+              <Trans>Don’t have an account?</Trans>{" "}
               <Link to={`/sign-up${preservedSearch}`} className="font-medium text-[#1B1B1E]">
-                Sign up
+                <Trans>Sign up</Trans>
               </Link>
             </>
           ) : (
             <>
-              Already have an account?{" "}
+              <Trans>Already have an account?</Trans>{" "}
               <Link to={`/sign-in${preservedSearch}`} className="font-medium text-[#1B1B1E]">
-                Sign in
+                <Trans>Sign in</Trans>
               </Link>
             </>
           )}

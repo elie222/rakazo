@@ -1,6 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import { desktopBridge, windowChromeKind } from "../lib/desktop";
 
 export function WindowChrome() {
+  const { t } = useLingui();
   const desktop = desktopBridge();
   const kind = windowChromeKind(desktop);
   if (kind === "spacer") {
@@ -14,19 +16,19 @@ export function WindowChrome() {
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#FF5F57]"
-        aria-label="Close"
+        aria-label={t`Close`}
         onClick={() => void desktop?.window.close()}
       />
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#FEBC2E]"
-        aria-label="Minimize"
+        aria-label={t`Minimize`}
         onClick={() => void desktop?.window.minimize()}
       />
       <button
         type="button"
         className="app-no-drag h-3 w-3 rounded-full bg-[#28C840]"
-        aria-label="Fullscreen"
+        aria-label={t`Fullscreen`}
         onClick={() => void desktop?.window.toggleMaximize()}
       />
     </div>

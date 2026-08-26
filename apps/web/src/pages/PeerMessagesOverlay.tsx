@@ -1,3 +1,5 @@
+import { plural } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +28,7 @@ export function PeerMessagesOverlay({
   initialPeerBotId?: string | null;
   onClose: () => void;
 }) {
+  const { t } = useLingui();
   const [messages, setMessages] = useState<readonly ThreadMessage[]>(initialMessages);
   const [historyReady, setHistoryReady] = useState(initialOlderCursor == null);
   const [selectedId, setSelectedId] = useState<string | null>(initialPeerBotId ?? null);
@@ -135,21 +138,21 @@ export function PeerMessagesOverlay({
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div id="peer-messages-title" className="text-2xl font-medium text-[#F1F1F2]">
-              Bot messages
+              <Trans>Bot messages</Trans>
             </div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {!historyReady
-                ? "Loading peer messages…"
-                : conversations.length === 0
-                  ? `${botName} has not messaged another bot yet.`
-                  : `${botName} · ${conversations.length} ${
-                      conversations.length === 1 ? "peer" : "peers"
-                    }`}
+              {!historyReady ? (
+                <Trans>Loading peer messages…</Trans>
+              ) : conversations.length === 0 ? (
+                t`${botName} has not messaged another bot yet.`
+              ) : (
+                t`${botName} · ${plural(conversations.length, { one: "# peer", other: "# peers" })}`
+              )}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close bot messages"
+            aria-label={t`Close bot messages`}
             onClick={onClose}
             className="text-[#85858A]"
           >
@@ -159,11 +162,14 @@ export function PeerMessagesOverlay({
 
         {!historyReady ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
-            Loading peer messages…
+            <Trans>Loading peer messages…</Trans>
           </div>
         ) : conversations.length === 0 ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
-            When {botName} messages another bot, the exchange shows up here instead of in the chat.
+            <Trans>
+              When {botName} messages another bot, the exchange shows up here instead of in the
+              chat.
+            </Trans>
           </div>
         ) : (
           <div className="mt-5 flex min-h-0 flex-1 gap-4 px-6 pb-6 sm:px-8 sm:pb-7">

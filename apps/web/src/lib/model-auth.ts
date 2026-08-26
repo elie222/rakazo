@@ -5,6 +5,7 @@ import { rpc } from "./rpc";
 export type { ModelCatalogEntry, ModelCredential, ModelOAuthBegin } from "@rakazo/contracts";
 export { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 
+/** English fallback auth hint for a catalog entry (localize at the UI call site). */
 export function providerHint(entry: ModelCatalogEntry) {
   if (entry.authHint) return entry.authHint;
   if (entry.signIn !== undefined) return "Sign in";

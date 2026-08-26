@@ -1,3 +1,4 @@
+import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
@@ -37,14 +38,14 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
                 : "border-[#26262A] text-[#85858A]"
             }`}
           >
-            {option === "cloud" ? "Cloud" : "Local"}
+            {option === "cloud" ? <Trans>Cloud</Trans> : <Trans>Local</Trans>}
           </button>
         ))}
       </div>
 
       {mode === "local" ? (
         <label className="mt-4 block text-[13.5px] text-[#85858A]">
-          Base URL
+          <Trans>Base URL</Trans>
           <input
             value={baseUrl}
             disabled={busy}
@@ -56,7 +57,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
       ) : null}
 
       <label className="mt-4 block text-[13.5px] text-[#85858A]">
-        {mode === "cloud" ? "Organization API key" : "Instance API key"}
+        {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
         <input
           value={apiKey}
           disabled={busy}
@@ -76,7 +77,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
         onClick={() => void connect()}
         className="mt-5"
       >
-        {busy ? "Connecting…" : "Connect"}
+        {busy ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
       </Button>
     </>
   );
