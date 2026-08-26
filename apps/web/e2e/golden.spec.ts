@@ -130,7 +130,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  // Nearest ancestor with a Connect/Revoke control (featured tile or catalog row).
+  const gmailRow = page
+    .getByText("Gmail", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Connected", exact: true }).click();
@@ -146,7 +149,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
   await expect(gmailRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 
-  const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
+  const linearRow = page
+    .getByText("Linear", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   const connectPopup = page.waitForEvent("popup");
   await linearRow.getByRole("button", { name: "Connect", exact: true }).click();
   const popup = await connectPopup;
