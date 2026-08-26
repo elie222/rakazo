@@ -405,7 +405,7 @@ export async function replaceComputer(
   }
   const botId = context.botId;
   if (!botId) throw new Error("computer replacement requires a bot id");
-  if (hasActiveComputerControl(existing) && existing.controlBotId !== botId) {
+  if (hasActiveComputerControl(existing)) {
     throw new ComputerBusyError();
   }
   if (existing.state === "booting" || existing.state === "suspending") {

@@ -691,7 +691,7 @@ describe("computer replacement", () => {
     ).rejects.toBeInstanceOf(ComputerBusyError);
   });
 
-  it("rejects replacement while another bot holds user control", async () => {
+  it("rejects replacement while any bot holds user control", async () => {
     const prisma = {
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
@@ -719,6 +719,39 @@ describe("computer replacement", () => {
         },
         "computer-1",
         "recover",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+  });
+
+  it("rejects replacement while the same bot holds user control", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "dedicated",
+          state: "running",
+          controlHolder: "user",
+          controlLeaseId: "lease-1",
+          controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+          controlBotId: "bot-1",
+        }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
