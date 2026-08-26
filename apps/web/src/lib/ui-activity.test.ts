@@ -17,5 +17,8 @@ describe("localizeAgentActivity", () => {
     expect(localizeAgentActivity("사용자가 작성한 일반 문장", "ko-KR")).toBe(
       "사용자가 작성한 일반 문장",
     );
+    expect(
+      localizeAgentActivity("Reading the latest status before deciding what to do", "ko-KR"),
+    ).toBe("Reading the latest status before deciding what to do");
   });
 });
