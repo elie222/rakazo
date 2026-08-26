@@ -1830,7 +1830,7 @@ msgstr "Ersatzschlüssel einfügen"
 #: src/pages/ModelSettingsOverlay.tsx:415
 #: src/pages/Onboarding.tsx:280
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "Fügen Sie die OpenAI-kompatible Adresse Ihres Servers ein. Rakazo ergänzt /v1 bei Bedarf."
+msgstr "Füge die OpenAI-kompatible Adresse deines Servers ein. Rakazo ergänzt /v1 bei Bedarf."
 
 #: src/pages/VoiceSettingsOverlay.tsx:242
 msgid "Paste your API key"

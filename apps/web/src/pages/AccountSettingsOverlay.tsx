@@ -56,7 +56,9 @@ export function AccountSettingsOverlay({
     if (next === locale || localeBusy) return;
     setLocale(next);
     setLocaleBusy(true);
-    void setUiLocale(next).finally(() => setLocaleBusy(false));
+    void setUiLocale(next)
+      .then((activated) => setLocale(activated))
+      .finally(() => setLocaleBusy(false));
   }
 
   return (

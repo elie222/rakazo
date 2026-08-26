@@ -47,10 +47,11 @@ function activateLoaded(locale: UiLocale, messages: CatalogMessages): UiLocale {
  * If the preferred catalog fails, falls back to English (then empty English).
  */
 export async function activateUiLocale(locale: UiLocale): Promise<UiLocale> {
-  if (activeLocale === locale && i18n.locale === locale) return locale;
-
+  // Bump first so a later "already active" selection cancels in-flight loads.
   const generation = ++activationGeneration;
   const isCurrent = () => generation === activationGeneration;
+
+  if (activeLocale === locale && i18n.locale === locale) return locale;
 
   try {
     const messages = await loadCatalog(locale);
@@ -79,5 +80,7 @@ export async function bootstrapI18n(preferred: UiLocale = resolveUiLocale()): Pr
 
 export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
   persistUiLocale(locale);
-  return activateUiLocale(locale);
+  const activated = await activateUiLocale(locale);
+  if (activated !== locale) persistUiLocale(activated);
+  return activated;
 }

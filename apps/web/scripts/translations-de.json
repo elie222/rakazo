@@ -419,7 +419,7 @@
   "Park": "Zurückstellen",
   "Password": "Passwort",
   "Paste a replacement key": "Ersatzschlüssel einfügen",
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.": "Fügen Sie die OpenAI-kompatible Adresse Ihres Servers ein. Rakazo ergänzt /v1 bei Bedarf.",
+  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.": "Füge die OpenAI-kompatible Adresse deines Servers ein. Rakazo ergänzt /v1 bei Bedarf.",
   "Paste your API key": "Füge deinen API-Schlüssel ein",
   "Personal credential": "Persönliche Zugangsdaten",
   "Pick a voice": "Stimme auswählen",

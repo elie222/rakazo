@@ -67,4 +67,30 @@ describe("activateUiLocale", () => {
     expect(getActiveUiLocale()).toBe("ko");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("설정");
   });
+
+  it("cancels a pending activation when re-selecting the already-active locale", async () => {
+    let resolveDe!: (value: { messages: Record<string, string> }) => void;
+    const dePromise = new Promise<{ messages: Record<string, string> }>((resolve) => {
+      resolveDe = resolve;
+    });
+
+    setCatalogLoadersForTests({
+      en: async () => ({ messages: { Settings: "Settings" } }),
+      de: async () => dePromise,
+      ko: async () => ({ messages: { Settings: "설정" } }),
+    });
+
+    await activateUiLocale("en");
+    expect(getActiveUiLocale()).toBe("en");
+
+    const pendingDe = activateUiLocale("de");
+    const backToEn = activateUiLocale("en");
+    resolveDe({ messages: { Settings: "Einstellungen" } });
+
+    await expect(pendingDe).resolves.toBe("en");
+    await expect(backToEn).resolves.toBe("en");
+    expect(getActiveUiLocale()).toBe("en");
+    expect(i18n.locale).toBe("en");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Settings");
+  });
 });
