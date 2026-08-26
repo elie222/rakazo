@@ -403,11 +403,14 @@ export async function replaceComputer(
       throw new Error("computer control revocation is still in progress");
     }
   }
+  const botId = context.botId;
+  if (!botId) throw new Error("computer replacement requires a bot id");
+  if (hasActiveComputerControl(existing) && existing.controlBotId !== botId) {
+    throw new ComputerBusyError();
+  }
   if (existing.state === "booting" || existing.state === "suspending") {
     throw new ComputerBusyError();
   }
-  const botId = context.botId;
-  if (!botId) throw new Error("computer replacement requires a bot id");
 
   const previousState = existing.state;
   if (existing.state !== "stopped" && existing.state !== "suspended") {
