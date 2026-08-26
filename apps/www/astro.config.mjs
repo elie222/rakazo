@@ -6,7 +6,26 @@ import { defineConfig } from "astro/config";
 export default defineConfig({
   site: "https://rakazo.com",
   output: "static",
-  integrations: [react(), sitemap()],
+  i18n: {
+    defaultLocale: "en",
+    locales: ["en", "de", "ko"],
+    routing: {
+      prefixDefaultLocale: false,
+    },
+  },
+  integrations: [
+    react(),
+    sitemap({
+      i18n: {
+        defaultLocale: "en",
+        locales: {
+          en: "en-US",
+          de: "de-DE",
+          ko: "ko-KR",
+        },
+      },
+    }),
+  ],
   vite: {
     plugins: [tailwindcss()],
   },

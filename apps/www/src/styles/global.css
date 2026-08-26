@@ -821,16 +821,28 @@ button {
 }
 
 .site-footer__brand,
-.site-footer__links {
+.site-footer__nav,
+.site-footer__links,
+.site-footer__languages {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 18px;
+}
+
+.site-footer__brand,
+.site-footer__nav {
   padding-top: 40px;
 }
 
 .site-footer__brand {
   gap: 9px;
+}
+
+.site-footer__nav {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
 }
 
 .site-footer__legal {
@@ -843,11 +855,29 @@ button {
   color: var(--ink);
 }
 
+.site-footer__languages,
 .site-footer__links {
   color: var(--muted);
   font-size: 14px;
 }
 
+.site-footer__languages {
+  gap: 0;
+}
+
+.site-footer__languages a + a::before {
+  content: "·";
+  margin: 0 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.site-footer__languages a[aria-current="page"] {
+  color: var(--ink);
+}
+
+.site-footer__languages a:hover,
+.site-footer__languages a:focus-visible,
 .site-footer__links a:hover,
 .site-footer__links a:focus-visible {
   color: var(--ink);
@@ -2227,8 +2257,12 @@ button {
   }
 
   .site-footer__brand,
-  .site-footer__links {
+  .site-footer__nav {
     padding-top: 0;
+  }
+
+  .site-footer__nav {
+    align-items: flex-start;
   }
 
   .product-demo__topbar {

@@ -1,14 +1,38 @@
 ---
 type Props = {
   emailId?: string;
+  emailLabel?: string;
+  placeholder?: string;
   submitLabel?: string;
+  joiningLabel?: string;
+  successLabel?: string;
+  addedLabel?: string;
+  errorLabel?: string;
 };
 
-const { emailId = "waitlist-email", submitLabel = "Continue" } = Astro.props;
+const {
+  emailId = "waitlist-email",
+  emailLabel = "Email address",
+  placeholder = "you@company.com",
+  submitLabel = "Continue",
+  joiningLabel = "Joining…",
+  successLabel = "You’re in.",
+  addedLabel = "Added",
+  errorLabel = "Couldn’t add you. Try again.",
+} = Astro.props;
 ---
 
-<form class="waitlist-form" data-waitlist-form data-endpoint="/api/waitlist" novalidate>
-  <label class="sr-only" for={emailId}>Email address</label>
+<form
+  class="waitlist-form"
+  data-waitlist-form
+  data-endpoint="/api/waitlist"
+  data-joining-label={joiningLabel}
+  data-success-label={successLabel}
+  data-added-label={addedLabel}
+  data-error-label={errorLabel}
+  novalidate
+>
+  <label class="sr-only" for={emailId}>{emailLabel}</label>
   <input
     id={emailId}
     name="email"
@@ -18,7 +42,7 @@ const { emailId = "waitlist-email", submitLabel = "Continue" } = Astro.props;
     autocapitalize="none"
     spellcheck="false"
     maxlength="254"
-    placeholder="you@company.com"
+    placeholder={placeholder}
     required
   />
   <div class="waitlist-form__trap" hidden>
@@ -42,6 +66,10 @@ const { emailId = "waitlist-email", submitLabel = "Continue" } = Astro.props;
     }
 
     const submitLabel = submit.dataset.submitLabel || "Continue";
+    const joiningLabel = form.dataset.joiningLabel || "Joining…";
+    const successLabel = form.dataset.successLabel || "You’re in.";
+    const addedLabel = form.dataset.addedLabel || "Added";
+    const errorLabel = form.dataset.errorLabel || "Couldn’t add you. Try again.";
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -56,7 +84,7 @@ const { emailId = "waitlist-email", submitLabel = "Continue" } = Astro.props;
       if (!endpoint) return;
 
       submit.disabled = true;
-      submit.textContent = "Joining…";
+      submit.textContent = joiningLabel;
 
       try {
         const response = await fetch(endpoint, {
@@ -68,12 +96,12 @@ const { emailId = "waitlist-email", submitLabel = "Continue" } = Astro.props;
         if (!response.ok) throw new Error("Waitlist request failed");
 
         form.reset();
-        status.textContent = "You’re in.";
+        status.textContent = successLabel;
         status.classList.add("is-success");
-        submit.textContent = "Added";
+        submit.textContent = addedLabel;
         form.dispatchEvent(new CustomEvent("waitlist:joined", { bubbles: true }));
       } catch {
-        status.textContent = "Couldn’t add you. Try again.";
+        status.textContent = errorLabel;
         status.classList.add("is-error");
         submit.disabled = false;
         submit.textContent = submitLabel;

@@ -1,25 +1,56 @@
 ---
 import "../styles/global.css";
 import { getMarkdownAlternate } from "../agent-content";
+import {
+  DEFAULT_LOCALE,
+  LOCALE_HTML_LANG,
+  LOCALE_OG,
+  isLocale,
+  localeHomePath,
+  type Locale,
+} from "../i18n/locales";
 import { SITE_NAME, SITE_URL } from "../site";
 
 type Props = {
   title?: string;
   description: string;
   structuredData?: object;
+  locale?: Locale;
+  skipLabel?: string;
+  homeAlternates?: boolean;
+  ogImageAlt?: string;
 };
 
-const { title = SITE_NAME, description, structuredData } = Astro.props;
+const {
+  title = SITE_NAME,
+  description,
+  structuredData,
+  skipLabel = "Skip to content",
+  homeAlternates = false,
+  ogImageAlt = "Rakazo — AI teammates you actually own. Your keys, your model, your machine.",
+} = Astro.props;
+
+const locale: Locale = isLocale(Astro.currentLocale)
+  ? Astro.currentLocale
+  : (Astro.props.locale ?? DEFAULT_LOCALE);
+
 const canonical = new URL(Astro.url.pathname, SITE_URL).toString();
 const socialImage = new URL("/og-image.png", SITE_URL).toString();
 const structuredDataJson = structuredData
   ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
   : null;
 const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
+const htmlLang = LOCALE_HTML_LANG[locale];
+const ogLocale = LOCALE_OG[locale];
+const homeUrls = {
+  en: new URL(localeHomePath("en"), SITE_URL).toString(),
+  de: new URL(localeHomePath("de"), SITE_URL).toString(),
+  ko: new URL(localeHomePath("ko"), SITE_URL).toString(),
+};
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={htmlLang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -31,18 +62,31 @@ const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
     <meta property="og:url" content={canonical} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={SITE_NAME} />
-    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale" content={ogLocale} />
+    {locale !== "en" && <meta property="og:locale:alternate" content={LOCALE_OG.en} />}
+    {locale !== "de" && <meta property="og:locale:alternate" content={LOCALE_OG.de} />}
+    {locale !== "ko" && <meta property="og:locale:alternate" content={LOCALE_OG.ko} />}
     <meta property="og:image" content={socialImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:type" content="image/png" />
-    <meta property="og:image:alt" content="Rakazo — AI teammates you actually own. Your keys, your model, your machine." />
+    <meta property="og:image:alt" content={ogImageAlt} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={socialImage} />
-    <meta name="twitter:image:alt" content="Rakazo — AI teammates you actually own. Your keys, your model, your machine." />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
     <link rel="canonical" href={canonical} />
+    {
+      homeAlternates && (
+        <>
+          <link rel="alternate" hreflang="en" href={homeUrls.en} />
+          <link rel="alternate" hreflang="de" href={homeUrls.de} />
+          <link rel="alternate" hreflang="ko" href={homeUrls.ko} />
+          <link rel="alternate" hreflang="x-default" href={homeUrls.en} />
+        </>
+      )
+    }
     {markdownAlternate && (
       <link rel="alternate" type="text/markdown" href={markdownAlternate} />
     )}
@@ -64,7 +108,7 @@ const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
     </script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main">{skipLabel}</a>
     <div class="page-shell">
       <slot />
     </div>
