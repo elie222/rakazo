@@ -50,11 +50,7 @@ describe("featured connectors", () => {
   });
 
   it("resolves featured rows from slug or display name", () => {
-    const catalog = [
-      item("gmail", "Gmail"),
-      item("slackbot", "Slack"),
-      item("NOTION", "Notion"),
-    ];
+    const catalog = [item("gmail", "Gmail"), item("slackbot", "Slack"), item("NOTION", "Notion")];
     expect(resolveFeaturedCatalogItem("gmail", catalog)?.slug).toBe("gmail");
     expect(resolveFeaturedCatalogItem("slack", catalog)?.slug).toBe("slackbot");
     expect(resolveFeaturedCatalogItem("notion", catalog)?.slug).toBe("NOTION");
