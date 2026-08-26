@@ -756,4 +756,51 @@ describe("computer replacement", () => {
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
   });
+
+  it("rejects replacement when control is claimed before the suspending lock", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "dedicated",
+          state: "running",
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+        }),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 0 }),
+      },
+      run: { findFirst: vi.fn() },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "recover",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { controlHolder: { not: "user" } },
+            { controlLeaseId: null },
+            { controlLeaseExpiresAt: null },
+            { controlLeaseExpiresAt: { lte: expect.any(Date) } },
+          ]),
+        }),
+      }),
+    );
+  });
 });

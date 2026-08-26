@@ -420,6 +420,12 @@ export async function replaceComputer(
         id: computerId,
         state: { notIn: ["booting", "suspending", "stopped", "suspended"] },
         executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
+        OR: [
+          { controlHolder: { not: "user" } },
+          { controlLeaseId: null },
+          { controlLeaseExpiresAt: null },
+          { controlLeaseExpiresAt: { lte: now } },
+        ],
       },
       data: { state: "suspending" },
     });
