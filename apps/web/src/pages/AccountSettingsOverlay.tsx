@@ -30,7 +30,7 @@ export function AccountSettingsOverlay({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
-  const [localeBusy, setLocaleBusy] = useState(false);
+  const localeRequestRef = useRef(0);
 
   useEffect(() => {
     const previousFocus =
@@ -53,12 +53,13 @@ export function AccountSettingsOverlay({
   }, [focusUsage]);
 
   function chooseLocale(next: UiLocale) {
-    if (next === locale || localeBusy) return;
+    if (next === locale) return;
+    const requestId = ++localeRequestRef.current;
     setLocale(next);
-    setLocaleBusy(true);
-    void setUiLocale(next)
-      .then((activated) => setLocale(activated))
-      .finally(() => setLocaleBusy(false));
+    void setUiLocale(next).then((activated) => {
+      if (requestId !== localeRequestRef.current) return;
+      setLocale(activated);
+    });
   }
 
   return (
@@ -103,7 +104,7 @@ export function AccountSettingsOverlay({
           <h3 className="text-[15px] font-medium text-[#ECECEE]">
             <Trans>Language</Trans>
           </h3>
-          <UiLocalePicker value={locale} disabled={localeBusy} onChange={chooseLocale} />
+          <UiLocalePicker value={locale} onChange={chooseLocale} />
         </section>
 
         <div
@@ -155,11 +156,9 @@ export function AccountSettingsOverlay({
 
 function UiLocalePicker({
   value,
-  disabled,
   onChange,
 }: {
   value: UiLocale;
-  disabled: boolean;
   onChange: (locale: UiLocale) => void;
 }) {
   const { t } = useLingui();
@@ -203,7 +202,6 @@ function UiLocalePicker({
   }
 
   function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (disabled) return;
     if (event.key === "Escape" && open) {
       event.preventDefault();
       event.stopPropagation();
@@ -253,15 +251,12 @@ function UiLocalePicker({
         type="button"
         role="combobox"
         data-testid="ui-locale-select"
-        disabled={disabled}
         aria-label={t`Language`}
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50] disabled:opacity-50"
-        onClick={() => {
-          if (!disabled) setOpen((current) => !current);
-        }}
+        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50]"
+        onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >
         <span className="min-w-0 truncate">{UI_LOCALE_LABELS[value]}</span>
