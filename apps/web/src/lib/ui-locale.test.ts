@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { resolveUiLocale, selectUiLocale } from "./ui-locale";
 
 describe("selectUiLocale", () => {
-  it("prefers a deployment locale over browser language", () => {
-    expect(selectUiLocale("ko", null, "en-US")).toBe("ko");
+  it("uses a saved user choice before the deployment default", () => {
+    expect(selectUiLocale("ko", "en-US", "ko-KR")).toBe("en-US");
   });
 
   it("allows a saved user choice to override browser language", () => {

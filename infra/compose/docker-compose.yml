@@ -101,11 +101,15 @@ services:
       dockerfile: infra/compose/Dockerfile
       args:
         VITE_DEFAULT_UI_LOCALE: ${VITE_DEFAULT_UI_LOCALE:-}
-    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/web write-runtime-config && pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
     environment:
       API_PROXY_TARGET: http://api:3100
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      VITE_DEFAULT_UI_LOCALE: ${VITE_DEFAULT_UI_LOCALE:-}
     ports:
       - "5173:5173"
     depends_on:

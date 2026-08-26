@@ -3,7 +3,7 @@ export function selectUiLocale(
   savedLocale: string | null | undefined,
   browserLocale: string | null | undefined,
 ): string {
-  return deploymentLocale?.trim() || savedLocale?.trim() || browserLocale?.trim() || "en";
+  return savedLocale?.trim() || deploymentLocale?.trim() || browserLocale?.trim() || "en";
 }
 
 export function resolveUiLocale(): string {
@@ -15,5 +15,7 @@ export function resolveUiLocale(): string {
     // Storage can be unavailable in restricted browser contexts.
   }
   const browserLocale = typeof navigator === "undefined" ? null : navigator.language;
-  return selectUiLocale(import.meta.env.VITE_DEFAULT_UI_LOCALE, savedLocale, browserLocale);
+  const deploymentLocale =
+    globalThis.__RAKAZO_RUNTIME_CONFIG__?.defaultUiLocale ?? import.meta.env.VITE_DEFAULT_UI_LOCALE;
+  return selectUiLocale(deploymentLocale, savedLocale, browserLocale);
 }

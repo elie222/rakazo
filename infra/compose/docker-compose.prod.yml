@@ -125,7 +125,10 @@ services:
         GIT_SHA: ${GIT_SHA:-}
         VITE_DEFAULT_UI_LOCALE: ${VITE_DEFAULT_UI_LOCALE:-}
     restart: unless-stopped
-    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/web write-runtime-config && pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
     init: true
     security_opt:
       - no-new-privileges:true
@@ -138,6 +141,7 @@ services:
     environment:
       NODE_ENV: production
       API_PROXY_TARGET: http://api:3100
+      VITE_DEFAULT_UI_LOCALE: ${VITE_DEFAULT_UI_LOCALE:-}
     expose:
       - "5173"
     networks:
