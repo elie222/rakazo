@@ -72,8 +72,8 @@ export function ComputerMaintenanceActions({
         <p className="text-[13px] leading-[1.45] text-[#6C6C70]">
           <Trans>
             Recover replaces an unreachable computer and keeps files in the saved workspace. Reset
-            restores the last saved workspace and loses unsaved work. Update rebuilds with the latest
-            image and keeps the saved workspace.
+            restores the last saved workspace and loses unsaved work. Update rebuilds with the
+            latest image and keeps the saved workspace.
           </Trans>
         </p>
       ) : null}
