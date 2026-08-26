@@ -27,19 +27,12 @@ const locale: Locale = isLocale(Astro.currentLocale)
   : DEFAULT_LOCALE;
 
 const copy = getHomeCopy(locale);
+const enCopy = getHomeCopy(DEFAULT_LOCALE);
 const homeHref = localeHomePath(locale);
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
-const ogImageAlt =
-  locale === "de"
-    ? "Rakazo — KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine."
-    : locale === "ko"
-      ? "Rakazo — 진짜로 내 것인 AI 팀원. 키, 모델, 머신 — 모두 당신 것."
-      : "Rakazo — AI teammates you actually own. Your keys, your model, your machine.";
-
-const availableLanguage =
-  locale === "de" ? "German" : locale === "ko" ? "Korean" : "English";
+const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -74,14 +67,14 @@ const structuredData = {
       "@id": `${SITE_URL}/#website`,
       url: `${SITE_URL}/`,
       name: SITE_NAME,
-      description: copy.description,
-      inLanguage: locale,
+      description: enCopy.description,
+      inLanguage: DEFAULT_LOCALE,
       publisher: { "@id": `${SITE_URL}/#organization` },
     },
     {
       "@type": "WebPage",
-      "@id": `${SITE_URL}${homeHref === "/" ? "/" : homeHref}#webpage`,
-      url: `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`,
+      "@id": `${pageUrl}#webpage`,
+      url: pageUrl,
       name: copy.title,
       description: copy.description,
       inLanguage: locale,
@@ -93,7 +86,7 @@ const structuredData = {
       "@id": `${SITE_URL}/#software`,
       name: SITE_NAME,
       url: `${SITE_URL}/`,
-      description: copy.description,
+      description: enCopy.description,
       applicationCategory: "BusinessApplication",
       applicationSubCategory: "AI agent platform",
       operatingSystem: "Web, macOS, Linux, iOS, Android",
@@ -101,7 +94,7 @@ const structuredData = {
       codeRepository: GITHUB_URL,
       license: `${GITHUB_URL}/blob/main/LICENSE`,
       provider: { "@id": `${SITE_URL}/#organization` },
-      inLanguage: availableLanguage,
+      inLanguage: enCopy.availableLanguage,
       offers: {
         "@type": "Offer",
         price: "0",
@@ -110,11 +103,6 @@ const structuredData = {
     },
   ],
 };
-
-const openSourceStatValue =
-  locale === "de" ? "Open Source" : locale === "ko" ? "오픈소스" : "Open source";
-const selfHostStatValue =
-  locale === "de" ? "Self-host" : locale === "ko" ? "셀프 호스트" : "Self-host";
 ---
 
 <BaseLayout
@@ -124,7 +112,7 @@ const selfHostStatValue =
   locale={locale}
   skipLabel={copy.skipToContent}
   homeAlternates
-  ogImageAlt={ogImageAlt}
+  ogImageAlt={copy.ogImageAlt}
 >
   <div class="container">
     <Header locale={locale} copy={copy.nav} starsLabel={starsLabel} homeHref={homeHref} />
@@ -270,8 +258,8 @@ const selfHostStatValue =
                     : stat.value === "license"
                       ? "Apache-2.0"
                       : stat.value === "openSource"
-                        ? openSourceStatValue
-                        : selfHostStatValue}
+                        ? copy.cta.openSourceValue
+                        : copy.cta.selfHostValue}
                 </div>
                 <div class="stat-label">{stat.label}</div>
               </div>

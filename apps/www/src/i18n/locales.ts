@@ -23,7 +23,7 @@ export const LOCALE_HTML_LANG: Record<Locale, string> = {
 };
 
 export function isLocale(value: string | undefined): value is Locale {
-  return value === "en" || value === "de" || value === "ko";
+  return value !== undefined && (LOCALES as readonly string[]).includes(value);
 }
 
 export function localeHomePath(locale: Locale): string {

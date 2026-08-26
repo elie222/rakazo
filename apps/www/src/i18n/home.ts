@@ -5,6 +5,8 @@ import type { Locale } from "./locales";
 export type HomeCopy = {
   title: string;
   description: string;
+  ogImageAlt: string;
+  availableLanguage: string;
   skipToContent: string;
   starFallback: string;
   nav: {
@@ -60,6 +62,8 @@ export type HomeCopy = {
     copy: string;
     getStarted: string;
     viewOnGithub: string;
+    openSourceValue: string;
+    selfHostValue: string;
     stats: Array<{ value: "stars" | "license" | "openSource" | "selfHost"; label: string }>;
   };
   getStartedDialog: {
@@ -195,6 +199,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,
+    ogImageAlt:
+      "Rakazo — AI teammates you actually own. Your keys, your model, your machine.",
+    availableLanguage: "English",
     skipToContent: "Skip to content",
     starFallback: "Star",
     nav: {
@@ -273,6 +280,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Give Rakazo something you have been putting off and let it handle the follow-through.",
       getStarted: "Get started",
       viewOnGithub: "View on GitHub",
+      openSourceValue: "Open source",
+      selfHostValue: "Self-host",
       stats: [
         { value: "stars", label: "GitHub stars" },
         { value: "license", label: "License" },
@@ -309,6 +318,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     title: "Rakazo | Open-Source-Alternative zu Grok Bot",
     description:
       "Rakazo ist eine Open-Source-Alternative zu Grok Bot für persistente KI-Teamkollegen, die echte Arbeit erledigen. Deine Keys, dein Modell, deine Maschine.",
+    ogImageAlt:
+      "Rakazo — KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
+    availableLanguage: "German",
     skipToContent: "Zum Inhalt springen",
     starFallback: "Star",
     nav: {
@@ -370,7 +382,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         "Unbegrenzte Bots, keine Seats, keine Limits",
         "Community-Support auf GitHub",
       ],
-      starOnGithub: "Auf GitHub starren",
+      starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
       cloudTitle: "Cloud",
       cloudBadge: "Demnächst",
@@ -387,6 +399,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Gib Rakazo etwas, das du aufgeschoben hast — und lass es den Follow-through übernehmen.",
       getStarted: "Loslegen",
       viewOnGithub: "Auf GitHub ansehen",
+      openSourceValue: "Open Source",
+      selfHostValue: "Self-host",
       stats: [
         { value: "stars", label: "GitHub Stars" },
         { value: "license", label: "Lizenz" },
@@ -423,6 +437,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     title: "Rakazo | 오픈소스 Grok Bot 대안",
     description:
       "Rakazo는 실제 업무를 수행하는 지속형 AI 팀원을 위한 오픈소스 Grok Bot 대안입니다. 키, 모델, 머신 — 모두 당신 것.",
+    ogImageAlt: "Rakazo — 진짜로 내 것인 AI 팀원. 키, 모델, 머신 — 모두 당신 것.",
+    availableLanguage: "Korean",
     skipToContent: "본문으로 건너뛰기",
     starFallback: "Star",
     nav: {
@@ -501,6 +517,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "미뤄 두었던 일을 Rakazo에 맡기고, 후속까지 맡기세요.",
       getStarted: "시작하기",
       viewOnGithub: "GitHub에서 보기",
+      openSourceValue: "오픈소스",
+      selfHostValue: "셀프 호스트",
       stats: [
         { value: "stars", label: "GitHub 스타" },
         { value: "license", label: "라이선스" },

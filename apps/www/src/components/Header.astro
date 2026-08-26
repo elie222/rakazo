@@ -20,8 +20,8 @@ type Props = {
 
 const { starsLabel } = Astro.props;
 const locale = Astro.props.locale ?? DEFAULT_LOCALE;
-const copy = Astro.props.copy ?? getHomeCopy(DEFAULT_LOCALE).nav;
-const homeHref = Astro.props.homeHref ?? localeHomePath(DEFAULT_LOCALE);
+const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
+const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
 const NAV_LINKS = [
   { href: localeHashPath(locale, "demo"), label: copy.product },
