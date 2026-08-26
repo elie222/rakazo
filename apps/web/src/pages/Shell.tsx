@@ -1249,6 +1249,8 @@ export function ShellPage() {
   const jumpToReplyMessage = useCallback((messageId: string) => {
     const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
     if (existing) {
+      // Cancel any in-flight around-fetch so it cannot overwrite this scroll.
+      jumpGeneration.current += 1;
       existing.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
