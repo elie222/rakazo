@@ -24,6 +24,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "follow_up",
   "spawn",
   "skill",
+  "bot_message",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {

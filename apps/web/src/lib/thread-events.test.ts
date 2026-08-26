@@ -264,6 +264,19 @@ describe("thread event reduction", () => {
     expect(progressed?.cursor).toBe(4);
   });
 
+  it("preserves bot_message when event-sourcing a peer run", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        runId: "peer-run-1",
+        payload: { trigger: "bot_message" },
+      }),
+    );
+
+    expect(started?.run?.trigger).toBe("bot_message");
+  });
+
   it("marks the run as waiting when computer takeover is requested", () => {
     const run = threadRun("run-1");
     const initial: ThreadSnapshot = {
