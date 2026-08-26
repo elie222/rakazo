@@ -9,6 +9,7 @@ if [ -z "$BIN" ]; then
   exit 1
 fi
 exec "$BIN" \
+  --test-type \
   --no-sandbox \
   --disable-dev-shm-usage \
   --disable-gpu \
