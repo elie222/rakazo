@@ -101,7 +101,9 @@ describe("persistSupermemoryConfig", () => {
 
   it("deletes the old secret when replacing an existing config with a new key", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
-    const { deps, secretDeleteMany } = makeDeps({ existing: { id: "cfg-1", secretId: "secret-old" } });
+    const { deps, secretDeleteMany } = makeDeps({
+      existing: { id: "cfg-1", secretId: "secret-old" },
+    });
     await persistSupermemoryConfig(deps as never, actor, {
       mode: "cloud",
       apiKey: "sm_new_key_12345",

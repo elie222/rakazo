@@ -78,7 +78,12 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
               {loading ? "Loading…" : "Connect Supermemory to replace native MEMORY.md memory."}
             </p>
           </div>
-          <button type="button" aria-label="Close memory settings" onClick={onClose} className="text-[#85858A]">
+          <button
+            type="button"
+            aria-label="Close memory settings"
+            onClick={onClose}
+            className="text-[#85858A]"
+          >
             ✕
           </button>
         </div>
@@ -110,13 +115,12 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
             </div>
           ) : (
             <>
-              <div role="radiogroup" aria-label="Supermemory mode" className="flex gap-2">
+              <div className="flex gap-2">
                 {(["cloud", "local"] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
-                    role="radio"
-                    aria-checked={mode === option}
+                    aria-pressed={mode === option}
                     onClick={() => setMode(option)}
                     className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
                       mode === option
@@ -155,13 +159,12 @@ export function SupermemorySettingsOverlay({ onClose }: { onClose: () => void })
 
               <div className="mt-4 text-[13.5px] text-[#85858A]">
                 Default scope for new bots
-                <div role="radiogroup" aria-label="Default memory scope" className="mt-2 flex gap-2">
+                <div className="mt-2 flex gap-2">
                   {(["isolated", "shared"] as const).map((option) => (
                     <button
                       key={option}
                       type="button"
-                      role="radio"
-                      aria-checked={defaultScope === option}
+                      aria-pressed={defaultScope === option}
                       onClick={() => setDefaultScope(option)}
                       className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
                         defaultScope === option

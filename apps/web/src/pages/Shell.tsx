@@ -1111,6 +1111,11 @@ export function ShellPage() {
               >
                 <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
                 <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">Voice</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
                   setSupermemorySettingsOpen(true);
                 }}
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
@@ -2607,10 +2612,11 @@ function BotSettings({
             ))}
           </select>
         </label>
+      ) : null}
       {supermemoryConnected ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
           Memory scope
-          <div role="radiogroup" aria-label="Memory scope" className="mt-2 flex gap-2">
+          <div className="mt-2 flex gap-2">
             {(
               [
                 { value: null, label: "Inherit default" },
@@ -2621,8 +2627,7 @@ function BotSettings({
               <button
                 key={option.label}
                 type="button"
-                role="radio"
-                aria-checked={memoryScope === option.value}
+                aria-pressed={memoryScope === option.value}
                 onClick={() => setMemoryScope(option.value)}
                 className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
                   memoryScope === option.value

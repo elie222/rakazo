@@ -349,31 +349,30 @@ export function createRunExecutor(deps: ExecutorDeps) {
           settings,
           savedSkills,
           memoryConfig,
-        ] =
-          await Promise.all([
-            deps.prisma.bot.findUniqueOrThrow({
-              where: { id: run.botId },
-              include: { computer: true },
-            }),
-            deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
-            deps.prisma.message.findMany({
-              where: { threadId: run.threadId },
-              orderBy: { seq: "desc" },
-              take: LEGACY_HISTORY_WINDOW_SIZE,
-              select: { role: true, runId: true, blocks: true },
-            }),
-            deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
-            deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId },
-              select: { id: true, provider: true, displayName: true, status: true },
-            }),
-            findDefaultModelCredential(deps.prisma, run),
-            deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deps.prisma.taughtSkill.findMany({
-              where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
-            }),
-            findWorkspaceMemoryConfig(deps.prisma, run.workspaceId),
-          ]);
+        ] = await Promise.all([
+          deps.prisma.bot.findUniqueOrThrow({
+            where: { id: run.botId },
+            include: { computer: true },
+          }),
+          deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
+          deps.prisma.message.findMany({
+            where: { threadId: run.threadId },
+            orderBy: { seq: "desc" },
+            take: LEGACY_HISTORY_WINDOW_SIZE,
+            select: { role: true, runId: true, blocks: true },
+          }),
+          deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
+          deps.prisma.connection.findMany({
+            where: { userId: run.userId, workspaceId: run.workspaceId },
+            select: { id: true, provider: true, displayName: true, status: true },
+          }),
+          findDefaultModelCredential(deps.prisma, run),
+          deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+          deps.prisma.taughtSkill.findMany({
+            where: { botId: run.botId, workspaceId: run.workspaceId, status: "saved" },
+          }),
+          findWorkspaceMemoryConfig(deps.prisma, run.workspaceId),
+        ]);
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
         let liveSlugs: string[] = [];
@@ -406,8 +405,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? {
               baseUrl: memoryConfig.baseUrl,
               apiKey: deps.secretStore!.load(
-                (await deps.prisma.secret.findUniqueOrThrow({ where: { id: memoryConfig.secretId } }))
-                  .ciphertext,
+                (
+                  await deps.prisma.secret.findUniqueOrThrow({
+                    where: { id: memoryConfig.secretId },
+                  })
+                ).ciphertext,
               ),
               containerTag: supermemoryContainerTagFor(
                 effectiveMemoryScope(bot.memoryScope, memoryConfig.defaultMemoryScope),
@@ -761,7 +763,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish({ ok: true });
           }
           if (name === "recall_memory") {
-            return searchSupermemory(String(args.query ?? ""), supermemory!.containerTag, supermemory!);
+            return searchSupermemory(
+              String(args.query ?? ""),
+              supermemory!.containerTag,
+              supermemory!,
+            );
           }
           if (name === "save_memory") {
             return finish(
