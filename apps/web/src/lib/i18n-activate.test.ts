@@ -46,6 +46,7 @@ describe("activateUiLocale", () => {
         throw new Error("de catalog missing");
       },
       ko: async () => ({ messages: { Settings: "설정" } }),
+      tr: async () => ({ messages: { Settings: "Ayarlar" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -66,6 +67,9 @@ describe("activateUiLocale", () => {
       ko: async () => {
         throw new Error("ko missing");
       },
+      tr: async () => {
+        throw new Error("tr missing");
+      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -83,6 +87,7 @@ describe("activateUiLocale", () => {
       en: async () => ({ messages: { Settings: "Settings" } }),
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
+      tr: async () => ({ messages: { Settings: "Ayarlar" } }),
     });
 
     const first = activateUiLocale("de");
@@ -105,6 +110,7 @@ describe("activateUiLocale", () => {
       en: async () => ({ messages: { Settings: "Settings" } }),
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
+      tr: async () => ({ messages: { Settings: "Ayarlar" } }),
     });
 
     await activateUiLocale("en");
@@ -132,6 +138,7 @@ describe("activateUiLocale", () => {
       en: async () => ({ messages: { Settings: "Settings" } }),
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
+      tr: async () => ({ messages: { Settings: "Ayarlar" } }),
     });
 
     await activateUiLocale("en");

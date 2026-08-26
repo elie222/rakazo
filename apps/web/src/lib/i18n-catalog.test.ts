@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
 import ko from "../../scripts/translations-ko.json";
+import tr from "../../scripts/translations-tr.json";
 
 describe("lingui catalogs", () => {
   beforeEach(() => {
@@ -56,9 +57,30 @@ describe("lingui catalogs", () => {
         values: { intervalAmountSelect: "5", intervalUnitSelect: "분" },
       }),
     ).toBe("5 분마다");
+
+    i18n.load("tr", {
+      "every {intervalAmountSelect} {intervalUnitSelect}":
+        "her {intervalAmountSelect} {intervalUnitSelect}",
+      "at {timeSelect}": "saat {timeSelect}",
+    });
+    i18n.activate("tr");
+    expect(
+      i18n._({
+        id: "every {intervalAmountSelect} {intervalUnitSelect}",
+        message: "every {intervalAmountSelect} {intervalUnitSelect}",
+        values: { intervalAmountSelect: "5", intervalUnitSelect: "dakika" },
+      }),
+    ).toBe("her 5 dakika");
+    expect(
+      i18n._({
+        id: "at {timeSelect}",
+        message: "at {timeSelect}",
+        values: { timeSelect: "09:00" },
+      }),
+    ).toBe("saat 09:00");
   });
 
-  it("uses seeded catalog strings for German and Korean chrome", () => {
+  it("uses seeded catalog strings for German, Korean, and Turkish chrome", () => {
     i18n.load("de", de as Record<string, string>);
     i18n.activate("de");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Einstellungen");
@@ -68,5 +90,10 @@ describe("lingui catalogs", () => {
     i18n.activate("ko");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("설정");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("취소");
+
+    i18n.load("tr", tr as Record<string, string>);
+    i18n.activate("tr");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Ayarlar");
+    expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("İptal");
   });
 });
