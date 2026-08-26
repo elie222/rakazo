@@ -1206,6 +1206,7 @@ export function createRouter(deps: RouterDeps) {
         const granted = await deps.prisma.computer.updateMany({
           where: {
             id: bot.computer.id,
+            state: "running",
             controlHolder: { not: "user" },
             controlLeaseId: null,
           },

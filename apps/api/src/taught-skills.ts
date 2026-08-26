@@ -185,6 +185,7 @@ async function grantTakeover(
   const granted = await deps.prisma.computer.updateMany({
     where: {
       id: bot.computer.id,
+      state: "running",
       OR: [{ controlHolder: { not: "user" } }, { controlBotId: bot.id }],
     },
     data: {
