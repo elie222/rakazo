@@ -1526,42 +1526,51 @@ function MessageBubble({
   const askBlock = message.blocks.find(isApprovalAskBlock);
   if (askBlock?.kind === "ask" && askBlock.actions?.length) {
     return (
-      <View
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          borderWidth: 1,
-          borderColor: "#232326",
-          backgroundColor: "#17171A",
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-      >
-        {askBlock.text ? (
-          <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>{askBlock.text}</Text>
-        ) : null}
-        {askBlock.detail ? (
-          <Text
-            style={{
-              color: "#85858A",
-              marginTop: 8,
-              fontSize: 12.5,
-              fontFamily: "Menlo",
-              lineHeight: 20,
-            }}
-          >
-            {askBlock.detail}
-          </Text>
-        ) : null}
-        {askBlock.status === "answered" ? (
-          <Text style={{ color: "#4ECB71", marginTop: 12, fontSize: 13.5, fontWeight: "600" }}>
-            {formatApprovalAnswer(askBlock.answer)}
-          </Text>
-        ) : canAnswer && onAnswer ? (
-          <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
-        ) : (
-          <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>No longer active</Text>
-        )}
+      <View style={{ gap: 8, width: "100%" }}>
+        <View
+          style={{
+            width: "90%",
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: "#232326",
+            backgroundColor: "#17171A",
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+          }}
+        >
+          {askBlock.text ? (
+            <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>
+              {askBlock.text}
+            </Text>
+          ) : null}
+          {askBlock.detail ? (
+            <Text
+              style={{
+                color: "#85858A",
+                marginTop: 8,
+                fontSize: 12.5,
+                fontFamily: "Menlo",
+                lineHeight: 20,
+              }}
+            >
+              {askBlock.detail}
+            </Text>
+          ) : null}
+          {askBlock.status === "answered" ? (
+            <Text style={{ color: "#4ECB71", marginTop: 12, fontSize: 13.5, fontWeight: "600" }}>
+              {formatApprovalAnswer(askBlock.answer)}
+            </Text>
+          ) : canAnswer && onAnswer ? (
+            <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
+          ) : (
+            <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>
+              No longer active
+            </Text>
+          )}
+        </View>
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={botId} block={block} />
+        ))}
       </View>
     );
   }
