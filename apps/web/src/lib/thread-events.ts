@@ -428,6 +428,13 @@ export function computerPanelAutoBoot(
   return "boot";
 }
 
+/** Auto panel reconnect must use computer.boot — never computer.recover (that destroys the sandbox). */
+export function computerPanelAutoUsesBoot(
+  action: ReturnType<typeof computerPanelAutoBoot>,
+): boolean {
+  return action === "boot" || action === "recover-screen";
+}
+
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,

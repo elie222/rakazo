@@ -124,6 +124,7 @@ import {
   activeThreadRuns,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
+  computerPanelAutoUsesBoot,
   computerTakeoverBlocked,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
@@ -1534,21 +1535,16 @@ export function ShellPage() {
     takeControl,
     overlay,
     force = false,
-    action = "boot",
   }: {
     takeControl: boolean;
     overlay: boolean;
     force?: boolean;
-    action?: "boot" | "recover";
   }) {
     if (!active) return;
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     try {
-      if (needsBoot) {
-        if (action === "recover") await rpc.computer.recover({ botId: active.id });
-        else await rpc.computer.boot({ botId: active.id });
-      }
+      if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
       setComputerError(null);
@@ -1583,11 +1579,11 @@ export function ShellPage() {
       }
       if (action === "boot" && autoBooted.current === botId) return;
       autoBooted.current = botId;
+      if (!computerPanelAutoUsesBoot(action)) return;
       await bootComputer({
         takeControl: false,
         overlay: action === "boot",
         force: true,
-        action: action === "recover-screen" ? "recover" : "boot",
       }).catch(() => undefined);
     })();
     return () => {

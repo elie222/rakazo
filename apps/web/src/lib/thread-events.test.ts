@@ -9,6 +9,7 @@ import {
   activeThreadRuns,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
+  computerPanelAutoUsesBoot,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -1150,6 +1151,12 @@ describe("computer event reduction", () => {
     expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
     expect(computerPanelAutoBoot("booting")).toBe("wait");
     expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  });
+
+  it("maps recover-screen to computer.boot, not computer.recover", () => {
+    expect(computerPanelAutoUsesBoot("recover-screen")).toBe(true);
+    expect(computerPanelAutoUsesBoot("boot")).toBe(true);
+    expect(computerPanelAutoUsesBoot("wait")).toBe(false);
   });
 });
 

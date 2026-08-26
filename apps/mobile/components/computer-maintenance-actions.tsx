@@ -17,7 +17,7 @@ export function ComputerMaintenanceActions({
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!computer || computer.kind === "desktop") return null;
+  if (!computer) return null;
 
   const busy = Boolean(computer.busyBotName) || computer.state === "booting";
 
