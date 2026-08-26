@@ -13,6 +13,7 @@ const defaultCatalogLoaders: Record<UiLocale, CatalogLoader> = {
   de: () => import("../locales/de/messages.po") as Promise<CatalogModule>,
   ko: () => import("../locales/ko/messages.po") as Promise<CatalogModule>,
   tr: () => import("../locales/tr/messages.po") as Promise<CatalogModule>,
+  "pt-BR": () => import("../locales/pt-BR/messages.po") as Promise<CatalogModule>,
 };
 
 let catalogLoaders: Record<UiLocale, CatalogLoader> = defaultCatalogLoaders;

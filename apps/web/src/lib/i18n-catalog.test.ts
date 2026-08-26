@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
 import ko from "../../scripts/translations-ko.json";
 import tr from "../../scripts/translations-tr.json";
+import ptBR from "../../scripts/translations-pt-BR.json";
 
 describe("lingui catalogs", () => {
   beforeEach(() => {
@@ -95,5 +96,10 @@ describe("lingui catalogs", () => {
     i18n.activate("tr");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Ayarlar");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("İptal");
+
+    i18n.load("pt-BR", ptBR as Record<string, string>);
+    i18n.activate("pt-BR");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Configurações");
+    expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("Cancelar");
   });
 });
