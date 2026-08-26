@@ -166,6 +166,8 @@ async function main() {
           {
             ...process.env,
             CI: "1",
+            // Pin English so e2e selectors match source messages regardless of runner locale.
+            VITE_DEFAULT_UI_LOCALE: "en",
           },
         );
       } catch (error) {
