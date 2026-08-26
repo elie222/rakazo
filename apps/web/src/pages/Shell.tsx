@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   AgentSkillCatalogEntry,
@@ -191,6 +192,7 @@ type PendingAttachment = {
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
 export function ShellPage() {
+  const { t } = useLingui();
   const { botId, groupId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1254,11 +1256,11 @@ export function ShellPage() {
       const skipped: string[] = [];
       for (const file of Array.from(files)) {
         if (existing.length + next.length >= ATTACHMENT_MAX_COUNT) {
-          skipped.push(`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
+          skipped.push(t`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
           continue;
         }
         if (file.size > ATTACHMENT_MAX_BYTES) {
-          skipped.push(`${file.name} (over 10 MiB)`);
+          skipped.push(t`${file.name} (over 10 MiB)`);
           continue;
         }
         const mimeType = inferAttachmentMimeType(file.name, file.type);
@@ -1274,10 +1276,10 @@ export function ShellPage() {
         });
       }
       if (next.length) setPendingAttachments((current) => [...current, ...next]);
-      setAttachmentNotice(skipped.length ? `Skipped ${skipped.join(", ")}` : null);
+      setAttachmentNotice(skipped.length ? t`Skipped ${skipped.join(", ")}` : null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [pendingAttachments],
+    [pendingAttachments, t],
   );
   const removeAttachment = useCallback((attachment: PendingAttachment) => {
     revokePendingAttachmentPreviews([attachment]);
@@ -1338,7 +1340,7 @@ export function ShellPage() {
         for (const pending of attachments) {
           const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
           if (!mimeType) {
-            throw new Error(`Unsupported file type: ${pending.file.name}`);
+            throw new Error(t`Unsupported file type: ${pending.file.name}`);
           }
           const contentBase64 = await readFileAsBase64(pending.file);
           const artifact = await rpc.artifacts.create(
@@ -1380,17 +1382,17 @@ export function ShellPage() {
         else if (botTarget) await refreshThreadRef.current(botTarget);
       } catch (error) {
         if (reroutedToGroup && groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
+          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
+          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
         } else if (botTarget && activeBotId.current === botTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to send message");
+          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
         }
       } finally {
         setSending(false);
       }
     },
-    [activeReplyTarget?.id, navigate, pendingAttachments, sending],
+    [activeReplyTarget?.id, navigate, pendingAttachments, sending, t],
   );
   const followUpMessage = useCallback(async (text: string) => {
     const id = activeBotId.current;
@@ -1407,7 +1409,7 @@ export function ShellPage() {
         await rpc.threads.stop({ groupId: groupTarget });
       } catch (error) {
         if (activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : "Failed to stop");
+          setSendError(error instanceof Error ? error.message : t`Failed to stop`);
         }
         return;
       }
@@ -1426,7 +1428,7 @@ export function ShellPage() {
       await rpc.threads.stop({ botId: botTarget });
     } catch (error) {
       if (activeBotId.current === botTarget) {
-        setSendError(error instanceof Error ? error.message : "Failed to stop");
+        setSendError(error instanceof Error ? error.message : t`Failed to stop`);
       }
       return;
     }
@@ -1444,7 +1446,7 @@ export function ShellPage() {
       }
     }
     await refreshThreadRef.current(botTarget).catch(() => undefined);
-  }, []);
+  }, [t]);
   const stopTeaching = useCallback(async () => {
     const id = activeBotId.current;
     if (!id || teachBusy) return;
@@ -1537,7 +1539,7 @@ export function ShellPage() {
       await refreshThread(active.id);
       setComputerError(null);
     } catch (error) {
-      setComputerError(error instanceof Error ? error.message : "Could not take control");
+      setComputerError(error instanceof Error ? error.message : t`Could not take control`);
       throw error;
     } finally {
       setBooting(false);
@@ -1659,7 +1661,7 @@ export function ShellPage() {
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
-  const userName = session.data?.user.name ?? "You";
+  const userName = session.data?.user.name ?? t`You`;
   const initials = userName
     .split(" ")
     .map((p) => p[0])
@@ -1679,7 +1681,7 @@ export function ShellPage() {
       {mobileSidebarOpen ? (
         <button
           type="button"
-          aria-label="Close navigation"
+          aria-label={t`Close navigation`}
           onClick={() => setMobileSidebarOpen(false)}
           className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
         />
@@ -1694,9 +1696,9 @@ export function ShellPage() {
           <div className="relative flex items-center gap-2.5">
             <button
               type="button"
-              aria-label="Activity"
+              aria-label={t`Activity`}
               aria-pressed={activityMode}
-              title="Activity"
+              title={t`Activity`}
               data-activity-mode={activityMode ? "on" : "off"}
               onClick={toggleActivityMode}
               className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
@@ -1714,7 +1716,7 @@ export function ShellPage() {
               type="button"
               onClick={() => setCreateMenuOpen((open) => !open)}
               className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
-              title="Create"
+              title={t`Create`}
             >
               +
             </button>
@@ -1728,7 +1730,7 @@ export function ShellPage() {
                     setPanel("create");
                   }}
                 >
-                  New bot
+                  <Trans>New bot</Trans>
                 </button>
                 <button
                   type="button"
@@ -1738,7 +1740,7 @@ export function ShellPage() {
                     setPanel("create-group");
                   }}
                 >
-                  New group
+                  <Trans>New group</Trans>
                 </button>
               </div>
             ) : null}
@@ -1749,7 +1751,7 @@ export function ShellPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
+            placeholder={t`Search`}
             className="w-full bg-transparent outline-none"
           />
         </div>
@@ -1808,7 +1810,11 @@ export function ShellPage() {
                             }`}
                           >
                             {bot.name}
-                            {bot.unread ? <span className="sr-only"> (unread)</span> : null}
+                            {bot.unread ? (
+                              <span className="sr-only">
+                                <Trans> (unread)</Trans>
+                              </span>
+                            ) : null}
                           </span>
                           <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
                             {bot.status === "idle" ? "" : bot.status}
@@ -1889,7 +1895,9 @@ export function ShellPage() {
                 onClick={() => setArchivedOpen((open) => !open)}
                 className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
               >
-                <span>Archived</span>
+                <span>
+                  <Trans>Archived</Trans>
+                </span>
                 <span>{archivedBots.length}</span>
               </button>
               {archivedOpen
@@ -1909,15 +1917,15 @@ export function ShellPage() {
                         }
                         className="text-[12.5px] text-[#C9C9CE] hover:text-white"
                       >
-                        Restore
+                        <Trans>Restore</Trans>
                       </button>
                       <button
                         type="button"
-                        aria-label={`Delete ${bot.name}`}
+                        aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
                         className="text-[12.5px] text-[#FF5364]"
                       >
-                        Delete
+                        <Trans>Delete</Trans>
                       </button>
                     </div>
                   ))
@@ -1933,14 +1941,16 @@ export function ShellPage() {
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">Integrations</span>
+          <span className="text-[14.5px] text-[#C9C9CE]">
+            <Trans>Integrations</Trans>
+          </span>
         </button>
         <div className="relative">
           {menuOpen ? (
             <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
               <button
                 type="button"
-                aria-label="Settings"
+                aria-label={t`Settings`}
                 onClick={() => {
                   setMenuOpen(false);
                   setAccountSettingsFocusUsage(false);
@@ -1949,7 +1959,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Settings</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Settings</Trans>
+                </span>
               </button>
               <button
                 type="button"
@@ -1960,7 +1972,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Models</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Models</Trans>
+                </span>
               </button>
               <button
                 type="button"
@@ -1971,7 +1985,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <span className="text-[#9A9AA0]">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Memory</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Memory</Trans>
+                </span>
               </button>
               <button
                 type="button"
@@ -1982,7 +1998,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Voice</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Voice</Trans>
+                </span>
               </button>
               <button
                 type="button"
@@ -1992,11 +2010,15 @@ export function ShellPage() {
                 }}
               >
                 <Gauge size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">Usage</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Usage</Trans>
+                </span>
               </button>
               {usage ? (
                 <p className="px-3 pb-2 text-[12.5px] text-[#85858A]">
-                  {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+                  <Trans>
+                    {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+                  </Trans>
                 </p>
               ) : null}
               <button
@@ -2005,7 +2027,9 @@ export function ShellPage() {
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
                 <LogOut size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="text-[14.5px] text-[#ECECEE]">Log out</span>
+                <span className="text-[14.5px] text-[#ECECEE]">
+                  <Trans>Log out</Trans>
+                </span>
               </button>
             </div>
           ) : null}
@@ -2028,7 +2052,7 @@ export function ShellPage() {
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
-              aria-label="Open navigation"
+              aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
               className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
             >
@@ -2051,8 +2075,8 @@ export function ShellPage() {
               <span className="min-w-0">
                 <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
                   {inGroup
-                    ? (activeGroup?.name ?? activeSnapshot?.groupName ?? "Group")
-                    : (active?.name ?? "Select a bot")}
+                    ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
+                    : (active?.name ?? t`Select a bot`)}
                 </span>
               </span>
             </button>
@@ -2061,8 +2085,8 @@ export function ShellPage() {
             {!inGroup && active ? (
               <button
                 type="button"
-                title={voiceStatus?.ready ? "Call" : "Set up voice to call"}
-                aria-label="Call"
+                title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
+                aria-label={t`Call`}
                 onClick={() => {
                   if (!voiceStatus?.ready) {
                     setVoiceOpen(true);
@@ -2079,7 +2103,7 @@ export function ShellPage() {
             {!inGroup ? (
               <button
                 type="button"
-                title="Agent computer"
+                title={t`Agent computer`}
                 onClick={() => {
                   const next = panel === "computer" ? null : "computer";
                   setPanel(next);
@@ -2123,7 +2147,7 @@ export function ShellPage() {
         />
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
-            Teaching in progress — stop teaching before sending a new message.
+            <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
         <Composer
@@ -2195,17 +2219,21 @@ export function ShellPage() {
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-[#85858A]">
-                  {panel === "settings"
-                    ? "Settings"
-                    : active
-                      ? (computer?.state ?? active.status)
-                      : "group"}
+                  {panel === "settings" ? (
+                    <Trans>Settings</Trans>
+                  ) : active ? (
+                    (computer?.state ?? active.status)
+                  ) : (
+                    <Trans>Group</Trans>
+                  )}
                 </span>
                 <div className="flex gap-3.5">
                   {active ? (
                     <button
                       type="button"
-                      aria-label={panel === "settings" ? "Show computer" : "Show settings"}
+                      aria-label={
+                        panel === "settings" ? t`Show computer` : t`Show settings`
+                      }
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={
                         panel === "settings"
@@ -2216,7 +2244,7 @@ export function ShellPage() {
                       <Settings size={16} strokeWidth={1.7} />
                     </button>
                   ) : null}
-                  <button type="button" aria-label="Close panel" onClick={() => setPanel(null)}>
+                  <button type="button" aria-label={t`Close panel`} onClick={() => setPanel(null)}>
                     <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
@@ -2227,16 +2255,18 @@ export function ShellPage() {
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full window
+                      <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
-                      This bot runs on this computer, not a Linux desktop. Shell and files use your
-                      home folder.
+                      <Trans>
+                        This bot runs on this computer, not a Linux desktop. Shell and files use
+                        your home folder.
+                      </Trans>
                     </div>
                   ) : computer?.state === "running" && embeddedScreenUrl ? (
                     <iframe
-                      title="Bot screen preview"
+                      title={t`Bot screen preview`}
                       src={embeddedScreenUrl}
                       sandbox={screenIframeSandbox(embeddedScreenUrl)}
                       className="h-full w-full border-0 bg-black"
@@ -2248,28 +2278,31 @@ export function ShellPage() {
                       {computerPlaceholder(
                         computer?.state,
                         booting,
-                        computerLabel(computer?.mode, active.name),
+                        computerLabel(computer?.mode, active.name, t),
+                        t,
                       )}
                     </div>
                   )}
                   <button
                     type="button"
                     className="absolute inset-0 cursor-pointer"
-                    aria-label="Open computer"
+                    aria-label={t`Open computer`}
                     onClick={() => void openComputer()}
                   />
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <span className="min-w-0 text-[13.5px] text-[#85858A]">
-                    {hasControl
-                      ? "You have control"
-                      : computerError
-                        ? computerError
-                        : computer?.busyBotName
-                          ? `${computer.busyBotName} is using it`
-                          : computer?.state === "suspended"
-                            ? "Asleep"
-                            : computerLabel(computer?.mode, active.name)}
+                    {hasControl ? (
+                      t`You have control`
+                    ) : computerError ? (
+                      computerError
+                    ) : computer?.busyBotName ? (
+                      t`${computer.busyBotName} is using it`
+                    ) : computer?.state === "suspended" ? (
+                      t`Asleep`
+                    ) : (
+                      computerLabel(computer?.mode, active.name, t)
+                    )}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -2282,14 +2315,16 @@ export function ShellPage() {
                       variant="outline"
                       size="sm"
                       disabled={takeoverBlocked}
-                      title={takeoverBlocked ? "Stop the bot first" : undefined}
+                      title={takeoverBlocked ? t`Stop the bot first` : undefined}
                       onClick={() => void openComputer()}
                     >
-                      Take control
+                      <Trans>Take control</Trans>
                     </Button>
                   )}
                 </div>
-                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
+                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">
+                  <Trans>Routines</Trans>
+                </div>
                 {activeRoutines.map((routine) => {
                   const routineRunning =
                     snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
@@ -2328,7 +2363,7 @@ export function ShellPage() {
                           onClick={() => void stopRun()}
                           className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
                         >
-                          Running · Stop
+                          <Trans>Running · Stop</Trans>
                         </button>
                       ) : null}
                     </div>
@@ -2343,7 +2378,7 @@ export function ShellPage() {
                   }}
                   className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
                 >
-                  + New routine
+                  + <Trans>New routine</Trans>
                 </button>
                 {active ? (
                   <TeachComputerSection
@@ -2445,13 +2480,15 @@ export function ShellPage() {
                   >
                     <ChevronLeft size={18} strokeWidth={1.8} />
                   </button>
-                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
+                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">
+                    <Trans>Routine</Trans>
+                  </div>
                   <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
                     <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
                 <label className="text-[14px] text-[#85858A]">
-                  Name
+                  <Trans>Name</Trans>
                   <input
                     value={routineDraft.name}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
@@ -2459,7 +2496,7 @@ export function ShellPage() {
                   />
                 </label>
                 <label className="mt-5 block text-[14px] text-[#85858A]">
-                  Instruction
+                  <Trans>Instruction</Trans>
                   <textarea
                     value={routineDraft.prompt}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
@@ -2468,7 +2505,7 @@ export function ShellPage() {
                   />
                 </label>
                 <div className="mt-5 text-[14px] text-[#85858A]">
-                  When to run
+                  <Trans>When to run</Trans>
                   <span className="ml-2 text-[12.5px] text-[#6E6E74]">
                     {editingRoutine?.timezone ?? localTimezone()}
                   </span>
@@ -2497,15 +2534,15 @@ export function ShellPage() {
                         if (targetRoutine) {
                           await rpc.routines.update({
                             routineId: targetRoutine.id,
-                            name: routineDraft.name || "Routine",
-                            prompt: routineDraft.prompt || "Check in.",
+                            name: routineDraft.name || t`Routine`,
+                            prompt: routineDraft.prompt || t`Check in.`,
                             crons,
                           });
                         } else {
                           await rpc.routines.create({
                             botId: targetBotId,
-                            name: routineDraft.name || "Routine",
-                            prompt: routineDraft.prompt || "Check in.",
+                            name: routineDraft.name || t`Routine`,
+                            prompt: routineDraft.prompt || t`Check in.`,
                             crons,
                             timezone: localTimezone(),
                             active: true,
@@ -2520,7 +2557,7 @@ export function ShellPage() {
                           return;
                         }
                         setRoutineError(
-                          error instanceof Error ? error.message : "Could not save routine",
+                          error instanceof Error ? error.message : t`Could not save routine`,
                         );
                         return;
                       } finally {
@@ -2543,7 +2580,7 @@ export function ShellPage() {
                     }}
                     className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
                   >
-                    {savingRoutine ? "Saving…" : "Save"}
+                    {savingRoutine ? t`Saving…` : t`Save`}
                   </button>
                   {editingRoutine?.botId === active.id ? (
                     <>
@@ -2567,7 +2604,7 @@ export function ShellPage() {
                         }}
                         className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40"
                       >
-                        {runningRoutine ? "Running…" : "Run now"}
+                        {runningRoutine ? t`Running…` : t`Run now`}
                       </button>
                       <button
                         type="button"
@@ -2575,7 +2612,7 @@ export function ShellPage() {
                         onClick={() => setDeleteRoutineTarget(editingRoutine)}
                         className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364] disabled:opacity-40"
                       >
-                        Delete routine
+                        <Trans>Delete routine</Trans>
                       </button>
                     </>
                   ) : null}
@@ -2787,7 +2824,7 @@ export function ShellPage() {
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
           <div className="text-[19px] font-medium text-[#F1F1F2]">
-            Booting up {active?.name}’s computer
+            <Trans>Booting up {active?.name}’s computer</Trans>
           </div>
           <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[#232327]">
             <div className="h-full w-2/3 rounded-full bg-[#F1F1EF]" />
@@ -2807,12 +2844,12 @@ export function ShellPage() {
                 />
               ) : (
                 <span className="truncate text-[15.5px] font-medium text-[#ECECEE]" dir="auto">
-                  {computerLabel(computer?.mode, active.name)}
+                  {computerLabel(computer?.mode, active.name, t)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
-                  You have control
+                  <Trans>You have control</Trans>
                 </span>
               ) : null}
             </div>
@@ -2822,11 +2859,11 @@ export function ShellPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-label="Stop"
+                  aria-label={t`Stop`}
                   data-testid="computer-overlay-stop"
                   onClick={() => void stopRun()}
                 >
-                  Stop
+                  <Trans>Stop</Trans>
                 </Button>
               ) : null}
               {recordingSkill ? (
@@ -2842,18 +2879,18 @@ export function ShellPage() {
                   variant="outline"
                   size="sm"
                   disabled={takeoverBlocked}
-                  title={takeoverBlocked ? "Stop the bot first" : undefined}
+                  title={takeoverBlocked ? t`Stop the bot first` : undefined}
                   onClick={() =>
                     void bootComputer({ takeControl: true, overlay: false }).catch(() => undefined)
                   }
                 >
-                  Take control
+                  <Trans>Take control</Trans>
                 </Button>
               )}
               <button
                 type="button"
                 className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
-                aria-label="Close computer"
+                aria-label={t`Close computer`}
                 onClick={() => setComputerOpen(false)}
               >
                 <X size={16} strokeWidth={1.8} />
@@ -2871,13 +2908,15 @@ export function ShellPage() {
           <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
             {computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
-                This bot runs on this computer. There is no separate Linux desktop. Ask it to use
-                the shell; working directories under your home folder are allowed.
+                <Trans>
+                  This bot runs on this computer. There is no separate Linux desktop. Ask it to use
+                  the shell; working directories under your home folder are allowed.
+                </Trans>
               </div>
             ) : computer?.state === "running" && embeddedScreenUrl ? (
               <>
                 <iframe
-                  title="Bot screen"
+                  title={t`Bot screen`}
                   src={embeddedScreenUrl}
                   sandbox={screenIframeSandbox(embeddedScreenUrl)}
                   className="h-full w-full border-0 bg-black"
@@ -2898,9 +2937,11 @@ export function ShellPage() {
               </>
             ) : (
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                {computer?.state === "suspended"
-                  ? "Computer is asleep"
-                  : computerLabel(computer?.mode, active.name)}
+                {computer?.state === "suspended" ? (
+                  t`Computer is asleep`
+                ) : (
+                  computerLabel(computer?.mode, active.name, t)
+                )}
               </div>
             )}
           </div>
@@ -2953,6 +2994,7 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
+  const { t } = useLingui();
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -2970,18 +3012,18 @@ const Transcript = memo(function Transcript({
           onClick={() => void onLoadOlder()}
           className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
         >
-          {loadingOlder ? "Loading…" : "Load earlier messages"}
+          {loadingOlder ? t`Loading…` : t`Load earlier messages`}
         </button>
       ) : null}
       {messages.map((message) => (
         <div key={message.id} data-message-id={message.id} className="group/message relative">
           <button
             type="button"
-            aria-label="Reply"
+            aria-label={t`Reply`}
             onClick={() => onReply(message)}
             className="absolute end-0 top-0 rounded px-2 py-1 text-[12px] text-[#85858A] opacity-0 group-hover/message:opacity-100 hover:text-[#ECECEE] focus:opacity-100"
           >
-            Reply
+            <Trans>Reply</Trans>
           </button>
           <MessageView
             artifactTarget={artifactTarget}
@@ -3072,6 +3114,7 @@ const Composer = memo(function Composer({
   onDictateStart: (onFinal: (text: string) => void) => void;
   onDictateStop: () => void;
 }) {
+  const { t } = useLingui();
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
@@ -3209,14 +3252,16 @@ const Composer = memo(function Composer({
       {replyTarget ? (
         <div className="mb-3 flex items-start justify-between gap-3 rounded-[14px] border border-[#26262A] bg-[#17171A] px-4 py-2 text-[13px] text-[#C9C9CE]">
           <div className="min-w-0">
-            <div className="text-[#85858A]">Replying to</div>
+            <div className="text-[#85858A]">
+              <Trans>Replying to</Trans>
+            </div>
             <div dir="auto" className="truncate">
-              {previewMessageText(replyTarget)}
+              {previewMessageText(replyTarget, t)}
             </div>
           </div>
           <button
             type="button"
-            aria-label="Cancel reply"
+            aria-label={t`Cancel reply`}
             onClick={onClearReply}
             className="text-[#85858A]"
           >
@@ -3250,7 +3295,7 @@ const Composer = memo(function Composer({
               </span>
               <button
                 type="button"
-                aria-label={`Remove ${attachment.file.name}`}
+                aria-label={t`Remove ${attachment.file.name}`}
                 onClick={() => onRemoveAttachment(attachment)}
                 className="text-[#85858A] hover:text-[#ECECEE]"
               >
@@ -3269,7 +3314,7 @@ const Composer = memo(function Composer({
             <button
               key={mentionChipKey(mention)}
               type="button"
-              aria-label={`@${mention.name}`}
+              aria-label={t`@${mention.name}`}
               onClick={() => insertMention(mention)}
               className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
             >
@@ -3297,7 +3342,7 @@ const Composer = memo(function Composer({
             <button
               key={skill.id}
               type="button"
-              aria-label={`Skill ${skill.name}`}
+              aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
               className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
             >
@@ -3312,18 +3357,21 @@ const Composer = memo(function Composer({
               </span>
             </button>
           ))}
-          {slashActionOptions.map((action) => (
+          {slashActionOptions.map((action) => {
+            const label = slashActionLabel(action.id, t);
+            return (
             <button
               key={action.id}
               type="button"
-              aria-label={action.label}
+              aria-label={label}
               onClick={() => runSlashAction(action.id)}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
             >
               <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[#9A9AA0]" />
-              <span className="text-[14px] text-[#ECECEE]">{action.label}</span>
+              <span className="text-[14px] text-[#ECECEE]">{label}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
       ) : null}
       <div className="flex items-end gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3">
@@ -3337,7 +3385,7 @@ const Composer = memo(function Composer({
         />
         <button
           type="button"
-          aria-label="Attach file"
+          aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
           className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
@@ -3346,7 +3394,7 @@ const Composer = memo(function Composer({
         </button>
         <button
           type="button"
-          aria-label={dictating ? "Stop dictation" : "Dictate"}
+          aria-label={dictating ? t`Stop dictation` : t`Dictate`}
           onMouseDown={(event) => {
             event.preventDefault();
             onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
@@ -3365,7 +3413,7 @@ const Composer = memo(function Composer({
               ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
               : "border-[#26262A] text-[#9A9AA0]"
           }`}
-          title={transcribe ? "Hold to talk" : "Hold to talk (on-device dictation)"}
+          title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
         >
           <Mic size={16} strokeWidth={1.8} />
         </button>
@@ -3381,7 +3429,7 @@ const Composer = memo(function Composer({
               </span>
               <button
                 type="button"
-                aria-label={`Remove skill ${selectedSkill.name}`}
+                aria-label={t`Remove skill ${selectedSkill.name}`}
                 onClick={() => setSelectedSkill(null)}
                 className="text-[#85858A] hover:text-[#ECECEE]"
               >
@@ -3402,7 +3450,7 @@ const Composer = memo(function Composer({
               </span>
               <button
                 type="button"
-                aria-label={`Remove mention ${mention.name}`}
+                aria-label={t`Remove mention ${mention.name}`}
                 onClick={() =>
                   setSelectedMentions((current) =>
                     current.filter(
@@ -3439,11 +3487,11 @@ const Composer = memo(function Composer({
             placeholder={
               showComposerPlaceholder
                 ? activeName
-                  ? `Message ${activeName}`
-                  : "Message…"
+                  ? t`Message ${activeName}`
+                  : t`Message…`
                 : undefined
             }
-            aria-label={activeName ? `Message ${activeName}` : "Message"}
+            aria-label={activeName ? t`Message ${activeName}` : t`Message`}
             name="chat-message"
             autoComplete="off"
             dir="auto"
@@ -3454,7 +3502,7 @@ const Composer = memo(function Composer({
         {running ? (
           <button
             type="button"
-            aria-label="Stop"
+            aria-label={t`Stop`}
             onClick={() => void onStop()}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
           >
@@ -3463,7 +3511,7 @@ const Composer = memo(function Composer({
         ) : (
           <button
             type="button"
-            aria-label="Send"
+            aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
             className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
@@ -3475,6 +3523,17 @@ const Composer = memo(function Composer({
     </div>
   );
 });
+
+function slashActionLabel(id: SlashActionId, t: ReturnType<typeof useLingui>["t"]) {
+  switch (id) {
+    case "chat-settings":
+      return t`Chat Settings`;
+    case "settings-general":
+      return t`Settings: General`;
+    case "settings-usage":
+      return t`Settings: Usage`;
+  }
+}
 
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
@@ -3517,7 +3576,10 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   return <BotAvatar color={mention.color ?? "#85858A"} size={16} />;
 }
 
-function previewMessageText(message: ThreadMessage): string {
+function previewMessageText(
+  message: ThreadMessage,
+  t: ReturnType<typeof useLingui>["t"],
+): string {
   const text = message.blocks
     .map((block) => (block.kind === "text" ? block.text : ""))
     .filter(Boolean)
@@ -3525,9 +3587,9 @@ function previewMessageText(message: ThreadMessage): string {
     .trim();
   if (text) return text;
   if (message.blocks.some((block) => block.kind === "image" || block.kind === "file")) {
-    return "Attachment";
+    return t`Attachment`;
   }
-  return "Message";
+  return t`Message`;
 }
 
 function firstThreadRoute(
@@ -3566,17 +3628,17 @@ function ComputerReleaseActions({
   if (!takeoverRequested) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        Release
+        <Trans>Release</Trans>
       </Button>
     );
   }
   return (
     <div className="flex items-center gap-2">
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
-        Skip
+        <Trans>Skip</Trans>
       </Button>
       <Button type="button" size="sm" onClick={() => void onRelease("done")}>
-        I’m done
+        <Trans>I’m done</Trans>
       </Button>
     </div>
   );
@@ -3651,6 +3713,7 @@ const MessageView = memo(function MessageView({
   speaking: boolean;
   onSpeak: () => void;
 }) {
+  const { t } = useLingui();
   const isNarration =
     message.role === "bot" &&
     message.blocks.length > 0 &&
@@ -3670,7 +3733,7 @@ const MessageView = memo(function MessageView({
           className="mb-2 max-w-[74%] rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-[12.5px] text-[#85858A]"
           dir="auto"
         >
-          {previewMessageText(replyPreview)}
+          {previewMessageText(replyPreview, t)}
         </div>
       ) : null}
     </>
@@ -3708,11 +3771,11 @@ const MessageView = memo(function MessageView({
             {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
               <button
                 type="button"
-                aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                 onClick={onSpeak}
                 className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
               >
-                {speaking ? "Stop" : "Speak"}
+                {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
               </button>
             ) : null}
           </div>
@@ -3725,8 +3788,8 @@ const MessageView = memo(function MessageView({
       {messageContext}
       {message.blocks.map((block, i) => {
         if (block.kind === "handoff") {
-          const from = memberName?.(block.fromBotId) ?? "bot";
-          const to = memberName?.(block.toBotId) ?? "bot";
+          const from = memberName?.(block.fromBotId) ?? t`bot`;
+          const to = memberName?.(block.toBotId) ?? t`bot`;
           return (
             <div
               key={i}
@@ -3743,7 +3806,7 @@ const MessageView = memo(function MessageView({
           const sent = block.kind === "bot_message_sent";
           const peer = sent ? block.toBotName : block.fromBotName;
           const peerBotId = sent ? block.toBotId : block.fromBotId;
-          const label = sent ? `Messaged ${peer}` : `Message from ${peer}`;
+          const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
           return (
             <button
               key={i}
@@ -3819,7 +3882,7 @@ const MessageView = memo(function MessageView({
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
-                  {running ? "subagent" : block.status}
+                  {running ? <Trans>subagent</Trans> : block.status}
                 </span>
               </div>
               <div className="mt-2 text-[13.5px] text-[#85858A]">{block.task}</div>
@@ -3854,19 +3917,21 @@ const MessageView = memo(function MessageView({
                     color: removed ? "#E65707" : "#4ECB71",
                   }}
                 >
-                  {block.status === "archived"
-                    ? "archived"
-                    : block.status === "deleted"
-                      ? "deleted"
-                      : "bot"}
+                  {block.status === "archived" ? (
+                    <Trans>archived</Trans>
+                  ) : block.status === "deleted" ? (
+                    <Trans>deleted</Trans>
+                  ) : (
+                    <Trans>bot</Trans>
+                  )}
                 </span>
               </div>
               <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
                 {removed
                   ? block.status === "archived"
-                    ? "Archived. Chat, memory, and files kept."
-                    : "Removed with chat, computer, and memory."
-                  : block.title || "Opened its thread."}
+                    ? t`Archived. Chat, memory, and files kept.`
+                    : t`Removed with chat, computer, and memory.`
+                  : block.title || t`Opened its thread.`}
               </div>
             </button>
           );
@@ -3959,11 +4024,11 @@ const MessageView = memo(function MessageView({
                 {voiceReady ? (
                   <button
                     type="button"
-                    aria-label={speaking ? "Stop speaking" : "Speak this reply"}
+                    aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                     onClick={onSpeak}
                     className="mt-2 text-[12px] text-[#85858A] hover:text-[#ECECEE]"
                   >
-                    {speaking ? "Stop" : "Speak"}
+                    {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
                   </button>
                 ) : null}
               </div>
@@ -4010,7 +4075,9 @@ const MessageView = memo(function MessageView({
               className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]">Computer</span>
+                <span className="text-[15px] font-medium text-[#ECECEE]">
+                  <Trans>Computer</Trans>
+                </span>
                 <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
                   {block.state}
                 </span>
@@ -4034,9 +4101,12 @@ function ComputerModePicker({
   value: ComputerMode;
   onChange: (value: ComputerMode) => void;
 }) {
+  const { t } = useLingui();
   return (
     <div className="mt-4">
-      <div className="text-[14px] text-[#85858A]">Computer</div>
+      <div className="text-[14px] text-[#85858A]">
+        <Trans>Computer</Trans>
+      </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         {(["team", "dedicated"] as const).map((mode) => (
           <button
@@ -4050,7 +4120,7 @@ function ComputerModePicker({
                 : "border-[#26262A] text-[#85858A]"
             }`}
           >
-            {mode === "team" ? "Team" : "Private"}
+            {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
           </button>
         ))}
       </div>
@@ -4070,6 +4140,7 @@ function CreateBotForm({
   }) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { t } = useLingui();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -4084,7 +4155,7 @@ function CreateBotForm({
     try {
       await onCreate({ name, title, description, computerMode });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create bot");
+      setError(err instanceof Error ? err.message : t`Could not create bot`);
     } finally {
       setSubmitting(false);
     }
@@ -4093,8 +4164,10 @@ function CreateBotForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">New bot</span>
-        <button type="button" aria-label="Cancel new bot" onClick={onCancel}>
+        <span className="text-[13.5px] text-[#85858A]">
+          <Trans>New bot</Trans>
+        </span>
+        <button type="button" aria-label={t`Cancel new bot`} onClick={onCancel}>
           <X size={16} strokeWidth={1.8} />
         </button>
       </div>
@@ -4104,32 +4177,32 @@ function CreateBotForm({
         </p>
       ) : null}
       <label className="mt-6 block text-[14px] text-[#85858A]">
-        Name
+        <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Name this bot"
+          placeholder={t`Name this bot`}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Title
+        <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Describe what this bot does"
+          placeholder={t`Describe what this bot does`}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Description
+        <Trans>Description</Trans>
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What this bot is for"
+          placeholder={t`What this bot is for`}
           rows={4}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
@@ -4141,7 +4214,7 @@ function CreateBotForm({
         onClick={() => void handleSubmit()}
         className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
       >
-        {submitting ? "Creating…" : "Create"}
+        {submitting ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
       </button>
     </div>
   );
@@ -4172,6 +4245,7 @@ function BotSettings({
   onExport: () => Promise<void>;
   onClear: () => void;
 }) {
+  const { t } = useLingui();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
@@ -4267,7 +4341,7 @@ function BotSettings({
         <BotAvatar color={bot.color} size={64} status={bot.status} />
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
-        Name
+        <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
@@ -4276,7 +4350,7 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Title
+        <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
@@ -4285,7 +4359,7 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
-        Description
+        <Trans>Description</Trans>
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
@@ -4296,7 +4370,9 @@ function BotSettings({
       </label>
       <details data-testid="bot-settings-advanced" className="group mt-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
-          <span className="text-[#85858A]">Advanced</span>
+          <span className="text-[#85858A]">
+            <Trans>Advanced</Trans>
+          </span>
           <span aria-hidden="true" className="transition-transform group-open:rotate-90">
             ›
           </span>
@@ -4306,7 +4382,7 @@ function BotSettings({
           <ScratchpadSection botId={bot.id} />
         </Suspense>
         <label className="mt-4 block text-[14px] text-[#85858A]">
-          Model
+          <Trans>Model</Trans>
           <select
             value={modelKey}
             onChange={(event) => {
@@ -4316,7 +4392,7 @@ function BotSettings({
             className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
           >
             <option value="">
-              Workspace default
+              {t`Workspace default`}
               {me?.defaultModel
                 ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
                 : ""}
@@ -4333,16 +4409,16 @@ function BotSettings({
         </label>
         {thinkingOptions.length ? (
           <label className="mt-4 block text-[14px] text-[#85858A]">
-            Thinking
+            <Trans>Thinking</Trans>
             <select
               value={thinkingLevel}
               onChange={(event) => setThinkingLevel(event.target.value)}
               className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             >
-              <option value="">Default (medium)</option>
+              <option value="">{t`Default (medium)`}</option>
               {thinkingOptions.map((level) => (
                 <option key={level} value={level}>
-                  {thinkingLevelLabel(level)}
+                  {thinkingLevelLabel(level, t)}
                 </option>
               ))}
             </select>
@@ -4350,13 +4426,13 @@ function BotSettings({
         ) : null}
         {memoryProviderConfigured ? (
           <div className="mt-4 text-[14px] text-[#85858A]">
-            Memory scope
+            <Trans>Memory scope</Trans>
             <div className="mt-2 flex gap-2">
               {(
                 [
-                  { value: null, label: "Inherit default" },
-                  { value: "isolated" as const, label: "Isolated" },
-                  { value: "shared" as const, label: "Shared" },
+                  { value: null, label: t`Inherit default` },
+                  { value: "isolated" as const, label: t`Isolated` },
+                  { value: "shared" as const, label: t`Shared` },
                 ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
               ).map((option) => (
                 <button
@@ -4382,17 +4458,17 @@ function BotSettings({
             checked={autoSpeak}
             onChange={(event) => setAutoSpeak(event.target.checked)}
           />
-          Read replies aloud
+          <Trans>Read replies aloud</Trans>
         </label>
         {voices.length ? (
           <label className="mt-4 block text-[14px] text-[#85858A]">
-            Voice
+            <Trans>Voice</Trans>
             <select
               value={voiceId}
               onChange={(event) => setVoiceId(event.target.value)}
               className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             >
-              <option value="">Account default</option>
+              <option value="">{t`Account default`}</option>
               {voices.map((voice) => (
                 <option key={voice.id} value={voice.id}>
                   {voice.label}
@@ -4432,22 +4508,22 @@ function BotSettings({
                   }
                 : {}),
             })
-              .catch((err) => setError(err instanceof Error ? err.message : "Could not save"))
+              .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
               .finally(() => setSaving(false));
           }}
           className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
         >
-          Save
+          <Trans>Save</Trans>
         </button>
         <button
           type="button"
           onClick={() => void onExport()}
           className="text-[14px] text-[#85858A]"
         >
-          Export
+          <Trans>Export</Trans>
         </button>
         <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
-          Clear conversation
+          <Trans>Clear conversation</Trans>
         </button>
       </div>
     </div>
@@ -4458,8 +4534,16 @@ function modelOptionKey(provider: string, modelId: string) {
   return `${provider}::${modelId}`;
 }
 
-function thinkingLevelLabel(level: ThinkingLevel) {
-  if (level === "xhigh") return "Extra high";
+function thinkingLevelLabel(
+  level: ThinkingLevel,
+  t: ReturnType<typeof useLingui>["t"],
+) {
+  if (level === "xhigh") return t`Extra high`;
+  if (level === "low") return t`Low`;
+  if (level === "medium") return t`Medium`;
+  if (level === "high") return t`High`;
+  if (level === "minimal") return t`Minimal`;
+  if (level === "max") return t`Max`;
   return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }
 
@@ -4487,6 +4571,7 @@ function NewBotSectionDialog({
   onCancel: () => void;
   onConfirm: (name: string) => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4520,19 +4605,19 @@ function NewBotSectionDialog({
           setSaving(true);
           setError(null);
           void onConfirm(trimmed).catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : "Could not create section");
+            setError(err instanceof Error ? err.message : t`Could not create section`);
             setSaving(false);
           });
         }}
       >
         <h2 id="new-bot-section-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          New section
+          <Trans>New section</Trans>
         </h2>
         <p className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          Create a section and move {bot.name} into it.
+          <Trans>Create a section and move {bot.name} into it.</Trans>
         </p>
         <label className="mt-4 block text-[13.5px] text-[#C9C9CE]">
-          Name
+          <Trans>Name</Trans>
           <input
             maxLength={60}
             value={name}
@@ -4548,14 +4633,14 @@ function NewBotSectionDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             type="submit"
             disabled={saving || !name.trim()}
             className="rounded-[10px] bg-[#F1F1EF] px-3.5 py-2 text-[14px] font-medium text-[#17171A] disabled:opacity-40"
           >
-            {saving ? "Creating…" : "Create"}
+            {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
           </button>
         </div>
       </form>
@@ -4572,6 +4657,7 @@ function ClearConversationDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -4600,14 +4686,16 @@ function ClearConversationDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Clear {bot.name}’s conversation?
+          <Trans>Clear {bot.name}’s conversation?</Trans>
         </h2>
         <p
           id="clear-conversation-description"
           className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
         >
-          This permanently removes every message and stops current work. The bot, computer, memory,
-          and routines are kept.
+          <Trans>
+            This permanently removes every message and stops current work. The bot, computer,
+            memory, and routines are kept.
+          </Trans>
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
@@ -4617,7 +4705,7 @@ function ClearConversationDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             type="button"
@@ -4626,13 +4714,13 @@ function ClearConversationDialog({
               setClearing(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not clear conversation");
+                setError(err instanceof Error ? err.message : t`Could not clear conversation`);
                 setClearing(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {clearing ? "Clearing…" : "Clear"}
+            {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
           </button>
         </div>
       </div>
@@ -4649,6 +4737,7 @@ function DeleteBotDialog({
   onCancel: () => void;
   onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4678,14 +4767,18 @@ function DeleteBotDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="delete-bot-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Delete {bot.name}?
+          <Trans>Delete {bot.name}?</Trans>
         </h2>
         <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          Its conversation, files, and routines will be permanently deleted. Bots it created stay in
-          your list.
+          <Trans>
+            Its conversation, files, and routines will be permanently deleted. Bots it created stay
+            in your list.
+          </Trans>
         </p>
         <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">What about its memories?</legend>
+          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">
+            <Trans>What about its memories?</Trans>
+          </legend>
           <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
             <input
               type="radio"
@@ -4694,9 +4787,11 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(false)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">Keep memories</span>
+              <span className="block text-[14px] text-[#ECECEE]">
+                <Trans>Keep memories</Trans>
+              </span>
               <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
-                Move them to your shared memory.
+                <Trans>Move them to your shared memory.</Trans>
               </span>
             </span>
           </label>
@@ -4708,9 +4803,11 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(true)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">Delete memories too</span>
+              <span className="block text-[14px] text-[#ECECEE]">
+                <Trans>Delete memories too</Trans>
+              </span>
               <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
-                This cannot be undone.
+                <Trans>This cannot be undone.</Trans>
               </span>
             </span>
           </label>
@@ -4723,7 +4820,7 @@ function DeleteBotDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             type="button"
@@ -4732,13 +4829,13 @@ function DeleteBotDialog({
               setDeleting(true);
               setError(null);
               void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not delete bot");
+                setError(err instanceof Error ? err.message : t`Could not delete bot`);
                 setDeleting(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
         </div>
       </div>
@@ -4755,6 +4852,7 @@ function DeleteRoutineDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -4783,10 +4881,10 @@ function DeleteRoutineDialog({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          Delete {routine.name}?
+          <Trans>Delete {routine.name}?</Trans>
         </h2>
         <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
-          This cannot be undone.
+          <Trans>This cannot be undone.</Trans>
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
@@ -4796,7 +4894,7 @@ function DeleteRoutineDialog({
             onClick={onCancel}
             className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             type="button"
@@ -4805,13 +4903,13 @@ function DeleteRoutineDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not delete routine");
+                setError(err instanceof Error ? err.message : t`Could not delete routine`);
                 setDeleting(false);
               });
             }}
             className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
         </div>
       </div>
@@ -4850,16 +4948,21 @@ function computerPlaceholder(
   state: ComputerStatus["state"] | undefined,
   booting: boolean,
   label: string,
+  t: ReturnType<typeof useLingui>["t"],
 ) {
-  if (state === "booting" || booting) return "Booting live desktop…";
+  if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return label;
-  if (state === "suspended") return "Computer is asleep — take control to wake it";
-  if (state === "error") return "Computer failed to boot";
-  return "Computer is stopped";
+  if (state === "suspended") return t`Computer is asleep — take control to wake it`;
+  if (state === "error") return t`Computer failed to boot`;
+  return t`Computer is stopped`;
 }
 
-function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
-  return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+function computerLabel(
+  mode: ComputerStatus["mode"] | undefined,
+  botName: string,
+  t: ReturnType<typeof useLingui>["t"],
+) {
+  return mode === "dedicated" ? t`${botName}’s computer` : t`Team Computer`;
 }
 
 function ChoiceCard({
@@ -4871,6 +4974,7 @@ function ChoiceCard({
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -4881,7 +4985,7 @@ function ChoiceCard({
       await rpc.onboarding.choose({ botId, optionId });
       await onBotChanged().catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save this choice");
+      setError(err instanceof Error ? err.message : t`Could not save this choice`);
       setPending(false);
     }
   }
@@ -4929,6 +5033,7 @@ function AppConnectCard({
   botId: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
 }) {
+  const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
@@ -4965,10 +5070,10 @@ function AppConnectCard({
         }
         await abortableDelay(2_000, controller.signal);
       }
-      if (!controller.signal.aborted) setError("Authorization timed out. Please try again.");
+      if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : "Could not authorize this app");
+        setError(error instanceof Error ? error.message : t`Could not authorize this app`);
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -4980,7 +5085,7 @@ function AppConnectCard({
   return (
     <BuiCard
       role="group"
-      aria-label={`${block.name} connection`}
+      aria-label={t`${block.name} connection`}
       className="w-[min(420px,80%)] px-4 py-3.5"
     >
       <div className="flex items-center gap-3.5">
@@ -5004,10 +5109,10 @@ function AppConnectCard({
           </span>
         </span>
         {status === "connected" ? (
-          <SuccessPop label="Connected" />
+          <SuccessPop label={t`Connected`} />
         ) : (
           <BuiButton disabled={busy} onClick={() => void authorize()}>
-            {busy ? "Waiting…" : "Authorize"}
+            {busy ? t`Waiting…` : t`Authorize`}
           </BuiButton>
         )}
       </div>
@@ -5027,6 +5132,7 @@ function ChartCanvas({
   width: number;
   height?: number;
 }) {
+  const { t } = useLingui();
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{
@@ -5059,7 +5165,7 @@ function ChartCanvas({
         setError(null);
         ref.current.replaceChildren(parts.plotted);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not render chart");
+        if (!cancelled) setError(err instanceof Error ? err.message : t`Could not render chart`);
       }
     })();
     return () => {
@@ -5067,7 +5173,11 @@ function ChartCanvas({
     };
   }, [spec, data, width, height]);
   if (error)
-    return <div className="text-[13px] text-[#F3A2AA]">Chart failed to render: {error}</div>;
+    return (
+      <div className="text-[13px] text-[#F3A2AA]">
+        <Trans>Chart failed to render: {error}</Trans>
+      </div>
+    );
   return (
     <div className="text-[#C9C9CE]">
       {meta.title ? (
@@ -5113,12 +5223,13 @@ function McpApprovalCard({
   endpoint: string | null;
   needsOAuth: boolean;
 }) {
+  const { t } = useLingui();
   const [state, setState] = useState<McpApprovalState>("pending");
   const [error, setError] = useState<string | null>(null);
 
   async function authorize() {
     if (!botId) {
-      setError("This server cannot be assigned without a bot.");
+      setError(t`This server cannot be assigned without a bot.`);
       return;
     }
     setState("connecting");
@@ -5134,7 +5245,7 @@ function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId });
       setState("connected");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not approve this server");
+      setError(err instanceof Error ? err.message : t`Could not approve this server`);
       setState("pending");
     }
   }
@@ -5147,7 +5258,7 @@ function McpApprovalCard({
           M
         </span>
         <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
-          Connect MCP server “{name}”
+          <Trans>Connect MCP server “{name}”</Trans>
         </span>
       </div>
       <p className="mt-1.5 truncate text-[12px]" style={{ color: "var(--bui-ink-3)" }}>
@@ -5157,8 +5268,8 @@ function McpApprovalCard({
         <>
           <p className="mt-2 text-[13px] leading-[1.5]" style={{ color: "var(--bui-ink-2)" }}>
             {needsOAuth
-              ? "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
-              : "Approve this server to let your agent use its tools."}
+              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
+              : t`Approve this server to let your agent use its tools.`}
           </p>
           {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
           <div className="mt-3 flex gap-2">
@@ -5167,20 +5278,28 @@ function McpApprovalCard({
               disabled={state === "connecting"}
               onClick={() => void authorize()}
             >
-              {state === "connecting" ? "Connecting…" : needsOAuth ? "Authorize" : "Approve"}
+              {state === "connecting"
+                ? t`Connecting…`
+                : needsOAuth
+                  ? t`Authorize`
+                  : t`Approve`}
             </BuiButton>
-            <BuiButton onClick={() => setState("dismissed")}>Not now</BuiButton>
+            <BuiButton onClick={() => setState("dismissed")}>
+              <Trans>Not now</Trans>
+            </BuiButton>
           </div>
         </>
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label="Connected — its tools are available from your next message." />
+          <SuccessPop
+            label={t`Connected — its tools are available from your next message.`}
+          />
         </div>
       ) : null}
       {state === "dismissed" ? (
         <p className="mt-2 text-[13px] text-[#85858A]">
-          Dismissed — reconnect anytime from MCP settings.
+          <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
     </BuiCard>
@@ -5196,6 +5315,7 @@ function ChartBlockView({
   spec: Record<string, unknown>;
   data: unknown[];
 }) {
+  const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
   const [viewport, setViewport] = useState(() => ({
     width: window.innerWidth,
@@ -5225,7 +5345,7 @@ function ChartBlockView({
           onClick={() => setExpanded(true)}
           className="absolute end-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
         >
-          Expand
+          <Trans>Expand</Trans>
         </button>
       </div>
       {expanded ? (
@@ -5246,7 +5366,7 @@ function ChartBlockView({
               <span className="text-[13px] text-[#85858A]">{name}</span>
               <button
                 type="button"
-                aria-label="Close chart"
+                aria-label={t`Close chart`}
                 onClick={() => setExpanded(false)}
                 className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
               >
@@ -5275,6 +5395,7 @@ function ArtifactImage({
   artifactId: string;
   name: string;
 }) {
+  const { t } = useLingui();
   const [src, setSrc] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -5345,7 +5466,7 @@ function ArtifactImage({
       {open && src ? (
         <button
           type="button"
-          aria-label="Close image preview"
+          aria-label={t`Close image preview`}
           className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
           onClick={() => setOpen(false)}
         >
