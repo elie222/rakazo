@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
@@ -6,11 +7,7 @@ import { useState } from "react";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
-function formatAnsweredState(
-  answer: string | undefined,
-  approval: boolean,
-  t: ReturnType<typeof useLingui>["t"],
-): string {
+function formatAnsweredState(answer: string | undefined, approval: boolean): string {
   if (!answer) return t`Answered`;
   if (!approval) return t`Answered: ${answer}`;
   if (answer === "allow") return t`Allowed once`;
@@ -62,7 +59,7 @@ export function AskCard({
       ) : null}
       {block.status === "answered" ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {formatAnsweredState(block.answer, Boolean(approvalActions), t)}
+          {formatAnsweredState(block.answer, Boolean(approvalActions))}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">

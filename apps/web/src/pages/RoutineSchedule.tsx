@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
   CRON_FREQS,
@@ -23,7 +24,7 @@ const TIMES = [
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
 
-function cronFreqLabel(freq: CronFreq, t: ReturnType<typeof useLingui>["t"]): string {
+function cronFreqLabel(freq: CronFreq): string {
   switch (freq) {
     case "Every hour":
       return t`Every hour`;
@@ -44,7 +45,7 @@ function cronFreqLabel(freq: CronFreq, t: ReturnType<typeof useLingui>["t"]): st
   }
 }
 
-function cronUnitLabel(unit: CronUnit, t: ReturnType<typeof useLingui>["t"]): string {
+function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
       return t`minutes`;
@@ -57,14 +58,11 @@ function cronUnitLabel(unit: CronUnit, t: ReturnType<typeof useLingui>["t"]): st
   }
 }
 
-function describeCronPresetLocalized(
-  preset: CronPreset,
-  t: ReturnType<typeof useLingui>["t"],
-): { lead: string; detail: string } {
+function describeCronPresetLocalized(preset: CronPreset): { lead: string; detail: string } {
   if (preset.freq === "Interval") {
     return {
       lead: t`Every`,
-      detail: t`${preset.n} ${cronUnitLabel(preset.unit, t)}`,
+      detail: t`${preset.n} ${cronUnitLabel(preset.unit)}`,
     };
   }
   if (preset.freq === "Every hour") {
@@ -148,7 +146,7 @@ function RoutineSchedule({
   onChange: (next: CronPreset) => void;
 }) {
   const { t } = useLingui();
-  const { lead, detail } = describeCronPresetLocalized(value, t);
+  const { lead, detail } = describeCronPresetLocalized(value);
   const times = TIMES.includes(value.time) ? TIMES : [...TIMES, value.time];
   const numbers = NUMBERS.includes(value.n) ? NUMBERS : [...NUMBERS, value.n].sort((a, b) => a - b);
 
@@ -180,7 +178,7 @@ function RoutineSchedule({
     >
       {UNITS.map((unit) => (
         <option key={unit} value={unit}>
-          {cronUnitLabel(unit, t)}
+          {cronUnitLabel(unit)}
         </option>
       ))}
     </select>
@@ -238,7 +236,7 @@ function RoutineSchedule({
         >
           {CRON_FREQS.map((freq) => (
             <option key={freq} value={freq}>
-              {cronFreqLabel(freq, t)}
+              {cronFreqLabel(freq)}
             </option>
           ))}
         </select>

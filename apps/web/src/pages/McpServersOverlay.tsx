@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
@@ -5,17 +6,13 @@ import { useEffect, useState } from "react";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
-function oauthStatusText(server: McpServer, t: ReturnType<typeof useLingui>["t"]): string {
+function oauthStatusText(server: McpServer): string {
   if (server.oauthStatus === "connected") return t`OAuth connected`;
   if (server.oauthStatus === "reconnect") return t`Authorization expired — reconnect required`;
   return server.hasSecret ? t`Encrypted static credential saved` : t`No credential saved`;
 }
 
-function oauthActionLabel(
-  server: McpServer,
-  pending: boolean,
-  t: ReturnType<typeof useLingui>["t"],
-): string {
+function oauthActionLabel(server: McpServer, pending: boolean): string {
   if (pending) return t`Connecting…`;
   return server.oauthStatus === "none" ? t`Connect OAuth` : t`Reconnect OAuth`;
 }
@@ -427,7 +424,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       <p
                         className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-[#F0A15A]" : "text-[#6E778A]"}`}
                       >
-                        {oauthStatusText(server, t)}
+                        {oauthStatusText(server)}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] text-[#77777F]">
@@ -459,7 +456,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                               onClick={() => void connectOAuth(server)}
                               className="rounded-lg bg-[#7785FF] px-3 py-2 text-xs font-semibold text-[#090A12] disabled:opacity-50"
                             >
-                              {oauthActionLabel(server, oauthPending === server.id, t)}
+                              {oauthActionLabel(server, oauthPending === server.id)}
                             </button>
                             {server.oauthStatus !== "none" ? (
                               <button

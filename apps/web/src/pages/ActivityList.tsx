@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
@@ -91,7 +92,7 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
   const { t } = useLingui();
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
-  const label = statusLabel(run.status, t);
+  const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
   return (
     <button
@@ -109,7 +110,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-[14px] font-medium text-[#ECECEE]">{title}</span>
           <span className="shrink-0 text-[12px] text-[#6C6C70]">
-            {formatRelativeTime(run.updatedAt, t)}
+            {formatRelativeTime(run.updatedAt)}
           </span>
         </div>
         <div className="mt-0.5 flex items-baseline gap-2">
@@ -127,11 +128,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   );
 }
 
-function formatRelativeTime(
-  iso: string,
-  t: ReturnType<typeof useLingui>["t"],
-  now = new Date(),
-): string {
+function formatRelativeTime(iso: string, now = new Date()): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -145,10 +142,7 @@ function formatRelativeTime(
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function statusLabel(
-  status: RunActivityRow["status"],
-  t: ReturnType<typeof useLingui>["t"],
-): string {
+function statusLabel(status: RunActivityRow["status"]): string {
   switch (status) {
     case "queued":
       return t`Queued`;

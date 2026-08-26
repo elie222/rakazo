@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
@@ -2276,8 +2277,7 @@ export function ShellPage() {
                       {computerPlaceholder(
                         computer?.state,
                         booting,
-                        computerLabel(computer?.mode, active.name, t),
-                        t,
+                        computerLabel(computer?.mode, active.name),
                       )}
                     </div>
                   )}
@@ -2298,7 +2298,7 @@ export function ShellPage() {
                           ? t`${computer.busyBotName} is using it`
                           : computer?.state === "suspended"
                             ? t`Asleep`
-                            : computerLabel(computer?.mode, active.name, t)}
+                            : computerLabel(computer?.mode, active.name)}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -2840,7 +2840,7 @@ export function ShellPage() {
                 />
               ) : (
                 <span className="truncate text-[15.5px] font-medium text-[#ECECEE]" dir="auto">
-                  {computerLabel(computer?.mode, active.name, t)}
+                  {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
@@ -2935,7 +2935,7 @@ export function ShellPage() {
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
-                  : computerLabel(computer?.mode, active.name, t)}
+                  : computerLabel(computer?.mode, active.name)}
               </div>
             )}
           </div>
@@ -3250,7 +3250,7 @@ const Composer = memo(function Composer({
               <Trans>Replying to</Trans>
             </div>
             <div dir="auto" className="truncate">
-              {previewMessageText(replyTarget, t)}
+              {previewMessageText(replyTarget)}
             </div>
           </div>
           <button
@@ -3352,7 +3352,7 @@ const Composer = memo(function Composer({
             </button>
           ))}
           {slashActionOptions.map((action) => {
-            const label = slashActionLabel(action.id, t);
+            const label = slashActionLabel(action.id);
             return (
               <button
                 key={action.id}
@@ -3518,7 +3518,7 @@ const Composer = memo(function Composer({
   );
 });
 
-function slashActionLabel(id: SlashActionId, t: ReturnType<typeof useLingui>["t"]) {
+function slashActionLabel(id: SlashActionId) {
   switch (id) {
     case "chat-settings":
       return t`Chat Settings`;
@@ -3570,7 +3570,7 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   return <BotAvatar color={mention.color ?? "#85858A"} size={16} />;
 }
 
-function previewMessageText(message: ThreadMessage, t: ReturnType<typeof useLingui>["t"]): string {
+function previewMessageText(message: ThreadMessage): string {
   const text = message.blocks
     .map((block) => (block.kind === "text" ? block.text : ""))
     .filter(Boolean)
@@ -3724,7 +3724,7 @@ const MessageView = memo(function MessageView({
           className="mb-2 max-w-[74%] rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-[12.5px] text-[#85858A]"
           dir="auto"
         >
-          {previewMessageText(replyPreview, t)}
+          {previewMessageText(replyPreview)}
         </div>
       ) : null}
     </>
@@ -4408,7 +4408,7 @@ function BotSettings({
               <option value="">{t`Default (medium)`}</option>
               {thinkingOptions.map((level) => (
                 <option key={level} value={level}>
-                  {thinkingLevelLabel(level, t)}
+                  {thinkingLevelLabel(level)}
                 </option>
               ))}
             </select>
@@ -4524,7 +4524,7 @@ function modelOptionKey(provider: string, modelId: string) {
   return `${provider}::${modelId}`;
 }
 
-function thinkingLevelLabel(level: ThinkingLevel, t: ReturnType<typeof useLingui>["t"]) {
+function thinkingLevelLabel(level: ThinkingLevel) {
   if (level === "xhigh") return t`Extra high`;
   if (level === "low") return t`Low`;
   if (level === "medium") return t`Medium`;
@@ -4935,7 +4935,6 @@ function computerPlaceholder(
   state: ComputerStatus["state"] | undefined,
   booting: boolean,
   label: string,
-  t: ReturnType<typeof useLingui>["t"],
 ) {
   if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return label;
@@ -4944,11 +4943,7 @@ function computerPlaceholder(
   return t`Computer is stopped`;
 }
 
-function computerLabel(
-  mode: ComputerStatus["mode"] | undefined,
-  botName: string,
-  t: ReturnType<typeof useLingui>["t"],
-) {
+function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? t`${botName}’s computer` : t`Team Computer`;
 }
 

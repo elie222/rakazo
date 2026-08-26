@@ -1,18 +1,18 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-function describeRule(rule: ActionApprovalRule, t: ReturnType<typeof useLingui>["t"]): string {
-  const target =
-    rule.matchKind === "category"
-      ? t`${rule.matchValue} actions`
-      : rule.matchKind === "connector"
-        ? t`${rule.matchValue} connector`
-        : rule.matchValue;
-  return rule.effect === "require_approval"
-    ? t`Ask before ${target}`
-    : t`Allow ${target} without asking`;
+function describeRule(rule: ActionApprovalRule): string {
+  if (rule.effect === "require_approval") {
+    if (rule.matchKind === "category") return t`Ask before ${rule.matchValue} actions`;
+    if (rule.matchKind === "connector") return t`Ask before ${rule.matchValue} connector`;
+    return t`Ask before ${rule.matchValue}`;
+  }
+  if (rule.matchKind === "category") return t`Allow ${rule.matchValue} actions without asking`;
+  if (rule.matchKind === "connector") return t`Allow ${rule.matchValue} connector without asking`;
+  return t`Allow ${rule.matchValue} without asking`;
 }
 
 export function ApprovalRulesSettings() {
@@ -121,7 +121,7 @@ export function ApprovalRulesSettings() {
               key={rule.id}
               className="flex items-center justify-between gap-3 rounded-[11px] border border-[#26262A] px-3.5 py-2.5"
             >
-              <span className="text-[13.5px] text-[#C9C9CE]">{describeRule(rule, t)}</span>
+              <span className="text-[13.5px] text-[#C9C9CE]">{describeRule(rule)}</span>
               <button
                 type="button"
                 onClick={() => void removeRule(rule.id)}

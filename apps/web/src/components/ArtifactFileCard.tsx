@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { Download, FileText, X } from "lucide-react";
@@ -48,7 +49,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         >
           <div className="font-medium">{props.name}</div>
           <div className="mt-1 text-[#85858A]">
-            {props.mimeType} · {formatBytes(props.size, t)}
+            {props.mimeType} · {formatBytes(props.size)}
           </div>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}
@@ -73,7 +74,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
               <span className="mt-0.5 block text-[13px] text-[#85858A]">
-                {formatBytes(props.size, t)}
+                {formatBytes(props.size)}
               </span>
             </span>
           </button>
@@ -257,7 +258,7 @@ function DownloadError({ message }: { message: string }) {
   );
 }
 
-function formatBytes(size: number, t: ReturnType<typeof useLingui>["t"]) {
+function formatBytes(size: number) {
   if (size < 1024) return t`${size} B`;
   if (size < 1024 * 1024) return t`${(size / 1024).toFixed(1)} KB`;
   return t`${(size / (1024 * 1024)).toFixed(1)} MB`;
