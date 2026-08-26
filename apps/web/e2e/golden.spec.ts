@@ -159,10 +159,17 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await advanced.evaluate((element) => {
     (element as HTMLDetailsElement).open = true;
   });
+  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
+  // MCP → OpenAPI → Treg order inside Advanced.
+  const advancedActions = advanced.locator("button");
+  await expect(advancedActions.nth(0)).toHaveText("MCP servers");
+  await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(3)).toHaveText("Add Treg");
 
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
