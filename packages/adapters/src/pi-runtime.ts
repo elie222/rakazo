@@ -55,8 +55,15 @@ function thinkingLevelFor(
 const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const MAX_AGENT_TOOL_NAME_LENGTH = 64;
 const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
-// Bound runaway agent loops before they can issue unbounded billable tool calls.
-const MAX_TOOL_CALLS_PER_TURN = 80;
+
+/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default). */
+export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.MAX_TOOL_CALLS_PER_TURN?.trim();
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.floor(parsed);
+}
 
 export class PiAgentRuntime implements AgentRuntime {
   describe() {
@@ -122,7 +129,7 @@ export class PiAgentRuntime implements AgentRuntime {
           apiKey,
           nestedAgents,
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
-          toolCallBudget: { count: 0, exceeded: false },
+          toolCallBudget: { count: 0, exceeded: false, limit: maxToolCallsPerTurn() },
           abortTurn: () => undefined,
           signal,
           depth: 0,
@@ -219,11 +226,25 @@ export class PiAgentRuntime implements AgentRuntime {
           signal.removeEventListener("abort", onAbort);
         }
 
+        // Budget abort stops the agent underneath the model, which leaves
+        // errorMessage set. Treat that as a soft stop so the turn still ends
+        // with a durable assistant message instead of a failed run.
+        const budgetExceeded = host.toolCallBudget.exceeded;
         const error = agent.state.errorMessage;
-        if (error) {
+        if (error && !budgetExceeded) {
           throw new Error(sanitizeError(error));
         }
-        if (!streamed) {
+        if (budgetExceeded) {
+          const budgetMessage = toolCallBudgetExceededMessage(host.toolCallBudget.limit);
+          if (streamed.trim()) {
+            const suffix = `\n\n${budgetMessage}`;
+            queue.push({ type: "text", text: suffix });
+            streamed += suffix;
+          } else {
+            queue.push({ type: "text", text: budgetMessage });
+            streamed = budgetMessage;
+          }
+        } else if (!streamed) {
           const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
           queue.push({ type: "text", text: fallback });
           streamed = fallback;
@@ -636,13 +657,22 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     await nested.prompt(task || "Complete the delegated task.");
     await nested.waitForIdle();
     host.signal.removeEventListener("abort", onAbort);
+    // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
+    // completed stop rather than a failed subagent chip.
+    const budgetExceeded = host.toolCallBudget.exceeded;
     const error = nested.state.errorMessage;
-    if (error) {
+    if (error && !budgetExceeded) {
       const message = sanitizeError(error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
     }
-    const result = streamed || assistantText(nested.state.messages.at(-1)) || "done.";
+    const budgetMessage = budgetExceeded
+      ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
+      : undefined;
+    const result =
+      budgetMessage && streamed.trim()
+        ? `${streamed.trim()}\n\n${budgetMessage}`
+        : budgetMessage || streamed || assistantText(nested.state.messages.at(-1)) || "done.";
     const clipped = result.length > 12_000 ? `${result.slice(0, 12_000)}…` : result;
     host.queue.push({
       type: "subagent",
@@ -853,20 +883,26 @@ interface ToolHost {
   apiKey: string | undefined;
   nestedAgents: Set<Agent>;
   subagentGate: { acquire(): Promise<void>; release(): void };
-  toolCallBudget: { count: number; exceeded: boolean };
+  toolCallBudget: { count: number; exceeded: boolean; limit: number };
   abortTurn(): void;
   signal: AbortSignal;
   depth: number;
 }
 
+function toolCallBudgetExceededMessage(limit: number) {
+  return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
+}
+
 function consumeToolCall(host: ToolHost): boolean {
   host.toolCallBudget.count += 1;
-  if (host.toolCallBudget.count <= MAX_TOOL_CALLS_PER_TURN) return true;
+  const limit = host.toolCallBudget.limit;
+  // limit <= 0 means unlimited — do not abort.
+  if (limit <= 0 || host.toolCallBudget.count <= limit) return true;
   if (!host.toolCallBudget.exceeded) {
     host.toolCallBudget.exceeded = true;
     host.queue.push({
       type: "progress",
-      text: `Stopped: more than ${MAX_TOOL_CALLS_PER_TURN} tool calls in one turn.`,
+      text: `Stopped: more than ${limit} tool calls in one turn.`,
     });
   }
   host.abortTurn();
