@@ -83,8 +83,12 @@ export default function NewBot() {
       setError("Paste share JSON or a link token");
       return;
     }
-    const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
-    await importShare({ manifest });
+    try {
+      const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
+      await importShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not parse share JSON");
+    }
   }
 
   async function pickShareFile() {
@@ -93,9 +97,13 @@ export default function NewBot() {
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
-    const text = await fetch(result.assets[0].uri).then((res) => res.text());
-    const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
-    await importShare({ manifest });
+    try {
+      const text = await fetch(result.assets[0].uri).then((res) => res.text());
+      const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
+      await importShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import share file");
+    }
   }
 
   return (

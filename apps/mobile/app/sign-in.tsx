@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
@@ -27,6 +27,9 @@ import {
 
 export default function SignIn() {
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const returnPath =
+    typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,14 +53,14 @@ export default function SignIn() {
       </View>
     );
   }
-  if (hasSession) return <Redirect href="/" />;
+  if (hasSession) return <Redirect href={returnPath} />;
 
   async function submit() {
     setPending(true);
     setError(null);
     try {
       await signIn(email.trim(), password);
-      router.replace("/");
+      router.replace(returnPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in");
     } finally {

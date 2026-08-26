@@ -4,9 +4,9 @@ import {
 } from "@rakazo/contracts";
 import * as DocumentPicker from "expo-document-picker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
-import { type MobileBot, rpc } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { loadSessionToken, type MobileBot, rpc } from "../../lib/api";
 
 export default function ShareImportScreen() {
   const router = useRouter();
@@ -15,6 +15,19 @@ export default function ShareImportScreen() {
   const [shareToken, setShareToken] = useState(routeToken ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    void loadSessionToken().then((session) => {
+      const authed = Boolean(session);
+      setSignedIn(authed);
+      setAuthReady(true);
+      if (!authed && routeToken) {
+        router.replace(`/sign-in?next=${encodeURIComponent(`/share/${routeToken}`)}`);
+      }
+    });
+  }, [routeToken, router]);
 
   async function importShare(input: { manifest?: ShareManifest; token?: string }) {
     setPending(true);
@@ -43,8 +56,12 @@ export default function ShareImportScreen() {
       setError("Paste share JSON or a link token");
       return;
     }
-    const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
-    await importShare({ manifest });
+    try {
+      const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
+      await importShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not parse share JSON");
+    }
   }
 
   async function pickFile() {
@@ -53,9 +70,21 @@ export default function ShareImportScreen() {
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
-    const text = await fetch(result.assets[0].uri).then((res) => res.text());
-    const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
-    await importShare({ manifest });
+    try {
+      const text = await fetch(result.assets[0].uri).then((res) => res.text());
+      const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
+      await importShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import share file");
+    }
+  }
+
+  if (!authReady || !signedIn) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#050506", justifyContent: "center" }}>
+        <Text style={{ color: "#6C6C70", textAlign: "center" }}>Loading…</Text>
+      </View>
+    );
   }
 
   return (

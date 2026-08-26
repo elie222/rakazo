@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioEmulator } from "@rakazo/adapters";
-import type { appContract } from "@rakazo/contracts";
+import type { appContract, ShareManifest } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -342,12 +342,26 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["export/bot", { botId: ownerBot.id }],
       ["bots/shareManifest", { botId: ownerBot.id }],
       ["bots/shareCreate", { botId: ownerBot.id }],
-      ["bots/importShare", { manifest: sampleShareManifest() }],
       ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
       botIdCalls.map(([procedure, input]) => expectDenied(app, intruder, procedure, input)),
     );
+
+    const ownerShareManifest = await rpc<ShareManifest>(app, owner, "bots/shareManifest", {
+      botId: ownerBot.id,
+    });
+    const intruderImported = await rpc<Bot>(app, intruder, "bots/importShare", {
+      manifest: ownerShareManifest,
+    });
+    expect(intruderImported.id).not.toBe(ownerBot.id);
+    const importedRow = await handles.prisma.bot.findUniqueOrThrow({
+      where: { id: intruderImported.id },
+    });
+    expect(importedRow.userId).toBe(intruderActor.userId);
+    expect(importedRow.workspaceId).toBe(intruderActor.workspaceId);
+    const ownerRow = await handles.prisma.bot.findUniqueOrThrow({ where: { id: ownerBot.id } });
+    expect(importedRow.computerId).not.toBe(ownerRow.computerId);
 
     const ownerBot2 = await rpc<Bot>(app, owner, "bots/create", botInput("Owner Bot Two"));
     const ownerGroup = await rpc<{ id: string }>(app, owner, "groups/create", {
