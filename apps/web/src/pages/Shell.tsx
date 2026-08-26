@@ -2279,8 +2279,8 @@ export function ShellPage() {
                     peekTarget ? (
                       <button
                         type="button"
-                        aria-label="Back to your computer"
-                        title="Back to your computer"
+                        aria-label={t`Back to your computer`}
+                        title={t`Back to your computer`}
                         onClick={clearPeek}
                         className="max-w-[120px] truncate rounded-full border border-[#26262A] px-2.5 py-1 text-[11px] leading-none text-[#85858A] transition-colors hover:text-[#ECECEE]"
                       >
@@ -2290,19 +2290,19 @@ export function ShellPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          aria-label="View another computer"
-                          title="View another computer"
+                          aria-label={t`View another computer`}
+                          title={t`View another computer`}
                           onClick={() => setPeekMenuOpen((open) => !open)}
                           className="rounded-full border border-[#26262A] px-2.5 py-1 text-[11px] leading-none text-[#85858A] transition-colors hover:text-[#ECECEE]"
                         >
-                          View…
+                          <Trans>View…</Trans>
                         </button>
                         {peekMenuOpen ? (
                           <div className="app-no-drag absolute end-0 top-full z-20 mt-2 max-h-[240px] min-w-[180px] overflow-y-auto rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
                             {bots.filter((bot) => !bot.archivedAt && bot.id !== active.id)
                               .length === 0 ? (
                               <div className="px-3.5 py-2 text-[13px] text-[#6C6C70]">
-                                No other agents yet
+                                <Trans>No other agents yet</Trans>
                               </div>
                             ) : (
                               bots
@@ -2352,7 +2352,7 @@ export function ShellPage() {
                   {peek ? (
                     embeddableScreenUrl(peek.url) ? (
                       <iframe
-                        title="Other computer preview (view only)"
+                        title={t`Other computer preview (view only)`}
                         src={embeddableScreenUrl(peek.url) ?? undefined}
                         sandbox={screenIframeSandbox(peek.url)}
                         className="h-full w-full border-0 bg-black"
@@ -2366,7 +2366,7 @@ export function ShellPage() {
                               false,
                               computerLabel(peek.mode, peekTarget?.name ?? active.name),
                             )
-                          : "Never used yet"}
+                          : t`Never used yet`}
                       </div>
                     )
                   ) : computerOpen ? (
@@ -2398,7 +2398,7 @@ export function ShellPage() {
                       )}
                     </div>
                   )}
-{peek ? null : (
+                  {peek ? null : (
                     <button
                       type="button"
                       className="absolute inset-0 cursor-pointer"
@@ -2410,7 +2410,7 @@ export function ShellPage() {
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <span className="min-w-0 text-[13.5px] text-[#85858A]">
                     {peek
-                      ? `Viewing ${peekTarget?.name ?? active.name} (read only)`
+                      ? t`Viewing ${peekTarget?.name ?? active.name} (read only)`
                       : hasControl
                         ? t`You have control`
                         : computerError
