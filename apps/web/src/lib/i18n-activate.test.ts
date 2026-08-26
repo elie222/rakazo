@@ -1,15 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activateUiLocale, getActiveUiLocale, i18n, setCatalogLoadersForTests } from "./i18n";
+import {
+  activateUiLocale,
+  getActiveUiLocale,
+  i18n,
+  setCatalogLoadersForTests,
+  setUiLocale,
+} from "./i18n";
+import { UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
 vi.mock("./apply-ui-direction", () => ({
   applyUiDirection: vi.fn(),
 }));
+
+function stubLocaleStorage() {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
+    key: () => null,
+    length: 0,
+  });
+  return store;
+}
 
 describe("activateUiLocale", () => {
   beforeEach(() => {
     setCatalogLoadersForTests(null);
     i18n.load("en", {});
     i18n.activate("en");
+    vi.unstubAllGlobals();
   });
 
   it("falls back to English when the preferred catalog fails to load", async () => {
@@ -92,5 +119,30 @@ describe("activateUiLocale", () => {
     expect(getActiveUiLocale()).toBe("en");
     expect(i18n.locale).toBe("en");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Settings");
+  });
+
+  it("does not let a stale setUiLocale fallback overwrite the latest stored locale", async () => {
+    const store = stubLocaleStorage();
+    let resolveDe!: (value: { messages: Record<string, string> }) => void;
+    const dePromise = new Promise<{ messages: Record<string, string> }>((resolve) => {
+      resolveDe = resolve;
+    });
+
+    setCatalogLoadersForTests({
+      en: async () => ({ messages: { Settings: "Settings" } }),
+      de: async () => dePromise,
+      ko: async () => ({ messages: { Settings: "설정" } }),
+    });
+
+    await activateUiLocale("en");
+    const pendingDe = setUiLocale("de");
+    const pendingKo = setUiLocale("ko");
+    expect(store.get(UI_LOCALE_STORAGE_KEY)).toBe("ko");
+
+    resolveDe({ messages: { Settings: "Einstellungen" } });
+    await expect(pendingDe).resolves.toBe("ko");
+    await expect(pendingKo).resolves.toBe("ko");
+    expect(getActiveUiLocale()).toBe("ko");
+    expect(store.get(UI_LOCALE_STORAGE_KEY)).toBe("ko");
   });
 });

@@ -80,7 +80,12 @@ export async function bootstrapI18n(preferred: UiLocale = resolveUiLocale()): Pr
 
 export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
   persistUiLocale(locale);
-  const activated = await activateUiLocale(locale);
-  if (activated !== locale) persistUiLocale(activated);
+  const activation = activateUiLocale(locale);
+  const generation = activationGeneration;
+  const activated = await activation;
+  // Only rewrite storage on fallback when this call is still the latest selection.
+  if (generation === activationGeneration && activated !== locale) {
+    persistUiLocale(activated);
+  }
   return activated;
 }
