@@ -238,6 +238,15 @@ function validTimezoneOrUtc(timezone: string): string {
   }
 }
 
+export function isValidTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseClock(time: string): { hour: number; minute: number } {
   const [rawH, rest] = time.split(":");
   const minute = Number((rest ?? "00").slice(0, 2));

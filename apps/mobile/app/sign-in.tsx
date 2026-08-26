@@ -1,3 +1,4 @@
+import { INTERNAL_PATH_RESOLVE_ORIGIN, safeInternalAppPath } from "@rakazo/contracts";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
@@ -29,7 +30,9 @@ export default function SignIn() {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
   const returnPath =
-    typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    typeof next === "string"
+      ? (safeInternalAppPath(next, INTERNAL_PATH_RESOLVE_ORIGIN) ?? "/")
+      : "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -106,6 +106,21 @@ describeShare("bot share import and links", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
 
+  it("rejects share manifests with invalid routine timezones", async () => {
+    const owner = await signup(app, `share-tz-${stamp}@rakazo.test`, "TZ Owner");
+    const manifest = await rpc<ShareManifest>(app, owner, "bots/shareManifest", {
+      botId: (await rpc<Bot>(app, owner, "bots/create", botInput("TZ Bot"))).id,
+    });
+    const invalid = {
+      ...manifest,
+      routines: [
+        { name: "Bad TZ", prompt: "Nope", crons: ["0 9 * * *"], timezone: "Mars/Olympus" },
+      ],
+    };
+    const response = await raw(app, owner, "bots/importShare", { manifest: invalid });
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+
   it("creates public preview links without leaking revoked or expired snapshots", async () => {
     const owner = await signup(app, `share-link-${stamp}@rakazo.test`, "Link Owner");
     const importer = await signup(app, `share-importer-${stamp}@rakazo.test`, "Importer");

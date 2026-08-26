@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { safeInternalAppPath } from "@rakazo/contracts";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../lib/auth";
@@ -33,12 +34,8 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
       return;
     }
     const next = new URLSearchParams(window.location.search).get("next");
-    const destination =
-      next?.startsWith("/") && !next.startsWith("//")
-        ? next
-        : mode === "up"
-          ? "/onboarding"
-          : "/app";
+    const safeNext = next ? safeInternalAppPath(next, window.location.origin) : null;
+    const destination = safeNext ?? (mode === "up" ? "/onboarding" : "/app");
     navigate(destination);
   }
 

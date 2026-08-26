@@ -81,6 +81,7 @@ import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  isValidTimezone,
   nextCronDateAcrossStrict,
 } from "@rakazo/core";
 import {
@@ -3338,6 +3339,9 @@ async function importShareManifest(
 
 function validateShareRoutineTemplates(routines: ShareManifest["routines"]) {
   for (const routine of routines) {
+    if (!isValidTimezone(routine.timezone)) {
+      throw new ORPCError("BAD_REQUEST", { message: "Enter a valid timezone." });
+    }
     if (hasMixedOneShotSchedule(routine.crons)) {
       throw new ORPCError("BAD_REQUEST", {
         message: "A one-time schedule can't be combined with other schedules.",
