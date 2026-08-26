@@ -48,7 +48,8 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   const clip = {
     x: Math.max(0, Math.min(toolbarBox.x, bubbleBox.x) - pad),
     y: Math.max(0, toolbarBox.y - pad),
-    width: Math.max(toolbarBox.x + toolbarBox.width, bubbleBox.x + bubbleBox.width) -
+    width:
+      Math.max(toolbarBox.x + toolbarBox.width, bubbleBox.x + bubbleBox.width) -
       Math.min(toolbarBox.x, bubbleBox.x) +
       pad * 2,
     height: bubbleBox.y + bubbleBox.height - toolbarBox.y + pad * 2,
