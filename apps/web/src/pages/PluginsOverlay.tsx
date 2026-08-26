@@ -248,46 +248,55 @@ export function PluginsOverlay({
               <Trans>No apps match your search.</Trans>
             </p>
           ) : null}
-          {visible.map((item) => {
-            const key = itemKey(item);
-            return (
-              <div key={key} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
-                {item.logo ? (
-                  <img
-                    src={item.logo}
-                    alt=""
-                    className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
-                  />
-                ) : (
-                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold text-[#ECECEE]">
-                    {item.name[0]}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
-                </div>
-                <Button
-                  type="button"
-                  variant="pill"
-                  size="sm"
-                  disabled={pending === key}
-                  onClick={() => void (item.connected ? revoke(item) : connect(item))}
-                >
-                  {pending === key ? (
-                    item.connected ? (
-                      <Trans>Removing…</Trans>
+          {visible.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {visible.map((item) => {
+                const key = itemKey(item);
+                return (
+                  <div
+                    key={key}
+                    className="flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2"
+                  >
+                    {item.logo ? (
+                      <img
+                        src={item.logo}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded-xl bg-[#2C2C30] object-contain"
+                      />
                     ) : (
-                      <Trans>Adding…</Trans>
-                    )
-                  ) : item.connected ? (
-                    <Trans>Remove</Trans>
-                  ) : (
-                    <Trans>Add</Trans>
-                  )}
-                </Button>
-              </div>
-            );
-          })}
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2C2C30] text-sm font-semibold text-[#ECECEE]">
+                        {item.name[0]}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[15px] font-medium text-[#ECECEE]">
+                        {item.name}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="pill"
+                      size="sm"
+                      disabled={pending === key}
+                      onClick={() => void (item.connected ? revoke(item) : connect(item))}
+                    >
+                      {pending === key ? (
+                        item.connected ? (
+                          <Trans>Removing…</Trans>
+                        ) : (
+                          <Trans>Adding…</Trans>
+                        )
+                      ) : item.connected ? (
+                        <Trans>Remove</Trans>
+                      ) : (
+                        <Trans>Add</Trans>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
 
           <details
             data-testid="integrations-advanced"

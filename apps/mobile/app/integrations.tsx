@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,6 +20,8 @@ import { native } from "../lib/native";
 type SourceKind = "treg" | "mcp" | "api";
 
 export default function Integrations() {
+  const { width } = useWindowDimensions();
+  const catalogColumns = width >= 480 ? 2 : 1;
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -187,25 +190,32 @@ export default function Integrations() {
         {catalog.length === 0 ? (
           <Text style={styles.secondary}>No managed app catalog configured.</Text>
         ) : null}
-        {catalog.map((item) => {
-          const key = `${item.connectorId}:${item.slug}`;
-          return (
-            <View key={key} style={styles.row}>
-              <View style={styles.grow}>
-                <Text style={styles.title}>{item.name}</Text>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                disabled={pending === key}
-                onPress={() => void (item.connected ? revoke(item) : connect(item))}
+        <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
+          {catalog.map((item) => {
+            const key = `${item.connectorId}:${item.slug}`;
+            return (
+              <View
+                key={key}
+                style={[styles.row, catalogColumns === 2 ? styles.catalogCell : null]}
               >
-                <Text style={styles.link}>
-                  {pending === key ? "Working…" : item.connected ? "Remove" : "Add"}
-                </Text>
-              </Pressable>
-            </View>
-          );
-        })}
+                <View style={styles.grow}>
+                  <Text numberOfLines={1} style={styles.title}>
+                    {item.name}
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={pending === key}
+                  onPress={() => void (item.connected ? revoke(item) : connect(item))}
+                >
+                  <Text style={styles.link}>
+                    {pending === key ? "Working…" : item.connected ? "Remove" : "Add"}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
 
         <Pressable
           accessibilityRole="button"
@@ -373,17 +383,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   authToggle: { minHeight: 42, justifyContent: "center" },
+  catalogGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  catalogStack: { gap: 8 },
+  catalogCell: { flexGrow: 1, flexBasis: "47%", maxWidth: "49%" },
   row: {
-    minHeight: 64,
-    padding: 14,
+    minHeight: 56,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: native.fill,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
-  grow: { flex: 1, gap: 3 },
-  title: { color: native.label, fontSize: 16, fontWeight: "600" },
+  grow: { flex: 1, gap: 3, minWidth: 0 },
+  title: { color: native.label, fontSize: 15, fontWeight: "600" },
   secondary: { color: native.secondaryLabel, fontSize: 13 },
   link: { color: native.label, fontSize: 14, fontWeight: "600" },
   remove: { color: "#E96B6B", fontSize: 14, fontWeight: "600" },
