@@ -980,7 +980,8 @@ export function ShellPage() {
   async function jumpToMessage(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = searchHitThreadTarget(target);
     const epoch = historyEpoch.current;
-    const jumpId = (jumpGeneration.current += 1);
+    jumpGeneration.current += 1;
+    const jumpId = jumpGeneration.current;
     const [snap, page] = await Promise.all([
       rpc.threads.get(threadTarget),
       rpc.threads.messages({ ...threadTarget, around: { messageId: target.messageId } }),
