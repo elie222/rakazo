@@ -773,8 +773,10 @@ export function ShellPage() {
     if (!pendingJump) {
       pinnedAroundRef.current = null;
     }
+    peekRequest.current += 1;
     setPeek(null);
     setPeekTarget(null);
+    setPeekLoading(false);
     setPeekMenuOpen(false);
     screenRequest.current += 1;
     const cached = computerCacheRef.current.get(active.id);
