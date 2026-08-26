@@ -1812,7 +1812,7 @@ export function ShellPage() {
                 />
               ) : null}
               {sidebarGroups.map((group) => {
-                const collapsed = collapsedSidebarSections.has(group.key);
+                const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title ? (
