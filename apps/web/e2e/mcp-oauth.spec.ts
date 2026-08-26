@@ -82,6 +82,9 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   });
 
   await page.getByText("Integrations", { exact: true }).click();
+  await page.getByTestId("integrations-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
   await page.getByRole("button", { name: "MCP servers", exact: true }).click();
   await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
   await expect(page.getByText("Linear MCP", { exact: true })).toBeVisible();

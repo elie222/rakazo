@@ -5,7 +5,6 @@ import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-type CatalogView = "all" | "connected" | "sources";
 type SourceKind = "treg" | "mcp" | "api";
 
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
@@ -32,7 +31,6 @@ export function PluginsOverlay({
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<CatalogView>("all");
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -67,15 +65,14 @@ export function PluginsOverlay({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const scoped = view === "connected" ? catalog.filter((item) => item.connected) : catalog;
-    if (!needle) return scoped;
-    return scoped.filter(
+    if (!needle) return catalog;
+    return catalog.filter(
       (item) =>
         item.name.toLowerCase().includes(needle) ||
         item.slug.toLowerCase().includes(needle) ||
         item.connectorId.toLowerCase().includes(needle),
     );
-  }, [catalog, query, view]);
+  }, [catalog, query]);
 
   function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
     setCatalog((prev) => markConnected(prev, item.connectorId, item.slug, connected));
@@ -151,7 +148,6 @@ export function PluginsOverlay({
 
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
-    setView("sources");
     setError(null);
     setSourceName(kind === "treg" ? "Treg" : "");
     setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
@@ -208,101 +204,122 @@ export function PluginsOverlay({
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
       <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
         <div className="flex items-start justify-between px-8 pt-7">
-          <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">
-              <Trans>Integrations</Trans>
-            </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              <Trans>Connect apps or add Treg, MCP, and OpenAPI tool sources.</Trans>
-            </p>
+          <div className="text-2xl font-medium text-[#F1F1F2]">
+            <Trans>Integrations</Trans>
           </div>
-          <div className="flex items-center gap-3">
-            {onOpenMcp ? (
-              <button
-                type="button"
-                onClick={onOpenMcp}
-                className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
-              >
-                <Trans>MCP servers</Trans>
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label={t`Close integrations`}
-              onClick={onClose}
-              className="text-[#85858A]"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label={t`Close integrations`}
+            onClick={onClose}
+            className="text-[#85858A]"
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 px-8 pt-4">
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
-            <Trans>Add Treg</Trans>
-          </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
-            <Trans>Add MCP server</Trans>
-          </Button>
-          <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
-            <Trans>Add OpenAPI</Trans>
-          </Button>
+        <div className="px-8 pt-4">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t`Search apps`}
+            className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
+          />
         </div>
 
-        {view !== "sources" ? (
-          <div className="px-8 pt-4">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t`Search apps`}
-              className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
-            />
-          </div>
-        ) : null}
-
-        <div role="tablist" aria-label={t`Integration views`} className="flex gap-1 px-8 pt-4">
-          {(["all", "connected", "sources"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              aria-selected={view === option}
-              aria-controls="integration-list"
-              onClick={() => {
-                setView(option);
-                if (option !== "sources") setSourceKind(null);
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
-                view === option
-                  ? "bg-[#2C2C30] text-[#F1F1F2]"
-                  : "text-[#7A7A80] hover:text-[#C8C8CC]"
-              }`}
-            >
-              {option === "all" ? (
-                <Trans>Apps</Trans>
-              ) : option === "connected" ? (
-                <Trans>Connected</Trans>
-              ) : (
-                <Trans>Tool sources</Trans>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div
-          id="integration-list"
-          role="tabpanel"
-          className="rk-scroll flex-1 overflow-y-auto px-8 py-6"
-        >
-          {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
+        <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+          {error && !sourceKind ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
           {loading ? (
             <p className="text-[#6C6C70]">
               <Trans>Loading integrations…</Trans>
             </p>
           ) : null}
 
-          {view === "sources" ? (
-            <div className="space-y-4">
+          {!loading && catalog.length === 0 ? (
+            <p className="text-[#6C6C70]">
+              <Trans>No managed app catalog is configured on this deployment.</Trans>
+            </p>
+          ) : null}
+          {!loading && catalog.length > 0 && visible.length === 0 ? (
+            <p className="text-[#6C6C70]">
+              <Trans>No apps match your search.</Trans>
+            </p>
+          ) : null}
+          {visible.map((item) => {
+            const key = itemKey(item);
+            return (
+              <div key={key} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
+                {item.logo ? (
+                  <img
+                    src={item.logo}
+                    alt=""
+                    className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
+                  />
+                ) : (
+                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold text-[#ECECEE]">
+                    {item.name[0]}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
+                </div>
+                <Button
+                  type="button"
+                  variant="pill"
+                  size="sm"
+                  disabled={pending === key}
+                  onClick={() => void (item.connected ? revoke(item) : connect(item))}
+                >
+                  {pending === key ? (
+                    item.connected ? (
+                      <Trans>Removing…</Trans>
+                    ) : (
+                      <Trans>Adding…</Trans>
+                    )
+                  ) : item.connected ? (
+                    <Trans>Added</Trans>
+                  ) : (
+                    <Trans>Add</Trans>
+                  )}
+                </Button>
+              </div>
+            );
+          })}
+
+          <details data-testid="integrations-advanced" className="group mt-8">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
+              <span className="text-[#85858A]">
+                <Trans>Advanced</Trans>
+              </span>
+              <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+                ›
+              </span>
+            </summary>
+
+            <div className="mt-4 space-y-4">
+              {onOpenMcp ? (
+                <button
+                  type="button"
+                  onClick={onOpenMcp}
+                  className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
+                >
+                  <Trans>MCP servers</Trans>
+                </button>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
+                  <Trans>Add MCP server</Trans>
+                </Button>
+                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
+                  <Trans>Add OpenAPI</Trans>
+                </Button>
+                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
+                  <Trans>Add Treg</Trans>
+                </Button>
+              </div>
+
+              {error && sourceKind ? <p className="text-sm text-[#C94244]">{error}</p> : null}
+
               {sourceKind ? (
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
                   <div className="text-base font-medium text-[#ECECEE]">
@@ -399,84 +416,31 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              {sources.length === 0 && !sourceKind ? (
-                <p className="text-[#6C6C70]">
-                  <Trans>No MCP or API tool sources installed yet.</Trans>
-                </p>
-              ) : null}
-              {sources.map((source) => (
-                <div key={source.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
-                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
-                    {source.kind === "mcp" ? "M" : "A"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
-                    <div className="truncate text-[13.5px] text-[#7A7A80]">
-                      {source.kind.toUpperCase()} · {source.source} ·{" "}
-                      {source.secretConfigured ? (
-                        <Trans>credential saved</Trans>
-                      ) : (
-                        <Trans>no auth</Trans>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="pill"
-                    size="sm"
-                    disabled={pending === source.id}
-                    onClick={() => void removeSource(source)}
-                  >
-                    {pending === source.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
-                  </Button>
+              <div>
+                <div className="mb-3 text-sm font-medium text-[#A8A8AD]">
+                  <Trans>Tool sources</Trans>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              {!loading && catalog.length === 0 ? (
-                <p className="text-[#6C6C70]">
-                  <Trans>
-                    No managed app catalog is configured on this deployment. You can still add Treg,
-                    MCP, or OpenAPI sources.
-                  </Trans>
-                </p>
-              ) : null}
-              {!loading && catalog.length > 0 && visible.length === 0 ? (
-                <p className="text-[#6C6C70]">
-                  {query.trim() ? (
-                    <Trans>No apps match your search.</Trans>
-                  ) : (
-                    <Trans>No connected apps yet.</Trans>
-                  )}
-                </p>
-              ) : null}
-              {visible.map((item) => {
-                const key = itemKey(item);
-                return (
-                  <div key={key} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
-                    {item.logo ? (
-                      <img
-                        src={item.logo}
-                        alt=""
-                        className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
-                      />
-                    ) : (
-                      <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold">
-                        {item.name[0]}
-                      </div>
-                    )}
+                {sources.length === 0 && !sourceKind ? (
+                  <p className="text-[#6C6C70]">
+                    <Trans>No MCP or API tool sources installed yet.</Trans>
+                  </p>
+                ) : null}
+                {sources.map((source) => (
+                  <div
+                    key={source.id}
+                    className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
+                  >
+                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
+                      {source.kind === "mcp" ? "M" : "A"}
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15.5px] font-medium text-[#ECECEE]">{item.name}</div>
-                      <div className="text-[13.5px] text-[#7A7A80]">
-                        {item.connectorId} · {item.slug}
-                        {item.noAuth ? (
-                          <>
-                            {" "}
-                            · <Trans>no auth</Trans>
-                          </>
+                      <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
+                      <div className="truncate text-[13.5px] text-[#7A7A80]">
+                        {source.kind.toUpperCase()} · {source.source} ·{" "}
+                        {source.secretConfigured ? (
+                          <Trans>credential saved</Trans>
                         ) : (
-                          ""
+                          <Trans>no auth</Trans>
                         )}
                       </div>
                     </div>
@@ -484,26 +448,16 @@ export function PluginsOverlay({
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={pending === key}
-                      onClick={() => void (item.connected ? revoke(item) : connect(item))}
+                      disabled={pending === source.id}
+                      onClick={() => void removeSource(source)}
                     >
-                      {pending === key ? (
-                        item.connected ? (
-                          <Trans>Revoking…</Trans>
-                        ) : (
-                          <Trans>Connecting…</Trans>
-                        )
-                      ) : item.connected ? (
-                        <Trans>Revoke</Trans>
-                      ) : (
-                        <Trans>Connect</Trans>
-                      )}
+                      {pending === source.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
                     </Button>
                   </div>
-                );
-              })}
-            </>
-          )}
+                ))}
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>

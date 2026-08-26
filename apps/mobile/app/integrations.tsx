@@ -22,6 +22,7 @@ export default function Integrations() {
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [credential, setCredential] = useState("");
@@ -165,123 +166,9 @@ export default function Integrations() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.explanation}>
-          Connect managed apps or install a remote tool source. Credentials are encrypted and never
-          shown to bots.
-        </Text>
+        <Text style={styles.explanation}>Connect apps.</Text>
 
-        <View style={styles.actions}>
-          {(["treg", "mcp", "api"] as const).map((kind) => (
-            <Pressable
-              key={kind}
-              accessibilityRole="button"
-              onPress={() => beginSource(kind)}
-              style={styles.smallButton}
-            >
-              <Text style={styles.buttonLabel}>
-                {kind === "treg" ? "Add Treg" : kind === "mcp" ? "Add MCP" : "Add OpenAPI"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {sourceKind ? (
-          <View style={styles.card}>
-            <Text style={styles.title}>
-              {sourceKind === "treg"
-                ? "Connect Treg"
-                : sourceKind === "mcp"
-                  ? "Remote MCP server"
-                  : "OpenAPI JSON"}
-            </Text>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Display name"
-              placeholderTextColor={native.tertiaryLabel}
-              style={styles.input}
-            />
-            {sourceKind !== "treg" ? (
-              <TextInput
-                value={url}
-                onChangeText={setUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder={
-                  sourceKind === "mcp"
-                    ? "https://example.com/mcp"
-                    : "https://example.com/openapi.json"
-                }
-                placeholderTextColor={native.tertiaryLabel}
-                style={styles.input}
-              />
-            ) : null}
-            {sourceKind !== "treg" ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setRequiresAuth((value) => !value)}
-                style={styles.authToggle}
-              >
-                <Text style={styles.secondary}>
-                  {requiresAuth ? "Bearer authentication" : "No authentication"}
-                </Text>
-              </Pressable>
-            ) : null}
-            {sourceKind === "treg" || requiresAuth ? (
-              <TextInput
-                value={credential}
-                onChangeText={setCredential}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder={sourceKind === "treg" ? "Treg token" : "Bearer token"}
-                placeholderTextColor={native.tertiaryLabel}
-                style={styles.input}
-              />
-            ) : null}
-            <View style={styles.actions}>
-              <Pressable
-                accessibilityRole="button"
-                disabled={pending === "source"}
-                onPress={() => void addSource()}
-                style={styles.smallButton}
-              >
-                {pending === "source" ? (
-                  <ActivityIndicator color={native.label} />
-                ) : (
-                  <Text style={styles.buttonLabel}>Verify and add</Text>
-                )}
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setSourceKind(null)}
-                style={styles.smallButton}
-              >
-                <Text style={styles.buttonLabel}>Cancel</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : null}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Text style={styles.section}>Tool sources</Text>
-        {sources.length === 0 ? (
-          <Text style={styles.secondary}>No custom sources installed.</Text>
-        ) : null}
-        {sources.map((source) => (
-          <View key={source.id} style={styles.row}>
-            <View style={styles.grow}>
-              <Text style={styles.title}>{source.name}</Text>
-              <Text numberOfLines={1} style={styles.secondary}>
-                {source.kind.toUpperCase()} · {source.source}
-              </Text>
-            </View>
-            <Pressable accessibilityRole="button" onPress={() => void removeSource(source)}>
-              <Text style={styles.remove}>{pending === source.id ? "Removing…" : "Remove"}</Text>
-            </Pressable>
-          </View>
-        ))}
+        {error && !sourceKind ? <Text style={styles.error}>{error}</Text> : null}
 
         <Text style={styles.section}>Apps</Text>
         {catalog.length === 0 ? (
@@ -293,9 +180,6 @@ export default function Integrations() {
             <View key={key} style={styles.row}>
               <View style={styles.grow}>
                 <Text style={styles.title}>{item.name}</Text>
-                <Text style={styles.secondary}>
-                  {item.connectorId} · {item.slug}
-                </Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -303,12 +187,141 @@ export default function Integrations() {
                 onPress={() => void (item.connected ? revoke(item) : connect(item))}
               >
                 <Text style={styles.link}>
-                  {pending === key ? "Working…" : item.connected ? "Revoke" : "Connect"}
+                  {pending === key ? "Working…" : item.connected ? "Added" : "Add"}
                 </Text>
               </Pressable>
             </View>
           );
         })}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: advancedOpen }}
+          testID="integrations-advanced"
+          onPress={() => setAdvancedOpen((open) => !open)}
+          style={styles.advancedToggle}
+        >
+          <Text style={styles.advancedLabel}>Advanced</Text>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+
+        {advancedOpen ? (
+          <View style={styles.advancedBody}>
+            <View style={styles.actions}>
+              {(["mcp", "api", "treg"] as const).map((kind) => (
+                <Pressable
+                  key={kind}
+                  accessibilityRole="button"
+                  onPress={() => beginSource(kind)}
+                  style={styles.smallButton}
+                >
+                  <Text style={styles.buttonLabel}>
+                    {kind === "treg" ? "Add Treg" : kind === "mcp" ? "Add MCP" : "Add OpenAPI"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {sourceKind ? (
+              <View style={styles.card}>
+                <Text style={styles.title}>
+                  {sourceKind === "treg"
+                    ? "Connect Treg"
+                    : sourceKind === "mcp"
+                      ? "Remote MCP server"
+                      : "OpenAPI JSON"}
+                </Text>
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Display name"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                />
+                {sourceKind !== "treg" ? (
+                  <TextInput
+                    value={url}
+                    onChangeText={setUrl}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder={
+                      sourceKind === "mcp"
+                        ? "https://example.com/mcp"
+                        : "https://example.com/openapi.json"
+                    }
+                    placeholderTextColor={native.tertiaryLabel}
+                    style={styles.input}
+                  />
+                ) : null}
+                {sourceKind !== "treg" ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setRequiresAuth((value) => !value)}
+                    style={styles.authToggle}
+                  >
+                    <Text style={styles.secondary}>
+                      {requiresAuth ? "Bearer authentication" : "No authentication"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {sourceKind === "treg" || requiresAuth ? (
+                  <TextInput
+                    value={credential}
+                    onChangeText={setCredential}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder={sourceKind === "treg" ? "Treg token" : "Bearer token"}
+                    placeholderTextColor={native.tertiaryLabel}
+                    style={styles.input}
+                  />
+                ) : null}
+                {error && sourceKind ? <Text style={styles.error}>{error}</Text> : null}
+                <View style={styles.actions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={pending === "source"}
+                    onPress={() => void addSource()}
+                    style={styles.smallButton}
+                  >
+                    {pending === "source" ? (
+                      <ActivityIndicator color={native.label} />
+                    ) : (
+                      <Text style={styles.buttonLabel}>Verify and add</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setSourceKind(null)}
+                    style={styles.smallButton}
+                  >
+                    <Text style={styles.buttonLabel}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={styles.section}>Tool sources</Text>
+            {sources.length === 0 ? (
+              <Text style={styles.secondary}>No custom sources installed.</Text>
+            ) : null}
+            {sources.map((source) => (
+              <View key={source.id} style={styles.row}>
+                <View style={styles.grow}>
+                  <Text style={styles.title}>{source.name}</Text>
+                  <Text numberOfLines={1} style={styles.secondary}>
+                    {source.kind.toUpperCase()} · {source.source}
+                  </Text>
+                </View>
+                <Pressable accessibilityRole="button" onPress={() => void removeSource(source)}>
+                  <Text style={styles.remove}>
+                    {pending === source.id ? "Removing…" : "Remove"}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -354,4 +367,14 @@ const styles = StyleSheet.create({
   link: { color: native.label, fontSize: 14, fontWeight: "600" },
   remove: { color: "#E96B6B", fontSize: 14, fontWeight: "600" },
   error: { color: "#E96B6B", fontSize: 14 },
+  advancedToggle: {
+    marginTop: 8,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  advancedLabel: { color: native.secondaryLabel, fontSize: 14 },
+  advancedBody: { gap: 14 },
+  chevron: { color: native.secondaryLabel, fontSize: 18 },
 });
