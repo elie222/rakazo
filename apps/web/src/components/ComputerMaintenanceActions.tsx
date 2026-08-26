@@ -58,7 +58,13 @@ export function ComputerMaintenanceActions({
           </BuiButton>
         ) : null}
         {showReset ? (
-          <BuiButton disabled={busy || pending !== null} onClick={() => setConfirmReset(true)}>
+          <BuiButton
+            disabled={busy || pending !== null}
+            onClick={() => {
+              setError(null);
+              setConfirmReset(true);
+            }}
+          >
             {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
           </BuiButton>
         ) : null}
@@ -77,20 +83,26 @@ export function ComputerMaintenanceActions({
           </Trans>
         </p>
       ) : null}
-      {error ? <p className="text-[13px] text-[#E65707]">{error}</p> : null}
+      {error && !confirmReset ? <p className="text-[13px] text-[#E65707]">{error}</p> : null}
       {confirmReset ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.72)] px-6"
-          role="dialog"
+          role="alertdialog"
           aria-modal="true"
+          aria-labelledby="reset-computer-title"
+          aria-describedby="reset-computer-description"
         >
           <BuiCard className="w-full max-w-[420px] border border-[#232326] p-5">
-            <div className="text-[16px] font-medium text-[#ECECEE]">
+            <div id="reset-computer-title" className="text-[16px] font-medium text-[#ECECEE]">
               <Trans>Reset computer?</Trans>
             </div>
-            <p className="mt-2 text-[14px] leading-[1.5] text-[#85858A]">
+            <p
+              id="reset-computer-description"
+              className="mt-2 text-[14px] leading-[1.5] text-[#85858A]"
+            >
               <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
             </p>
+            {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <BuiButton onClick={() => setConfirmReset(false)}>
                 <Trans>Cancel</Trans>
@@ -100,7 +112,7 @@ export function ComputerMaintenanceActions({
                 disabled={pending !== null}
                 onClick={() => void run("reset")}
               >
-                <Trans>Reset</Trans>
+                {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
               </BuiButton>
             </div>
           </BuiCard>

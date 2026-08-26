@@ -413,6 +413,7 @@ export async function replaceComputer(
   }
 
   const previousState = existing.state;
+  let claimedSuspending = false;
   if (existing.state !== "stopped" && existing.state !== "suspended") {
     const now = new Date();
     const claimed = await deps.prisma.computer.updateMany({
@@ -430,20 +431,23 @@ export async function replaceComputer(
       data: { state: "suspending" },
     });
     if (claimed.count !== 1) throw new ComputerBusyError();
-    const activeRun = await deps.prisma.run.findFirst({
-      where: {
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-        bot: { computerId },
-      },
-      select: { id: true },
-    });
-    if (activeRun) {
+    claimedSuspending = true;
+  }
+  const activeRun = await deps.prisma.run.findFirst({
+    where: {
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      bot: { computerId },
+    },
+    select: { id: true },
+  });
+  if (activeRun) {
+    if (claimedSuspending) {
       await deps.prisma.computer.updateMany({
         where: { id: computerId, state: "suspending" },
         data: { state: previousState },
       });
-      throw new ComputerBusyError();
     }
+    throw new ComputerBusyError();
   }
 
   const oldRef = existing.providerRef ? toComputerRef(existing) : null;

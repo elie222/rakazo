@@ -803,4 +803,74 @@ describe("computer replacement", () => {
       }),
     );
   });
+
+  it("rejects replacement of a stopped computer while a run is still active", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: null,
+          kind: "fake",
+          scope: "dedicated",
+          state: "stopped",
+          controlLeaseId: null,
+        }),
+        updateMany: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "active-run" }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "recover",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects replacement of a suspended computer while a run is still active", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "dedicated",
+          state: "suspended",
+          controlLeaseId: null,
+        }),
+        updateMany: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "active-run" }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "update",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
 });
