@@ -11,6 +11,8 @@ import {
   ModelOAuthBeginSchema,
   normalizeCreateBotProfile,
   ProductEventType,
+  RunActivityRowSchema,
+  RunSchema,
   UpdateBotInput,
   UpdateGroupInput,
 } from "./index.js";
@@ -117,6 +119,40 @@ describe("contracts", () => {
     expect(ProductEventType.options).toContain("thread.cleared");
     expect(ProductEventType.options).toContain("thread.subagent");
     expect(ProductEventType.options).toContain("bot.spawned");
+  });
+
+  it("accepts bot-to-bot runs in thread snapshots and activity rows", () => {
+    const run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "running",
+      trigger: "bot_message",
+      routineId: null,
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: "2026-08-26T00:00:00.000Z",
+      completedAt: null,
+      createdAt: "2026-08-26T00:00:00.000Z",
+    };
+
+    expect(RunSchema.safeParse(run).success).toBe(true);
+    expect(
+      RunActivityRowSchema.safeParse({
+        runId: run.id,
+        botId: run.botId,
+        botName: "Researcher",
+        groupId: null,
+        groupName: null,
+        threadId: run.threadId,
+        status: run.status,
+        trigger: run.trigger,
+        promptSnippet: "Review the report",
+        updatedAt: "2026-08-26T00:00:01.000Z",
+      }).success,
+    ).toBe(true);
   });
 
   it("caps remote MCP headers", () => {

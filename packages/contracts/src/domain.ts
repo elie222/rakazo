@@ -524,7 +524,7 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill"]),
+  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
