@@ -32,8 +32,24 @@ describe("toComputerStatus", () => {
   });
 
   it("hides update on desktop computers", () => {
-    expect(toComputerStatus("bot-1", { kind: "desktop", state: "running", scope: "team", controlHolder: "none", homeRevision: "r1" }).updateAvailable).toBe(false);
-    expect(toComputerStatus("bot-1", { kind: "e2b", state: "running", scope: "team", controlHolder: "none", homeRevision: "r1" }).updateAvailable).toBe(true);
+    expect(
+      toComputerStatus("bot-1", {
+        kind: "desktop",
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).updateAvailable,
+    ).toBe(false);
+    expect(
+      toComputerStatus("bot-1", {
+        kind: "e2b",
+        state: "running",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "r1",
+      }).updateAvailable,
+    ).toBe(true);
   });
 });
 

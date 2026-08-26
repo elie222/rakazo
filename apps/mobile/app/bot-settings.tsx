@@ -1,3 +1,4 @@
+import type { ComputerStatus } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -8,10 +9,9 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
-import { ComputerModePicker } from "../components/computer-mode-picker";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
+import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
-import type { ComputerStatus } from "@rakazo/contracts";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;

@@ -3,11 +3,31 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type ComputerStatus,
   controlLabel,
   embeddableScreenUrl,
   previewPlaceholder,
   readScreenUrl,
 } from "./computer.js";
+
+function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
+  return {
+    botId: "bot-1",
+    mode: "team",
+    kind: "fake",
+    state: "running",
+    controlHolder: "none",
+    controlBotId: null,
+    takeoverRequested: false,
+    screenAvailable: true,
+    screenWidth: 1280,
+    screenHeight: 800,
+    homeRevision: null,
+    busyBotName: null,
+    updateAvailable: true,
+    ...overrides,
+  };
+}
 
 describe("embeddableScreenUrl", () => {
   it("leaves a public stream URL alone", () => {
@@ -47,45 +67,35 @@ describe("computer copy", () => {
     expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
     expect(
       controlLabel(
-        {
+        computer({
           state: "running",
           controlHolder: "user",
           controlBotId: "bot-1",
           takeoverRequested: true,
-          screenAvailable: true,
-          mode: "team",
-          busyBotName: null,
-        },
+        }),
         "Chief",
         "bot-1",
       ),
     ).toBe("You have control");
     expect(
       controlLabel(
-        {
+        computer({
           state: "running",
           controlHolder: "user",
           controlBotId: "other-bot",
-          takeoverRequested: false,
-          screenAvailable: true,
-          mode: "team",
-          busyBotName: null,
-        },
+        }),
         "Chief",
         "bot-1",
       ),
     ).toBe("Team Computer");
     expect(
       controlLabel(
-        {
+        computer({
           state: "suspended",
           controlHolder: "none",
           controlBotId: null,
-          takeoverRequested: false,
           screenAvailable: false,
-          mode: "team",
-          busyBotName: null,
-        },
+        }),
         "Chief",
       ),
     ).toBe("Asleep");

@@ -25,6 +25,7 @@ import {
   type ComputerExecutionLease,
   type ConnectorRegistry,
   checkpointAndRecordComputerWorkspace,
+  computerSupportsUpdate,
   createVoiceProvider,
   destroyBot,
   displayBotWorkspacePath,
@@ -48,7 +49,6 @@ import {
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
   replaceComputer,
-  computerSupportsUpdate,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -2961,16 +2961,16 @@ async function runComputerReplace(
     throw error;
   }
   try {
-    await replaceComputer(
-      deps,
-      bot.computer.id,
-      mode,
-      {
-        ...computerContext(context.actor, bot.id, operationId),
-        screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-      },
-    );
+    await replaceComputer(deps, bot.computer.id, mode, {
+      ...computerContext(context.actor, bot.id, operationId),
+      screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+    });
     scheduleComputerSleep(deps.jobs, bot.computer.id);
+  } catch (error) {
+    if (error instanceof ComputerBusyError) {
+      throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+    }
+    throw error;
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }

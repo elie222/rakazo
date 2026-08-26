@@ -8,8 +8,8 @@ import {
   SafeAreaView,
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { ComputerModePicker } from "../components/computer-mode-picker";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
+import { ComputerModePicker } from "../components/computer-mode-picker";
 import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import {
@@ -240,7 +240,9 @@ export default function Computer() {
         <ComputerMaintenanceActions
           botId={botId ?? ""}
           computer={computer}
-          onChanged={refresh}
+          onChanged={async () => {
+            await refresh();
+          }}
         />
       ) : null}
       <ComputerModePicker

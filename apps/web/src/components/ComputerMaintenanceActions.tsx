@@ -1,6 +1,7 @@
 import type { ComputerStatus } from "@rakazo/contracts";
 import { useState } from "react";
 import { rpc } from "../lib/rpc";
+import { BuiButton, BuiCard } from "./beautiful-ui/primitives";
 
 type Action = "recover" | "reset" | "update";
 
@@ -46,42 +47,23 @@ export function ComputerMaintenanceActions({
     }
   }
 
-  const buttonClass = compact
-    ? "text-[13px] text-[#85858A] hover:text-[#ECECEE] disabled:opacity-40"
-    : "rounded-[11px] border border-[#26262A] px-3.5 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40";
-
   return (
     <div className={compact ? "flex flex-col items-start gap-2" : "mt-4 flex flex-col gap-3"}>
-      <div className={compact ? "flex flex-wrap gap-3" : "flex flex-col gap-2"}>
+      <div className={compact ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}>
         {showRecover ? (
-          <button
-            type="button"
-            disabled={busy || pending !== null}
-            className={buttonClass}
-            onClick={() => void run("recover")}
-          >
+          <BuiButton disabled={busy || pending !== null} onClick={() => void run("recover")}>
             {pending === "recover" ? "Recovering…" : "Recover computer"}
-          </button>
+          </BuiButton>
         ) : null}
         {showReset ? (
-          <button
-            type="button"
-            disabled={busy || pending !== null}
-            className={buttonClass}
-            onClick={() => setConfirmReset(true)}
-          >
+          <BuiButton disabled={busy || pending !== null} onClick={() => setConfirmReset(true)}>
             {pending === "reset" ? "Resetting…" : "Reset computer"}
-          </button>
+          </BuiButton>
         ) : null}
         {showUpdate ? (
-          <button
-            type="button"
-            disabled={busy || pending !== null}
-            className={buttonClass}
-            onClick={() => void run("update")}
-          >
+          <BuiButton disabled={busy || pending !== null} onClick={() => void run("update")}>
             {pending === "update" ? "Updating…" : "Update computer"}
-          </button>
+          </BuiButton>
         ) : null}
       </div>
       {!compact ? (
@@ -98,28 +80,22 @@ export function ComputerMaintenanceActions({
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-[420px] rounded-[14px] border border-[#232326] bg-[#0E0E10] p-5">
+          <BuiCard className="w-full max-w-[420px] border border-[#232326] p-5">
             <div className="text-[16px] font-medium text-[#ECECEE]">Reset computer?</div>
             <p className="mt-2 text-[14px] leading-[1.5] text-[#85858A]">
               Restore the last saved workspace. Unsaved work on the computer is lost.
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
-                onClick={() => setConfirmReset(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-[11px] bg-[#E65707] px-4 py-2 text-[14px] text-[#17171A]"
+              <BuiButton onClick={() => setConfirmReset(false)}>Cancel</BuiButton>
+              <BuiButton
+                tone="accent"
+                disabled={pending !== null}
                 onClick={() => void run("reset")}
               >
                 Reset
-              </button>
+              </BuiButton>
             </div>
-          </div>
+          </BuiCard>
         </div>
       ) : null}
     </div>

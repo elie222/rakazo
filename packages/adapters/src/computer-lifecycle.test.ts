@@ -19,8 +19,8 @@ import {
   replaceComputer,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 
 const context = {
@@ -611,9 +611,9 @@ describe("computer replacement", () => {
       );
       expect(destroy).toHaveBeenCalledOnce();
       expect(ref.fresh).toBe(true);
-      expect(
-        new TextDecoder().decode(await sandbox.readFile(ref, "notes/keep.txt", context)),
-      ).toBe("saved");
+      expect(new TextDecoder().decode(await sandbox.readFile(ref, "notes/keep.txt", context))).toBe(
+        "saved",
+      );
       await rm(dataDir, { recursive: true, force: true });
       await rm(homeRoot, { recursive: true, force: true });
     } catch (error) {
@@ -652,6 +652,40 @@ describe("computer replacement", () => {
         },
         "computer-1",
         "reset",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+  });
+
+  it("rejects replacement while the target bot has an active run", async () => {
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "dedicated",
+          state: "running",
+          controlLeaseId: null,
+        }),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "same-bot-run" }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "recover",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);

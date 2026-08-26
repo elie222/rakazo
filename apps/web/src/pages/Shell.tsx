@@ -104,9 +104,9 @@ import {
   LoadingState,
   SuccessPop,
 } from "../components/beautiful-ui/primitives";
+import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
-import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";

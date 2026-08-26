@@ -1,18 +1,10 @@
-import type { ComputerMode } from "@rakazo/contracts";
+import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
 export const SCREEN_URL_OPEN_ATTEMPTS = 5;
 export const SCREEN_URL_RETRY_DELAY_MS = 400;
 
-export type ComputerStatus = {
-  state: string;
-  controlHolder: string;
-  controlBotId: string | null;
-  takeoverRequested: boolean;
-  screenAvailable: boolean;
-  mode: ComputerMode;
-  busyBotName: string | null;
-};
+export type ComputerStatus = ContractComputerStatus;
 
 function isLocalHostname(hostname: string) {
   return (

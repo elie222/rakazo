@@ -9,12 +9,12 @@ import type {
 import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
 import { type PrismaClient, parseComputerMode, type ThreadEvents } from "@rakazo/db";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
+import { toComputerRef } from "./computer-support.js";
 import {
   checkpointAndRecordComputerWorkspace,
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
-import { toComputerRef } from "./computer-support.js";
 import { isUnrecoverableSandboxError } from "./e2b-sandbox.js";
 import { resolveAgentHomePath } from "./home.js";
 
@@ -421,15 +421,14 @@ export async function replaceComputer(
       data: { state: "suspending" },
     });
     if (claimed.count !== 1) throw new ComputerBusyError();
-    const otherRun = await deps.prisma.run.findFirst({
+    const activeRun = await deps.prisma.run.findFirst({
       where: {
-        botId: { not: botId },
         status: { in: [...ACTIVE_RUN_STATUSES] },
         bot: { computerId },
       },
       select: { id: true },
     });
-    if (otherRun) {
+    if (activeRun) {
       await deps.prisma.computer.updateMany({
         where: { id: computerId, state: "suspending" },
         data: { state: previousState },
@@ -440,11 +439,10 @@ export async function replaceComputer(
 
   const oldRef = existing.providerRef ? toComputerRef(existing) : null;
   try {
-    if (oldRef && existing.state === "running") {
+    if (oldRef && existing.state === "running" && mode !== "reset") {
       try {
         await checkpointAndRecordComputerWorkspace(deps, existing, oldRef, context);
       } catch (error) {
-        if (mode === "reset") throw error;
         if (!isUnrecoverableSandboxError(error)) throw error;
       }
     }
@@ -456,9 +454,6 @@ export async function replaceComputer(
         if (mode !== "recover" && !isUnrecoverableSandboxError(error)) throw error;
       }
     }
-    await deps.prisma.computerExecutionLease.deleteMany({
-      where: { computerId, botId },
-    });
     await deps.prisma.computer.update({
       where: { id: computerId },
       data: {
