@@ -650,13 +650,22 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     await nested.prompt(task || "Complete the delegated task.");
     await nested.waitForIdle();
     host.signal.removeEventListener("abort", onAbort);
+    // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
+    // completed stop rather than a failed subagent chip.
+    const budgetExceeded = host.toolCallBudget.exceeded;
     const error = nested.state.errorMessage;
-    if (error) {
+    if (error && !budgetExceeded) {
       const message = sanitizeError(error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
     }
-    const result = streamed || assistantText(nested.state.messages.at(-1)) || "done.";
+    const budgetMessage = budgetExceeded
+      ? toolCallBudgetExceededMessage(MAX_TOOL_CALLS_PER_TURN)
+      : undefined;
+    const result =
+      budgetMessage && streamed.trim()
+        ? `${streamed.trim()}\n\n${budgetMessage}`
+        : budgetMessage || streamed || assistantText(nested.state.messages.at(-1)) || "done.";
     const clipped = result.length > 12_000 ? `${result.slice(0, 12_000)}…` : result;
     host.queue.push({
       type: "subagent",

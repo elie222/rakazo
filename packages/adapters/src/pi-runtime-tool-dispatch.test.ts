@@ -237,6 +237,22 @@ describe("Pi connector tool dispatch", () => {
       type: "done",
       text: "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
     });
+    const subagentEvents = events.filter(
+      (event): event is { type: "subagent"; status: string; result?: string } =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        (event as { type?: string }).type === "subagent",
+    );
+    expect(subagentEvents.some((event) => event.status === "failed")).toBe(false);
+    expect(subagentEvents).toContainEqual(
+      expect.objectContaining({
+        type: "subagent",
+        status: "completed",
+        result:
+          "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
+      }),
+    );
   });
 
   it("emits a final assistant message when the parent turn hits the tool-call budget", async () => {
