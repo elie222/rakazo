@@ -211,10 +211,6 @@ msgstr "Zur Routine hinzufügen"
 msgid "Add Treg"
 msgstr "Treg hinzufügen"
 
-#: src/pages/PluginsOverlay.tsx:279
-msgid "Added"
-msgstr "Hinzugefügt"
-
 #: src/pages/McpServersOverlay.tsx:363
 #: src/pages/PluginsOverlay.tsx:276
 msgid "Adding…"
@@ -1905,6 +1901,7 @@ msgid "Release"
 msgstr "Freigeben"
 
 #: src/components/ApprovalRulesSettings.tsx:138
+#: src/pages/PluginsOverlay.tsx:279
 #: src/pages/PluginsOverlay.tsx:454
 #: src/pages/ScratchpadSection.tsx:162
 msgid "Remove"

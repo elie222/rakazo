@@ -139,10 +139,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(gmailRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
-  await gmailRow.getByRole("button", { name: "Added", exact: true }).click();
+  await gmailRow.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
@@ -151,8 +151,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
-  await expect(linearRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+  await expect(linearRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
 
   const advanced = page.getByTestId("integrations-advanced");

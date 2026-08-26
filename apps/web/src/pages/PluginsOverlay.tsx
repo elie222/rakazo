@@ -276,7 +276,7 @@ export function PluginsOverlay({
                       <Trans>Adding…</Trans>
                     )
                   ) : item.connected ? (
-                    <Trans>Added</Trans>
+                    <Trans>Remove</Trans>
                   ) : (
                     <Trans>Add</Trans>
                   )}

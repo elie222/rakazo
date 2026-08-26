@@ -573,6 +573,5 @@
   "Your key or subscription token is stored securely and is never shown here.": "API 키 또는 구독 토큰은 서버에 안전하게 저장되며 이 화면에 다시 표시되지 않습니다.",
   "Your name": "이름",
   "Your team of always-on agents<0/>that you can give real work to.": "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀",
-  "Added": "추가됨",
   "No managed app catalog is configured on this deployment.": "이 서버에는 관리형 앱 목록이 설정되지 않았습니다."
 }

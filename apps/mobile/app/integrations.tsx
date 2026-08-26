@@ -187,7 +187,7 @@ export default function Integrations() {
                 onPress={() => void (item.connected ? revoke(item) : connect(item))}
               >
                 <Text style={styles.link}>
-                  {pending === key ? "Working…" : item.connected ? "Added" : "Add"}
+                  {pending === key ? "Working…" : item.connected ? "Remove" : "Add"}
                 </Text>
               </Pressable>
             </View>
