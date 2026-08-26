@@ -58,11 +58,26 @@ function cronUnitLabel(unit: CronUnit): string {
   }
 }
 
+function cronUnitLabelSingular(unit: CronUnit): string {
+  switch (unit) {
+    case "minutes":
+      return t`minute`;
+    case "hours":
+      return t`hour`;
+    case "days":
+      return t`day`;
+    default:
+      return unit;
+  }
+}
+
 function describeCronPresetLocalized(preset: CronPreset): { lead: string; detail: string } {
   if (preset.freq === "Interval") {
+    const unitLabel =
+      preset.n === 1 ? cronUnitLabelSingular(preset.unit) : cronUnitLabel(preset.unit);
     return {
       lead: t`Every`,
-      detail: t`${preset.n} ${cronUnitLabel(preset.unit)}`,
+      detail: t`${preset.n} ${unitLabel}`,
     };
   }
   if (preset.freq === "Every hour") {

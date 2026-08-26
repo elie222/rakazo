@@ -41,10 +41,9 @@ msgid "{0} (over 10 MiB)"
 msgstr "{0} (over 10 MiB)"
 
 #. placeholder {0}: preset.n
-#. placeholder {1}: cronUnitLabel(preset.unit)
-#: src/pages/RoutineSchedule.tsx:65
-msgid "{0} {1}"
-msgstr "{0} {1}"
+#: src/pages/RoutineSchedule.tsx:80
+msgid "{0} {unitLabel}"
+msgstr "{0} {unitLabel}"
 
 #. placeholder {0}: block.name
 #: src/pages/Shell.tsx:5070
@@ -68,7 +67,7 @@ msgstr "{0} MB"
 
 #. placeholder {0}: usage.runs
 #. placeholder {1}: usage.inputTokens + usage.outputTokens
-#: src/pages/AccountSettingsOverlay.tsx:122
+#: src/pages/AccountSettingsOverlay.tsx:118
 #: src/pages/Shell.tsx:2020
 msgid "{0} runs · {1} tokens"
 msgstr "{0} runs · {1} tokens"
@@ -116,7 +115,7 @@ msgstr "{title}, {label}"
 msgid "@{0}"
 msgstr "@{0}"
 
-#: src/pages/RoutineSchedule.tsx:135
+#: src/pages/RoutineSchedule.tsx:150
 msgid "+ Add another schedule"
 msgstr "+ Add another schedule"
 
@@ -128,7 +127,7 @@ msgstr "+ Teach a task"
 msgid "Access token (optional)"
 msgstr "Access token (optional)"
 
-#: src/pages/AccountSettingsOverlay.tsx:75
+#: src/pages/AccountSettingsOverlay.tsx:94
 msgid "Account"
 msgstr "Account"
 
@@ -136,7 +135,7 @@ msgstr "Account"
 msgid "Account default"
 msgstr "Account default"
 
-#: src/pages/AccountSettingsOverlay.tsx:60
+#: src/pages/AccountSettingsOverlay.tsx:79
 msgid "Account preferences apply across all your bots."
 msgstr "Account preferences apply across all your bots."
 
@@ -215,7 +214,7 @@ msgstr "Add Treg"
 msgid "Adding…"
 msgstr "Adding…"
 
-#: src/pages/AccountSettingsOverlay.tsx:139
+#: src/pages/AccountSettingsOverlay.tsx:135
 #: src/pages/RoutineSchedule.tsx:42
 #: src/pages/Shell.tsx:4364
 msgid "Advanced"
@@ -290,12 +289,12 @@ msgid "Answered: {answer}"
 msgstr "Answered: {answer}"
 
 #: src/lib/localized-provider-hint.ts:9
-#: src/pages/ModelSettingsOverlay.tsx:633
-#: src/pages/ModelSettingsOverlay.tsx:636
-#: src/pages/ModelSettingsOverlay.tsx:652
-#: src/pages/Onboarding.tsx:452
-#: src/pages/Onboarding.tsx:455
-#: src/pages/Onboarding.tsx:466
+#: src/pages/ModelSettingsOverlay.tsx:629
+#: src/pages/ModelSettingsOverlay.tsx:632
+#: src/pages/ModelSettingsOverlay.tsx:648
+#: src/pages/Onboarding.tsx:450
+#: src/pages/Onboarding.tsx:453
+#: src/pages/Onboarding.tsx:464
 #: src/pages/VoiceSettingsOverlay.tsx:236
 msgid "API key"
 msgstr "API key"
@@ -380,13 +379,13 @@ msgid "Asleep"
 msgstr "Asleep"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx:75
-#: src/pages/RoutineSchedule.tsx:78
-#: src/pages/RoutineSchedule.tsx:83
+#: src/pages/RoutineSchedule.tsx:90
+#: src/pages/RoutineSchedule.tsx:93
+#: src/pages/RoutineSchedule.tsx:98
 msgid "at {0}"
 msgstr "at {0}"
 
-#: src/pages/RoutineSchedule.tsx:248
+#: src/pages/RoutineSchedule.tsx:263
 msgid "at {timeSelect}"
 msgstr "at {timeSelect}"
 
@@ -398,8 +397,8 @@ msgstr "Attach file"
 msgid "Attachment"
 msgstr "Attachment"
 
-#: src/pages/ModelSettingsOverlay.tsx:566
-#: src/pages/Onboarding.tsx:393
+#: src/pages/ModelSettingsOverlay.tsx:562
+#: src/pages/Onboarding.tsx:391
 msgid "Authorization code or callback URL"
 msgstr "Authorization code or callback URL"
 
@@ -587,7 +586,7 @@ msgstr "Close panel"
 msgid "Close preview"
 msgstr "Close preview"
 
-#: src/pages/AccountSettingsOverlay.tsx:65
+#: src/pages/AccountSettingsOverlay.tsx:84
 msgid "Close user settings"
 msgstr "Close user settings"
 
@@ -650,7 +649,7 @@ msgstr "Connect"
 msgid "Connect a model"
 msgstr "Connect a model"
 
-#: src/pages/ModelSettingsOverlay.tsx:682
+#: src/pages/ModelSettingsOverlay.tsx:678
 msgid "Connect API key"
 msgstr "Connect API key"
 
@@ -674,7 +673,7 @@ msgstr "Connect OAuth"
 msgid "Connect remote or local tool servers and choose which agents can use them."
 msgstr "Connect remote or local tool servers and choose which agents can use them."
 
-#: src/pages/ModelSettingsOverlay.tsx:536
+#: src/pages/ModelSettingsOverlay.tsx:532
 msgid "Connect this provider to use it as your personal model."
 msgstr "Connect this provider to use it as your personal model."
 
@@ -684,7 +683,7 @@ msgstr "Connect Treg"
 
 #: src/pages/McpOAuthCallback.tsx:53
 #: src/pages/MemorySettingsOverlay.tsx:163
-#: src/pages/ModelSettingsOverlay.tsx:381
+#: src/pages/ModelSettingsOverlay.tsx:377
 #: src/pages/PluginsOverlay.tsx:284
 #: src/pages/Shell.tsx:5094
 #: src/pages/VoiceSettingsOverlay.tsx:202
@@ -697,7 +696,7 @@ msgstr "Connected — its tools are available from your next message."
 
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
-#: src/pages/ModelSettingsOverlay.tsx:525
+#: src/pages/ModelSettingsOverlay.tsx:521
 #: src/pages/VoiceSettingsOverlay.tsx:223
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
@@ -727,8 +726,8 @@ msgstr "Connecting…"
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "Connection to {0} is still pending. You can close this and check again."
 
-#: src/pages/Onboarding.tsx:494
-#: src/pages/Onboarding.tsx:549
+#: src/pages/Onboarding.tsx:492
+#: src/pages/Onboarding.tsx:547
 msgid "Continue"
 msgstr "Continue"
 
@@ -970,7 +969,7 @@ msgstr "Create account"
 msgid "Create group"
 msgstr "Create group"
 
-#: src/pages/Onboarding.tsx:512
+#: src/pages/Onboarding.tsx:510
 msgid "Create your first bot"
 msgstr "Create your first bot"
 
@@ -992,13 +991,17 @@ msgstr "Credential"
 msgid "credential saved"
 msgstr "credential saved"
 
-#: src/pages/RoutineSchedule.tsx:72
+#: src/pages/RoutineSchedule.tsx:87
 msgid "Cron"
 msgstr "Cron"
 
-#: src/pages/RoutineSchedule.tsx:253
+#: src/pages/RoutineSchedule.tsx:268
 msgid "Cron expression"
 msgstr "Cron expression"
+
+#: src/pages/RoutineSchedule.tsx:68
+msgid "day"
+msgstr "day"
 
 #: src/pages/RoutineSchedule.tsx:55
 msgid "days"
@@ -1066,12 +1069,12 @@ msgstr "Deny"
 msgid "Deployment default"
 msgstr "Deployment default"
 
-#: src/pages/Onboarding.tsx:528
+#: src/pages/Onboarding.tsx:526
 #: src/pages/Shell.tsx:4185
 msgid "Describe what this bot does"
 msgstr "Describe what this bot does"
 
-#: src/pages/Onboarding.tsx:533
+#: src/pages/Onboarding.tsx:531
 #: src/pages/Shell.tsx:4190
 #: src/pages/Shell.tsx:4352
 msgid "Description"
@@ -1155,30 +1158,30 @@ msgid "Encrypted static credential saved"
 msgstr "Encrypted static credential saved"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: src/pages/ModelSettingsOverlay.tsx:589
-#: src/pages/Onboarding.tsx:415
+#: src/pages/ModelSettingsOverlay.tsx:585
+#: src/pages/Onboarding.tsx:413
 msgid "Enter this code at <0>{0}</0>"
 msgstr "Enter this code at <0>{0}</0>"
 
-#: src/pages/RoutineSchedule.tsx:64
+#: src/pages/RoutineSchedule.tsx:79
 msgid "Every"
 msgstr "Every"
 
-#: src/pages/RoutineSchedule.tsx:244
+#: src/pages/RoutineSchedule.tsx:259
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "every {intervalAmountSelect} {intervalUnitSelect}"
 
 #: src/pages/RoutineSchedule.tsx:32
-#: src/pages/RoutineSchedule.tsx:83
+#: src/pages/RoutineSchedule.tsx:98
 msgid "Every day"
 msgstr "Every day"
 
 #: src/pages/RoutineSchedule.tsx:30
-#: src/pages/RoutineSchedule.tsx:69
+#: src/pages/RoutineSchedule.tsx:84
 msgid "Every hour"
 msgstr "Every hour"
 
-#: src/pages/RoutineSchedule.tsx:78
+#: src/pages/RoutineSchedule.tsx:93
 msgid "Every Monday"
 msgstr "Every Monday"
 
@@ -1225,19 +1228,19 @@ msgstr "Failed to stop"
 msgid "Failure handling"
 msgstr "Failure handling"
 
-#: src/pages/ModelSettingsOverlay.tsx:430
-#: src/pages/Onboarding.tsx:292
+#: src/pages/ModelSettingsOverlay.tsx:426
+#: src/pages/Onboarding.tsx:290
 msgid "Find models"
 msgstr "Find models"
 
-#: src/pages/ModelSettingsOverlay.tsx:430
-#: src/pages/Onboarding.tsx:292
+#: src/pages/ModelSettingsOverlay.tsx:426
+#: src/pages/Onboarding.tsx:290
 msgid "Finding…"
 msgstr "Finding…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/ModelSettingsOverlay.tsx:549
-#: src/pages/Onboarding.tsx:376
+#: src/pages/ModelSettingsOverlay.tsx:545
+#: src/pages/Onboarding.tsx:374
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 
@@ -1291,11 +1294,15 @@ msgstr "Hold to talk"
 msgid "Hold to talk (on-device dictation)"
 msgstr "Hold to talk (on-device dictation)"
 
+#: src/pages/RoutineSchedule.tsx:66
+msgid "hour"
+msgstr "hour"
+
 #: src/pages/RoutineSchedule.tsx:53
 msgid "hours"
 msgstr "hours"
 
-#: src/pages/RoutineSchedule.tsx:227
+#: src/pages/RoutineSchedule.tsx:242
 msgid "How often"
 msgstr "How often"
 
@@ -1348,11 +1355,11 @@ msgstr "Interrupt"
 msgid "Interval"
 msgstr "Interval"
 
-#: src/pages/RoutineSchedule.tsx:161
+#: src/pages/RoutineSchedule.tsx:176
 msgid "Interval amount"
 msgstr "Interval amount"
 
-#: src/pages/RoutineSchedule.tsx:176
+#: src/pages/RoutineSchedule.tsx:191
 msgid "Interval unit"
 msgstr "Interval unit"
 
@@ -1377,9 +1384,9 @@ msgstr "Keep memories"
 msgid "Keys stay on the server. The app only learns whether a provider is configured."
 msgstr "Keys stay on the server. The app only learns whether a provider is configured."
 
-#: src/pages/AccountSettingsOverlay.tsx:83
-#: src/pages/AccountSettingsOverlay.tsx:87
-#: src/pages/AccountSettingsOverlay.tsx:94
+#: src/pages/AccountSettingsOverlay.tsx:102
+#: src/pages/AccountSettingsOverlay.tsx:255
+#: src/pages/AccountSettingsOverlay.tsx:274
 msgid "Language"
 msgstr "Language"
 
@@ -1404,7 +1411,7 @@ msgid "Loading memory settings…"
 msgstr "Loading memory settings…"
 
 #: src/pages/ModelSettingsOverlay.tsx:307
-#: src/pages/ModelSettingsOverlay.tsx:717
+#: src/pages/ModelSettingsOverlay.tsx:713
 msgid "Loading model catalog…"
 msgstr "Loading model catalog…"
 
@@ -1520,30 +1527,34 @@ msgstr "Minimal"
 msgid "Minimize"
 msgstr "Minimize"
 
+#: src/pages/RoutineSchedule.tsx:64
+msgid "minute"
+msgstr "minute"
+
 #: src/pages/RoutineSchedule.tsx:51
 msgid "minutes"
 msgstr "minutes"
 
-#: src/pages/ModelSettingsOverlay.tsx:435
-#: src/pages/ModelSettingsOverlay.tsx:496
-#: src/pages/ModelSettingsOverlay.tsx:830
-#: src/pages/Onboarding.tsx:297
-#: src/pages/Onboarding.tsx:346
-#: src/pages/Onboarding.tsx:354
+#: src/pages/ModelSettingsOverlay.tsx:431
+#: src/pages/ModelSettingsOverlay.tsx:492
+#: src/pages/ModelSettingsOverlay.tsx:826
+#: src/pages/Onboarding.tsx:295
+#: src/pages/Onboarding.tsx:344
+#: src/pages/Onboarding.tsx:352
 #: src/pages/Shell.tsx:4375
 msgid "Model"
 msgstr "Model"
 
-#: src/pages/ModelSettingsOverlay.tsx:477
-#: src/pages/Onboarding.tsx:327
+#: src/pages/ModelSettingsOverlay.tsx:473
+#: src/pages/Onboarding.tsx:325
 msgid "Model id"
 msgstr "Model id"
 
-#: src/pages/ModelSettingsOverlay.tsx:847
+#: src/pages/ModelSettingsOverlay.tsx:843
 msgid "Model options"
 msgstr "Model options"
 
-#: src/pages/AccountSettingsOverlay.tsx:128
+#: src/pages/AccountSettingsOverlay.tsx:124
 msgid "Model spend uses your provider keys."
 msgstr "Model spend uses your provider keys."
 
@@ -1556,12 +1567,12 @@ msgstr "Model updated."
 msgid "Models"
 msgstr "Models"
 
-#: src/pages/ModelSettingsOverlay.tsx:448
-#: src/pages/Onboarding.tsx:304
+#: src/pages/ModelSettingsOverlay.tsx:444
+#: src/pages/Onboarding.tsx:302
 msgid "Models from server"
 msgstr "Models from server"
 
-#: src/pages/RoutineSchedule.tsx:81
+#: src/pages/RoutineSchedule.tsx:96
 msgid "Monthly"
 msgstr "Monthly"
 
@@ -1582,7 +1593,7 @@ msgstr "Move to"
 #: src/pages/Auth.tsx:47
 #: src/pages/GroupPanel.tsx:110
 #: src/pages/GroupPanel.tsx:201
-#: src/pages/Onboarding.tsx:515
+#: src/pages/Onboarding.tsx:513
 #: src/pages/Shell.tsx:2487
 #: src/pages/Shell.tsx:4170
 #: src/pages/Shell.tsx:4334
@@ -1590,7 +1601,7 @@ msgstr "Move to"
 msgid "Name"
 msgstr "Name"
 
-#: src/pages/Onboarding.tsx:519
+#: src/pages/Onboarding.tsx:517
 #: src/pages/Shell.tsx:4175
 msgid "Name this bot"
 msgstr "Name this bot"
@@ -1676,11 +1687,11 @@ msgstr "No MCP or API tool sources installed yet."
 msgid "No MCP servers yet."
 msgstr "No MCP servers yet."
 
-#: src/pages/ModelSettingsOverlay.tsx:721
+#: src/pages/ModelSettingsOverlay.tsx:717
 msgid "No model catalog is available."
 msgstr "No model catalog is available."
 
-#: src/pages/ModelSettingsOverlay.tsx:389
+#: src/pages/ModelSettingsOverlay.tsx:385
 msgid "No providers found."
 msgstr "No providers found."
 
@@ -1696,7 +1707,7 @@ msgstr "None yet"
 msgid "Not configured"
 msgstr "Not configured"
 
-#: src/pages/ModelSettingsOverlay.tsx:527
+#: src/pages/ModelSettingsOverlay.tsx:523
 #: src/pages/VoiceSettingsOverlay.tsx:225
 msgid "Not connected"
 msgstr "Not connected"
@@ -1731,7 +1742,7 @@ msgid "OAuth will be available for providers that support browser authorization.
 msgstr "OAuth will be available for providers that support browser authorization. Static headers work today."
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx:81
+#: src/pages/RoutineSchedule.tsx:96
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
 
@@ -1759,8 +1770,8 @@ msgstr "Open the computer view on web or desktop to teach a task."
 msgid "Open work"
 msgstr "Open work"
 
-#: src/pages/ModelSettingsOverlay.tsx:408
-#: src/pages/Onboarding.tsx:271
+#: src/pages/ModelSettingsOverlay.tsx:404
+#: src/pages/Onboarding.tsx:269
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatible server URL"
 
@@ -1772,12 +1783,12 @@ msgstr "Opened its thread."
 msgid "Opening your workspace…"
 msgstr "Opening your workspace…"
 
-#: src/pages/ModelSettingsOverlay.tsx:639
-#: src/pages/Onboarding.tsx:458
+#: src/pages/ModelSettingsOverlay.tsx:635
+#: src/pages/Onboarding.tsx:456
 msgid "Optional"
 msgstr "Optional"
 
-#: src/pages/AccountSettingsOverlay.tsx:142
+#: src/pages/AccountSettingsOverlay.tsx:138
 msgid "Optional controls most people never need"
 msgstr "Optional controls most people never need"
 
@@ -1785,11 +1796,11 @@ msgstr "Optional controls most people never need"
 msgid "Optional header value"
 msgstr "Optional header value"
 
-#: src/pages/ModelSettingsOverlay.tsx:650
+#: src/pages/ModelSettingsOverlay.tsx:646
 msgid "Or connect an API key"
 msgstr "Or connect an API key"
 
-#: src/pages/Onboarding.tsx:466
+#: src/pages/Onboarding.tsx:464
 msgid "Or paste an API key"
 msgstr "Or paste an API key"
 
@@ -1797,8 +1808,8 @@ msgstr "Or paste an API key"
 msgid "Organization API key"
 msgstr "Organization API key"
 
-#: src/pages/ModelSettingsOverlay.tsx:457
-#: src/pages/Onboarding.tsx:313
+#: src/pages/ModelSettingsOverlay.tsx:453
+#: src/pages/Onboarding.tsx:311
 msgid "Other model…"
 msgstr "Other model…"
 
@@ -1816,8 +1827,8 @@ msgstr "Password"
 msgid "Paste a replacement key"
 msgstr "Paste a replacement key"
 
-#: src/pages/ModelSettingsOverlay.tsx:419
-#: src/pages/Onboarding.tsx:282
+#: src/pages/ModelSettingsOverlay.tsx:415
+#: src/pages/Onboarding.tsx:280
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 
@@ -1825,7 +1836,7 @@ msgstr "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if
 msgid "Paste your API key"
 msgstr "Paste your API key"
 
-#: src/pages/ModelSettingsOverlay.tsx:521
+#: src/pages/ModelSettingsOverlay.tsx:517
 #: src/pages/VoiceSettingsOverlay.tsx:219
 msgid "Personal credential"
 msgstr "Personal credential"
@@ -1915,7 +1926,7 @@ msgstr "Remove mention {0}"
 msgid "Remove skill {0}"
 msgstr "Remove skill {0}"
 
-#: src/pages/RoutineSchedule.tsx:110
+#: src/pages/RoutineSchedule.tsx:125
 msgid "Remove this schedule"
 msgstr "Remove this schedule"
 
@@ -1936,8 +1947,8 @@ msgstr "Removing…"
 msgid "Reopen"
 msgstr "Reopen"
 
-#: src/pages/ModelSettingsOverlay.tsx:648
-#: src/pages/ModelSettingsOverlay.tsx:680
+#: src/pages/ModelSettingsOverlay.tsx:644
+#: src/pages/ModelSettingsOverlay.tsx:676
 msgid "Replace API key"
 msgstr "Replace API key"
 
@@ -2003,7 +2014,7 @@ msgstr "Running…"
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/ModelSettingsOverlay.tsx:678
+#: src/pages/ModelSettingsOverlay.tsx:674
 #: src/pages/Shell.tsx:2579
 #: src/pages/Shell.tsx:4506
 msgid "Save"
@@ -2028,7 +2039,7 @@ msgstr "Saved."
 
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/ModelSettingsOverlay.tsx:676
+#: src/pages/ModelSettingsOverlay.tsx:672
 #: src/pages/Shell.tsx:2579
 msgid "Saving…"
 msgstr "Saving…"
@@ -2091,8 +2102,8 @@ msgid "Server name"
 msgstr "Server name"
 
 #: src/pages/McpServersOverlay.tsx:317
-#: src/pages/ModelSettingsOverlay.tsx:404
-#: src/pages/Onboarding.tsx:267
+#: src/pages/ModelSettingsOverlay.tsx:400
+#: src/pages/Onboarding.tsx:265
 msgid "Server URL"
 msgstr "Server URL"
 
@@ -2100,7 +2111,7 @@ msgstr "Server URL"
 msgid "Set up voice to call"
 msgstr "Set up voice to call"
 
-#: src/pages/AccountSettingsOverlay.tsx:57
+#: src/pages/AccountSettingsOverlay.tsx:76
 #: src/pages/Shell.tsx:1954
 #: src/pages/Shell.tsx:1964
 #: src/pages/Shell.tsx:2224
@@ -2115,8 +2126,8 @@ msgstr "Settings: General"
 msgid "Settings: Usage"
 msgstr "Settings: Usage"
 
-#: src/pages/ModelSettingsOverlay.tsx:416
-#: src/pages/Onboarding.tsx:279
+#: src/pages/ModelSettingsOverlay.tsx:412
+#: src/pages/Onboarding.tsx:277
 msgid "Setup help"
 msgstr "Setup help"
 
@@ -2135,7 +2146,7 @@ msgstr "Show settings"
 
 #: src/lib/localized-provider-hint.ts:7
 #: src/pages/Auth.tsx:114
-#: src/pages/ModelSettingsOverlay.tsx:621
+#: src/pages/ModelSettingsOverlay.tsx:617
 #: src/pages/Onboarding.tsx:105
 msgid "Sign in"
 msgstr "Sign in"
@@ -2161,7 +2172,7 @@ msgstr "Skill {0}"
 msgid "Skip"
 msgstr "Skip"
 
-#: src/pages/Onboarding.tsx:504
+#: src/pages/Onboarding.tsx:502
 msgid "Skip for now"
 msgstr "Skip for now"
 
@@ -2209,8 +2220,8 @@ msgid "Starting"
 msgstr "Starting"
 
 #: src/components/teach/TeachComputerSection.tsx:115
-#: src/pages/ModelSettingsOverlay.tsx:619
-#: src/pages/Onboarding.tsx:443
+#: src/pages/ModelSettingsOverlay.tsx:615
+#: src/pages/Onboarding.tsx:441
 msgid "Starting…"
 msgstr "Starting…"
 
@@ -2253,12 +2264,12 @@ msgstr "Stored encrypted"
 msgid "subagent"
 msgstr "subagent"
 
-#: src/pages/ModelSettingsOverlay.tsx:579
-#: src/pages/Onboarding.tsx:405
+#: src/pages/ModelSettingsOverlay.tsx:575
+#: src/pages/Onboarding.tsx:403
 msgid "Submit"
 msgstr "Submit"
 
-#: src/pages/ModelSettingsOverlay.tsx:707
+#: src/pages/ModelSettingsOverlay.tsx:703
 msgid "Switching…"
 msgstr "Switching…"
 
@@ -2337,7 +2348,7 @@ msgstr "This Mac runs shell commands with your account, including files in your 
 msgid "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 
-#: src/pages/Onboarding.tsx:479
+#: src/pages/Onboarding.tsx:477
 msgid "This provider cannot paste a key here. Skip if this deployment already has credentials."
 msgstr "This provider cannot paste a key here. Skip if this deployment already has credentials."
 
@@ -2357,15 +2368,15 @@ msgstr "This server is already connected. Disconnect it first to authorize again
 msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
 msgstr "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
 
-#: src/pages/ModelSettingsOverlay.tsx:690
+#: src/pages/ModelSettingsOverlay.tsx:686
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 
-#: src/pages/RoutineSchedule.tsx:191
+#: src/pages/RoutineSchedule.tsx:206
 msgid "Time of day"
 msgstr "Time of day"
 
-#: src/pages/Onboarding.tsx:524
+#: src/pages/Onboarding.tsx:522
 #: src/pages/Shell.tsx:4180
 #: src/pages/Shell.tsx:4343
 msgid "Title"
@@ -2396,7 +2407,7 @@ msgstr "Unpin"
 msgid "Unsupported file type: {0}"
 msgstr "Unsupported file type: {0}"
 
-#: src/pages/AccountSettingsOverlay.tsx:118
+#: src/pages/AccountSettingsOverlay.tsx:114
 #: src/pages/Shell.tsx:2015
 msgid "Usage"
 msgstr "Usage"
@@ -2405,12 +2416,12 @@ msgstr "Usage"
 msgid "Use {hostLabel}"
 msgstr "Use {hostLabel}"
 
-#: src/pages/ModelSettingsOverlay.tsx:488
-#: src/pages/Onboarding.tsx:338
+#: src/pages/ModelSettingsOverlay.tsx:484
+#: src/pages/Onboarding.tsx:336
 msgid "Use a found model"
 msgstr "Use a found model"
 
-#: src/pages/ModelSettingsOverlay.tsx:709
+#: src/pages/ModelSettingsOverlay.tsx:705
 msgid "Use this model"
 msgstr "Use this model"
 
@@ -2429,10 +2440,10 @@ msgstr "Verifying…"
 msgid "Voice"
 msgstr "Voice"
 
-#: src/pages/ModelSettingsOverlay.tsx:583
-#: src/pages/ModelSettingsOverlay.tsx:605
-#: src/pages/Onboarding.tsx:409
-#: src/pages/Onboarding.tsx:431
+#: src/pages/ModelSettingsOverlay.tsx:579
+#: src/pages/ModelSettingsOverlay.tsx:601
+#: src/pages/Onboarding.tsx:407
+#: src/pages/Onboarding.tsx:429
 msgid "Waiting for sign-in…"
 msgstr "Waiting for sign-in…"
 
@@ -2441,7 +2452,7 @@ msgid "Waiting…"
 msgstr "Waiting…"
 
 #: src/pages/RoutineSchedule.tsx:34
-#: src/pages/RoutineSchedule.tsx:75
+#: src/pages/RoutineSchedule.tsx:90
 msgid "Weekdays"
 msgstr "Weekdays"
 
@@ -2453,7 +2464,7 @@ msgstr "What about its memories?"
 msgid "What result will you demonstrate?"
 msgstr "What result will you demonstrate?"
 
-#: src/pages/Onboarding.tsx:537
+#: src/pages/Onboarding.tsx:535
 #: src/pages/Shell.tsx:4195
 msgid "What this bot is for"
 msgstr "What this bot is for"
@@ -2508,7 +2519,7 @@ msgstr "You have control"
 msgid "Your email address"
 msgstr "Your email address"
 
-#: src/pages/ModelSettingsOverlay.tsx:532
+#: src/pages/ModelSettingsOverlay.tsx:528
 msgid "Your key or subscription token is stored securely and is never shown here."
 msgstr "Your key or subscription token is stored securely and is never shown here."
 

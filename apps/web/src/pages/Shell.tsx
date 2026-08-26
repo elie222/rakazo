@@ -5153,7 +5153,7 @@ function ChartCanvas({
     return () => {
       cancelled = true;
     };
-  }, [spec, data, width, height]);
+  }, [spec, data, width, height, t]);
   if (error)
     return (
       <div className="text-[13px] text-[#F3A2AA]">
