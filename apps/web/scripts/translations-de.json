@@ -149,7 +149,6 @@
   "Connect": "Verbinden",
   "Connect a model": "Modell verbinden",
   "Connect API key": "API-Schlüssel verbinden",
-  "Connect apps or add Treg, MCP, and OpenAPI tool sources.": "Verbinde Apps oder füge Treg-, MCP- und OpenAPI-Toolquellen hinzu.",
   "Connect ElevenLabs, OpenAI, or Cartesia": "ElevenLabs, OpenAI oder Cartesia verbinden",
   "Connect MCP server “{name}”": "MCP-Server „{name}“ verbinden",
   "Connect OAuth": "OAuth verbinden",
@@ -308,7 +307,6 @@
   "Inputs": "Eingaben",
   "Instance API key": "Instanz-API-Schlüssel",
   "Instruction": "Anweisung",
-  "Integration views": "Integrationsansichten",
   "Integrations": "Integrationen",
   "Interrupt": "Unterbrechen",
   "Interval": "Intervall",
@@ -378,12 +376,10 @@
   "No apps match your search.": "Keine Apps entsprechen deiner Suche.",
   "no auth": "keine Authentifizierung",
   "No authentication": "Keine Authentifizierung",
-  "No connected apps yet.": "Noch keine Apps verbunden.",
   "No connection record found for {0}.": "Kein Verbindungseintrag für {0} gefunden.",
   "No credential saved": "Keine Anmeldedaten gespeichert",
   "No exceptions. Actions run automatically.": "Keine Ausnahmen. Aktionen werden automatisch ausgeführt.",
   "No longer active": "Nicht mehr aktiv",
-  "No managed app catalog is configured on this deployment. You can still add Treg, MCP, or OpenAPI sources.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert. Du kannst weiterhin Treg-, MCP- oder OpenAPI-Quellen hinzufügen.",
   "No MCP or API tool sources installed yet.": "Noch keine MCP- oder API-Toolquellen installiert.",
   "No MCP servers yet.": "Noch keine MCP-Server.",
   "No model catalog is available.": "Kein Modellkatalog verfügbar.",
@@ -576,5 +572,6 @@
   "Your email address": "Deine E-Mail-Adresse",
   "Your key or subscription token is stored securely and is never shown here.": "Dein Schlüssel oder Abonnementtoken wird sicher gespeichert und hier nie angezeigt.",
   "Your name": "Dein Name",
-  "Your team of always-on agents<0/>that you can give real work to.": "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+  "Your team of always-on agents<0/>that you can give real work to.": "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben.",
+  "No managed app catalog is configured on this deployment.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert."
 }

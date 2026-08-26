@@ -3029,7 +3029,7 @@ const Transcript = memo(function Transcript({
     <div
       ref={scrollRef}
       data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+      className="rk-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
     >
       {olderCursor != null ? (
         <button
@@ -3042,7 +3042,11 @@ const Transcript = memo(function Transcript({
         </button>
       ) : null}
       {messages.map((message) => (
-        <div key={message.id} data-message-id={message.id} className="group/message relative">
+        <div
+          key={message.id}
+          data-message-id={message.id}
+          className="group/message relative pt-9 hover:z-20"
+        >
           <MessageHoverActions message={message} onReply={onReply} />
           <MessageView
             artifactTarget={artifactTarget}
@@ -3643,7 +3647,7 @@ function MessageHoverActions({
   return (
     <div
       data-testid="message-hover-actions"
-      className="pointer-events-none absolute end-0 -top-1 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+      className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
     >
       <button
         type="button"

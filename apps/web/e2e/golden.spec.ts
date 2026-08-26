@@ -128,32 +128,48 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Slack", { exact: true })).toBeVisible();
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
+  await expect(page.getByText("Tool sources", { exact: true })).toBeHidden();
+  await expect(
+    page.getByText("Connect apps or add Treg, MCP, and OpenAPI tool sources.", { exact: true }),
+  ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
   const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
-  await gmailRow.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(gmailRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Connected", exact: true }).click();
-  await expect(page.getByText("Slack", { exact: true })).toBeHidden();
+  await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
-  await gmailRow.getByRole("button", { name: "Revoke", exact: true }).click();
-  await expect(page.getByText("No connected apps yet.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Gmail", { exact: true })).toBeHidden();
+  await gmailRow.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
-
-  await page.getByRole("tab", { name: "Apps", exact: true }).click();
-  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
-  await expect(gmailRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 
   const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
   const connectPopup = page.waitForEvent("popup");
-  await linearRow.getByRole("button", { name: "Connect", exact: true }).click();
+  await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
-  await expect(linearRow.getByRole("button", { name: "Revoke", exact: true })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Revoke", exact: true }).click();
-  await expect(linearRow.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(linearRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+
+  const advanced = page.getByTestId("integrations-advanced");
+  await advanced.evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
+  await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
+  // MCP → OpenAPI → Treg order inside Advanced.
+  const advancedActions = advanced.locator("button");
+  await expect(advancedActions.nth(0)).toHaveText("MCP servers");
+  await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(3)).toHaveText("Add Treg");
 
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");

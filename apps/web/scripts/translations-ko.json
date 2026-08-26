@@ -149,7 +149,6 @@
   "Connect": "연결",
   "Connect a model": "AI 모델 연결",
   "Connect API key": "API 키 연결",
-  "Connect apps or add Treg, MCP, and OpenAPI tool sources.": "앱을 연결하거나 Treg, MCP, OpenAPI 도구를 추가하세요.",
   "Connect ElevenLabs, OpenAI, or Cartesia": "ElevenLabs, OpenAI 또는 Cartesia 연결",
   "Connect MCP server “{name}”": "MCP 서버 ‘{name}’ 연결",
   "Connect OAuth": "OAuth 연결",
@@ -308,7 +307,6 @@
   "Inputs": "입력값",
   "Instance API key": "인스턴스 API 키",
   "Instruction": "실행할 내용",
-  "Integration views": "연동 목록 보기",
   "Integrations": "앱·도구 연동",
   "Interrupt": "끼어들기",
   "Interval": "간격",
@@ -378,12 +376,10 @@
   "No apps match your search.": "검색 결과가 없습니다.",
   "no auth": "인증 없음",
   "No authentication": "인증 없음",
-  "No connected apps yet.": "아직 연결된 앱이 없습니다.",
   "No connection record found for {0}.": "{0}의 연결 정보를 찾지 못했습니다.",
   "No credential saved": "저장된 인증 정보 없음",
   "No exceptions. Actions run automatically.": "별도 확인 규칙이 없습니다. 작업이 자동으로 실행됩니다.",
   "No longer active": "이미 종료된 요청입니다",
-  "No managed app catalog is configured on this deployment. You can still add Treg, MCP, or OpenAPI sources.": "이 서버에는 관리형 앱 목록이 설정되지 않았습니다. Treg, MCP 또는 OpenAPI 도구는 직접 추가할 수 있습니다.",
   "No MCP or API tool sources installed yet.": "아직 추가된 MCP 또는 API 도구가 없습니다.",
   "No MCP servers yet.": "아직 연결된 MCP 서버가 없습니다.",
   "No model catalog is available.": "사용 가능한 모델 목록이 없습니다.",
@@ -576,5 +572,6 @@
   "Your email address": "이메일 주소",
   "Your key or subscription token is stored securely and is never shown here.": "API 키 또는 구독 토큰은 서버에 안전하게 저장되며 이 화면에 다시 표시되지 않습니다.",
   "Your name": "이름",
-  "Your team of always-on agents<0/>that you can give real work to.": "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+  "Your team of always-on agents<0/>that you can give real work to.": "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀",
+  "No managed app catalog is configured on this deployment.": "이 서버에는 관리형 앱 목록이 설정되지 않았습니다."
 }

@@ -149,9 +149,7 @@ export default function Account() {
         >
           <View>
             <Text style={styles.settingsTitle}>Integrations</Text>
-            <Text style={styles.settingsExplanation}>
-              Connect apps and add Treg, MCP, or OpenAPI tools
-            </Text>
+            <Text style={styles.settingsExplanation}>Connect apps.</Text>
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
