@@ -2141,6 +2141,18 @@ export function ShellPage() {
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
+          onJumpToMessage={(messageId) => {
+            const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+            if (existing) {
+              existing.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+            if (inGroup && groupId) {
+              void jumpToMessage({ groupId, messageId });
+              return;
+            }
+            if (active?.id) void jumpToMessage({ botId: active.id, messageId });
+          }}
           onOpenPeerMessages={(peerBotId) => {
             setPeerMessagesFocusId(peerBotId);
             setPeerMessagesOpen(true);
@@ -2966,6 +2978,7 @@ const Transcript = memo(function Transcript({
   onOpenBot,
   onAnswer,
   onReply,
+  onJumpToMessage,
   onOpenPeerMessages,
   memberName,
   onRefresh,
@@ -2987,6 +3000,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peerBotId: string) => void;
   memberName?: (botId: string | undefined) => string | undefined;
   onRefresh: () => Promise<void>;
@@ -3032,11 +3046,8 @@ const Transcript = memo(function Transcript({
             replyPreview={
               message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
             }
-            onJumpToMessage={(messageId) => {
-              document
-                .querySelector(`[data-message-id="${messageId}"]`)
-                ?.scrollIntoView({ behavior: "smooth", block: "center" });
-            }}
+            replyToMessageId={message.replyToMessageId}
+            onJumpToMessage={onJumpToMessage}
             onRefresh={onRefresh}
             onBotChanged={onBotChanged}
             onAddRoutine={onAddRoutine}
@@ -3742,6 +3753,7 @@ const MessageView = memo(function MessageView({
   speakerName,
   memberName,
   replyPreview,
+  replyToMessageId,
   onJumpToMessage,
   onRefresh,
   onBotChanged,
@@ -3759,6 +3771,7 @@ const MessageView = memo(function MessageView({
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   replyPreview?: ThreadMessage;
+  replyToMessageId?: string;
   onJumpToMessage?: (messageId: string) => void;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
@@ -3775,6 +3788,7 @@ const MessageView = memo(function MessageView({
       (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
     );
   const isLive = message.id.startsWith("progress:");
+  const parentJumpId = replyPreview?.id ?? replyToMessageId;
   const messageContext = (
     <>
       {speakerName ? (
@@ -3782,16 +3796,16 @@ const MessageView = memo(function MessageView({
           {speakerName}
         </div>
       ) : null}
-      {replyPreview ? (
+      {parentJumpId ? (
         <button
           type="button"
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
-          onClick={() => onJumpToMessage?.(replyPreview.id)}
+          onClick={() => onJumpToMessage?.(parentJumpId)}
           className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-start text-[12.5px] text-[#85858A] hover:border-[#34343B] hover:text-[#C9C9CE]"
           dir="auto"
         >
-          {previewMessageText(replyPreview)}
+          {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
         </button>
       ) : null}
     </>
