@@ -1,23 +1,63 @@
 ---
+import {
+  DEFAULT_LOCALE,
+  LOCALE_LABELS,
+  LOCALES,
+  isLocale,
+  localeHomePath,
+  type Locale,
+} from "../i18n/locales";
 import { CHANGELOG_URL, DOCS_URL, GITHUB_URL, INBOX_ZERO_URL } from "../site";
 import Logo from "./Logo.astro";
+
+type Props = {
+  locale?: Locale;
+  languagesLabel?: string;
+  navLabel?: string;
+  homeHref?: string;
+};
+
+const currentLocale: Locale = isLocale(Astro.currentLocale)
+  ? Astro.currentLocale
+  : (Astro.props.locale ?? DEFAULT_LOCALE);
+
+const {
+  languagesLabel = "Language",
+  navLabel = "Footer",
+  homeHref = localeHomePath(currentLocale),
+} = Astro.props;
 ---
 
 <footer class="site-footer">
   <div class="site-footer__brand">
-    <Logo />
+    <Logo href={homeHref} />
     <span class="site-footer__legal">
       © 2026 ·
       <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a>
       · Apache-2.0
     </span>
   </div>
-  <nav class="site-footer__links" aria-label="Footer">
-    <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
-    <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs</a>
-    <a href={CHANGELOG_URL} target="_blank" rel="noreferrer">Changelog</a>
-    <a href="/about/">About</a>
-    <a href="/support/">Support</a>
-    <a href="/privacy/">Privacy</a>
-  </nav>
+  <div class="site-footer__nav">
+    <nav class="site-footer__languages" aria-label={languagesLabel}>
+      {
+        LOCALES.map((locale) => (
+          <a
+            href={localeHomePath(locale)}
+            hreflang={locale}
+            aria-current={locale === currentLocale ? "page" : undefined}
+          >
+            {LOCALE_LABELS[locale]}
+          </a>
+        ))
+      }
+    </nav>
+    <nav class="site-footer__links" aria-label={navLabel}>
+      <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
+      <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs</a>
+      <a href={CHANGELOG_URL} target="_blank" rel="noreferrer">Changelog</a>
+      <a href="/about/">About</a>
+      <a href="/support/">Support</a>
+      <a href="/privacy/">Privacy</a>
+    </nav>
+  </div>
 </footer>

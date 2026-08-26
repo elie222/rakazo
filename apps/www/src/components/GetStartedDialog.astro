@@ -1,7 +1,15 @@
 ---
+import type { HomeCopy } from "../i18n/home";
 import { GITHUB_URL } from "../site";
 import Button from "./Button.astro";
 import WaitlistForm from "./WaitlistForm.astro";
+
+type Props = {
+  copy: HomeCopy["getStartedDialog"];
+  waitlist: HomeCopy["waitlist"];
+};
+
+const { copy, waitlist } = Astro.props;
 ---
 
 <dialog class="get-started-dialog" data-get-started-dialog aria-labelledby="get-started-title">
@@ -10,7 +18,7 @@ import WaitlistForm from "./WaitlistForm.astro";
       class="get-started-dialog__close"
       type="button"
       data-get-started-close
-      aria-label="Close get started dialog"
+      aria-label={copy.closeLabel}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="m6 6 12 12M18 6 6 18"></path>
@@ -18,13 +26,22 @@ import WaitlistForm from "./WaitlistForm.astro";
     </button>
 
     <div data-get-started-signup>
-      <div class="eyebrow">Rakazo Cloud</div>
-      <h2 id="get-started-title">Get started with Rakazo</h2>
+      <div class="eyebrow">{copy.eyebrow}</div>
+      <h2 id="get-started-title">{copy.title}</h2>
       <p class="get-started-dialog__copy">
-        Leave your email and we’ll let you know when your hosted workspace is ready.
+        {copy.copy}
       </p>
       <div class="get-started-dialog__form">
-        <WaitlistForm emailId="get-started-email" />
+        <WaitlistForm
+          emailId="get-started-email"
+          emailLabel={waitlist.emailLabel}
+          placeholder={waitlist.placeholder}
+          submitLabel={waitlist.submit}
+          joiningLabel={waitlist.joining}
+          successLabel={waitlist.success}
+          addedLabel={waitlist.added}
+          errorLabel={waitlist.error}
+        />
       </div>
     </div>
 
@@ -34,13 +51,13 @@ import WaitlistForm from "./WaitlistForm.astro";
           <path d="m5 12 4 4L19 6"></path>
         </svg>
       </div>
-      <h2 id="get-started-success-title" tabindex="-1" data-get-started-success-title>You’re in.</h2>
+      <h2 id="get-started-success-title" tabindex="-1" data-get-started-success-title>{copy.successTitle}</h2>
       <p class="get-started-dialog__copy">
-        We’ll email you when hosted Rakazo is ready. Want to start today? Rakazo is already available on GitHub.
+        {copy.successCopy}
       </p>
       <div class="get-started-dialog__actions">
-        <Button href={GITHUB_URL} external>View on GitHub</Button>
-        <button class="button button--secondary" type="button" data-get-started-close>Done</button>
+        <Button href={GITHUB_URL} external>{copy.viewOnGithub}</Button>
+        <button class="button button--secondary" type="button" data-get-started-close>{copy.done}</button>
       </div>
     </div>
   </div>

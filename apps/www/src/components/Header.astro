@@ -1,20 +1,34 @@
 ---
+import { getHomeCopy } from "../i18n/home";
+import type { HomeCopy } from "../i18n/home";
+import {
+  DEFAULT_LOCALE,
+  localeHashPath,
+  localeHomePath,
+  type Locale,
+} from "../i18n/locales";
 import { DOCS_URL, GITHUB_URL } from "../site";
 import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
 type Props = {
   starsLabel: string;
+  locale?: Locale;
+  copy?: HomeCopy["nav"];
+  homeHref?: string;
 };
 
 const { starsLabel } = Astro.props;
+const locale = Astro.props.locale ?? DEFAULT_LOCALE;
+const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
+const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
 const NAV_LINKS = [
-  { href: "/#demo", label: "Product" },
-  { href: "/#roster", label: "Bots" },
-  { href: "/#selfhost", label: "Self-host" },
-  { href: "/#open-source", label: "Open source" },
-  { href: DOCS_URL, label: "Docs", external: true },
+  { href: localeHashPath(locale, "demo"), label: copy.product },
+  { href: localeHashPath(locale, "roster"), label: copy.bots },
+  { href: localeHashPath(locale, "selfhost"), label: copy.selfHost },
+  { href: localeHashPath(locale, "open-source"), label: copy.openSource },
+  { href: DOCS_URL, label: copy.docs, external: true },
 ];
 
 const externalAttrs = { target: "_blank", rel: "noreferrer" };
@@ -22,8 +36,8 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
 
 <header class="site-header">
   <div class="site-header__left">
-    <Logo />
-    <nav class="site-nav" aria-label="Primary">
+    <Logo href={homeHref} />
+    <nav class="site-nav" aria-label={copy.primary}>
       {
         NAV_LINKS.map((link) => (
           <a href={link.href} {...(link.external ? externalAttrs : {})}>
@@ -39,10 +53,10 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
       <span>{starsLabel}</span>
     </a>
     <div class="site-header__cta">
-      <Button href={GITHUB_URL} size="sm" external>View on GitHub</Button>
+      <Button href={GITHUB_URL} size="sm" external>{copy.viewOnGithub}</Button>
     </div>
     <details class="site-menu" data-site-menu>
-      <summary class="site-menu__toggle" aria-label="Menu">
+      <summary class="site-menu__toggle" aria-label={copy.menu}>
         <svg class="site-menu__icon site-menu__icon--open" viewBox="0 0 20 20" aria-hidden="true">
           <path d="M3 6h14M3 10h14M3 14h14" />
         </svg>
@@ -50,7 +64,7 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
           <path d="M5 5l10 10M15 5L5 15" />
         </svg>
       </summary>
-      <nav class="site-menu__panel" aria-label="Site">
+      <nav class="site-menu__panel" aria-label={copy.primary}>
         {
           NAV_LINKS.map((link) => (
             <a href={link.href} {...(link.external ? externalAttrs : {})}>
