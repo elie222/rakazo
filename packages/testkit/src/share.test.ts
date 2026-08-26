@@ -93,6 +93,19 @@ describeShare("bot share import and links", () => {
     expect(rejected.status).toBeGreaterThanOrEqual(400);
   });
 
+  it("rejects share manifests with invalid routine schedules", async () => {
+    const owner = await signup(app, `share-cron-${stamp}@rakazo.test`, "Cron Owner");
+    const manifest = await rpc<ShareManifest>(app, owner, "bots/shareManifest", {
+      botId: (await rpc<Bot>(app, owner, "bots/create", botInput("Cron Bot"))).id,
+    });
+    const invalid = {
+      ...manifest,
+      routines: [{ name: "Bad", prompt: "Nope", crons: ["not-a-cron"], timezone: "UTC" }],
+    };
+    const response = await raw(app, owner, "bots/importShare", { manifest: invalid });
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+
   it("creates public preview links without leaking revoked or expired snapshots", async () => {
     const owner = await signup(app, `share-link-${stamp}@rakazo.test`, "Link Owner");
     const importer = await signup(app, `share-importer-${stamp}@rakazo.test`, "Importer");

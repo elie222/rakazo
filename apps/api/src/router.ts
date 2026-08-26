@@ -3356,25 +3356,32 @@ async function importShareManifest(
       select: { id: true, workspaceId: true, name: true, archivedAt: true, computerId: true },
     });
     if (row) {
-      await destroyBot(
-        {
-          prisma: deps.prisma,
-          sandbox: deps.sandbox,
-          home: deps.home,
-          jobs: deps.jobs,
-          artifacts: deps.artifacts,
-          dataDir: deps.dataDir,
-        },
-        row,
-        {
-          operationId: "import-share-cleanup",
-          traceId: "import-share-cleanup",
-          workspaceId: actor.workspaceId,
-          userId: actor.userId,
-          signal: new AbortController().signal,
-        },
-        { deleteMemories: true },
-      ).catch(() => undefined);
+      try {
+        await destroyBot(
+          {
+            prisma: deps.prisma,
+            sandbox: deps.sandbox,
+            home: deps.home,
+            jobs: deps.jobs,
+            artifacts: deps.artifacts,
+            dataDir: deps.dataDir,
+          },
+          row,
+          {
+            operationId: "import-share-cleanup",
+            traceId: "import-share-cleanup",
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            signal: new AbortController().signal,
+          },
+          { deleteMemories: true },
+        );
+      } catch {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "Could not import share routines and rollback failed; remove the partial bot before retrying.",
+        });
+      }
     }
     throw error instanceof ORPCError
       ? error
