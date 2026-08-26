@@ -59,12 +59,12 @@ msgstr "{0} model{1} · {2}"
 msgid "{0} runs · {1} tokens"
 msgstr "{0} runs · {1} tokens"
 
-#. placeholder {0}: plural(conversations.length, { one: "# peer", other: "# peers" })
-#: src/pages/PeerMessagesOverlay.tsx:148
-msgid "{botName} · {0}"
-msgstr "{botName} · {0}"
+#. placeholder {0}: conversations.length
+#: src/pages/PeerMessagesOverlay.tsx:149
+msgid "{botName} · {0, plural, one {# peer} other {# peers}}"
+msgstr "{botName} · {0, plural, one {# peer} other {# peers}}"
 
-#: src/pages/PeerMessagesOverlay.tsx:146
+#: src/pages/PeerMessagesOverlay.tsx:147
 msgid "{botName} has not messaged another bot yet."
 msgstr "{botName} has not messaged another bot yet."
 
@@ -209,9 +209,9 @@ msgstr "Answer"
 #: src/pages/ModelSettingsOverlay.tsx:628
 #: src/pages/ModelSettingsOverlay.tsx:631
 #: src/pages/ModelSettingsOverlay.tsx:647
-#: src/pages/Onboarding.tsx:445
-#: src/pages/Onboarding.tsx:448
-#: src/pages/Onboarding.tsx:462
+#: src/pages/Onboarding.tsx:447
+#: src/pages/Onboarding.tsx:450
+#: src/pages/Onboarding.tsx:464
 #: src/pages/VoiceSettingsOverlay.tsx:236
 msgid "API key"
 msgstr "API key"
@@ -272,17 +272,16 @@ msgstr "Ask before sending external email"
 msgid "Asleep"
 msgstr "Asleep"
 
-#. js-lingui-explicit-id
-#: src/pages/RoutineSchedule.tsx:254
-msgid "routine-schedule-timed"
-msgstr "at <0/>"
+#: src/pages/RoutineSchedule.tsx:250
+msgid "at {timeSelect}"
+msgstr "at {timeSelect}"
 
 #: src/pages/Shell.tsx:3388
 msgid "Attach file"
 msgstr "Attach file"
 
 #: src/pages/ModelSettingsOverlay.tsx:561
-#: src/pages/Onboarding.tsx:386
+#: src/pages/Onboarding.tsx:388
 msgid "Authorization code or callback URL"
 msgstr "Authorization code or callback URL"
 
@@ -314,7 +313,7 @@ msgstr "Booting up {0}’s computer"
 msgid "bot"
 msgstr "bot"
 
-#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:141
 msgid "Bot messages"
 msgstr "Bot messages"
 
@@ -409,7 +408,7 @@ msgstr "Close"
 msgid "Close bot menu"
 msgstr "Close bot menu"
 
-#: src/pages/PeerMessagesOverlay.tsx:154
+#: src/pages/PeerMessagesOverlay.tsx:155
 msgid "Close bot messages"
 msgstr "Close bot messages"
 
@@ -577,8 +576,8 @@ msgstr "Connecting…"
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "Connection to {0} is still pending. You can close this and check again."
 
-#: src/pages/Onboarding.tsx:491
-#: src/pages/Onboarding.tsx:546
+#: src/pages/Onboarding.tsx:493
+#: src/pages/Onboarding.tsx:548
 msgid "Continue"
 msgstr "Continue"
 
@@ -820,7 +819,7 @@ msgstr "Create account"
 msgid "Create group"
 msgstr "Create group"
 
-#: src/pages/Onboarding.tsx:509
+#: src/pages/Onboarding.tsx:511
 msgid "Create your first bot"
 msgstr "Create your first bot"
 
@@ -842,7 +841,7 @@ msgstr "Credential"
 msgid "credential saved"
 msgstr "credential saved"
 
-#: src/pages/RoutineSchedule.tsx:262
+#: src/pages/RoutineSchedule.tsx:255
 msgid "Cron expression"
 msgstr "Cron expression"
 
@@ -900,12 +899,12 @@ msgstr "Deleting…"
 msgid "Deployment default"
 msgstr "Deployment default"
 
-#: src/pages/Onboarding.tsx:525
+#: src/pages/Onboarding.tsx:527
 #: src/pages/Shell.tsx:4195
 msgid "Describe what this bot does"
 msgstr "Describe what this bot does"
 
-#: src/pages/Onboarding.tsx:530
+#: src/pages/Onboarding.tsx:532
 #: src/pages/Shell.tsx:4200
 #: src/pages/Shell.tsx:4362
 msgid "Description"
@@ -982,14 +981,13 @@ msgstr "Email"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx:584
-#: src/pages/Onboarding.tsx:408
+#: src/pages/Onboarding.tsx:410
 msgid "Enter this code at <0>{0}</0>"
 msgstr "Enter this code at <0>{0}</0>"
 
-#. js-lingui-explicit-id
 #: src/pages/RoutineSchedule.tsx:246
-msgid "routine-schedule-interval"
-msgstr "every <0/> <1/>"
+msgid "every {intervalAmountSelect} {intervalUnitSelect}"
+msgstr "every {intervalAmountSelect} {intervalUnitSelect}"
 
 #: src/pages/Shell.tsx:5348
 msgid "Expand"
@@ -1030,7 +1028,7 @@ msgstr "Finding…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/ModelSettingsOverlay.tsx:544
-#: src/pages/Onboarding.tsx:369
+#: src/pages/Onboarding.tsx:371
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 
@@ -1185,8 +1183,8 @@ msgstr "Loading memory settings…"
 msgid "Loading model catalog…"
 msgstr "Loading model catalog…"
 
-#: src/pages/PeerMessagesOverlay.tsx:144
-#: src/pages/PeerMessagesOverlay.tsx:164
+#: src/pages/PeerMessagesOverlay.tsx:145
+#: src/pages/PeerMessagesOverlay.tsx:165
 msgid "Loading peer messages…"
 msgstr "Loading peer messages…"
 
@@ -1283,7 +1281,8 @@ msgstr "Minimize"
 #: src/pages/ModelSettingsOverlay.tsx:431
 #: src/pages/ModelSettingsOverlay.tsx:825
 #: src/pages/Onboarding.tsx:292
-#: src/pages/Onboarding.tsx:347
+#: src/pages/Onboarding.tsx:341
+#: src/pages/Onboarding.tsx:349
 #: src/pages/Shell.tsx:4385
 msgid "Model"
 msgstr "Model"
@@ -1332,7 +1331,7 @@ msgstr "Move to"
 #: src/pages/Auth.tsx:51
 #: src/pages/GroupPanel.tsx:110
 #: src/pages/GroupPanel.tsx:201
-#: src/pages/Onboarding.tsx:512
+#: src/pages/Onboarding.tsx:514
 #: src/pages/Shell.tsx:2491
 #: src/pages/Shell.tsx:4180
 #: src/pages/Shell.tsx:4344
@@ -1340,7 +1339,7 @@ msgstr "Move to"
 msgid "Name"
 msgstr "Name"
 
-#: src/pages/Onboarding.tsx:516
+#: src/pages/Onboarding.tsx:518
 #: src/pages/Shell.tsx:4185
 msgid "Name this bot"
 msgstr "Name this bot"
@@ -1502,7 +1501,7 @@ msgid "Opening your workspace…"
 msgstr "Opening your workspace…"
 
 #: src/pages/ModelSettingsOverlay.tsx:634
-#: src/pages/Onboarding.tsx:451
+#: src/pages/Onboarding.tsx:453
 msgid "Optional"
 msgstr "Optional"
 
@@ -1518,7 +1517,7 @@ msgstr "Optional header value"
 msgid "Or connect an API key"
 msgstr "Or connect an API key"
 
-#: src/pages/Onboarding.tsx:460
+#: src/pages/Onboarding.tsx:462
 msgid "Or paste an API key"
 msgstr "Or paste an API key"
 
@@ -1863,7 +1862,7 @@ msgstr "Skill {0}"
 msgid "Skip"
 msgstr "Skip"
 
-#: src/pages/Onboarding.tsx:501
+#: src/pages/Onboarding.tsx:503
 msgid "Skip for now"
 msgstr "Skip for now"
 
@@ -1904,7 +1903,7 @@ msgstr "Start recording"
 
 #: src/components/teach/TeachComputerSection.tsx:115
 #: src/pages/ModelSettingsOverlay.tsx:614
-#: src/pages/Onboarding.tsx:436
+#: src/pages/Onboarding.tsx:438
 msgid "Starting…"
 msgstr "Starting…"
 
@@ -1948,7 +1947,7 @@ msgid "subagent"
 msgstr "subagent"
 
 #: src/pages/ModelSettingsOverlay.tsx:574
-#: src/pages/Onboarding.tsx:398
+#: src/pages/Onboarding.tsx:400
 msgid "Submit"
 msgstr "Submit"
 
@@ -2027,7 +2026,7 @@ msgstr "This Mac runs shell commands with your account, including files in your 
 msgid "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 
-#: src/pages/Onboarding.tsx:476
+#: src/pages/Onboarding.tsx:478
 msgid "This provider cannot paste a key here. Skip if this deployment already has credentials."
 msgstr "This provider cannot paste a key here. Skip if this deployment already has credentials."
 
@@ -2055,7 +2054,7 @@ msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployme
 msgid "Time of day"
 msgstr "Time of day"
 
-#: src/pages/Onboarding.tsx:521
+#: src/pages/Onboarding.tsx:523
 #: src/pages/Shell.tsx:4190
 #: src/pages/Shell.tsx:4353
 msgid "Title"
@@ -2121,8 +2120,8 @@ msgstr "Voice"
 
 #: src/pages/ModelSettingsOverlay.tsx:578
 #: src/pages/ModelSettingsOverlay.tsx:600
-#: src/pages/Onboarding.tsx:402
-#: src/pages/Onboarding.tsx:424
+#: src/pages/Onboarding.tsx:404
+#: src/pages/Onboarding.tsx:426
 msgid "Waiting for sign-in…"
 msgstr "Waiting for sign-in…"
 
@@ -2138,7 +2137,7 @@ msgstr "What about its memories?"
 msgid "What result will you demonstrate?"
 msgstr "What result will you demonstrate?"
 
-#: src/pages/Onboarding.tsx:534
+#: src/pages/Onboarding.tsx:536
 #: src/pages/Shell.tsx:4205
 msgid "What this bot is for"
 msgstr "What this bot is for"
@@ -2147,7 +2146,7 @@ msgstr "What this bot is for"
 msgid "What to return"
 msgstr "What to return"
 
-#: src/pages/PeerMessagesOverlay.tsx:168
+#: src/pages/PeerMessagesOverlay.tsx:169
 msgid "When {botName} messages another bot, the exchange shows up here instead of in the chat."
 msgstr "When {botName} messages another bot, the exchange shows up here instead of in the chat."
 

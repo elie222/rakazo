@@ -3,10 +3,7 @@ import type { ActionApprovalRule } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-function describeRule(
-  rule: ActionApprovalRule,
-  t: ReturnType<typeof useLingui>["t"],
-): string {
+function describeRule(rule: ActionApprovalRule, t: ReturnType<typeof useLingui>["t"]): string {
   const target =
     rule.matchKind === "category"
       ? t`${rule.matchValue} actions`

@@ -1,4 +1,4 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
@@ -6,7 +6,6 @@ import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } f
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
 
 export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
-  const { t } = useLingui();
   const [mode, setMode] = useState<"cloud" | "local">("cloud");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
@@ -58,11 +57,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
       ) : null}
 
       <label className="mt-4 block text-[13.5px] text-[#85858A]">
-        {mode === "cloud" ? (
-          <Trans>Organization API key</Trans>
-        ) : (
-          <Trans>Instance API key</Trans>
-        )}
+        {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
         <input
           value={apiKey}
           disabled={busy}

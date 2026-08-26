@@ -243,18 +243,11 @@ function RoutineSchedule({
           ))}
         </select>
         {value.freq === "Interval" ? (
-          <Trans
-            id="routine-schedule-interval"
-            components={{ amount: intervalAmountSelect, unit: intervalUnitSelect }}
-          >
-            every <amount /> <unit />
+          <Trans>
+            every {intervalAmountSelect} {intervalUnitSelect}
           </Trans>
         ) : null}
-        {TIMED.includes(value.freq) ? (
-          <Trans id="routine-schedule-timed" components={{ time: timeSelect }}>
-            at <time />
-          </Trans>
-        ) : null}
+        {TIMED.includes(value.freq) ? <Trans>at {timeSelect}</Trans> : null}
         {value.freq === "Advanced" ? (
           <input
             value={value.cron}

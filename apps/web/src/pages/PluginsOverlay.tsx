@@ -369,8 +369,8 @@ export function PluginsOverlay({
                   ) : null}
                   <p className="text-xs leading-5 text-[#707077]">
                     <Trans>
-                      Rakazo verifies the source before saving it. Credentials are encrypted and
-                      are never returned to clients or exposed to the model.
+                      Rakazo verifies the source before saving it. Credentials are encrypted and are
+                      never returned to clients or exposed to the model.
                     </Trans>
                   </p>
                   <div className="flex gap-2">
@@ -437,8 +437,8 @@ export function PluginsOverlay({
               {!loading && catalog.length === 0 ? (
                 <p className="text-[#6C6C70]">
                   <Trans>
-                    No managed app catalog is configured on this deployment. You can still add
-                    Treg, MCP, or OpenAPI sources.
+                    No managed app catalog is configured on this deployment. You can still add Treg,
+                    MCP, or OpenAPI sources.
                   </Trans>
                 </p>
               ) : null}

@@ -53,8 +53,8 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
           {mac ? (
             <Trans>
               {" "}
-              macOS will not ask for extra permission if you let bots run on this Mac — they run
-              as you.
+              macOS will not ask for extra permission if you let bots run on this Mac — they run as
+              you.
             </Trans>
           ) : (
             <Trans>

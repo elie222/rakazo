@@ -2231,9 +2231,7 @@ export function ShellPage() {
                   {active ? (
                     <button
                       type="button"
-                      aria-label={
-                        panel === "settings" ? t`Show computer` : t`Show settings`
-                      }
+                      aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={
                         panel === "settings"
@@ -2292,17 +2290,15 @@ export function ShellPage() {
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <span className="min-w-0 text-[13.5px] text-[#85858A]">
-                    {hasControl ? (
-                      t`You have control`
-                    ) : computerError ? (
-                      computerError
-                    ) : computer?.busyBotName ? (
-                      t`${computer.busyBotName} is using it`
-                    ) : computer?.state === "suspended" ? (
-                      t`Asleep`
-                    ) : (
-                      computerLabel(computer?.mode, active.name, t)
-                    )}
+                    {hasControl
+                      ? t`You have control`
+                      : computerError
+                        ? computerError
+                        : computer?.busyBotName
+                          ? t`${computer.busyBotName} is using it`
+                          : computer?.state === "suspended"
+                            ? t`Asleep`
+                            : computerLabel(computer?.mode, active.name, t)}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -2937,11 +2933,9 @@ export function ShellPage() {
               </>
             ) : (
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                {computer?.state === "suspended" ? (
-                  t`Computer is asleep`
-                ) : (
-                  computerLabel(computer?.mode, active.name, t)
-                )}
+                {computer?.state === "suspended"
+                  ? t`Computer is asleep`
+                  : computerLabel(computer?.mode, active.name, t)}
               </div>
             )}
           </div>
@@ -3360,16 +3354,16 @@ const Composer = memo(function Composer({
           {slashActionOptions.map((action) => {
             const label = slashActionLabel(action.id, t);
             return (
-            <button
-              key={action.id}
-              type="button"
-              aria-label={label}
-              onClick={() => runSlashAction(action.id)}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
-            >
-              <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[#9A9AA0]" />
-              <span className="text-[14px] text-[#ECECEE]">{label}</span>
-            </button>
+              <button
+                key={action.id}
+                type="button"
+                aria-label={label}
+                onClick={() => runSlashAction(action.id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+              >
+                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[#9A9AA0]" />
+                <span className="text-[14px] text-[#ECECEE]">{label}</span>
+              </button>
             );
           })}
         </div>
@@ -3576,10 +3570,7 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   return <BotAvatar color={mention.color ?? "#85858A"} size={16} />;
 }
 
-function previewMessageText(
-  message: ThreadMessage,
-  t: ReturnType<typeof useLingui>["t"],
-): string {
+function previewMessageText(message: ThreadMessage, t: ReturnType<typeof useLingui>["t"]): string {
   const text = message.blocks
     .map((block) => (block.kind === "text" ? block.text : ""))
     .filter(Boolean)
@@ -4101,7 +4092,6 @@ function ComputerModePicker({
   value: ComputerMode;
   onChange: (value: ComputerMode) => void;
 }) {
-  const { t } = useLingui();
   return (
     <div className="mt-4">
       <div className="text-[14px] text-[#85858A]">
@@ -4534,10 +4524,7 @@ function modelOptionKey(provider: string, modelId: string) {
   return `${provider}::${modelId}`;
 }
 
-function thinkingLevelLabel(
-  level: ThinkingLevel,
-  t: ReturnType<typeof useLingui>["t"],
-) {
+function thinkingLevelLabel(level: ThinkingLevel, t: ReturnType<typeof useLingui>["t"]) {
   if (level === "xhigh") return t`Extra high`;
   if (level === "low") return t`Low`;
   if (level === "medium") return t`Medium`;
@@ -5278,11 +5265,7 @@ function McpApprovalCard({
               disabled={state === "connecting"}
               onClick={() => void authorize()}
             >
-              {state === "connecting"
-                ? t`Connecting…`
-                : needsOAuth
-                  ? t`Authorize`
-                  : t`Approve`}
+              {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
             </BuiButton>
             <BuiButton onClick={() => setState("dismissed")}>
               <Trans>Not now</Trans>
@@ -5292,9 +5275,7 @@ function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop
-            label={t`Connected — its tools are available from your next message.`}
-          />
+          <SuccessPop label={t`Connected — its tools are available from your next message.`} />
         </div>
       ) : null}
       {state === "dismissed" ? (

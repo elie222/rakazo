@@ -1,12 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
-import { setUiLocale, getActiveUiLocale } from "../lib/i18n";
-import {
-  type UiLocale,
-  UI_LOCALE_LABELS,
-  UI_LOCALES,
-} from "../lib/ui-locale";
+import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
+import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
 export function AccountSettingsOverlay({
   email,

@@ -458,11 +458,7 @@ export function OnboardingPage() {
                 </details>
               ) : (
                 <label className="mt-4 block text-sm text-[#85858A]">
-                  {subscriptionSignIn ? (
-                    <Trans>Or paste an API key</Trans>
-                  ) : (
-                    <Trans>API key</Trans>
-                  )}
+                  {subscriptionSignIn ? <Trans>Or paste an API key</Trans> : <Trans>API key</Trans>}
                   <input
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}

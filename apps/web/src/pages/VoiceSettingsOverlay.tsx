@@ -239,9 +239,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                     autoComplete="new-password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={
-                      credential ? t`Paste a replacement key` : t`Paste your API key`
-                    }
+                    placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none"
                   />
                 </label>

@@ -1,4 +1,5 @@
-import { plural, Trans, useLingui } from "@lingui/react/macro";
+import { plural } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";

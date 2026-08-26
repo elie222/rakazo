@@ -58,7 +58,6 @@
   "Ask before purchases": "결제하기 전에 확인",
   "Ask before sending external email": "외부 이메일을 보내기 전에 확인",
   "Asleep": "절전 중",
-  "routine-schedule-timed": "routine-schedule-timed",
   "Attach file": "파일 첨부",
   "Authorization code or callback URL": "인증 코드 또는 돌아온 페이지 주소",
   "Authorization timed out. Please try again.": "인증 시간이 만료되었습니다. 다시 시도해 주세요.",
@@ -220,7 +219,6 @@
   "Edit Profile": "Bot 정보 수정",
   "Email": "이메일",
   "Enter this code at <0>{0}</0>": "<0>{0}</0>에서 이 코드를 입력하세요",
-  "routine-schedule-interval": "routine-schedule-interval",
   "Expand": "펼치기",
   "Export": "내보내기",
   "Export this week's list from the CRM and drop it in the shared folder": "CRM에서 이번 주 목록을 내려받아 공유 폴더에 넣기",
@@ -496,5 +494,9 @@
   "Your name": "이름",
   "Your team of always-on agents<0/>that you can give real work to.": "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀",
   "every {0} {1}": "{0} {1}마다",
-  "at {0}": "{0}에"
+  "at {0}": "{0}에",
+  "every <0/> <1/>": "<0/> <1/>마다",
+  "at <0/>": "<0/>에",
+  "every {intervalAmountSelect} {intervalUnitSelect}": "{intervalAmountSelect} {intervalUnitSelect}마다",
+  "at {timeSelect}": "{timeSelect}에"
 }

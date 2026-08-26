@@ -77,8 +77,8 @@ export function TeachComputerSection({
         <div className="rounded-[11px] border border-[#232326] px-3 py-3 text-[13.5px] leading-[1.5] text-[#6C6C70]">
           {computer?.kind === "desktop" ? (
             <Trans>
-              Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks, but
-              not screen recording.
+              Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks,
+              but not screen recording.
             </Trans>
           ) : (
             <Trans>Open the computer view on web or desktop to teach a task.</Trans>

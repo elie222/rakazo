@@ -180,7 +180,11 @@ export function MemorySettingsOverlay({
                 onClick={() => void disconnect()}
                 className="mt-3"
               >
-                {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
+                {pending === "disconnect" ? (
+                  <Trans>Disconnecting…</Trans>
+                ) : (
+                  <Trans>Disconnect</Trans>
+                )}
               </Button>
             </div>
           ) : registration ? (

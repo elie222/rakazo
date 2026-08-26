@@ -1,12 +1,6 @@
 import { i18n } from "@lingui/core";
-import {
-  applyUiDirection,
-} from "./apply-ui-direction";
-import {
-  type UiLocale,
-  persistUiLocale,
-  resolveUiLocale,
-} from "./ui-locale";
+import { applyUiDirection } from "./apply-ui-direction";
+import { persistUiLocale, resolveUiLocale, type UiLocale } from "./ui-locale";
 
 export { i18n };
 
@@ -46,9 +40,7 @@ export async function activateUiLocale(locale: UiLocale): Promise<UiLocale> {
 }
 
 /** Resolve preferred locale and load only that catalog. */
-export async function bootstrapI18n(
-  preferred: UiLocale = resolveUiLocale(),
-): Promise<UiLocale> {
+export async function bootstrapI18n(preferred: UiLocale = resolveUiLocale()): Promise<UiLocale> {
   return activateUiLocale(preferred);
 }
 

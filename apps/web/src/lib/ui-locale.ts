@@ -61,7 +61,9 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
   const stored =
     options.stored !== undefined
       ? options.stored
-      : readStoredLocale(options.storage ?? (typeof localStorage !== "undefined" ? localStorage : null));
+      : readStoredLocale(
+          options.storage ?? (typeof localStorage !== "undefined" ? localStorage : null),
+        );
   if (stored) return normalizeUiLocale(stored);
 
   const envDefault =
@@ -70,7 +72,9 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
       : readEnvDefault(
           options.env ??
             (typeof import.meta !== "undefined"
-              ? (import.meta as ImportMeta).env
+              ? {
+                  VITE_DEFAULT_UI_LOCALE: (import.meta as ImportMeta).env?.VITE_DEFAULT_UI_LOCALE,
+                }
               : undefined),
         );
   if (envDefault) return normalizeUiLocale(envDefault);

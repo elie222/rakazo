@@ -12,11 +12,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const title =
-    mode === "in" ? (
-      <Trans>Sign in to Rakazo</Trans>
-    ) : (
-      <Trans>Create your Rakazo</Trans>
-    );
+    mode === "in" ? <Trans>Sign in to Rakazo</Trans> : <Trans>Create your Rakazo</Trans>;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

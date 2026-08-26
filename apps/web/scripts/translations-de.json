@@ -58,7 +58,6 @@
   "Ask before purchases": "Vor Käufen nachfragen",
   "Ask before sending external email": "Vor dem Senden externer E-Mails nachfragen",
   "Asleep": "Im Ruhezustand",
-  "routine-schedule-timed": "routine-schedule-timed",
   "Attach file": "Datei anhängen",
   "Authorization code or callback URL": "Autorisierungscode oder Callback-URL",
   "Authorization timed out. Please try again.": "Zeitüberschreitung bei der Autorisierung. Versuche es erneut.",
@@ -220,7 +219,6 @@
   "Edit Profile": "Profil bearbeiten",
   "Email": "E-Mail",
   "Enter this code at <0>{0}</0>": "Gib diesen Code unter <0>{0}</0> ein",
-  "routine-schedule-interval": "routine-schedule-interval",
   "Expand": "Erweitern",
   "Export": "Exportieren",
   "Export this week's list from the CRM and drop it in the shared folder": "Exportiere die Liste dieser Woche aus dem CRM und lege sie im freigegebenen Ordner ab",
@@ -496,5 +494,9 @@
   "Your name": "Dein Name",
   "Your team of always-on agents<0/>that you can give real work to.": "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben.",
   "every {0} {1}": "alle {0} {1}",
-  "at {0}": "um {0}"
+  "at {0}": "um {0}",
+  "every <0/> <1/>": "alle <0/> <1/>",
+  "at <0/>": "um <0/>",
+  "every {intervalAmountSelect} {intervalUnitSelect}": "alle {intervalAmountSelect} {intervalUnitSelect}",
+  "at {timeSelect}": "um {timeSelect}"
 }
