@@ -598,7 +598,7 @@ export function createRouter(deps: RouterDeps) {
         const manifest = input.token
           ? await loadShareManifestSnapshot(deps.prisma, input.token)
           : input.manifest!;
-        return importShareManifest(deps, repos, context.actor, manifest);
+        return importShareManifest(repos, context.actor, manifest);
       }),
       shareCreate: authed.bots.shareCreate.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -3312,7 +3312,6 @@ async function loadShareManifestSnapshot(
 }
 
 async function importShareManifest(
-  deps: RouterDeps,
   repos: ReturnType<typeof createRepos>,
   actor: Actor,
   manifest: ShareManifest,
@@ -3333,8 +3332,7 @@ async function importShareManifest(
     notifyOnFinish: manifest.notifyOnFinish,
     color: manifest.color,
     computerMode: manifest.computerMode,
-    shareRoutineTemplates:
-      manifest.routines.length > 0 ? manifest.routines : undefined,
+    shareRoutineTemplates: manifest.routines.length > 0 ? manifest.routines : undefined,
   });
 }
 
