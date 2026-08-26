@@ -4,7 +4,10 @@ import {
   BOT_TITLE_MAX_LENGTH,
   type ComputerMode,
   normalizeCreateBotProfile,
+  parseShareManifestPayload,
+  type ShareManifest,
 } from "@rakazo/contracts";
+import * as DocumentPicker from "expo-document-picker";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
@@ -19,6 +22,9 @@ export default function NewBot() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [shareJson, setShareJson] = useState("");
+  const [shareToken, setShareToken] = useState("");
+  const [importingShare, setImportingShare] = useState(false);
 
   function close() {
     if (router.canDismiss()) {
@@ -50,6 +56,48 @@ export default function NewBot() {
     }
   }
 
+  async function importShare(input: { manifest?: ShareManifest; token?: string }) {
+    setImportingShare(true);
+    setError(null);
+    try {
+      const bot = await rpc<MobileBot>(
+        "bots/importShare",
+        input.token ? { token: input.token } : { manifest: input.manifest! },
+      );
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import share");
+    } finally {
+      setImportingShare(false);
+    }
+  }
+
+  async function importFromShareFields() {
+    const token = shareToken.trim();
+    if (token) {
+      await importShare({ token });
+      return;
+    }
+    const raw = shareJson.trim();
+    if (!raw) {
+      setError("Paste share JSON or a link token");
+      return;
+    }
+    const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
+    await importShare({ manifest });
+  }
+
+  async function pickShareFile() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/json", "text/json", "public.json"],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const text = await fetch(result.assets[0].uri).then((res) => res.text());
+    const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
+    await importShare({ manifest });
+  }
+
   return (
     <>
       <Stack.Screen
@@ -72,7 +120,69 @@ export default function NewBot() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
+        <Text style={{ color: "#6C6C70", fontSize: 13 }}>
+          Import from share — configuration only, not computer or logins.
+        </Text>
+        <TextInput
+          value={shareJson}
+          onChangeText={setShareJson}
+          placeholder="Paste share JSON"
+          placeholderTextColor="#6C6C70"
+          multiline
+          style={{
+            marginTop: 12,
+            backgroundColor: "#1A1A1D",
+            borderRadius: 11,
+            padding: 16,
+            color: "#ECECEE",
+            minHeight: 80,
+            textAlignVertical: "top",
+          }}
+        />
+        <TextInput
+          value={shareToken}
+          onChangeText={setShareToken}
+          placeholder="Or paste link token"
+          placeholderTextColor="#6C6C70"
+          style={{
+            marginTop: 8,
+            backgroundColor: "#1A1A1D",
+            borderRadius: 11,
+            padding: 16,
+            color: "#ECECEE",
+          }}
+        />
+        <Pressable
+          onPress={() => void pickShareFile()}
+          disabled={importingShare}
+          style={{
+            marginTop: 8,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: "#3A3A3F",
+            padding: 14,
+            alignItems: "center",
+            opacity: importingShare ? 0.4 : 1,
+          }}
+        >
+          <Text style={{ color: "#ECECEE" }}>Pick .json file</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => void importFromShareFields()}
+          disabled={importingShare}
+          style={{
+            marginTop: 8,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: "#3A3A3F",
+            padding: 14,
+            alignItems: "center",
+            opacity: importingShare ? 0.4 : 1,
+          }}
+        >
+          <Text style={{ color: "#ECECEE" }}>{importingShare ? "Importing…" : "Import share"}</Text>
+        </Pressable>
+        <Text style={{ color: "#85858A", marginTop: 24, fontSize: 14 }}>Name</Text>
         <TextInput
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}

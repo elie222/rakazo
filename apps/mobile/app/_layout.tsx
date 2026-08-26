@@ -55,6 +55,7 @@ export default function Layout() {
             <Stack.Screen name="group-thread" options={{ title: "Group" }} />
             <Stack.Screen name="group-settings" options={{ title: "Group settings" }} />
             <Stack.Screen name="bot-settings" options={{ title: "Chat settings" }} />
+            <Stack.Screen name="share/[token]" options={{ title: "Import share" }} />
             <Stack.Screen name="thread" options={{ title: "Thread" }} />
             <Stack.Screen name="routine" options={{ title: "Routine" }} />
             <Stack.Screen name="computer" options={{ title: "Computer" }} />

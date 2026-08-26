@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
@@ -69,10 +69,14 @@ import {
   type McpServer,
   type Me,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  parseShareManifestPayload,
+  ShareManifestSchema,
+  type ShareManifest,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
+  buildShareManifest,
   containsSecret,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
@@ -330,6 +334,12 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
+    share: {
+      preview: os.share.preview.handler(async ({ input }) => {
+        const manifest = await loadShareManifestSnapshot(deps.prisma, input.token);
+        return manifest;
+      }),
+    },
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
@@ -568,6 +578,76 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         return duplicate;
+      }),
+      shareManifest: authed.bots.shareManifest.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const routines = await deps.prisma.routine.findMany({
+          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
+        });
+        return buildShareManifest(
+          shareBotConfigFromRecord(bot),
+          routines.map((routine) => ({
+            name: routine.name,
+            prompt: routine.prompt,
+            crons: routine.crons,
+            timezone: routine.timezone,
+          })),
+        );
+      }),
+      importShare: authed.bots.importShare.handler(async ({ context, input }) => {
+        const manifest = input.token
+          ? await loadShareManifestSnapshot(deps.prisma, input.token)
+          : input.manifest!;
+        return importShareManifest(deps, repos, context.actor, manifest);
+      }),
+      shareCreate: authed.bots.shareCreate.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const routines = await deps.prisma.routine.findMany({
+          where: { botId: input.botId, workspaceId: context.actor.workspaceId },
+        });
+        const snapshot = buildShareManifest(
+          shareBotConfigFromRecord(bot),
+          routines.map((routine) => ({
+            name: routine.name,
+            prompt: routine.prompt,
+            crons: routine.crons,
+            timezone: routine.timezone,
+          })),
+        );
+        const token = randomBytes(32).toString("base64url");
+        const ttlDays = input.ttlDays ?? 30;
+        const expiresAt = new Date(Date.now() + ttlDays * 86_400_000);
+        await deps.prisma.botShare.create({
+          data: {
+            token,
+            workspaceId: context.actor.workspaceId,
+            createdByUserId: context.actor.userId,
+            snapshot,
+            expiresAt,
+          },
+        });
+        return {
+          token,
+          url: new URL(`/share/${token}`, deps.env.webOrigin).toString(),
+          expiresAt: expiresAt.toISOString(),
+        };
+      }),
+      shareRevoke: authed.bots.shareRevoke.handler(async ({ context, input }) => {
+        const row = await deps.prisma.botShare.findFirst({
+          where: {
+            token: input.token,
+            workspaceId: context.actor.workspaceId,
+            createdByUserId: context.actor.userId,
+          },
+        });
+        if (!row) throw new IsolationError();
+        if (!row.revokedAt) {
+          await deps.prisma.botShare.update({
+            where: { token: input.token },
+            data: { revokedAt: new Date() },
+          });
+        }
+        return { ok: true as const };
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
@@ -3218,6 +3298,75 @@ async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
     where: { botId, workspaceId: actor.workspaceId },
   });
   return rows.map(mapRoutine);
+}
+
+async function loadShareManifestSnapshot(prisma: PrismaClient, token: string): Promise<ShareManifest> {
+  const row = await prisma.botShare.findUnique({ where: { token } });
+  if (!row || row.revokedAt || row.expiresAt <= new Date()) {
+    throw new ORPCError("NOT_FOUND", { message: "Share link not found" });
+  }
+  return ShareManifestSchema.parse(row.snapshot);
+}
+
+async function importShareManifest(
+  deps: RouterDeps,
+  repos: ReturnType<typeof createRepos>,
+  actor: Actor,
+  manifest: ShareManifest,
+) {
+  try {
+    parseShareManifestPayload(manifest);
+  } catch (error) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: error instanceof Error ? error.message : "Invalid share manifest",
+    });
+  }
+  const bot = await repos.createBot(actor, {
+    name: manifest.name,
+    title: manifest.title,
+    description: manifest.description,
+    instructions: manifest.instructions,
+    notifyOnFinish: manifest.notifyOnFinish,
+    color: manifest.color,
+    computerMode: manifest.computerMode,
+  });
+  if (manifest.routines.length) {
+    await deps.prisma.routine.createMany({
+      data: manifest.routines.map((routine) => ({
+        workspaceId: actor.workspaceId,
+        botId: bot.id,
+        userId: actor.userId,
+        name: routine.name,
+        prompt: routine.prompt,
+        crons: routine.crons,
+        timezone: routine.timezone,
+        notify: true,
+        active: false,
+        nextRunAt: null,
+      })),
+    });
+  }
+  return bot;
+}
+
+function shareBotConfigFromRecord(bot: {
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  color: string;
+  notifyOnFinish: boolean;
+  computer: { scope: string } | null;
+}) {
+  return {
+    name: bot.name,
+    title: bot.title,
+    description: bot.description,
+    instructions: bot.instructions,
+    color: bot.color,
+    notifyOnFinish: bot.notifyOnFinish,
+    computerMode: bot.computer?.scope === "dedicated" ? ("dedicated" as const) : ("team" as const),
+  };
 }
 
 function withViewOnly(url: string, viewOnly: boolean) {

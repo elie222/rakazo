@@ -28,7 +28,10 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
       setError(result.error.message ?? "Could not continue");
       return;
     }
-    navigate(mode === "up" ? "/onboarding" : "/app");
+    const next = new URLSearchParams(window.location.search).get("next");
+    const destination =
+      next?.startsWith("/") && !next.startsWith("//") ? next : mode === "up" ? "/onboarding" : "/app";
+    navigate(destination);
   }
 
   return (

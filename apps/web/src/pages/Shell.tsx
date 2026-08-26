@@ -16,10 +16,12 @@ import type {
   ProductEvent,
   Routine,
   SearchHit,
+  ShareManifest,
   TaughtSkill,
   ThinkingLevel,
   ThreadMessage,
   ThreadSnapshot,
+  parseShareManifestPayload,
   VoiceInfo,
   VoiceStatus,
   WorkspaceMemoryConfig,
@@ -1517,6 +1519,18 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
+  async function importShareBot(input: { manifest?: ShareManifest; token?: string }) {
+    const bot = await rpc.bots.importShare(
+      input.token ? { token: input.token } : { manifest: input.manifest! },
+    );
+    setBots((current) =>
+      current.some((item) => item.id === bot.id) ? current : [bot, ...current],
+    );
+    navigate(`/app/${bot.id}`);
+    setPanel(null);
+    await refreshBots().catch(() => undefined);
+  }
+
   async function bootComputer({
     takeControl,
     overlay,
@@ -2401,6 +2415,7 @@ export function ShellPage() {
               <CreateBotForm
                 onCancel={() => setPanel(null)}
                 onCreate={(input) => createBot(input)}
+                onImportShare={(input) => importShareBot(input)}
               />
             ) : null}
             {panel === "settings" && active ? (
@@ -4055,6 +4070,7 @@ function ComputerModePicker({
 
 function CreateBotForm({
   onCreate,
+  onImportShare,
   onCancel,
 }: {
   onCreate: (input: {
@@ -4063,6 +4079,7 @@ function CreateBotForm({
     description: string;
     computerMode: ComputerMode;
   }) => Promise<void>;
+  onImportShare: (input: { manifest?: ShareManifest; token?: string }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
@@ -4071,6 +4088,9 @@ function CreateBotForm({
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareJson, setShareJson] = useState("");
+  const [shareToken, setShareToken] = useState("");
+  const [importingShare, setImportingShare] = useState(false);
 
   async function handleSubmit() {
     if (!name.trim() || submitting) return;
@@ -4085,6 +4105,45 @@ function CreateBotForm({
     }
   }
 
+  async function handleImportShare() {
+    if (importingShare) return;
+    setError(null);
+    setImportingShare(true);
+    try {
+      const token = shareToken.trim();
+      if (token) {
+        await onImportShare({ token });
+        return;
+      }
+      const raw = shareJson.trim();
+      if (!raw) {
+        setError("Paste share JSON or a link token");
+        return;
+      }
+      const manifest = parseShareManifestPayload(JSON.parse(raw) as unknown);
+      await onImportShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import share");
+    } finally {
+      setImportingShare(false);
+    }
+  }
+
+  async function handleShareFile(file: File) {
+    if (importingShare) return;
+    setError(null);
+    setImportingShare(true);
+    try {
+      const text = await file.text();
+      const manifest = parseShareManifestPayload(JSON.parse(text) as unknown);
+      await onImportShare({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import share file");
+    } finally {
+      setImportingShare(false);
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
@@ -4093,6 +4152,52 @@ function CreateBotForm({
           <X size={16} strokeWidth={1.8} />
         </button>
       </div>
+      <details className="mb-5 rounded-[11px] border border-[#26262A] px-3.5 py-3">
+        <summary className="cursor-pointer text-[14px] text-[#85858A]">Import from share</summary>
+        <p className="mt-3 text-[13px] text-[#6C6C70]">
+          Configuration only — not a computer, logins, files, or chat history.
+        </p>
+        <label className="mt-3 block text-[13px] text-[#85858A]">
+          Share JSON
+          <textarea
+            value={shareJson}
+            onChange={(e) => setShareJson(e.target.value)}
+            rows={4}
+            placeholder="Paste rakazo.share/v1 JSON"
+            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2.5 text-[13px] text-[#ECECEE]"
+          />
+        </label>
+        <label className="mt-3 block text-[13px] text-[#85858A]">
+          Or link token
+          <input
+            value={shareToken}
+            onChange={(e) => setShareToken(e.target.value)}
+            placeholder="Token from a share URL"
+            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2.5 text-[13px] text-[#ECECEE]"
+          />
+        </label>
+        <label className="mt-3 block text-[13px] text-[#85858A]">
+          Or file
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="mt-2 block w-full text-[13px] text-[#85858A]"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleShareFile(file);
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={importingShare}
+          onClick={() => void handleImportShare()}
+          className="mt-4 rounded-[11px] border border-[#3A3A3F] px-4 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40"
+        >
+          {importingShare ? "Importing…" : "Import share"}
+        </button>
+      </details>
       {error ? (
         <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
           {error}
@@ -4185,6 +4290,16 @@ function BotSettings({
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShareLink(null);
+    setShareToken(null);
+    setShareNotice(null);
+  }, [bot.id]);
 
   useEffect(() => {
     void rpc.voice
@@ -4444,6 +4559,112 @@ function BotSettings({
         <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
           Clear conversation
         </button>
+      </div>
+      <div className="mt-6 border-t border-[#26262A] pt-5" data-testid="bot-share">
+        <p className="text-[14px] text-[#85858A]">Share bot</p>
+        <p className="mt-2 text-[13px] text-[#6C6C70]">
+          Copies configuration only — not your computer, logins, files, or chat history.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={shareBusy}
+            onClick={() => {
+              setShareBusy(true);
+              setShareNotice(null);
+              void rpc.bots
+                .shareManifest({ botId: bot.id })
+                .then(async (manifest) => {
+                  await navigator.clipboard.writeText(JSON.stringify(manifest, null, 2));
+                  setShareNotice("Share JSON copied");
+                })
+                .catch((err) =>
+                  setError(err instanceof Error ? err.message : "Could not copy share"),
+                )
+                .finally(() => setShareBusy(false));
+            }}
+            className="text-[14px] text-[#85858A] disabled:opacity-40"
+          >
+            Copy JSON
+          </button>
+          <button
+            type="button"
+            disabled={shareBusy}
+            onClick={() => {
+              setShareBusy(true);
+              setShareNotice(null);
+              void rpc.bots
+                .shareManifest({ botId: bot.id })
+                .then((manifest) => {
+                  const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+                    type: "application/json",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${bot.name.toLowerCase().replace(/\s+/g, "-")}.rakazo-bot.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                })
+                .catch((err) =>
+                  setError(err instanceof Error ? err.message : "Could not download share"),
+                )
+                .finally(() => setShareBusy(false));
+            }}
+            className="text-[14px] text-[#85858A] disabled:opacity-40"
+          >
+            Download
+          </button>
+          <button
+            type="button"
+            disabled={shareBusy}
+            onClick={() => {
+              setShareBusy(true);
+              setShareNotice(null);
+              void rpc.bots
+                .shareCreate({ botId: bot.id })
+                .then(({ url, token }) => {
+                  setShareLink(url);
+                  setShareToken(token);
+                  setShareNotice("Share link created");
+                })
+                .catch((err) =>
+                  setError(err instanceof Error ? err.message : "Could not create share link"),
+                )
+                .finally(() => setShareBusy(false));
+            }}
+            className="text-[14px] text-[#85858A] disabled:opacity-40"
+          >
+            Create link
+          </button>
+          {shareToken ? (
+            <button
+              type="button"
+              disabled={shareBusy}
+              onClick={() => {
+                setShareBusy(true);
+                void rpc.bots
+                  .shareRevoke({ token: shareToken })
+                  .then(() => {
+                    setShareLink(null);
+                    setShareToken(null);
+                    setShareNotice("Share link revoked");
+                  })
+                  .catch((err) =>
+                    setError(err instanceof Error ? err.message : "Could not revoke share link"),
+                  )
+                  .finally(() => setShareBusy(false));
+              }}
+              className="text-[14px] text-[#E65707] disabled:opacity-40"
+            >
+              Revoke link
+            </button>
+          ) : null}
+        </div>
+        {shareNotice ? <p className="mt-2 text-[13px] text-[#6C6C70]">{shareNotice}</p> : null}
+        {shareLink ? (
+          <p className="mt-2 break-all text-[13px] text-[#9A9AA0]">{shareLink}</p>
+        ) : null}
       </div>
     </div>
   );

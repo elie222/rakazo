@@ -15,7 +15,7 @@ type RpcPath<T, Prefix extends string = ""> = T extends { "~orpc": unknown }
         [Key in keyof T & string]: RpcPath<T[Key], Prefix extends "" ? Key : `${Prefix}/${Key}`>;
       }[keyof T & string]
     : never;
-type ProtectedRpcPath = Exclude<RpcPath<typeof appContract>, "health">;
+type ProtectedRpcPath = Exclude<RpcPath<typeof appContract>, "health" | "share/preview">;
 
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
@@ -72,6 +72,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],
       ["bots/remove", { botId: "missing-bot" }],
+      ["bots/shareManifest", { botId: "missing-bot" }],
+      ["bots/importShare", { manifest: sampleShareManifest() }],
+      ["bots/shareCreate", { botId: "missing-bot" }],
+      ["bots/shareRevoke", { token: "missing-share-token" }],
       ["groups/create", { name: "Nope", botIds: ["missing-a", "missing-b"] }],
       ["groups/list"],
       ["groups/get", { groupId: "missing-group" }],
@@ -336,6 +340,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["artifacts/get", { botId: ownerBot.id, artifactId: ownerArtifact.id }],
       ["export/bot", { botId: ownerBot.id }],
+      ["bots/shareManifest", { botId: ownerBot.id }],
+      ["bots/shareCreate", { botId: ownerBot.id }],
+      ["bots/importShare", { manifest: sampleShareManifest() }],
       ["voice/prepare", { text: "stolen speech", botId: ownerBot.id }],
     ];
     await Promise.all(
@@ -773,6 +780,21 @@ function botInput(name: string) {
     description: "",
     instructions: "",
     notifyOnFinish: false,
+  };
+}
+
+function sampleShareManifest() {
+  return {
+    version: "rakazo.share/v1",
+    sharedAt: new Date().toISOString(),
+    name: "Shared",
+    title: "",
+    description: "",
+    instructions: "",
+    color: "#2965EC",
+    notifyOnFinish: false,
+    computerMode: "team",
+    routines: [],
   };
 }
 

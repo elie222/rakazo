@@ -4,10 +4,11 @@ import {
   BOT_TITLE_MAX_LENGTH,
   type ComputerMode,
   normalizeCreateBotProfile,
+  type ShareManifest,
 } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { Pressable, ScrollView, Share, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
 
@@ -25,6 +26,10 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!botId) return;
@@ -132,6 +137,91 @@ export default function BotSettingsScreen() {
           }}
         />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+        <Text style={{ color: "#85858A", marginTop: 24, fontSize: 14 }}>Share bot</Text>
+        <Text style={{ color: "#6C6C70", marginTop: 8, fontSize: 13 }}>
+          Configuration only — not your computer, logins, files, or chat history.
+        </Text>
+        <Pressable
+          onPress={() => {
+            if (!botId || shareBusy) return;
+            setShareBusy(true);
+            void rpc<ShareManifest>("bots/shareManifest", { botId })
+              .then(async (manifest) => {
+                await Share.share({ message: JSON.stringify(manifest, null, 2) });
+              })
+              .catch((err) => setError(err instanceof Error ? err.message : "Could not share"))
+              .finally(() => setShareBusy(false));
+          }}
+          disabled={shareBusy || !bot}
+          style={{
+            marginTop: 12,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: "#3A3A3F",
+            padding: 14,
+            alignItems: "center",
+            opacity: shareBusy || !bot ? 0.4 : 1,
+          }}
+        >
+          <Text style={{ color: "#ECECEE" }}>Share JSON</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            if (!botId || shareBusy) return;
+            setShareBusy(true);
+            setShareNotice(null);
+            void rpc<{ url: string; token: string }>("bots/shareCreate", { botId })
+              .then(({ url, token }) => {
+                setShareLink(url);
+                setShareToken(token);
+                setShareNotice("Share link created");
+              })
+              .catch((err) => setError(err instanceof Error ? err.message : "Could not create link"))
+              .finally(() => setShareBusy(false));
+          }}
+          disabled={shareBusy || !bot}
+          style={{
+            marginTop: 8,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: "#3A3A3F",
+            padding: 14,
+            alignItems: "center",
+            opacity: shareBusy || !bot ? 0.4 : 1,
+          }}
+        >
+          <Text style={{ color: "#ECECEE" }}>Create share link</Text>
+        </Pressable>
+        {shareLink ? (
+          <Pressable
+            onPress={() => void Share.share({ message: shareLink })}
+            style={{ marginTop: 8 }}
+          >
+            <Text style={{ color: "#0A84FF", fontSize: 14 }}>{shareLink}</Text>
+          </Pressable>
+        ) : null}
+        {shareToken ? (
+          <Pressable
+            onPress={() => {
+              if (!shareToken || shareBusy) return;
+              setShareBusy(true);
+              void rpc("bots/shareRevoke", { token: shareToken })
+                .then(() => {
+                  setShareLink(null);
+                  setShareToken(null);
+                  setShareNotice("Share link revoked");
+                })
+                .catch((err) =>
+                  setError(err instanceof Error ? err.message : "Could not revoke link"),
+                )
+                .finally(() => setShareBusy(false));
+            }}
+            style={{ marginTop: 8 }}
+          >
+            <Text style={{ color: "#E65707", fontSize: 14 }}>Revoke link</Text>
+          </Pressable>
+        ) : null}
+        {shareNotice ? <Text style={{ color: "#6C6C70", marginTop: 8, fontSize: 13 }}>{shareNotice}</Text> : null}
         {error ? <Text style={{ color: "#E65707", marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}

@@ -24,6 +24,7 @@ import {
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
+  ShareManifestSchema,
   GroupDetailSchema,
   GroupSchema,
   McpServerConfigInput,
@@ -109,8 +110,33 @@ const threadSendInput = threadTarget
     }
   });
 
+const importShareInput = z
+  .object({
+    manifest: ShareManifestSchema.optional(),
+    token: z.string().min(8).max(200).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (!input.manifest && !input.token) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide manifest or token",
+        path: ["manifest"],
+      });
+    }
+    if (input.manifest && input.token) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide only one of manifest or token",
+        path: ["token"],
+      });
+    }
+  });
+
 export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
+  share: {
+    preview: oc.input(z.object({ token: z.string().min(8).max(200) })).output(ShareManifestSchema),
+  },
   me: oc.output(MeSchema),
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {
@@ -179,6 +205,25 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
+    shareManifest: oc.input(botId).output(ShareManifestSchema),
+    importShare: oc.input(importShareInput).output(BotSchema),
+    shareCreate: oc
+      .input(
+        z.object({
+          botId: Id,
+          ttlDays: z.number().int().min(1).max(365).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          token: z.string(),
+          url: z.string(),
+          expiresAt: z.string(),
+        }),
+      ),
+    shareRevoke: oc.input(z.object({ token: z.string().min(8).max(200) })).output(
+      z.object({ ok: z.literal(true) }),
+    ),
   },
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),

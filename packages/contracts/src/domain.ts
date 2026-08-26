@@ -814,3 +814,38 @@ export const ExportManifestSchema = z.object({
   history: z.array(ThreadMessageSchema),
 });
 export type ExportManifest = z.infer<typeof ExportManifestSchema>;
+
+export const SHARE_MANIFEST_VERSION = "rakazo.share/v1";
+
+export const ShareRoutineTemplateSchema = z.object({
+  name: z.string().min(1).max(80),
+  prompt: z.string().min(1),
+  crons: z.array(z.string().min(1)).min(1),
+  timezone: z.string(),
+});
+export type ShareRoutineTemplate = z.infer<typeof ShareRoutineTemplateSchema>;
+
+export const ShareManifestSchema = z.object({
+  version: z.literal(SHARE_MANIFEST_VERSION),
+  sharedAt: z.string(),
+  name: z.string().min(1).max(BOT_NAME_MAX_LENGTH),
+  title: z.string().max(BOT_TITLE_MAX_LENGTH),
+  description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH),
+  instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH),
+  color: z.string(),
+  notifyOnFinish: z.boolean(),
+  computerMode: ComputerModeSchema.default("team"),
+  routines: z.array(ShareRoutineTemplateSchema).default([]),
+});
+export type ShareManifest = z.infer<typeof ShareManifestSchema>;
+
+export function isExportManifestPayload(manifest: unknown): boolean {
+  return ExportManifestSchema.safeParse(manifest).success;
+}
+
+export function parseShareManifestPayload(manifest: unknown): ShareManifest {
+  if (isExportManifestPayload(manifest)) {
+    throw new Error("Full export backups cannot be imported as a share");
+  }
+  return ShareManifestSchema.parse(manifest);
+}

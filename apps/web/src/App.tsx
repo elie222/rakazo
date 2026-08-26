@@ -21,6 +21,9 @@ const OnboardingPage = lazy(() =>
 const WelcomePage = lazy(() =>
   import("./pages/Welcome").then((module) => ({ default: module.WelcomePage })),
 );
+const SharePage = lazy(() =>
+  import("./pages/Share").then((module) => ({ default: module.SharePage })),
+);
 
 export function App() {
   const session = authClient.useSession();
@@ -73,6 +76,7 @@ export function App() {
             path="/mcp/oauth/callback"
             element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
           />
+          <Route path="/share/:token" element={<SharePage />} />
           <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
           <Route
             path="/app/g/:groupId"
