@@ -345,6 +345,7 @@ export function ShellPage() {
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
+  const jumpGeneration = useRef(0);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
@@ -979,13 +980,15 @@ export function ShellPage() {
   async function jumpToMessage(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = searchHitThreadTarget(target);
     const epoch = historyEpoch.current;
+    const jumpId = (jumpGeneration.current += 1);
     const [snap, page] = await Promise.all([
       rpc.threads.get(threadTarget),
       rpc.threads.messages({ ...threadTarget, around: { messageId: target.messageId } }),
     ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
     // the fetched page would pin deleted messages that every later refresh keeps restoring.
-    if (epoch !== historyEpoch.current) return;
+    // jumpId drops an older jump that finished after a newer click.
+    if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
     expandedHistoryThread.current = page.threadId;
@@ -1011,6 +1014,7 @@ export function ShellPage() {
       setRoutines([]);
       setRoutinesBotId(null);
     }
+    if (jumpId !== jumpGeneration.current) return;
     window.requestAnimationFrame(() => {
       document
         .querySelector(`[data-message-id="${target.messageId}"]`)
@@ -1130,6 +1134,8 @@ export function ShellPage() {
   refreshGroupThreadRef.current = refreshGroupThread;
   const loadOlderMessagesRef = useRef(loadOlderMessages);
   loadOlderMessagesRef.current = loadOlderMessages;
+  const jumpToMessageRef = useRef(jumpToMessage);
+  jumpToMessageRef.current = jumpToMessage;
 
   const mentionBotsKey = useMemo(
     () => bots.map((bot) => `${bot.id}:${bot.name}`).join(","),
@@ -1239,6 +1245,20 @@ export function ShellPage() {
 
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
+  const jumpToReplyMessage = useCallback((messageId: string) => {
+    const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (existing) {
+      existing.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const groupId = activeGroupId.current;
+    if (groupId) {
+      void jumpToMessageRef.current({ groupId, messageId });
+      return;
+    }
+    const botId = activeBotId.current;
+    if (botId) void jumpToMessageRef.current({ botId, messageId });
+  }, []);
   const answerMessage = useCallback(async (message: ThreadMessage, text: string) => {
     const botId = activeBotId.current;
     const groupId = activeGroupId.current;
@@ -2141,18 +2161,7 @@ export function ShellPage() {
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
-          onJumpToMessage={(messageId) => {
-            const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
-            if (existing) {
-              existing.scrollIntoView({ behavior: "smooth", block: "center" });
-              return;
-            }
-            if (inGroup && groupId) {
-              void jumpToMessage({ groupId, messageId });
-              return;
-            }
-            if (active?.id) void jumpToMessage({ botId: active.id, messageId });
-          }}
+          onJumpToMessage={jumpToReplyMessage}
           onOpenPeerMessages={(peerBotId) => {
             setPeerMessagesFocusId(peerBotId);
             setPeerMessagesOpen(true);
