@@ -102,7 +102,8 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 ## Web UI language
 
 The web (and Electron-hosted) UI supports English, Deutsch, and 한국어. Change it under
-**Settings → Language**. The marketing site (`apps/www`) is English-only.
+**Settings → Language**. The marketing homepage (`apps/www`) is available in en/de/ko via
+footer language links (`/`, `/de/`, `/ko/`); other marketing pages stay English.
 
 ## Development
 

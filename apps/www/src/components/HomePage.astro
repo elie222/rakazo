@@ -1,0 +1,304 @@
+---
+import Button from "./Button.astro";
+import Footer from "./Footer.astro";
+import GetStartedDialog from "./GetStartedDialog.astro";
+import Header from "./Header.astro";
+import { ProductDemo } from "./ProductDemo";
+import RosterBotAvatar from "./RosterBotAvatar.astro";
+import { getHomeCopy } from "../i18n/home";
+import {
+  DEFAULT_LOCALE,
+  isLocale,
+  localeHomePath,
+  type Locale,
+} from "../i18n/locales";
+import { fetchGithubStars, formatStarCount } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import {
+  DOCS_URL,
+  GITHUB_URL,
+  SETUP_PROMPT_URL,
+  SITE_NAME,
+  SITE_URL,
+} from "../site";
+
+const locale: Locale = isLocale(Astro.currentLocale)
+  ? Astro.currentLocale
+  : DEFAULT_LOCALE;
+
+const copy = getHomeCopy(locale);
+const enCopy = getHomeCopy(DEFAULT_LOCALE);
+const homeHref = localeHomePath(locale);
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
+const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
+const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "Inbox Zero Inc.",
+      alternateName: "Rakazo",
+      url: `${SITE_URL}/`,
+      logo: `${SITE_URL}/brand/rakazo-mark.svg`,
+      email: "hello@rakazo.com",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "customer support",
+        email: "hello@rakazo.com",
+        url: `${SITE_URL}/support/`,
+        availableLanguage: ["English", "German", "Korean"],
+      },
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: "131 Continental Dr, Suite 305",
+        addressLocality: "Newark",
+        addressRegion: "DE",
+        postalCode: "19713",
+        addressCountry: "US",
+      },
+      sameAs: [GITHUB_URL, "https://www.getinboxzero.com/"],
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: SITE_NAME,
+      description: enCopy.description,
+      inLanguage: DEFAULT_LOCALE,
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+    {
+      "@type": "WebPage",
+      "@id": `${pageUrl}#webpage`,
+      url: pageUrl,
+      name: copy.title,
+      description: copy.description,
+      inLanguage: locale,
+      isPartOf: { "@id": `${SITE_URL}/#website` },
+      about: { "@id": `${SITE_URL}/#software` },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${SITE_URL}/#software`,
+      name: SITE_NAME,
+      url: `${SITE_URL}/`,
+      description: enCopy.description,
+      applicationCategory: "BusinessApplication",
+      applicationSubCategory: "AI agent platform",
+      operatingSystem: "Web, macOS, Linux, iOS, Android",
+      isAccessibleForFree: true,
+      codeRepository: GITHUB_URL,
+      license: `${GITHUB_URL}/blob/main/LICENSE`,
+      provider: { "@id": `${SITE_URL}/#organization` },
+      inLanguage: enCopy.availableLanguage,
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+    },
+  ],
+};
+---
+
+<BaseLayout
+  title={copy.title}
+  description={copy.description}
+  {structuredData}
+  locale={locale}
+  skipLabel={copy.skipToContent}
+  homeAlternates
+  ogImageAlt={copy.ogImageAlt}
+>
+  <div class="container">
+    <Header locale={locale} copy={copy.nav} starsLabel={starsLabel} homeHref={homeHref} />
+
+    <main id="main">
+      <section class="hero">
+        <a class="hero__pill" href="#selfhost">
+          <span class="hero__badge">{copy.hero.badge}</span>
+          <span>{copy.hero.pill}</span>
+        </a>
+        <h1>{copy.hero.heading}</h1>
+        <p class="lead">
+          {copy.hero.lead}
+        </p>
+        <div class="hero__actions">
+          <button class="button button--primary" type="button" data-get-started-open>
+            {copy.hero.getStarted}
+          </button>
+          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
+        </div>
+        <div class="hero__agent-setup">
+          <button
+            class="setup-copy"
+            type="button"
+            data-setup-copy={setupAgentPrompt}
+            data-setup-label={copy.hero.setupWithAgent}
+            data-setup-copied={copy.hero.copiedForAgent}
+            data-setup-failed={copy.hero.copyFailed}
+          >
+            <span class="setup-copy__prefix" aria-hidden="true">$</span>
+            <span class="setup-copy__label">{copy.hero.setupWithAgent}</span>
+            <svg class="setup-copy__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <section id="demo">
+        <ProductDemo client:load />
+      </section>
+
+      <section id="selfhost" class="section">
+        <div class="section-intro">
+          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
+          <h2 class="section-heading">{copy.selfHost.heading}</h2>
+          <p class="section-copy">
+            {copy.selfHost.copy}
+          </p>
+        </div>
+        <div class="card-grid-3">
+          {
+            copy.selfHost.features.map((feature) => (
+              <article class="feature-card">
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section id="roster" class="section">
+        <div class="section-intro">
+          <div class="eyebrow">{copy.roster.eyebrow}</div>
+          <h2 class="section-heading">{copy.roster.heading}</h2>
+          <p class="section-copy">
+            {copy.roster.copy}
+          </p>
+        </div>
+        <div class="card-grid-4">
+          {
+            copy.roster.bots.map((bot) => (
+              <article class="roster-card">
+                <RosterBotAvatar color={bot.color} name={bot.name} />
+                <h3>{bot.name}</h3>
+                <p>{bot.desc}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section id="open-source" class="section">
+        <div class="section-intro">
+          <div class="eyebrow">{copy.openSource.eyebrow}</div>
+          <h2 class="section-heading">{copy.openSource.heading}</h2>
+          <p class="section-copy">
+            {copy.openSource.copy}
+          </p>
+        </div>
+        <div class="comparison-grid">
+          <article class="comparison-card">
+            <h3>{copy.openSource.selfHostTitle}</h3>
+            <p class="comparison-meta">{copy.openSource.selfHostMeta}</p>
+            <div class="comparison-list">
+              {copy.openSource.selfHostItems.map((item) => <div>{item}</div>)}
+            </div>
+            <div class="comparison-actions">
+              <Button href={GITHUB_URL} size="sm" external>{copy.openSource.starOnGithub}</Button>
+              <Button href={DOCS_URL} variant="secondary" size="sm" external>
+                {copy.openSource.readTheDocs}
+              </Button>
+            </div>
+          </article>
+          <article class="comparison-card comparison-card--muted">
+            <div class="comparison-kicker">
+              <h3>{copy.openSource.cloudTitle}</h3>
+              <span class="comparison-badge">{copy.openSource.cloudBadge}</span>
+            </div>
+            <p class="comparison-meta">{copy.openSource.cloudMeta}</p>
+            <div class="comparison-list comparison-list--muted">
+              {copy.openSource.cloudItems.map((item) => <div>{item}</div>)}
+            </div>
+            <div class="comparison-actions">
+              <button class="button button--primary button--small" type="button" data-get-started-open>
+                {copy.openSource.getStarted}
+              </button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="stats-band">
+        <div>
+          <h2>{copy.cta.heading}</h2>
+          <p>{copy.cta.copy}</p>
+          <div class="cta-actions">
+            <button class="button button--primary" type="button" data-get-started-open>
+              {copy.cta.getStarted}
+            </button>
+            <Button href={GITHUB_URL} variant="secondary" external>{copy.cta.viewOnGithub}</Button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          {
+            copy.cta.stats.map((stat) => (
+              <div>
+                <div class="stat-value">
+                  {stat.value === "stars"
+                    ? starsLabel
+                    : stat.value === "license"
+                      ? "Apache-2.0"
+                      : stat.value === "openSource"
+                        ? copy.cta.openSourceValue
+                        : copy.cta.selfHostValue}
+                </div>
+                <div class="stat-label">{stat.label}</div>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <GetStartedDialog copy={copy.getStartedDialog} waitlist={copy.waitlist} />
+    </main>
+
+    <Footer
+      locale={locale}
+      languagesLabel={copy.footer.languagesLabel}
+      navLabel={copy.footer.navLabel}
+      homeHref={homeHref}
+    />
+  </div>
+</BaseLayout>
+
+<script>
+  const setupCopy = document.querySelector<HTMLButtonElement>("[data-setup-copy]");
+  const setupCopyLabel = setupCopy?.querySelector<HTMLElement>(".setup-copy__label");
+
+  setupCopy?.addEventListener("click", async () => {
+    const prompt = setupCopy.dataset.setupCopy;
+    const idleLabel = setupCopy.dataset.setupLabel;
+    const copiedLabel = setupCopy.dataset.setupCopied;
+    const failedLabel = setupCopy.dataset.setupFailed;
+    if (!prompt || !setupCopyLabel || !idleLabel || !copiedLabel || !failedLabel) return;
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setupCopyLabel.textContent = copiedLabel;
+      window.setTimeout(() => {
+        setupCopyLabel.textContent = idleLabel;
+      }, 2400);
+    } catch {
+      setupCopyLabel.textContent = failedLabel;
+    }
+  });
+</script>
