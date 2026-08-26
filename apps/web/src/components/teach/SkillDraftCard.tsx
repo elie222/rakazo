@@ -1,3 +1,4 @@
+import { Trans } from "@lingui/react/macro";
 import type { SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { useEffect, useState } from "react";
@@ -12,7 +13,7 @@ type SkillDraftBlock = {
   status: "draft" | "saved";
 };
 
-function fieldLabel(id: string, title: string) {
+function fieldLabel(id: string, title: React.ReactNode) {
   return (
     <label htmlFor={id} className="mt-3 block text-[13px] text-[#85858A]">
       {title}
@@ -74,16 +75,18 @@ export function SkillDraftCard({
       data-testid="skill-draft-card"
       className="w-[min(520px,92%)] rounded-[20px] border border-[#242428] bg-[#141417] px-[18px] py-4"
     >
-      <div className="text-[15px] font-medium text-[#ECECEE]">Draft skill</div>
+      <div className="text-[15px] font-medium text-[#ECECEE]">
+        <Trans>Draft skill</Trans>
+      </div>
       <div className="mt-1 text-[13.5px] text-[#85858A]">{block.goal}</div>
-      {fieldLabel("skill-draft-name", "Name")}
+      {fieldLabel("skill-draft-name", <Trans>Name</Trans>)}
       <input
         id="skill-draft-name"
         value={name}
         onChange={(event) => setName(event.target.value)}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-when", "When to use")}
+      {fieldLabel("skill-draft-when", <Trans>When to use</Trans>)}
       <textarea
         id="skill-draft-when"
         value={playbook.whenToUse}
@@ -91,7 +94,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-inputs", "Inputs")}
+      {fieldLabel("skill-draft-inputs", <Trans>Inputs</Trans>)}
       <textarea
         id="skill-draft-inputs"
         value={playbook.inputs.join("\n")}
@@ -104,7 +107,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-steps", "Steps")}
+      {fieldLabel("skill-draft-steps", <Trans>Steps</Trans>)}
       <textarea
         id="skill-draft-steps"
         value={playbook.steps.join("\n")}
@@ -117,7 +120,7 @@ export function SkillDraftCard({
         rows={5}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-check", "How to check")}
+      {fieldLabel("skill-draft-check", <Trans>How to check</Trans>)}
       <textarea
         id="skill-draft-check"
         value={playbook.howToCheck}
@@ -125,7 +128,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-return", "What to return")}
+      {fieldLabel("skill-draft-return", <Trans>What to return</Trans>)}
       <textarea
         id="skill-draft-return"
         value={playbook.whatToReturn}
@@ -133,7 +136,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-approval", "Approval boundaries")}
+      {fieldLabel("skill-draft-approval", <Trans>Approval boundaries</Trans>)}
       <textarea
         id="skill-draft-approval"
         value={playbook.approvalBoundaries}
@@ -141,7 +144,7 @@ export function SkillDraftCard({
         rows={2}
         className={fieldClassName()}
       />
-      {fieldLabel("skill-draft-failure", "Failure handling")}
+      {fieldLabel("skill-draft-failure", <Trans>Failure handling</Trans>)}
       <textarea
         id="skill-draft-failure"
         value={playbook.failureHandling}
@@ -156,7 +159,7 @@ export function SkillDraftCard({
           onClick={() => void saveDraft()}
           className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[14px] text-[#17171A] disabled:opacity-40"
         >
-          {saved ? "Saved" : busy ? "Saving…" : "Save"}
+          {saved ? <Trans>Saved</Trans> : busy ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </button>
         <button
           type="button"
@@ -164,7 +167,7 @@ export function SkillDraftCard({
           onClick={() => void testDraft()}
           className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
         >
-          Test
+          <Trans>Test</Trans>
         </button>
         <button
           type="button"
@@ -172,7 +175,7 @@ export function SkillDraftCard({
           onClick={() => onAddRoutine(skillName, formatSkillRunPrompt(skillName, playbook))}
           className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
         >
-          Add to routine
+          <Trans>Add to routine</Trans>
         </button>
       </div>
     </div>

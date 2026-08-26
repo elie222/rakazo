@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { narrateTool, speechFromBlocks, spokenDecision } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +26,7 @@ export function CallView({
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const { t } = useLingui();
   const [phase, setPhase] = useState<Phase>("listening");
   const [caption, setCaption] = useState("");
   const [heard, setHeard] = useState("");
@@ -35,6 +37,8 @@ export function CallView({
   const closing = useRef(false);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
+  const askPromptRef = useRef(t`Say yes or no, or answer in a sentence.`);
+  askPromptRef.current = t`Say yes or no, or answer in a sentence.`;
 
   function setCallPhase(next: Phase) {
     phaseRef.current = next;
@@ -66,7 +70,7 @@ export function CallView({
         onFinal: (text) => void handleTranscript(text),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Microphone failed");
+      setError(err instanceof Error ? err.message : t`Microphone failed`);
     }
   }
 
@@ -91,7 +95,7 @@ export function CallView({
         await onSend(text);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send that");
+      setError(err instanceof Error ? err.message : t`Could not send that`);
       void listen();
     }
   }
@@ -151,7 +155,7 @@ export function CallView({
       if (text) {
         spokenMessage.current = lastBot.id;
         dictation.stop("cancel");
-        void speaker.speak(ask ? `${text}. Say yes or no, or answer in a sentence.` : text, {
+        void speaker.speak(ask ? `${text}. ${askPromptRef.current}` : text, {
           botId,
           messageId: lastBot.id,
         });
@@ -195,13 +199,21 @@ export function CallView({
         data-testid="call-view"
         className="w-full max-w-[420px] rounded-[24px] border border-[#2A2A2F] bg-[#141416] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]"
       >
-        <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">Call</div>
+        <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">
+          <Trans>Call</Trans>
+        </div>
         <div className="mt-2 text-[22px] font-medium text-[#F1F1F2]">{botName}</div>
         <div className="mt-5 text-[15px] text-[#C9C9CE]">
-          {phase === "listening" ? "Listening…" : phase === "speaking" ? "Speaking…" : "Working…"}
+          {phase === "listening" ? (
+            <Trans>Listening…</Trans>
+          ) : phase === "speaking" ? (
+            <Trans>Speaking…</Trans>
+          ) : (
+            <Trans>Working…</Trans>
+          )}
         </div>
         <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-[#85858A]">
-          {phase === "listening" ? heard || "Say something. Silence sends it." : caption}
+          {phase === "listening" ? heard || t`Say something. Silence sends it.` : caption}
         </p>
         {error ? <p className="mt-2 text-[13px] text-[#C94244]">{error}</p> : null}
         <div className="mt-6 flex justify-center gap-3">
@@ -210,17 +222,19 @@ export function CallView({
             onClick={interrupt}
             className="rounded-full border border-[#2A2A2F] px-4 py-2 text-[14px] text-[#C9C9CE]"
           >
-            Interrupt
+            <Trans>Interrupt</Trans>
           </button>
           <button
             type="button"
             onClick={hangUp}
             className="rounded-full bg-[#FF5364] px-4 py-2 text-[14px] font-medium text-white"
           >
-            Hang up
+            <Trans>Hang up</Trans>
           </button>
         </div>
-        <p className="mt-4 text-[12px] text-[#6C6C70]">Space interrupts · Esc hangs up</p>
+        <p className="mt-4 text-[12px] text-[#6C6C70]">
+          <Trans>Space interrupts · Esc hangs up</Trans>
+        </p>
       </div>
     </div>
   );

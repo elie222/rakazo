@@ -3,6 +3,7 @@ import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import tls from "node:tls";
+import { lingui } from "@lingui/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
@@ -124,7 +125,12 @@ export default defineConfig(({ mode }) => {
   const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   return {
     plugins: [
-      react(),
+      react({
+        babel: {
+          plugins: ["@lingui/babel-plugin-lingui-macro"],
+        },
+      }),
+      lingui(),
       tailwindcss(),
       {
         name: "rakazo-performance-asset-delay",

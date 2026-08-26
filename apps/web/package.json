@@ -9,9 +9,13 @@
     "preview": "vite preview",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/web/src",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "intl:extract": "lingui extract --clean",
+    "intl:compile": "lingui compile"
   },
   "dependencies": {
+    "@lingui/core": "5.9.5",
+    "@lingui/react": "5.9.5",
     "@orpc/client": "^1.15.0",
     "@orpc/contract": "^1.15.0",
     "@rakazo/chat-ui": "workspace:*",
@@ -27,6 +31,11 @@
   },
   "devDependencies": {
     "@fontsource-variable/geist": "^5.3.0",
+    "@lingui/babel-plugin-lingui-macro": "5.9.5",
+    "@lingui/cli": "5.9.5",
+    "@lingui/conf": "5.9.5",
+    "@lingui/macro": "5.9.5",
+    "@lingui/vite-plugin": "5.9.5",
     "@playwright/test": "^1.55.0",
     "@tailwindcss/vite": "^4.1.12",
     "@types/react": "^19.1.12",

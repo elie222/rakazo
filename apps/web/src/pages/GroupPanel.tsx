@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { useMemo, useState } from "react";
@@ -71,6 +72,7 @@ export function CreateGroupForm({
   onCancel: () => void;
   onCreate: (input: { name: string; botIds: string[] }) => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -83,7 +85,7 @@ export function CreateGroupForm({
     try {
       await onCreate({ name: name.trim(), botIds: selected });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create group");
+      setError(cause instanceof Error ? cause.message : t`Could not create group`);
     } finally {
       setSubmitting(false);
     }
@@ -92,8 +94,10 @@ export function CreateGroupForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">New group</span>
-        <button type="button" aria-label="Cancel new group" onClick={onCancel}>
+        <span className="text-[13.5px] text-[#85858A]">
+          <Trans>New group</Trans>
+        </span>
+        <button type="button" aria-label={t`Cancel new group`} onClick={onCancel}>
           ✕
         </button>
       </div>
@@ -103,16 +107,18 @@ export function CreateGroupForm({
         </p>
       ) : null}
       <label className="block text-[14px] text-[#85858A]">
-        Name
+        <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Name this group"
+          placeholder={t`Name this group`}
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
       <div className="mt-5 text-[14px] text-[#85858A]">
-        Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        <Trans>
+          Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        </Trans>
       </div>
       <MemberPicker
         bots={bots}
@@ -125,7 +131,7 @@ export function CreateGroupForm({
         disabled={submitting || !validSelection(name, selected)}
         onClick={() => void create()}
       >
-        {submitting ? "Creating…" : "Create group"}
+        {submitting ? <Trans>Creating…</Trans> : <Trans>Create group</Trans>}
       </Button>
     </div>
   );
@@ -142,6 +148,7 @@ export function GroupSettings({
   onSave: (input: { name?: string; botIds?: string[] }) => Promise<void>;
   onRemove: () => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
   const [pending, setPending] = useState<"save" | "remove" | null>(null);
@@ -154,7 +161,13 @@ export function GroupSettings({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not ${kind} group`);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : kind === "save"
+            ? t`Could not save group`
+            : t`Could not remove group`,
+      );
     } finally {
       setPending(null);
     }
@@ -175,7 +188,9 @@ export function GroupSettings({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">Group settings</span>
+        <span className="text-[13.5px] text-[#85858A]">
+          <Trans>Group settings</Trans>
+        </span>
       </div>
       {error ? (
         <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
@@ -183,7 +198,7 @@ export function GroupSettings({
         </p>
       ) : null}
       <label className="block text-[14px] text-[#85858A]">
-        Name
+        <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -191,7 +206,9 @@ export function GroupSettings({
         />
       </label>
       <div className="mt-5 text-[14px] text-[#85858A]">
-        Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        <Trans>
+          Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+        </Trans>
       </div>
       <MemberPicker
         bots={bots}
@@ -204,7 +221,7 @@ export function GroupSettings({
         disabled={pending !== null || !validSelection(name, selected)}
         onClick={() => void mutate("save", save)}
       >
-        {pending === "save" ? "Saving…" : "Save"}
+        {pending === "save" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
       </Button>
       <button
         type="button"
@@ -212,7 +229,7 @@ export function GroupSettings({
         onClick={() => void mutate("remove", onRemove)}
         className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B] disabled:opacity-40"
       >
-        {pending === "remove" ? "Deleting…" : "Delete group"}
+        {pending === "remove" ? <Trans>Deleting…</Trans> : <Trans>Delete group</Trans>}
       </button>
     </div>
   );

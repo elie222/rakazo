@@ -1,3 +1,4 @@
+import { Trans } from "@lingui/react/macro";
 import type { SearchHit } from "@rakazo/contracts";
 
 export function WorkspaceSearchResults({
@@ -10,10 +11,18 @@ export function WorkspaceSearchResults({
   onSelect: (hit: SearchHit) => void;
 }) {
   if (loading) {
-    return <div className="px-3 py-4 text-[14px] text-[#85858A]">Searching…</div>;
+    return (
+      <div className="px-3 py-4 text-[14px] text-[#85858A]">
+        <Trans>Searching…</Trans>
+      </div>
+    );
   }
   if (!hits.length) {
-    return <div className="px-3 py-4 text-[14px] text-[#85858A]">No results</div>;
+    return (
+      <div className="px-3 py-4 text-[14px] text-[#85858A]">
+        <Trans>No results</Trans>
+      </div>
+    );
   }
   return (
     <div className="flex flex-col gap-0.5">
