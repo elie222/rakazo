@@ -23,7 +23,45 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Copy" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "message-hover-toolbar");
+
+  // Pill must float above the bubble text, not cover the first line.
+  const bubble = parentRow.locator("div").filter({ hasText: parentText }).last();
+  await expect
+    .poll(async () => {
+      const toolbarBox = await toolbar.boundingBox();
+      const bubbleBox = await bubble.boundingBox();
+      if (!toolbarBox || !bubbleBox) return null;
+      return toolbarBox.y + toolbarBox.height <= bubbleBox.y + 1;
+    })
+    .toBe(true);
+
+  // Keep the pill visible for the artifact (full-page shots can drop :hover).
+  await toolbar.evaluate((el) => {
+    const node = el as HTMLElement;
+    node.style.opacity = "1";
+    node.style.pointerEvents = "auto";
+  });
+  const toolbarBox = await toolbar.boundingBox();
+  const bubbleBox = await bubble.boundingBox();
+  if (!toolbarBox || !bubbleBox) throw new Error("missing hover toolbar geometry");
+  const pad = 16;
+  const clip = {
+    x: Math.max(0, Math.min(toolbarBox.x, bubbleBox.x) - pad),
+    y: Math.max(0, toolbarBox.y - pad),
+    width:
+      Math.max(toolbarBox.x + toolbarBox.width, bubbleBox.x + bubbleBox.width) -
+      Math.min(toolbarBox.x, bubbleBox.x) +
+      pad * 2,
+    height: bubbleBox.y + bubbleBox.height - toolbarBox.y + pad * 2,
+  };
+  const hoverPath = testInfo.outputPath("message-hover-toolbar.png");
+  await page.screenshot({
+    animations: "disabled",
+    caret: "hide",
+    clip,
+    path: hoverPath,
+  });
+  await testInfo.attach("message-hover-toolbar", { contentType: "image/png", path: hoverPath });
 
   await toolbar.getByRole("button", { name: "Copy" }).click();
   await expect
