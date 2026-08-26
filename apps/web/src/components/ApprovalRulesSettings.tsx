@@ -6,11 +6,19 @@ import { rpc } from "../lib/rpc";
 
 function describeRule(rule: ActionApprovalRule): string {
   if (rule.effect === "require_approval") {
-    if (rule.matchKind === "category") return t`Ask before ${rule.matchValue} actions`;
+    if (rule.matchKind === "category") {
+      if (rule.matchValue === "email") return t`Ask before email actions`;
+      if (rule.matchValue === "purchase") return t`Ask before purchase actions`;
+      return t`Ask before ${rule.matchValue} actions`;
+    }
     if (rule.matchKind === "connector") return t`Ask before ${rule.matchValue} connector`;
     return t`Ask before ${rule.matchValue}`;
   }
-  if (rule.matchKind === "category") return t`Allow ${rule.matchValue} actions without asking`;
+  if (rule.matchKind === "category") {
+    if (rule.matchValue === "email") return t`Allow email actions without asking`;
+    if (rule.matchValue === "purchase") return t`Allow purchase actions without asking`;
+    return t`Allow ${rule.matchValue} actions without asking`;
+  }
   if (rule.matchKind === "connector") return t`Allow ${rule.matchValue} connector without asking`;
   return t`Allow ${rule.matchValue} without asking`;
 }

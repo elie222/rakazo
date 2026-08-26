@@ -16,6 +16,13 @@ function formatAnsweredState(answer: string | undefined, approval: boolean): str
   return t`Answered: ${answer}`;
 }
 
+function approvalActionLabel(id: string, fallback: string): string {
+  if (id === "allow") return t`Allow once`;
+  if (id === "always") return t`Always allow this tool`;
+  if (id === "deny") return t`Deny`;
+  return fallback;
+}
+
 export function AskCard({
   block,
   canAnswer,
@@ -79,7 +86,11 @@ export function AskCard({
                   : "rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
               }
             >
-              {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
+              {pendingAction === action.id ? (
+                <Trans>Sending…</Trans>
+              ) : (
+                approvalActionLabel(action.id, action.label)
+              )}
             </button>
           ))}
         </div>

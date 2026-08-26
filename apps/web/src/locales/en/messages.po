@@ -25,6 +25,11 @@ msgstr " macOS will not ask for extra permission if you let bots run on this Mac
 msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 msgstr " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 
+#. placeholder {0}: group.entries.length
+#: src/pages/ModelSettingsOverlay.tsx:370
+msgid "{0, plural, one {# model} other {# models}}"
+msgstr "{0, plural, one {# model} other {# models}}"
+
 #. placeholder {0}: file.name
 #: src/pages/Shell.tsx:1260
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
@@ -51,22 +56,15 @@ msgstr "{0} connection"
 msgid "{0} is using it"
 msgstr "{0} is using it"
 
-#. placeholder {0}: (size / 1024).toFixed(1)
-#: src/components/ArtifactFileCard.tsx:263
+#. placeholder {0}: format(size / 1024)
+#: src/components/ArtifactFileCard.tsx:270
 msgid "{0} KB"
 msgstr "{0} KB"
 
-#. placeholder {0}: (size / (1024 * 1024)).toFixed(1)
-#: src/components/ArtifactFileCard.tsx:264
+#. placeholder {0}: format(size / (1024 * 1024))
+#: src/components/ArtifactFileCard.tsx:271
 msgid "{0} MB"
 msgstr "{0} MB"
-
-#. placeholder {0}: group.entries.length
-#. placeholder {1}: group.entries.length === 1 ? "" : "s"
-#. placeholder {2}: providerHint(group.entries[0]!)
-#: src/pages/ModelSettingsOverlay.tsx:370
-msgid "{0} model{1} · {2}"
-msgstr "{0} model{1} · {2}"
 
 #. placeholder {0}: usage.runs
 #. placeholder {1}: usage.inputTokens + usage.outputTokens
@@ -88,15 +86,15 @@ msgstr "{botName} has not messaged another bot yet."
 msgid "{botName}’s computer"
 msgstr "{botName}’s computer"
 
-#: src/pages/ActivityList.tsx:141
+#: src/pages/ActivityList.tsx:142
 msgid "{days}d ago"
 msgstr "{days}d ago"
 
-#: src/pages/ActivityList.tsx:139
+#: src/pages/ActivityList.tsx:140
 msgid "{hours}h ago"
 msgstr "{hours}h ago"
 
-#: src/pages/ActivityList.tsx:137
+#: src/pages/ActivityList.tsx:138
 msgid "{minutes}m ago"
 msgstr "{minutes}m ago"
 
@@ -105,11 +103,11 @@ msgstr "{minutes}m ago"
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "{remaining} left · bot is watching, not acting"
 
-#: src/components/ArtifactFileCard.tsx:262
+#: src/components/ArtifactFileCard.tsx:264
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/ActivityList.tsx:96
+#: src/pages/ActivityList.tsx:97
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
@@ -142,7 +140,7 @@ msgstr "Account default"
 msgid "Account preferences apply across all your bots."
 msgstr "Account preferences apply across all your bots."
 
-#: src/components/ApprovalRulesSettings.tsx:82
+#: src/components/ApprovalRulesSettings.tsx:90
 msgid "Action confirmations"
 msgstr "Action confirmations"
 
@@ -236,19 +234,31 @@ msgid "Agents:"
 msgstr "Agents:"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:13
+#: src/components/ApprovalRulesSettings.tsx:20
 msgid "Allow {0} actions without asking"
 msgstr "Allow {0} actions without asking"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:14
+#: src/components/ApprovalRulesSettings.tsx:22
 msgid "Allow {0} connector without asking"
 msgstr "Allow {0} connector without asking"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:15
+#: src/components/ApprovalRulesSettings.tsx:23
 msgid "Allow {0} without asking"
 msgstr "Allow {0} without asking"
+
+#: src/components/ApprovalRulesSettings.tsx:18
+msgid "Allow email actions without asking"
+msgstr "Allow email actions without asking"
+
+#: src/components/AskCard.tsx:20
+msgid "Allow once"
+msgstr "Allow once"
+
+#: src/components/ApprovalRulesSettings.tsx:19
+msgid "Allow purchase actions without asking"
+msgstr "Allow purchase actions without asking"
 
 #: src/components/AskCard.tsx:13
 msgid "Allowed once"
@@ -258,11 +268,15 @@ msgstr "Allowed once"
 msgid "Already have an account?"
 msgstr "Already have an account?"
 
+#: src/components/AskCard.tsx:21
+msgid "Always allow this tool"
+msgstr "Always allow this tool"
+
 #: src/components/AskCard.tsx:14
 msgid "Always allowed"
 msgstr "Always allowed"
 
-#: src/components/AskCard.tsx:95
+#: src/components/AskCard.tsx:106
 msgid "Answer"
 msgstr "Answer"
 
@@ -275,12 +289,13 @@ msgstr "Answered"
 msgid "Answered: {answer}"
 msgstr "Answered: {answer}"
 
-#: src/pages/ModelSettingsOverlay.tsx:627
-#: src/pages/ModelSettingsOverlay.tsx:630
-#: src/pages/ModelSettingsOverlay.tsx:646
-#: src/pages/Onboarding.tsx:447
-#: src/pages/Onboarding.tsx:450
-#: src/pages/Onboarding.tsx:461
+#: src/lib/localized-provider-hint.ts:9
+#: src/pages/ModelSettingsOverlay.tsx:633
+#: src/pages/ModelSettingsOverlay.tsx:636
+#: src/pages/ModelSettingsOverlay.tsx:652
+#: src/pages/Onboarding.tsx:452
+#: src/pages/Onboarding.tsx:455
+#: src/pages/Onboarding.tsx:466
 #: src/pages/VoiceSettingsOverlay.tsx:236
 msgid "API key"
 msgstr "API key"
@@ -330,25 +345,33 @@ msgid "Arguments"
 msgstr "Arguments"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:11
+#: src/components/ApprovalRulesSettings.tsx:15
 msgid "Ask before {0}"
 msgstr "Ask before {0}"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:9
+#: src/components/ApprovalRulesSettings.tsx:12
 msgid "Ask before {0} actions"
 msgstr "Ask before {0} actions"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:10
+#: src/components/ApprovalRulesSettings.tsx:14
 msgid "Ask before {0} connector"
 msgstr "Ask before {0} connector"
 
-#: src/components/ApprovalRulesSettings.tsx:105
+#: src/components/ApprovalRulesSettings.tsx:10
+msgid "Ask before email actions"
+msgstr "Ask before email actions"
+
+#: src/components/ApprovalRulesSettings.tsx:11
+msgid "Ask before purchase actions"
+msgstr "Ask before purchase actions"
+
+#: src/components/ApprovalRulesSettings.tsx:113
 msgid "Ask before purchases"
 msgstr "Ask before purchases"
 
-#: src/components/ApprovalRulesSettings.tsx:97
+#: src/components/ApprovalRulesSettings.tsx:105
 msgid "Ask before sending external email"
 msgstr "Ask before sending external email"
 
@@ -375,8 +398,8 @@ msgstr "Attach file"
 msgid "Attachment"
 msgstr "Attachment"
 
-#: src/pages/ModelSettingsOverlay.tsx:560
-#: src/pages/Onboarding.tsx:388
+#: src/pages/ModelSettingsOverlay.tsx:566
+#: src/pages/Onboarding.tsx:393
 msgid "Authorization code or callback URL"
 msgstr "Authorization code or callback URL"
 
@@ -428,7 +451,7 @@ msgstr "Bot screen"
 msgid "Bot screen preview"
 msgstr "Bot screen preview"
 
-#: src/components/ApprovalRulesSettings.tsx:85
+#: src/components/ApprovalRulesSettings.tsx:93
 msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
 msgstr "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
 
@@ -446,7 +469,7 @@ msgstr "Call"
 msgid "Can't reach the server."
 msgstr "Can't reach the server."
 
-#: src/components/AskCard.tsx:118
+#: src/components/AskCard.tsx:129
 #: src/components/teach/TeachComputerSection.tsx:122
 #: src/pages/PluginsOverlay.tsx:396
 #: src/pages/Shell.tsx:4623
@@ -468,7 +491,7 @@ msgstr "Cancel new group"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
-#: src/pages/ActivityList.tsx:162
+#: src/pages/ActivityList.tsx:163
 msgid "Cancelled"
 msgstr "Cancelled"
 
@@ -559,8 +582,8 @@ msgstr "Close navigation"
 msgid "Close panel"
 msgstr "Close panel"
 
-#: src/components/ArtifactFileCard.tsx:181
-#: src/components/ArtifactFileCard.tsx:221
+#: src/components/ArtifactFileCard.tsx:182
+#: src/components/ArtifactFileCard.tsx:222
 msgid "Close preview"
 msgstr "Close preview"
 
@@ -627,7 +650,7 @@ msgstr "Connect"
 msgid "Connect a model"
 msgstr "Connect a model"
 
-#: src/pages/ModelSettingsOverlay.tsx:676
+#: src/pages/ModelSettingsOverlay.tsx:682
 msgid "Connect API key"
 msgstr "Connect API key"
 
@@ -651,7 +674,7 @@ msgstr "Connect OAuth"
 msgid "Connect remote or local tool servers and choose which agents can use them."
 msgstr "Connect remote or local tool servers and choose which agents can use them."
 
-#: src/pages/ModelSettingsOverlay.tsx:530
+#: src/pages/ModelSettingsOverlay.tsx:536
 msgid "Connect this provider to use it as your personal model."
 msgstr "Connect this provider to use it as your personal model."
 
@@ -661,7 +684,7 @@ msgstr "Connect Treg"
 
 #: src/pages/McpOAuthCallback.tsx:53
 #: src/pages/MemorySettingsOverlay.tsx:163
-#: src/pages/ModelSettingsOverlay.tsx:379
+#: src/pages/ModelSettingsOverlay.tsx:381
 #: src/pages/PluginsOverlay.tsx:284
 #: src/pages/Shell.tsx:5094
 #: src/pages/VoiceSettingsOverlay.tsx:202
@@ -674,7 +697,7 @@ msgstr "Connected — its tools are available from your next message."
 
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
-#: src/pages/ModelSettingsOverlay.tsx:519
+#: src/pages/ModelSettingsOverlay.tsx:525
 #: src/pages/VoiceSettingsOverlay.tsx:223
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
@@ -704,8 +727,8 @@ msgstr "Connecting…"
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "Connection to {0} is still pending. You can close this and check again."
 
-#: src/pages/Onboarding.tsx:489
-#: src/pages/Onboarding.tsx:544
+#: src/pages/Onboarding.tsx:494
+#: src/pages/Onboarding.tsx:549
 msgid "Continue"
 msgstr "Continue"
 
@@ -799,11 +822,11 @@ msgid "Could not disconnect OAuth"
 msgstr "Could not disconnect OAuth"
 
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:33
+#: src/components/ArtifactFileCard.tsx:34
 msgid "Could not download {0}. Try again."
 msgstr "Could not download {0}. Try again."
 
-#: src/components/ArtifactFileCard.tsx:210
+#: src/components/ArtifactFileCard.tsx:211
 msgid "Could not download {name}. Try again."
 msgstr "Could not download {name}. Try again."
 
@@ -811,7 +834,7 @@ msgstr "Could not download {name}. Try again."
 msgid "Could not install connector"
 msgstr "Could not install connector"
 
-#: src/components/ApprovalRulesSettings.tsx:31
+#: src/components/ApprovalRulesSettings.tsx:39
 msgid "Could not load approval rules"
 msgstr "Could not load approval rules"
 
@@ -827,7 +850,7 @@ msgstr "Could not load MCP servers"
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
 
-#: src/components/ArtifactFileCard.tsx:168
+#: src/components/ArtifactFileCard.tsx:169
 msgid "Could not load this file."
 msgstr "Could not load this file."
 
@@ -856,7 +879,7 @@ msgstr "Could not remove connector"
 msgid "Could not remove group"
 msgstr "Could not remove group"
 
-#: src/components/ApprovalRulesSettings.tsx:75
+#: src/components/ApprovalRulesSettings.tsx:83
 msgid "Could not remove rule"
 msgstr "Could not remove rule"
 
@@ -884,7 +907,7 @@ msgstr "Could not save model"
 msgid "Could not save routine"
 msgstr "Could not save routine"
 
-#: src/components/ApprovalRulesSettings.tsx:63
+#: src/components/ApprovalRulesSettings.tsx:71
 msgid "Could not save rule"
 msgstr "Could not save rule"
 
@@ -908,7 +931,7 @@ msgstr "Could not send that"
 msgid "Could not start OAuth"
 msgstr "Could not start OAuth"
 
-#: src/components/AskCard.tsx:44
+#: src/components/AskCard.tsx:51
 msgid "Could not submit this answer"
 msgstr "Could not submit this answer"
 
@@ -947,7 +970,7 @@ msgstr "Create account"
 msgid "Create group"
 msgstr "Create group"
 
-#: src/pages/Onboarding.tsx:507
+#: src/pages/Onboarding.tsx:512
 msgid "Create your first bot"
 msgstr "Create your first bot"
 
@@ -1035,16 +1058,20 @@ msgstr "Deleting…"
 msgid "Denied"
 msgstr "Denied"
 
+#: src/components/AskCard.tsx:22
+msgid "Deny"
+msgstr "Deny"
+
 #: src/pages/ModelSettingsOverlay.tsx:328
 msgid "Deployment default"
 msgstr "Deployment default"
 
-#: src/pages/Onboarding.tsx:523
+#: src/pages/Onboarding.tsx:528
 #: src/pages/Shell.tsx:4185
 msgid "Describe what this bot does"
 msgstr "Describe what this bot does"
 
-#: src/pages/Onboarding.tsx:528
+#: src/pages/Onboarding.tsx:533
 #: src/pages/Shell.tsx:4190
 #: src/pages/Shell.tsx:4352
 msgid "Description"
@@ -1088,18 +1115,18 @@ msgstr "Docker is the default: bots use a shared Team Computer."
 msgid "Don’t have an account?"
 msgstr "Don’t have an account?"
 
-#: src/pages/ActivityList.tsx:158
+#: src/pages/ActivityList.tsx:159
 msgid "Done"
 msgstr "Done"
 
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:83
 #: src/components/ArtifactFileCard.tsx:84
+#: src/components/ArtifactFileCard.tsx:85
 msgid "Download {0}"
 msgstr "Download {0}"
 
-#: src/components/ArtifactFileCard.tsx:201
 #: src/components/ArtifactFileCard.tsx:202
+#: src/components/ArtifactFileCard.tsx:203
 msgid "Download {name}"
 msgstr "Download {name}"
 
@@ -1111,7 +1138,7 @@ msgstr "Draft skill"
 msgid "Duplicate"
 msgstr "Duplicate"
 
-#: src/components/AskCard.tsx:138
+#: src/components/AskCard.tsx:149
 msgid "Edit first"
 msgstr "Edit first"
 
@@ -1128,8 +1155,8 @@ msgid "Encrypted static credential saved"
 msgstr "Encrypted static credential saved"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: src/pages/ModelSettingsOverlay.tsx:583
-#: src/pages/Onboarding.tsx:410
+#: src/pages/ModelSettingsOverlay.tsx:589
+#: src/pages/Onboarding.tsx:415
 msgid "Enter this code at <0>{0}</0>"
 msgstr "Enter this code at <0>{0}</0>"
 
@@ -1179,7 +1206,7 @@ msgstr "Export this week's list from the CRM and drop it in the shared folder"
 msgid "Extra high"
 msgstr "Extra high"
 
-#: src/pages/ActivityList.tsx:160
+#: src/pages/ActivityList.tsx:161
 msgid "Failed"
 msgstr "Failed"
 
@@ -1198,19 +1225,19 @@ msgstr "Failed to stop"
 msgid "Failure handling"
 msgstr "Failure handling"
 
-#: src/pages/ModelSettingsOverlay.tsx:426
-#: src/pages/Onboarding.tsx:287
+#: src/pages/ModelSettingsOverlay.tsx:430
+#: src/pages/Onboarding.tsx:292
 msgid "Find models"
 msgstr "Find models"
 
-#: src/pages/ModelSettingsOverlay.tsx:426
-#: src/pages/Onboarding.tsx:287
+#: src/pages/ModelSettingsOverlay.tsx:430
+#: src/pages/Onboarding.tsx:292
 msgid "Finding…"
 msgstr "Finding…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/ModelSettingsOverlay.tsx:543
-#: src/pages/Onboarding.tsx:371
+#: src/pages/ModelSettingsOverlay.tsx:549
+#: src/pages/Onboarding.tsx:376
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 
@@ -1338,7 +1365,7 @@ msgstr "Isolated"
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 
-#: src/pages/ActivityList.tsx:135
+#: src/pages/ActivityList.tsx:136
 msgid "just now"
 msgstr "just now"
 
@@ -1364,7 +1391,7 @@ msgstr "Listening…"
 msgid "Load earlier messages"
 msgstr "Load earlier messages"
 
-#: src/pages/ActivityList.tsx:59
+#: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "Loading activity…"
 
@@ -1377,7 +1404,7 @@ msgid "Loading memory settings…"
 msgstr "Loading memory settings…"
 
 #: src/pages/ModelSettingsOverlay.tsx:307
-#: src/pages/ModelSettingsOverlay.tsx:711
+#: src/pages/ModelSettingsOverlay.tsx:717
 msgid "Loading model catalog…"
 msgstr "Loading model catalog…"
 
@@ -1386,11 +1413,11 @@ msgstr "Loading model catalog…"
 msgid "Loading peer messages…"
 msgstr "Loading peer messages…"
 
-#: src/components/ArtifactFileCard.tsx:237
+#: src/components/ArtifactFileCard.tsx:238
 msgid "Loading preview…"
 msgstr "Loading preview…"
 
-#: src/components/ApprovalRulesSettings.tsx:111
+#: src/components/ApprovalRulesSettings.tsx:119
 msgid "Loading rules…"
 msgstr "Loading rules…"
 
@@ -1497,21 +1524,22 @@ msgstr "Minimize"
 msgid "minutes"
 msgstr "minutes"
 
-#: src/pages/ModelSettingsOverlay.tsx:431
-#: src/pages/ModelSettingsOverlay.tsx:824
-#: src/pages/Onboarding.tsx:292
-#: src/pages/Onboarding.tsx:341
-#: src/pages/Onboarding.tsx:349
+#: src/pages/ModelSettingsOverlay.tsx:435
+#: src/pages/ModelSettingsOverlay.tsx:496
+#: src/pages/ModelSettingsOverlay.tsx:830
+#: src/pages/Onboarding.tsx:297
+#: src/pages/Onboarding.tsx:346
+#: src/pages/Onboarding.tsx:354
 #: src/pages/Shell.tsx:4375
 msgid "Model"
 msgstr "Model"
 
-#: src/pages/ModelSettingsOverlay.tsx:473
-#: src/pages/Onboarding.tsx:322
+#: src/pages/ModelSettingsOverlay.tsx:477
+#: src/pages/Onboarding.tsx:327
 msgid "Model id"
 msgstr "Model id"
 
-#: src/pages/ModelSettingsOverlay.tsx:841
+#: src/pages/ModelSettingsOverlay.tsx:847
 msgid "Model options"
 msgstr "Model options"
 
@@ -1528,8 +1556,8 @@ msgstr "Model updated."
 msgid "Models"
 msgstr "Models"
 
-#: src/pages/ModelSettingsOverlay.tsx:444
-#: src/pages/Onboarding.tsx:299
+#: src/pages/ModelSettingsOverlay.tsx:448
+#: src/pages/Onboarding.tsx:304
 msgid "Models from server"
 msgstr "Models from server"
 
@@ -1554,7 +1582,7 @@ msgstr "Move to"
 #: src/pages/Auth.tsx:47
 #: src/pages/GroupPanel.tsx:110
 #: src/pages/GroupPanel.tsx:201
-#: src/pages/Onboarding.tsx:510
+#: src/pages/Onboarding.tsx:515
 #: src/pages/Shell.tsx:2487
 #: src/pages/Shell.tsx:4170
 #: src/pages/Shell.tsx:4334
@@ -1562,7 +1590,7 @@ msgstr "Move to"
 msgid "Name"
 msgstr "Name"
 
-#: src/pages/Onboarding.tsx:514
+#: src/pages/Onboarding.tsx:519
 #: src/pages/Shell.tsx:4175
 msgid "Name this bot"
 msgstr "Name this bot"
@@ -1571,11 +1599,11 @@ msgstr "Name this bot"
 msgid "Name this group"
 msgstr "Name this group"
 
-#: src/pages/ActivityList.tsx:154
+#: src/pages/ActivityList.tsx:155
 msgid "Needs input"
 msgstr "Needs input"
 
-#: src/pages/ActivityList.tsx:156
+#: src/pages/ActivityList.tsx:157
 msgid "Needs takeover"
 msgstr "Needs takeover"
 
@@ -1628,11 +1656,11 @@ msgstr "No connection record found for {0}."
 msgid "No credential saved"
 msgstr "No credential saved"
 
-#: src/components/ApprovalRulesSettings.tsx:115
+#: src/components/ApprovalRulesSettings.tsx:123
 msgid "No exceptions. Actions run automatically."
 msgstr "No exceptions. Actions run automatically."
 
-#: src/components/AskCard.tsx:66
+#: src/components/AskCard.tsx:73
 msgid "No longer active"
 msgstr "No longer active"
 
@@ -1648,11 +1676,11 @@ msgstr "No MCP or API tool sources installed yet."
 msgid "No MCP servers yet."
 msgstr "No MCP servers yet."
 
-#: src/pages/ModelSettingsOverlay.tsx:715
+#: src/pages/ModelSettingsOverlay.tsx:721
 msgid "No model catalog is available."
 msgstr "No model catalog is available."
 
-#: src/pages/ModelSettingsOverlay.tsx:387
+#: src/pages/ModelSettingsOverlay.tsx:389
 msgid "No providers found."
 msgstr "No providers found."
 
@@ -1668,7 +1696,7 @@ msgstr "None yet"
 msgid "Not configured"
 msgstr "Not configured"
 
-#: src/pages/ModelSettingsOverlay.tsx:521
+#: src/pages/ModelSettingsOverlay.tsx:527
 #: src/pages/VoiceSettingsOverlay.tsx:225
 msgid "Not connected"
 msgstr "Not connected"
@@ -1677,7 +1705,7 @@ msgstr "Not connected"
 msgid "Not now"
 msgstr "Not now"
 
-#: src/pages/ActivityList.tsx:71
+#: src/pages/ActivityList.tsx:72
 msgid "Now"
 msgstr "Now"
 
@@ -1731,8 +1759,8 @@ msgstr "Open the computer view on web or desktop to teach a task."
 msgid "Open work"
 msgstr "Open work"
 
-#: src/pages/ModelSettingsOverlay.tsx:406
-#: src/pages/Onboarding.tsx:268
+#: src/pages/ModelSettingsOverlay.tsx:408
+#: src/pages/Onboarding.tsx:271
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatible server URL"
 
@@ -1744,8 +1772,8 @@ msgstr "Opened its thread."
 msgid "Opening your workspace…"
 msgstr "Opening your workspace…"
 
-#: src/pages/ModelSettingsOverlay.tsx:633
-#: src/pages/Onboarding.tsx:453
+#: src/pages/ModelSettingsOverlay.tsx:639
+#: src/pages/Onboarding.tsx:458
 msgid "Optional"
 msgstr "Optional"
 
@@ -1757,11 +1785,11 @@ msgstr "Optional controls most people never need"
 msgid "Optional header value"
 msgstr "Optional header value"
 
-#: src/pages/ModelSettingsOverlay.tsx:644
+#: src/pages/ModelSettingsOverlay.tsx:650
 msgid "Or connect an API key"
 msgstr "Or connect an API key"
 
-#: src/pages/Onboarding.tsx:461
+#: src/pages/Onboarding.tsx:466
 msgid "Or paste an API key"
 msgstr "Or paste an API key"
 
@@ -1769,8 +1797,8 @@ msgstr "Or paste an API key"
 msgid "Organization API key"
 msgstr "Organization API key"
 
-#: src/pages/ModelSettingsOverlay.tsx:453
-#: src/pages/Onboarding.tsx:308
+#: src/pages/ModelSettingsOverlay.tsx:457
+#: src/pages/Onboarding.tsx:313
 msgid "Other model…"
 msgstr "Other model…"
 
@@ -1788,11 +1816,16 @@ msgstr "Password"
 msgid "Paste a replacement key"
 msgstr "Paste a replacement key"
 
+#: src/pages/ModelSettingsOverlay.tsx:419
+#: src/pages/Onboarding.tsx:282
+msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+msgstr "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+
 #: src/pages/VoiceSettingsOverlay.tsx:242
 msgid "Paste your API key"
 msgstr "Paste your API key"
 
-#: src/pages/ModelSettingsOverlay.tsx:515
+#: src/pages/ModelSettingsOverlay.tsx:521
 #: src/pages/VoiceSettingsOverlay.tsx:219
 msgid "Personal credential"
 msgstr "Personal credential"
@@ -1810,7 +1843,7 @@ msgid "Playing…"
 msgstr "Playing…"
 
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:67
+#: src/components/ArtifactFileCard.tsx:68
 msgid "Preview {0}"
 msgstr "Preview {0}"
 
@@ -1827,7 +1860,7 @@ msgstr "Provider"
 msgid "Providers"
 msgstr "Providers"
 
-#: src/pages/ActivityList.tsx:148
+#: src/pages/ActivityList.tsx:149
 msgid "Queued"
 msgstr "Queued"
 
@@ -1839,7 +1872,7 @@ msgstr "Rakazo verifies the source before saving it. Credentials are encrypted a
 msgid "Read replies aloud"
 msgstr "Read replies aloud"
 
-#: src/pages/ActivityList.tsx:81
+#: src/pages/ActivityList.tsx:82
 msgid "Recent"
 msgstr "Recent"
 
@@ -1861,7 +1894,7 @@ msgstr "Recording: {0}"
 msgid "Release"
 msgstr "Release"
 
-#: src/components/ApprovalRulesSettings.tsx:130
+#: src/components/ApprovalRulesSettings.tsx:138
 #: src/pages/PluginsOverlay.tsx:430
 #: src/pages/ScratchpadSection.tsx:162
 msgid "Remove"
@@ -1903,8 +1936,8 @@ msgstr "Removing…"
 msgid "Reopen"
 msgstr "Reopen"
 
-#: src/pages/ModelSettingsOverlay.tsx:642
-#: src/pages/ModelSettingsOverlay.tsx:674
+#: src/pages/ModelSettingsOverlay.tsx:648
+#: src/pages/ModelSettingsOverlay.tsx:680
 msgid "Replace API key"
 msgstr "Replace API key"
 
@@ -1955,7 +1988,7 @@ msgstr "Routines"
 msgid "Run now"
 msgstr "Run now"
 
-#: src/pages/ActivityList.tsx:152
+#: src/pages/ActivityList.tsx:153
 msgid "Running"
 msgstr "Running"
 
@@ -1970,7 +2003,7 @@ msgstr "Running…"
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/ModelSettingsOverlay.tsx:672
+#: src/pages/ModelSettingsOverlay.tsx:678
 #: src/pages/Shell.tsx:2579
 #: src/pages/Shell.tsx:4506
 msgid "Save"
@@ -1995,7 +2028,7 @@ msgstr "Saved."
 
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/ModelSettingsOverlay.tsx:670
+#: src/pages/ModelSettingsOverlay.tsx:676
 #: src/pages/Shell.tsx:2579
 msgid "Saving…"
 msgstr "Saving…"
@@ -2023,6 +2056,7 @@ msgid "Search providers"
 msgstr "Search providers"
 
 #: src/pages/Onboarding.tsx:228
+#: src/pages/Onboarding.tsx:229
 msgid "Search providers and models"
 msgstr "Search providers and models"
 
@@ -2038,17 +2072,17 @@ msgstr "Select a bot"
 msgid "Send"
 msgstr "Send"
 
-#: src/components/AskCard.tsx:107
+#: src/components/AskCard.tsx:118
 msgid "Send answer"
 msgstr "Send answer"
 
-#: src/components/AskCard.tsx:130
+#: src/components/AskCard.tsx:141
 msgid "Send it"
 msgstr "Send it"
 
-#: src/components/AskCard.tsx:82
-#: src/components/AskCard.tsx:107
-#: src/components/AskCard.tsx:130
+#: src/components/AskCard.tsx:90
+#: src/components/AskCard.tsx:118
+#: src/components/AskCard.tsx:141
 msgid "Sending…"
 msgstr "Sending…"
 
@@ -2057,8 +2091,8 @@ msgid "Server name"
 msgstr "Server name"
 
 #: src/pages/McpServersOverlay.tsx:317
-#: src/pages/ModelSettingsOverlay.tsx:402
-#: src/pages/Onboarding.tsx:264
+#: src/pages/ModelSettingsOverlay.tsx:404
+#: src/pages/Onboarding.tsx:267
 msgid "Server URL"
 msgstr "Server URL"
 
@@ -2081,8 +2115,8 @@ msgstr "Settings: General"
 msgid "Settings: Usage"
 msgstr "Settings: Usage"
 
-#: src/pages/ModelSettingsOverlay.tsx:414
-#: src/pages/Onboarding.tsx:276
+#: src/pages/ModelSettingsOverlay.tsx:416
+#: src/pages/Onboarding.tsx:279
 msgid "Setup help"
 msgstr "Setup help"
 
@@ -2099,8 +2133,9 @@ msgstr "Show computer"
 msgid "Show settings"
 msgstr "Show settings"
 
+#: src/lib/localized-provider-hint.ts:7
 #: src/pages/Auth.tsx:114
-#: src/pages/ModelSettingsOverlay.tsx:615
+#: src/pages/ModelSettingsOverlay.tsx:621
 #: src/pages/Onboarding.tsx:105
 msgid "Sign in"
 msgstr "Sign in"
@@ -2126,9 +2161,13 @@ msgstr "Skill {0}"
 msgid "Skip"
 msgstr "Skip"
 
-#: src/pages/Onboarding.tsx:499
+#: src/pages/Onboarding.tsx:504
 msgid "Skip for now"
 msgstr "Skip for now"
+
+#: src/lib/localized-provider-hint.ts:8
+msgid "Skip or deploy key"
+msgstr "Skip or deploy key"
 
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/Shell.tsx:1280
@@ -2165,13 +2204,13 @@ msgstr "Speaking…"
 msgid "Start recording"
 msgstr "Start recording"
 
-#: src/pages/ActivityList.tsx:150
+#: src/pages/ActivityList.tsx:151
 msgid "Starting"
 msgstr "Starting"
 
 #: src/components/teach/TeachComputerSection.tsx:115
-#: src/pages/ModelSettingsOverlay.tsx:613
-#: src/pages/Onboarding.tsx:438
+#: src/pages/ModelSettingsOverlay.tsx:619
+#: src/pages/Onboarding.tsx:443
 msgid "Starting…"
 msgstr "Starting…"
 
@@ -2214,12 +2253,12 @@ msgstr "Stored encrypted"
 msgid "subagent"
 msgstr "subagent"
 
-#: src/pages/ModelSettingsOverlay.tsx:573
-#: src/pages/Onboarding.tsx:400
+#: src/pages/ModelSettingsOverlay.tsx:579
+#: src/pages/Onboarding.tsx:405
 msgid "Submit"
 msgstr "Submit"
 
-#: src/pages/ModelSettingsOverlay.tsx:701
+#: src/pages/ModelSettingsOverlay.tsx:707
 msgid "Switching…"
 msgstr "Switching…"
 
@@ -2282,7 +2321,7 @@ msgstr "this computer"
 msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 
-#: src/components/ArtifactFileCard.tsx:161
+#: src/components/ArtifactFileCard.tsx:162
 msgid "This file is not valid UTF-8 Markdown."
 msgstr "This file is not valid UTF-8 Markdown."
 
@@ -2298,7 +2337,7 @@ msgstr "This Mac runs shell commands with your account, including files in your 
 msgid "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 
-#: src/pages/Onboarding.tsx:474
+#: src/pages/Onboarding.tsx:479
 msgid "This provider cannot paste a key here. Skip if this deployment already has credentials."
 msgstr "This provider cannot paste a key here. Skip if this deployment already has credentials."
 
@@ -2318,7 +2357,7 @@ msgstr "This server is already connected. Disconnect it first to authorize again
 msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
 msgstr "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
 
-#: src/pages/ModelSettingsOverlay.tsx:684
+#: src/pages/ModelSettingsOverlay.tsx:690
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 
@@ -2326,7 +2365,7 @@ msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployme
 msgid "Time of day"
 msgstr "Time of day"
 
-#: src/pages/Onboarding.tsx:519
+#: src/pages/Onboarding.tsx:524
 #: src/pages/Shell.tsx:4180
 #: src/pages/Shell.tsx:4343
 msgid "Title"
@@ -2340,7 +2379,7 @@ msgstr "Tool sources"
 msgid "Treg token"
 msgstr "Treg token"
 
-#: src/components/AskCard.tsx:98
+#: src/components/AskCard.tsx:109
 msgid "Type your answer"
 msgstr "Type your answer"
 
@@ -2366,12 +2405,12 @@ msgstr "Usage"
 msgid "Use {hostLabel}"
 msgstr "Use {hostLabel}"
 
-#: src/pages/ModelSettingsOverlay.tsx:484
-#: src/pages/Onboarding.tsx:333
+#: src/pages/ModelSettingsOverlay.tsx:488
+#: src/pages/Onboarding.tsx:338
 msgid "Use a found model"
 msgstr "Use a found model"
 
-#: src/pages/ModelSettingsOverlay.tsx:703
+#: src/pages/ModelSettingsOverlay.tsx:709
 msgid "Use this model"
 msgstr "Use this model"
 
@@ -2390,10 +2429,10 @@ msgstr "Verifying…"
 msgid "Voice"
 msgstr "Voice"
 
-#: src/pages/ModelSettingsOverlay.tsx:577
-#: src/pages/ModelSettingsOverlay.tsx:599
-#: src/pages/Onboarding.tsx:404
-#: src/pages/Onboarding.tsx:426
+#: src/pages/ModelSettingsOverlay.tsx:583
+#: src/pages/ModelSettingsOverlay.tsx:605
+#: src/pages/Onboarding.tsx:409
+#: src/pages/Onboarding.tsx:431
 msgid "Waiting for sign-in…"
 msgstr "Waiting for sign-in…"
 
@@ -2414,7 +2453,7 @@ msgstr "What about its memories?"
 msgid "What result will you demonstrate?"
 msgstr "What result will you demonstrate?"
 
-#: src/pages/Onboarding.tsx:532
+#: src/pages/Onboarding.tsx:537
 #: src/pages/Shell.tsx:4195
 msgid "What this bot is for"
 msgstr "What this bot is for"
@@ -2469,7 +2508,7 @@ msgstr "You have control"
 msgid "Your email address"
 msgstr "Your email address"
 
-#: src/pages/ModelSettingsOverlay.tsx:526
+#: src/pages/ModelSettingsOverlay.tsx:532
 msgid "Your key or subscription token is stored securely and is never shown here."
 msgstr "Your key or subscription token is stored securely and is never shown here."
 

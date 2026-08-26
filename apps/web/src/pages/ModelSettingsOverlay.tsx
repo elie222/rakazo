@@ -1,7 +1,6 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Me } from "@rakazo/contracts";
 import {
-  OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -16,7 +15,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { type ModelCatalogEntry, type ModelCredential, providerHint } from "../lib/model-auth";
+import { localizedProviderHint } from "../lib/localized-provider-hint";
+import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -367,11 +367,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           {group.name}
                         </span>
                         <span className="mt-0.5 block text-[12px] text-[#6C6C70]">
-                          <Trans>
-                            {group.entries.length} model
-                            {group.entries.length === 1 ? "" : "s"} ·{" "}
-                            {providerHint(group.entries[0]!)}
-                          </Trans>
+                          <Plural value={group.entries.length} one="# model" other="# models" />
+                          {" · "}
+                          {localizedProviderHint(group.entries[0]!)}
                         </span>
                       </span>
                       {connected ? (
@@ -413,7 +411,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         <summary className="w-fit cursor-pointer select-none">
                           <Trans>Setup help</Trans>
                         </summary>
-                        <p className="mt-1">{OPENAI_COMPATIBLE_BASE_URL_HINT}</p>
+                        <p className="mt-1">
+                          {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+                        </p>
                       </details>
                       <div className="mt-3 flex items-center gap-2">
                         <Button
@@ -488,7 +488,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </>
                   ) : (
                     <>
-                      <span>Model</span>
+                      <span>
+                        <Trans>Model</Trans>
+                      </span>
                       <ModelPicker
                         options={modelsForProvider}
                         value={selected.id}

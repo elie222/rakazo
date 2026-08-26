@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
@@ -139,7 +140,7 @@ function formatRelativeTime(iso: string, now = new Date()): string {
   if (hours < 24) return t`${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return t`${days}d ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString(i18n.locale || "en", { month: "short", day: "numeric" });
 }
 
 function statusLabel(status: RunActivityRow["status"]): string {

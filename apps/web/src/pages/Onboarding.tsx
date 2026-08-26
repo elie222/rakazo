@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
-  OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -8,7 +7,8 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type ModelCatalogEntry, providerHint } from "../lib/model-auth";
+import { localizedProviderHint } from "../lib/localized-provider-hint";
+import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -225,6 +225,7 @@ export function OnboardingPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              aria-label={t`Search providers and models`}
               placeholder={t`Search providers and models`}
               className="mt-8 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             />
@@ -253,7 +254,7 @@ export function OnboardingPage() {
                   <span className="text-[15px] text-[#ECECEE]">
                     {entry.providerName ?? entry.provider}
                   </span>
-                  <span className="text-[12px] text-[#85858A]">{providerHint(entry)}</span>
+                  <span className="text-[12px] text-[#85858A]">{localizedProviderHint(entry)}</span>
                 </button>
               ))}
             </div>
@@ -275,7 +276,9 @@ export function OnboardingPage() {
                     <summary className="w-fit cursor-pointer select-none">
                       <Trans>Setup help</Trans>
                     </summary>
-                    <p className="mt-1">{OPENAI_COMPATIBLE_BASE_URL_HINT}</p>
+                    <p className="mt-1">
+                      {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+                    </p>
                   </details>
                   <div className="mt-3">
                     <button

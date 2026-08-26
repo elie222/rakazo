@@ -1,5 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
@@ -29,7 +36,12 @@ export function AccountSettingsOverlay({
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCloseRef.current();
+      if (event.key !== "Escape") return;
+      const localeOpen = panelRef.current?.querySelector(
+        '[data-testid="ui-locale-select"][aria-expanded="true"]',
+      );
+      if (localeOpen) return;
+      onCloseRef.current();
     }
     window.addEventListener("keydown", handleKeyDown);
     if (focusUsage) usageRef.current?.focus();
@@ -39,6 +51,13 @@ export function AccountSettingsOverlay({
       previousFocus?.focus();
     };
   }, [focusUsage]);
+
+  function chooseLocale(next: UiLocale) {
+    if (next === locale || localeBusy) return;
+    setLocale(next);
+    setLocaleBusy(true);
+    void setUiLocale(next).finally(() => setLocaleBusy(false));
+  }
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
@@ -82,30 +101,7 @@ export function AccountSettingsOverlay({
           <h3 className="text-[15px] font-medium text-[#ECECEE]">
             <Trans>Language</Trans>
           </h3>
-          <label className="mt-3 block">
-            <span className="sr-only">
-              <Trans>Language</Trans>
-            </span>
-            <select
-              data-testid="ui-locale-select"
-              className="w-full rounded-xl border border-[#2A2A2E] bg-[#16161A] px-3 py-2.5 text-[14px] text-[#ECECEE] outline-none"
-              value={locale}
-              disabled={localeBusy}
-              aria-label={t`Language`}
-              onChange={(event) => {
-                const next = event.target.value as UiLocale;
-                setLocale(next);
-                setLocaleBusy(true);
-                void setUiLocale(next).finally(() => setLocaleBusy(false));
-              }}
-            >
-              {UI_LOCALES.map((code) => (
-                <option key={code} value={code}>
-                  {UI_LOCALE_LABELS[code]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <UiLocalePicker value={locale} disabled={localeBusy} onChange={chooseLocale} />
         </section>
 
         <div
@@ -151,6 +147,154 @@ export function AccountSettingsOverlay({
           </div>
         </details>
       </div>
+    </div>
+  );
+}
+
+function UiLocalePicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: UiLocale;
+  disabled: boolean;
+  onChange: (locale: UiLocale) => void;
+}) {
+  const { t } = useLingui();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const listboxId = useId();
+  const selectedIndex = Math.max(0, UI_LOCALES.indexOf(value));
+  const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(selectedIndex);
+
+  useEffect(() => {
+    setHighlightedIndex(selectedIndex);
+    setOpen(false);
+  }, [selectedIndex, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    optionRefs.current[highlightedIndex]?.focus();
+  }, [highlightedIndex, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+
+  function choose(index: number) {
+    const next = UI_LOCALES[index];
+    if (!next) return;
+    onChange(next);
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
+  function moveHighlight(index: number) {
+    setHighlightedIndex((index + UI_LOCALES.length) % UI_LOCALES.length);
+  }
+
+  function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (disabled) return;
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen(true);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+      setHighlightedIndex(UI_LOCALES.length - 1);
+    }
+  }
+
+  function onOptionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(index + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(index - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setHighlightedIndex(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setHighlightedIndex(UI_LOCALES.length - 1);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      choose(index);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+  }
+
+  return (
+    <div ref={rootRef} className="relative mt-3">
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        data-testid="ui-locale-select"
+        disabled={disabled}
+        aria-label={t`Language`}
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50] disabled:opacity-50"
+        onClick={() => {
+          if (!disabled) setOpen((current) => !current);
+        }}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span className="min-w-0 truncate">{UI_LOCALE_LABELS[value]}</span>
+        <span className="ml-3 shrink-0 text-[#85858A]" aria-hidden="true">
+          <ChevronDown size={16} strokeWidth={1.8} />
+        </span>
+      </button>
+      {open ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={t`Language`}
+          className="rk-scroll absolute left-0 right-0 top-full z-20 mt-2 overflow-y-auto rounded-[11px] border border-[#26262A] bg-[#101012] p-1 shadow-[0_20px_45px_rgba(0,0,0,.55)]"
+        >
+          {UI_LOCALES.map((code, index) => (
+            <button
+              key={code}
+              ref={(element) => {
+                optionRefs.current[index] = element;
+              }}
+              type="button"
+              role="option"
+              aria-selected={code === value}
+              tabIndex={index === highlightedIndex ? 0 : -1}
+              className={`w-full rounded-[8px] px-3 py-2 text-start text-[13.5px] text-[#ECECEE] outline-none hover:bg-[#1A1A1D] focus-visible:bg-[#1A1A1D] ${
+                code === value ? "bg-[#1A1A1D]" : ""
+              }`}
+              onClick={() => choose(index)}
+              onKeyDown={(event) => onOptionKeyDown(event, index)}
+            >
+              {UI_LOCALE_LABELS[code]}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
