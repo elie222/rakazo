@@ -829,6 +829,13 @@ function ModelPicker({
       : 0;
   }
 
+  function optionDomId(index: number) {
+    return `${listboxId}-option-${index}`;
+  }
+
+  const activeDescendantId =
+    filteredOptions.length > 0 ? optionDomId(activeOptionIndex()) : undefined;
+
   function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -923,7 +930,12 @@ function ModelPicker({
             ref={searchRef}
             type="text"
             value={query}
+            role="combobox"
             aria-label={t`Search models`}
+            aria-controls={listboxId}
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-activedescendant={activeDescendantId}
             placeholder={t`Search`}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -949,6 +961,7 @@ function ModelPicker({
                     <ModelOption
                       key={`${option.provider}:${option.id}`}
                       option={option}
+                      optionDomId={optionDomId(index)}
                       index={index}
                       value={value}
                       highlighted={highlightedIndex === index}
@@ -974,6 +987,7 @@ function ModelPicker({
 
 function ModelOption({
   option,
+  optionDomId,
   index,
   value,
   highlighted,
@@ -982,6 +996,7 @@ function ModelOption({
   onOptionKeyDown,
 }: {
   option: ModelCatalogEntry;
+  optionDomId: string;
   index: number;
   value: string;
   highlighted: boolean;
@@ -992,6 +1007,7 @@ function ModelOption({
   const { t } = useLingui();
   return (
     <button
+      id={optionDomId}
       ref={(element) => {
         optionRefs.current[index] = element;
       }}
