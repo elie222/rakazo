@@ -1010,15 +1010,23 @@ export function ShellPage() {
     });
     if (threadTarget.botId) {
       commitComputer(snap.computer ?? null);
-      setRoutines(await rpc.routines.list({ botId: threadTarget.botId }));
-      setRoutinesBotId(threadTarget.botId);
+      // Don't block parent-scroll on routines metadata; a list failure must not abort the jump.
+      void rpc.routines
+        .list({ botId: threadTarget.botId })
+        .then((routines) => {
+          if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
+          if (activeBotId.current !== threadTarget.botId) return;
+          setRoutines(routines);
+          setRoutinesBotId(threadTarget.botId);
+        })
+        .catch(() => undefined);
     } else {
       commitComputer(null);
       setRoutines([]);
       setRoutinesBotId(null);
     }
-    if (jumpId !== jumpGeneration.current) return;
     window.requestAnimationFrame(() => {
+      if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
       document
         .querySelector(`[data-message-id="${target.messageId}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
