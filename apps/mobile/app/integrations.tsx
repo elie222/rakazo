@@ -28,7 +28,8 @@ export default function Integrations() {
   const [credential, setCredential] = useState("");
   const [requiresAuth, setRequiresAuth] = useState(true);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
@@ -42,10 +43,16 @@ export default function Integrations() {
 
   useEffect(() => {
     void refresh().catch((reason) =>
-      setError(reason instanceof Error ? reason.message : "Could not load integrations"),
+      setCatalogError(reason instanceof Error ? reason.message : "Could not load integrations"),
     );
     return () => connectionAttempt.current?.abort();
   }, []);
+
+  function closeAdvanced() {
+    setAdvancedOpen(false);
+    setSourceKind(null);
+    setSourceError(null);
+  }
 
   async function connect(item: ConnectionCatalogItem) {
     connectionAttempt.current?.abort();
@@ -53,7 +60,7 @@ export default function Integrations() {
     connectionAttempt.current = controller;
     const key = `${item.connectorId}:${item.slug}`;
     setPending(key);
-    setError(null);
+    setCatalogError(null);
     try {
       const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
         "connections/begin",
@@ -83,7 +90,7 @@ export default function Integrations() {
       );
     } catch (reason) {
       if (controller.signal.aborted) return;
-      setError(reason instanceof Error ? reason.message : "Could not connect");
+      setCatalogError(reason instanceof Error ? reason.message : "Could not connect");
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -95,7 +102,7 @@ export default function Integrations() {
   async function revoke(item: ConnectionCatalogItem) {
     const key = `${item.connectorId}:${item.slug}`;
     setPending(key);
-    setError(null);
+    setCatalogError(null);
     const connections = await rpc<Connection[]>("connections/list").catch(() => []);
     const matches = connections.filter(
       (connection) =>
@@ -110,7 +117,7 @@ export default function Integrations() {
       await rpc("connections/revoke", { connectionId: row.id });
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not revoke connection");
+      setCatalogError(reason instanceof Error ? reason.message : "Could not revoke connection");
     } finally {
       setPending(null);
     }
@@ -118,6 +125,7 @@ export default function Integrations() {
 
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
+    setSourceError(null);
     setName(kind === "treg" ? "Treg" : "");
     setUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
@@ -127,7 +135,7 @@ export default function Integrations() {
   async function addSource() {
     if (!sourceKind) return;
     setPending("source");
-    setError(null);
+    setSourceError(null);
     try {
       await rpc("capabilities/install", {
         kind: sourceKind === "api" ? "api" : "mcp",
@@ -145,7 +153,7 @@ export default function Integrations() {
       setSourceKind(null);
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not add source");
+      setSourceError(reason instanceof Error ? reason.message : "Could not add source");
     } finally {
       setPending(null);
     }
@@ -153,11 +161,12 @@ export default function Integrations() {
 
   async function removeSource(source: CapabilityInstall) {
     setPending(source.id);
+    setSourceError(null);
     try {
       await rpc("capabilities/remove", { id: source.id });
       setSources((current) => current.filter((item) => item.id !== source.id));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not remove source");
+      setSourceError(reason instanceof Error ? reason.message : "Could not remove source");
     } finally {
       setPending(null);
     }
@@ -168,7 +177,7 @@ export default function Integrations() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.explanation}>Connect apps.</Text>
 
-        {error && !sourceKind ? <Text style={styles.error}>{error}</Text> : null}
+        {catalogError ? <Text style={styles.error}>{catalogError}</Text> : null}
 
         <Text style={styles.section}>Apps</Text>
         {catalog.length === 0 ? (
@@ -198,7 +207,10 @@ export default function Integrations() {
           accessibilityRole="button"
           accessibilityState={{ expanded: advancedOpen }}
           testID="integrations-advanced"
-          onPress={() => setAdvancedOpen((open) => !open)}
+          onPress={() => {
+            if (advancedOpen) closeAdvanced();
+            else setAdvancedOpen(true);
+          }}
           style={styles.advancedToggle}
         >
           <Text style={styles.advancedLabel}>Advanced</Text>
@@ -216,11 +228,17 @@ export default function Integrations() {
                   style={styles.smallButton}
                 >
                   <Text style={styles.buttonLabel}>
-                    {kind === "treg" ? "Add Treg" : kind === "mcp" ? "Add MCP" : "Add OpenAPI"}
+                    {kind === "treg"
+                      ? "Add Treg"
+                      : kind === "mcp"
+                        ? "Add MCP server"
+                        : "Add OpenAPI"}
                   </Text>
                 </Pressable>
               ))}
             </View>
+
+            {sourceError ? <Text style={styles.error}>{sourceError}</Text> : null}
 
             {sourceKind ? (
               <View style={styles.card}>
@@ -276,7 +294,6 @@ export default function Integrations() {
                     style={styles.input}
                   />
                 ) : null}
-                {error && sourceKind ? <Text style={styles.error}>{error}</Text> : null}
                 <View style={styles.actions}>
                   <Pressable
                     accessibilityRole="button"

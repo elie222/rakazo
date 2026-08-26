@@ -40,7 +40,8 @@ export function PluginsOverlay({
   const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const connectionAttempt = useRef<AbortController | null>(null);
 
@@ -57,7 +58,7 @@ export function PluginsOverlay({
   useEffect(() => {
     void refresh()
       .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : t`Could not load integrations`),
+        setCatalogError(err instanceof Error ? err.message : t`Could not load integrations`),
       )
       .finally(() => setLoading(false));
     return () => connectionAttempt.current?.abort();
@@ -82,7 +83,7 @@ export function PluginsOverlay({
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
-    setError(null);
+    setCatalogError(null);
     const key = itemKey(item);
     setPending(key);
     try {
@@ -111,10 +112,12 @@ export function PluginsOverlay({
         await abortableDelay(2_000, controller.signal);
       }
       if (controller.signal.aborted) return;
-      setError(t`Connection to ${item.name} is still pending. You can close this and check again.`);
+      setCatalogError(
+        t`Connection to ${item.name} is still pending. You can close this and check again.`,
+      );
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof Error ? err.message : t`Could not connect`);
+      setCatalogError(err instanceof Error ? err.message : t`Could not connect`);
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -124,7 +127,7 @@ export function PluginsOverlay({
   }
 
   async function revoke(item: ConnectionCatalogItem) {
-    setError(null);
+    setCatalogError(null);
     const key = itemKey(item);
     setPending(key);
     try {
@@ -140,7 +143,7 @@ export function PluginsOverlay({
       await rpc.connections.revoke({ connectionId: row.id });
       setItemConnected(item, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not revoke connection`);
+      setCatalogError(err instanceof Error ? err.message : t`Could not revoke connection`);
     } finally {
       setPending(null);
     }
@@ -148,7 +151,7 @@ export function PluginsOverlay({
 
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
-    setError(null);
+    setSourceError(null);
     setSourceName(kind === "treg" ? "Treg" : "");
     setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
@@ -158,7 +161,7 @@ export function PluginsOverlay({
 
   async function installSource() {
     if (!sourceKind) return;
-    setError(null);
+    setSourceError(null);
     setPending("install-source");
     try {
       const auth = {
@@ -181,7 +184,7 @@ export function PluginsOverlay({
       setSourceKind(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not install connector`);
+      setSourceError(err instanceof Error ? err.message : t`Could not install connector`);
     } finally {
       setPending(null);
     }
@@ -189,12 +192,12 @@ export function PluginsOverlay({
 
   async function removeSource(install: CapabilityInstall) {
     setPending(install.id);
-    setError(null);
+    setSourceError(null);
     try {
       await rpc.capabilities.remove({ id: install.id });
       setSources((current) => current.filter((source) => source.id !== install.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not remove connector`);
+      setSourceError(err instanceof Error ? err.message : t`Could not remove connector`);
     } finally {
       setPending(null);
     }
@@ -221,13 +224,14 @@ export function PluginsOverlay({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            aria-label={t`Search apps`}
             placeholder={t`Search apps`}
             className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
           />
         </div>
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-          {error && !sourceKind ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
+          {catalogError ? <p className="mb-4 text-sm text-[#C94244]">{catalogError}</p> : null}
           {loading ? (
             <p className="text-[#6C6C70]">
               <Trans>Loading integrations…</Trans>
@@ -285,7 +289,16 @@ export function PluginsOverlay({
             );
           })}
 
-          <details data-testid="integrations-advanced" className="group mt-8">
+          <details
+            data-testid="integrations-advanced"
+            className="group mt-8"
+            onToggle={(event) => {
+              if (!(event.currentTarget as HTMLDetailsElement).open) {
+                setSourceKind(null);
+                setSourceError(null);
+              }
+            }}
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
               <span className="text-[#85858A]">
                 <Trans>Advanced</Trans>
@@ -318,7 +331,7 @@ export function PluginsOverlay({
                 </Button>
               </div>
 
-              {error && sourceKind ? <p className="text-sm text-[#C94244]">{error}</p> : null}
+              {sourceError ? <p className="text-sm text-[#C94244]">{sourceError}</p> : null}
 
               {sourceKind ? (
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
