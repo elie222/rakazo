@@ -84,3 +84,38 @@ export function hasValidBearerToken(authorization: string | undefined, expectedT
   }
   return difference === 0;
 }
+
+/**
+ * The deployment-wide model default: provider, model id, and the key for that provider.
+ *
+ * They resolve together on purpose. A deployment key is a bearer credential for one
+ * vendor, so the provider it is offered to must be decided by the same expression that
+ * picks it — the previous code hardcoded `"openrouter"` as the fallback provider while
+ * reading whatever key was configured, which sends an Anthropic key to OpenRouter the
+ * moment the deployment default is not OpenRouter.
+ *
+ * `key` is undefined when the provider named by PI_DEFAULT_PROVIDER has no key set;
+ * callers already treat a missing deployment key as "no usable model" (scripted).
+ */
+export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env): {
+  provider: string;
+  model: string;
+  key: string | undefined;
+} {
+  const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
+  // ponytail: two rows because two providers ship a deployment key today. A third one
+  // adds a row here, not a branch at each call site.
+  const keys: Record<string, string | undefined> = {
+    openrouter: env.OPENROUTER_API_KEY,
+    anthropic: env.ANTHROPIC_API_KEY,
+  };
+  const models: Record<string, string> = {
+    openrouter: "deepseek/deepseek-v4-flash-0731",
+    anthropic: "claude-sonnet-5",
+  };
+  return {
+    provider,
+    model: env.PI_DEFAULT_MODEL?.trim() || models[provider] || models.openrouter!,
+    key: keys[provider],
+  };
+}

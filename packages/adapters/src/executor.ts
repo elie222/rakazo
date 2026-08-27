@@ -45,6 +45,7 @@ import {
   redactSecrets,
   renderBotDirectory,
   resolveActionApproval,
+  resolveDeploymentModel,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
   toolRequiresApproval,
@@ -312,18 +313,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const useOverride = Boolean(hasOverride && overrideCredential);
       const credential = useOverride ? overrideCredential : defaultCredential;
       const resolved = await resolveModelKey(deps, scope.userId, scope.workspaceId, credential);
+      // Provider and model come from one resolver, so the deployment key can never be
+      // offered to a provider it does not belong to.
+      const deployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
       const provider =
         (useOverride ? override!.modelProvider : null) ??
         credential?.provider ??
         settings?.defaultModelProvider ??
-        (deps.deploymentModelKey ? "openrouter" : "scripted");
+        deployment?.provider ??
+        "scripted";
       const id =
         (useOverride ? override!.modelId : null) ??
         credential?.defaultModel ??
         settings?.defaultModelId ??
-        (deps.deploymentModelKey
-          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-          : "scripted");
+        deployment?.model ??
+        "scripted";
       return {
         provider,
         id,
@@ -747,18 +751,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
+        const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runModelProvider =
           (useModelOverride ? bot.modelProvider : null) ??
           credential?.provider ??
           settings?.defaultModelProvider ??
-          (deps.deploymentModelKey ? "openrouter" : "scripted");
+          runDeployment?.provider ??
+          "scripted";
         const runModelId =
           (useModelOverride ? bot.modelId : null) ??
           credential?.defaultModel ??
           settings?.defaultModelId ??
-          (deps.deploymentModelKey
-            ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-            : "scripted");
+          runDeployment?.model ??
+          "scripted";
         await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { modelProvider: runModelProvider, modelId: runModelId },

@@ -303,7 +303,7 @@ export interface RouterDeps {
   env: {
     defaultProvider: string;
     defaultModel: string;
-    openRouterKey?: string;
+    deploymentModelKey?: string;
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
@@ -2898,7 +2898,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
   ]);
   const hasDeployment = Boolean(
-    settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
+    settings?.deploymentModelCredentialCipher || deps.env.deploymentModelKey,
   );
   return {
     userId: actor.userId,

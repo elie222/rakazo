@@ -1,4 +1,9 @@
-import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
+import {
+  resolveAuthSecret,
+  resolveDeploymentModel,
+  resolveEncryptionKey,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 
 export interface AppEnv {
   databaseUrl: string;
@@ -15,7 +20,7 @@ export interface AppEnv {
   sandboxSupervisorToken: string;
   sandboxProvider: string;
   agentRuntime: string;
-  openRouterKey: string | undefined;
+  deploymentModelKey: string | undefined;
   e2bApiKey: string | undefined;
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
@@ -38,6 +43,7 @@ export interface AppEnv {
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
+  const deploymentModel = resolveDeploymentModel(source);
   return {
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
@@ -53,7 +59,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sandboxSupervisorToken: resolveSupervisorToken(source),
     sandboxProvider: source.SANDBOX_PROVIDER ?? "docker",
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
-    openRouterKey: source.OPENROUTER_API_KEY,
+    // Provider, model and key resolve together: see resolveDeploymentModel.
+    deploymentModelKey: deploymentModel.key,
     e2bApiKey: source.E2B_API_KEY,
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
@@ -66,8 +73,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
-    defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
-    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
+    defaultProvider: deploymentModel.provider,
+    defaultModel: deploymentModel.model,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")

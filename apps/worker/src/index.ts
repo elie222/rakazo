@@ -29,7 +29,7 @@ import {
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveDeploymentModel, resolveEncryptionKey } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
@@ -45,6 +45,8 @@ async function main() {
   const runtime =
     process.env.AGENT_RUNTIME === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const dataDir = process.env.DATA_DIR ?? "./data";
+  // Same resolver the API uses, so both processes agree on provider, model and key.
+  const { key: deploymentModelKey } = resolveDeploymentModel();
   const sandbox = createRunSandbox(process.env.SANDBOX_PROVIDER ?? "docker", {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     e2bApiKey: process.env.E2B_API_KEY,
@@ -103,11 +105,9 @@ async function main() {
     artifacts,
     connector: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
-      Boolean,
-    ),
+    secrets: [deploymentModelKey ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
     secretStore: secrets,
-    deploymentModelKey: process.env.OPENROUTER_API_KEY,
+    deploymentModelKey,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
     jobs,
@@ -125,7 +125,7 @@ async function main() {
     runtime,
     secretStore: secrets,
     memoryProviders,
-    deploymentModelKey: process.env.OPENROUTER_API_KEY,
+    deploymentModelKey,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

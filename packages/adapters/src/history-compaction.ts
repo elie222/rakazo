@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { blocksToAgentHistoryText } from "@rakazo/core";
+import { blocksToAgentHistoryText, resolveDeploymentModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type {
   ConfiguredMemoryProvider,
@@ -115,8 +115,6 @@ export const MAX_TRANSCRIPT_CHARS = 40_000;
 
 /** Bounds a hung summarization call, which would otherwise hold a background-worker slot open. */
 const SUMMARIZE_TIMEOUT_MS = 120_000;
-
-const DEFAULT_SUMMARIZER_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
 
 export interface CompactHistoryDeps {
   prisma: PrismaClient;
@@ -249,8 +247,11 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       })
     : deps.deploymentModelKey
       ? {
-          provider: "openrouter",
-          id: process.env.PI_DEFAULT_MODEL ?? DEFAULT_SUMMARIZER_MODEL_ID,
+          // Provider comes from the same resolver as the key, not a hardcoded
+          // "openrouter" — a deployment default of anthropic would otherwise summarize
+          // by sending an Anthropic key to OpenRouter.
+          provider: resolveDeploymentModel().provider,
+          id: resolveDeploymentModel().model,
           apiKey: deps.deploymentModelKey,
         }
       : await (async () => {
