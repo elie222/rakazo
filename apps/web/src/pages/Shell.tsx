@@ -1925,7 +1925,12 @@ export function ShellPage() {
                             ) : null}
                           </>
                         ) : (
-                          <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                          <div
+                            dir="auto"
+                            className={`mt-0.5 truncate text-[13.5px] ${
+                              bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                            }`}
+                          >
                             {bot.preview}
                           </div>
                         )}
