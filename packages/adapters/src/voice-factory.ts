@@ -2,6 +2,7 @@ import type { VoiceProvider } from "@rakazo/adapter-kit";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
+import { LocalVoiceProvider } from "./local-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
 
 export const VOICE_CATALOG = [
@@ -22,6 +23,12 @@ export const VOICE_CATALOG = [
     name: "Cartesia",
     description: "Lowest-latency Sonic voices for interruptible calls.",
     transcribe: false,
+  },
+  {
+    id: "local",
+    name: "Local Docker (Whisper + Kokoro)",
+    description: "Private, no paid account required. Uses your local Whisper and Kokoro containers.",
+    transcribe: true,
   },
 ] as const;
 
@@ -58,13 +65,15 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       return new OpenAIVoiceProvider();
     case "cartesia":
       return new CartesiaVoiceProvider();
+    case "local":
+      return new LocalVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();
     default:
       break;
   }
-  throw new Error(`Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia.`);
+  throw new Error(`Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | local.`);
 }
 
 export class NoVoiceConfigured extends Error {

@@ -17,6 +17,7 @@ exec "$BIN" \
   --no-first-run \
   --no-default-browser-check \
   --disable-session-crashed-bubble \
+  --hide-crash-restore-bubble \
   --password-store=basic \
   --user-data-dir="$PROFILE" \
   --start-maximized \

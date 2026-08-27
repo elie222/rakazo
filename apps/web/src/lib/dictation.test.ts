@@ -8,6 +8,39 @@ afterEach(() => {
 });
 
 describe("Dictation recorder fallback", () => {
+  it("uses the configured transcription provider instead of browser speech recognition", async () => {
+    const track = { stop: vi.fn() };
+    const recognitionStart = vi.fn();
+    vi.stubGlobal("window", {
+      SpeechRecognition: class {
+        start = recognitionStart;
+      },
+    });
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })) },
+      language: "en-US",
+    });
+    const recorderStart = vi.fn();
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        state = "inactive";
+        start() {
+          recorderStart();
+          this.state = "recording";
+        }
+        stop() {
+          this.state = "inactive";
+        }
+      },
+    );
+
+    await new Dictation().listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+
+    expect(recorderStart).toHaveBeenCalledOnce();
+    expect(recognitionStart).not.toHaveBeenCalled();
+  });
+
   it("stops tracks if hold-to-talk is cancelled while the mic prompt is open", async () => {
     const track = { stop: vi.fn() };
     let grant!: (stream: { getTracks: () => Array<{ stop: () => void }> }) => void;

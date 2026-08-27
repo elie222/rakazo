@@ -45,6 +45,13 @@ EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
+# The browser profile lives in the bot's persistent home. A computer container
+# can be replaced while Chromium is stopped, leaving its single-instance marker
+# behind with the old container hostname. Clear only those stale markers during
+# this fresh boot, before any Chromium process exists.
+rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
+  "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
+  "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"
 HOME="$AGENT_HOME" rakazo-browser >/tmp/rakazo/browser.log 2>&1 &
 browser_up=0
 for _ in $(seq 1 40); do

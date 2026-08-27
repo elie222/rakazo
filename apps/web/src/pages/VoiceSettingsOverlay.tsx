@@ -233,15 +233,34 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                 </div>
 
                 <label className="mt-5 block text-[13.5px] text-[#85858A]">
-                  <Trans>API key</Trans>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none"
-                  />
+                  {selected.id === "local" ? (
+                    <>
+                      <Trans>Local service tokens</Trans>
+                      <textarea
+                        autoComplete="off"
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder={t`Whisper token, then Kokoro token on the next line`}
+                        rows={3}
+                        className="mt-2 w-full resize-none rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none"
+                      />
+                      <span className="mt-1 block text-[12px] text-[#6C6C70]">
+                        <Trans>These are local Docker tokens, not paid provider credentials.</Trans>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Trans>API key</Trans>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
+                        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none"
+                      />
+                    </>
+                  )}
                 </label>
                 <Button
                   type="button"

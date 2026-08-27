@@ -34,15 +34,17 @@ afterEach(() => {
 describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
-    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual(["elevenlabs", "openai", "cartesia"]);
+    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual(["elevenlabs", "openai", "cartesia", "local"]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
+      "local",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
     expect(createVoiceProvider("cartesia").describe().capabilities.transcribe).toBe(false);
+    expect(createVoiceProvider("local").describe().capabilities.transcribe).toBe(true);
     expect(isVoiceProviderId("elevenlabs")).toBe(true);
     expect(isVoiceProviderId("scripted")).toBe(false);
     expect(isVoiceProviderId("piper")).toBe(false);

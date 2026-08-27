@@ -1,0 +1,26 @@
+# Stable local runtime for Docker Desktop.
+#
+# Use with docker-compose.yml so the existing `compose_pgdata` volume and
+# `data/` directory remain in place. Unlike the development launcher, these
+# services run built production commands and do not watch source files.
+services:
+  postgres:
+    restart: unless-stopped
+
+  api:
+    restart: unless-stopped
+    environment:
+      # Whisper and Kokoro run as separate host Docker containers on this
+      # Windows machine. From the app container, Docker Desktop exposes them
+      # through this special host name instead of 127.0.0.1.
+      RAKAZO_WHISPER_URL: http://host.docker.internal:9000
+      RAKAZO_KOKORO_URL: http://host.docker.internal:8880
+
+  worker:
+    restart: unless-stopped
+
+  supervisor:
+    restart: unless-stopped
+
+  web:
+    restart: unless-stopped
