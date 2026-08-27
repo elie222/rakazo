@@ -175,7 +175,13 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       const run = await action();
       setStatus(await rpc.updater.status());
       setCheck(null);
-      setDone(run.ok ? successLabel : (run.error ?? t`Update finished with errors`));
+      if (run.ok) {
+        setError(null);
+        setDone(successLabel);
+      } else {
+        setDone(null);
+        setError(run.error ?? t`Update finished with errors`);
+      }
     } catch (err) {
       if (!isLikelyUpdaterRecreateDisconnect(err)) {
         setError(err instanceof Error ? err.message : t`Update failed`);
