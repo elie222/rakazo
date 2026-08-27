@@ -1008,7 +1008,7 @@ describe("computer replacement", () => {
     const home = new LocalAgentHomeStore(homeRoot);
     const sandbox = new FakeSandboxProvider();
     const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
-    vi.spyOn(sandbox, "exportWorkspace").mockImplementation(async function* () {
+    vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
       throw new Error("ECONNRESET");
     });
 
@@ -1066,7 +1066,7 @@ describe("computer replacement", () => {
     const home = new LocalAgentHomeStore(homeRoot);
     const sandbox = new FakeSandboxProvider();
     const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
-    vi.spyOn(sandbox, "exportWorkspace").mockImplementation(async function* () {
+    vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
       throw new Error("ECONNRESET");
     });
 
@@ -1080,10 +1080,7 @@ describe("computer replacement", () => {
       controlLeaseId: null,
       homeRevision: null,
     };
-    const updateMany = vi
-      .fn()
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValue({ count: 1 });
+    const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 1 });
     const prisma = {
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue(computerRecord),
