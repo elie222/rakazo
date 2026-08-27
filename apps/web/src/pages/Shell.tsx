@@ -678,15 +678,21 @@ export function ShellPage() {
           setMemoryProviderConfig(null);
         }
       });
+    const botsRequest = botsRefreshEpoch.current;
     void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
       .then(([bootstrap, groupList]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
-        setBots(bootstrap.bots);
-        setBotSections(bootstrap.botSections);
-        setArchivedBots(bootstrap.archivedBots);
-        setGroups(groupList);
-        setInitialBotsLoaded(true);
+        // Skip list/route writes if a later refreshBots() advanced the epoch while
+        // bootstrap was in flight (3s poll can finish first).
+        const applyBotLists = botsRequest === botsRefreshEpoch.current;
+        if (applyBotLists) {
+          setBots(bootstrap.bots);
+          setBotSections(bootstrap.botSections);
+          setArchivedBots(bootstrap.archivedBots);
+          setGroups(groupList);
+          setInitialBotsLoaded(true);
+        }
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
           commitSnapshot(bootstrap.thread);
@@ -696,6 +702,7 @@ export function ShellPage() {
           markOnce("rk:renderer:bots-response");
           markOnce("rk:renderer:thread-response");
         }
+        if (!applyBotLists) return;
         if (bootstrap.bots.length === 0 && bootstrap.archivedBots.length === 0) {
           navigate("/onboarding", { replace: true });
           return;
