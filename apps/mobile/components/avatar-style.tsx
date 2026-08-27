@@ -28,7 +28,6 @@ export function AvatarStyleProvider({ children }: { children: ReactNode }) {
 
   async function updateAvatarStyle(next: AvatarStyle) {
     const requestId = ++requestIdRef.current;
-    setAvatarStyle(next);
     const me = await rpc<Me>("preferences/update", { avatarStyle: next });
     if (requestId !== requestIdRef.current) return;
     setAvatarStyle(me.avatarStyle);
