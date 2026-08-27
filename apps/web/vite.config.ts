@@ -7,7 +7,7 @@ import { lingui } from "@lingui/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
-import { resolveAuthSecret } from "../../packages/core/src/secrets-guard.ts";
+import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -118,10 +118,14 @@ export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
-  const screenProxySecret = resolveAuthSecret({
-    ...process.env,
-    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? rootEnv.BETTER_AUTH_SECRET,
-  });
+  const screenProxySecret = () =>
+    resolveScreenProxySecret({
+      ...process.env,
+      SCREEN_PROXY_SECRET: process.env.SCREEN_PROXY_SECRET ?? rootEnv.SCREEN_PROXY_SECRET,
+      SANDBOX_SUPERVISOR_TOKEN:
+        process.env.SANDBOX_SUPERVISOR_TOKEN ?? rootEnv.SANDBOX_SUPERVISOR_TOKEN,
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? rootEnv.BETTER_AUTH_SECRET,
+    });
   const performanceAssetDelayMs = Number(process.env.RAKAZO_PERFORMANCE_ASSET_DELAY_MS ?? 0);
   return {
     plugins: [
@@ -148,8 +152,8 @@ export default defineConfig(({ mode }) => {
       },
       {
         name: "rakazo-novnc-proxy",
-        configureServer: (server) => attachNovncProxy(server, screenProxySecret),
-        configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret),
+        configureServer: (server) => attachNovncProxy(server, screenProxySecret()),
+        configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret()),
       },
     ],
     server: {

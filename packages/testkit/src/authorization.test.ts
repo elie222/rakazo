@@ -769,6 +769,38 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
+
+    await rpc(app, owner, "deployment/update", { signupsEnabled: false });
+    const closedSignup = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: `closed-${stamp}@rakazo.test`,
+        password: "password123",
+        name: "Closed Signup",
+      }),
+    });
+    expect(closedSignup.status).toBeGreaterThanOrEqual(400);
+
+    await rpc(app, owner, "deployment/update", {
+      signupsEnabled: true,
+      signupAllowlist: ["approved@example.test"],
+    });
+    const disallowedSignup = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: `not-approved-${stamp}@rakazo.test`,
+        password: "password123",
+        name: "Disallowed Signup",
+      }),
+    });
+    expect(disallowedSignup.status).toBeGreaterThanOrEqual(400);
+    await signup(app, "approved@example.test", "Approved Signup");
+    await rpc(app, owner, "deployment/update", {
+      signupsEnabled: true,
+      signupAllowlist: [],
+    });
   });
 });
 

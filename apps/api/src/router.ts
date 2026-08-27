@@ -392,11 +392,15 @@ export function createRouter(deps: RouterDeps) {
             ownerUserId: context.actor.userId,
             signupsEnabled: input.signupsEnabled ?? true,
             signupAllowlist: (input.signupAllowlist ?? []).join(","),
+            signupPolicyInitialized: true,
             computerHost: input.computerHost ?? undefined,
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
             ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
+            ...(input.signupsEnabled === undefined && input.signupAllowlist === undefined
+              ? {}
+              : { signupPolicyInitialized: true }),
             ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });
@@ -448,7 +452,7 @@ export function createRouter(deps: RouterDeps) {
           const ciphertext = ciphertextById.get(row.secretId);
           if (!ciphertext) return modelCredentialDto(row);
           try {
-            return modelCredentialDto(row, deps.secrets.load(ciphertext));
+            return modelCredentialDto(row, deps.secrets.load(ciphertext, row.secretId));
           } catch {
             return modelCredentialDto(row);
           }
@@ -2107,6 +2111,7 @@ export function createRouter(deps: RouterDeps) {
               row,
               mcpOAuth.statusForCiphertext(
                 row.secretId ? ciphertextById.get(row.secretId) : undefined,
+                row.secretId ?? undefined,
               ),
             ),
           );
@@ -2181,7 +2186,9 @@ export function createRouter(deps: RouterDeps) {
             let existingMaterial: Record<string, unknown> = {};
             if (existingSecret) {
               try {
-                const value = JSON.parse(deps.secrets.load(existingSecret.ciphertext));
+                const value = JSON.parse(
+                  deps.secrets.load(existingSecret.ciphertext, existingSecret.id),
+                );
                 if (value && typeof value === "object" && !Array.isArray(value))
                   existingMaterial = value as Record<string, unknown>;
               } catch {

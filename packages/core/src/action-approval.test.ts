@@ -143,13 +143,13 @@ describe("resolveActionApproval", () => {
     ).toBe("allow");
   });
 
-  it("does not let standing rules gate approval-exempt local tools", () => {
+  it("lets an explicit rule gate a tool that is exempt by default", () => {
     expect(
       resolveActionApproval({
-        toolName: "read_file",
-        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "read_file" }],
+        toolName: "shell",
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "shell" }],
       }),
-    ).toBe("allow");
+    ).toBe("ask");
   });
 
   it("lets require_approval beat always-allow at the same specificity", () => {

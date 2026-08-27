@@ -40,6 +40,7 @@ import {
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
+import { signupPolicyFromEnv } from "@rakazo/core";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
@@ -95,11 +96,30 @@ export async function createApp(
   const events = createThreadEvents(prisma, realtime, {
     runSecretWriter: createRunSecretWriter(secrets),
   });
-  await prisma.deploymentSettings.upsert({
+  const environmentSignupPolicy = signupPolicyFromEnv(env);
+  const deploymentSettings = await prisma.deploymentSettings.upsert({
     where: { id: "default" },
-    create: { id: "default" },
+    create: {
+      id: "default",
+      signupsEnabled: environmentSignupPolicy.enabled,
+      signupAllowlist: environmentSignupPolicy.allowlist.join(","),
+      signupPolicyInitialized: true,
+    },
     update: {},
   });
+  if (!deploymentSettings.signupPolicyInitialized) {
+    // Older versions created this row with schema defaults even though auth
+    // still enforced the environment policy. Copy that effective policy once
+    // so upgrades preserve behavior before Settings becomes authoritative.
+    await prisma.deploymentSettings.updateMany({
+      where: { id: "default", signupPolicyInitialized: false },
+      data: {
+        signupsEnabled: environmentSignupPolicy.enabled,
+        signupAllowlist: environmentSignupPolicy.allowlist.join(","),
+        signupPolicyInitialized: true,
+      },
+    });
+  }
 
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
@@ -250,7 +270,7 @@ export async function createApp(
       defaultModel: env.defaultModel,
       deploymentModelKey: env.deploymentModelKey,
       webOrigin: env.webOrigin,
-      screenProxySecret: env.authSecret,
+      screenProxySecret: env.screenProxySecret,
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       updaterUrl: env.updaterUrl,

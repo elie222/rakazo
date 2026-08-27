@@ -17,12 +17,14 @@ import {
   containerCreateOptions,
   containerNameFor,
   resolveComputerControlEndpoint,
+  resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   SCREEN_HOST,
   screenPorts,
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
+import { ensureComputerHomeOwnership } from "./home-ownership.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -62,6 +64,7 @@ const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
+const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
@@ -132,6 +135,9 @@ app.post("/computers", async (c) => {
           return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
         }
       }
+      // Only a fresh or replaced container needs the migration. Existing containers
+      // with the current image have already crossed the uid-1000 ownership boundary.
+      if (runtimeInfo) await ensureComputerHomeOwnership(serviceHomePath);
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
         containerCreateOptions({
@@ -537,7 +543,7 @@ app.delete("/computers/:id", async (c) => {
       );
       await container.remove({ force: true }).catch(() => undefined);
       clearComputerScreenRegistry(computerScreens, id);
-      if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
+      if (screenNetworkMode !== "internal") {
         await removeBotNetwork(botId);
       }
       return c.json({ ok: true });
@@ -761,8 +767,12 @@ async function publishedScreenUrl(
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
+    if (screenNetworkMode === "isolated" && supervisorInfo) {
+      const networkName = info.HostConfig.NetworkMode;
+      if (networkName) await connectComposeScreenPeers(networkName, supervisorInfo);
+    }
     const target = resolveScreenPublishTarget({
-      screenNetwork: process.env.SANDBOX_SCREEN_NETWORK,
+      screenNetwork: screenNetworkMode,
       networkMode: info.HostConfig.NetworkMode,
       networks: info.NetworkSettings?.Networks,
       hostPort: info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort,
@@ -802,36 +812,64 @@ async function setInteractiveScreen(
 // dial any other container's exposed ports, which would let one bot's
 // computer reach another bot's desktop/VNC endpoint with no authentication).
 async function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
-  if (process.env.SANDBOX_SCREEN_NETWORK === "internal") {
+  if (screenNetworkMode === "internal") {
     // The supervisor itself runs in this shared network in that topology and
     // needs to address child containers by their in-network IP, so children
     // stay on the supervisor's network rather than an isolated one.
     return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
   }
-  return ensureBotNetwork(botId);
+  const networkName = await ensureBotNetwork(botId);
+  if (screenNetworkMode === "isolated") {
+    if (!info) throw new Error("isolated Compose screens require a containerized supervisor");
+  }
+  return networkName;
+}
+
+async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
+  const peerIds = new Set([info.Id]);
+  const project = info.Config.Labels?.["com.docker.compose.project"];
+  if (project) {
+    const webContainers = await docker.listContainers({
+      all: true,
+      filters: {
+        label: [`com.docker.compose.project=${project}`, "com.docker.compose.service=web"],
+      },
+    });
+    for (const container of webContainers) peerIds.add(container.Id);
+  }
+  const network = docker.getNetwork(networkName);
+  const networkInfo = await network.inspect();
+  const connectedIds = new Set(Object.keys(networkInfo.Containers ?? {}));
+  await Promise.all(
+    [...peerIds]
+      .filter((containerId) => !connectedIds.has(containerId))
+      .map((containerId) =>
+        network.connect({ Container: containerId }).catch((error) => {
+          if (!/already exists|already connected/i.test(String(error))) throw error;
+        }),
+      ),
+  );
 }
 
 async function ensureBotNetwork(botId: string) {
   const name = computerNetworkNameFor(botId);
-  try {
-    await docker.getNetwork(name).inspect();
-  } catch {
-    await docker
-      .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
-      .catch((error) => {
-        // Another concurrent provision request may have created it first.
-        if (!/already exists/i.test(String(error))) throw error;
-      });
-  }
+  await docker
+    .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
+    .catch((error) => {
+      // Existing networks and concurrent provision requests are both safe.
+      if (!/already exists/i.test(String(error))) throw error;
+    });
   return name;
 }
 
 async function removeBotNetwork(botId: string) {
   for (const name of computerNetworkNamesForCleanup(botId)) {
-    await docker
-      .getNetwork(name)
-      .remove()
-      .catch(() => undefined);
+    const network = docker.getNetwork(name);
+    const info = await network.inspect().catch(() => undefined);
+    for (const containerId of Object.keys(info?.Containers ?? {})) {
+      await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+    }
+    await network.remove().catch(() => undefined);
   }
 }
 

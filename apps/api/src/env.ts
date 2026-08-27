@@ -1,5 +1,10 @@
 import { resolveDeploymentModel } from "@rakazo/adapters";
-import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
+import {
+  resolveAuthSecret,
+  resolveEncryptionKey,
+  resolveScreenProxySecret,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 
 export interface AppEnv {
   databaseUrl: string;
@@ -8,12 +13,14 @@ export interface AppEnv {
   authUrl: string;
   webOrigin: string;
   apiUrl: string;
+  apiHost: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   encryptionKey: string;
   dataDir: string;
   sandboxSupervisorUrl: string;
-  sandboxSupervisorToken: string;
+  sandboxSupervisorToken: string | undefined;
+  screenProxySecret: string;
   sandboxProvider: string;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
@@ -45,6 +52,7 @@ export interface AppEnv {
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
+  const sandboxProvider = source.SANDBOX_PROVIDER ?? "docker";
   const deploymentModel = resolveDeploymentModel(source);
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
@@ -55,13 +63,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
+    apiHost: source.API_HOST ?? "127.0.0.1",
     signupsEnabled: source.SIGNUPS_ENABLED,
     signupAllowlist: source.SIGNUP_ALLOWLIST,
     encryptionKey: resolveEncryptionKey(source),
     dataDir: source.DATA_DIR ?? "./data",
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
-    sandboxSupervisorToken: resolveSupervisorToken(source),
-    sandboxProvider: source.SANDBOX_PROVIDER ?? "docker",
+    sandboxSupervisorToken:
+      sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
+    screenProxySecret: resolveScreenProxySecret(source),
+    sandboxProvider,
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
     deploymentModelKey: deploymentModel.key,
