@@ -4,9 +4,15 @@ import {
   type Actor,
   GROUP_MEMBER_MIN,
   type GroupMember,
+  type RunStatus,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, projectMessages, resolveGroupTargetBotIds } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  isActive,
+  projectMessages,
+  resolveGroupTargetBotIds,
+} from "@rakazo/core";
 import {
   appendEventInTransaction,
   createGroupRepos,
@@ -279,12 +285,13 @@ export async function threadSnapshot(
             where: {
               botId: target.botId,
               threadId: target.threadId,
+              status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
             },
             orderBy: { createdAt: "desc" },
           }),
         ]);
         const liveEvents =
-          run && ACTIVE_RUN_STATUSES.includes(run.status as never)
+          run && isActive(run.status as RunStatus)
             ? await tx.event.findMany({
                 where: {
                   threadId: target.threadId,
