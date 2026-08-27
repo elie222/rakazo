@@ -2160,9 +2160,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           flushPendingTools();
-          if (!assembled) {
-            messageSegments = appendTextSegment(messageSegments, "done.");
-          }
+          if (!assembled) messageSegments = completionMessageSegments(messageSegments);
           const blocks = redactBlocks(messageSegments, runSecrets);
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const completed = await deps.events.finalizeRun({
@@ -2347,6 +2345,10 @@ async function renewRunLease(
 
 function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+export function completionMessageSegments(segments: MessageBlock[]): MessageBlock[] {
+  return segments.length > 0 ? segments : [{ kind: "text", text: "done." }];
 }
 
 function computerRunRequeueData(

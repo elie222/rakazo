@@ -96,6 +96,8 @@ describe("directory", () => {
     expect(directory).toContain("Investigates source-backed questions");
     expect(directory).toContain("Analyst (id: b_2)");
     expect(directory).toContain("asynchronous");
+    expect(directory).toContain("does not end your turn");
+    expect(directory).toContain("send later updates when they add new information");
   });
 
   it("treats directory fields as untrusted prompt data", () => {
@@ -209,5 +211,10 @@ describe("inbound wake prompt", () => {
 
   it("does not demand a reply for an FYI", () => {
     expect(prompt).toContain("staying silent is fine");
+  });
+
+  it("continues independent work after sending useful updates", () => {
+    expect(prompt).toContain("sending does not end your turn");
+    expect(prompt).toContain("continue work that does not depend on their reply");
   });
 });

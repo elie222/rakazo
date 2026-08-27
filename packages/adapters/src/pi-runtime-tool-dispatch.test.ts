@@ -38,6 +38,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         if (!target) throw new Error("expected tool was not exposed");
         const rawArgs = fakeAgentState.invoke.args;
         const args = target.prepareArguments?.(rawArgs) ?? rawArgs;
+        this.emit({ type: "tool_execution_start", toolName: target.name, args });
         await target.execute("call-1", args);
         return;
       }
@@ -195,6 +196,37 @@ describe("Pi connector tool dispatch", () => {
       "call-1",
       { connectorId: "destination", toolName: "destination.write" },
     );
+  });
+
+  it("does not claim a tool-only turn finished work the model never described", async () => {
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "tool-only",
+        prompt: "send the update",
+        instructions: "Use the destination tool.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "tool-only",
+        traceId: "tool-only",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).not.toContainEqual({ type: "text", text: "I finished the work." });
+    expect(events.at(-1)).toEqual({ type: "done" });
   });
 
   it("allows more than 80 tool calls by default when no fuse is configured", async () => {
