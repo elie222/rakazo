@@ -715,7 +715,7 @@ export function ShellPage() {
     };
     window.addEventListener("focus", refreshVisibleBots);
     document.addEventListener("visibilitychange", refreshVisibleBots);
-    const poll = window.setInterval(refreshVisibleBots, 60_000);
+    const poll = window.setInterval(refreshVisibleBots, 3_000);
     return () => {
       cancelled = true;
       window.clearTimeout(refreshTimer);
@@ -862,6 +862,7 @@ export function ShellPage() {
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
+              event.type === "run.started" ||
               isRunTerminalEvent(event) ||
               event.type === "thread.cleared"
             ) {
@@ -1495,6 +1496,7 @@ export function ShellPage() {
         if (botTarget && activeBotId.current === botTarget) setAttachmentNotice(null);
         if (groupTarget) await refreshGroupThreadRef.current(groupTarget);
         else if (botTarget) await refreshThreadRef.current(botTarget);
+        void refreshBots().catch(() => undefined);
       } catch (error) {
         if (reroutedToGroup && groupTarget) {
           setSendError(error instanceof Error ? error.message : t`Failed to send message`);
