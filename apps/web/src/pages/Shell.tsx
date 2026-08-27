@@ -479,12 +479,13 @@ export function ShellPage() {
   );
 
   function snapTranscriptToEndAfterFrame() {
-    const queuedScrollTop = messageScroll.current?.scrollTop;
-    if (queuedScrollTop === undefined) return;
+    const queuedElement = messageScroll.current;
+    if (!queuedElement) return;
+    const queuedScrollTop = queuedElement.scrollTop;
     window.requestAnimationFrame(() => {
       const element = messageScroll.current;
-      if (element && transcriptCanSnapAfterFrame(element, queuedScrollTop)) {
-        element.scrollTop = element.scrollHeight;
+      if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
+        queuedElement.scrollTop = queuedElement.scrollHeight;
       }
     });
   }

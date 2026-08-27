@@ -5,10 +5,11 @@ export function transcriptIsNearEnd(
 }
 
 export function transcriptCanSnapAfterFrame(
-  element: Pick<HTMLElement, "scrollTop">,
+  element: Pick<HTMLElement, "scrollTop"> | null,
+  queuedElement: Pick<HTMLElement, "scrollTop">,
   queuedScrollTop: number,
 ): boolean {
-  return element.scrollTop === queuedScrollTop;
+  return element === queuedElement && queuedElement.scrollTop === queuedScrollTop;
 }
 
 export function transcriptMovedDown(previousScrollTop: number | null, scrollTop: number): boolean {

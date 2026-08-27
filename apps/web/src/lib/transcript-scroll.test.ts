@@ -18,8 +18,16 @@ describe("transcriptIsNearEnd", () => {
 
 describe("transcriptCanSnapAfterFrame", () => {
   it("does not snap after the reader moves while the frame is queued", () => {
-    expect(transcriptCanSnapAfterFrame({ scrollTop: 920 }, 950)).toBe(false);
-    expect(transcriptCanSnapAfterFrame({ scrollTop: 950 }, 950)).toBe(true);
+    const transcript = { scrollTop: 950 };
+    expect(transcriptCanSnapAfterFrame(transcript, transcript, 950)).toBe(true);
+    transcript.scrollTop = 920;
+    expect(transcriptCanSnapAfterFrame(transcript, transcript, 950)).toBe(false);
+  });
+
+  it("does not snap a replacement transcript", () => {
+    const queuedTranscript = { scrollTop: 950 };
+    const replacementTranscript = { scrollTop: 950 };
+    expect(transcriptCanSnapAfterFrame(replacementTranscript, queuedTranscript, 950)).toBe(false);
   });
 });
 
