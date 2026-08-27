@@ -40,11 +40,13 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(projects).toContainText("Projects");
   await expect(projects).toContainText("Chief");
 
-  await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
-  await page
-    .getByRole("menu", { name: /Move Chief to section/ })
-    .getByRole("menuitem", { name: "Unassigned", exact: true })
-    .click();
+  await bot.click();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  const sectionSelect = settings.locator("label:has-text('Section') select");
+  await expect(sectionSelect).toHaveValue(/.+/);
+  await expect(sectionSelect.locator("option:checked")).toHaveText("Projects");
+  await sectionSelect.selectOption({ label: "Unassigned" });
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
   await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText("Chief");
 });

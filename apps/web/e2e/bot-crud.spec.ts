@@ -21,6 +21,11 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page
     .locator("label:has-text('Description') textarea")
     .fill("Finds reliable sources and turns them into concise briefs.");
+  await page
+    .locator("label:has-text('Instructions') textarea")
+    .fill("Investigate each claim, cite the source, and separate facts from assumptions.");
+  await page.getByLabel("Custom color").fill("#6a6bf5");
+  await expect(page.locator("label:has-text('Section') select")).toHaveValue("");
   await captureScreenshot(page, testInfo, "26-new-bot-form");
   await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
   await page.getByRole("button", { name: "Create", exact: true }).click();
@@ -55,11 +60,19 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const nameInput = page.locator("label:has-text('Name') input");
   const titleInput = page.locator("label:has-text('Title') input");
   const descriptionInput = page.locator("label:has-text('Description') textarea");
+  const instructionsInput = page.locator("label:has-text('Instructions') textarea");
+  const colorInput = page.getByLabel("Custom color");
+  const sectionSelect = page.locator("label:has-text('Section') select");
   await expect(nameInput).toHaveValue("Researcher");
   await expect(titleInput).toHaveValue(normalizedLongTitle);
   await expect(descriptionInput).toHaveValue(
     "Finds reliable sources and turns them into concise briefs.",
   );
+  await expect(instructionsInput).toHaveValue(
+    "Investigate each claim, cite the source, and separate facts from assumptions.",
+  );
+  await expect(colorInput).toHaveValue("#6a6bf5");
+  await expect(sectionSelect).toHaveValue("");
   const settings = page.getByTestId("bot-settings");
   const modelSelect = settings.locator("label:has-text('Model') select");
   const teamComputer = settings.getByRole("button", { name: "Team" });
@@ -87,6 +100,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await nameInput.fill("Atlas");
   await titleInput.fill("Research lead");
   await descriptionInput.fill("Builds durable, source-backed research briefs.");
+  await instructionsInput.fill(
+    "Verify every material claim and return source links with the brief.",
+  );
+  await colorInput.fill("#f2622a");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(botList.getByRole("button", { name: /^Atlas/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Atlas")).toBeVisible();
@@ -99,6 +116,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(nameInput).toHaveValue("Atlas");
   await expect(titleInput).toHaveValue("Research lead");
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
+  await expect(instructionsInput).toHaveValue(
+    "Verify every material claim and return source links with the brief.",
+  );
+  await expect(colorInput).toHaveValue("#f2622a");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
   const atlas = botList.getByRole("button", { name: /^Atlas/ });

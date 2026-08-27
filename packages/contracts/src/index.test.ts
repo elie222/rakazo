@@ -24,17 +24,20 @@ describe("contracts", () => {
     expect(parsed.notifyOnFinish).toBe(true);
   });
 
-  it("normalizes bot creation fields without losing the longer instruction copy", () => {
+  it("normalizes bot descriptions and instructions independently", () => {
     const profile = normalizeCreateBotProfile({
       name: `  ${"N".repeat(100)}  `,
       title: `  ${"T".repeat(BOT_TITLE_MAX_LENGTH + 10)}  `,
       description: `  ${"D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
+      instructions: `  ${"I".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
     });
 
     expect(profile.name).toHaveLength(80);
     expect(profile.title).toHaveLength(BOT_TITLE_MAX_LENGTH);
     expect(profile.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
     expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
+    expect(profile.description).toBe("D".repeat(BOT_DESCRIPTION_MAX_LENGTH));
+    expect(profile.instructions).toBe("I".repeat(BOT_INSTRUCTIONS_MAX_LENGTH));
   });
 
   it("accepts the same title limit when creating and updating bots", () => {

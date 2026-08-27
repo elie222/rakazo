@@ -30,7 +30,9 @@ import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
+  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   normalizeCreateBotProfile,
@@ -113,6 +115,7 @@ import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
+import { botProfileUpdate } from "../lib/bot-profile";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
@@ -1547,13 +1550,20 @@ export function ShellPage() {
     name: string;
     title: string;
     description: string;
+    instructions: string;
+    color: string;
+    sectionId: string | null;
     computerMode: ComputerMode;
   }) {
-    const bot = await rpc.bots.create({
+    let bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
+      color: input.color,
       notifyOnFinish: true,
       computerMode: input.computerMode,
     });
+    if (input.sectionId) {
+      bot = await rpc.bots.update({ botId: bot.id, sectionId: input.sectionId });
+    }
     setBots((current) =>
       current.some((item) => item.id === bot.id) ? current : [bot, ...current],
     );
@@ -2487,6 +2497,7 @@ export function ShellPage() {
             ) : null}
             {panel === "create" ? (
               <CreateBotForm
+                sections={botSections}
                 onCancel={() => setPanel(null)}
                 onCreate={(input) => createBot(input)}
               />
@@ -2495,6 +2506,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                sections={botSections}
                 computer={computer}
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
@@ -4242,14 +4254,88 @@ function ComputerModePicker({
   );
 }
 
+function BotColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  return (
+    <div className="mt-4">
+      <div className="text-[14px] text-[#85858A]">
+        <Trans>Color</Trans>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {BOT_COLORS.map((color) => (
+          <button
+            key={color}
+            type="button"
+            aria-label={`Use ${color}`}
+            aria-pressed={value.toLowerCase() === color.toLowerCase()}
+            onClick={() => onChange(color)}
+            className="h-8 w-8 rounded-full border-2 outline-none focus-visible:ring-2 focus-visible:ring-[#ECECEE]"
+            style={{
+              backgroundColor: color,
+              borderColor: value.toLowerCase() === color.toLowerCase() ? "#ECECEE" : "transparent",
+            }}
+          />
+        ))}
+        <label className="relative grid h-8 w-8 cursor-pointer place-items-center overflow-hidden rounded-full border-2 border-[#4A4A50]">
+          <span className="sr-only">
+            <Trans>Custom color</Trans>
+          </span>
+          <input
+            type="color"
+            aria-label="Custom color"
+            value={value}
+            onChange={(event) => onChange(event.target.value.toUpperCase())}
+            className="absolute h-12 w-12 cursor-pointer border-0 bg-transparent p-0"
+          />
+        </label>
+        <span className="font-mono text-[12px] uppercase text-[#85858A]">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function BotSectionPicker({
+  sections,
+  value,
+  onChange,
+}: {
+  sections: BotSection[];
+  value: string | null;
+  onChange: (sectionId: string | null) => void;
+}) {
+  return (
+    <label className="mt-4 block text-[14px] text-[#85858A]">
+      <Trans>Section</Trans>
+      <select
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value || null)}
+        className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#111114] px-3.5 py-3 text-[#ECECEE]"
+      >
+        <option value="">
+          <Trans>Unassigned</Trans>
+        </option>
+        {sections.map((section) => (
+          <option key={section.id} value={section.id}>
+            {section.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function CreateBotForm({
+  sections,
   onCreate,
   onCancel,
 }: {
+  sections: BotSection[];
   onCreate: (input: {
     name: string;
     title: string;
     description: string;
+    instructions: string;
+    color: string;
+    sectionId: string | null;
     computerMode: ComputerMode;
   }) => Promise<void>;
   onCancel: () => void;
@@ -4258,6 +4344,9 @@ function CreateBotForm({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [color, setColor] = useState<string>(BOT_COLORS[0]);
+  const [sectionId, setSectionId] = useState<string | null>(null);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4267,7 +4356,15 @@ function CreateBotForm({
     setError(null);
     setSubmitting(true);
     try {
-      await onCreate({ name, title, description, computerMode });
+      await onCreate({
+        name,
+        title,
+        description,
+        instructions,
+        color,
+        sectionId,
+        computerMode,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create bot`);
     } finally {
@@ -4321,6 +4418,19 @@ function CreateBotForm({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        <Trans>Instructions</Trans>
+        <textarea
+          value={instructions}
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          onChange={(e) => setInstructions(e.target.value)}
+          placeholder={t`How this agent should work`}
+          rows={8}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <BotColorPicker value={color} onChange={setColor} />
+      <BotSectionPicker sections={sections} value={sectionId} onChange={setSectionId} />
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       <button
         type="button"
@@ -4336,6 +4446,7 @@ function CreateBotForm({
 
 function BotSettings({
   bot,
+  sections,
   computer,
   memoryProviderConfigured,
   onSave,
@@ -4344,6 +4455,7 @@ function BotSettings({
   onComputerChanged,
 }: {
   bot: Bot;
+  sections: BotSection[];
   computer: ComputerStatus | null;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
@@ -4351,6 +4463,8 @@ function BotSettings({
     title?: string;
     description?: string;
     instructions?: string;
+    color?: string;
+    sectionId?: string | null;
     computerMode: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
@@ -4367,6 +4481,9 @@ function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [instructions, setInstructions] = useState(bot.instructions);
+  const [color, setColor] = useState(bot.color);
+  const [sectionId, setSectionId] = useState(bot.sectionId);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -4456,7 +4573,7 @@ function BotSettings({
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
-        <BotAvatar color={bot.color} size={64} status={bot.status} />
+        <BotAvatar color={color} size={64} status={bot.status} />
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
         <Trans>Name</Trans>
@@ -4486,6 +4603,18 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        <Trans>Instructions</Trans>
+        <textarea
+          value={instructions}
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          onChange={(e) => setInstructions(e.target.value)}
+          rows={10}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <BotColorPicker value={color} onChange={setColor} />
+      <BotSectionPicker sections={sections} value={sectionId} onChange={setSectionId} />
       <details data-testid="bot-settings-advanced" className="group mt-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
           <span className="text-[#85858A]">
@@ -4606,10 +4735,14 @@ function BotSettings({
             setError(null);
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
             void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
+              ...botProfileUpdate({
+                name,
+                title,
+                description,
+                instructions,
+                color,
+                sectionId,
+              }),
               computerMode,
               memoryScope,
               autoSpeak,
