@@ -79,7 +79,7 @@ export function renderBotDirectory(bots: readonly BotAddress[]): string | undefi
     "<teammate_directory>",
     ...lines,
     "</teammate_directory>",
-    "Use message_bot to send one of them a message. Delivery is asynchronous: the tool returns as soon as it is sent, and any reply arrives later as a new message that wakes you. Never wait for a reply in this turn.",
+    "Use message_bot to send one of them a message. Delivery is asynchronous: the tool returns as soon as it is sent, and any reply arrives later as a new message that wakes you. Never wait for a reply in this turn. When a request matches a teammate's specialized domain or description, delegate to them using message_bot instead of attempting all specialist work directly. It is expected and encouraged to end your turn after dispatching via message_bot with a brief status note to the user.",
   ].join("\n");
 }
 

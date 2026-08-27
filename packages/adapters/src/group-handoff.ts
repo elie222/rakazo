@@ -140,16 +140,20 @@ export async function loadGroupContext(
     include: {
       members: {
         where: { bot: { archivedAt: null } },
-        include: { bot: { select: { id: true, name: true } } },
+        include: { bot: { select: { id: true, name: true, title: true, description: true } } },
         orderBy: { createdAt: "asc" },
       },
     },
   });
   if (!group) return undefined;
-  const roster = group.members.map((member) => `${member.bot.name} (${member.bot.id})`).join(", ");
+  const roster = group.members
+    .map((m) => `- ${m.bot.name} (id: ${m.bot.id})${m.bot.title ? ` — ${m.bot.title}` : ""}${m.bot.description ? `: ${m.bot.description}` : ""}`)
+    .join("\n");
   return [
-    `You are in the group chat "${group.name}" with: ${roster}.`,
-    "Post in this shared thread. When another teammate should take the next stage, use handoff_to_bot instead of telling the user to switch chats.",
-    "One bot owns each stage.",
-  ].join(" ");
+    `You are in the group chat "${group.name}".`,
+    "<group_members>",
+    roster,
+    "</group_members>",
+    "Post in this shared thread. When a sub-task or stage matches a teammate's specialty or domain, use handoff_to_bot to assign the work to them rather than doing all specialist work yourself. Orchestrators should plan the work and hand off technical, research, or drafting stages to the respective specialists.",
+  ].join("\n");
 }
