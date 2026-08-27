@@ -118,7 +118,10 @@ export class PiAgentRuntime implements AgentRuntime {
           ? undefined
           : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? request.model.apiKey || "local"
-            : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+            : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
+              // another provider would ship our key to a vendor it was not issued for.
+              (request.model.apiKey ??
+              (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
