@@ -120,12 +120,12 @@ export class Dictation {
     const mine = this.token;
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
-    if (opts.transcribe) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850);
-      return;
-    }
     if (webSpeechAvailable()) {
       this.listenWebSpeech(opts.mode, opts.endpointMs ?? 850, mine);
+      return;
+    }
+    if (opts.transcribe) {
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850);
       return;
     }
     this.set({

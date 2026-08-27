@@ -1597,10 +1597,6 @@ export function ShellPage() {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
-      // Taking control changes the screen policy from view-only to interactive.
-      // Fetch a new screen capability immediately so the already-open panel is
-      // not left connected to the old, view-only noVNC session.
-      await refreshComputerScreen(active.id);
       setComputerError(null);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
@@ -1713,18 +1709,6 @@ export function ShellPage() {
     } catch {
       // computerError already set in bootComputer
     }
-  }
-
-  async function openComputerPreview() {
-    if (!active) return;
-    // A large read-only view lets the user watch the Team Computer while an
-    // agent owns it. Taking control remains an explicit action in the overlay.
-    if (computer?.state === "running" && screenUrl) {
-      await refreshComputerScreen(active.id);
-      setComputerOpen(true);
-      return;
-    }
-    await openComputer();
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
@@ -2397,8 +2381,8 @@ export function ShellPage() {
                   <button
                     type="button"
                     className="absolute inset-0 cursor-pointer"
-                    aria-label={t`Open larger computer preview`}
-                    onClick={() => void openComputerPreview()}
+                    aria-label={t`Open computer`}
+                    onClick={() => void openComputer()}
                   />
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">

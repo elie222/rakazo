@@ -37,15 +37,6 @@
       rfb.viewOnly = flag("view_only");
       rfb.scaleViewport = true;
       rfb.clipViewport = false;
-      // The parent panel animates from zero width when it opens. noVNC calculates
-      // its scale before that transition has completed and otherwise keeps the
-      // tiny initial canvas. Re-applying the scale on a real element resize keeps
-      // embedded previews correctly sized without polling or restarting anything.
-      const screen = document.getElementById("screen");
-      new ResizeObserver(() => {
-        rfb.scaleViewport = false;
-        rfb.scaleViewport = true;
-      }).observe(screen);
     </script>
   </head>
   <body>
