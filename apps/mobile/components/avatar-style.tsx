@@ -15,6 +15,7 @@ export function AvatarStyleProvider({ children }: { children: ReactNode }) {
   const [avatarStyle, setAvatarStyle] = useState<AvatarStyle>("robot");
   const pathname = usePathname();
   const requestIdRef = useRef(0);
+  const updatePendingRef = useRef(false);
 
   useEffect(() => {
     const requestId = ++requestIdRef.current;
@@ -27,10 +28,16 @@ export function AvatarStyleProvider({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   async function updateAvatarStyle(next: AvatarStyle) {
+    if (updatePendingRef.current) return;
+    updatePendingRef.current = true;
     const requestId = ++requestIdRef.current;
-    const me = await rpc<Me>("preferences/update", { avatarStyle: next });
-    if (requestId !== requestIdRef.current) return;
-    setAvatarStyle(me.avatarStyle);
+    try {
+      const me = await rpc<Me>("preferences/update", { avatarStyle: next });
+      if (requestId !== requestIdRef.current) return;
+      setAvatarStyle(me.avatarStyle);
+    } finally {
+      updatePendingRef.current = false;
+    }
   }
 
   return (
