@@ -4,6 +4,7 @@ import {
   expandSkillReferencesInPrompt,
   extractForcedSkillName,
   extractRoutineSkillMentions,
+  filterAttachedAgentSkills,
   formatSkillsCatalogInstruction,
   parseSkillMd,
 } from "./agent-skill.js";
@@ -190,6 +191,15 @@ clip: |
 });
 
 describe("skill prompt helpers", () => {
+  it("limits a bot to its explicitly attached skills while preserving legacy all-skills bots", () => {
+    const skills = [
+      { id: "skill-a", name: "A", description: "A" },
+      { id: "skill-b", name: "B", description: "B" },
+    ];
+    expect(filterAttachedAgentSkills(skills, null)).toEqual(skills);
+    expect(filterAttachedAgentSkills(skills, ["skill-b", "missing"])).toEqual([skills[1]]);
+    expect(filterAttachedAgentSkills(skills, [])).toEqual([]);
+  });
   it("extracts forced /Name and Use skill: Name", () => {
     expect(extractForcedSkillName("/Daily standup\nplease")).toEqual({
       name: "Daily standup",

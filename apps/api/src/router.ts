@@ -77,6 +77,7 @@ import {
   AttachmentValidationError,
   containsSecret,
   expandSkillReferencesInPrompt,
+  filterAttachedAgentSkills,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
@@ -549,6 +550,9 @@ export function createRouter(deps: RouterDeps) {
           modelProvider: source.modelProvider,
           modelId: source.modelId,
           thinkingLevel: source.thinkingLevel,
+          agentSkillIds: Array.isArray(source.agentSkillIds)
+            ? source.agentSkillIds.filter((id): id is string => typeof id === "string")
+            : null,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -604,6 +608,15 @@ export function createRouter(deps: RouterDeps) {
             throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
           }
         }
+        if (input.agentSkillIds !== undefined) {
+          const availableSkillIds = new Set(
+            (await agentSkills.list(context.actor)).map((skill) => skill.id),
+          );
+          const unknownSkillId = input.agentSkillIds?.find((id) => !availableSkillIds.has(id));
+          if (unknownSkillId) {
+            throw new ORPCError("BAD_REQUEST", { message: "Unknown skill attachment" });
+          }
+        }
         const thinkingLevel = input.thinkingLevel;
         if (input.thinkingLevel) {
           const provider =
@@ -638,6 +651,14 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            ...(input.agentSkillIds !== undefined
+              ? {
+                  agentSkillIds:
+                    input.agentSkillIds === null
+                      ? Prisma.DbNull
+                      : ([...new Set(input.agentSkillIds)] as Prisma.InputJsonValue),
+                }
+              : {}),
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
@@ -1722,7 +1743,10 @@ export function createRouter(deps: RouterDeps) {
           });
           if (existing) return { runId: existing.id };
         }
-        const skillRecords = await agentSkills.listWithContent(context.actor);
+        const skillRecords = filterAttachedAgentSkills(
+          await agentSkills.listWithContent(context.actor),
+          bot.agentSkillIds,
+        );
         const prompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
         let run: { id: string };
         try {

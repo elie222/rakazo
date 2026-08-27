@@ -32,6 +32,16 @@ export type SkillRecord = SkillCatalogEntry & {
   content: string;
 };
 
+export function filterAttachedAgentSkills<T extends { id: string }>(
+  skills: T[],
+  attachedSkillIds: unknown,
+): T[] {
+  if (attachedSkillIds == null) return skills;
+  if (!Array.isArray(attachedSkillIds)) return [];
+  const attached = new Set(attachedSkillIds.filter((id): id is string => typeof id === "string"));
+  return skills.filter((skill) => attached.has(skill.id));
+}
+
 const FORCE_SKILL_PREFIX = /^(?:\/|use\s+skill:\s*)(.+?)(?:\n|$)/i;
 const ROUTINE_SKILL_STOP = new Set([
   "then",

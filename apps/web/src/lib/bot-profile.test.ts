@@ -11,6 +11,7 @@ describe("botProfileUpdate", () => {
         instructions: "Detailed operating instructions",
         color: "#9B5CF6",
         sectionId: "grow-section",
+        agentSkillIds: ["builtin:browser", "skill-seo"],
       }),
     ).toEqual({
       name: "Maya",
@@ -19,6 +20,7 @@ describe("botProfileUpdate", () => {
       instructions: "Detailed operating instructions",
       color: "#9B5CF6",
       sectionId: "grow-section",
+      agentSkillIds: ["builtin:browser", "skill-seo"],
     });
   });
 });

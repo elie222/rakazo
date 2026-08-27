@@ -2507,6 +2507,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 sections={botSections}
+                agentSkills={agentSkills}
                 computer={computer}
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
@@ -4323,6 +4324,108 @@ function BotSectionPicker({
   );
 }
 
+function BotSkillsPicker({
+  skills,
+  value,
+  onChange,
+}: {
+  skills: AgentSkillCatalogEntry[];
+  value: string[] | null;
+  onChange: (skillIds: string[]) => void;
+}) {
+  const { t } = useLingui();
+  const [query, setQuery] = useState("");
+  const selectedIds = value ?? skills.map((skill) => skill.id);
+  const selected = new Set(selectedIds);
+  const visibleSkills = skills.filter((skill) => {
+    const needle = query.trim().toLowerCase();
+    return (
+      !needle ||
+      skill.name.toLowerCase().includes(needle) ||
+      skill.description.toLowerCase().includes(needle)
+    );
+  });
+
+  function toggle(skillId: string) {
+    const next = new Set(selectedIds);
+    if (next.has(skillId)) next.delete(skillId);
+    else next.add(skillId);
+    onChange(skills.map((skill) => skill.id).filter((id) => next.has(id)));
+  }
+
+  return (
+    <div className="mt-4 text-[14px] text-[#85858A]">
+      <Trans>Skills</Trans>
+      <details className="relative mt-2" data-testid="bot-skills-picker">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-[11px] border border-[#26262A] bg-[#111114] px-3.5 py-3 text-[#ECECEE]">
+          <span>
+            {skills.length === 0
+              ? t`No installed skills`
+              : t`${selected.size} of ${skills.length} attached`}
+          </span>
+          <span aria-hidden="true">⌄</span>
+        </summary>
+        <div className="absolute left-0 right-0 z-30 mt-2 rounded-[13px] border border-[#343438] bg-[#17171A] p-3 shadow-[0_18px_50px_rgba(0,0,0,.65)]">
+          <div className="flex gap-2">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t`Search skills`}
+              aria-label={t`Search skills`}
+              className="min-w-0 flex-1 rounded-[9px] border border-[#303034] bg-[#0E0E10] px-3 py-2 text-[#ECECEE]"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(skills.map((skill) => skill.id))}
+              className="rounded-[9px] border border-[#303034] px-2.5 text-[12px] text-[#C9C9CE]"
+            >
+              <Trans>All</Trans>
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="rounded-[9px] border border-[#303034] px-2.5 text-[12px] text-[#C9C9CE]"
+            >
+              <Trans>None</Trans>
+            </button>
+          </div>
+          <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+            {visibleSkills.map((skill) => (
+              <label
+                key={skill.id}
+                className="flex cursor-pointer gap-3 rounded-[10px] border border-[#29292D] bg-[#111114] p-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(skill.id)}
+                  onChange={() => toggle(skill.id)}
+                  className="mt-1"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-[#ECECEE]">
+                    {skill.name}
+                    <span className="rounded-full bg-[#242428] px-2 py-0.5 text-[10px] uppercase text-[#85858A]">
+                      {skill.source}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[12px] leading-5 text-[#9B9BA1]">
+                    {skill.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+            {visibleSkills.length === 0 ? (
+              <p className="px-2 py-4 text-center text-[12px] text-[#85858A]">
+                <Trans>No matching skills</Trans>
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function CreateBotForm({
   sections,
   onCreate,
@@ -4447,6 +4550,7 @@ function CreateBotForm({
 function BotSettings({
   bot,
   sections,
+  agentSkills,
   computer,
   memoryProviderConfigured,
   onSave,
@@ -4456,6 +4560,7 @@ function BotSettings({
 }: {
   bot: Bot;
   sections: BotSection[];
+  agentSkills: AgentSkillCatalogEntry[];
   computer: ComputerStatus | null;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
@@ -4465,6 +4570,7 @@ function BotSettings({
     instructions?: string;
     color?: string;
     sectionId?: string | null;
+    agentSkillIds?: string[] | null;
     computerMode: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
@@ -4484,6 +4590,7 @@ function BotSettings({
   const [instructions, setInstructions] = useState(bot.instructions);
   const [color, setColor] = useState(bot.color);
   const [sectionId, setSectionId] = useState(bot.sectionId);
+  const [agentSkillIds, setAgentSkillIds] = useState<string[] | null>(bot.agentSkillIds ?? null);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -4615,6 +4722,7 @@ function BotSettings({
       </label>
       <BotColorPicker value={color} onChange={setColor} />
       <BotSectionPicker sections={sections} value={sectionId} onChange={setSectionId} />
+      <BotSkillsPicker skills={agentSkills} value={agentSkillIds} onChange={setAgentSkillIds} />
       <details data-testid="bot-settings-advanced" className="group mt-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
           <span className="text-[#85858A]">
@@ -4742,6 +4850,7 @@ function BotSettings({
                 instructions,
                 color,
                 sectionId,
+                agentSkillIds,
               }),
               computerMode,
               memoryScope,
