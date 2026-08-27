@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
@@ -20,6 +21,7 @@ export function AccountSettingsOverlay({
   focusUsage,
   avatarStyle,
   onAvatarStyleChange,
+  isDeploymentOwner = false,
   onClose,
 }: {
   email?: string | null;
@@ -28,6 +30,7 @@ export function AccountSettingsOverlay({
   focusUsage?: boolean;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
+  isDeploymentOwner?: boolean;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -186,6 +189,8 @@ export function AccountSettingsOverlay({
             <Trans>Model spend uses your provider keys.</Trans>
           </p>
         </div>
+
+        <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
 
         <details
           data-testid="advanced-settings"

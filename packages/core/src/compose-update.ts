@@ -280,6 +280,89 @@ export function resolveExecutionMode(input: {
   };
 }
 
+/**
+ * What the deployment-owner Settings UI should show. Distinct from {@link resolveExecutionMode}:
+ * Compose without the opt-in sidecar is still a Compose install, and source checkouts must never
+ * look like they can one-click apply from the API process (no `.git` in the app image; no Docker
+ * socket either).
+ */
+export type InstallKind = "sidecar" | "compose" | "source";
+
+export interface InstallKindDecision {
+  kind: InstallKind;
+  /** Maps onto ServerUpdateMode for contracts that already use that enum. */
+  mode: ExecutionMode;
+  reason: string | null;
+}
+
+/**
+ * `updaterUrlConfigured` means the API was given `RAKAZO_UPDATER_URL` (Compose prod always sets
+ * this). Reachability requires both URL and token and a live sidecar. A source checkout is only
+ * claimed when there is no Compose updater wiring and `.git` is present on disk.
+ */
+export function resolveInstallKind(input: {
+  updaterUrlConfigured?: boolean;
+  updaterReachable?: boolean;
+  hasCheckout?: boolean;
+  disabled?: boolean;
+}): InstallKindDecision {
+  if (input.disabled === true) {
+    return {
+      kind:
+        input.updaterUrlConfigured === true
+          ? "compose"
+          : input.hasCheckout === true
+            ? "source"
+            : "compose",
+      mode: "unavailable",
+      reason: "Self-update is switched off for this deployment.",
+    };
+  }
+  if (input.updaterReachable === true) {
+    return { kind: "sidecar", mode: "sidecar", reason: null };
+  }
+  if (input.updaterUrlConfigured === true) {
+    return {
+      kind: "compose",
+      mode: "unavailable",
+      reason:
+        "The updater sidecar is not reachable. Start the opt-in `updater` profile, or upgrade from the host with the Compose commands below.",
+    };
+  }
+  if (input.hasCheckout === true) {
+    return {
+      kind: "source",
+      mode: "checkout",
+      reason: "This is a source checkout. Upgrade from a terminal; Settings cannot apply it.",
+    };
+  }
+  return {
+    kind: "compose",
+    mode: "unavailable",
+    reason:
+      "This deployment has no updater sidecar. Upgrade from the host with the Compose commands below, or enable the `updater` profile.",
+  };
+}
+
+/** Exact host commands from docs/self-host.md for Compose deployments without the sidecar. */
+export const COMPOSE_MANUAL_UPGRADE_COMMANDS = [
+  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web",
+  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never api worker web",
+] as const;
+
+/** Exact host commands from docs/self-host.md for source / `pnpm dev` installs. */
+export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
+  "git pull",
+  "pnpm --filter @rakazo/db migrate",
+  "# Restart the API and worker processes",
+] as const;
+
+export function manualUpgradeCommands(kind: InstallKind): readonly string[] {
+  if (kind === "source") return SOURCE_MANUAL_UPGRADE_COMMANDS;
+  if (kind === "compose") return COMPOSE_MANUAL_UPGRADE_COMMANDS;
+  return [];
+}
+
 export interface ComposeInvocation {
   command: string;
   args: string[];

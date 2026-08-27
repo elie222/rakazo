@@ -35,11 +35,17 @@ export interface AppEnv {
   mcpStdioAllowedCommands: string[];
   port: number;
   gitSha: string | undefined;
+  /** Private Compose control-network URL for the opt-in updater sidecar. */
+  updaterUrl: string | undefined;
+  /** Bearer shared with the updater; never sent to the browser. */
+  updaterToken: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
   const deploymentModel = resolveDeploymentModel(source);
+  const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
+  const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
   return {
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
@@ -79,6 +85,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .filter(Boolean),
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    updaterUrl,
+    updaterToken,
   };
 }
 

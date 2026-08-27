@@ -2853,6 +2853,7 @@ export function ShellPage() {
             usage={usage}
             focusUsage={accountSettingsFocusUsage}
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
               setBootstrapMe(nextMe);

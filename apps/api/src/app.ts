@@ -252,6 +252,9 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      gitSha: env.gitSha,
+      updaterUrl: env.updaterUrl,
+      updaterToken: env.updaterToken,
     },
   });
   const rpc = new RPCHandler(router);

@@ -39,6 +39,10 @@ import {
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
+  ServerUpdateCheckSchema,
+  ServerUpdateRequestSchema,
+  ServerUpdateRunSchema,
+  ServerUpdateStatusSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -128,6 +132,17 @@ export const appContract = {
         }),
       )
       .output(DeploymentSettingsSchema),
+  },
+  /**
+   * Deployment-owner product updates. When the Compose updater sidecar is reachable, these proxy
+   * to its `/state` `/plan` `/apply` `/rollback` contract. Otherwise they only report install kind
+   * and the documented host commands. Never git-fetch from the API process.
+   */
+  updater: {
+    status: oc.output(ServerUpdateStatusSchema),
+    check: oc.input(ServerUpdateRequestSchema).output(ServerUpdateCheckSchema),
+    apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
+    rollback: oc.output(ServerUpdateRunSchema),
   },
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),
