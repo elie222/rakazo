@@ -1,9 +1,5 @@
-import {
-  resolveAuthSecret,
-  resolveDeploymentModel,
-  resolveEncryptionKey,
-  resolveSupervisorToken,
-} from "@rakazo/core";
+import { resolveDeploymentModel } from "@rakazo/adapters";
+import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 
 export interface AppEnv {
   databaseUrl: string;

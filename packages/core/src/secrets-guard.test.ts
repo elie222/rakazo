@@ -4,7 +4,6 @@ import {
   DEV_ENCRYPTION_KEY_PLACEHOLDER,
   hasValidBearerToken,
   resolveAuthSecret,
-  resolveDeploymentModel,
   resolveEncryptionKey,
   resolveSupervisorToken,
   resolveUpdaterToken,
@@ -102,30 +101,5 @@ describe("secrets-guard", () => {
     expect(hasValidBearerToken("secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Basic secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken(undefined, "secret-token")).toBe(false);
-  });
-
-  it("pairs the deployment model key with the provider it belongs to", () => {
-    const both = { OPENROUTER_API_KEY: "or-key", ANTHROPIC_API_KEY: "sk-ant-key" };
-    expect(resolveDeploymentModel(both)).toEqual({
-      provider: "openrouter",
-      model: "deepseek/deepseek-v4-flash-0731",
-      key: "or-key",
-    });
-    // The whole point: switching the provider switches the key with it.
-    expect(resolveDeploymentModel({ ...both, PI_DEFAULT_PROVIDER: "anthropic" })).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-5",
-      key: "sk-ant-key",
-    });
-    // A provider with no key configured yields no key — never another vendor's.
-    expect(
-      resolveDeploymentModel({ OPENROUTER_API_KEY: "or-key", PI_DEFAULT_PROVIDER: "anthropic" }),
-    ).toEqual({ provider: "anthropic", model: "claude-sonnet-5", key: undefined });
-    expect(
-      resolveDeploymentModel({
-        PI_DEFAULT_PROVIDER: "anthropic",
-        PI_DEFAULT_MODEL: "claude-haiku-4-5",
-      }).model,
-    ).toBe("claude-haiku-4-5");
   });
 });

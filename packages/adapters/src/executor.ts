@@ -45,7 +45,6 @@ import {
   redactSecrets,
   renderBotDirectory,
   resolveActionApproval,
-  resolveDeploymentModel,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
   toolRequiresApproval,
@@ -106,6 +105,7 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import { resolveDeploymentModel } from "./deployment-model.js";
 import { handoffToGroupBot, loadGroupContext } from "./group-handoff.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -312,9 +312,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // provider with a workspace or deployment secret from another provider.
       const useOverride = Boolean(hasOverride && overrideCredential);
       const credential = useOverride ? overrideCredential : defaultCredential;
-      const resolved = await resolveModelKey(deps, scope.userId, scope.workspaceId, credential);
-      // Provider and model come from one resolver, so the deployment key can never be
-      // offered to a provider it does not belong to.
       const deployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
       const provider =
         (useOverride ? override!.modelProvider : null) ??
@@ -328,6 +325,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         settings?.defaultModelId ??
         deployment?.model ??
         "scripted";
+      // The key is resolved for the provider that won above, not before it is known.
+      const resolved = await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.workspaceId,
+        credential,
+        provider,
+      );
       return {
         provider,
         id,
@@ -743,14 +748,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         }
-        const resolved = await resolveModelKey(
-          deps,
-          run.userId,
-          run.workspaceId,
-          credential,
-          (values) => runSecrets.push(...values),
-        );
-        runSecrets.push(...resolved.redact);
         const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runModelProvider =
           (useModelOverride ? bot.modelProvider : null) ??
@@ -764,6 +761,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           settings?.defaultModelId ??
           runDeployment?.model ??
           "scripted";
+        const resolved = await resolveModelKey(
+          deps,
+          run.userId,
+          run.workspaceId,
+          credential,
+          runModelProvider,
+          (values) => runSecrets.push(...values),
+        );
+        runSecrets.push(...resolved.redact);
         await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { modelProvider: runModelProvider, modelId: runModelId },
@@ -784,11 +790,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        // Gate on the model this run will actually call — the same pair written to the
-        // run row above. Re-deriving it here without the deployment fallback gated the
-        // wrong model: a deployment default resolved to "scripted", whose vision lookup
-        // is openrouter/PI_DEFAULT_MODEL, so a vision-capable default lost its screenshot
-        // tools.
+        // Gate on the model this run will actually call — the pair written to the run row
+        // above. Deriving it a second time here dropped the deployment fallback, so a
+        // vision-capable default was gated as "scripted" and lost its screenshot tools.
         const acceptsImages =
           deps.runtime.describe().capabilities.scripted ||
           modelAcceptsImageInput(runModelProvider, runModelId);
@@ -2508,11 +2512,22 @@ async function runSandboxCommand(
   return { stdout, stderr, code };
 }
 
+/**
+ * The deployment key is a bearer credential for exactly one vendor, so it is handed out
+ * only when the provider that won the resolution above is that vendor. A provider named
+ * by deployment settings or a bot override gets no key rather than another vendor's.
+ */
+function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
+  if (!deps.deploymentModelKey) return undefined;
+  return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
+}
+
 async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
   workspaceId: string,
   credential: { secretId: string; provider: string } | null,
+  provider: string,
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
@@ -2524,7 +2539,7 @@ async function resolveModelKey(
   if (credential) {
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
-      if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
+      if (!row) return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       const plaintext = deps.secretStore.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {
@@ -2581,7 +2596,7 @@ async function resolveModelKey(
       };
     });
   }
-  return { apiKey: deps.deploymentModelKey, redact: [] };
+  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 
 async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

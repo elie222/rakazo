@@ -1,8 +1,9 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { blocksToAgentHistoryText, resolveDeploymentModel } from "@rakazo/core";
+import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { resolveDeploymentModel } from "./deployment-model.js";
 import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
@@ -239,6 +240,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // "scripted" means nothing at all is configured: ScriptedAgentRuntime answers by echoing canned
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
+  const deploymentFallback = resolveDeploymentModel();
   const model = deps.resolveModel
     ? await deps.resolveModel({
         userId: thread.userId,
@@ -247,11 +249,9 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       })
     : deps.deploymentModelKey
       ? {
-          // Provider comes from the same resolver as the key, not a hardcoded
-          // "openrouter" — a deployment default of anthropic would otherwise summarize
-          // by sending an Anthropic key to OpenRouter.
-          provider: resolveDeploymentModel().provider,
-          id: resolveDeploymentModel().model,
+          // Provider must come from the same resolver as the key, not a hardcoded one.
+          provider: deploymentFallback.provider,
+          id: deploymentFallback.model,
           apiKey: deps.deploymentModelKey,
         }
       : await (async () => {
