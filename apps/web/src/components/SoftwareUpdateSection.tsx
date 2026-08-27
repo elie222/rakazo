@@ -132,6 +132,13 @@ export function SoftwareUpdateSection() {
                 <Trans>Local changes. Stash or commit first.</Trans>
               </p>
             </div>
+          ) : !updateInfo.canAutoUpdate ? (
+            <div className="flex items-start gap-2 text-[12.5px] text-[#E5A83B]">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <p className="font-medium">
+                <Trans>Switch to main first.</Trans>
+              </p>
+            </div>
           ) : (
             <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[13px] font-medium text-[#E5A83B]">

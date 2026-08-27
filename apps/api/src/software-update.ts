@@ -64,6 +64,11 @@ export function unavailableCheck(): SoftwareUpdateCheck {
   };
 }
 
+/** Only auto-update when HEAD is on the tracked branch (never merge main into a feature branch). */
+export function isOnUpdateBranch(branch: string): boolean {
+  return branch === UPDATE_BRANCH;
+}
+
 export function buildCheckResult(input: {
   currentCommit: string;
   targetCommit: string;
@@ -74,6 +79,7 @@ export function buildCheckResult(input: {
   remote: string;
 }): SoftwareUpdateCheck {
   const isUpToDate = input.behindBy === 0;
+  const onTrack = isOnUpdateBranch(input.branch);
   return {
     available: true,
     currentCommit: input.currentCommit,
@@ -84,18 +90,20 @@ export function buildCheckResult(input: {
     changedFiles: input.changedFiles,
     branch: input.branch,
     remote: input.remote,
-    canAutoUpdate: !input.dirty && !isUpToDate && input.behindBy > 0,
+    canAutoUpdate: onTrack && !input.dirty && !isUpToDate && input.behindBy > 0,
   };
 }
 
 export function applyFailureMessage(
-  reason: "dirty" | "not-git" | "not-ff" | "failed",
+  reason: "dirty" | "not-git" | "wrong-branch" | "not-ff" | "failed",
 ): SoftwareUpdateApply {
   switch (reason) {
     case "dirty":
       return { success: false, message: "Local changes. Stash or commit first." };
     case "not-git":
       return { success: false, message: "Updates unavailable." };
+    case "wrong-branch":
+      return { success: false, message: "Switch to main first." };
     case "not-ff":
       return { success: false, message: "Cannot fast-forward. Update manually." };
     default:
@@ -178,6 +186,9 @@ export async function applySoftwareUpdate(): Promise<SoftwareUpdateApply> {
   if (!(await isGitCheckout())) return applyFailureMessage("not-git");
 
   try {
+    const branch = (await git(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+    if (!isOnUpdateBranch(branch)) return applyFailureMessage("wrong-branch");
+
     const statusRaw = await git(["status", "--porcelain"]);
     const { dirty } = parsePorcelain(statusRaw);
     if (dirty) return applyFailureMessage("dirty");

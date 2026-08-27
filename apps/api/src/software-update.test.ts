@@ -63,7 +63,25 @@ describe("buildCheckResult", () => {
     });
   });
 
-  it("allows auto update when behind and clean", () => {
+  it("allows auto update when behind, clean, and on main", () => {
+    const result = buildCheckResult({
+      currentCommit: "aaa",
+      targetCommit: "bbb",
+      behindBy: 3,
+      dirty: false,
+      changedFiles: [],
+      branch: "main",
+      remote: "origin",
+    });
+    expect(result).toMatchObject({
+      available: true,
+      isUpToDate: false,
+      behindBy: 3,
+      canAutoUpdate: true,
+    });
+  });
+
+  it("blocks auto update on a non-main branch even if behind", () => {
     const result = buildCheckResult({
       currentCommit: "aaa",
       targetCommit: "bbb",
@@ -73,12 +91,7 @@ describe("buildCheckResult", () => {
       branch: "feature",
       remote: "origin",
     });
-    expect(result).toMatchObject({
-      available: true,
-      isUpToDate: false,
-      behindBy: 3,
-      canAutoUpdate: true,
-    });
+    expect(result.canAutoUpdate).toBe(false);
   });
 
   it("blocks auto update when dirty even if behind", () => {
@@ -112,6 +125,7 @@ describe("applyFailureMessage", () => {
   it("returns short safe messages", () => {
     expect(applyFailureMessage("dirty").message).toBe("Local changes. Stash or commit first.");
     expect(applyFailureMessage("not-git").message).toBe("Updates unavailable.");
+    expect(applyFailureMessage("wrong-branch").message).toBe("Switch to main first.");
     expect(applyFailureMessage("not-ff").message).toBe("Cannot fast-forward. Update manually.");
     expect(applyFailureMessage("failed").message).toBe("Update failed.");
     expect(applyFailureMessage("dirty").success).toBe(false);
