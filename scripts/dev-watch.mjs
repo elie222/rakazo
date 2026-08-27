@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// Spawn `tsx watch` with stdin ignored. Under turbo on Windows an inherited stdin
-// handle that never closes prevents tsx watch from reaching the entrypoint.
+// Spawn `tsx watch` with stdin ignored.
+//
+// tsx watch listens on stdin for its press-Return-to-restart shortcut. Under turbo on Windows that
+// inherited handle never delivers and never closes, and the watched service then never reaches its
+// entrypoint: no output, no port, no error. These services are non-interactive, so nothing is lost.
+// The redirect lives here rather than in the dev scripts because `< NUL` and `< /dev/null` differ.
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
