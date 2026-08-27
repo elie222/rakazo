@@ -3,7 +3,17 @@ import {
   confirmUpdaterRecreate,
   isLikelyUpdaterRecreateDisconnect,
   recreateWaitTimeoutError,
+  type RecreateLastRun,
 } from "./updater-recreate.js";
+
+function run(partial: Partial<RecreateLastRun> & Pick<RecreateLastRun, "ok" | "fromTag" | "toTag">): RecreateLastRun {
+  return {
+    finishedAt: "2026-08-27T21:00:00.000Z",
+    error: null,
+    restartAdvice: "",
+    ...partial,
+  };
+}
 
 describe("isLikelyUpdaterRecreateDisconnect", () => {
   it("recognizes common browser and Node transport failures after API recreate", () => {
@@ -25,7 +35,7 @@ describe("isLikelyUpdaterRecreateDisconnect", () => {
 });
 
 describe("confirmUpdaterRecreate", () => {
-  it("requires an idle sidecar and a changed image tag", () => {
+  it("requires an idle sidecar, matching lastRun, and a changed image tag", () => {
     expect(
       confirmUpdaterRecreate({
         beforeImageTag: "sha-aaa",
@@ -33,6 +43,7 @@ describe("confirmUpdaterRecreate", () => {
         running: false,
         supported: true,
         installKind: "sidecar",
+        lastRun: run({ ok: true, fromTag: "sha-aaa", toTag: "sha-bbb" }),
       }),
     ).toEqual({ confirmed: true, reason: "changed" });
     expect(
@@ -42,17 +53,9 @@ describe("confirmUpdaterRecreate", () => {
         running: true,
         supported: true,
         installKind: "sidecar",
+        lastRun: run({ ok: true, fromTag: "sha-aaa", toTag: "sha-bbb" }),
       }),
     ).toEqual({ confirmed: false, reason: "running" });
-    expect(
-      confirmUpdaterRecreate({
-        beforeImageTag: "sha-aaa",
-        afterImageTag: "sha-aaa",
-        running: false,
-        supported: true,
-        installKind: "sidecar",
-      }),
-    ).toEqual({ confirmed: false, reason: "unchanged" });
   });
 
   it("does not treat a compose fallback with a changed configured tag as success", () => {
@@ -63,12 +66,12 @@ describe("confirmUpdaterRecreate", () => {
         running: false,
         supported: false,
         installKind: "compose",
+        lastRun: run({ ok: true, fromTag: "sha-aaa", toTag: "sha-bbb" }),
       }),
     ).toEqual({ confirmed: false, reason: "waiting" });
   });
 
-  it("confirms rollback when the live before-tag differs from the restored after-tag", () => {
-    // Caller must pass the tag at action start (B), not a stale panel tag (A).
+  it("confirms rollback when lastRun moved from the live before-tag to the restored tag", () => {
     expect(
       confirmUpdaterRecreate({
         beforeImageTag: "sha-bbb",
@@ -76,8 +79,42 @@ describe("confirmUpdaterRecreate", () => {
         running: false,
         supported: true,
         installKind: "sidecar",
+        lastRun: run({ ok: true, fromTag: "sha-bbb", toTag: "sha-aaa" }),
       }),
     ).toEqual({ confirmed: true, reason: "changed" });
+  });
+
+  it("rejects a stale env pin when recreate failed even if the tag appears to change", () => {
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-bbb",
+        running: false,
+        supported: true,
+        installKind: "sidecar",
+        lastRun: run({
+          ok: false,
+          fromTag: "sha-aaa",
+          toTag: "sha-bbb",
+          error: "Recreate the stack failed.",
+          restartAdvice:
+            "Recreate the stack failed. The updater restored the previously running sha-aaa image, but could not restore the environment pin.",
+        }),
+      }),
+    ).toEqual({ confirmed: false, reason: "failed" });
+  });
+
+  it("waits until a finished lastRun is available", () => {
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-aaa",
+        running: false,
+        supported: true,
+        installKind: "sidecar",
+        lastRun: null,
+      }),
+    ).toEqual({ confirmed: false, reason: "waiting" });
   });
 });
 

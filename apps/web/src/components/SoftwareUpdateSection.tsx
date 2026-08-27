@@ -19,7 +19,11 @@ function shortRev(value: string | null | undefined): string | null {
 
 async function waitForUpdaterStatus(options: {
   beforeImageTag: string | null;
-}): Promise<{ status: ServerUpdateStatus; confirmed: boolean }> {
+}): Promise<{
+  status: ServerUpdateStatus;
+  confirmed: boolean;
+  reason: "waiting" | "running" | "unchanged" | "changed" | "failed";
+}> {
   let lastError: unknown;
   let sawApi = false;
   let sawSidecar = false;
@@ -36,11 +40,12 @@ async function waitForUpdaterStatus(options: {
         running: next.running,
         supported: next.supported,
         installKind: next.installKind,
+        lastRun: next.lastRun,
       });
       if (verdict.reason === "waiting") continue;
       sawSidecar = true;
       if (verdict.reason === "running") continue;
-      return { status: next, confirmed: verdict.confirmed };
+      return { status: next, confirmed: verdict.confirmed, reason: verdict.reason };
     } catch (error) {
       lastError = error;
     }
@@ -219,6 +224,13 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
         if (recovered.confirmed) {
           setError(null);
           setDone(successLabel);
+        } else if (recovered.reason === "failed") {
+          setDone(null);
+          setError(
+            recovered.status.lastRun?.error ??
+              recovered.status.lastRun?.restartAdvice ??
+              t`Update finished with errors`,
+          );
         } else {
           setDone(null);
           setError(t`API is back, but the image tag did not change. Check the host logs.`);

@@ -120,6 +120,67 @@ describe("server update install kind", () => {
     expect(status.canRollback).toBe(true);
     expect(status.manualCommands).toEqual([]);
     expect(status.imageTag).toMatch(/^sha-/);
+    expect(status.lastRun).toBeNull();
+  });
+
+  it("surfaces a finished sidecar lastRun for recreate confirmation", async () => {
+    const root = await tempRoot(false);
+    const lastRun = {
+      startedAt: "2026-08-27T21:00:00.000Z",
+      finishedAt: "2026-08-27T21:01:00.000Z",
+      ok: false,
+      fromCommit: null,
+      toCommit: null,
+      fromTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      toTag: "sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      strategy: "pull",
+      repoUrl: "https://github.com/elie222/rakazo",
+      branch: "main",
+      restart: "not-required",
+      restartAdvice: "Recreate failed; prior image restored, env pin not restored.",
+      error: "Recreate the stack failed.",
+      steps: [],
+    };
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const href = String(input);
+      if (href.endsWith("/health")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (href.endsWith("/state")) {
+        return new Response(
+          JSON.stringify({
+            image: "ghcr.io/elie222/rakazo/app",
+            currentTag: "sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            previousTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            running: false,
+            lastRun,
+            checkout: {
+              present: true,
+              commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              branch: "main",
+              remoteUrl: "https://github.com/elie222/rakazo",
+              dirty: false,
+              dirtyPaths: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("missing", { status: 404 });
+    });
+    const status = await readServerUpdateStatus({
+      url: URL,
+      token: TOKEN,
+      gitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      checkoutRoot: root,
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+    expect(status.lastRun).toMatchObject({
+      ok: false,
+      fromTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      toTag: "sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      error: "Recreate the stack failed.",
+    });
   });
 });
 

@@ -6,6 +6,7 @@ import type {
   ServerUpdateRun,
   ServerUpdateStatus,
 } from "@rakazo/contracts";
+import { ServerUpdateRunSchema } from "@rakazo/contracts";
 import {
   DEFAULT_UPDATE_BRANCH,
   detectRestartSupervisor,
@@ -138,6 +139,7 @@ export async function readServerUpdateStatus(
       currentTag?: string;
       previousTag?: string | null;
       running?: boolean;
+      lastRun?: unknown;
       checkout?: {
         present?: boolean;
         commit?: string | null;
@@ -150,6 +152,7 @@ export async function readServerUpdateStatus(
 
     const remoteUrl = state.checkout?.remoteUrl ?? null;
     const official = remoteUrl ? isOfficialRepoUrl(remoteUrl) : true;
+    const parsedLastRun = ServerUpdateRunSchema.safeParse(state.lastRun);
     return {
       ...base,
       supported: true,
@@ -176,6 +179,7 @@ export async function readServerUpdateStatus(
         official,
       },
       running: state.running === true,
+      lastRun: parsedLastRun.success ? parsedLastRun.data : null,
     };
   } catch (error) {
     return {

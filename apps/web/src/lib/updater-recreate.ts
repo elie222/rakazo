@@ -19,10 +19,19 @@ export function isLikelyUpdaterRecreateDisconnect(error: unknown): boolean {
   );
 }
 
+export type RecreateLastRun = {
+  ok: boolean;
+  fromTag: string | null;
+  toTag: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  restartAdvice: string;
+};
+
 /**
- * After reconnect, only claim success from a live sidecar status: supported sidecar install,
- * idle run lock, and an image tag that actually moved. A compose/source fallback with a changed
- * configured tag is not proof the update finished.
+ * After reconnect, only claim success from a finished sidecar run that started from the
+ * pre-action tag. A changed env pin alone is not enough: recreate can fail, restore the prior
+ * image, and still leave `RAKAZO_IMAGE_TAG` pointing at the target.
  */
 export function confirmUpdaterRecreate(input: {
   beforeImageTag: string | null;
@@ -30,12 +39,27 @@ export function confirmUpdaterRecreate(input: {
   running: boolean;
   supported: boolean;
   installKind: string;
-}): { confirmed: boolean; reason: "waiting" | "running" | "unchanged" | "changed" } {
+  lastRun: RecreateLastRun | null;
+}): {
+  confirmed: boolean;
+  reason: "waiting" | "running" | "unchanged" | "changed" | "failed";
+} {
   if (input.supported !== true || input.installKind !== "sidecar") {
     return { confirmed: false, reason: "waiting" };
   }
   if (input.running) return { confirmed: false, reason: "running" };
-  if (input.beforeImageTag && input.afterImageTag && input.afterImageTag !== input.beforeImageTag) {
+
+  const run = input.lastRun;
+  if (!run || run.finishedAt === null) {
+    return { confirmed: false, reason: "waiting" };
+  }
+  if (!input.beforeImageTag || run.fromTag !== input.beforeImageTag) {
+    return { confirmed: false, reason: "unchanged" };
+  }
+  if (!run.ok) {
+    return { confirmed: false, reason: "failed" };
+  }
+  if (run.toTag && input.afterImageTag === run.toTag && run.toTag !== input.beforeImageTag) {
     return { confirmed: true, reason: "changed" };
   }
   return { confirmed: false, reason: "unchanged" };
