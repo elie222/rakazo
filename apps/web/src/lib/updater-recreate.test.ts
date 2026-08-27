@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { confirmUpdaterRecreate, isLikelyUpdaterRecreateDisconnect } from "./updater-recreate.js";
+import {
+  confirmUpdaterRecreate,
+  isLikelyUpdaterRecreateDisconnect,
+  recreateWaitTimeoutError,
+} from "./updater-recreate.js";
 
 describe("isLikelyUpdaterRecreateDisconnect", () => {
   it("recognizes common browser and Node transport failures after API recreate", () => {
@@ -61,5 +65,29 @@ describe("confirmUpdaterRecreate", () => {
         installKind: "compose",
       }),
     ).toEqual({ confirmed: false, reason: "waiting" });
+  });
+});
+
+describe("recreateWaitTimeoutError", () => {
+  it("reports sidecar unavailable when only fallback status was seen", () => {
+    expect(recreateWaitTimeoutError({ sawApi: true, sawSidecar: false }).message).toBe(
+      "The updater sidecar was unavailable after reconnect.",
+    );
+  });
+
+  it("reports still running when a live sidecar status was seen", () => {
+    expect(recreateWaitTimeoutError({ sawApi: true, sawSidecar: true }).message).toBe(
+      "The updater was still running when the wait timed out.",
+    );
+  });
+
+  it("keeps the last transport error when the API never came back", () => {
+    expect(
+      recreateWaitTimeoutError({
+        sawApi: false,
+        sawSidecar: false,
+        lastError: new Error("Failed to fetch"),
+      }).message,
+    ).toBe("Failed to fetch");
   });
 });

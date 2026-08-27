@@ -2,7 +2,11 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServerUpdateCheck, ServerUpdateStatus } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
-import { confirmUpdaterRecreate, isLikelyUpdaterRecreateDisconnect } from "../lib/updater-recreate";
+import {
+  confirmUpdaterRecreate,
+  isLikelyUpdaterRecreateDisconnect,
+  recreateWaitTimeoutError,
+} from "../lib/updater-recreate";
 import { BuiButton, LoadingState, SuccessPop } from "./beautiful-ui/primitives";
 
 const RECREATE_POLL_MS = 2_000;
@@ -18,6 +22,7 @@ async function waitForUpdaterStatus(options: {
 }): Promise<{ status: ServerUpdateStatus; confirmed: boolean }> {
   let lastError: unknown;
   let sawApi = false;
+  let sawSidecar = false;
   for (let attempt = 0; attempt < RECREATE_POLL_ATTEMPTS; attempt += 1) {
     if (attempt > 0) {
       await new Promise((resolve) => setTimeout(resolve, RECREATE_POLL_MS));
@@ -32,18 +37,15 @@ async function waitForUpdaterStatus(options: {
         supported: next.supported,
         installKind: next.installKind,
       });
-      if (verdict.reason === "waiting" || verdict.reason === "running") continue;
+      if (verdict.reason === "waiting") continue;
+      sawSidecar = true;
+      if (verdict.reason === "running") continue;
       return { status: next, confirmed: verdict.confirmed };
     } catch (error) {
       lastError = error;
     }
   }
-  if (sawApi) {
-    throw new Error("The updater was still running when the wait timed out.");
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("The API did not come back after the update.");
+  throw recreateWaitTimeoutError({ sawApi, sawSidecar, lastError });
 }
 
 /** Presentational body so unit tests can render install-kind branches without RPC. */

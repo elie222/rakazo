@@ -40,3 +40,20 @@ export function confirmUpdaterRecreate(input: {
   }
   return { confirmed: false, reason: "unchanged" };
 }
+
+/** Timeout copy after recreate reconnect polling. */
+export function recreateWaitTimeoutError(input: {
+  sawApi: boolean;
+  sawSidecar: boolean;
+  lastError?: unknown;
+}): Error {
+  if (input.sawSidecar) {
+    return new Error("The updater was still running when the wait timed out.");
+  }
+  if (input.sawApi) {
+    return new Error("The updater sidecar was unavailable after reconnect.");
+  }
+  return input.lastError instanceof Error
+    ? input.lastError
+    : new Error("The API did not come back after the update.");
+}
