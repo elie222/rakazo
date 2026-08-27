@@ -108,4 +108,14 @@ describe("BotAvatar", () => {
       /data-working[^}]+animation:/s,
     );
   });
+
+  it("freezes organic path morphing under reduced motion", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*)$/)?.[1] ?? "";
+
+    expect(reducedMotion).toMatch(
+      /\.rakazo-organic-avatar \.rakazo-organic-avatar-body \{[^}]*d:\s*var\(--rakazo-organic-path\);/s,
+    );
+    expect(reducedMotion).toMatch(/\.rakazo-organic-avatar animate \{[^}]*display:\s*none;/s);
+  });
 });
