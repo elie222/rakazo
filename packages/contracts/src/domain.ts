@@ -9,6 +9,9 @@ export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
+export const AvatarStyleSchema = z.enum(["robot", "organic"]);
+export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
+
 export const ThinkingLevelSchema = z.enum([
   "off",
   "minimal",
@@ -792,6 +795,7 @@ export const MeSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  avatarStyle: AvatarStyleSchema,
 });
 export type Me = z.infer<typeof MeSchema>;
 

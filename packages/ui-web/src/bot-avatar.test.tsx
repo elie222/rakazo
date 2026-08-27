@@ -1,5 +1,6 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { AvatarStyleProvider } from "./avatar-style.js";
 import { BotAvatar } from "./bot-avatar.js";
 
 describe("BotAvatar", () => {
@@ -33,5 +34,35 @@ describe("BotAvatar", () => {
   it("renders idle avatar without working ring when idle", () => {
     const html = renderToString(<BotAvatar color="#F59E0B" status="idle" />);
     expect(html).not.toContain("<svg");
+  });
+
+  it("generates an organic avatar from the bot color", () => {
+    const html = renderToString(
+      <BotAvatar color="#D9508A" identity="maya" size={28} status="running" variant="organic" />,
+    );
+
+    expect(html).toContain("rakazo-organic-avatar");
+    expect(html).toContain('data-working="true"');
+    expect(html).toContain("<animate");
+    expect(html).not.toContain("rakazo-bot-avatar-visor");
+  });
+
+  it("generates distinct organic silhouettes for distinct bot identities", () => {
+    const maya = renderToString(<BotAvatar color="#D9508A" identity="maya" variant="organic" />);
+    const github = renderToString(
+      <BotAvatar color="#D9508A" identity="github" variant="organic" />,
+    );
+
+    expect(maya).not.toEqual(github);
+  });
+
+  it("uses the account avatar preference when no local variant is provided", () => {
+    const html = renderToString(
+      <AvatarStyleProvider value="organic">
+        <BotAvatar color="#D9508A" identity="maya" />
+      </AvatarStyleProvider>,
+    );
+
+    expect(html).toContain("rakazo-organic-avatar");
   });
 });

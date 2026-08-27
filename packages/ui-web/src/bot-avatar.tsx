@@ -1,5 +1,6 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
 import { type CSSProperties, memo, useId } from "react";
+import { type AvatarStyle, useAvatarStyle } from "./avatar-style.js";
 import { cn } from "./lib/utils.js";
 import "./styles.css";
 
@@ -7,6 +8,8 @@ export interface BotAvatarProps {
   color: string;
   size?: number;
   status?: string;
+  variant?: AvatarStyle;
+  identity?: string;
   className?: string;
 }
 
@@ -14,9 +17,24 @@ export const BotAvatar = memo(function BotAvatar({
   color,
   size = 38,
   status,
+  variant,
+  identity,
   className,
 }: BotAvatarProps) {
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
+  const gradId = `spin-grad-${useId().replace(/[^a-zA-Z0-9-_]/g, "")}`;
+  const preferredVariant = useAvatarStyle();
+  if ((variant ?? preferredVariant) === "organic") {
+    return (
+      <OrganicAvatar
+        color={color}
+        identity={identity}
+        size={size}
+        isWorking={isWorking}
+        className={className}
+      />
+    );
+  }
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(4, Math.round(size * 0.14));
@@ -25,15 +43,14 @@ export const BotAvatar = memo(function BotAvatar({
   const eyeGap = Math.max(3, Math.round(size * 0.1));
 
   const seed = hashString(color || "#8B5CF6");
-  const variant = seed % 4;
+  const eyeVariant = seed % 4;
   const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
   const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
-  const gradId = `spin-grad-${useId().replace(/[^a-zA-Z0-9-_]/g, "")}`;
   const eyeGlow = `0 0 4px #FFFFFF, 0 0 8px #FFFFFF, 0 0 14px ${lightenColor(color, 20)}`;
   const eyeAnimation = {
     "--rakazo-eye-animation-name": isWorking
       ? "rakazo-eyes-working"
-      : `rakazo-eyes-idle-${variant}`,
+      : `rakazo-eyes-idle-${eyeVariant}`,
     "--rakazo-eye-animation-duration": isWorking ? "1.4s" : `${idleDuration}s`,
     "--rakazo-eye-animation-easing": isWorking ? "ease-in-out" : "cubic-bezier(0.4, 0, 0.2, 1)",
     "--rakazo-eye-animation-delay": isWorking ? "0s" : `${idleDelay}s`,
@@ -132,6 +149,68 @@ export const BotAvatar = memo(function BotAvatar({
     </div>
   );
 });
+
+function OrganicAvatar({
+  color,
+  identity,
+  size,
+  isWorking,
+  className,
+}: {
+  color: string;
+  identity?: string;
+  size: number;
+  isWorking: boolean;
+  className?: string;
+}) {
+  const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
+  const shapeStyle = {
+    "--rakazo-organic-duration": `${4.8 + (seed % 24) / 10}s`,
+  } as CSSProperties;
+  const shapeA = organicAvatarPath(seed);
+  const shapeB = organicAvatarPath(seed, 0.42);
+
+  return (
+    <svg
+      viewBox="-60 -60 120 120"
+      aria-hidden="true"
+      className={cn("rakazo-organic-avatar overflow-visible select-none", className)}
+      data-working={isWorking}
+      style={{
+        ...shapeStyle,
+        width: size,
+        height: size,
+        flex: "none",
+      }}
+    >
+      <path
+        className="rakazo-organic-avatar-body"
+        d={shapeA}
+        fill={color}
+        style={{
+          filter: isWorking
+            ? `drop-shadow(0 0 ${Math.round(size * 0.16)}px ${color})`
+            : "drop-shadow(0 2px 3px rgba(0,0,0,.34))",
+        }}
+      >
+        <animate
+          attributeName="d"
+          values={`${shapeA};${shapeB};${shapeA}`}
+          dur={isWorking ? "1.35s" : `${4.8 + (seed % 24) / 10}s`}
+          repeatCount="indefinite"
+        />
+      </path>
+      <g
+        className="rakazo-organic-avatar-eyes"
+        transform={`rotate(${(seed % 9) - 4})`}
+        fill="#101014"
+      >
+        <rect x="-14" y="-12" width="7" height="24" rx="3.5" />
+        <rect x="7" y="-12" width="7" height="24" rx="3.5" />
+      </g>
+    </svg>
+  );
+}
 
 function hashString(str: string): number {
   let hash = 0;

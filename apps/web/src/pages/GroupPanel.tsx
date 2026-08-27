@@ -51,7 +51,7 @@ function MemberPicker({
               checked ? "bg-[#1A1A1D]" : "hover:bg-[#141416]"
             }`}
           >
-            <BotAvatar color={bot.color} size={32} status={bot.status} />
+            <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
             <span className="flex-1 text-[15px] text-[#ECECEE]" dir="auto">
               {bot.name}
             </span>
