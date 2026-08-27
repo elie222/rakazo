@@ -11,30 +11,50 @@ afterEach(async () => {
 });
 
 describe("computer home ownership", () => {
-  it("walks existing contents without following symlinks outside the home", async () => {
-    if (process.getuid?.() !== 0) return;
+  it.skipIf(process.platform !== "linux" || process.getuid?.() !== 0)(
+    "walks existing contents without following symlinks outside the home",
+    async () => {
+      const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-"));
+      roots.push(parent);
+      const home = path.join(parent, "home");
+      const outside = path.join(parent, "outside");
+      await mkdir(path.join(home, "nested"), { recursive: true });
+      await writeFile(path.join(home, "nested", "file.txt"), "inside");
+      await writeFile(outside, "outside");
+      await symlink(outside, path.join(home, "link"));
 
-    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-"));
-    roots.push(parent);
-    const home = path.join(parent, "home");
-    const outside = path.join(parent, "outside");
-    await mkdir(path.join(home, "nested"), { recursive: true });
-    await writeFile(path.join(home, "nested", "file.txt"), "inside");
-    await writeFile(outside, "outside");
-    await symlink(outside, path.join(home, "link"));
+      const uid = process.getuid?.() ?? 0;
+      const gid = process.getgid?.() ?? 0;
+      const outsideBefore = await lstat(outside);
+      await ensureComputerHomeOwnership(home, uid, gid);
 
-    const uid = process.getuid?.() ?? 0;
-    const gid = process.getgid?.() ?? 0;
-    const outsideBefore = await lstat(outside);
-    await ensureComputerHomeOwnership(home, uid, gid);
+      await expect(lstat(path.join(home, "nested", "file.txt"))).resolves.toMatchObject({
+        uid,
+        gid,
+      });
+      await expect(lstat(home)).resolves.toMatchObject({ uid, gid });
+      await expect(lstat(outside)).resolves.toMatchObject({
+        uid: outsideBefore.uid,
+        gid: outsideBefore.gid,
+      });
+    },
+  );
 
-    await expect(lstat(path.join(home, "nested", "file.txt"))).resolves.toMatchObject({ uid, gid });
-    await expect(lstat(home)).resolves.toMatchObject({ uid, gid });
-    await expect(lstat(outside)).resolves.toMatchObject({
-      uid: outsideBefore.uid,
-      gid: outsideBefore.gid,
-    });
-  });
+  it.skipIf(process.platform !== "linux" || process.getuid?.() !== 0)(
+    "rejects a symlink as the home root",
+    async () => {
+      const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-root-"));
+      roots.push(parent);
+      const outside = path.join(parent, "outside");
+      const home = path.join(parent, "home");
+      await mkdir(outside);
+      await symlink(outside, home);
+
+      await expect(ensureComputerHomeOwnership(home)).rejects.toMatchObject({
+        code: expect.stringMatching(/ELOOP|ENOTDIR/),
+      });
+    },
+  );
 
   it("no-ops when the supervisor is not root", async () => {
     if (process.getuid?.() === 0) return;
