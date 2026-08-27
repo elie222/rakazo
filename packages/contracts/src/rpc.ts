@@ -567,6 +567,28 @@ export const appContract = {
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
   },
+  updater: {
+    check: oc.output(
+      z.object({
+        currentCommit: z.string(),
+        targetCommit: z.string(),
+        isUpToDate: z.boolean(),
+        behindBy: z.number(),
+        dirty: z.boolean(),
+        changedFiles: z.array(z.string()),
+        branch: z.string(),
+        remote: z.string(),
+        canAutoUpdate: z.boolean(),
+      }),
+    ),
+    apply: oc.output(
+      z.object({
+        success: z.boolean(),
+        message: z.string(),
+        updatedToCommit: z.string().optional(),
+      }),
+    ),
+  },
 };
 
 export type AppContract = typeof appContract;

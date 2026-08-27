@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
@@ -127,6 +128,8 @@ export function AccountSettingsOverlay({
             <Trans>Model spend uses your provider keys.</Trans>
           </p>
         </div>
+
+        <SoftwareUpdateSection />
 
         <details
           data-testid="advanced-settings"
