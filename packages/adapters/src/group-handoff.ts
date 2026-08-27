@@ -1,5 +1,6 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { renderGroupMembersContext } from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -140,16 +141,16 @@ export async function loadGroupContext(
     include: {
       members: {
         where: { bot: { archivedAt: null } },
-        include: { bot: { select: { id: true, name: true } } },
+        include: {
+          bot: { select: { id: true, name: true, title: true, description: true } },
+        },
         orderBy: { createdAt: "asc" },
       },
     },
   });
   if (!group) return undefined;
-  const roster = group.members.map((member) => `${member.bot.name} (${member.bot.id})`).join(", ");
-  return [
-    `You are in the group chat "${group.name}" with: ${roster}.`,
-    "Post in this shared thread. When another teammate should take the next stage, use handoff_to_bot instead of telling the user to switch chats.",
-    "One bot owns each stage.",
-  ].join(" ");
+  return renderGroupMembersContext(
+    group.name,
+    group.members.map((member) => member.bot),
+  );
 }
