@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import {
   COMPUTER_IMAGE,
+  COMPUTER_UID,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   containerCreateOptions,
@@ -135,9 +136,10 @@ app.post("/computers", async (c) => {
           return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
         }
       }
-      // Only a fresh or replaced container needs the migration. Existing containers
-      // with the current image have already crossed the uid-1000 ownership boundary.
-      if (runtimeInfo) await ensureComputerHomeOwnership(serviceHomePath);
+      // Fresh or replaced containers need homes writable by uid 1000. Root supervisors
+      // normalize ownership without following symlinks; host-run non-root processes no-op.
+      await ensureComputerHomeOwnership(serviceHomePath);
+      await assertComputerHomeWritable(serviceHomePath);
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
         containerCreateOptions({
@@ -663,6 +665,15 @@ function assertBotHomePath(homePath: string, botId: string) {
   if (homePath !== expected) {
     throw new Error("computer home must be the bot's home directory");
   }
+}
+
+async function assertComputerHomeWritable(homePath: string) {
+  if (process.getuid?.() === 0) return;
+  const stat = await lstat(homePath);
+  if (stat.uid === COMPUTER_UID) return;
+  throw new Error(
+    `computer home ${homePath} is owned by uid ${stat.uid}; containers run as ${COMPUTER_UID} and need a writable bind mount (chown -R ${COMPUTER_UID}:${COMPUTER_UID} ${homePath} or use Compose data-init)`,
+  );
 }
 
 function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo | undefined) {

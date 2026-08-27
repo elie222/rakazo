@@ -151,6 +151,7 @@ describe("graphical computer spec", () => {
 
   it("validates the configured screen network mode", () => {
     expect(resolveScreenNetworkMode(undefined)).toBe("published");
+    expect(resolveScreenNetworkMode("published")).toBe("published");
     expect(resolveScreenNetworkMode("isolated")).toBe("isolated");
     expect(() => resolveScreenNetworkMode("typo")).toThrow(/Unsupported/);
   });

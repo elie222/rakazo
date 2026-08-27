@@ -46,6 +46,46 @@ describe("secrets-guard", () => {
         ENCRYPTION_KEY: DEV_ENCRYPTION_KEY_PLACEHOLDER,
       }),
     ).toThrow(/ENCRYPTION_KEY/);
+    expect(() =>
+      resolveSupervisorToken({
+        NODE_ENV: "production",
+        SANDBOX_SUPERVISOR_TOKEN: DEV_SUPERVISOR_TOKEN_PLACEHOLDER,
+      }),
+    ).toThrow(/SANDBOX_SUPERVISOR_TOKEN/);
+    expect(() =>
+      resolveSupervisorToken({
+        NODE_ENV: "production",
+        SANDBOX_SUPERVISOR_TOKEN: "replace-with-32-plus-character-supervisor-token",
+      }),
+    ).toThrow(/SANDBOX_SUPERVISOR_TOKEN/);
+    expect(() =>
+      resolveScreenProxySecret({
+        NODE_ENV: "production",
+        SCREEN_PROXY_SECRET: DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
+      }),
+    ).toThrow(/SCREEN_PROXY_SECRET/);
+    expect(() =>
+      resolveScreenProxySecret({
+        NODE_ENV: "production",
+        SCREEN_PROXY_SECRET: "replace-with-32-plus-character-screen-proxy-secret",
+      }),
+    ).toThrow(/SCREEN_PROXY_SECRET/);
+  });
+
+  it("accepts real dedicated credentials in production", () => {
+    expect(
+      resolveSupervisorToken({
+        NODE_ENV: "production",
+        SANDBOX_SUPERVISOR_TOKEN: "prod-supervisor-token-with-enough-length",
+      }),
+    ).toBe("prod-supervisor-token-with-enough-length");
+    expect(
+      resolveScreenProxySecret({
+        NODE_ENV: "production",
+        SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+        SANDBOX_SUPERVISOR_TOKEN: "prod-supervisor-token-with-enough-length",
+      }),
+    ).toBe("prod-screen-proxy-secret-with-enough-length");
   });
 
   it("accepts real secrets in production", () => {

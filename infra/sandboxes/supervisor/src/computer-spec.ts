@@ -10,7 +10,7 @@ export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
 export function resolveScreenNetworkMode(value: string | undefined): ScreenNetworkMode {
-  if (!value) return "published";
+  if (!value || value === "published") return "published";
   if (value === "internal" || value === "isolated") return value;
   throw new Error(`Unsupported SANDBOX_SCREEN_NETWORK value: ${value}`);
 }
