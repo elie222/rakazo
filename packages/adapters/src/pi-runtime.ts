@@ -80,7 +80,7 @@ export class PiAgentRuntime implements AgentRuntime {
     running.get(runId)?.abort();
   }
 
-  async *run(request: AgentRunRequest, context?: Partial<AdapterContext>): AsyncIterable<AgentRuntimeEvent> {
+  async *run(request: AgentRunRequest, context?: AdapterContext): AsyncIterable<AgentRuntimeEvent> {
     const controller = new AbortController();
     running.set(request.runId, controller);
     const signal = context?.signal ?? controller.signal;
