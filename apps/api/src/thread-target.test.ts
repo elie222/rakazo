@@ -74,6 +74,53 @@ describe("threadSnapshot", () => {
       }),
     ]);
   });
+
+  it("returns the latest failed run so the client can show its error", async () => {
+    const run = {
+      id: "run-failed",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "failed",
+      trigger: "user",
+      modelProvider: "openrouter",
+      modelId: "openrouter/unknown",
+      error: "Provider is not configured: openrouter",
+      startedAt: null,
+      completedAt: new Date("2026-08-23T00:00:01.000Z"),
+      createdAt: new Date("2026-08-23T00:00:00.000Z"),
+    };
+    const findManyEvents = vi.fn();
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: findManyEvents,
+      },
+      run: { findFirst: vi.fn().mockResolvedValue(run) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const target = {
+      kind: "bot",
+      botId: "bot-1",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+
+    const snapshot = await threadSnapshot({ prisma }, target);
+
+    expect(snapshot.run).toEqual(
+      expect.objectContaining({
+        id: "run-failed",
+        status: "failed",
+        error: "Provider is not configured: openrouter",
+      }),
+    );
+    expect(findManyEvents).not.toHaveBeenCalled();
+  });
 });
 
 describe("stopThreadRuns", () => {
