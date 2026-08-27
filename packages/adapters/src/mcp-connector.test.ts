@@ -23,10 +23,13 @@ const ASSIGNMENT = {
   server: SERVER,
 };
 
-function mcpFetch(state: { failNext: boolean; initializations: number }) {
+function mcpFetch(
+  state: { failNext: boolean; initializations: number },
+  expectedUrl = "https://mcp.example.test/mcp",
+) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
-    if (new URL(request.url).href !== "https://mcp.example.test/mcp")
+    if (new URL(request.url).href !== expectedUrl)
       throw new Error(`Unexpected request: ${request.url}`);
     if (request.method !== "POST") return new Response(null, { status: 405 });
     if (state.failNext) return new Response("boom", { status: 500 });
@@ -62,6 +65,29 @@ function mcpFetch(state: { failNext: boolean; initializations: number }) {
 }
 
 describe("MCP connector session cache", () => {
+  it("connects to an explicitly configured localhost HTTP server", async () => {
+    const state = { failNext: false, initializations: 0 };
+    const localAssignment = {
+      ...ASSIGNMENT,
+      server: { ...SERVER, endpoint: "http://localhost:8123/api/mcp" },
+    };
+    vi.stubGlobal("fetch", mcpFetch(state, "http://localhost:8123/api/mcp"));
+    const prisma = {
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
+    };
+    const connector = new McpConnector(prisma as never, {} as never);
+
+    const tools = await connector.discoverTools({
+      workspaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never);
+
+    expect(tools.map((tool) => tool.name)).toEqual(["mcp__demo__echo"]);
+    await connector.close();
+  });
+
   it("evicts a session after a failed call so the next call reconnects instead of reusing a dead session", async () => {
     const state = { failNext: false, initializations: 0 };
     vi.stubGlobal("fetch", mcpFetch(state));

@@ -207,6 +207,7 @@ export class McpConnector implements ConnectorProvider {
         };
         await session.connectRemote({
           url: server.endpoint,
+          urlPolicy: { allowHttpLocalhost: true },
           transport: server.transport === "sse" ? "sse" : "streamable-http",
           allowLegacySse: server.transport === "sse",
           headerPolicy: { headers },
