@@ -76,7 +76,7 @@ export class McpConnector implements ConnectorProvider {
             `mcp discovery failed for server ${assignment.server.slug}:`,
             error instanceof Error ? error.message : error,
           );
-          await this.evict(assignment.server.id);
+          await this.evict(this.sessionKey(assignment.server, context));
           return [];
         }
       }),
@@ -120,7 +120,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "result", data: result };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
-      await this.evict(assignment.server.id);
+      await this.evict(this.sessionKey(assignment.server, context));
       yield { type: "error", message: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -132,25 +132,31 @@ export class McpConnector implements ConnectorProvider {
     this.connecting.clear();
   }
 
-  private async evict(serverId: string): Promise<void> {
-    const entry = this.sessions.get(String(serverId));
+  private sessionKey(server: McpServer, context: AdapterContext): string {
+    // Identity headers are applied once, at connect time, so a session is only
+    // valid for the identity it connected as. The key has to carry that identity.
+    return `${server.id} ${context.workspaceId} ${context.userId}`;
+  }
+
+  private async evict(sessionKey: string): Promise<void> {
+    const entry = this.sessions.get(sessionKey);
     if (!entry) return;
-    this.sessions.delete(String(serverId));
+    this.sessions.delete(sessionKey);
     await entry.session.close();
   }
 
   private async sessionFor(server: McpServer, context: AdapterContext): Promise<McpSession> {
-    const sessionKey = String(server.id);
+    const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) return existing.session;
     const pending = this.connecting.get(sessionKey);
     if (pending?.revision === server.revision) return pending.promise;
     if (pending) {
       await pending.promise.catch(() => undefined);
-      await this.evict(server.id);
+      await this.evict(sessionKey);
       return this.sessionFor(server, context);
     }
-    if (existing) await this.evict(server.id);
+    if (existing) await this.evict(sessionKey);
 
     const promise = this.connectSession(server, context).then((session) => {
       this.sessions.set(sessionKey, { session, revision: server.revision });

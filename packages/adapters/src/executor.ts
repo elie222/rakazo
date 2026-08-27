@@ -47,10 +47,7 @@ import {
   resolveActionApproval,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
-  type ToolNameStreak,
   toolRequiresApproval,
-  trackToolCallStreak,
-  trackToolNameStreak,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
@@ -108,6 +105,7 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import { resolveDeploymentModel } from "./deployment-model.js";
 import { handoffToGroupBot, loadGroupContext } from "./group-handoff.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -180,6 +178,7 @@ import {
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
 } from "./thread-artifacts.js";
+import { advanceToolCallLoopGuard } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
@@ -195,11 +194,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-// Same tool, same arguments, this many times in a row means the agent is stuck, not paginating.
-const MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = 6;
-// Backstop for a stuck agent that varies its arguments each call (so the exact-match cap above
-// never trips) but keeps hammering the same tool without ever narrating progress in between.
-const MAX_CONSECUTIVE_SAME_TOOL_CALLS = 20;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 /** Cap the roster so a large workspace cannot flood the prompt. */
@@ -318,19 +312,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // provider with a workspace or deployment secret from another provider.
       const useOverride = Boolean(hasOverride && overrideCredential);
       const credential = useOverride ? overrideCredential : defaultCredential;
-      const resolved = await resolveModelKey(deps, scope.userId, scope.workspaceId, credential);
+      const deployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
       const provider =
         (useOverride ? override!.modelProvider : null) ??
         credential?.provider ??
         settings?.defaultModelProvider ??
-        (deps.deploymentModelKey ? "openrouter" : "scripted");
+        deployment?.provider ??
+        "scripted";
       const id =
         (useOverride ? override!.modelId : null) ??
         credential?.defaultModel ??
         settings?.defaultModelId ??
-        (deps.deploymentModelKey
-          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-          : "scripted");
+        deployment?.model ??
+        "scripted";
+      // The key is resolved for the provider that won above, not before it is known.
+      const resolved = await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.workspaceId,
+        credential,
+        provider,
+      );
       return {
         provider,
         id,
@@ -746,26 +748,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         }
+        const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
+        const runModelProvider =
+          (useModelOverride ? bot.modelProvider : null) ??
+          credential?.provider ??
+          settings?.defaultModelProvider ??
+          runDeployment?.provider ??
+          "scripted";
+        const runModelId =
+          (useModelOverride ? bot.modelId : null) ??
+          credential?.defaultModel ??
+          settings?.defaultModelId ??
+          runDeployment?.model ??
+          "scripted";
         const resolved = await resolveModelKey(
           deps,
           run.userId,
           run.workspaceId,
           credential,
+          runModelProvider,
           (values) => runSecrets.push(...values),
         );
         runSecrets.push(...resolved.redact);
-        const runModelProvider =
-          (useModelOverride ? bot.modelProvider : null) ??
-          credential?.provider ??
-          settings?.defaultModelProvider ??
-          (deps.deploymentModelKey ? "openrouter" : "scripted");
-        const runModelId =
-          (useModelOverride ? bot.modelId : null) ??
-          credential?.defaultModel ??
-          settings?.defaultModelId ??
-          (deps.deploymentModelKey
-            ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-            : "scripted");
         await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { modelProvider: runModelProvider, modelId: runModelId },
@@ -786,13 +790,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        const modelProvider = credential?.provider ?? settings?.defaultModelProvider ?? "scripted";
-        const modelId = credential?.defaultModel ?? settings?.defaultModelId ?? "scripted";
-        // Scripted runtime fixtures still need screenshot tools; for Pi, resolve
-        // the scripted placeholder the same way the runtime does before gating.
+        // Gate on the model this run will actually call — the pair written to the run row
+        // above. Deriving it a second time here dropped the deployment fallback, so a
+        // vision-capable default was gated as "scripted" and lost its screenshot tools.
         const acceptsImages =
           deps.runtime.describe().capabilities.scripted ||
-          modelAcceptsImageInput(modelProvider, modelId);
+          modelAcceptsImageInput(runModelProvider, runModelId);
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
@@ -863,7 +866,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let lastProgressAt = 0;
         let hasStreamedText = false;
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
-        let toolNameStreak: ToolNameStreak = { name: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
@@ -1909,7 +1911,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               assembled += event.text;
               currentTextSegment += event.text;
               toolCallStreak = { key: undefined, count: 0 };
-              toolNameStreak = { name: undefined, count: 0 };
               tryFlushPendingTools();
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
@@ -1918,7 +1919,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             } else if (event.type === "progress") {
               toolCallStreak = { key: undefined, count: 0 };
-              toolNameStreak = { name: undefined, count: 0 };
               // Flush batched text deltas first so an activity line cannot land
               // ahead of text the model streamed before the tool call.
               if (pendingProgress) {
@@ -2027,12 +2027,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
               pendingToolNames.push(event.name);
               tryFlushPendingTools();
-              toolCallStreak = trackToolCallStreak(toolCallStreak, event.name, event.args);
-              toolNameStreak = trackToolNameStreak(toolNameStreak, event.name);
-              const stuckOnExactRepeat =
-                toolCallStreak.count >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS;
-              const stuckOnSameTool = toolNameStreak.count >= MAX_CONSECUTIVE_SAME_TOOL_CALLS;
-              if (stuckOnExactRepeat || stuckOnSameTool) {
+              const loopGuard = advanceToolCallLoopGuard(toolCallStreak, event.name, event.args);
+              toolCallStreak = loopGuard.streak;
+              if (loopGuard.stuck) {
                 approvedEffectReplays.assertDrained();
                 flushPendingTools();
                 if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -2041,9 +2038,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 }
                 await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
                 terminalCheckpointComplete = true;
-                const stuckCount = stuckOnExactRepeat ? toolCallStreak.count : toolNameStreak.count;
-                const stuckDetail = stuckOnExactRepeat ? " with the same input" : "";
-                const stuckText = `I got stuck calling ${humanizeToolName(event.name)}${stuckDetail} ${stuckCount} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
+                const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
                 await deps.events.finalizeRun({
                   workspaceId: run.workspaceId,
                   threadId: thread.id,
@@ -2522,11 +2517,22 @@ async function runSandboxCommand(
   return { stdout, stderr, code };
 }
 
+/**
+ * The deployment key is a bearer credential for exactly one vendor, so it is handed out
+ * only when the provider that won the resolution above is that vendor. A provider named
+ * by deployment settings or a bot override gets no key rather than another vendor's.
+ */
+function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
+  if (!deps.deploymentModelKey) return undefined;
+  return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
+}
+
 async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
   workspaceId: string,
   credential: { secretId: string; provider: string } | null,
+  provider: string,
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
@@ -2538,7 +2544,7 @@ async function resolveModelKey(
   if (credential) {
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
-      if (!row) return { apiKey: deps.deploymentModelKey, redact: [] };
+      if (!row) return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       const plaintext = deps.secretStore.load(row.ciphertext);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = async (next: string) => {
@@ -2595,7 +2601,7 @@ async function resolveModelKey(
       };
     });
   }
-  return { apiKey: deps.deploymentModelKey, redact: [] };
+  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 
 async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

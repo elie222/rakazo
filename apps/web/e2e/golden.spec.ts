@@ -124,10 +124,11 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await page.getByText("Integrations").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
-  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
-  await expect(page.getByText("Slack", { exact: true })).toBeVisible();
+  const featured = page.getByTestId("featured-connectors");
+  await expect(featured).toContainText(
+    /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
+  );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-  await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -137,7 +138,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
+  const gmailRow = featured
+    .getByText("Gmail", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
@@ -146,7 +150,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
-  const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
+  const linearRow = page
+    .getByText("Linear", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   const connectPopup = page.waitForEvent("popup");
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;

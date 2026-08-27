@@ -76,10 +76,13 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(modelSelect).toContainText("Workspace default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await page.getByRole("button", { name: "Show computer" }).click();
-  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();
+  // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
+  // chrome, then wait until any overlay has cleared — avoid Locator.or() strict-mode multi-hits.
   const bootOverlay = page.getByText(/Booting up .* computer/);
-  await expect(bootOverlay).toBeVisible();
+  await expect(sidePanel.getByRole("button", { name: "Take control" })).toBeVisible();
   await expect(bootOverlay).toBeHidden();
   await captureScreenshot(page, testInfo, "27b-computer-panel");
   await page.getByRole("button", { name: "Show settings" }).click();

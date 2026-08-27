@@ -1,5 +1,6 @@
 import type { ComposioProvider } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { featuredConnectorProvidersMatch } from "@rakazo/core";
 import {
   createThreadMessage,
   IsolationError,
@@ -258,13 +259,13 @@ export async function markAppConnected(
       !blocks.some(
         (block) =>
           block.kind === "app_connect" &&
-          block.provider === provider &&
+          featuredConnectorProvidersMatch(block.provider, provider) &&
           block.status !== "connected",
       )
     )
       continue;
     const next = blocks.map((block) =>
-      block.kind === "app_connect" && block.provider === provider
+      block.kind === "app_connect" && featuredConnectorProvidersMatch(block.provider, provider)
         ? { ...block, status: "connected" as const }
         : block,
     );

@@ -3,6 +3,7 @@ import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { resolveDeploymentModel } from "./deployment-model.js";
 import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
@@ -115,8 +116,6 @@ export const MAX_TRANSCRIPT_CHARS = 40_000;
 
 /** Bounds a hung summarization call, which would otherwise hold a background-worker slot open. */
 const SUMMARIZE_TIMEOUT_MS = 120_000;
-
-const DEFAULT_SUMMARIZER_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
 
 export interface CompactHistoryDeps {
   prisma: PrismaClient;
@@ -241,6 +240,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // "scripted" means nothing at all is configured: ScriptedAgentRuntime answers by echoing canned
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
+  const deploymentFallback = resolveDeploymentModel();
   const model = deps.resolveModel
     ? await deps.resolveModel({
         userId: thread.userId,
@@ -249,8 +249,9 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       })
     : deps.deploymentModelKey
       ? {
-          provider: "openrouter",
-          id: process.env.PI_DEFAULT_MODEL ?? DEFAULT_SUMMARIZER_MODEL_ID,
+          // Provider must come from the same resolver as the key, not a hardcoded one.
+          provider: deploymentFallback.provider,
+          id: deploymentFallback.model,
           apiKey: deps.deploymentModelKey,
         }
       : await (async () => {

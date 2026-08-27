@@ -105,4 +105,31 @@ describe("MCP connector session cache", () => {
 
     await connector.close();
   });
+
+  it("does not reuse one session across workspaces", async () => {
+    const state = { failNext: false, initializations: 0 };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
+        findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
+      },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, {
+      network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+    });
+    const contextFor = (workspaceId: string, userId: string) =>
+      ({ workspaceId, userId, botId: "bot-1", signal: new AbortController().signal }) as never;
+
+    await connector.discoverTools(contextFor("w1", "u1"));
+    expect(state.initializations).toBe(1);
+
+    await connector.discoverTools(contextFor("w2", "u2"));
+    expect(state.initializations).toBe(2);
+
+    await connector.discoverTools(contextFor("w1", "u1"));
+    expect(state.initializations).toBe(2);
+
+    await connector.close();
+  });
 });
