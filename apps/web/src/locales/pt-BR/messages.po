@@ -70,7 +70,7 @@ msgstr "{0} MB"
 #: src/pages/AccountSettingsOverlay.tsx:121
 #: src/pages/Shell.tsx:2030
 msgid "{0} runs · {1} tokens"
-msgstr "{0} é executado · Tokens {1}"
+msgstr "{0} execuções · {1} tokens"
 
 #. placeholder {0}: conversations.length
 #: src/pages/PeerMessagesOverlay.tsx:149
@@ -465,7 +465,7 @@ msgstr "Traga sua própria chave. O provedor pode ser trocado; seus bots mantêm
 #: src/pages/Shell.tsx:2099
 #: src/pages/Shell.tsx:2100
 msgid "Call"
-msgstr "Ligue para"
+msgstr "Ligar"
 
 #: src/App.tsx:125
 msgid "Can't reach the server."
@@ -504,7 +504,7 @@ msgstr "Falha na renderização do gráfico: {error}"
 
 #: src/pages/Shell.tsx:3552
 msgid "Chat Settings"
-msgstr "Bate-papo"
+msgstr "Configurações do chat"
 
 #: src/pages/Shell.tsx:2561
 #: src/pages/Shell.tsx:2568
@@ -889,7 +889,7 @@ msgstr "Não foi possível renderizar o gráfico"
 
 #: src/pages/PluginsOverlay.tsx:146
 msgid "Could not revoke connection"
-msgstr "Não foi possível revogar a ligação"
+msgstr "Não foi possível revogar a conexão"
 
 #: src/pages/Shell.tsx:4595
 msgid "Could not save"
@@ -897,7 +897,7 @@ msgstr "Não foi possível salvar"
 
 #: src/pages/GroupPanel.tsx:168
 msgid "Could not save group"
-msgstr "Não foi possível guardar o grupo"
+msgstr "Não foi possível salvar o grupo"
 
 #: src/pages/Onboarding.tsx:178
 msgid "Could not save model"
@@ -1060,7 +1060,7 @@ msgstr "excluído"
 #: src/pages/Shell.tsx:4924
 #: src/pages/Shell.tsx:4998
 msgid "Deleting…"
-msgstr "A eliminar…"
+msgstr "Excluindo…"
 
 #: src/components/AskCard.tsx:15
 msgid "Denied"
@@ -1251,7 +1251,7 @@ msgstr "Conclua o login em <0>{0}</0>. A página final não pode ser carregada; 
 
 #: src/pages/McpOAuthCallback.tsx:55
 msgid "Finishing MCP connection…"
-msgstr "A terminar a ligação MCP..."
+msgstr "Finalizando conexão MCP…"
 
 #: src/pages/WindowChrome.tsx:31
 msgid "Fullscreen"
@@ -1553,7 +1553,7 @@ msgstr "Modelo"
 #: src/pages/ModelSettingsOverlay.tsx:473
 #: src/pages/Onboarding.tsx:325
 msgid "Model id"
-msgstr "Model id"
+msgstr "ID do modelo"
 
 #: src/pages/ModelSettingsOverlay.tsx:843
 msgid "Model options"
@@ -1821,7 +1821,7 @@ msgstr "Suspender"
 #: src/pages/Auth.tsx:74
 #: src/pages/Auth.tsx:81
 msgid "Password"
-msgstr "Palavra-passe"
+msgstr "Senha"
 
 #: src/pages/VoiceSettingsOverlay.tsx:242
 msgid "Paste a replacement key"
@@ -1847,7 +1847,7 @@ msgstr "Escolha uma voz"
 
 #: src/pages/BotContextMenu.tsx:82
 msgid "Pin"
-msgstr "Pino"
+msgstr "Fixar"
 
 #: src/pages/VoiceSettingsOverlay.tsx:284
 msgid "Playing…"
@@ -1893,7 +1893,7 @@ msgstr "Reconectar OAuth"
 
 #: src/App.tsx:123
 msgid "Reconnecting"
-msgstr "A restabelecer ligação"
+msgstr "Reconectando"
 
 #. placeholder {0}: recording.goal
 #: src/components/teach/TeachRecordingChrome.tsx:43
@@ -2057,7 +2057,7 @@ msgstr "Habilidades salvas"
 #: src/pages/ScratchpadSection.tsx:51
 #: src/pages/ScratchpadSection.tsx:73
 msgid "Saved, but list refresh failed"
-msgstr "Guardado, mas a atualização da lista falhou"
+msgstr "Salvo, mas a atualização da lista falhou"
 
 #: src/pages/ModelSettingsOverlay.tsx:274
 msgid "Saved."
@@ -2086,7 +2086,7 @@ msgstr "Pesquisar"
 #: src/pages/PluginsOverlay.tsx:227
 #: src/pages/PluginsOverlay.tsx:228
 msgid "Search apps"
-msgstr "Procurar aplicações"
+msgstr "Pesquisar apps"
 
 #: src/pages/ModelSettingsOverlay.tsx:343
 #: src/pages/ModelSettingsOverlay.tsx:349
@@ -2169,7 +2169,7 @@ msgstr "Mostrar computador"
 
 #: src/pages/Shell.tsx:2246
 msgid "Show settings"
-msgstr "Mostrar definições"
+msgstr "Mostrar configurações"
 
 #: src/lib/localized-provider-hint.ts:7
 #: src/pages/Auth.tsx:114
@@ -2510,7 +2510,7 @@ msgstr "O que devolver"
 
 #: src/pages/PeerMessagesOverlay.tsx:169
 msgid "When {botName} messages another bot, the exchange shows up here instead of in the chat."
-msgstr "Quando o {botName} envia mensagens para outro bot, a exchange aparece aqui em vez de no chat."
+msgstr "Quando o {botName} envia mensagens para outro bot, a conversa aparece aqui em vez de no chat."
 
 #: src/pages/Shell.tsx:2531
 msgid "When to run"
