@@ -11,13 +11,14 @@ const child = spawn(process.execPath, [tsxCli, "watch", ...process.argv.slice(2)
   stdio: ["ignore", "inherit", "inherit"],
 });
 
-const forward = (signal) => {
-  process.on(signal, () => child.kill(signal));
-};
-forward("SIGINT");
-forward("SIGTERM");
+const onSigint = () => child.kill("SIGINT");
+const onSigterm = () => child.kill("SIGTERM");
+process.on("SIGINT", onSigint);
+process.on("SIGTERM", onSigterm);
 
 child.on("exit", (code, signal) => {
+  process.off("SIGINT", onSigint);
+  process.off("SIGTERM", onSigterm);
   if (signal) {
     process.kill(process.pid, signal);
     return;
