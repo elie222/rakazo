@@ -770,8 +770,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
 
-    await rpc(app, owner, "deployment/update", { signupsEnabled: false });
     try {
+      await rpc(app, owner, "deployment/update", { signupsEnabled: false });
       const closedSignup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
         headers: { "content-type": "application/json" },

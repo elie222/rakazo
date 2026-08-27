@@ -15,6 +15,11 @@ export function resolveScreenNetworkMode(value: string | undefined): ScreenNetwo
   throw new Error(`Unsupported SANDBOX_SCREEN_NETWORK value: ${value}`);
 }
 
+export function hostComputerUser(uid = process.getuid?.(), gid = process.getgid?.()): string {
+  if (uid === undefined || gid === undefined || uid === 0) return COMPUTER_USER;
+  return `${uid}:${gid}`;
+}
+
 export function screenPorts(index: number) {
   if (index < 0 || index >= TEAM_SCREEN_LIMIT) {
     throw new Error(
@@ -52,6 +57,7 @@ export interface ComputerCreateInput {
   botId: string;
   workspaceId: string;
   homePath: string;
+  user?: string;
   controlToken?: string;
   networkMode?: string;
 }
@@ -74,7 +80,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
   return {
     Image: input.image,
     name: input.name,
-    User: COMPUTER_USER,
+    User: input.user ?? COMPUTER_USER,
     Tty: true,
     Env: [
       "DISPLAY=:1",

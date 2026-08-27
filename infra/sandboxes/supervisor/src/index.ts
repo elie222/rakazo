@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +12,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import {
   COMPUTER_IMAGE,
-  COMPUTER_UID,
+  COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  hostComputerUser,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -118,13 +119,15 @@ app.post("/computers", async (c) => {
       assertBotHomePath(serviceHomePath, body.botId);
       await mkdir(serviceHomePath, { recursive: true });
       const homePath = hostHomePath(serviceHomePath, runtimeInfo);
+      const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser();
       const existing = await findBotContainer(body.botId, body.workspaceId);
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
         if (
           info.Image !== desired.Id ||
-          (networkMode && info.HostConfig.NetworkMode !== networkMode)
+          (networkMode && info.HostConfig.NetworkMode !== networkMode) ||
+          info.Config.User !== computerUser
         ) {
           await existing.remove({ force: true }).catch(() => undefined);
         } else {
@@ -136,10 +139,11 @@ app.post("/computers", async (c) => {
           return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
         }
       }
-      // Fresh or replaced containers need homes writable by uid 1000. Root supervisors
-      // normalize ownership without following symlinks; host-run non-root processes no-op.
-      await ensureComputerHomeOwnership(serviceHomePath);
-      await assertComputerHomeWritable(serviceHomePath);
+      // Only a fresh or replaced container needs the migration. Existing containers
+      // with the current image already use the desired ownership and runtime user.
+      if (runtimeInfo || (process.platform === "linux" && process.getuid?.() === 0)) {
+        await ensureComputerHomeOwnership(serviceHomePath);
+      }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
         containerCreateOptions({
@@ -148,6 +152,7 @@ app.post("/computers", async (c) => {
           botId: body.botId,
           workspaceId: body.workspaceId,
           homePath,
+          user: computerUser,
           networkMode,
           controlToken: randomUUID(),
         }),
@@ -665,15 +670,6 @@ function assertBotHomePath(homePath: string, botId: string) {
   if (homePath !== expected) {
     throw new Error("computer home must be the bot's home directory");
   }
-}
-
-async function assertComputerHomeWritable(homePath: string) {
-  if (process.getuid?.() === 0) return;
-  const stat = await lstat(homePath);
-  if (stat.uid === COMPUTER_UID) return;
-  throw new Error(
-    `computer home ${homePath} is owned by uid ${stat.uid}; containers run as ${COMPUTER_UID} and need a writable bind mount (chown -R ${COMPUTER_UID}:${COMPUTER_UID} ${homePath} or use Compose data-init)`,
-  );
 }
 
 function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo | undefined) {

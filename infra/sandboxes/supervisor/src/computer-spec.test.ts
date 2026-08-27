@@ -8,6 +8,7 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  hostComputerUser,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -154,6 +155,11 @@ describe("graphical computer spec", () => {
     expect(resolveScreenNetworkMode("published")).toBe("published");
     expect(resolveScreenNetworkMode("isolated")).toBe("isolated");
     expect(() => resolveScreenNetworkMode("typo")).toThrow(/Unsupported/);
+  });
+
+  it("uses the host identity for host-run bind mounts without ever using root", () => {
+    expect(hostComputerUser(501, 20)).toBe("501:20");
+    expect(hostComputerUser(0, 0)).toBe("1000:1000");
   });
 
   it("uses the container IP only for the internal screen network topology", () => {
