@@ -3079,7 +3079,12 @@ const Transcript = memo(function Transcript({
   }, [scrollRef]);
 
   useLayoutEffect(() => {
-    if (following.current) scrollToEnd();
+    if (following.current) {
+      scrollToEnd();
+      return;
+    }
+    const element = scrollRef.current;
+    if (element) setAtEnd(transcriptIsNearEnd(element));
   }, [messages, running, scrollToEnd]);
 
   useEffect(
@@ -3096,9 +3101,11 @@ const Transcript = memo(function Transcript({
         data-testid="transcript"
         onPointerDown={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onTouchStart={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onWheel={(event) => {
           if (event.deltaY < 0) {
@@ -3170,18 +3177,17 @@ const Transcript = memo(function Transcript({
           </div>
         ) : null}
       </div>
-      <button
-        type="button"
+      <BuiButton
         aria-label={t`Jump to latest message`}
         aria-hidden={atEnd}
         tabIndex={atEnd ? -1 : 0}
         onClick={scrollToEnd}
-        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[#303034] bg-[#1A1A1D]/95 text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[#242428] motion-reduce:transition-none ${
+        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 !-translate-x-1/2 place-items-center border border-[#303034] !p-0 backdrop-blur transition-[opacity,transform] duration-200 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
           atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
         <ArrowDown size={17} strokeWidth={1.8} />
-      </button>
+      </BuiButton>
     </div>
   );
 });

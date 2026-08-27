@@ -144,28 +144,24 @@ export function BuiCard({
 /** Primary pill button in the Beautiful UI control style. */
 export function BuiButton({
   children,
-  onClick,
-  disabled,
   tone = "neutral",
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  tone?: "neutral" | "accent";
-}) {
+  className = "",
+  style,
+  ...props
+}: React.ComponentPropsWithoutRef<"button"> & { tone?: "neutral" | "accent" }) {
   return (
     <button
+      {...props}
       type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60"
+      className={`rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60 ${className}`}
       style={
         tone === "accent"
-          ? { background: "var(--bui-accent)", color: "#090a12" }
+          ? { background: "var(--bui-accent)", color: "#090a12", ...style }
           : {
               background: "var(--bui-hover)",
               color: "var(--bui-ink)",
               boxShadow: "var(--bui-shadow-btn)",
+              ...style,
             }
       }
     >
