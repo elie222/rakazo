@@ -154,7 +154,7 @@ msgstr "Modelo ativo"
 
 #: src/pages/VoiceSettingsOverlay.tsx:149
 msgid "Active voice"
-msgstr "Voz ativa? "
+msgstr "Voz ativa"
 
 #: src/pages/Shell.tsx:1710
 #: src/pages/Shell.tsx:1712
@@ -766,7 +766,7 @@ msgstr "Não foi possível concluir o OAuth"
 
 #: src/pages/PluginsOverlay.tsx:120
 msgid "Could not connect"
-msgstr "Não foi possível conectar: "
+msgstr "Não foi possível conectar"
 
 #. placeholder {0}: registration.name
 #: src/pages/MemorySettingsOverlay.tsx:94
@@ -783,7 +783,7 @@ msgstr "Não foi possível conectar este provedor de voz"
 
 #: src/pages/Auth.tsx:31
 msgid "Could not continue"
-msgstr "NÃO FOI POSSÍVEL CONTINUAR."
+msgstr "Não foi possível continuar"
 
 #: src/pages/Shell.tsx:4238
 msgid "Could not create bot"
@@ -1121,7 +1121,7 @@ msgstr "O Docker é o padrão: os bots usam um Computador de Equipe compartilhad
 
 #: src/pages/Auth.tsx:105
 msgid "Don’t have an account?"
-msgstr "Não tem uma conta? "
+msgstr "Não tem uma conta?"
 
 #: src/pages/ActivityList.tsx:159
 msgid "Done"
@@ -1184,7 +1184,7 @@ msgstr "Todos os dias"
 #: src/pages/RoutineSchedule.tsx:30
 #: src/pages/RoutineSchedule.tsx:84
 msgid "Every hour"
-msgstr " A cada hora"
+msgstr "A cada hora"
 
 #: src/pages/RoutineSchedule.tsx:93
 msgid "Every Monday"
@@ -1212,7 +1212,7 @@ msgstr "Exporte a lista desta semana do CRM e solte-a na pasta compartilhada"
 
 #: src/pages/Shell.tsx:4627
 msgid "Extra high"
-msgstr "EXTRA ALTA"
+msgstr "Extra alta"
 
 #: src/pages/ActivityList.tsx:161
 msgid "Failed"
@@ -1631,7 +1631,7 @@ msgstr "Novo bot"
 #: src/pages/GroupPanel.tsx:98
 #: src/pages/Shell.tsx:1754
 msgid "New group"
-msgstr "NOVO GRUPO"
+msgstr "Novo grupo"
 
 #: src/pages/ScratchpadSection.tsx:183
 msgid "New open-work item"
@@ -1639,7 +1639,7 @@ msgstr "Novo item de trabalho aberto"
 
 #: src/pages/Shell.tsx:2400
 msgid "New routine"
-msgstr "Nova rotina?"
+msgstr "Nova rotina"
 
 #: src/pages/BotContextMenu.tsx:128
 #: src/pages/Shell.tsx:4700
@@ -2518,7 +2518,7 @@ msgstr "Quando executar"
 
 #: src/components/teach/SkillDraftCard.tsx:89
 msgid "When to use"
-msgstr "Quando usar "
+msgstr "Quando usar"
 
 #: src/pages/HostComputerPrompt.tsx:49
 msgid "Where should bots run?"
