@@ -463,7 +463,7 @@
   "Running…": "चल रहा है…",
   "Save": "सहेजें",
   "Saved": "सहेजा गया",
-  "Saved skills": "सहेजी गई स्किल",
+  "Saved skills": "सहेजी गई स्किल्स",
   "Saved, but list refresh failed": "सहेजा गया, लेकिन सूची रिफ़्रेश विफल रही",
   "Saved.": "सहेजा गया।",
   "Saving…": "सहेजा जा रहा है…",
@@ -578,6 +578,6 @@
   "Your email address": "आपका ईमेल पता",
   "Your key or subscription token is stored securely and is never shown here.": "आपकी कुंजी या सब्सक्रिप्शन टोकन सुरक्षित रूप से संग्रहीत है और यहां कभी नहीं दिखाया जाता।",
   "Your name": "आपका नाम",
-  "Your team of always-on agents<0/>that you can give real work to.": "हमेशा चालू रहने वाले एजेंट की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।",
+  "Your team of always-on agents<0/>that you can give real work to.": "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।",
   "Earlier message": "पुराना संदेश"
 }
