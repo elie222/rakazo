@@ -20,6 +20,24 @@
     var(--rakazo-eye-animation-easing) var(--rakazo-eye-animation-delay) infinite;
 }
 
+.rakazo-organic-avatar-body {
+  transform-origin: center;
+}
+
+.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes {
+  animation: rakazo-organic-eyes 1.35s ease-in-out infinite;
+}
+
+@keyframes rakazo-organic-eyes {
+  0%,
+  100% {
+    transform: translateX(-6%);
+  }
+  50% {
+    transform: translateX(6%);
+  }
+}
+
 @keyframes rakazo-eyes-idle-0 {
   0%,
   32%,
@@ -153,6 +171,14 @@
 @media (prefers-reduced-motion: reduce) {
   .rakazo-bot-avatar-ring,
   .rakazo-bot-avatar-eyes {
+    animation: none;
+  }
+
+  .rakazo-organic-avatar-body animate {
+    display: none;
+  }
+
+  .rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes {
     animation: none;
   }
 

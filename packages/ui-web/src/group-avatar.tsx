@@ -54,6 +54,7 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <BotAvatar
         color={firstMember.color}
+        identity={firstMember.botId ?? firstMember.name}
         size={size}
         status={firstMember.status}
         className={cn("rakazo-group-avatar", className)}
@@ -90,7 +91,12 @@ export const GroupAvatar = memo(function GroupAvatar({
             boxShadow: "0 0 0 1.5px #121215",
           }}
         >
-          <BotAvatar color={member.color} size={miniSize} status={member.status} />
+          <BotAvatar
+            color={member.color}
+            identity={member.botId ?? member.name}
+            size={miniSize}
+            status={member.status}
+          />
         </div>
       ))}
       {members.length > 3 ? (
