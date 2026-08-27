@@ -3062,6 +3062,11 @@ const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
+  const workingLabel =
+    workingBotName != null && workingBotName !== ""
+      ? t`${workingBotName} is working`
+      : t`Bots are working`;
   return (
     <div
       ref={scrollRef}
@@ -3116,14 +3121,7 @@ const Transcript = memo(function Transcript({
           message.blocks[0]?.kind === "progress" &&
           message.blocks[0].text,
       ) ? (
-        <ActiveBotGlyph
-          bots={workingBots}
-          label={
-            workingBots.length === 1 && workingBots[0]?.name
-              ? t`${workingBots[0].name} is working`
-              : t`Bots are working`
-          }
-        />
+        <ActiveBotGlyph bots={workingBots} label={workingLabel} />
       ) : null}
     </div>
   );
