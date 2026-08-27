@@ -26,6 +26,8 @@ export interface UpdaterProxyConfig {
   url: string | null;
   token: string | null;
   gitSha: string | undefined;
+  /** Current `RAKAZO_IMAGE_TAG` when known; selects compose pull vs rebuild commands. */
+  imageTag?: string | null;
   disabled?: boolean;
   /** Override for tests; defaults to process.cwd(). */
   checkoutRoot?: string;
@@ -95,11 +97,12 @@ export async function readServerUpdateStatus(
     disabled: config.disabled === true,
   });
   const supervisor = detectRestartSupervisor(process.env);
+  const imageTagHint = config.imageTag?.trim() || process.env.RAKAZO_IMAGE_TAG?.trim() || null;
   const base: ServerUpdateStatus = {
     supported: install.kind === "sidecar",
     unsupportedReason: install.kind === "sidecar" ? null : install.reason,
     installKind: install.kind,
-    manualCommands: [...manualUpgradeCommands(install.kind)],
+    manualCommands: [...manualUpgradeCommands(install.kind, { imageTag: imageTagHint })],
     mode: install.mode,
     strategy: null,
     strategyNote: null,
@@ -111,7 +114,7 @@ export async function readServerUpdateStatus(
     dirty: false,
     dirtyPaths: [],
     image: null,
-    imageTag: null,
+    imageTag: imageTagHint,
     previousImageTag: null,
     canRollback: false,
     source: {
@@ -182,7 +185,11 @@ export async function readServerUpdateStatus(
         error instanceof Error ? error.message : "The updater sidecar did not respond.",
       installKind: "compose",
       mode: "unavailable",
-      manualCommands: [...manualUpgradeCommands("compose")],
+      manualCommands: [
+        ...manualUpgradeCommands("compose", {
+          imageTag: imageTagHint,
+        }),
+      ],
     };
   }
 }
@@ -237,6 +244,13 @@ export async function checkServerUpdate(
   };
 }
 
+/**
+ * Proxies `/apply` to the sidecar.
+ *
+ * A successful recreate replaces this API container while the request is still open, so the
+ * JSON body often never reaches the browser. Clients must treat a mid-flight transport failure
+ * as "recreate in progress" and re-fetch `status` once the API is healthy again.
+ */
 export async function applyServerUpdate(
   config: UpdaterProxyConfig,
   input: ServerUpdateRequest = {},
@@ -253,6 +267,12 @@ export async function applyServerUpdate(
   );
 }
 
+/**
+ * Proxies `/rollback` to the sidecar.
+ *
+ * Same recreate caveat as {@link applyServerUpdate}: a successful rollback kills this process
+ * mid-response, so clients must recover by polling status after a transport drop.
+ */
 export async function rollbackServerUpdate(config: UpdaterProxyConfig): Promise<ServerUpdateRun> {
   await requireSidecar(config);
   const fetchImpl = config.fetch ?? fetch;

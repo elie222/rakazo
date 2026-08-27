@@ -50,6 +50,7 @@ describe("server update install kind", () => {
       url: URL,
       token: TOKEN,
       gitSha: "abc",
+      imageTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       checkoutRoot: root,
       fetch: vi.fn(async () => {
         throw new Error("ECONNREFUSED");
@@ -59,6 +60,24 @@ describe("server update install kind", () => {
     expect(status.supported).toBe(false);
     expect(status.manualCommands[0]).toMatch(/docker compose .*pull api worker web/);
     expect(status.manualCommands[1]).toMatch(/up -d --wait --pull never/);
+  });
+
+  it("shows rebuild commands for a compose install on the local image tag", async () => {
+    const root = await tempRoot(false);
+    const status = await readServerUpdateStatus({
+      url: URL,
+      token: TOKEN,
+      gitSha: "abc",
+      imageTag: "local",
+      checkoutRoot: root,
+      fetch: vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+    });
+    expect(status.installKind).toBe("compose");
+    expect(status.manualCommands.some((line) => line.includes("--build"))).toBe(true);
+    expect(status.manualCommands.some((line) => line.includes("git pull"))).toBe(true);
+    expect(status.manualCommands.some((line) => /\bpull api worker web\b/.test(line))).toBe(false);
   });
 
   it("detects sidecar when health and authenticated state succeed", async () => {

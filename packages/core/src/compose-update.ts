@@ -344,11 +344,20 @@ export function resolveInstallKind(input: {
   };
 }
 
-/** Exact host commands from docs/self-host.md for Compose deployments without the sidecar. */
-export const COMPOSE_MANUAL_UPGRADE_COMMANDS = [
+/** Exact host commands from docs/self-host.md for Compose on a published release tag. */
+export const COMPOSE_PULL_UPGRADE_COMMANDS = [
   "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web",
   "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never api worker web",
 ] as const;
+
+/** Exact host commands from docs/self-host.md for Compose on the default `local` tag. */
+export const COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS = [
+  "git pull",
+  "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+] as const;
+
+/** @deprecated Prefer {@link COMPOSE_PULL_UPGRADE_COMMANDS}; kept for call-site clarity in tests. */
+export const COMPOSE_MANUAL_UPGRADE_COMMANDS = COMPOSE_PULL_UPGRADE_COMMANDS;
 
 /** Exact host commands from docs/self-host.md for source / `pnpm dev` installs. */
 export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
@@ -357,10 +366,26 @@ export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
   "# Restart the API and worker processes",
 ] as const;
 
-export function manualUpgradeCommands(kind: InstallKind): readonly string[] {
+/**
+ * Host commands Settings should show when the sidecar cannot apply.
+ * Compose picks pull vs rebuild from the current image tag when known; otherwise both documented
+ * paths from self-host.md so a `local` install is not told to `pull` a tag the registry never serves.
+ */
+export function manualUpgradeCommands(
+  kind: InstallKind,
+  options: { imageTag?: string | null } = {},
+): readonly string[] {
   if (kind === "source") return SOURCE_MANUAL_UPGRADE_COMMANDS;
-  if (kind === "compose") return COMPOSE_MANUAL_UPGRADE_COMMANDS;
-  return [];
+  if (kind !== "compose") return [];
+  const tag = options.imageTag?.trim() ?? "";
+  if (tag !== "" && isLocalImageTag(tag)) return COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS;
+  if (tag !== "" && !isLocalImageTag(tag)) return COMPOSE_PULL_UPGRADE_COMMANDS;
+  return [
+    "# Published release tag",
+    ...COMPOSE_PULL_UPGRADE_COMMANDS,
+    "# Local tag (rebuild from checkout)",
+    ...COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS,
+  ];
 }
 
 export interface ComposeInvocation {

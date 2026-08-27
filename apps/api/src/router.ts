@@ -318,6 +318,7 @@ export interface RouterDeps {
     gitSha?: string;
     updaterUrl?: string;
     updaterToken?: string;
+    imageTag?: string;
   };
 }
 
@@ -2957,6 +2958,7 @@ function updaterConfig(deps: RouterDeps): UpdaterProxyConfig {
     url: deps.env.updaterUrl ?? null,
     token: deps.env.updaterToken ?? null,
     gitSha: deps.env.gitSha,
+    imageTag: deps.env.imageTag ?? null,
   };
 }
 

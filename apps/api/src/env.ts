@@ -39,6 +39,8 @@ export interface AppEnv {
   updaterUrl: string | undefined;
   /** Bearer shared with the updater; never sent to the browser. */
   updaterToken: string | undefined;
+  /** Current application image tag; used for compose manual-upgrade command selection. */
+  imageTag: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -87,6 +89,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
     updaterUrl,
     updaterToken,
+    imageTag: optional(source.RAKAZO_IMAGE_TAG),
   };
 }
 

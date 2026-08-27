@@ -2,11 +2,32 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServerUpdateCheck, ServerUpdateStatus } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { isLikelyUpdaterRecreateDisconnect } from "../lib/updater-recreate";
 import { BuiButton, LoadingState, SuccessPop } from "./beautiful-ui/primitives";
+
+const RECREATE_POLL_MS = 2_000;
+const RECREATE_POLL_ATTEMPTS = 90;
 
 function shortRev(value: string | null | undefined): string | null {
   if (!value) return null;
   return value.length > 12 ? value.slice(0, 12) : value;
+}
+
+async function waitForUpdaterStatus(): Promise<ServerUpdateStatus> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < RECREATE_POLL_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, RECREATE_POLL_MS));
+    }
+    try {
+      return await rpc.updater.status();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("The API did not come back after the update.");
 }
 
 /** Presentational body so unit tests can render install-kind branches without RPC. */
@@ -146,17 +167,43 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     }
   }
 
+  async function finishAfterPossibleRecreate(
+    action: () => Promise<{ ok: boolean; error: string | null }>,
+    successLabel: string,
+  ) {
+    try {
+      const run = await action();
+      setStatus(await rpc.updater.status());
+      setCheck(null);
+      setDone(run.ok ? successLabel : (run.error ?? t`Update finished with errors`));
+    } catch (err) {
+      if (!isLikelyUpdaterRecreateDisconnect(err)) {
+        setError(err instanceof Error ? err.message : t`Update failed`);
+        return;
+      }
+      setDone(t`Waiting for the API to come back…`);
+      try {
+        setStatus(await waitForUpdaterStatus());
+        setCheck(null);
+        setError(null);
+        setDone(successLabel);
+      } catch (waitError) {
+        setDone(null);
+        setError(
+          waitError instanceof Error
+            ? waitError.message
+            : t`The API did not come back. Refresh this page.`,
+        );
+      }
+    }
+  }
+
   async function runApply() {
     setBusy("apply");
     setError(null);
     setDone(null);
     try {
-      const run = await rpc.updater.apply({});
-      setStatus(await rpc.updater.status());
-      setCheck(null);
-      setDone(run.ok ? t`Updated` : (run.error ?? t`Update finished with errors`));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Update failed`);
+      await finishAfterPossibleRecreate(() => rpc.updater.apply({}), t`Updated`);
     } finally {
       setBusy(null);
     }
@@ -167,12 +214,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     setError(null);
     setDone(null);
     try {
-      const run = await rpc.updater.rollback();
-      setStatus(await rpc.updater.status());
-      setCheck(null);
-      setDone(run.ok ? t`Rolled back` : (run.error ?? t`Rollback finished with errors`));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Rollback failed`);
+      await finishAfterPossibleRecreate(() => rpc.updater.rollback(), t`Rolled back`);
     } finally {
       setBusy(null);
     }

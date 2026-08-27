@@ -255,6 +255,7 @@ export async function createApp(
       gitSha: env.gitSha,
       updaterUrl: env.updaterUrl,
       updaterToken: env.updaterToken,
+      imageTag: env.imageTag,
     },
   });
   const rpc = new RPCHandler(router);

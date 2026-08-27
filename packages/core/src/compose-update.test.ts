@@ -188,7 +188,20 @@ describe("strategy and mode selection", () => {
     });
     expect(source.kind).toBe("source");
     expect(source.mode).toBe("checkout");
-    expect(manualUpgradeCommands("compose")).toEqual([...COMPOSE_MANUAL_UPGRADE_COMMANDS]);
+    expect(manualUpgradeCommands("compose")).toEqual([
+      "# Published release tag",
+      ...COMPOSE_MANUAL_UPGRADE_COMMANDS,
+      "# Local tag (rebuild from checkout)",
+      "git pull",
+      "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+    ]);
+    expect(manualUpgradeCommands("compose", { imageTag: "local" })).toEqual([
+      "git pull",
+      "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+    ]);
+    expect(manualUpgradeCommands("compose", { imageTag: "sha-abc" })).toEqual([
+      ...COMPOSE_MANUAL_UPGRADE_COMMANDS,
+    ]);
     expect(manualUpgradeCommands("source")).toEqual([...SOURCE_MANUAL_UPGRADE_COMMANDS]);
     expect(manualUpgradeCommands("sidecar")).toEqual([]);
   });
