@@ -283,6 +283,8 @@ export function ShellPage() {
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
   const botsRefreshEpoch = useRef(0);
+  const botsRefreshApplied = useRef(0);
+  const archivedBotsRefreshEpoch = useRef(0);
   const botsRefreshInFlight = useRef(0);
   // Last-known computer/screen per bot, so switching back to an already-seen
   // bot paints its computer pane instantly instead of blanking it while the
@@ -471,6 +473,7 @@ export function ShellPage() {
     async (includeArchived = false) => {
       markOnce("rk:renderer:bots-request-start");
       const request = ++botsRefreshEpoch.current;
+      const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
       botsRefreshInFlight.current += 1;
       try {
         const [list, sections, archived, groupList] = await Promise.all([
@@ -480,12 +483,20 @@ export function ShellPage() {
           rpc.groups.list(),
         ]);
         markOnce("rk:renderer:bots-response");
-        if (request !== botsRefreshEpoch.current) return;
+        const botsFresh = request === botsRefreshEpoch.current;
+        const archivedFresh =
+          archivedRequest != null && archivedRequest === archivedBotsRefreshEpoch.current;
+        // A newer non-archived refresh can win the bots epoch while an older
+        // includeArchived request still owns archivedBotsRefreshEpoch — apply
+        // whichever slices are still current.
+        if (!botsFresh && !archivedFresh) return;
+        if (archivedFresh && archived) setArchivedBots(archived);
+        if (!botsFresh) return;
         setBots(list);
         setBotSections(sections);
         setGroups(groupList);
         setInitialBotsLoaded(true);
-        if (archived) setArchivedBots(archived);
+        botsRefreshApplied.current = request;
         if (
           includeArchived &&
           list.length === 0 &&
@@ -678,14 +689,14 @@ export function ShellPage() {
           setMemoryProviderConfig(null);
         }
       });
-    const botsRequest = botsRefreshEpoch.current;
+    const appliedAtStart = botsRefreshApplied.current;
     void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
       .then(([bootstrap, groupList]) => {
         if (cancelled) return;
         setBootstrapMe(bootstrap.me);
-        // Skip list/route writes if a later refreshBots() advanced the epoch while
-        // bootstrap was in flight (3s poll can finish first).
-        const applyBotLists = botsRequest === botsRefreshEpoch.current;
+        // Skip list/route writes only if a later refreshBots() successfully
+        // committed (failed refreshes bump epoch but not botsRefreshApplied).
+        const applyBotLists = appliedAtStart === botsRefreshApplied.current;
         if (applyBotLists) {
           setBots(bootstrap.bots);
           setBotSections(bootstrap.botSections);
