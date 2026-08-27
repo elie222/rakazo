@@ -3058,7 +3058,16 @@ const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
-  const scrollToEnd = useCallback(() => {
+  const snapToEnd = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    following.current = true;
+    autoScrolling.current = false;
+    setAtEnd(true);
+    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+  }, [scrollRef]);
+
+  const jumpToLatest = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -3079,8 +3088,8 @@ const Transcript = memo(function Transcript({
   }, [scrollRef]);
 
   useLayoutEffect(() => {
-    if (following.current) scrollToEnd();
-  }, [messages, running, scrollToEnd]);
+    if (following.current) snapToEnd();
+  }, [messages, running, snapToEnd]);
 
   useEffect(
     () => () => {
@@ -3172,10 +3181,10 @@ const Transcript = memo(function Transcript({
       </div>
       <button
         type="button"
-        aria-label={t`Jump to latest message`}
+        aria-label={t`Jump to latest`}
         aria-hidden={atEnd}
         tabIndex={atEnd ? -1 : 0}
-        onClick={scrollToEnd}
+        onClick={jumpToLatest}
         className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[#303034] bg-[#1A1A1D]/95 text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[#242428] motion-reduce:transition-none ${
           atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
