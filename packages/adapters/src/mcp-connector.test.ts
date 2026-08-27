@@ -124,11 +124,14 @@ describe("MCP connector session cache", () => {
     await connector.discoverTools(contextFor("w1", "u1"));
     expect(state.initializations).toBe(1);
 
-    await connector.discoverTools(contextFor("w2", "u2"));
+    await connector.discoverTools(contextFor("w1", "u2"));
     expect(state.initializations).toBe(2);
 
+    await connector.discoverTools(contextFor("w2", "u1"));
+    expect(state.initializations).toBe(3);
+
     await connector.discoverTools(contextFor("w1", "u1"));
-    expect(state.initializations).toBe(2);
+    expect(state.initializations).toBe(3);
 
     await connector.close();
   });
