@@ -29,8 +29,10 @@ async function waitForUpdaterStatus(options: {
         beforeImageTag: options.beforeImageTag,
         afterImageTag: next.imageTag,
         running: next.running,
+        supported: next.supported,
+        installKind: next.installKind,
       });
-      if (verdict.reason === "running") continue;
+      if (verdict.reason === "waiting" || verdict.reason === "running") continue;
       return { status: next, confirmed: verdict.confirmed };
     } catch (error) {
       lastError = error;

@@ -27,6 +27,8 @@ describe("confirmUpdaterRecreate", () => {
         beforeImageTag: "sha-aaa",
         afterImageTag: "sha-bbb",
         running: false,
+        supported: true,
+        installKind: "sidecar",
       }),
     ).toEqual({ confirmed: true, reason: "changed" });
     expect(
@@ -34,6 +36,8 @@ describe("confirmUpdaterRecreate", () => {
         beforeImageTag: "sha-aaa",
         afterImageTag: "sha-bbb",
         running: true,
+        supported: true,
+        installKind: "sidecar",
       }),
     ).toEqual({ confirmed: false, reason: "running" });
     expect(
@@ -41,7 +45,21 @@ describe("confirmUpdaterRecreate", () => {
         beforeImageTag: "sha-aaa",
         afterImageTag: "sha-aaa",
         running: false,
+        supported: true,
+        installKind: "sidecar",
       }),
     ).toEqual({ confirmed: false, reason: "unchanged" });
+  });
+
+  it("does not treat a compose fallback with a changed configured tag as success", () => {
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-bbb",
+        running: false,
+        supported: false,
+        installKind: "compose",
+      }),
+    ).toEqual({ confirmed: false, reason: "waiting" });
   });
 });

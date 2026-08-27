@@ -19,12 +19,21 @@ export function isLikelyUpdaterRecreateDisconnect(error: unknown): boolean {
   );
 }
 
-/** After reconnect, only claim success when the image tag actually moved and the sidecar is idle. */
+/**
+ * After reconnect, only claim success from a live sidecar status: supported sidecar install,
+ * idle run lock, and an image tag that actually moved. A compose/source fallback with a changed
+ * configured tag is not proof the update finished.
+ */
 export function confirmUpdaterRecreate(input: {
   beforeImageTag: string | null;
   afterImageTag: string | null;
   running: boolean;
-}): { confirmed: boolean; reason: "running" | "unchanged" | "changed" } {
+  supported: boolean;
+  installKind: string;
+}): { confirmed: boolean; reason: "waiting" | "running" | "unchanged" | "changed" } {
+  if (input.supported !== true || input.installKind !== "sidecar") {
+    return { confirmed: false, reason: "waiting" };
+  }
   if (input.running) return { confirmed: false, reason: "running" };
   if (input.beforeImageTag && input.afterImageTag && input.afterImageTag !== input.beforeImageTag) {
     return { confirmed: true, reason: "changed" };
