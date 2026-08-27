@@ -493,7 +493,11 @@ export function ShellPage() {
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -528,7 +532,11 @@ export function ShellPage() {
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -3178,9 +3186,11 @@ const Transcript = memo(function Transcript({
         data-testid="transcript"
         onPointerDown={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onTouchStart={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onWheel={(event) => {
           if (event.deltaY < 0) {
