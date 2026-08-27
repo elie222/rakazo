@@ -3,6 +3,7 @@ set -eu
 RAKAZO_HOME="${HOME:-/home/rakazo}"
 PROFILE="$RAKAZO_HOME/.browser-profiles/chromium"
 mkdir -p "$PROFILE"
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then
   echo "chromium is not installed" >&2

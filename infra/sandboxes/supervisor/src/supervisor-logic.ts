@@ -144,6 +144,10 @@ export function stopExtraScreenCommand(index: number) {
   const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;
   const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
   return [
+    // ponytail: persist browser logins created on an extra screen.
+    `pkill -TERM -f -- '--user-data-dir=${profile}' || true`,
+    `for i in $(seq 1 50); do pgrep -f -- '--user-data-dir=${profile}' >/dev/null 2>&1 || break; sleep 0.1; done`,
+    `if [ -d ${profile} ]; then cp -a ${profile}/. /home/rakazo/.browser-profiles/chromium/ 2>/dev/null || true; rm -f /home/rakazo/.browser-profiles/chromium/SingletonLock /home/rakazo/.browser-profiles/chromium/SingletonCookie /home/rakazo/.browser-profiles/chromium/SingletonSocket; fi`,
     `pkill -f 'Xvfb ${layout.display} -screen' || true`,
     `pkill -f 'HOME=${fluxHome} DISPLAY=${layout.display} fluxbox' || true`,
     `pkill -f -- '--user-data-dir=${profile}' || true`,

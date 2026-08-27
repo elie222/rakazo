@@ -8,6 +8,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { workmateClaudeProvider } from "./workmate-claude.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -36,6 +37,8 @@ let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
   const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  const workmateClaude = workmateClaudeProvider();
+  if (workmateClaude) models.setProvider(workmateClaude);
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);

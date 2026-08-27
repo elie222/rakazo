@@ -26,6 +26,7 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 import { textContentArg } from "./tool-text.js";
+import { workmateClaudeProvider } from "./workmate-claude.js";
 
 const running = new Map<string, AbortController>();
 // Built on first use, not at module load: entry points call loadRootEnv() after
@@ -33,8 +34,16 @@ const running = new Map<string, AbortController>();
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  catalogModelsCache ??= registerWorkmateClaudeProvider(
+    registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+  );
   return catalogModelsCache;
+}
+
+function registerWorkmateClaudeProvider<T extends Models>(models: T): T {
+  const workmateClaude = workmateClaudeProvider();
+  if (workmateClaude) models.setProvider(workmateClaude);
+  return models;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
 // Reasoning-capable models must not start at "off": for OpenRouter, pi-ai maps
@@ -293,15 +302,17 @@ export function modelsForRequest(
   const oauth = request.model.oauth;
   if (oauth) {
     const persist = oauth.persist;
-    return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(
-        builtinModels({
-          credentials: new PiRuntimeCredentialStore(
-            provider,
-            toOAuthCredential(oauth.credential),
-            persist ? (next) => persist(next) : undefined,
-          ),
-        }),
+    return registerWorkmateClaudeProvider(
+      registerOpenAiCompatibleCatalog(
+        registerLocalProvider(
+          builtinModels({
+            credentials: new PiRuntimeCredentialStore(
+              provider,
+              toOAuthCredential(oauth.credential),
+              persist ? (next) => persist(next) : undefined,
+            ),
+          }),
+        ),
       ),
     );
   }
@@ -310,7 +321,9 @@ export function modelsForRequest(
     request.model.baseUrl &&
     request.model.id.trim()
   ) {
-    const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+    const models = registerWorkmateClaudeProvider(
+      registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+    );
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,

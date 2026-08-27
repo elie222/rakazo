@@ -1,0 +1,26 @@
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:5453:5432"
+  supervisor:
+    restart: unless-stopped
+  api:
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !override
+      - "127.0.0.1:3100:3100"
+  worker:
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  web:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:5173:5173"
+  bridge-forward:
+    image: alpine/socat
+    restart: unless-stopped
+    network_mode: host
+    command: TCP-LISTEN:8788,bind=172.26.0.1,fork,reuseaddr,range=172.26.0.0/16 TCP:127.0.0.1:8788
