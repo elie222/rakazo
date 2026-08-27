@@ -2611,3 +2611,11 @@ msgstr "Adın"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/pages/Shell.tsx:3105
+msgid "{workingBotName} is working"
+msgstr "{workingBotName} çalışıyor"
+
+#: src/pages/Shell.tsx:3106
+msgid "Bots are working"
+msgstr "Botlar çalışıyor"

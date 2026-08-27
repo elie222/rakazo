@@ -2611,3 +2611,11 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/pages/Shell.tsx:3105
+msgid "{workingBotName} is working"
+msgstr "{workingBotName} काम कर रहा है"
+
+#: src/pages/Shell.tsx:3106
+msgid "Bots are working"
+msgstr "बॉट काम कर रहे हैं"
