@@ -79,14 +79,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();
-  // "Booting up … computer" only flashes when auto-boot runs with overlay. Team desktops that
-  // are already running/asleep/stopped (or finish before Playwright observes the flash) skip it.
+  // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
+  // chrome, then wait until any overlay has cleared — avoid Locator.or() strict-mode multi-hits.
   const bootOverlay = page.getByText(/Booting up .* computer/);
-  await expect(
-    bootOverlay
-      .or(sidePanel.getByRole("button", { name: "Take control" }))
-      .or(sidePanel.getByText(/Computer is asleep|Computer is stopped|Team Computer/)),
-  ).toBeVisible();
+  await expect(sidePanel.getByRole("button", { name: "Take control" })).toBeVisible();
   await expect(bootOverlay).toBeHidden();
   await captureScreenshot(page, testInfo, "27b-computer-panel");
   await page.getByRole("button", { name: "Show settings" }).click();
