@@ -3092,11 +3092,21 @@ const Transcript = memo(function Transcript({
   }, [messages, running, snapToEnd]);
 
   const loadOlder = useCallback(() => {
+    const wasFollowing = following.current;
     // Prepend must not race the messages-driven snap-to-end follow path.
     following.current = false;
     autoScrolling.current = false;
-    return onLoadOlder();
-  }, [onLoadOlder]);
+    const pending = onLoadOlder();
+    if (!pending) return;
+    return Promise.resolve(pending).catch((error) => {
+      const element = scrollRef.current;
+      if (wasFollowing && element && transcriptIsNearEnd(element)) {
+        following.current = true;
+        setAtEnd(true);
+      }
+      throw error;
+    });
+  }, [onLoadOlder, scrollRef]);
 
   useEffect(
     () => () => {
