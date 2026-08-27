@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLikelyUpdaterRecreateDisconnect } from "./updater-recreate.js";
+import { confirmUpdaterRecreate, isLikelyUpdaterRecreateDisconnect } from "./updater-recreate.js";
 
 describe("isLikelyUpdaterRecreateDisconnect", () => {
   it("recognizes common browser and Node transport failures after API recreate", () => {
@@ -17,5 +17,31 @@ describe("isLikelyUpdaterRecreateDisconnect", () => {
     ).toBe(false);
     expect(isLikelyUpdaterRecreateDisconnect("failed to fetch")).toBe(false);
     expect(isLikelyUpdaterRecreateDisconnect(null)).toBe(false);
+  });
+});
+
+describe("confirmUpdaterRecreate", () => {
+  it("requires an idle sidecar and a changed image tag", () => {
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-bbb",
+        running: false,
+      }),
+    ).toEqual({ confirmed: true, reason: "changed" });
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-bbb",
+        running: true,
+      }),
+    ).toEqual({ confirmed: false, reason: "running" });
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-aaa",
+        afterImageTag: "sha-aaa",
+        running: false,
+      }),
+    ).toEqual({ confirmed: false, reason: "unchanged" });
   });
 });

@@ -18,3 +18,16 @@ export function isLikelyUpdaterRecreateDisconnect(error: unknown): boolean {
     message.includes("the operation was aborted")
   );
 }
+
+/** After reconnect, only claim success when the image tag actually moved and the sidecar is idle. */
+export function confirmUpdaterRecreate(input: {
+  beforeImageTag: string | null;
+  afterImageTag: string | null;
+  running: boolean;
+}): { confirmed: boolean; reason: "running" | "unchanged" | "changed" } {
+  if (input.running) return { confirmed: false, reason: "running" };
+  if (input.beforeImageTag && input.afterImageTag && input.afterImageTag !== input.beforeImageTag) {
+    return { confirmed: true, reason: "changed" };
+  }
+  return { confirmed: false, reason: "unchanged" };
+}
