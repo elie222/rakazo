@@ -279,6 +279,7 @@ export async function threadSnapshot(
             where: {
               botId: target.botId,
               threadId: target.threadId,
+              status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
             },
             orderBy: { createdAt: "desc" },
           }),
