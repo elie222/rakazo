@@ -1854,7 +1854,8 @@ export function ShellPage() {
                           }}
                           className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
                           style={{
-                            background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                            background:
+                              !inGroup && active?.id === bot.id ? "#161618" : "transparent",
                           }}
                         >
                           <BotAvatar color={bot.color} size={38} status={bot.status} />
