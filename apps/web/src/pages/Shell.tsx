@@ -3160,9 +3160,11 @@ const Transcript = memo(function Transcript({
         data-testid="transcript"
         onPointerDown={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onTouchStart={() => {
           autoScrolling.current = false;
+          following.current = false;
         }}
         onWheel={(event) => {
           if (event.deltaY < 0) {
