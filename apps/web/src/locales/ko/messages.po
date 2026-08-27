@@ -1393,7 +1393,7 @@ msgstr "대화, 파일, 자동 실행이 영구 삭제됩니다. 이 Bot이 만�
 
 #: src/pages/Shell.tsx:3213
 msgid "Jump to latest"
-msgstr ""
+msgstr "최신 메시지로 이동"
 
 #: src/pages/Shell.tsx:3951
 msgid "Jump to replied message"

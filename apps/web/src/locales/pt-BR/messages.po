@@ -1393,7 +1393,7 @@ msgstr "Suas conversas, arquivos e rotinas serão excluídos permanentemente. Os
 
 #: src/pages/Shell.tsx:3213
 msgid "Jump to latest"
-msgstr ""
+msgstr "Ir para a mensagem mais recente"
 
 #: src/pages/Shell.tsx:3951
 msgid "Jump to replied message"

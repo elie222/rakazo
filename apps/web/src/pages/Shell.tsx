@@ -3103,6 +3103,7 @@ const Transcript = memo(function Transcript({
   const [atEnd, setAtEnd] = useState(true);
   const following = useRef(true);
   const autoScrolling = useRef(false);
+  const lastScrollTop = useRef(0);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
   const messageById = useMemo(
@@ -3199,10 +3200,12 @@ const Transcript = memo(function Transcript({
           }
         }}
         onScroll={(event) => {
+          const scrolledDown = event.currentTarget.scrollTop >= lastScrollTop.current;
+          lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
           setAtEnd(nearEnd);
           if (nearEnd) {
-            following.current = true;
+            if (scrolledDown) following.current = true;
             if (autoScrolling.current) {
               autoScrolling.current = false;
               window.clearTimeout(autoScrollTimer.current);

@@ -1393,7 +1393,7 @@ msgstr "Seine Unterhaltung, Dateien und Routinen werden dauerhaft gelöscht. Von
 
 #: src/pages/Shell.tsx:3213
 msgid "Jump to latest"
-msgstr ""
+msgstr "Zur neuesten Nachricht springen"
 
 #: src/pages/Shell.tsx:3951
 msgid "Jump to replied message"

@@ -1393,7 +1393,7 @@ msgstr "इसकी बातचीत, फ़ाइलें और रूट�
 
 #: src/pages/Shell.tsx:3213
 msgid "Jump to latest"
-msgstr ""
+msgstr "नवीनतम संदेश पर जाएँ"
 
 #: src/pages/Shell.tsx:3951
 msgid "Jump to replied message"

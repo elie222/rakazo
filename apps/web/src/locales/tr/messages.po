@@ -1393,7 +1393,7 @@ msgstr "Sohbeti, dosyaları ve rutinleri kalıcı olarak silinecek. Oluşturduğ
 
 #: src/pages/Shell.tsx:3213
 msgid "Jump to latest"
-msgstr ""
+msgstr "En son mesaja git"
 
 #: src/pages/Shell.tsx:3951
 msgid "Jump to replied message"
