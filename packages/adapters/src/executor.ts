@@ -1820,11 +1820,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     id: { not: bot.id },
                     thread: { isNot: null },
                   },
-                  select: { id: true, name: true, title: true },
+                  select: { id: true, name: true, title: true, description: true },
                   orderBy: { createdAt: "asc" },
                   take: BOT_DIRECTORY_LIMIT,
                 })
-              ).map((peer) => ({ id: peer.id, name: peer.name, title: peer.title })),
+              ).map((peer) => ({
+                id: peer.id,
+                name: peer.name,
+                title: peer.title,
+                description: peer.description,
+              })),
             );
 
         try {
