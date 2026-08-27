@@ -1895,7 +1895,7 @@ export function ShellPage() {
                             bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                           }`}
                         >
-                          {bot.preview || bot.title}
+                          {bot.title || bot.preview}
                         </div>
                       </div>
                     </button>
