@@ -1892,14 +1892,27 @@ export function ShellPage() {
                             ) : null}
                           </span>
                         </div>
-                        <div
-                          dir="auto"
-                          className={`mt-0.5 truncate text-[13.5px] ${
-                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                          }`}
-                        >
-                          {bot.title || bot.preview}
-                        </div>
+                        {bot.title ? (
+                          <>
+                            <div
+                              dir="auto"
+                              className={`mt-0.5 truncate text-[13.5px] ${
+                                bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                              }`}
+                            >
+                              {bot.title}
+                            </div>
+                            {bot.preview ? (
+                              <div dir="auto" className="truncate text-[12.5px] text-[#6C6C70]">
+                                {bot.preview}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                            {bot.preview}
+                          </div>
+                        )}
                       </div>
                     </button>
                   ))}
