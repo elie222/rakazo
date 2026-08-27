@@ -181,8 +181,13 @@ describe("contracts", () => {
       McpServerConfigInput.safeParse({ ...base, endpoint: "http://127.0.0.1:3000/mcp" }).success,
     ).toBe(true);
     expect(
-      McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp" }).success,
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp" })
+        .success,
     ).toBe(true);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp#" })
+        .success,
+    ).toBe(false);
     expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "http://example.test/mcp" }).success,
     ).toBe(false);

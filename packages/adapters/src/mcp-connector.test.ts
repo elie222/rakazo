@@ -24,11 +24,12 @@ const ASSIGNMENT = {
 };
 
 function mcpFetch(
-  state: { failNext: boolean; initializations: number },
+  state: { failNext: boolean; initializations: number; headers?: Record<string, string>[] },
   expectedUrl = "https://mcp.example.test/mcp",
 ) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
+    state.headers?.push(Object.fromEntries(request.headers.entries()));
     if (new URL(request.url).href !== expectedUrl)
       throw new Error(`Unexpected request: ${request.url}`);
     if (request.method !== "POST") return new Response(null, { status: 405 });
@@ -85,6 +86,40 @@ describe("MCP connector session cache", () => {
     } as never);
 
     expect(tools.map((tool) => tool.name)).toEqual(["mcp__demo__echo"]);
+    await connector.close();
+  });
+
+  it("does not send stored credentials to a localhost HTTP server", async () => {
+    const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
+    const localAssignment = {
+      ...ASSIGNMENT,
+      server: { ...SERVER, endpoint: "http://localhost:8123/api/mcp", secretId: "secret-1" },
+    };
+    vi.stubGlobal("fetch", mcpFetch(state, "http://localhost:8123/api/mcp"));
+    const prisma = {
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
+      secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
+    };
+    const connector = new McpConnector(
+      prisma as never,
+      {
+        load: vi
+          .fn()
+          .mockReturnValue(
+            JSON.stringify({ secret: "local-token", headers: { "X-Api-Key": "local-key" } }),
+          ),
+      } as never,
+    );
+
+    await connector.discoverTools({
+      workspaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never);
+
+    expect(state.headers[0]?.authorization).toBeUndefined();
+    expect(state.headers[0]?.["x-api-key"]).toBeUndefined();
     await connector.close();
   });
 

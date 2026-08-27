@@ -3,7 +3,7 @@ import * as z from "zod";
 export const McpTransportSchema = z.enum(["streamable_http", "sse", "stdio"]);
 export type McpTransport = z.infer<typeof McpTransportSchema>;
 
-function isLocalMcpHost(hostname: string): boolean {
+export function isLocalMcpHost(hostname: string): boolean {
   return (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
@@ -18,6 +18,7 @@ export const McpRemoteEndpointSchema = z
   .url()
   .refine((value) => {
     try {
+      if (value.endsWith("#")) return false;
       const url = new URL(value);
       if (url.username || url.password || url.hash) return false;
       if (url.protocol === "https:") return true;
