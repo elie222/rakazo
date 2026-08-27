@@ -53,6 +53,9 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("https://app.example.com")).toBeNull();
     expect(apiBaseWarning("http://127.0.0.1:3100")).toBeNull();
     expect(apiBaseWarning("http://192.168.1.20:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.64.0.1:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.119.57.55:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.127.255.255:3100")).toBeNull();
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
   });
 
