@@ -47,10 +47,7 @@ import {
   resolveActionApproval,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
-  type ToolNameStreak,
   toolRequiresApproval,
-  trackToolCallStreak,
-  trackToolNameStreak,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
@@ -180,6 +177,7 @@ import {
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
 } from "./thread-artifacts.js";
+import { advanceToolCallLoopGuard } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
@@ -195,11 +193,6 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
-// Same tool, same arguments, this many times in a row means the agent is stuck, not paginating.
-const MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = 6;
-// Backstop for a stuck agent that varies its arguments each call (so the exact-match cap above
-// never trips) but keeps hammering the same tool without ever narrating progress in between.
-const MAX_CONSECUTIVE_SAME_TOOL_CALLS = 20;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 /** Cap the roster so a large workspace cannot flood the prompt. */
@@ -863,7 +856,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let lastProgressAt = 0;
         let hasStreamedText = false;
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
-        let toolNameStreak: ToolNameStreak = { name: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
@@ -1904,7 +1896,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               assembled += event.text;
               currentTextSegment += event.text;
               toolCallStreak = { key: undefined, count: 0 };
-              toolNameStreak = { name: undefined, count: 0 };
               tryFlushPendingTools();
               pendingProgress += progressRedactor.push(event.text);
               const now = Date.now();
@@ -1913,7 +1904,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             } else if (event.type === "progress") {
               toolCallStreak = { key: undefined, count: 0 };
-              toolNameStreak = { name: undefined, count: 0 };
               // Flush batched text deltas first so an activity line cannot land
               // ahead of text the model streamed before the tool call.
               if (pendingProgress) {
@@ -2022,12 +2012,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
               pendingToolNames.push(event.name);
               tryFlushPendingTools();
-              toolCallStreak = trackToolCallStreak(toolCallStreak, event.name, event.args);
-              toolNameStreak = trackToolNameStreak(toolNameStreak, event.name);
-              const stuckOnExactRepeat =
-                toolCallStreak.count >= MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS;
-              const stuckOnSameTool = toolNameStreak.count >= MAX_CONSECUTIVE_SAME_TOOL_CALLS;
-              if (stuckOnExactRepeat || stuckOnSameTool) {
+              const loopGuard = advanceToolCallLoopGuard(toolCallStreak, event.name, event.args);
+              toolCallStreak = loopGuard.streak;
+              if (loopGuard.stuck) {
                 approvedEffectReplays.assertDrained();
                 flushPendingTools();
                 if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -2036,9 +2023,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 }
                 await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
                 terminalCheckpointComplete = true;
-                const stuckCount = stuckOnExactRepeat ? toolCallStreak.count : toolNameStreak.count;
-                const stuckDetail = stuckOnExactRepeat ? " with the same input" : "";
-                const stuckText = `I got stuck calling ${humanizeToolName(event.name)}${stuckDetail} ${stuckCount} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
+                const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
                 await deps.events.finalizeRun({
                   workspaceId: run.workspaceId,
                   threadId: thread.id,
