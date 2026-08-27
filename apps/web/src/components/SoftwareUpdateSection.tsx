@@ -189,8 +189,13 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     action: () => Promise<{ ok: boolean; error: string | null }>,
     successLabel: string,
   ) {
-    const beforeImageTag = status?.imageTag ?? null;
+    // Snapshot the live tag right before apply/rollback. Panel state can be stale if
+    // another tab or host update moved the image after this section last loaded.
+    let beforeImageTag: string | null = null;
     try {
+      const before = await rpc.updater.status();
+      beforeImageTag = before.imageTag ?? null;
+      setStatus(before);
       const run = await action();
       setStatus(await rpc.updater.status());
       setCheck(null);

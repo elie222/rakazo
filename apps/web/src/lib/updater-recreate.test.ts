@@ -66,6 +66,19 @@ describe("confirmUpdaterRecreate", () => {
       }),
     ).toEqual({ confirmed: false, reason: "waiting" });
   });
+
+  it("confirms rollback when the live before-tag differs from the restored after-tag", () => {
+    // Caller must pass the tag at action start (B), not a stale panel tag (A).
+    expect(
+      confirmUpdaterRecreate({
+        beforeImageTag: "sha-bbb",
+        afterImageTag: "sha-aaa",
+        running: false,
+        supported: true,
+        installKind: "sidecar",
+      }),
+    ).toEqual({ confirmed: true, reason: "changed" });
+  });
 });
 
 describe("recreateWaitTimeoutError", () => {
