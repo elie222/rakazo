@@ -570,6 +570,7 @@ export const appContract = {
   updater: {
     check: oc.output(
       z.object({
+        available: z.boolean(),
         currentCommit: z.string(),
         targetCommit: z.string(),
         isUpToDate: z.boolean(),

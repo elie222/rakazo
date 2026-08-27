@@ -112,6 +112,7 @@ import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import { applySoftwareUpdate, checkSoftwareUpdate } from "./software-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
@@ -2889,79 +2890,13 @@ export function createRouter(deps: RouterDeps) {
       ),
     },
     updater: {
-      check: authed.updater.check.handler(async () => {
-        try {
-          const { execFile } = await import("node:child_process");
-          const { promisify } = await import("node:util");
-          const exec = promisify(execFile);
-
-          const { stdout: currentCommitRaw } = await exec("git", ["rev-parse", "HEAD"]).catch(() => ({ stdout: "unknown" }));
-          const { stdout: branchRaw } = await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ({ stdout: "main" }));
-          const { stdout: statusRaw } = await exec("git", ["status", "--porcelain"]).catch(() => ({ stdout: "" }));
-
-          const { stdout: remoteRaw } = await exec("git", ["remote"]).catch(() => ({ stdout: "origin" }));
-          const remote = remoteRaw.trim().split("\n")[0] || "origin";
-          const { stdout: lsRemoteRaw } = await exec("git", ["ls-remote", remote, branchRaw.trim()]).catch(() => ({ stdout: "" }));
-
-          const currentCommit = currentCommitRaw.trim();
-          const targetCommit = lsRemoteRaw.trim().split(/\s+/)[0] || currentCommit;
-          const branch = branchRaw.trim();
-          const changedFiles = statusRaw.trim().split("\n").filter(Boolean).map((l: string) => l.slice(3).trim());
-          const dirty = changedFiles.length > 0;
-          const isUpToDate = currentCommit === targetCommit;
-
-          let behindBy = 0;
-          if (!isUpToDate && targetCommit !== "unknown") {
-            const { stdout: revListRaw } = await exec("git", ["rev-list", "--count", `HEAD..${targetCommit}`]).catch(() => ({ stdout: "1" }));
-            behindBy = parseInt(revListRaw.trim(), 10) || 1;
-          }
-
-          return {
-            currentCommit,
-            targetCommit,
-            isUpToDate,
-            behindBy,
-            dirty,
-            changedFiles,
-            branch,
-            remote,
-            canAutoUpdate: !dirty,
-          };
-        } catch {
-          return {
-            currentCommit: "unknown",
-            targetCommit: "unknown",
-            isUpToDate: true,
-            behindBy: 0,
-            dirty: false,
-            changedFiles: [],
-            branch: "main",
-            remote: "origin",
-            canAutoUpdate: false,
-          };
-        }
+      check: authed.updater.check.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return checkSoftwareUpdate();
       }),
-      apply: authed.updater.apply.handler(async () => {
-        try {
-          const { execFile } = await import("node:child_process");
-          const { promisify } = await import("node:util");
-          const exec = promisify(execFile);
-
-          await exec("git", ["fetch", "origin", "main"]);
-          await exec("git", ["merge", "--ff-only", "origin/main"]);
-          const { stdout: headRaw } = await exec("git", ["rev-parse", "HEAD"]);
-
-          return {
-            success: true,
-            message: "Successfully updated Rakazo to the latest version.",
-            updatedToCommit: headRaw.trim(),
-          };
-        } catch (error: any) {
-          return {
-            success: false,
-            message: error?.message || "Failed to fast-forward merge updates. Please check git status.",
-          };
-        }
+      apply: authed.updater.apply.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return applySoftwareUpdate();
       }),
     },
   });
