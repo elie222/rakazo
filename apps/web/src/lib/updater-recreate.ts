@@ -1,5 +1,5 @@
 /**
- * Apply/rollback recreate the API container mid-request. ORPC then surfaces a generic transport
+ * Apply recreates the API container mid-request. ORPC then surfaces a generic transport
  * failure instead of the sidecar's completed run. Treat those as "wait for the new API".
  */
 export function isLikelyUpdaterRecreateDisconnect(error: unknown): boolean {

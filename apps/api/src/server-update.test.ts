@@ -8,7 +8,6 @@ import {
   checkServerUpdate,
   isUpdaterConfigured,
   readServerUpdateStatus,
-  rollbackServerUpdate,
   type UpdaterProxyConfig,
   UpdaterProxyError,
 } from "./server-update.js";
@@ -234,7 +233,7 @@ describe("sidecar proxy auth and no-git-apply", () => {
     expect(JSON.stringify(check)).not.toContain(TOKEN);
   });
 
-  it("rejects check/apply/rollback when the sidecar is off (no git apply path)", async () => {
+  it("rejects check/apply when the sidecar is off (no git apply path)", async () => {
     const config: UpdaterProxyConfig = {
       url: null,
       token: null,
@@ -245,7 +244,6 @@ describe("sidecar proxy auth and no-git-apply", () => {
     await expect(applyServerUpdate(config)).rejects.toMatchObject({
       message: expect.stringMatching(/sidecar/i),
     });
-    await expect(rollbackServerUpdate(config)).rejects.toBeInstanceOf(UpdaterProxyError);
     expect(assertNoGitApplyPath).toBeTypeOf("function");
     expect(() => assertNoGitApplyPath("source")).toThrow(/cannot apply/);
     expect(() => assertNoGitApplyPath("compose")).toThrow(/cannot apply/);

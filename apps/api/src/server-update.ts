@@ -272,26 +272,8 @@ export async function applyServerUpdate(
 }
 
 /**
- * Proxies `/rollback` to the sidecar.
- *
- * Same recreate caveat as {@link applyServerUpdate}: a successful rollback kills this process
- * mid-response, so clients must recover by polling status after a transport drop.
- */
-export async function rollbackServerUpdate(config: UpdaterProxyConfig): Promise<ServerUpdateRun> {
-  await requireSidecar(config);
-  const fetchImpl = config.fetch ?? fetch;
-  return sidecarJson<ServerUpdateRun>(
-    config,
-    fetchImpl,
-    "POST",
-    "/rollback",
-    undefined,
-    APPLY_TIMEOUT_MS,
-  );
-}
-
-/**
- * Hard gate: Settings apply/rollback/check never run git (or anything else) inside the API.
+ * Hard gate: Settings apply/check never run git (or anything else) inside the API.
+ * Sidecar `/rollback` remains for ops only and is not exposed on the owner RPC surface.
  * Only the updater sidecar holds the Docker socket and outlives a recreate.
  */
 async function requireSidecar(config: UpdaterProxyConfig): Promise<void> {

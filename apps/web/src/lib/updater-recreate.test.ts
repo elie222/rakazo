@@ -73,7 +73,7 @@ describe("confirmUpdaterRecreate", () => {
     ).toEqual({ confirmed: false, reason: "waiting" });
   });
 
-  it("confirms rollback when lastRun moved from the live before-tag to the restored tag", () => {
+  it("confirms a tag move when lastRun moved from the live before-tag", () => {
     expect(
       confirmUpdaterRecreate({
         beforeImageTag: "sha-bbb",

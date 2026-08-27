@@ -57,7 +57,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/status"],
       ["updater/check", {}],
       ["updater/apply", {}],
-      ["updater/rollback"],
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
@@ -767,7 +766,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await expectDenied(app, other, "updater/status", {});
     await expectDenied(app, other, "updater/check", {});
     await expectDenied(app, other, "updater/apply", {});
-    await expectDenied(app, other, "updater/rollback", {});
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });

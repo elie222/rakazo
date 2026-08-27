@@ -154,7 +154,7 @@ export function createUpdaterApp(
   };
   let running = false;
   let planInFlight: Promise<unknown> | null = null;
-  /** Survives API recreate so Settings can confirm apply/rollback after the proxy drops. */
+  /** Survives API recreate so Settings can confirm apply after the proxy drops. */
   let lastRun: ServerUpdateRun | null = null;
 
   app.get("/health", (c) => c.json({ ok: true, service: "updater", image: config.image }));

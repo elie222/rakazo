@@ -102,9 +102,6 @@ export function AccountSettingsOverlay({
             <h2 id="account-settings-title" className="text-2xl font-medium text-[#F1F1F2]">
               <Trans>Settings</Trans>
             </h2>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              <Trans>Account preferences apply across all your bots.</Trans>
-            </p>
           </div>
           <button
             type="button"

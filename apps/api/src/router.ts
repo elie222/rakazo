@@ -116,7 +116,6 @@ import {
   applyServerUpdate,
   checkServerUpdate,
   readServerUpdateStatus,
-  rollbackServerUpdate,
   type UpdaterProxyConfig,
   UpdaterProxyError,
 } from "./server-update.js";
@@ -421,14 +420,6 @@ export function createRouter(deps: RouterDeps) {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
         try {
           return await applyServerUpdate(updaterConfig(deps), input);
-        } catch (error) {
-          mapUpdaterError(error);
-        }
-      }),
-      rollback: authed.updater.rollback.handler(async ({ context }) => {
-        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        try {
-          return await rollbackServerUpdate(updaterConfig(deps));
         } catch (error) {
           mapUpdaterError(error);
         }

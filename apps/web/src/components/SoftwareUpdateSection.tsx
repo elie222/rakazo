@@ -7,15 +7,10 @@ import {
   isLikelyUpdaterRecreateDisconnect,
   recreateWaitTimeoutError,
 } from "../lib/updater-recreate";
-import { BuiButton, LoadingState, SuccessPop } from "./beautiful-ui/primitives";
+import { BuiButton, SuccessPop } from "./beautiful-ui/primitives";
 
 const RECREATE_POLL_MS = 2_000;
 const RECREATE_POLL_ATTEMPTS = 90;
-
-function shortRev(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value.length > 12 ? value.slice(0, 12) : value;
-}
 
 async function waitForUpdaterStatus(options: { beforeImageTag: string | null }): Promise<{
   status: ServerUpdateStatus;
@@ -51,86 +46,37 @@ async function waitForUpdaterStatus(options: { beforeImageTag: string | null }):
   throw recreateWaitTimeoutError({ sawApi, sawSidecar, lastError });
 }
 
-/** Presentational body so unit tests can render install-kind branches without RPC. */
+/** Presentational body for the sidecar update path (unit-testable without RPC). */
 export function SoftwareUpdatePanel({
-  status,
   check,
   busy,
   error,
   done,
   onCheck,
   onApply,
-  onRollback,
 }: {
-  status: ServerUpdateStatus;
   check: ServerUpdateCheck | null;
-  busy: "check" | "apply" | "rollback" | null;
+  busy: "check" | "apply" | null;
   error: string | null;
   done: string | null;
   onCheck: () => void;
   onApply: () => void;
-  onRollback: () => void;
 }) {
+  const updateAvailable = check?.status === "available";
+
   return (
     <div className="mt-3 space-y-3">
-      <p className="text-[13.5px] text-[#C9C9CE]">
-        {status.imageTag ? (
-          <Trans>Image {status.imageTag}</Trans>
-        ) : status.revision ? (
-          <Trans>Revision {shortRev(status.revision)}</Trans>
-        ) : (
-          <Trans>Version {status.version}</Trans>
-        )}
-      </p>
-
-      {status.installKind === "sidecar" ? (
-        <>
-          <p className="text-[12.5px] text-[#6C6C70]">
-            <Trans>Updates pull the published image through the updater sidecar.</Trans>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <BuiButton disabled={busy !== null} onClick={onCheck}>
-              {busy === "check" ? <Trans>Checking…</Trans> : <Trans>Check</Trans>}
-            </BuiButton>
-            <BuiButton
-              tone="accent"
-              disabled={busy !== null || check?.status === "dirty"}
-              onClick={onApply}
-            >
-              {busy === "apply" ? <Trans>Updating…</Trans> : <Trans>Update</Trans>}
-            </BuiButton>
-            {status.canRollback ? (
-              <BuiButton disabled={busy !== null} onClick={onRollback}>
-                {busy === "rollback" ? <Trans>Rolling back…</Trans> : <Trans>Rollback</Trans>}
-              </BuiButton>
-            ) : null}
-          </div>
-          {check ? <CheckSummary check={check} /> : null}
-        </>
-      ) : null}
-
-      {status.installKind === "compose" ? (
-        <>
-          <p className="text-[12.5px] text-[#6C6C70]">
-            <Trans>Compose install without the updater sidecar. Run these on the host.</Trans>
-          </p>
-          <CommandBlock commands={status.manualCommands} />
-        </>
-      ) : null}
-
-      {status.installKind === "source" ? (
-        <>
-          <p className="text-[12.5px] text-[#6C6C70]">
-            <Trans>Source install. Upgrade from a terminal.</Trans>
-          </p>
-          <CommandBlock commands={status.manualCommands} />
-        </>
-      ) : null}
-
-      {status.unsupportedReason && status.installKind === "sidecar" ? (
-        <p className="text-[12.5px] text-[#F1A8A8]">{status.unsupportedReason}</p>
-      ) : null}
-
+      <div className="flex flex-wrap gap-2">
+        <BuiButton disabled={busy !== null} onClick={onCheck}>
+          {busy === "check" ? <Trans>Checking…</Trans> : <Trans>Check for updates</Trans>}
+        </BuiButton>
+        {updateAvailable ? (
+          <BuiButton tone="accent" disabled={busy !== null} onClick={onApply}>
+            {busy === "apply" ? <Trans>Updating…</Trans> : <Trans>Update</Trans>}
+          </BuiButton>
+        ) : null}
+      </div>
+      {check ? <CheckSummary check={check} /> : null}
       {error ? (
         <p role="alert" className="text-[12.5px] text-[#F1A8A8]">
           {error}
@@ -146,7 +92,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
   const [status, setStatus] = useState<ServerUpdateStatus | null>(null);
   const [check, setCheck] = useState<ServerUpdateCheck | null>(null);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<"check" | "apply" | "rollback" | null>(null);
+  const [busy, setBusy] = useState<"check" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
@@ -175,6 +121,26 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
 
   if (!isDeploymentOwner) return null;
 
+  // Wait for status before deciding whether to show the section (compose/source stay hidden).
+  if (loading) return null;
+  if (!status) {
+    if (!error) return null;
+    return (
+      <section
+        data-testid="software-update-settings"
+        className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4"
+      >
+        <h3 className="text-[15px] font-medium text-[#ECECEE]">
+          <Trans>Software update</Trans>
+        </h3>
+        <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
+          {error}
+        </p>
+      </section>
+    );
+  }
+  if (status.installKind !== "sidecar") return null;
+
   async function runCheck() {
     setBusy("check");
     setError(null);
@@ -190,10 +156,9 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
 
   async function finishAfterPossibleRecreate(
     action: () => Promise<{ ok: boolean; error: string | null }>,
-    successLabel: string,
   ) {
-    // Snapshot the live tag right before apply/rollback. Panel state can be stale if
-    // another tab or host update moved the image after this section last loaded.
+    // Snapshot the live tag right before apply. Panel state can be stale if another tab or
+    // host update moved the image after this section last loaded.
     let beforeImageTag: string | null = null;
     try {
       const before = await rpc.updater.status();
@@ -204,7 +169,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       setCheck(null);
       if (run.ok) {
         setError(null);
-        setDone(successLabel);
+        setDone(t`Updated`);
       } else {
         setDone(null);
         setError(run.error ?? t`Update finished with errors`);
@@ -221,7 +186,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
         setCheck(null);
         if (recovered.confirmed) {
           setError(null);
-          setDone(successLabel);
+          setDone(t`Updated`);
         } else if (recovered.reason === "failed") {
           setDone(null);
           setError(
@@ -231,7 +196,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
           );
         } else {
           setDone(null);
-          setError(t`API is back, but the image tag did not change. Check the host logs.`);
+          setError(t`API is back, but the update did not finish. Check the host logs.`);
         }
       } catch (waitError) {
         setDone(null);
@@ -249,18 +214,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     setError(null);
     setDone(null);
     try {
-      await finishAfterPossibleRecreate(() => rpc.updater.apply({}), t`Updated`);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runRollback() {
-    setBusy("rollback");
-    setError(null);
-    setDone(null);
-    try {
-      await finishAfterPossibleRecreate(() => rpc.updater.rollback(), t`Rolled back`);
+      await finishAfterPossibleRecreate(() => rpc.updater.apply({}));
     } finally {
       setBusy(null);
     }
@@ -274,31 +228,14 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       <h3 className="text-[15px] font-medium text-[#ECECEE]">
         <Trans>Software update</Trans>
       </h3>
-
-      {loading ? (
-        <div className="mt-3">
-          <LoadingState label={t`Loading`} />
-        </div>
-      ) : null}
-
-      {!loading && status ? (
-        <SoftwareUpdatePanel
-          status={status}
-          check={check}
-          busy={busy}
-          error={error}
-          done={done}
-          onCheck={() => void runCheck()}
-          onApply={() => void runApply()}
-          onRollback={() => void runRollback()}
-        />
-      ) : null}
-
-      {!loading && !status && error ? (
-        <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
-          {error}
-        </p>
-      ) : null}
+      <SoftwareUpdatePanel
+        check={check}
+        busy={busy}
+        error={error}
+        done={done}
+        onCheck={() => void runCheck()}
+        onApply={() => void runApply()}
+      />
     </section>
   );
 }
@@ -308,7 +245,6 @@ function CheckSummary({ check }: { check: ServerUpdateCheck }) {
     return (
       <p className="text-[12.5px] text-[#6C6C70]">
         <Trans>Up to date</Trans>
-        {check.targetTag ? ` (${check.targetTag})` : null}
       </p>
     );
   }
@@ -316,8 +252,6 @@ function CheckSummary({ check }: { check: ServerUpdateCheck }) {
     return (
       <p className="text-[12.5px] text-[#C9C9CE]">
         <Trans>Update available</Trans>
-        {check.targetTag ? `: ${check.targetTag}` : null}
-        {check.targetCommit && !check.targetTag ? `: ${shortRev(check.targetCommit)}` : null}
       </p>
     );
   }
@@ -330,17 +264,5 @@ function CheckSummary({ check }: { check: ServerUpdateCheck }) {
   }
   return (
     <p className="text-[12.5px] text-[#F1A8A8]">{check.reason ?? <Trans>Unavailable</Trans>}</p>
-  );
-}
-
-function CommandBlock({ commands }: { commands: string[] }) {
-  if (commands.length === 0) return null;
-  return (
-    <pre
-      data-testid="software-update-commands"
-      className="overflow-x-auto rounded-[10px] border border-[#232326] bg-[#0C0C0E] px-3 py-2.5 font-mono text-[11.5px] leading-5 text-[#C9C9CE]"
-    >
-      {commands.join("\n")}
-    </pre>
   );
 }
