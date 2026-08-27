@@ -3091,6 +3091,13 @@ const Transcript = memo(function Transcript({
     if (following.current) snapToEnd();
   }, [messages, running, snapToEnd]);
 
+  const loadOlder = useCallback(() => {
+    // Prepend must not race the messages-driven snap-to-end follow path.
+    following.current = false;
+    autoScrolling.current = false;
+    return onLoadOlder();
+  }, [onLoadOlder]);
+
   useEffect(
     () => () => {
       window.clearTimeout(autoScrollTimer.current);
@@ -3127,7 +3134,7 @@ const Transcript = memo(function Transcript({
           <button
             type="button"
             disabled={loadingOlder}
-            onClick={() => void onLoadOlder()}
+            onClick={() => void loadOlder()}
             className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
           >
             {loadingOlder ? t`Loading…` : t`Load earlier messages`}
