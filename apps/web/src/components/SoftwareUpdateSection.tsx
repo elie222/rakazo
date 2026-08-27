@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServerUpdateCheck, ServerUpdateStatus } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
-import { isLikelyUpdaterRecreateDisconnect } from "../lib/updater-recreate";
+import { confirmUpdaterRecreate, isLikelyUpdaterRecreateDisconnect } from "../lib/updater-recreate";
 import { BuiButton, LoadingState, SuccessPop } from "./beautiful-ui/primitives";
 
 const RECREATE_POLL_MS = 2_000;
@@ -13,17 +13,31 @@ function shortRev(value: string | null | undefined): string | null {
   return value.length > 12 ? value.slice(0, 12) : value;
 }
 
-async function waitForUpdaterStatus(): Promise<ServerUpdateStatus> {
+async function waitForUpdaterStatus(options: {
+  beforeImageTag: string | null;
+}): Promise<{ status: ServerUpdateStatus; confirmed: boolean }> {
   let lastError: unknown;
+  let sawApi = false;
   for (let attempt = 0; attempt < RECREATE_POLL_ATTEMPTS; attempt += 1) {
     if (attempt > 0) {
       await new Promise((resolve) => setTimeout(resolve, RECREATE_POLL_MS));
     }
     try {
-      return await rpc.updater.status();
+      const next = await rpc.updater.status();
+      sawApi = true;
+      const verdict = confirmUpdaterRecreate({
+        beforeImageTag: options.beforeImageTag,
+        afterImageTag: next.imageTag,
+        running: next.running,
+      });
+      if (verdict.reason === "running") continue;
+      return { status: next, confirmed: verdict.confirmed };
     } catch (error) {
       lastError = error;
     }
+  }
+  if (sawApi) {
+    throw new Error("The updater was still running when the wait timed out.");
   }
   throw lastError instanceof Error
     ? lastError
@@ -171,6 +185,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     action: () => Promise<{ ok: boolean; error: string | null }>,
     successLabel: string,
   ) {
+    const beforeImageTag = status?.imageTag ?? null;
     try {
       const run = await action();
       setStatus(await rpc.updater.status());
@@ -189,10 +204,16 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       }
       setDone(t`Waiting for the API to come back…`);
       try {
-        setStatus(await waitForUpdaterStatus());
+        const recovered = await waitForUpdaterStatus({ beforeImageTag });
+        setStatus(recovered.status);
         setCheck(null);
-        setError(null);
-        setDone(successLabel);
+        if (recovered.confirmed) {
+          setError(null);
+          setDone(successLabel);
+        } else {
+          setDone(null);
+          setError(t`API is back, but the image tag did not change. Check the host logs.`);
+        }
       } catch (waitError) {
         setDone(null);
         setError(
