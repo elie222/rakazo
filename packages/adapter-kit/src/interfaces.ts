@@ -181,7 +181,7 @@ export interface SemanticMemoryProvider {
 
 export interface AgentRuntime {
   describe(): AdapterDescriptor<AgentRuntimeCapabilities>;
-  run(request: AgentRunRequest, context: AdapterContext): AsyncIterable<AgentRuntimeEvent>;
+  run(request: AgentRunRequest, context?: Partial<AdapterContext>): AsyncIterable<AgentRuntimeEvent>;
   abort(runId: string): Promise<void>;
 }
 
