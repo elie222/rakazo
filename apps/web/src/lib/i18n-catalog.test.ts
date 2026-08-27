@@ -1,7 +1,9 @@
 import { i18n } from "@lingui/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
+import hi from "../../scripts/translations-hi.json";
 import ko from "../../scripts/translations-ko.json";
+import ptBR from "../../scripts/translations-pt-BR.json";
 import tr from "../../scripts/translations-tr.json";
 
 describe("lingui catalogs", () => {
@@ -78,9 +80,30 @@ describe("lingui catalogs", () => {
         values: { timeSelect: "09:00" },
       }),
     ).toBe("saat 09:00");
+
+    i18n.load("hi", {
+      "every {intervalAmountSelect} {intervalUnitSelect}":
+        "हर {intervalAmountSelect} {intervalUnitSelect}",
+      "at {timeSelect}": "{timeSelect} बजे",
+    });
+    i18n.activate("hi");
+    expect(
+      i18n._({
+        id: "every {intervalAmountSelect} {intervalUnitSelect}",
+        message: "every {intervalAmountSelect} {intervalUnitSelect}",
+        values: { intervalAmountSelect: "5", intervalUnitSelect: "मिनट" },
+      }),
+    ).toBe("हर 5 मिनट");
+    expect(
+      i18n._({
+        id: "at {timeSelect}",
+        message: "at {timeSelect}",
+        values: { timeSelect: "09:00" },
+      }),
+    ).toBe("09:00 बजे");
   });
 
-  it("uses seeded catalog strings for German, Korean, and Turkish chrome", () => {
+  it("uses seeded catalog strings for German, Korean, Turkish, Hindi, and Brazilian Portuguese chrome", () => {
     i18n.load("de", de as Record<string, string>);
     i18n.activate("de");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Einstellungen");
@@ -95,5 +118,15 @@ describe("lingui catalogs", () => {
     i18n.activate("tr");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Ayarlar");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("İptal");
+
+    i18n.load("hi", hi as Record<string, string>);
+    i18n.activate("hi");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("सेटिंग्स");
+    expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("रद्द करें");
+
+    i18n.load("pt-BR", ptBR as Record<string, string>);
+    i18n.activate("pt-BR");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Configurações");
+    expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("Cancelar");
   });
 });
