@@ -47,6 +47,7 @@ describe("activateUiLocale", () => {
       },
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
+      hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -70,6 +71,9 @@ describe("activateUiLocale", () => {
       tr: async () => {
         throw new Error("tr missing");
       },
+      hi: async () => {
+        throw new Error("hi missing");
+      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -88,6 +92,7 @@ describe("activateUiLocale", () => {
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
+      hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
     });
 
     const first = activateUiLocale("de");
@@ -111,6 +116,7 @@ describe("activateUiLocale", () => {
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
+      hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
     });
 
     await activateUiLocale("en");
@@ -139,6 +145,7 @@ describe("activateUiLocale", () => {
       de: async () => dePromise,
       ko: async () => ({ messages: { Settings: "설정" } }),
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
+      hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
     });
 
     await activateUiLocale("en");

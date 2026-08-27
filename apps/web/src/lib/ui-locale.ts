@@ -1,4 +1,4 @@
-export const UI_LOCALES = ["en", "de", "ko", "tr"] as const;
+export const UI_LOCALES = ["en", "de", "ko", "tr", "hi"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
@@ -9,10 +9,13 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   de: "Deutsch",
   ko: "한국어",
   tr: "Türkçe",
+  hi: "हिन्दी",
 };
 
 export function isUiLocale(value: string | null | undefined): value is UiLocale {
-  return value === "en" || value === "de" || value === "ko" || value === "tr";
+  return (
+    value === "en" || value === "de" || value === "ko" || value === "tr" || value === "hi"
+  );
 }
 
 /** Normalize BCP-47 tags (`de-DE`, `ko-KR`) to a supported UI locale, else `en`. */
