@@ -2163,6 +2163,7 @@ export function ShellPage() {
         <Transcript
           key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
+          preserveViewport={expandedHistoryThread.current === activeSnapshot?.threadId}
           artifactTarget={transcriptArtifactTarget}
           messages={activeSnapshot?.messages ?? []}
           olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -3006,6 +3007,7 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  preserveViewport,
   artifactTarget,
   messages,
   olderCursor,
@@ -3028,6 +3030,7 @@ const Transcript = memo(function Transcript({
   onSpeak,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  preserveViewport: boolean;
   artifactTarget: ArtifactTarget;
   messages: ThreadMessage[];
   olderCursor: number | null;
@@ -3079,13 +3082,14 @@ const Transcript = memo(function Transcript({
   }, [scrollRef]);
 
   useLayoutEffect(() => {
+    if (preserveViewport) return;
     if (following.current) {
       scrollToEnd();
       return;
     }
     const element = scrollRef.current;
     if (element) setAtEnd(transcriptIsNearEnd(element));
-  }, [messages, running, scrollToEnd]);
+  }, [messages, preserveViewport, running, scrollRef, scrollToEnd]);
 
   useEffect(
     () => () => {
