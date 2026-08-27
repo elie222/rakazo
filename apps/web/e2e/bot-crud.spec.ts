@@ -76,10 +76,17 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(modelSelect).toContainText("Workspace default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await page.getByRole("button", { name: "Show computer" }).click();
-  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(page.getByRole("button", { name: "Show settings" })).toBeVisible();
+  // "Booting up … computer" only flashes when auto-boot runs with overlay. Team desktops that
+  // are already running/asleep/stopped (or finish before Playwright observes the flash) skip it.
   const bootOverlay = page.getByText(/Booting up .* computer/);
-  await expect(bootOverlay).toBeVisible();
+  await expect(
+    bootOverlay
+      .or(sidePanel.getByRole("button", { name: "Take control" }))
+      .or(sidePanel.getByText(/Computer is asleep|Computer is stopped|Team Computer/)),
+  ).toBeVisible();
   await expect(bootOverlay).toBeHidden();
   await captureScreenshot(page, testInfo, "27b-computer-panel");
   await page.getByRole("button", { name: "Show settings" }).click();
