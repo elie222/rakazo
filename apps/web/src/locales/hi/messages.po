@@ -112,7 +112,7 @@ msgstr "{title}, {label}"
 
 #: src/pages/Shell.tsx:3068
 msgid "{workingBotName} is working"
-msgstr ""
+msgstr "{workingBotName} काम कर रहा है"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx:3378
@@ -465,7 +465,7 @@ msgstr "बॉट डिफ़ॉल्ट रूप से बिना पू�
 
 #: src/pages/Shell.tsx:3069
 msgid "Bots are working"
-msgstr ""
+msgstr "बॉट काम कर रहे हैं"
 
 #: src/pages/VoiceSettingsOverlay.tsx:130
 msgid "Bring your own key. The provider is swappable; your bots keep the same speak and call buttons."
@@ -1528,7 +1528,7 @@ msgstr "{activeName} को संदेश भेजें"
 
 #: src/pages/Shell.tsx:3938
 msgid "Message from"
-msgstr ""
+msgstr "संदेश"
 
 #: src/pages/Shell.tsx:3934
 msgid "Message from {peer}"
@@ -1540,7 +1540,7 @@ msgstr "संदेश…"
 
 #: src/pages/Shell.tsx:3938
 msgid "Messaged"
-msgstr ""
+msgstr "संदेश भेजा"
 
 #: src/pages/Shell.tsx:3934
 msgid "Messaged {peer}"

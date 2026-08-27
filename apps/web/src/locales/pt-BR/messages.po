@@ -112,7 +112,7 @@ msgstr "{title}, {label}"
 
 #: src/pages/Shell.tsx:3068
 msgid "{workingBotName} is working"
-msgstr ""
+msgstr "{workingBotName} está trabalhando"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx:3378
@@ -465,7 +465,7 @@ msgstr "Os bots agem sem perguntar por padrão. Adicione uma exceção apenas qu
 
 #: src/pages/Shell.tsx:3069
 msgid "Bots are working"
-msgstr ""
+msgstr "Bots estão trabalhando"
 
 #: src/pages/VoiceSettingsOverlay.tsx:130
 msgid "Bring your own key. The provider is swappable; your bots keep the same speak and call buttons."
@@ -1528,7 +1528,7 @@ msgstr "Mensagem {activeName}"
 
 #: src/pages/Shell.tsx:3938
 msgid "Message from"
-msgstr ""
+msgstr "Mensagem de"
 
 #: src/pages/Shell.tsx:3934
 msgid "Message from {peer}"
@@ -1540,7 +1540,7 @@ msgstr "Mensagem…"
 
 #: src/pages/Shell.tsx:3938
 msgid "Messaged"
-msgstr ""
+msgstr "Enviou mensagem para"
 
 #: src/pages/Shell.tsx:3934
 msgid "Messaged {peer}"
