@@ -784,13 +784,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        const modelProvider = credential?.provider ?? settings?.defaultModelProvider ?? "scripted";
-        const modelId = credential?.defaultModel ?? settings?.defaultModelId ?? "scripted";
-        // Scripted runtime fixtures still need screenshot tools; for Pi, resolve
-        // the scripted placeholder the same way the runtime does before gating.
+        // Gate on the model this run will actually call — the same pair written to the
+        // run row above. Re-deriving it here without the deployment fallback gated the
+        // wrong model: a deployment default resolved to "scripted", whose vision lookup
+        // is openrouter/PI_DEFAULT_MODEL, so a vision-capable default lost its screenshot
+        // tools.
         const acceptsImages =
           deps.runtime.describe().capabilities.scripted ||
-          modelAcceptsImageInput(modelProvider, modelId);
+          modelAcceptsImageInput(runModelProvider, runModelId);
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
