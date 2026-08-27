@@ -475,15 +475,10 @@
     transition: none;
   }
 
-  .rakazo-organic-avatar .rakazo-organic-avatar-body {
+  .rakazo-organic-avatar[data-shape-family] .rakazo-organic-avatar-body {
     animation: none;
     d: var(--rakazo-organic-path);
     transition: none;
-  }
-
-  /* Stop SMIL morph timelines so they cannot override the frozen path. */
-  .rakazo-organic-avatar animate {
-    display: none;
   }
 
   .rakazo-organic-avatar[data-eye-pattern] .rakazo-organic-avatar-eyes {

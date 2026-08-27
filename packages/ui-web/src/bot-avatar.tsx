@@ -1,5 +1,5 @@
 import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
-import { type CSSProperties, memo, useId } from "react";
+import { type CSSProperties, memo, useId, useSyncExternalStore } from "react";
 import { type AvatarStyle, useAvatarStyle } from "./avatar-style.js";
 import { cn } from "./lib/utils.js";
 import "./styles.css";
@@ -168,6 +168,11 @@ function OrganicAvatar({
   isWorking: boolean;
   className?: string;
 }) {
+  const reducedMotion = useSyncExternalStore(
+    subscribeToReducedMotion,
+    reducedMotionSnapshot,
+    () => false,
+  );
   const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
   const duration = `${4.8 + (seed % 24) / 10}s`;
   const shapeA = organicAvatarPath(seed);
@@ -203,12 +208,14 @@ function OrganicAvatar({
             } as CSSProperties
           }
         >
-          <animate
-            attributeName="d"
-            values={`${shapeA};${shapeB};${shapeA}`}
-            dur={duration}
-            repeatCount="indefinite"
-          />
+          {!reducedMotion ? (
+            <animate
+              attributeName="d"
+              values={`${shapeA};${shapeB};${shapeA}`}
+              dur={duration}
+              repeatCount="indefinite"
+            />
+          ) : null}
         </path>
       ))}
       <g transform={`rotate(${(seed % 9) - 4})`}>
@@ -225,6 +232,18 @@ function OrganicAvatar({
       </g>
     </svg>
   );
+}
+
+const reducedMotionMedia = "(prefers-reduced-motion: reduce)";
+
+function reducedMotionSnapshot(): boolean {
+  return window.matchMedia(reducedMotionMedia).matches;
+}
+
+function subscribeToReducedMotion(onChange: () => void): () => void {
+  const media = window.matchMedia(reducedMotionMedia);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
 }
 
 function hashString(str: string): number {
