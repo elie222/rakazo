@@ -278,21 +278,22 @@ export async function threadSnapshot(
           tx.run.findFirst({
             where: {
               botId: target.botId,
-              status: { in: [...ACTIVE_RUN_STATUSES] },
+              threadId: target.threadId,
             },
             orderBy: { createdAt: "desc" },
           }),
         ]);
-        const liveEvents = run
-          ? await tx.event.findMany({
-              where: {
-                threadId: target.threadId,
-                runId: run.id,
-                type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
-              },
-              orderBy: { seq: "asc" },
-            })
-          : [];
+        const liveEvents =
+          run && ACTIVE_RUN_STATUSES.includes(run.status as never)
+            ? await tx.event.findMany({
+                where: {
+                  threadId: target.threadId,
+                  runId: run.id,
+                  type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
+                },
+                orderBy: { seq: "asc" },
+              })
+            : [];
         return { messagePage, last, run, liveEvents };
       }),
     ]);
