@@ -88,16 +88,17 @@ export function LoadingState({
   /** Epoch ms when the run started. Falls back to mount time when omitted. */
   startedAt?: number;
 }) {
+  if (indicator) {
+    return (
+      <span role="status" className="flex w-fit items-center gap-2.5">
+        <span className="sr-only">{label}</span>
+        {indicator}
+      </span>
+    );
+  }
   return (
-    <span role="status" className="flex w-fit items-center gap-2.5">
-      {indicator ? (
-        <>
-          <span className="sr-only">{label}</span>
-          {indicator}
-        </>
-      ) : (
-        <DefaultLoadingState label={label} startedAt={startedAt} />
-      )}
+    <span className="flex w-fit items-center gap-2.5">
+      <DefaultLoadingState label={label} startedAt={startedAt} />
     </span>
   );
 }

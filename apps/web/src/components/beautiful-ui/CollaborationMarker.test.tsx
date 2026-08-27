@@ -8,6 +8,7 @@ describe("collaboration transcript markers", () => {
       <CollaborationMarker
         ariaLabel="Message from Research"
         color="#14B8A6"
+        identity="research"
         label="Message from Research"
         onClick={() => undefined}
       />,

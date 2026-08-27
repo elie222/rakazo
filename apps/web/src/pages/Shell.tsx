@@ -4081,6 +4081,7 @@ const MessageView = memo(function MessageView({
               key={i}
               ariaLabel={label}
               color={peerBot(peerBotId)?.color ?? "#85858A"}
+              identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages(peerBotId)}
             />
