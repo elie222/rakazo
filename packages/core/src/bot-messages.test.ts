@@ -156,6 +156,22 @@ describe("directory", () => {
     expect(directory).toContain("Bot39 (id: b_39)");
   });
 
+  it("charges the aggregate budget against escaped description size", () => {
+    const expanding = "&".repeat(3_000);
+    const directory =
+      renderBotDirectory([
+        { id: "b_1", name: "A", description: expanding },
+        { id: "b_2", name: "B", description: expanding },
+      ]) ?? "";
+    const escapedChars = [...directory.matchAll(/: ((&amp;)+)/g)].reduce(
+      (total, match) => total + (match[1]?.length ?? 0),
+      0,
+    );
+    expect(escapedChars).toBeLessThanOrEqual(BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH);
+    expect(escapedChars).toBe(BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH);
+    expect(escapedChars).toBeLessThan(expanding.length * 5 * 2);
+  });
+
   it("says nothing when a bot has no teammates", () => {
     expect(renderBotDirectory([])).toBeUndefined();
   });

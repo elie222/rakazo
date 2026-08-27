@@ -64,12 +64,13 @@ export function renderBotDirectory(bots: readonly BotAddress[]): string | undefi
     const rawDescription = bot.description?.trim();
     let description: string | undefined;
     if (rawDescription && descriptionBudget > 0) {
-      const capped = rawDescription.slice(
-        0,
-        Math.min(BOT_DESCRIPTION_MAX_LENGTH, descriptionBudget),
-      );
-      descriptionBudget -= capped.length;
-      description = escapeDirectoryField(capped);
+      // Charge the budget after escaping — &/< /> / newlines expand.
+      let escaped = escapeDirectoryField(rawDescription.slice(0, BOT_DESCRIPTION_MAX_LENGTH));
+      if (escaped.length > descriptionBudget) escaped = escaped.slice(0, descriptionBudget);
+      if (escaped.length > 0) {
+        descriptionBudget -= escaped.length;
+        description = escaped;
+      }
     }
     return `- ${name} (id: ${bot.id})${title ? ` — ${title}` : ""}${description ? `: ${description}` : ""}`;
   });
