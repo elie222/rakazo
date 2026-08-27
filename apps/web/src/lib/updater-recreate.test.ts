@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   confirmUpdaterRecreate,
   isLikelyUpdaterRecreateDisconnect,
-  recreateWaitTimeoutError,
   type RecreateLastRun,
+  recreateWaitTimeoutError,
 } from "./updater-recreate.js";
 
-function run(partial: Partial<RecreateLastRun> & Pick<RecreateLastRun, "ok" | "fromTag" | "toTag">): RecreateLastRun {
+function run(
+  partial: Partial<RecreateLastRun> & Pick<RecreateLastRun, "ok" | "fromTag" | "toTag">,
+): RecreateLastRun {
   return {
     finishedAt: "2026-08-27T21:00:00.000Z",
     error: null,

@@ -17,9 +17,7 @@ function shortRev(value: string | null | undefined): string | null {
   return value.length > 12 ? value.slice(0, 12) : value;
 }
 
-async function waitForUpdaterStatus(options: {
-  beforeImageTag: string | null;
-}): Promise<{
+async function waitForUpdaterStatus(options: { beforeImageTag: string | null }): Promise<{
   status: ServerUpdateStatus;
   confirmed: boolean;
   reason: "waiting" | "running" | "unchanged" | "changed" | "failed";
