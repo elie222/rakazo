@@ -1,3 +1,5 @@
+import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
+
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 
 /**
@@ -6,6 +8,9 @@ export const BOT_MESSAGE_MAX_LENGTH = 8_000;
  * other forever; a person's own message always starts a fresh chain at hop 0.
  */
 export const BOT_MESSAGE_MAX_HOPS = 6;
+
+/** Cap total description characters across the rendered teammate directory. */
+export const BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH = 8_000;
 
 export interface BotAddress {
   id: string;
@@ -52,12 +57,20 @@ export function resolveBotAddress<T extends BotAddress>(
  */
 export function renderBotDirectory(bots: readonly BotAddress[]): string | undefined {
   if (bots.length === 0) return undefined;
+  let descriptionBudget = BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH;
   const lines = bots.map((bot) => {
-    const name = escapePromptData(bot.name.trim());
-    const title = bot.title?.trim() ? escapePromptData(bot.title.trim()) : undefined;
-    const description = bot.description?.trim()
-      ? escapePromptData(bot.description.trim())
-      : undefined;
+    const name = escapeDirectoryField(bot.name.trim());
+    const title = bot.title?.trim() ? escapeDirectoryField(bot.title.trim()) : undefined;
+    const rawDescription = bot.description?.trim();
+    let description: string | undefined;
+    if (rawDescription && descriptionBudget > 0) {
+      const capped = rawDescription.slice(
+        0,
+        Math.min(BOT_DESCRIPTION_MAX_LENGTH, descriptionBudget),
+      );
+      descriptionBudget -= capped.length;
+      description = escapeDirectoryField(capped);
+    }
     return `- ${name} (id: ${bot.id})${title ? ` — ${title}` : ""}${description ? `: ${description}` : ""}`;
   });
   return [
@@ -73,6 +86,10 @@ export const BOT_MESSAGE_WAKE_CUE = "[bot]";
 
 function escapePromptData(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function escapeDirectoryField(value: string): string {
+  return escapePromptData(value).replaceAll("\r", "\\r").replaceAll("\n", "\\n");
 }
 
 /**
