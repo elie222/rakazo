@@ -17,6 +17,8 @@ services:
       - "host.docker.internal:host-gateway"
   web:
     restart: unless-stopped
+    env_file:
+      - ../../.env
     ports: !override
       - "127.0.0.1:5173:5173"
   bridge-forward:
