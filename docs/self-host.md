@@ -8,7 +8,7 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 ## Docker Compose (single machine)
 
-1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings. Docker sandbox deployments also require a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Use at least 32 characters for new secrets; 64 random hex characters are recommended for `ENCRYPTION_KEY`. Rakazo rejects missing or placeholder production secrets, and rejects short or reused service-boundary tokens. Existing deployments must keep their current `ENCRYPTION_KEY` so stored credentials remain decryptable.
+1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
@@ -20,9 +20,9 @@ Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and 
 
 Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
-The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. When the Docker sandbox provider is enabled, `SANDBOX_SUPERVISOR_TOKEN` is a required independent service credential shared only by the API, worker, and supervisor. `SCREEN_PROXY_SECRET` separately signs browser-screen capabilities and is shared only by the API and web proxy.
+The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. Docker sandboxes require `SANDBOX_SUPERVISOR_TOKEN` (API, worker, supervisor). `SCREEN_PROXY_SECRET` signs browser-screen capabilities (API and web proxy). Keep both distinct from `BETTER_AUTH_SECRET`.
 
-New connector and model credentials use AES-256-GCM with per-record scrypt salts and row-bound authenticated data. Legacy ciphertext remains readable and is not rewritten during startup, avoiding a startup-wide irreversible rewrite and preserving existing credentials during rollback.
+New credentials use versioned AES-GCM with per-record salt and row-bound AAD. Legacy ciphertext stays readable.
 
 On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
 
@@ -44,7 +44,7 @@ AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
-MAX_TOOL_CALLS_PER_TURN=80 # recommended Pi turn tool-call fuse; set 0 for unlimited
+MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 BOX_API_KEY=              # when SANDBOX_PROVIDER=box

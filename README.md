@@ -49,9 +49,8 @@ cd rakazo
 cp .env.example .env
 ```
 
-Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` in `.env` to independent,
-long random values. Docker sandbox deployments also require a dedicated
-`SANDBOX_SUPERVISOR_TOKEN`. You can
+Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` in `.env` to independent
+long random values. Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. You can
 also set `OPENROUTER_API_KEY`, or connect a supported model provider during onboarding.
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the

@@ -4,14 +4,17 @@ import { COMPUTER_GID, COMPUTER_UID } from "./computer-spec.js";
 
 /**
  * Compose runs the supervisor as root while computer containers run as uid 1000.
- * Normalize existing bind-mount contents without following symlinks out of the
- * bot home. Host-run supervisors leave ownership unchanged.
+ * When running as root, normalize existing bind-mount contents without following
+ * symlinks out of the bot home. Host-run / non-root supervisors leave ownership
+ * unchanged.
  */
 export async function ensureComputerHomeOwnership(
   root: string,
   uid = COMPUTER_UID,
   gid = COMPUTER_GID,
 ): Promise<void> {
+  if (process.getuid?.() !== 0) return;
+
   const visit = async (target: string): Promise<void> => {
     const stat = await lstat(target);
     if (stat.isDirectory()) {

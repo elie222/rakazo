@@ -12,6 +12,8 @@ afterEach(async () => {
 
 describe("computer home ownership", () => {
   it("walks existing contents without following symlinks outside the home", async () => {
+    if (process.getuid?.() !== 0) return;
+
     const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-"));
     roots.push(parent);
     const home = path.join(parent, "home");
@@ -31,6 +33,25 @@ describe("computer home ownership", () => {
     await expect(lstat(outside)).resolves.toMatchObject({
       uid: outsideBefore.uid,
       gid: outsideBefore.gid,
+    });
+  });
+
+  it("no-ops when the supervisor is not root", async () => {
+    if (process.getuid?.() === 0) return;
+
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    await mkdir(home, { recursive: true });
+    const file = path.join(home, "file.txt");
+    await writeFile(file, "inside");
+    const before = await lstat(file);
+
+    await ensureComputerHomeOwnership(home, 1000, 1000);
+
+    await expect(lstat(file)).resolves.toMatchObject({
+      uid: before.uid,
+      gid: before.gid,
     });
   });
 });
