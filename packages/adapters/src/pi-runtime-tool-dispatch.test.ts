@@ -337,6 +337,38 @@ describe("Pi connector tool dispatch", () => {
     });
   });
 
+  it("normalizes a blank contextual fallback", async () => {
+    fakeAgentState.mode = "empty";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "peer-result-blank",
+        prompt: "[bot] result",
+        instructions: "Summarize the result.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        emptyResponseText: "   ",
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "peer-result-blank",
+        traceId: "peer-result-blank",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
+  });
+
   it("allows more than 80 tool calls by default when no fuse is configured", async () => {
     fakeAgentState.mode = "parent-limit";
     const executeTool = vi.fn(async () => ({ ok: true }));

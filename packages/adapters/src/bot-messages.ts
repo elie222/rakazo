@@ -34,7 +34,7 @@ export async function currentBotMessageHop(
   return botMessageContext(blocks)?.hop ?? 0;
 }
 
-async function currentBotMessageContext(
+export async function loadBotMessageContext(
   prisma: PrismaClient,
   sourceMessageId: string | null | undefined,
 ) {
@@ -75,7 +75,7 @@ export async function messageBot(
     };
   }
 
-  const sourceContext = await currentBotMessageContext(deps.prisma, run.sourceMessageId);
+  const sourceContext = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   const intent = input.intent ?? "request";
   const hop = nextBotMessageHop(sourceContext?.hop);
 
@@ -92,7 +92,9 @@ export async function messageBot(
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
   const returnsToSender =
-    (intent === "result" || intent === "status") && sourceContext?.fromBotId === target.id;
+    options?.allowTerminalSource === true &&
+    (intent === "result" || intent === "status") &&
+    sourceContext?.fromBotId === target.id;
   if (botMessageHopExhausted(hop) && !returnsToSender) {
     return {
       ok: false as const,
@@ -308,9 +310,10 @@ export async function returnBotMessageOutcome(
   text: string,
   intent: "result" | "status" = "result",
 ) {
-  const source = await currentBotMessageContext(deps.prisma, run.sourceMessageId);
-  if (!source || (source.intent ?? "request") === "fyi") return false;
-  if ((source.intent ?? "request") !== "request" && source.intent !== "question") return false;
+  const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
+  if (!source) return false;
+  const sourceIntent = source.intent ?? "request";
+  if (sourceIntent !== "request" && sourceIntent !== "question") return false;
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
     select: { blocks: true },

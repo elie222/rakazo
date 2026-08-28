@@ -31,7 +31,6 @@ import {
   assertTransition,
   blocksToAgentHistoryText,
   botMessageAllowsSilence,
-  botMessageContext,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -91,7 +90,7 @@ import {
   resolveAutoReviewChecker,
   runAutoReviewJudge,
 } from "./auto-review.js";
-import { messageBot, returnBotMessageOutcome } from "./bot-messages.js";
+import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -701,6 +700,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           bot,
           thread,
           messages,
+          peerMessage,
           task,
           storedConnections,
           defaultCredential,
@@ -720,6 +720,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             take: LEGACY_HISTORY_WINDOW_SIZE,
             select: { id: true, seq: true, role: true, runId: true, blocks: true },
           }),
+          run.trigger === "bot_message"
+            ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
+            : Promise.resolve(undefined),
           deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
           deps.prisma.connection.findMany({
             where: { userId: run.userId, workspaceId: run.workspaceId },
@@ -836,14 +839,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
-        const peerMessage =
-          run.trigger === "bot_message"
-            ? botMessageContext(
-                (messages.find((message) => message.id === run.sourceMessageId)?.blocks as
-                  | MessageBlock[]
-                  | undefined) ?? [],
-              )
-            : undefined;
         const allowSilentPeerMessage = botMessageAllowsSilence(peerMessage?.intent);
         const emptyResponseText = peerMessage
           ? peerMessage.intent === "result" ||
@@ -2903,17 +2898,19 @@ export function completionMessageSegments(
   segments: MessageBlock[],
   options?: { allowSilentEmpty?: boolean; emptyResponseText?: string },
 ): MessageBlock[] {
+  const fallback = options?.emptyResponseText?.trim() || "done.";
   if (segments.length > 0) {
     if (
-      options?.emptyResponseText &&
+      !options?.allowSilentEmpty &&
+      options?.emptyResponseText !== undefined &&
       !segments.some((segment) => segment.kind === "text" && segment.text)
     ) {
-      return [...segments, { kind: "text", text: options.emptyResponseText }];
+      return [...segments, { kind: "text", text: fallback }];
     }
     return segments;
   }
   if (options?.allowSilentEmpty) return [];
-  return [{ kind: "text", text: options?.emptyResponseText ?? "done." }];
+  return [{ kind: "text", text: fallback }];
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */

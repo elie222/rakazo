@@ -27,6 +27,22 @@ describe("completionMessageSegments", () => {
       completionMessageSegments(steps, { emptyResponseText: "Update from Researcher: 42" }),
     ).toEqual([...steps, { kind: "text", text: "Update from Researcher: 42" }]);
   });
+
+  it("does not append fallback text to a tool-only FYI", () => {
+    const steps = [{ kind: "steps" as const, steps: [{ label: "Read file", count: 1 }] }];
+    expect(
+      completionMessageSegments(steps, {
+        allowSilentEmpty: true,
+        emptyResponseText: "synthetic text",
+      }),
+    ).toEqual(steps);
+  });
+
+  it("normalizes a blank fallback", () => {
+    expect(completionMessageSegments([], { emptyResponseText: "   " })).toEqual([
+      { kind: "text", text: "done." },
+    ]);
+  });
 });
 
 describe("completionNotificationBody", () => {

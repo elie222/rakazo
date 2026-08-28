@@ -1,6 +1,11 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { currentBotMessageHop, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
+import {
+  currentBotMessageHop,
+  loadBotMessageContext,
+  messageBot,
+  returnBotMessageOutcome,
+} from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
 
 const run = {
@@ -224,6 +229,7 @@ describe("messaging another bot", () => {
       { ...run, sourceMessageId: "message-source" },
       sender,
       { bot_id: "bot-target", message: "finished", intent: "result" },
+      { allowTerminalSource: true },
     );
     expect(sent.ok).toBe(true);
     expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(2);
@@ -264,6 +270,28 @@ describe("messaging another bot", () => {
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
+  it("keeps model-supplied status updates subject to the hop limit", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "please finish",
+          hop: 6,
+          intent: "request",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "still working", intent: "status" },
+    );
+    expect(sent.ok).toBe(false);
+  });
+
   it("keeps a person-started chain going", async () => {
     const harness = deps({
       hopBlocks: [
@@ -299,6 +327,28 @@ describe("hop lookup", () => {
       },
     } as unknown as PrismaClient;
     expect(await currentBotMessageHop(prisma, "message-1")).toBe(3);
+  });
+
+  it("loads peer context directly from the source message", async () => {
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "b",
+              fromBotName: "B",
+              text: "late FYI",
+              intent: "fyi",
+            },
+          ],
+        }),
+      },
+    } as unknown as PrismaClient;
+    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({ intent: "fyi" });
+    expect(prisma.message.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "message-old" } }),
+    );
   });
 });
 
