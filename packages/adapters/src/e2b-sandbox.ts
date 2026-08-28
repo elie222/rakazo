@@ -629,7 +629,16 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async keepAlive(computer: ComputerRef): Promise<void> {
     const desktop = await this.box(computer);
-    await desktop.setTimeout(sandboxIdleMs()).catch(() => undefined);
+    try {
+      await desktop.setTimeout(sandboxIdleMs());
+    } catch (error) {
+      // Heartbeats refresh lastTouchedAt; if we swallow a gone error here, box() never
+      // reaches its 60s probe and keeps handing back the dead cached handle.
+      if (isSandboxGoneError(error)) {
+        this.forget(desktop.sandboxId);
+        return;
+      }
+    }
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
   }
 

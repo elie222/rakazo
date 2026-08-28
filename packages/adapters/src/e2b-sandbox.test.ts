@@ -716,4 +716,31 @@ describe("sandbox-gone detection", () => {
     expect(dead.setTimeout).toHaveBeenCalledTimes(1);
     expect(sdk.connect).toHaveBeenCalledTimes(1);
   });
+
+  it("forgets a dead handle on keepAlive before the 60s probe threshold", async () => {
+    const dead = {
+      sandboxId: "box-1",
+      setTimeout: vi.fn(async () => {
+        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
+      }),
+    } as unknown as Sandbox;
+    const revived = { sandboxId: "box-1", setTimeout: vi.fn(async () => undefined) };
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(async () => dead),
+      connect: vi.fn(async () => revived as unknown as Sandbox),
+      pause: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    const ref = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+
+    // Still inside box()'s 60s cache window — keepAlive must not refresh lastTouchedAt
+    // on a gone sandbox, or subsequent heartbeats would keep serving the dead handle.
+    await provider.keepAlive?.(ref);
+    expect(dead.setTimeout).toHaveBeenCalledTimes(1);
+    expect(sdk.connect).not.toHaveBeenCalled();
+
+    await provider.keepAlive?.(ref);
+    expect(sdk.connect).toHaveBeenCalledTimes(1);
+    expect(revived.setTimeout).toHaveBeenCalledTimes(1);
+  });
 });
