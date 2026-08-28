@@ -43,19 +43,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV DISPLAY=:1
 ENV HOME=/home/rakazo
 WORKDIR /home/rakazo
-COPY start.sh /usr/local/bin/rakazo-computer
-COPY control.py /usr/local/bin/rakazo-computer-control
+# --chmod normalizes modes: a restrictive host umask (e.g. 077 on hardened hosts) would
+# otherwise leave these files unreadable to USER 1000 at runtime.
+COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
+COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
-COPY rakazo-browser /usr/local/bin/rakazo-browser
-COPY fluxbox.init /etc/rakazo/fluxbox/init
-COPY fluxbox.apps /etc/rakazo/fluxbox/apps
-COPY fluxbox.menu /etc/rakazo/fluxbox/menu
-COPY embed.html /usr/share/novnc/embed.html
+COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
+COPY --chmod=644 fluxbox.init /etc/rakazo/fluxbox/init
+COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
+COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
+COPY --chmod=644 embed.html /usr/share/novnc/embed.html
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.
 RUN ldconfig \
   && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser \
-    /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \
-  && chmod +x /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser
+    /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu
 EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 6093 6094 6095
 USER 1000:1000
 CMD ["/usr/local/bin/rakazo-computer"]
