@@ -8,6 +8,7 @@ import {
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
+import { isLocalMcpHost } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
 import {
   createSafeRemoteFetch,
@@ -75,8 +76,7 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
   if (url.toString().length > max) throw new Error(`MCP URL exceeds ${max} characters`);
   if (url.username || url.password || url.hash)
     throw new Error("MCP URL must not contain credentials or a fragment");
-  const local =
-    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  const local = isLocalMcpHost(url.hostname);
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local)
@@ -101,6 +101,15 @@ export function secureFetch(
   const configured = Object.entries(headerPolicy.headers ?? {}).filter(([name]) =>
     allowed.has(name.toLowerCase()),
   );
+  const configuredNames = new Set(
+    Object.keys(headerPolicy.headers ?? {}).map((name) => name.toLowerCase()),
+  );
+  const localCredentialHeaders = new Set([
+    ...configuredNames,
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+  ]);
   const safeRemoteFetch = createSafeRemoteFetch(
     network.fetch ?? globalThis.fetch,
     network.resolveHostname,
@@ -109,10 +118,17 @@ export function secureFetch(
     const source = input instanceof Request ? input : new Request(input, init);
     const url = validateUrl(source.url, urlPolicy);
     const headers = new Headers(source.headers);
-    if (url.origin === resourceUrl.origin) {
+    const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
+    if (localHttp) {
+      for (const name of [...headers.keys()]) {
+        if (localCredentialHeaders.has(name.toLowerCase())) headers.delete(name);
+      }
+    }
+    if (!localHttp && url.origin === resourceUrl.origin) {
       for (const [name, value] of configured) headers.set(name, value);
     }
     for (const [name, value] of new Headers(init?.headers)) {
+      if (localHttp && localCredentialHeaders.has(name.toLowerCase())) continue;
       if (allowed.has(name.toLowerCase())) headers.set(name, value);
     }
     // Buffer the body: a re-wrapped Request body is a stream without a replayable
@@ -127,7 +143,6 @@ export function secureFetch(
       redirect: "manual",
       signal: source.signal,
     } satisfies RequestInit;
-    const localHttp = url.protocol === "http:";
     const response = localHttp
       ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
       : await safeRemoteFetch(url, requestInit);

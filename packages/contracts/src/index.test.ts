@@ -170,7 +170,7 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
-  it("rejects non-HTTPS MCP endpoints before storage", () => {
+  it("allows localhost HTTP MCP endpoints and rejects other non-HTTPS URLs before storage", () => {
     const base = {
       slug: "demo",
       name: "Demo",
@@ -179,6 +179,17 @@ describe("contracts", () => {
     };
     expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "http://127.0.0.1:3000/mcp" }).success,
+    ).toBe(true);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp" })
+        .success,
+    ).toBe(true);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp#" })
+        .success,
+    ).toBe(false);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://example.test/mcp" }).success,
     ).toBe(false);
     expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "https://mcp.example.test/mcp" }).success,
