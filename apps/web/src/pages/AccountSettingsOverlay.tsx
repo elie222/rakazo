@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
@@ -20,6 +21,7 @@ export function AccountSettingsOverlay({
   focusUsage,
   avatarStyle,
   onAvatarStyleChange,
+  isDeploymentOwner = false,
   onClose,
 }: {
   email?: string | null;
@@ -28,6 +30,7 @@ export function AccountSettingsOverlay({
   focusUsage?: boolean;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
+  isDeploymentOwner?: boolean;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -99,9 +102,6 @@ export function AccountSettingsOverlay({
             <h2 id="account-settings-title" className="text-2xl font-medium text-[#F1F1F2]">
               <Trans>Settings</Trans>
             </h2>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              <Trans>Account preferences apply across all your bots.</Trans>
-            </p>
           </div>
           <button
             type="button"
@@ -186,6 +186,8 @@ export function AccountSettingsOverlay({
             <Trans>Model spend uses your provider keys.</Trans>
           </p>
         </div>
+
+        <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
 
         <details
           data-testid="advanced-settings"

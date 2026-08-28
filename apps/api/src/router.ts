@@ -112,6 +112,13 @@ import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import {
+  applyServerUpdate,
+  checkServerUpdate,
+  readServerUpdateStatus,
+  type UpdaterProxyConfig,
+  UpdaterProxyError,
+} from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
@@ -307,6 +314,10 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    gitSha?: string;
+    updaterUrl?: string;
+    updaterToken?: string;
+    imageTag?: string;
   };
 }
 
@@ -391,6 +402,28 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+      }),
+    },
+    updater: {
+      status: authed.updater.status.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return readServerUpdateStatus(updaterConfig(deps));
+      }),
+      check: authed.updater.check.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        try {
+          return await checkServerUpdate(updaterConfig(deps), input);
+        } catch (error) {
+          mapUpdaterError(error);
+        }
+      }),
+      apply: authed.updater.apply.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        try {
+          return await applyServerUpdate(updaterConfig(deps), input);
+        } catch (error) {
+          mapUpdaterError(error);
+        }
       }),
     },
     models: {
@@ -2966,6 +2999,30 @@ export function createRouter(deps: RouterDeps) {
         prepareVoice(deps, context.actor, input),
       ),
     },
+  });
+}
+
+function updaterConfig(deps: RouterDeps): UpdaterProxyConfig {
+  return {
+    url: deps.env.updaterUrl ?? null,
+    token: deps.env.updaterToken ?? null,
+    gitSha: deps.env.gitSha,
+    imageTag: deps.env.imageTag ?? null,
+  };
+}
+
+function mapUpdaterError(error: unknown): never {
+  if (error instanceof UpdaterProxyError) {
+    if (error.status === 401 || error.status === 403) {
+      throw new ORPCError("FORBIDDEN", { message: error.message });
+    }
+    if (error.status >= 500) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", { message: error.message });
+    }
+    throw new ORPCError("BAD_REQUEST", { message: error.message });
+  }
+  throw new ORPCError("INTERNAL_SERVER_ERROR", {
+    message: error instanceof Error ? error.message : "Update failed.",
   });
 }
 

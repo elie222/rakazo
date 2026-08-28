@@ -5,6 +5,7 @@ import type {
   ConnectorProvider,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
@@ -199,9 +200,12 @@ export class McpConnector implements ConnectorProvider {
         });
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
-        const authProvider = this.oauth
-          ? await this.oauth.providerFor(server, context, loaded)
-          : undefined;
+        const endpoint = new URL(server.endpoint);
+        const localHttp = endpoint.protocol === "http:" && isLocalMcpHost(endpoint.hostname);
+        const authProvider =
+          !localHttp && this.oauth
+            ? await this.oauth.providerFor(server, context, loaded)
+            : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
             ? material.secret
@@ -213,9 +217,10 @@ export class McpConnector implements ConnectorProvider {
         };
         await session.connectRemote({
           url: server.endpoint,
+          urlPolicy: { allowHttpLocalhost: true },
           transport: server.transport === "sse" ? "sse" : "streamable-http",
           allowLegacySse: server.transport === "sse",
-          headerPolicy: { headers },
+          headerPolicy: localHttp ? undefined : { headers },
           fallbackToSse: false,
           authProvider,
           network: this.options.network,

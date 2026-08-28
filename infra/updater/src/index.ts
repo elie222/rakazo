@@ -154,6 +154,8 @@ export function createUpdaterApp(
   };
   let running = false;
   let planInFlight: Promise<unknown> | null = null;
+  /** Survives API recreate so Settings can confirm apply after the proxy drops. */
+  let lastRun: ServerUpdateRun | null = null;
 
   app.get("/health", (c) => c.json({ ok: true, service: "updater", image: config.image }));
 
@@ -178,6 +180,7 @@ export function createUpdaterApp(
         image: config.image,
         imageRef: imageRef(config.image, tags.currentTag),
         running,
+        lastRun,
         ...tags,
         checkout,
       });
@@ -463,12 +466,12 @@ export function createUpdaterApp(
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
       if (targetTag === tags.currentTag) {
-        return upToDateRecord(request, targetTag, "pull", targetCommit);
+        return rememberRun(upToDateRecord(request, targetTag, "pull", targetCommit));
       }
     } else {
       const remoteHead = await resolveRemoteHead(request);
       if (upToDateForBuild(tags.currentTag, checkout.commit, remoteHead)) {
-        return upToDateRecord(request, tags.currentTag, "build", checkout.commit);
+        return rememberRun(upToDateRecord(request, tags.currentTag, "build", checkout.commit));
       }
     }
 
@@ -485,27 +488,29 @@ export function createUpdaterApp(
               repoIdentity(checkout.remoteUrl) !== repoIdentity(request.repoUrl),
           });
 
-    return execute({
-      request,
-      strategy: decision.strategy,
-      fromTag: tags.currentTag,
-      originalPreviousTag: tags.previousTag,
-      toTag: targetTag,
-      fromCommit: checkout.commit,
-      fromBranch: checkout.branch,
-      toCommit: targetCommit,
-      restoreRemoteUrl:
-        decision.strategy === "build" &&
-        checkout.remoteUrl !== null &&
-        repoIdentity(checkout.remoteUrl) !== repoIdentity(request.repoUrl)
-          ? checkout.remoteUrl
-          : null,
-      steps,
-      restartAdvice:
-        decision.strategy === "pull"
-          ? `The updater deployed ${releaseTag ?? targetTag} from its full source-commit image tag and recreated the API, worker, and web containers. Migrations ran inside the new API container before it became healthy.`
-          : "The updater built the fork and recreated the API, worker, and web containers. Migrations ran inside the new API container before it started serving.",
-    });
+    return rememberRun(
+      await execute({
+        request,
+        strategy: decision.strategy,
+        fromTag: tags.currentTag,
+        originalPreviousTag: tags.previousTag,
+        toTag: targetTag,
+        fromCommit: checkout.commit,
+        fromBranch: checkout.branch,
+        toCommit: targetCommit,
+        restoreRemoteUrl:
+          decision.strategy === "build" &&
+          checkout.remoteUrl !== null &&
+          repoIdentity(checkout.remoteUrl) !== repoIdentity(request.repoUrl)
+            ? checkout.remoteUrl
+            : null,
+        steps,
+        restartAdvice:
+          decision.strategy === "pull"
+            ? `The updater deployed ${releaseTag ?? targetTag} from its full source-commit image tag and recreated the API, worker, and web containers. Migrations ran inside the new API container before it became healthy.`
+            : "The updater built the fork and recreated the API, worker, and web containers. Migrations ran inside the new API container before it started serving.",
+      }),
+    );
   }
 
   async function rollback(): Promise<ServerUpdateRun> {
@@ -517,19 +522,26 @@ export function createUpdaterApp(
     const steps = composeUpdatePlan({ strategy: "pull", target: composeTarget }).filter(
       (step) => step.id !== "pull",
     );
-    return execute({
-      request: { repoUrl: "", branch: "" },
-      strategy: "pull",
-      fromTag: tags.currentTag,
-      originalPreviousTag: tags.previousTag,
-      toTag: decision.tag,
-      fromCommit: checkout.commit,
-      fromBranch: checkout.branch,
-      toCommit: null,
-      restoreRemoteUrl: null,
-      steps,
-      restartAdvice: `Rolled back to ${decision.tag}. Database migrations are not reversed: if the newer version added a migration, roll forward again or restore a database backup.`,
-    });
+    return rememberRun(
+      await execute({
+        request: { repoUrl: "", branch: "" },
+        strategy: "pull",
+        fromTag: tags.currentTag,
+        originalPreviousTag: tags.previousTag,
+        toTag: decision.tag,
+        fromCommit: checkout.commit,
+        fromBranch: checkout.branch,
+        toCommit: null,
+        restoreRemoteUrl: null,
+        steps,
+        restartAdvice: `Rolled back to ${decision.tag}. Database migrations are not reversed: if the newer version added a migration, roll forward again or restore a database backup.`,
+      }),
+    );
+  }
+
+  function rememberRun(record: ServerUpdateRun): ServerUpdateRun {
+    lastRun = record;
+    return record;
   }
 
   /**
