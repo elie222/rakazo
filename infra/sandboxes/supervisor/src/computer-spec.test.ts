@@ -9,6 +9,7 @@ import {
   containerCreateOptions,
   containerNameFor,
   hostComputerUser,
+  legacyNetworkOwnedSolelyBy,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -99,6 +100,12 @@ describe("graphical computer spec", () => {
     expect(names).toContain("rakazo-computer-bot_1");
     expect(names.some((name) => /-[0-9a-f]{8}$/.test(name))).toBe(true);
     expect(names.some((name) => /-[0-9a-f]{32}$/.test(name))).toBe(true);
+  });
+
+  it("skips legacy network removal when another bot is still attached", () => {
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(true);
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "ab"])).toBe(false);
+    expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(true);
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {

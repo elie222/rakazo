@@ -18,6 +18,7 @@ import {
   containerCreateOptions,
   containerNameFor,
   hostComputerUser,
+  legacyNetworkOwnedSolelyBy,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -26,7 +27,7 @@ import {
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { ensureComputerHomeOwnership } from "./home-ownership.js";
+import { assertHostComputerHomeCompatible, ensureComputerHomeOwnership } from "./home-ownership.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -143,6 +144,8 @@ app.post("/computers", async (c) => {
       // with the current image already use the desired ownership and runtime user.
       if (runtimeInfo || (process.platform === "linux" && process.getuid?.() === 0)) {
         await ensureComputerHomeOwnership(serviceHomePath);
+      } else {
+        await assertHostComputerHomeCompatible(serviceHomePath);
       }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
@@ -870,10 +873,32 @@ async function ensureBotNetwork(botId: string) {
 }
 
 async function removeBotNetwork(botId: string) {
+  const currentName = computerNetworkNameFor(botId);
   for (const name of computerNetworkNamesForCleanup(botId)) {
     const network = docker.getNetwork(name);
     const info = await network.inspect().catch(() => undefined);
-    for (const containerId of Object.keys(info?.Containers ?? {})) {
+    if (!info) continue;
+    const containerIds = Object.keys(info.Containers ?? {});
+    if (name !== currentName) {
+      const owners: Array<string | undefined> = [];
+      for (const containerId of containerIds) {
+        const labels =
+          (
+            await docker
+              .getContainer(containerId)
+              .inspect()
+              .catch(() => undefined)
+          )?.Config.Labels ?? {};
+        const owner = labels["rakazo.botId"];
+        owners.push(owner);
+        if (owner === botId) {
+          await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+        }
+      }
+      if (!legacyNetworkOwnedSolelyBy(botId, owners)) continue;
+    }
+    const remaining = await network.inspect().catch(() => undefined);
+    for (const containerId of Object.keys(remaining?.Containers ?? {})) {
       await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
     }
     await network.remove().catch(() => undefined);

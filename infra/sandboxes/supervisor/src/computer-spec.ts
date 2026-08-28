@@ -139,6 +139,17 @@ export function computerNetworkNamesForCleanup(botId: string) {
   ];
 }
 
+/**
+ * Legacy unsalted network names can collide across botIds. Only remove such a
+ * network when no other bot's container is still attached.
+ */
+export function legacyNetworkOwnedSolelyBy(
+  botId: string,
+  attachedBotIds: Array<string | undefined>,
+): boolean {
+  return !attachedBotIds.some((owner) => owner && owner !== botId);
+}
+
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
 }

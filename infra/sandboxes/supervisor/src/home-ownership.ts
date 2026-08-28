@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { type FileHandle, lchown, open, opendir } from "node:fs/promises";
+import { type FileHandle, lchown, lstat, open, opendir } from "node:fs/promises";
 import path from "node:path";
 import { COMPUTER_GID, COMPUTER_UID } from "./computer-spec.js";
 
@@ -61,4 +61,33 @@ export async function ensureComputerHomeOwnership(
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Host-run non-root supervisors launch the computer as the supervisor uid/gid.
+ * Fail closed when an existing home still contains foreign-owned entries so the
+ * bind mount is not silently unwritable. Does not chown (non-root cannot).
+ */
+export async function assertHostComputerHomeCompatible(
+  root: string,
+  uid = process.getuid?.(),
+  gid = process.getgid?.(),
+): Promise<void> {
+  if (uid === undefined || gid === undefined || uid === 0) return;
+
+  const visit = async (target: string): Promise<void> => {
+    const stat = await lstat(target);
+    if (stat.uid !== uid || stat.gid !== gid) {
+      throw new Error(
+        `computer home ${root} has entries owned by ${stat.uid}:${stat.gid}; host-run containers use ${uid}:${gid}. Fix ownership (chown -R ${uid}:${gid} ${root}) or run via Compose.`,
+      );
+    }
+    if (!stat.isDirectory()) return;
+    const directory = await opendir(target);
+    for await (const entry of directory) {
+      await visit(path.join(target, entry.name));
+    }
+  };
+
+  await visit(root);
 }
