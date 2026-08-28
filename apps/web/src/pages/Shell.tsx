@@ -120,6 +120,7 @@ import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
+import { browserNotificationMessage, shouldNotifyBrowser } from "../lib/browser-notifications";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
@@ -215,6 +216,24 @@ type PendingAttachment = {
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
+let browserNotificationPermissionRequested = false;
+
+function requestBrowserNotificationPermission(): void {
+  if (
+    browserNotificationPermissionRequested ||
+    typeof Notification === "undefined" ||
+    Notification.permission !== "default"
+  ) {
+    return;
+  }
+  browserNotificationPermissionRequested = true;
+  try {
+    void Notification.requestPermission().catch(() => undefined);
+  } catch {
+    // Browsers can reject permission requests outside a secure context.
+  }
+}
+
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
   if (!userId) return null;
   return `rakazo:collapsed-sidebar-sections:${userId}`;
@@ -248,6 +267,8 @@ export function ShellPage() {
   const userId = session.data?.user.id;
   const [groups, setGroups] = useState<Group[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const botsRef = useRef(bots);
+  botsRef.current = bots;
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
@@ -415,6 +436,7 @@ export function ShellPage() {
   } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
   const readVisibleGroups = useRef(new Set<string>());
+  const notifiedBrowserRuns = useRef(new Set<string>());
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
   const autoSpoken = useRef<string | null>(null);
@@ -485,6 +507,45 @@ export function ShellPage() {
       }
     },
     [markBotRead],
+  );
+  const notifyBrowserForTerminalEvent = useCallback(
+    (
+      event: Pick<ProductEvent, "type" | "threadId" | "runId" | "seq">,
+      subscribedThreadId: string | undefined,
+      initialCursor: number,
+      streamReady: boolean,
+      botName: string,
+      notifyOnFinish: boolean,
+    ) => {
+      const runId = event.runId;
+      if (typeof runId !== "string") return;
+      const permission = typeof Notification === "undefined" ? "denied" : Notification.permission;
+      const shouldNotify = shouldNotifyBrowser(event, {
+        subscribedThreadId: subscribedThreadId ?? "",
+        initialCursor,
+        streamReady,
+        pageVisible: document.visibilityState === "visible",
+        windowFocused: document.hasFocus(),
+        permission,
+        notifiedRunIds: notifiedBrowserRuns.current,
+      });
+      if (
+        streamReady &&
+        isRunTerminalEvent(event) &&
+        event.threadId === subscribedThreadId &&
+        event.seq > initialCursor
+      ) {
+        notifiedBrowserRuns.current.add(runId);
+      }
+      if (!shouldNotify || !notifyOnFinish || typeof Notification === "undefined") return;
+      const message = browserNotificationMessage(event, botName);
+      try {
+        new Notification(message.title, { body: message.body });
+      } catch {
+        // Permission can change between the check and construction.
+      }
+    },
+    [],
   );
 
   const refreshBots = useCallback(
@@ -891,15 +952,28 @@ export function ShellPage() {
       const primed = bootstrappedThread.current;
       bootstrappedThread.current = null;
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const snap =
+      let snap =
         primed?.botId === active.id
           ? primed
           : pendingJump
             ? await rpc.threads.get({ botId: active.id }).catch(() => null)
             : await refreshThread(active.id).catch(() => null);
       if (abort.signal.aborted) return;
-      let cursor = snap?.cursor ?? -1;
+      if (snap === null) {
+        snap = await refreshThread(active.id).catch(() => null);
+        if (abort.signal.aborted) return;
+      }
       let retryMs = 250;
+      while (snap === null && !abort.signal.aborted) {
+        await abortableDelay(retryMs, abort.signal);
+        snap = await refreshThread(active.id).catch(() => null);
+        retryMs = Math.min(retryMs * 2, 5_000);
+      }
+      if (!snap || abort.signal.aborted) return;
+      const subscribedThreadId = snap.threadId;
+      const initialCursor = snap.cursor;
+      let cursor = initialCursor;
+      retryMs = 250;
       while (!abort.signal.aborted) {
         try {
           const events = await rpc.threads.subscribe(
@@ -911,6 +985,14 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            notifyBrowserForTerminalEvent(
+              event,
+              subscribedThreadId,
+              initialCursor,
+              true,
+              active.name,
+              active.notifyOnFinish,
+            );
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
               pinnedAroundRef.current = null;
@@ -957,7 +1039,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, markBotReadIfVisible, notifyBrowserForTerminalEvent]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -997,12 +1079,25 @@ export function ShellPage() {
     historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
-      const snap = pendingJump
+      let snap = pendingJump
         ? await rpc.threads.get({ groupId }).catch(() => null)
         : await refreshGroupThread(groupId).catch(() => null);
       if (abort.signal.aborted) return;
-      let cursor = snap?.cursor ?? -1;
+      if (snap === null) {
+        snap = await refreshGroupThread(groupId).catch(() => null);
+        if (abort.signal.aborted) return;
+      }
       let retryMs = 250;
+      while (snap === null && !abort.signal.aborted) {
+        await abortableDelay(retryMs, abort.signal);
+        snap = await refreshGroupThread(groupId).catch(() => null);
+        retryMs = Math.min(retryMs * 2, 5_000);
+      }
+      if (!snap || abort.signal.aborted) return;
+      const subscribedThreadId = snap.threadId;
+      const initialCursor = snap.cursor;
+      let cursor = initialCursor;
+      retryMs = 250;
       while (!abort.signal.aborted) {
         try {
           const events = await rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal });
@@ -1011,6 +1106,15 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
+            notifyBrowserForTerminalEvent(
+              event,
+              subscribedThreadId,
+              initialCursor,
+              true,
+              eventBot?.name ?? activeGroup.name,
+              eventBot?.notifyOnFinish ?? true,
+            );
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
@@ -1037,7 +1141,7 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
-  }, [activeGroup?.id, groupId]);
+  }, [activeGroup?.id, groupId, notifyBrowserForTerminalEvent]);
 
   const filtered = useMemo(
     () =>
@@ -1491,6 +1595,12 @@ export function ShellPage() {
       );
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+      if (
+        plan.shouldSend &&
+        (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
+      ) {
+        requestBrowserNotificationPermission();
+      }
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
