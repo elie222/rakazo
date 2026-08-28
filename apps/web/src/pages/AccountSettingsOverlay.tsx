@@ -10,6 +10,10 @@ import {
   useState,
 } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
@@ -22,6 +26,7 @@ export function AccountSettingsOverlay({
   avatarStyle,
   onAvatarStyleChange,
   isDeploymentOwner = false,
+  sandboxProvider,
   onClose,
 }: {
   email?: string | null;
@@ -31,6 +36,7 @@ export function AccountSettingsOverlay({
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
   isDeploymentOwner?: boolean;
+  sandboxProvider?: string | null;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -188,6 +194,18 @@ export function AccountSettingsOverlay({
         </div>
 
         <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
+
+        {isDeploymentOwner && computersAreUnavailable(sandboxProvider) ? (
+          <div
+            data-testid="computers-setup-settings"
+            className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4"
+          >
+            <h3 className="text-[15px] font-medium text-[#ECECEE]">
+              <Trans>Computers</Trans>
+            </h3>
+            <ComputersUnavailableHint className="mt-3 text-[13px] leading-relaxed text-[#85858A]" />
+          </div>
+        ) : null}
 
         <details
           data-testid="advanced-settings"

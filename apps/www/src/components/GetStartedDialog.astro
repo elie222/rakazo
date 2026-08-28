@@ -25,12 +25,27 @@ const { copy, waitlist } = Astro.props;
       </svg>
     </button>
 
-    <div data-get-started-signup>
+    <div data-get-started-choice>
       <div class="eyebrow">{copy.eyebrow}</div>
       <h2 id="get-started-title">{copy.title}</h2>
-      <p class="get-started-dialog__copy">
-        {copy.copy}
-      </p>
+      <p class="get-started-dialog__copy">{copy.copy}</p>
+      <div class="get-started-dialog__choices">
+        <button class="get-started-dialog__choice" type="button" data-get-started-selfhost>
+          <span class="get-started-dialog__choice-title">{copy.selfHostNow}</span>
+          <span class="get-started-dialog__choice-hint">{copy.selfHostHint}</span>
+        </button>
+        <button class="get-started-dialog__choice" type="button" data-get-started-cloud>
+          <span class="get-started-dialog__choice-title">{copy.cloudWaitlist}</span>
+          <span class="get-started-dialog__choice-hint">{copy.cloudHint}</span>
+        </button>
+      </div>
+    </div>
+
+    <div data-get-started-signup hidden>
+      <button class="get-started-dialog__back" type="button" data-get-started-back>{copy.back}</button>
+      <div class="eyebrow">{copy.cloudWaitlist}</div>
+      <h2 id="get-started-cloud-title">{copy.cloudWaitlist}</h2>
+      <p class="get-started-dialog__copy">{copy.cloudHint}</p>
       <div class="get-started-dialog__form">
         <WaitlistForm
           emailId="get-started-email"
@@ -56,7 +71,8 @@ const { copy, waitlist } = Astro.props;
         {copy.successCopy}
       </p>
       <div class="get-started-dialog__actions">
-        <Button href={GITHUB_URL} external>{copy.viewOnGithub}</Button>
+        <a class="button button--primary" href="#selfhost" data-get-started-close>{copy.selfHostNow}</a>
+        <Button href={GITHUB_URL} variant="secondary" external>{copy.viewOnGithub}</Button>
         <button class="button button--secondary" type="button" data-get-started-close>{copy.done}</button>
       </div>
     </div>
@@ -67,18 +83,48 @@ const { copy, waitlist } = Astro.props;
   const dialog = document.querySelector<HTMLDialogElement>("[data-get-started-dialog]");
   const openers = document.querySelectorAll<HTMLButtonElement>("[data-get-started-open]");
   const closeButtons = dialog?.querySelectorAll<HTMLButtonElement>("[data-get-started-close]");
+  const choice = dialog?.querySelector<HTMLElement>("[data-get-started-choice]");
   const signup = dialog?.querySelector<HTMLElement>("[data-get-started-signup]");
   const success = dialog?.querySelector<HTMLElement>("[data-get-started-success]");
   const successTitle = dialog?.querySelector<HTMLElement>("[data-get-started-success-title]");
   const email = dialog?.querySelector<HTMLInputElement>("input[type='email']");
+  const selfHostBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-selfhost]");
+  const cloudBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-cloud]");
+  const backBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-back]");
+
+  function showChoice() {
+    if (!choice || !signup || !success) return;
+    choice.hidden = false;
+    signup.hidden = true;
+    success.hidden = true;
+    dialog?.setAttribute("aria-labelledby", "get-started-title");
+  }
+
+  function showCloud() {
+    if (!choice || !signup || !success) return;
+    choice.hidden = true;
+    signup.hidden = false;
+    success.hidden = true;
+    dialog?.setAttribute("aria-labelledby", "get-started-cloud-title");
+    window.requestAnimationFrame(() => email?.focus());
+  }
 
   openers.forEach((opener) => {
     opener.addEventListener("click", () => {
       if (!dialog || dialog.open) return;
+      showChoice();
       dialog.showModal();
-      window.requestAnimationFrame(() => email?.focus());
+      window.requestAnimationFrame(() => selfHostBtn?.focus());
     });
   });
+
+  selfHostBtn?.addEventListener("click", () => {
+    dialog?.close();
+    document.getElementById("selfhost")?.scrollIntoView({ behavior: "smooth" });
+  });
+
+  cloudBtn?.addEventListener("click", () => showCloud());
+  backBtn?.addEventListener("click", () => showChoice());
 
   closeButtons?.forEach((button) => {
     button.addEventListener("click", () => dialog?.close());
@@ -89,7 +135,8 @@ const { copy, waitlist } = Astro.props;
   });
 
   dialog?.addEventListener("waitlist:joined", () => {
-    if (!signup || !success) return;
+    if (!choice || !signup || !success) return;
+    choice.hidden = true;
     signup.hidden = true;
     success.hidden = false;
     dialog.setAttribute("aria-labelledby", "get-started-success-title");

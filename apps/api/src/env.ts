@@ -1,10 +1,12 @@
-import { resolveDeploymentModel } from "@rakazo/adapters";
+import { resolveDeploymentModel, resolveSandboxProvider } from "@rakazo/adapters";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
 } from "@rakazo/core";
+
+export { resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
   databaseUrl: string;
@@ -52,7 +54,7 @@ export interface AppEnv {
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
-  const sandboxProvider = source.SANDBOX_PROVIDER ?? "docker";
+  const sandboxProvider = resolveSandboxProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);

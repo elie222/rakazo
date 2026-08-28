@@ -164,6 +164,36 @@ const structuredData = {
             {copy.selfHost.copy}
           </p>
         </div>
+        <div class="selfhost-install">
+          <h3>{copy.selfHost.installTitle}</h3>
+          <p>{copy.selfHost.installHint}</p>
+          <pre class="selfhost-install__code"><code>{`mkdir rakazo && cd rakazo &&
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.images.yml &&
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/.env.images.example &&
+cp .env.images.example .env &&
+POSTGRES_PASSWORD=$(openssl rand -hex 16) &&
+BETTER_AUTH_SECRET=$(openssl rand -hex 32) &&
+ENCRYPTION_KEY=$(openssl rand -hex 32) &&
+SCREEN_PROXY_SECRET=$(openssl rand -hex 32) &&
+SANDBOX_SUPERVISOR_TOKEN=$(openssl rand -hex 32) &&
+: "\${POSTGRES_PASSWORD:?}" "\${BETTER_AUTH_SECRET:?}" "\${ENCRYPTION_KEY:?}" "\${SCREEN_PROXY_SECRET:?}" "\${SANDBOX_SUPERVISOR_TOKEN:?}" &&
+sed -i.bak \\
+  -e "s/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=\${POSTGRES_PASSWORD}/" \\
+  -e "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=\${BETTER_AUTH_SECRET}/" \\
+  -e "s/^ENCRYPTION_KEY=$/ENCRYPTION_KEY=\${ENCRYPTION_KEY}/" \\
+  -e "s/^SCREEN_PROXY_SECRET=$/SCREEN_PROXY_SECRET=\${SCREEN_PROXY_SECRET}/" \\
+  -e "s/^SANDBOX_SUPERVISOR_TOKEN=$/SANDBOX_SUPERVISOR_TOKEN=\${SANDBOX_SUPERVISOR_TOKEN}/" \\
+  .env && rm -f .env.bak &&
+docker compose --env-file .env -f docker-compose.images.yml pull &&
+docker compose --env-file .env -f docker-compose.images.yml up -d`}</code></pre>
+          <p class="selfhost-install__note">{copy.selfHost.computersNote}</p>
+          <div class="selfhost-install__actions">
+            <Button href={DOCS_URL} size="sm" external>{copy.openSource.readTheDocs}</Button>
+            <Button href={GITHUB_URL} variant="secondary" size="sm" external>
+              {copy.openSource.starOnGithub}
+            </Button>
+          </div>
+        </div>
         <div class="card-grid-3">
           {
             copy.selfHost.features.map((feature) => (

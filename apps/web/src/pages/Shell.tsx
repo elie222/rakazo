@@ -108,6 +108,10 @@ import {
 } from "../components/beautiful-ui/CollaborationMarker";
 import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -2527,11 +2531,15 @@ export function ShellPage() {
                       style={{ pointerEvents: "none" }}
                     />
                   ) : (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      {computerPlaceholder(
-                        computer?.state,
-                        booting,
-                        computerLabel(computer?.mode, active.name),
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
+                      {computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
+                        <ComputersUnavailableHint />
+                      ) : (
+                        computerPlaceholder(
+                          computer?.state,
+                          booting,
+                          computerLabel(computer?.mode, active.name),
+                        )
                       )}
                     </div>
                   )}
@@ -3066,6 +3074,7 @@ export function ShellPage() {
             focusUsage={accountSettingsFocusUsage}
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
+            sandboxProvider={bootstrapMe?.sandboxProvider}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
               setBootstrapMe(nextMe);
@@ -5462,7 +5471,7 @@ function computerPlaceholder(
 ) {
   if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return label;
-  if (state === "suspended") return t`Computer is asleep — take control to wake it`;
+  if (state === "suspended") return t`Computer is asleep. Take control to wake it.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;
 }

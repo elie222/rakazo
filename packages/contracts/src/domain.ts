@@ -728,6 +728,7 @@ export const DeploymentSettingsSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
 });
 
 export const ServerUpdateSourceSchema = z.object({
@@ -841,6 +842,7 @@ export const MeSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
   avatarStyle: AvatarStyleSchema,
 });
 export type Me = z.infer<typeof MeSchema>;
