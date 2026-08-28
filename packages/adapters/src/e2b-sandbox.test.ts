@@ -85,6 +85,34 @@ describe("E2B computer backend", () => {
     expect(run.mock.calls[0]?.[1]?.timeoutMs).toBeGreaterThan(60_000);
   });
 
+  it("surfaces a setup TimeoutError as ComputerScreenUnavailableError", async () => {
+    const run = vi.fn(async () => {
+      throw new TimeoutError("the operation timed out");
+    });
+    const desktop = {
+      sandboxId: "timeout-e2b-box",
+      display: ":0",
+      commands: { run },
+    } as unknown as Sandbox;
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    const computer = {
+      id: "timeout-e2b-box",
+      botId: "bot-1",
+      kind: "e2b" as const,
+      providerRef: "timeout-e2b-box",
+      fresh: false,
+    };
+
+    await expect(provider.connectScreen(computer, { view: "stream" }, context)).rejects.toThrow(
+      ComputerScreenUnavailableError,
+    );
+  });
+
   it("prepares a reused computer idempotently", async () => {
     let profilesConfigured = false;
     const command = vi.fn(async (value: string) => {

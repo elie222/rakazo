@@ -659,6 +659,14 @@ export class E2BSandboxProvider implements SandboxProvider {
         timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
       });
     } catch (error) {
+      if (error instanceof TimeoutError) {
+        return {
+          exitCode: 124,
+          stdout: "",
+          stderr: error.message,
+          error: error.message,
+        };
+      }
       const result = (error as { result?: CommandResult }).result;
       if (result) return result;
       throw error;
