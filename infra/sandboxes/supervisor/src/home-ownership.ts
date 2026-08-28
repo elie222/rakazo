@@ -3,7 +3,6 @@ import { type FileHandle, lstat, open, opendir, readlink } from "node:fs/promise
 import path from "node:path";
 
 const DIRECTORY_OPEN_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const FILE_OPEN_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 
 function hasPermissions(stat: Stats, uid: number, gid: number, required: number): boolean {
   const shift = stat.uid === uid ? 6 : stat.gid === gid ? 3 : 0;
@@ -13,11 +12,6 @@ function hasPermissions(stat: Stats, uid: number, gid: number, required: number)
 function isMissingOrNotDirectory(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR";
-}
-
-function isMissingOrSymlink(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  return code === "ENOENT" || code === "ELOOP";
 }
 
 function isPathInside(root: string, candidate: string): boolean {
@@ -118,22 +112,19 @@ async function assertWritableDirectory(
       continue;
     }
 
-    let childFile: FileHandle | undefined;
+    let childStat: Stats;
     try {
-      childFile = await open(childPath, FILE_OPEN_FLAGS);
+      childStat = await lstat(childPath);
     } catch (error) {
-      // Symlinks and vanished entries are skipped; they are not bind-mounted content.
-      if (isMissingOrSymlink(error)) continue;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
       throw error;
     }
-    try {
-      const fileStat = await childFile.stat();
-      const filePath = await resolveFdPath(childFile.fd);
-      if (!hasPermissions(fileStat, uid, gid, 0b010)) {
-        throw writabilityError(filePath, root, uid, gid);
-      }
-    } finally {
-      await childFile.close();
+    if (childStat.isSymbolicLink()) continue;
+    if (childStat.isDirectory()) {
+      throw new Error(`computer home ${root} changed during validation; retry the request`);
+    }
+    if (!hasPermissions(childStat, uid, gid, 0b010)) {
+      throw writabilityError(path.join(displayPath, entry.name), root, uid, gid);
     }
   }
 
