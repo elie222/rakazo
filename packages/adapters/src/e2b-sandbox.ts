@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { Sandbox, TimeoutError } from "@e2b/desktop";
+import { type CommandResult, Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
@@ -647,8 +647,29 @@ export class E2BSandboxProvider implements SandboxProvider {
     }
   }
 
+  /** Apply the deployment timeout (SDK default is 60s) and return failed results instead of throwing. */
+  private async runSetupCommand(
+    desktop: Sandbox,
+    command: string,
+    signal?: AbortSignal,
+  ): Promise<CommandResult> {
+    try {
+      return await desktop.commands.run(command, {
+        ...(signal ? { signal } : {}),
+        timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
+      });
+    } catch (error) {
+      const result = (error as { result?: CommandResult }).result;
+      if (result) return result;
+      throw error;
+    }
+  }
+
   private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
-    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId));
+    const allocation = await this.runSetupCommand(
+      desktop,
+      allocateExtraDisplayCommand(screenKey, leaseId),
+    );
     if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
     const index = parseAllocatedExtraDisplay(allocation.stdout);
     return extraDisplayLayout(index, desktop.display ?? ":0");
@@ -660,7 +681,8 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<string> {
     if (layout.isPrimary) throw new Error("primary display does not use an extra view password");
-    const result = await desktop.commands.run(
+    const result = await this.runSetupCommand(
+      desktop,
       ensureExtraDisplayCommand(
         layout,
         {
@@ -669,7 +691,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         },
         randomBytes(9).toString("base64url"),
       ),
-      { signal: context.signal },
+      context.signal,
     );
     if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
     return parseExtraDisplayViewPassword(result.stdout);
@@ -706,10 +728,11 @@ export class E2BSandboxProvider implements SandboxProvider {
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${proxyPort} ' && exit 0; sleep 0.1; done`,
         "exit 1",
       ].join(" && ");
-      const result = await desktop.commands.run(command);
+      const result = await this.runSetupCommand(desktop, command);
       if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
     } else {
-      const result = await desktop.commands.run(
+      const result = await this.runSetupCommand(
+        desktop,
         extraDisplayControlStartCommand(layout, controlToken, password),
       );
       if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
