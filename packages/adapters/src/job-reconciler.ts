@@ -105,7 +105,6 @@ export function createJobReconciler(
   let timer: ReturnType<typeof setInterval> | undefined;
   let reconciling: Promise<void> | undefined;
   let runCursor: Cursor | undefined;
-  let outcomeCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
   let controlScanDeadline: Date | undefined;
@@ -213,23 +212,9 @@ export function createJobReconciler(
       if (events) {
         const outcomes = await deps.prisma.run.findMany({
           where: {
-            AND: [
-              {
-                trigger: "bot_message",
-                status: { in: ["completed", "failed"] },
-                botOutcomeReturnedAt: null,
-              },
-              ...(outcomeCursor
-                ? [
-                    {
-                      OR: [
-                        { updatedAt: { gt: outcomeCursor.at } },
-                        { updatedAt: outcomeCursor.at, id: { gt: outcomeCursor.id } },
-                      ],
-                    },
-                  ]
-                : []),
-            ],
+            trigger: "bot_message",
+            status: { in: ["completed", "failed"] },
+            botOutcomeReturnedAt: null,
           },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: batchSize,
@@ -242,7 +227,6 @@ export function createJobReconciler(
             sourceMessageId: true,
             status: true,
             error: true,
-            updatedAt: true,
             bot: { select: { name: true } },
           },
         });
@@ -267,14 +251,15 @@ export function createJobReconciler(
               { id: run.botId, name: run.bot.name },
               text,
               run.status === "failed" ? "status" : "result",
-            ).catch((error) => console.error("bot message outcome reconciliation", error));
+            ).catch(async (error) => {
+              console.error("bot message outcome reconciliation", error);
+              await deps.prisma.run.updateMany({
+                where: { id: run.id, botOutcomeReturnedAt: null },
+                data: { updatedAt: new Date() },
+              });
+            });
           }),
         );
-        const lastOutcome = outcomes.at(-1);
-        outcomeCursor =
-          outcomes.length === batchSize && lastOutcome
-            ? { at: lastOutcome.updatedAt, id: lastOutcome.id }
-            : undefined;
       }
 
       await Promise.all([

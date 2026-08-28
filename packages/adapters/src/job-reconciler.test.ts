@@ -276,7 +276,6 @@ describe("createJobReconciler", () => {
       sourceMessageId: "message-1",
       status: "completed",
       error: null,
-      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       bot: { name: "Researcher" },
     };
     const runFindMany = vi
@@ -288,7 +287,7 @@ describe("createJobReconciler", () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([terminalRun]);
     const prisma = {
-      run: { findMany: runFindMany },
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
       routine: { findMany: vi.fn(async () => []) },
       computer: { findMany: vi.fn(async () => []) },
       message: {
@@ -311,14 +310,11 @@ describe("createJobReconciler", () => {
     expect(runFindMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         where: {
-          AND: [
-            {
-              trigger: "bot_message",
-              status: { in: ["completed", "failed"] },
-              botOutcomeReturnedAt: null,
-            },
-          ],
+          trigger: "bot_message",
+          status: { in: ["completed", "failed"] },
+          botOutcomeReturnedAt: null,
         },
       }),
     );
@@ -329,20 +325,10 @@ describe("createJobReconciler", () => {
       "Finished.",
       "result",
     );
-    expect(runFindMany).toHaveBeenNthCalledWith(
-      4,
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          AND: [
-            expect.anything(),
-            {
-              OR: [
-                { updatedAt: { gt: terminalRun.updatedAt } },
-                { updatedAt: terminalRun.updatedAt, id: { gt: terminalRun.id } },
-              ],
-            },
-          ],
-        },
+        where: { id: terminalRun.id, botOutcomeReturnedAt: null },
+        data: { updatedAt: expect.any(Date) },
       }),
     );
     expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
