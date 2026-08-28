@@ -244,6 +244,30 @@ describe("messaging another bot", () => {
     );
   });
 
+  it("does not exempt a terminal reply to another terminal reply", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "finished",
+          hop: 6,
+          intent: "result",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "acknowledged", intent: "result" },
+      { allowTerminalSource: true },
+    );
+    expect(sent.ok).toBe(false);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
   it("does not let a result label bypass the hop limit toward an unrelated bot", async () => {
     const harness = deps({
       bots: [

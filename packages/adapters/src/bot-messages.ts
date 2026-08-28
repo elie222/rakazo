@@ -94,6 +94,9 @@ export async function messageBot(
   const returnsToSender =
     options?.allowTerminalSource === true &&
     (intent === "result" || intent === "status") &&
+    (sourceContext?.intent === undefined ||
+      sourceContext.intent === "request" ||
+      sourceContext.intent === "question") &&
     sourceContext?.fromBotId === target.id;
   if (botMessageHopExhausted(hop) && !returnsToSender) {
     return {
