@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BrowserNotificationApi,
   type BrowserNotificationContext,
@@ -6,6 +6,7 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "./browser-notifications.js";
+import { i18n } from "./i18n.js";
 
 function event(
   overrides: Partial<{
@@ -38,6 +39,18 @@ function context(overrides: Partial<BrowserNotificationContext> = {}): BrowserNo
 }
 
 describe("browser run notifications", () => {
+  beforeEach(() => {
+    i18n.load("en", {
+      "{name} failed": "Chief failed",
+      "{name} finished": "Chief finished",
+      "{name} stopped": "Chief stopped",
+      "Your bot run failed.": "Your bot run failed.",
+      "Your bot run was stopped.": "Your bot run was stopped.",
+      "Your bot finished its work.": "Your bot finished its work.",
+    });
+    i18n.activate("en");
+  });
+
   it("only accepts a new terminal event for the hidden or unfocused subscribed thread", () => {
     expect(shouldNotifyBrowser(event(), context())).toBe(true);
     expect(shouldNotifyBrowser(event({ type: "run.started" }), context())).toBe(false);

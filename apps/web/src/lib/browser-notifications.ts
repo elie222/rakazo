@@ -1,5 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { isRunTerminalEvent } from "@rakazo/core";
+import { i18n } from "./i18n";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
 
@@ -57,12 +58,24 @@ export function browserNotificationMessage(
   event: Pick<ProductEvent, "type">,
   botName: string,
 ): { title: string; body: string } {
-  const name = botName.trim() || "Bot";
+  const name = botName.trim() || i18n._({ id: "Bot", message: "Bot" });
   if (event.type === "run.failed") {
-    return { title: `${name} failed`, body: "Your bot run failed." };
+    return {
+      title: i18n._({ id: "{name} failed", message: "{name} failed", values: { name } }),
+      body: i18n._({ id: "Your bot run failed.", message: "Your bot run failed." }),
+    };
   }
   if (event.type === "run.cancelled") {
-    return { title: `${name} stopped`, body: "Your bot run was stopped." };
+    return {
+      title: i18n._({ id: "{name} stopped", message: "{name} stopped", values: { name } }),
+      body: i18n._({
+        id: "Your bot run was stopped.",
+        message: "Your bot run was stopped.",
+      }),
+    };
   }
-  return { title: `${name} finished`, body: "Your bot finished its work." };
+  return {
+    title: i18n._({ id: "{name} finished", message: "{name} finished", values: { name } }),
+    body: i18n._({ id: "Your bot finished its work.", message: "Your bot finished its work." }),
+  };
 }
