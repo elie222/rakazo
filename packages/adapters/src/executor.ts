@@ -30,6 +30,8 @@ import {
   applyJudgeDecision,
   assertTransition,
   blocksToAgentHistoryText,
+  botMessageAllowsSilence,
+  botMessageContext,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -89,7 +91,7 @@ import {
   resolveAutoReviewChecker,
   runAutoReviewJudge,
 } from "./auto-review.js";
-import { messageBot } from "./bot-messages.js";
+import { messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -834,6 +836,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
+        const peerMessage =
+          run.trigger === "bot_message"
+            ? botMessageContext(
+                (messages.find((message) => message.id === run.sourceMessageId)?.blocks as
+                  | MessageBlock[]
+                  | undefined) ?? [],
+              )
+            : undefined;
+        const allowSilentPeerMessage = botMessageAllowsSilence(peerMessage?.intent);
+        const emptyResponseText = peerMessage
+          ? peerMessage.intent === "result" ||
+            peerMessage.intent === "status" ||
+            peerMessage.intent === "question"
+            ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
+            : "The delegated bot completed its turn without a written summary."
+          : undefined;
         const recallPromise =
           semanticMemory && memoryScope && thread.historyCompactedUpToSeq != null
             ? semanticMemory.recall(
@@ -2158,6 +2176,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 bot_id: args.bot_id ? String(args.bot_id) : undefined,
                 confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
                 message: redactSecrets(String(args.message ?? ""), runSecrets),
+                intent: args.intent as
+                  | "request"
+                  | "result"
+                  | "question"
+                  | "status"
+                  | "fyi"
+                  | undefined,
                 deliveryKey: executionId,
               },
             );
@@ -2369,7 +2394,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
-              allowSilentEmpty: run.trigger === "bot_message",
+              allowSilentEmpty: allowSilentPeerMessage,
+              emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
             },
             context,
@@ -2645,13 +2671,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
           flushPendingTools();
           if (!assembled) {
             messageSegments = completionMessageSegments(messageSegments, {
-              allowSilentEmpty: run.trigger === "bot_message",
+              allowSilentEmpty: allowSilentPeerMessage,
+              emptyResponseText,
             });
           }
           const blocks = redactBlocks(messageSegments, runSecrets);
           const text = redactSecrets(completionNotificationBody(assembled, blocks), runSecrets);
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
+          }
+          if (run.trigger === "bot_message" && text) {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              text,
+            ).catch((error) => console.error("bot message result return", error));
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const completed = await deps.events.finalizeRun({
@@ -2713,6 +2748,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
+          if (run.trigger === "bot_message") {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              `Could not complete the delegated request: ${message}`,
+              "status",
+            ).catch((returnError) => console.error("bot message failure return", returnError));
+          }
           const failed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
@@ -2848,11 +2892,19 @@ function computerRetryDelay(fence: number): number {
 
 export function completionMessageSegments(
   segments: MessageBlock[],
-  options?: { allowSilentEmpty?: boolean },
+  options?: { allowSilentEmpty?: boolean; emptyResponseText?: string },
 ): MessageBlock[] {
-  if (segments.length > 0) return segments;
+  if (segments.length > 0) {
+    if (
+      options?.emptyResponseText &&
+      !segments.some((segment) => segment.kind === "text" && segment.text)
+    ) {
+      return [...segments, { kind: "text", text: options.emptyResponseText }];
+    }
+    return segments;
+  }
   if (options?.allowSilentEmpty) return [];
-  return [{ kind: "text", text: "done." }];
+  return [{ kind: "text", text: options?.emptyResponseText ?? "done." }];
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */

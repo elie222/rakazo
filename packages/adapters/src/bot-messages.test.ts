@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { currentBotMessageHop, messageBot } from "./bot-messages.js";
+import { currentBotMessageHop, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
 
 const run = {
@@ -22,6 +22,7 @@ function deps(
     targetArchived?: boolean;
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
+    transactionConflictOnce?: boolean;
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -34,6 +35,7 @@ function deps(
         : { blocks: options.hopBlocks ?? [] },
     );
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
     run: {
       findFirst: vi
         .fn()
@@ -53,6 +55,7 @@ function deps(
     event: { create: vi.fn().mockResolvedValue({ seq: 7 }) },
     thread: { update: vi.fn().mockResolvedValue({}) },
   };
+  let transactionAttempts = 0;
   const prisma = {
     bot: {
       findMany: vi
@@ -63,8 +66,12 @@ function deps(
           ],
         ),
     },
-    message: { findUnique: messageFindUnique },
+    message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
+      transactionAttempts += 1;
+      if (options.transactionConflictOnce && transactionAttempts === 1) {
+        throw Object.assign(new Error("write conflict"), { code: "P2034" });
+      }
       if (options.uniqueConflictOnCommit) {
         throw Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
       }
@@ -113,6 +120,11 @@ describe("messaging another bot", () => {
     expect(harness.notify).toHaveBeenCalledWith("thread-target", 7);
     expect(harness.notify).toHaveBeenCalledWith("thread-sender", 7);
     expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
+    expect(
+      harness.tx.thread.update.mock.calls.filter(
+        ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
+      ),
+    ).toHaveLength(2);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -157,6 +169,16 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({ ok: false, error: "message is required" });
   });
 
+  it("rejects an oversized message instead of silently truncating it", async () => {
+    const harness = deps();
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "x".repeat(8_001),
+    });
+    expect(sent).toEqual({ ok: false, error: "message exceeds the 8000 character limit" });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
   it("does not deliver once the sending run is no longer active", async () => {
     const harness = deps({ senderRunning: false });
     const sent = await messageBot(harness.deps, run, sender, {
@@ -181,6 +203,38 @@ describe("messaging another bot", () => {
     );
     expect(sent.ok).toBe(false);
     expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("allows a final result back through after the request hop limit", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "please finish",
+          hop: 6,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "finished", intent: "result" },
+    );
+    expect(sent.ok).toBe(true);
+    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          replyToMessageId: "message-request",
+          blocks: expect.arrayContaining([expect.objectContaining({ intent: "result" })]),
+        }),
+      }),
+    );
   });
 
   it("keeps a person-started chain going", async () => {
@@ -286,5 +340,45 @@ describe("hardening", () => {
     expect(sent).toMatchObject({ ok: true, replayed: true, botId: "bot-target" });
     expect(harness.enqueue).not.toHaveBeenCalled();
     expect(harness.notify).not.toHaveBeenCalled();
+  });
+
+  it("retries a serialization conflict without dropping the delivery", async () => {
+    const harness = deps({ transactionConflictOnce: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart it",
+    });
+    expect(sent.ok).toBe(true);
+    expect(harness.deps.prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+});
+
+describe("automatic outcome return", () => {
+  it("routes a delegated run's final text back to its coordinator", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "research this",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "The answer is 42.",
+    );
+    expect(returned).toBe(true);
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ trigger: "bot_message" }) }),
+    );
+    expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 });
