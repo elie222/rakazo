@@ -311,9 +311,15 @@ export async function returnBotMessageOutcome(
   intent: "result" | "status" = "result",
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
-  if (!source) return false;
+  if (!source) {
+    await markBotOutcomeReturned(deps.prisma, run.id);
+    return false;
+  }
   const sourceIntent = source.intent ?? "request";
-  if (sourceIntent !== "request" && sourceIntent !== "question") return false;
+  if (sourceIntent !== "request" && sourceIntent !== "question") {
+    await markBotOutcomeReturned(deps.prisma, run.id);
+    return false;
+  }
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
     select: { blocks: true },
@@ -326,7 +332,10 @@ export async function returnBotMessageOutcome(
         block.intent === "result",
     ),
   );
-  if (alreadyReturned) return false;
+  if (alreadyReturned) {
+    await markBotOutcomeReturned(deps.prisma, run.id);
+    return false;
+  }
   const outcome = await messageBot(
     deps,
     run,
@@ -339,7 +348,15 @@ export async function returnBotMessageOutcome(
     },
     { allowTerminalSource: true },
   );
+  if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);
   return outcome.ok;
+}
+
+async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
+  await prisma.run.updateMany({
+    where: { id: runId, status: { in: ["completed", "failed"] } },
+    data: { botOutcomeReturnedAt: new Date() },
+  });
 }
 
 function isUniqueConstraintError(error: unknown) {

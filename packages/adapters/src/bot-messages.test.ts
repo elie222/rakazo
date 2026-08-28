@@ -72,6 +72,7 @@ function deps(
         ),
     },
     message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
+    run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
       transactionAttempts += 1;
       if (options.transactionConflictOnce && transactionAttempts === 1) {
@@ -462,5 +463,8 @@ describe("automatic outcome return", () => {
       }),
     );
     expect(harness.enqueue).toHaveBeenCalledOnce();
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { botOutcomeReturnedAt: expect.any(Date) } }),
+    );
   });
 });
