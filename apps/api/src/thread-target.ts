@@ -605,22 +605,25 @@ export async function stopThreadRuns(
   },
   actor: Actor,
   target: ThreadTarget,
+  preCancelledRunIds?: string[],
 ) {
-  const activeRuns = await deps.prisma.run.findMany({
-    where: {
-      threadId: target.threadId,
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-    },
-    select: { id: true, botId: true },
-  });
-  await deps.prisma.run.updateMany({
-    where: {
-      threadId: target.threadId,
-      status: { in: [...ACTIVE_RUN_STATUSES] },
-    },
-    data: { status: "cancelled", completedAt: new Date() },
-  });
-  const runIds = activeRuns.map((run) => run.id);
+  const runIds =
+    preCancelledRunIds ??
+    (
+      await deps.prisma.run.findMany({
+        where: {
+          threadId: target.threadId,
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: { id: true },
+      })
+    ).map((run) => run.id);
+  if (!preCancelledRunIds) {
+    await deps.prisma.run.updateMany({
+      where: { id: { in: runIds } },
+      data: { status: "cancelled", completedAt: new Date() },
+    });
+  }
   const computers = runIds.length
     ? await deps.prisma.computer.findMany({
         where: { executionRunId: { in: runIds } },
@@ -659,7 +662,7 @@ export async function stopThreadRuns(
   await deps.prisma.event.deleteMany({
     where: {
       type: "thread.progress",
-      runId: { in: activeRuns.map((run) => run.id) },
+      runId: { in: runIds },
     },
   });
 }

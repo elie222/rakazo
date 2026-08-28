@@ -5146,8 +5146,8 @@ function ClearConversationDialog({
           className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
         >
           <Trans>
-            This permanently removes every message and stops current work. The bot, computer,
-            memory, and routines are kept.
+            This permanently removes every message and stops current work. The chat remains
+            available.
           </Trans>
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
@@ -5190,6 +5190,7 @@ function DeleteBotDialog({
   onCancel: () => void;
   onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -5356,7 +5357,7 @@ function DeleteItemDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : `Could not delete ${noun}`);
+                setError(err instanceof Error ? err.message : t`Could not delete ${noun}`);
                 setDeleting(false);
               });
             }}
