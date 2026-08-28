@@ -763,9 +763,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       signupsEnabled: false,
       signupAllowlist: ["attacker@example.test"],
     });
-    await expectDenied(app, other, "updater/status", {});
-    await expectDenied(app, other, "updater/check", {});
-    await expectDenied(app, other, "updater/apply", {});
+    await expectForbidden(app, other, "updater/status", {});
+    await expectForbidden(app, other, "updater/check", {});
+    await expectForbidden(app, other, "updater/apply", {});
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
@@ -895,6 +895,12 @@ async function expectDenied(app: App, cookie: string, procedure: string, body: u
     return;
   }
   expect(response.status, procedure).toBeGreaterThanOrEqual(400);
+}
+
+async function expectForbidden(app: App, cookie: string, procedure: string, body: unknown) {
+  const response = await raw(app, cookie, procedure, body);
+  expect(response.status, procedure).toBe(403);
+  expect(await response.text(), procedure).toMatch(/forbidden/i);
 }
 
 interface Actor {

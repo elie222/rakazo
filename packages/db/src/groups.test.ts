@@ -73,6 +73,11 @@ describe("archiveGroup", () => {
     });
 
     expect(queryRaw).toHaveBeenCalled();
+    expect(findManyRuns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ threadId: "thread-1" }),
+      }),
+    );
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

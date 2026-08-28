@@ -82,6 +82,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await captureScreenshot(page, testInfo, "40-restored-auth-session");
   await composer.press("Enter");
   await expect(composer).toHaveValue("");
-  // Message also appears in the activity sidebar while the run is active.
+  // Scope to the transcript: the sidebar activity row can echo the same text.
   await expect(page.getByTestId("transcript").getByText(message, { exact: true })).toBeVisible();
 });

@@ -78,6 +78,23 @@ your first bot.
 For an agent-assisted installation, use [SETUP_PROMPT.md](./SETUP_PROMPT.md). For deployment,
 provider selection, backups, and upgrades, see the [self-hosting guide](./docs/self-host.md).
 
+### Self-host from published images
+
+No clone required. Create a folder, drop the compose file and env example, set secrets, then pull
+and start:
+
+```bash
+mkdir rakazo && cd rakazo
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.images.yml
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/.env.images.example
+cp .env.images.example .env
+# set POSTGRES_PASSWORD, BETTER_AUTH_SECRET, ENCRYPTION_KEY, SCREEN_PROXY_SECRET, E2B_API_KEY
+# on arm64, pin RAKAZO_IMAGE_TAG to a release (latest / vX.Y.Z); edge is amd64-only
+docker compose --env-file .env -f docker-compose.images.yml up -d
+```
+
+Details and tag choices: [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
+
 ## Desktop and mobile
 
 The Electron and Expo apps are clients of the same Rakazo API used by the web app.

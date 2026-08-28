@@ -6,6 +6,33 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up.
 
+## Published images (no checkout)
+
+Pull Postgres and `ghcr.io/elie222/rakazo/app` into any empty folder. No clone or image build.
+
+```bash
+mkdir rakazo && cd rakazo
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.images.yml
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/.env.images.example
+cp .env.images.example .env
+```
+
+Set `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET`. Add
+`E2B_API_KEY` (default computer provider) and an optional model key such as `OPENROUTER_API_KEY`.
+The example defaults to `edge` (main builds, `linux/amd64` only). On arm64 hosts, or when you want
+a fixed version, pin `RAKAZO_IMAGE_TAG` to a release (`latest` or `vX.Y.Z`; those publish
+amd64+arm64). See [Published images and tags](#published-images-and-tags).
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml pull
+docker compose --env-file .env -f docker-compose.images.yml up -d
+```
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
+deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
+that HTTPS URL. For Docker sandboxes on the same machine, or automatic HTTPS via Caddy, use the
+Compose paths below (those still expect a checkout).
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
@@ -243,6 +270,10 @@ this repository that is:
 | `ghcr.io/elie222/rakazo/app` | api, worker, and web — one image, three commands |
 | `ghcr.io/elie222/rakazo/updater` | the updater sidecar, plus the Docker CLI |
 
+`infra/compose/docker-compose.images.yml` is the no-checkout path for those app tags plus Postgres.
+Production Compose (`docker-compose.prod.yml`) can also pull the same tags once
+`RAKAZO_IMAGE_TAG` is set to a published value.
+
 If you deploy from your own fork, set `RAKAZO_IMAGE` and `RAKAZO_UPDATER_IMAGE` to your namespace —
 your CI cannot publish into someone else's.
 
@@ -254,6 +285,10 @@ your CI cannot publish into someone else's.
 | `latest` | stable `vX.Y.Z` tags only (not prereleases) | yes, to the newest stable release |
 | `sha-<full-commit>` | every push and manual run | source-addressed; used by the updater sidecar |
 | `edge` | pushes to main | yes, to the newest main build |
+
+`edge` from everyday main merges is `linux/amd64` only. Release tags (`v*`) and manual
+`workflow_dispatch` publishes are multi-arch (`amd64` + `arm64`). On arm64 hosts, pin a release
+tag rather than `edge`.
 
 The updater resolves the newest stable `vX.Y.Z` source tag but deploys its `sha-<full-commit>` image,
 not `latest` or a moving minor tag. A registry tag is not an OCI digest and GHCR package writers can
