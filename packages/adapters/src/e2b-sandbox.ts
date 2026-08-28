@@ -72,7 +72,9 @@ export function e2bCreateOptions(botId: string, apiKey: string) {
 
 // A sandbox that has expired stops resolving as a host, so reaching it fails at the socket
 // rather than with a 404. undici reports every one of those as a bare "fetch failed" and
-// hides the errno on the cause chain.
+// hides the errno on the cause chain. Used only by provision reconnect: replaceComputer must
+// not treat these as permanent, or an update-mode checkpoint blip destroys the old box
+// without committing workspace changes that exist only there.
 const SANDBOX_UNREACHABLE_CODES = new Set([
   "ECONNREFUSED",
   "ECONNRESET",
@@ -84,7 +86,7 @@ const SANDBOX_UNREACHABLE_CODES = new Set([
   "UND_ERR_SOCKET",
 ]);
 
-function isUnreachableTransportError(error: unknown): boolean {
+export function isUnreachableTransportError(error: unknown): boolean {
   for (let current = error; current instanceof Error; current = current.cause) {
     const code = (current as { code?: unknown }).code;
     if (typeof code === "string" && SANDBOX_UNREACHABLE_CODES.has(code)) return true;
@@ -94,17 +96,16 @@ function isUnreachableTransportError(error: unknown): boolean {
 }
 
 /**
- * True when the sandbox this error came from cannot be reached again, so the caller should
- * boot a fresh one. A reconnect that fails must never be fatal: rethrowing left the bot
- * dialling the same dead sandbox on all 25 retries, with no way out.
+ * True when the sandbox is permanently gone (404 / killed / not found). Used by
+ * replaceComputer to decide whether to swallow checkpoint/destroy failures.
+ * Transient transport errors stay recoverable so update/reset can abort without
+ * discarding an uncommitted workspace on a still-reachable box.
  */
 export function isUnrecoverableSandboxError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  if (
-    /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(message)
-  )
-    return true;
-  return isUnreachableTransportError(error);
+  return /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(
+    message,
+  );
 }
 
 export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
@@ -257,7 +258,10 @@ export class E2BSandboxProvider implements SandboxProvider {
         };
       } catch (error) {
         this.boxes.delete(request.providerRef);
-        if (!isUnrecoverableSandboxError(error)) throw error;
+        // Permanent gone (404/killed) or unreachable transport: boot fresh. Other errors rethrow.
+        if (!isUnrecoverableSandboxError(error) && !isUnreachableTransportError(error)) {
+          throw error;
+        }
       }
     }
     const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
