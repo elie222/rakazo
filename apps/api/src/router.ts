@@ -1738,9 +1738,9 @@ export function createRouter(deps: RouterDeps) {
               message: "One-shot schedules must be created from chat.",
             });
           }
-          if (!existing.nextRunAt) {
+          if (!existing.nextRunAt && existing.lastRunAt) {
             throw new ORPCError("BAD_REQUEST", {
-              message: "One-shot schedules cannot be reactivated after they fire.",
+              message: "This one-shot already ran.",
             });
           }
         }
@@ -1753,10 +1753,29 @@ export function createRouter(deps: RouterDeps) {
           !isOneShotRoutineCrons(crons) && (scheduleChanged || (active && !existing.nextRunAt))
             ? nextRoutineDate(crons, timezone)
             : null;
+        let armedOneShotAt: Date | null = null;
+        if (active && isOneShotRoutineCrons(crons) && !existing.nextRunAt && !existing.lastRunAt) {
+          if (!input.runAt) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Add a run time for this one-shot.",
+            });
+          }
+          const parsed = new Date(input.runAt);
+          if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Run time must be in the future.",
+            });
+          }
+          armedOneShotAt = parsed;
+        } else if (input.runAt !== undefined) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A run time is only for one-shots that have not run yet.",
+          });
+        }
         const nextRunAt = !active
           ? null
           : isOneShotRoutineCrons(crons)
-            ? existing.nextRunAt
+            ? (armedOneShotAt ?? existing.nextRunAt)
             : (recalculatedNextRunAt ?? existing.nextRunAt);
         const row = await deps.prisma.routine.update({
           where: { id: existing.id },

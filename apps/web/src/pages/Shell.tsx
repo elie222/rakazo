@@ -46,6 +46,7 @@ import {
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  isOneShotRoutineCrons,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   mentionChipKey,
@@ -227,6 +228,35 @@ function readCollapsedSidebarSections(userId: string | null | undefined): Set<st
   }
 }
 
+function toDatetimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function defaultArmRunAtLocal(): string {
+  return toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
+}
+
+function routineNeedsOneShotArm(
+  routine: Pick<Routine, "nextRunAt" | "lastRunAt">,
+  crons: string[],
+) {
+  return isOneShotRoutineCrons(crons) && !routine.nextRunAt && !routine.lastRunAt;
+}
+
+function emptyRoutineDraft() {
+  return { name: "", prompt: "", schedules: [defaultCronPreset()], runAtLocal: "" };
+}
+
+function draftFromRoutine(routine: Routine) {
+  return {
+    name: routine.name,
+    prompt: routine.prompt,
+    schedules: routine.crons.map(presetFromCron),
+    runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
+  };
+}
+
 export function ShellPage() {
   const { t } = useLingui();
   const { botId, groupId } = useParams();
@@ -370,11 +400,7 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
-  const [routineDraft, setRoutineDraft] = useState({
-    name: "",
-    prompt: "",
-    schedules: [defaultCronPreset()],
-  });
+  const [routineDraft, setRoutineDraft] = useState(emptyRoutineDraft);
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -1186,11 +1212,7 @@ export function ShellPage() {
     if (routineId && routinesBotId === active.id) {
       const routine = routines.find((item) => item.id === routineId);
       if (routine) {
-        setRoutineDraft({
-          name: routine.name,
-          prompt: routine.prompt,
-          schedules: routine.crons.map(presetFromCron),
-        });
+        setRoutineDraft(draftFromRoutine(routine));
         setEditingRoutine(routine);
         setPanel("routine");
       } else {
@@ -1661,7 +1683,7 @@ export function ShellPage() {
     await refreshThreadRef.current(id);
   }, []);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
-    setRoutineDraft({ name, prompt, schedules: [defaultCronPreset()] });
+    setRoutineDraft({ ...emptyRoutineDraft(), name, prompt });
     setEditingRoutine(null);
     setPanel("routine");
   }, []);
@@ -2601,11 +2623,7 @@ export function ShellPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setRoutineDraft({
-                            name: routine.name,
-                            prompt: routine.prompt,
-                            schedules: routine.crons.map(presetFromCron),
-                          });
+                          setRoutineDraft(draftFromRoutine(routine));
                           setEditingRoutine(routine);
                           setPanel("routine");
                         }}
@@ -2637,7 +2655,7 @@ export function ShellPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
+                    setRoutineDraft(emptyRoutineDraft());
                     setEditingRoutine(null);
                     setPanel("routine");
                   }}
@@ -2656,9 +2674,9 @@ export function ShellPage() {
                     onStopTeaching={stopTeaching}
                     onAddRoutine={(skill) => {
                       setRoutineDraft({
+                        ...emptyRoutineDraft(),
                         name: skill.name || skill.goal.slice(0, 80),
                         prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-                        schedules: [defaultCronPreset()],
                       });
                       setEditingRoutine(null);
                       setPanel("routine");
@@ -2785,6 +2803,24 @@ export function ShellPage() {
                     />
                   </Suspense>
                 </div>
+                {editingRoutine &&
+                routineNeedsOneShotArm(
+                  editingRoutine,
+                  routineDraft.schedules.map(cronFromPreset),
+                ) ? (
+                  <label className="mt-5 block text-[14px] text-[#85858A]">
+                    <Trans>Run at</Trans>
+                    <input
+                      type="datetime-local"
+                      value={routineDraft.runAtLocal}
+                      onChange={(e) =>
+                        setRoutineDraft((s) => ({ ...s, runAtLocal: e.target.value }))
+                      }
+                      aria-label={t`Run at`}
+                      className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                    />
+                  </label>
+                ) : null}
                 <div className="mt-5 flex items-center gap-3">
                   <button
                     type="button"
@@ -2801,11 +2837,32 @@ export function ShellPage() {
                       try {
                         const crons = routineDraft.schedules.map(cronFromPreset);
                         if (targetRoutine) {
+                          const armOneShot = routineNeedsOneShotArm(targetRoutine, crons);
+                          let runAt: string | undefined;
+                          if (armOneShot) {
+                            if (!routineDraft.runAtLocal) {
+                              setRoutineError(t`Add a run time for this one-shot.`);
+                              return;
+                            }
+                            const parsed = new Date(routineDraft.runAtLocal);
+                            if (
+                              !Number.isFinite(parsed.getTime()) ||
+                              parsed.getTime() <= Date.now()
+                            ) {
+                              setRoutineError(t`Run time must be in the future.`);
+                              return;
+                            }
+                            runAt = parsed.toISOString();
+                          }
                           await rpc.routines.update({
                             routineId: targetRoutine.id,
                             name: routineDraft.name || t`Routine`,
                             prompt: routineDraft.prompt || t`Check in.`,
                             crons,
+                            ...(!targetRoutine.active && !targetRoutine.lastRunAt
+                              ? { active: true }
+                              : {}),
+                            ...(runAt ? { runAt } : {}),
                           });
                         } else {
                           await rpc.routines.create({
