@@ -13,10 +13,10 @@ export function mergeCatalogWithConnected(
   directory: ToolkitDirectoryEntry[],
   connectedSlugs: Iterable<string>,
 ): ToolkitCatalogEntry[] {
-  const connected = new Set(connectedSlugs);
+  const connected = new Set([...connectedSlugs].map((slug) => slug.trim().toLowerCase()));
   return directory.map((item) => ({
     ...item,
-    connected: connected.has(item.slug),
+    connected: connected.has(item.slug.trim().toLowerCase()),
   }));
 }
 

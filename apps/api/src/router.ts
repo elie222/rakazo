@@ -152,17 +152,23 @@ async function reconcilePendingConnections(
   connectorId: string,
   connectedProviders: string[],
 ): Promise<void> {
-  const rows = await prisma.connection.findMany({
-    where: {
-      workspaceId: owner.workspaceId,
-      userId: owner.userId,
-      connectorId,
-      provider: { in: connectedProviders },
-      status: { in: ["pending", "connected"] },
-    },
-    select: { id: true, provider: true, displayName: true, status: true },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
+  const connectedProviderKeys = new Set(
+    connectedProviders.map((provider) => provider.trim().toLowerCase()),
+  );
+  const rows = (
+    await prisma.connection.findMany({
+      where: {
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        connectorId,
+        status: { in: ["pending", "connected"] },
+      },
+      select: { id: true, provider: true, displayName: true, status: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })
+  ).filter((row: { provider: string }) =>
+    connectedProviderKeys.has(row.provider.trim().toLowerCase()),
+  );
   const sync = planLiveConnectionSync(rows, connectedProviders);
   const updates = [
     ...(sync.connectIds.length > 0
