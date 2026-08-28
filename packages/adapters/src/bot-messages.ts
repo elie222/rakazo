@@ -64,6 +64,7 @@ export async function messageBot(
     intent?: BotMessageIntent;
     deliveryKey?: string;
   },
+  options?: { allowTerminalSource?: boolean },
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
@@ -77,13 +78,6 @@ export async function messageBot(
   const sourceContext = await currentBotMessageContext(deps.prisma, run.sourceMessageId);
   const intent = input.intent ?? "request";
   const hop = nextBotMessageHop(sourceContext?.hop);
-  if (botMessageHopExhausted(hop) && intent !== "result" && intent !== "status") {
-    return {
-      ok: false as const,
-      error:
-        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
-    };
-  }
 
   const candidates = await deps.prisma.bot.findMany({
     where: { workspaceId: run.workspaceId, userId: run.userId, archivedAt: null },
@@ -97,6 +91,15 @@ export async function messageBot(
   if (target.id === sender.id) return { ok: false as const, error: "a bot cannot message itself" };
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
+  const returnsToSender =
+    (intent === "result" || intent === "status") && sourceContext?.fromBotId === target.id;
+  if (botMessageHopExhausted(hop) && !returnsToSender) {
+    return {
+      ok: false as const,
+      error:
+        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
+    };
+  }
 
   const targetThreadId = target.thread.id;
 
@@ -160,7 +163,7 @@ export async function messageBot(
             threadId: run.threadId,
             botId: run.botId,
             userId: run.userId,
-            status: "running",
+            status: options?.allowTerminalSource ? { in: ["completed", "failed"] } : "running",
           },
           select: { id: true },
         });
@@ -321,12 +324,18 @@ export async function returnBotMessageOutcome(
     ),
   );
   if (alreadyReturned) return false;
-  const outcome = await messageBot(deps, run, sender, {
-    bot_id: source.fromBotId,
-    message: clampBotMessage(text),
-    intent,
-    deliveryKey: `auto-${intent}:${run.id}`,
-  });
+  const outcome = await messageBot(
+    deps,
+    run,
+    sender,
+    {
+      bot_id: source.fromBotId,
+      message: clampBotMessage(text),
+      intent,
+      deliveryKey: `auto-${intent}:${run.id}`,
+    },
+    { allowTerminalSource: true },
+  );
   return outcome.ok;
 }
 

@@ -237,6 +237,33 @@ describe("messaging another bot", () => {
     );
   });
 
+  it("does not let a result label bypass the hop limit toward an unrelated bot", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-other", name: "Writer", title: "", thread: { id: "thread-other" } },
+      ],
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "please finish",
+          hop: 6,
+          intent: "request",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-other", message: "keep going", intent: "result" },
+    );
+    expect(sent.ok).toBe(false);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
   it("keeps a person-started chain going", async () => {
     const harness = deps({
       hopBlocks: [
@@ -378,6 +405,11 @@ describe("automatic outcome return", () => {
     expect(returned).toBe(true);
     expect(harness.tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ trigger: "bot_message" }) }),
+    );
+    expect(harness.tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ["completed", "failed"] } }),
+      }),
     );
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });

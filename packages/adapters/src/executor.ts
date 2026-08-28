@@ -2680,14 +2680,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
-          if (run.trigger === "bot_message" && text) {
-            await returnBotMessageOutcome(
-              deps,
-              { ...run, sourceMessageId: run.sourceMessageId },
-              { id: bot.id, name: bot.name },
-              text,
-            ).catch((error) => console.error("bot message result return", error));
-          }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const completed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
@@ -2702,6 +2694,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          if (run.trigger === "bot_message" && text) {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              text,
+            ).catch((error) => console.error("bot message result return", error));
+          }
           if (bot.notifyOnFinish && text) {
             await notifyRun(deps, run, {
               kind: "completion",
@@ -2748,15 +2748,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
-          if (run.trigger === "bot_message") {
-            await returnBotMessageOutcome(
-              deps,
-              { ...run, sourceMessageId: run.sourceMessageId },
-              { id: bot.id, name: bot.name },
-              `Could not complete the delegated request: ${message}`,
-              "status",
-            ).catch((returnError) => console.error("bot message failure return", returnError));
-          }
           const failed = await deps.events.finalizeRun({
             workspaceId: run.workspaceId,
             threadId: thread.id,
@@ -2770,6 +2761,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          if (run.trigger === "bot_message") {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              `Could not complete the delegated request: ${message}`,
+              "status",
+            ).catch((returnError) => console.error("bot message failure return", returnError));
+          }
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "failure",
