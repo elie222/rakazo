@@ -12,6 +12,7 @@ import {
   completeReleasedScreen,
   computerControlTimeoutMs,
   containerActionStep,
+  demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
@@ -471,5 +472,71 @@ describe("sandbox supervisor input containment", () => {
       activeWindow: { id: "99", title: "Browser" },
     });
     expect(() => parseObservation("GEOM 1280 800\nIMAGE ")).toThrow(/no image/);
+  });
+});
+
+describe("docker exec stream demux", () => {
+  const frame = (type: number, text: string) => {
+    const payload = Buffer.from(text, "utf8");
+    const header = Buffer.alloc(8);
+    header[0] = type;
+    header.writeUInt32BE(payload.length, 4);
+    return Buffer.concat([header, payload]);
+  };
+
+  it("keeps stderr frames out of stdout", () => {
+    const stream = Buffer.concat([
+      frame(1, "aGVsbG8="),
+      frame(2, "python: DeprecationWarning\n"),
+      frame(1, "\n"),
+    ]);
+    expect(demuxDockerStream(stream)).toEqual({
+      stdout: "aGVsbG8=\n",
+      stderr: "python: DeprecationWarning\n",
+    });
+  });
+
+  it("treats a raw tty stream as stdout", () => {
+    expect(demuxDockerStream(Buffer.from("plain output\n"))).toEqual({
+      stdout: "plain output\n",
+      stderr: "",
+    });
+    expect(demuxDockerStream(Buffer.alloc(0))).toEqual({ stdout: "", stderr: "" });
+  });
+
+  it("falls back to raw stdout when the stream is not a complete multiplexed sequence", () => {
+    const cut = Buffer.concat([frame(1, "kept"), frame(2, "truncated stderr")]).subarray(
+      0,
+      12 + 8 + 6,
+    );
+    expect(demuxDockerStream(cut)).toEqual({ stdout: cut.toString("utf8"), stderr: "" });
+    const dangling = Buffer.concat([frame(1, "ok"), Buffer.from([1, 0, 0])]);
+    expect(demuxDockerStream(dangling)).toEqual({
+      stdout: dangling.toString("utf8"),
+      stderr: "",
+    });
+  });
+
+  it("treats raw payloads that begin with 0x01 or 0x02 as stdout when not valid frames", () => {
+    // size 0xffffffff does not fit remaining bytes → not a complete multiplexed stream
+    const raw01 = Buffer.from([0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x41, 0x42]);
+    expect(demuxDockerStream(raw01)).toEqual({
+      stdout: raw01.toString("utf8"),
+      stderr: "",
+    });
+    const raw02 = Buffer.from([0x02, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x43, 0x44]);
+    expect(demuxDockerStream(raw02)).toEqual({
+      stdout: raw02.toString("utf8"),
+      stderr: "",
+    });
+  });
+
+  it("rejects frames with nonzero reserved header padding as raw stdout", () => {
+    // type 1, nonzero padding, size 0 — would look like an empty stdout frame without the check
+    const padded = Buffer.from([0x01, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00]);
+    expect(demuxDockerStream(padded)).toEqual({
+      stdout: padded.toString("utf8"),
+      stderr: "",
+    });
   });
 });

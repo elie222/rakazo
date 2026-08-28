@@ -39,6 +39,7 @@ import {
   computerActionSchema,
   computerControlTimeoutMs,
   containerActionStep,
+  demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
@@ -965,21 +966,6 @@ async function inspectSupervisorContainer() {
   }
 }
 
-function stripDockerStream(buffer: Buffer) {
-  // docker multiplexed stream: 8-byte header per frame
-  if (buffer.length >= 8 && (buffer[0] ?? 99) <= 2) {
-    const parts: string[] = [];
-    let offset = 0;
-    while (offset + 8 <= buffer.length) {
-      const size = buffer.readUInt32BE(offset + 4);
-      parts.push(buffer.subarray(offset + 8, offset + 8 + size).toString("utf8"));
-      offset += 8 + size;
-    }
-    return parts.join("");
-  }
-  return buffer.toString("utf8");
-}
-
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
@@ -1014,9 +1000,12 @@ async function runContainerCommand(
       ? await consumeCompletionMarker(container, completionMarker)
       : false;
   const timedOut = sandboxCommandTimedOut(code, completedWithExit124);
+  const output = demuxDockerStream(Buffer.concat(chunks));
   return {
-    stdout: stripDockerStream(Buffer.concat(chunks)),
-    stderr: timedOut ? `command timed out after ${timeoutMs} ms\n` : "",
+    stdout: output.stdout,
+    stderr: timedOut
+      ? `${output.stderr}${output.stderr.endsWith("\n") || output.stderr === "" ? "" : "\n"}command timed out after ${timeoutMs} ms\n`
+      : output.stderr,
     code,
   };
 }
@@ -1102,6 +1091,7 @@ async function writeContainerFile(
   });
   const inspect = await exec.inspect();
   if ((inspect.ExitCode ?? 0) !== 0) {
-    throw new Error(stripDockerStream(Buffer.concat(chunks)) || "file write failed");
+    const output = demuxDockerStream(Buffer.concat(chunks));
+    throw new Error(output.stderr || output.stdout || "file write failed");
   }
 }

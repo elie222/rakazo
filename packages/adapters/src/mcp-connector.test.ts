@@ -89,7 +89,7 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
-  it("does not send stored credentials to a localhost HTTP server", async () => {
+  it("sends stored credentials to an explicitly configured localhost HTTP server", async () => {
     const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
     const localAssignment = {
       ...ASSIGNMENT,
@@ -118,8 +118,8 @@ describe("MCP connector session cache", () => {
       signal: new AbortController().signal,
     } as never);
 
-    expect(state.headers[0]?.authorization).toBeUndefined();
-    expect(state.headers[0]?.["x-api-key"]).toBeUndefined();
+    expect(state.headers[0]?.authorization).toBe("Bearer local-token");
+    expect(state.headers[0]?.["x-api-key"]).toBe("local-key");
     await connector.close();
   });
 

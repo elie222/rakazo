@@ -23,6 +23,8 @@ export interface McpUrlPolicy {
   maxUrlLength?: number;
   /** Permit plain HTTP only for explicitly local hosts. */
   allowHttpLocalhost?: boolean;
+  /** Permit configured credentials on an explicitly local HTTP endpoint. */
+  allowLocalHttpCredentials?: boolean;
   /** Hosts allowed after redirects (redirects are rejected by default). */
   allowedHosts?: readonly string[];
 }
@@ -119,7 +121,7 @@ export function secureFetch(
     const url = validateUrl(source.url, urlPolicy);
     const headers = new Headers(source.headers);
     const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
-    if (localHttp) {
+    if (localHttp && urlPolicy.allowLocalHttpCredentials !== true) {
       for (const name of [...headers.keys()]) {
         if (localCredentialHeaders.has(name.toLowerCase())) headers.delete(name);
       }
@@ -128,7 +130,12 @@ export function secureFetch(
       for (const [name, value] of configured) headers.set(name, value);
     }
     for (const [name, value] of new Headers(init?.headers)) {
-      if (localHttp && localCredentialHeaders.has(name.toLowerCase())) continue;
+      if (
+        localHttp &&
+        urlPolicy.allowLocalHttpCredentials !== true &&
+        localCredentialHeaders.has(name.toLowerCase())
+      )
+        continue;
       if (allowed.has(name.toLowerCase())) headers.set(name, value);
     }
     // Buffer the body: a re-wrapped Request body is a stream without a replayable
