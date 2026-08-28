@@ -13,4 +13,6 @@ Native Android client for Rakazo. This project intentionally has its own Gradle 
 ./gradlew assembleDebug
 ```
 
-The initial vertical slice is local and deterministic: workspace agents, activity, an agent thread, and computer-control state. Server auth, streaming, voice, notifications, and remote-computer transport will be connected through subsequent slices.
+The app connects to a self-hosted Rakazo server, stores its Better Auth session with an Android Keystore key, and renders the authenticated workspace agent list. Endpoint setup accepts HTTPS everywhere and HTTP only on loopback or private LAN addresses.
+
+Activity, thread streaming, voice, notifications, attachments, and remote-computer transport remain subsequent slices. Their deterministic UI reference stays in Compose previews rather than appearing as runtime data.

@@ -1,5 +1,6 @@
 package com.rakazo.app.ui
 
+import android.graphics.Color.parseColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -14,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,11 +46,13 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,10 +61,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +74,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +100,17 @@ import com.rakazo.app.ui.theme.TextMuted
 import com.rakazo.app.ui.theme.TextPrimary
 import com.rakazo.app.ui.theme.TextSecondary
 import com.rakazo.app.ui.theme.UnreadPurple
+import com.rakazo.app.network.AgentRecord
+import com.rakazo.app.network.AndroidSessionStore
+import com.rakazo.app.network.ApiException
+import com.rakazo.app.network.EndpointResult
+import com.rakazo.app.network.RakazoApi
+import com.rakazo.app.network.SessionManager
+import com.rakazo.app.network.normalizeEndpoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 
 private enum class AppScreen { Workspace, Thread, Computer }
 private enum class WorkspaceMode { Agents, Activity }
@@ -97,6 +120,7 @@ private data class Agent(
     val name: String,
     val summary: String,
     val color: Color,
+    val pinned: Boolean = false,
 )
 
 private data class ActivityItem(
@@ -127,8 +151,297 @@ private val RecentActivity = listOf(
     ActivityItem(Agents[5], "Updated today’s activity summary", "3h ago"),
 )
 
+private sealed interface RuntimeState {
+    data object Starting : RuntimeState
+    data class Server(val draft: String = "", val error: String? = null, val pending: Boolean = false) : RuntimeState
+    data class SignIn(val endpoint: String, val error: String? = null, val pending: Boolean = false) : RuntimeState
+    data class Workspace(val agents: List<Agent>) : RuntimeState
+    data class Offline(val message: String) : RuntimeState
+    data object Expired : RuntimeState
+}
+
 @Composable
 fun RakazoApp() {
+    val context = LocalContext.current.applicationContext
+    val api = remember { RakazoApi() }
+    val session = remember { SessionManager(AndroidSessionStore(context)) }
+    val scope = rememberCoroutineScope()
+    var state: RuntimeState by remember { mutableStateOf(RuntimeState.Starting) }
+
+    fun loadAgents() {
+        state = RuntimeState.Starting
+        scope.launch {
+            state = try {
+                val agents = withContext(Dispatchers.IO) { api.agents(session.endpoint, session.token) }
+                RuntimeState.Workspace(agents.map(AgentRecord::toAgent))
+            } catch (error: ApiException) {
+                if (error.status == 401) {
+                    session.signedOut()
+                    RuntimeState.Expired
+                } else {
+                    RuntimeState.Offline(error.message ?: "Could not load agents")
+                }
+            } catch (error: IOException) {
+                RuntimeState.Offline("Could not reach the server")
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        state = when {
+            session.endpoint.isEmpty() -> RuntimeState.Server()
+            session.token.isEmpty() -> RuntimeState.SignIn(session.endpoint)
+            else -> {
+                loadAgents()
+                RuntimeState.Starting
+            }
+        }
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = Page) {
+        when (val current = state) {
+            RuntimeState.Starting -> LoadingScreen()
+            is RuntimeState.Server -> ServerScreen(current) { input ->
+                when (val endpoint = normalizeEndpoint(input)) {
+                    is EndpointResult.Invalid -> state = current.copy(error = endpoint.message)
+                    is EndpointResult.Valid -> {
+                        state = current.copy(error = null, pending = true)
+                        scope.launch {
+                            state = try {
+                                withContext(Dispatchers.IO) { api.probe(endpoint.url) }
+                                session.useEndpoint(endpoint.url)
+                                RuntimeState.SignIn(endpoint.url)
+                            } catch (error: IOException) {
+                                current.copy(error = error.message ?: "Could not reach that server")
+                            }
+                        }
+                    }
+                }
+            }
+            is RuntimeState.SignIn -> SignInScreen(
+                state = current,
+                onChangeServer = { state = RuntimeState.Server(current.endpoint) },
+                onSubmit = { email, password ->
+                    if (email.isBlank() || password.isEmpty()) {
+                        state = current.copy(error = "Enter your email and password")
+                    } else {
+                        state = current.copy(error = null, pending = true)
+                        scope.launch {
+                            try {
+                                val token = withContext(Dispatchers.IO) {
+                                    api.signIn(current.endpoint, email.trim(), password)
+                                }
+                                session.signedIn(token)
+                                loadAgents()
+                            } catch (error: IOException) {
+                                state = current.copy(error = error.message ?: "Could not sign in")
+                            }
+                        }
+                    }
+                },
+            )
+            is RuntimeState.Workspace -> WorkspaceScreen(
+                agents = current.agents,
+                onOpenAgent = null,
+                onSignOut = {
+                    val endpoint = session.endpoint
+                    val token = session.token
+                    session.signedOut()
+                    state = RuntimeState.SignIn(endpoint)
+                    scope.launch(Dispatchers.IO) { runCatching { api.signOut(endpoint, token) } }
+                },
+            )
+            is RuntimeState.Offline -> StatusScreen(
+                title = "Rakazo is offline",
+                message = current.message,
+                action = "Retry",
+                onAction = ::loadAgents,
+                secondaryAction = "Sign out",
+                onSecondaryAction = {
+                    session.signedOut()
+                    state = RuntimeState.SignIn(session.endpoint)
+                },
+            )
+            RuntimeState.Expired -> StatusScreen(
+                title = "Session expired",
+                message = "Sign in again to continue.",
+                action = "Sign in",
+                onAction = { state = RuntimeState.SignIn(session.endpoint) },
+            )
+        }
+    }
+}
+
+private fun AgentRecord.toAgent() = Agent(
+    id = id,
+    name = name,
+    summary = summary,
+    color = Color(runCatching { parseColor(color) }.getOrDefault(0xFF7567F7.toInt())),
+    pinned = pinned,
+)
+
+@Composable
+private fun LoadingScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding().navigationBarsPadding(),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(color = FocusBlue, strokeWidth = 2.dp)
+    }
+}
+
+@Composable
+private fun ServerScreen(state: RuntimeState.Server, onContinue: (String) -> Unit) {
+    var draft by rememberSaveable(state.draft) { mutableStateOf(state.draft) }
+    FormScreen(title = "Connect to Rakazo", subtitle = "Enter the address of your Rakazo server.") {
+        FormField(
+            value = draft,
+            onValueChange = { draft = it },
+            placeholder = "https://rakazo.example.com",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        FormError(state.error)
+        Button(
+            onClick = { onContinue(draft) },
+            enabled = !state.pending,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = CreamText),
+        ) {
+            Text(if (state.pending) "Checking…" else "Continue", fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun SignInScreen(
+    state: RuntimeState.SignIn,
+    onChangeServer: () -> Unit,
+    onSubmit: (String, String) -> Unit,
+) {
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    FormScreen(title = "Sign in to Rakazo", subtitle = URIHost(state.endpoint)) {
+        FormField(
+            value = email,
+            onValueChange = { email = it },
+            placeholder = "Email",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        )
+        FormField(
+            value = password,
+            onValueChange = { password = it },
+            placeholder = "Password",
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        )
+        FormError(state.error)
+        Button(
+            onClick = { onSubmit(email, password) },
+            enabled = !state.pending,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = CreamText),
+        ) {
+            Text(if (state.pending) "Signing in…" else "Continue", fontWeight = FontWeight.SemiBold)
+        }
+        TextButton(onClick = onChangeServer, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Change server", color = TextSecondary)
+        }
+    }
+}
+
+@Composable
+private fun FormScreen(
+    title: String,
+    subtitle: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding().navigationBarsPadding()
+            .padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(subtitle, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(28.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    }
+}
+
+@Composable
+private fun FormField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    keyboardOptions: KeyboardOptions,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = SurfaceColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp, vertical = 17.dp),
+            singleLine = true,
+            keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
+            decorationBox = { field ->
+                if (value.isEmpty()) Text(placeholder, color = TextMuted)
+                field()
+            },
+        )
+    }
+}
+
+@Composable
+private fun FormError(message: String?) {
+    if (message != null) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = SurfaceColor,
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+        ) {
+            Text(message, modifier = Modifier.padding(16.dp), color = Color(0xFFFF8A8A))
+        }
+    }
+}
+
+@Composable
+private fun StatusScreen(
+    title: String,
+    message: String,
+    action: String,
+    onAction: () -> Unit,
+    secondaryAction: String? = null,
+    onSecondaryAction: (() -> Unit)? = null,
+) {
+    FormScreen(title, message) {
+        Button(
+            onClick = onAction,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = CreamText),
+        ) { Text(action, fontWeight = FontWeight.SemiBold) }
+        if (secondaryAction != null && onSecondaryAction != null) {
+            TextButton(onClick = onSecondaryAction, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(secondaryAction, color = TextSecondary)
+            }
+        }
+    }
+}
+
+private fun URIHost(endpoint: String) = runCatching { java.net.URI(endpoint).authority }.getOrNull() ?: endpoint
+
+@Composable
+private fun DemoRakazoApp() {
     var screen by rememberSaveable { mutableStateOf(AppScreen.Workspace) }
     BackHandler(enabled = screen != AppScreen.Workspace) {
         screen = if (screen == AppScreen.Computer) AppScreen.Thread else AppScreen.Workspace
@@ -147,7 +460,11 @@ fun RakazoApp() {
             label = "Rakazo screen",
         ) { destination ->
             when (destination) {
-                AppScreen.Workspace -> WorkspaceScreen(onOpenMaya = { screen = AppScreen.Thread })
+                AppScreen.Workspace -> WorkspaceScreen(
+                    agents = Agents,
+                    onOpenAgent = { screen = AppScreen.Thread },
+                    demoActivity = true,
+                )
                 AppScreen.Thread -> ThreadScreen(
                     onBack = { screen = AppScreen.Workspace },
                     onOpenComputer = { screen = AppScreen.Computer },
@@ -159,7 +476,12 @@ fun RakazoApp() {
 }
 
 @Composable
-private fun WorkspaceScreen(onOpenMaya: () -> Unit) {
+private fun WorkspaceScreen(
+    agents: List<Agent>,
+    onOpenAgent: (() -> Unit)?,
+    onSignOut: (() -> Unit)? = null,
+    demoActivity: Boolean = false,
+) {
     var mode by rememberSaveable { mutableStateOf(WorkspaceMode.Agents) }
     Column(
         modifier = Modifier
@@ -167,7 +489,7 @@ private fun WorkspaceScreen(onOpenMaya: () -> Unit) {
             .background(Page)
             .statusBarsPadding(),
     ) {
-        WorkspaceAppBar()
+        WorkspaceAppBar(onSignOut)
         WorkspaceTabs(mode = mode, onModeChange = { mode = it })
         HorizontalDivider(color = Border)
         AnimatedContent(
@@ -179,15 +501,15 @@ private fun WorkspaceScreen(onOpenMaya: () -> Unit) {
             label = "Workspace mode",
         ) { selected ->
             when (selected) {
-                WorkspaceMode.Agents -> AgentList(onOpenMaya)
-                WorkspaceMode.Activity -> ActivityList()
+                WorkspaceMode.Agents -> AgentList(agents, onOpenAgent)
+                WorkspaceMode.Activity -> if (demoActivity) ActivityList() else EmptyState("Activity is not connected yet")
             }
         }
     }
 }
 
 @Composable
-private fun WorkspaceAppBar() {
+private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,12 +523,14 @@ private fun WorkspaceAppBar() {
         AppBarIcon(Icons.Outlined.Search, "Search")
         AppBarIcon(Icons.Outlined.Add, "New agent")
         Surface(
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(48.dp)
+                .semantics { if (onSignOut != null) contentDescription = "Sign out" }
+                .clickable(enabled = onSignOut != null) { onSignOut?.invoke() },
             shape = CircleShape,
             color = Elevated,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Text("L", color = TextSecondary, fontWeight = FontWeight.Medium)
+                Icon(Icons.Outlined.Person, null, tint = TextSecondary)
             }
         }
     }
@@ -248,10 +572,10 @@ private fun WorkspaceTabs(mode: WorkspaceMode, onModeChange: (WorkspaceMode) -> 
 }
 
 @Composable
-private fun AgentList(onOpenMaya: () -> Unit) {
+private fun AgentList(agents: List<Agent>, onOpenAgent: (() -> Unit)?) {
     var query by rememberSaveable { mutableStateOf("") }
     val visible = remember(query) {
-        Agents.filter { agent ->
+        agents.filter { agent ->
             query.isBlank() || agent.name.contains(query, ignoreCase = true) ||
                 agent.summary.contains(query, ignoreCase = true)
         }
@@ -264,19 +588,21 @@ private fun AgentList(onOpenMaya: () -> Unit) {
         item {
             SearchField(query = query, onQueryChange = { query = it })
         }
-        if (Maya in visible) {
+        val pinned = visible.filter { it.pinned }
+        if (pinned.isNotEmpty()) {
             item { SectionLabel("Pinned") }
-            item {
-                AgentRow(agent = Maya, pinned = true, onClick = onOpenMaya)
+            items(pinned, key = { it.id }) { agent ->
+                AgentRow(agent = agent, pinned = true, onClick = onOpenAgent)
             }
         }
-        val unassigned = visible.filterNot { it == Maya }
+        val unassigned = visible.filterNot { it.pinned }
         if (unassigned.isNotEmpty()) {
-            item { SectionLabel("Unassigned") }
+            if (pinned.isNotEmpty()) item { SectionLabel("Unassigned") }
             items(unassigned, key = { it.id }) { agent ->
-                AgentRow(agent = agent, onClick = if (agent.id == "maya") onOpenMaya else ({}))
+                AgentRow(agent = agent, onClick = onOpenAgent)
             }
         }
+        if (visible.isEmpty()) item { EmptyState(if (query.isBlank()) "No agents yet" else "No matching agents") }
     }
 }
 
@@ -321,11 +647,11 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: () -> Unit) {
+private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: (() -> Unit)?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = onClick != null) { onClick?.invoke() }
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -346,7 +672,7 @@ private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: () -> Unit)
             Box(Modifier.size(8.dp).clip(CircleShape).background(UnreadPurple))
             Spacer(Modifier.width(18.dp))
             Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
-        } else {
+        } else if (onClick != null) {
             Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
         }
     }
@@ -372,6 +698,13 @@ private fun ActivityList() {
         items(RecentActivity, key = { it.agent.id }) { activity ->
             ActivityRow(activity.agent, activity.summary, activity.time)
         }
+    }
+}
+
+@Composable
+private fun EmptyState(message: String) {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(message, color = TextMuted, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -800,5 +1133,5 @@ private fun RemoteScreenPreview(modifier: Modifier = Modifier) {
 @Preview(showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun RakazoPreview() {
-    RakazoTheme { RakazoApp() }
+    RakazoTheme { DemoRakazoApp() }
 }
