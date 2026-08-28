@@ -183,20 +183,24 @@ describe("stopThreadRuns", () => {
         ]),
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
-      bot: {
+      computer: {
         findMany: vi.fn().mockResolvedValue([
           {
-            id: "bot-a",
-            computer: { homeKey: "home-a", kind: "fake", providerRef: "computer-a" },
+            homeKey: "home-a",
+            kind: "fake",
+            providerRef: "computer-a",
+            executionBotId: "bot-a",
           },
           {
-            id: "bot-b",
-            computer: { homeKey: "home-b", kind: "fake", providerRef: "computer-b" },
+            homeKey: "home-b",
+            kind: "fake",
+            providerRef: "computer-b",
+            executionBotId: "bot-b",
           },
         ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
       event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     } as unknown as PrismaClient;
     const actor = {
@@ -226,6 +230,12 @@ describe("stopThreadRuns", () => {
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ providerRef: "computer-b" }),
       expect.objectContaining({ workspaceId: "workspace-1", userId: "user-1", botId: "bot-b" }),
+    );
+    expect(prisma.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["run-a", "run-b"] } },
+    });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),
     );
   });
 });

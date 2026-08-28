@@ -812,8 +812,8 @@ export function createRouter(deps: RouterDeps) {
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        await stopThreadRuns(deps, context.actor, target);
         await groupRepos.archiveGroup(context.actor, input.groupId);
+        await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {

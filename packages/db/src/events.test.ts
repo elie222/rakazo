@@ -1040,10 +1040,10 @@ describe("clearThread", () => {
       cancelledRunIds: ["run-1"],
     });
     expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
-      where: { botId: "bot-1" },
+      where: { runId: { in: ["run-1"] } },
     });
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
-      where: { executionBotId: "bot-1" },
+      where: { executionRunId: { in: ["run-1"] } },
       data: {
         executionRunId: null,
         executionBotId: null,

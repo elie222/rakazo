@@ -187,7 +187,7 @@ export async function clearThread(
         ...(input.groupId ? {} : { botId: input.botId }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
-      select: { id: true, taskId: true, botId: true },
+      select: { id: true, taskId: true },
     });
     const now = new Date();
     const runIds = activeRuns.map((run) => run.id);
@@ -211,16 +211,11 @@ export async function clearThread(
         data: { status: "cancelled" },
       });
     }
-    const affectedBotIds = input.groupId
-      ? [...new Set(activeRuns.map((run) => run.botId))]
-      : [input.botId];
     await tx.computerExecutionLease.deleteMany({
-      where: input.groupId ? { botId: { in: affectedBotIds } } : { botId: input.botId },
+      where: { runId: { in: runIds } },
     });
     await tx.computer.updateMany({
-      where: input.groupId
-        ? { executionBotId: { in: affectedBotIds } }
-        : { executionBotId: input.botId },
+      where: { executionRunId: { in: runIds } },
       data: {
         executionRunId: null,
         executionBotId: null,
