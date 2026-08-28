@@ -2027,7 +2027,9 @@ export function ShellPage() {
                                 <div
                                   dir="auto"
                                   className={`mt-0.5 truncate text-[13.5px] ${
-                                    item.chat.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                                    item.chat.unread
+                                      ? "font-medium text-[#C9C9CE]"
+                                      : "text-[#85858A]"
                                   }`}
                                 >
                                   {item.chat.title}
