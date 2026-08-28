@@ -33,7 +33,7 @@ export async function handoffToGroupBot(
     }
     const [group, activeSource] = await Promise.all([
       tx.chatGroup.findFirst({
-        where: { id: groupId, thread: { id: run.threadId } },
+        where: { id: groupId, archivedAt: null, thread: { id: run.threadId } },
         include: {
           members: {
             where: { bot: { archivedAt: null } },
