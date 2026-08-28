@@ -256,10 +256,10 @@ export class McpConnector implements ConnectorProvider {
         };
         await session.connectRemote({
           url: server.endpoint,
-          urlPolicy: { allowHttpLocalhost: true },
+          urlPolicy: { allowHttpLocalhost: true, allowLocalHttpCredentials: localHttp },
           transport: server.transport === "sse" ? "sse" : "streamable-http",
           allowLegacySse: server.transport === "sse",
-          headerPolicy: localHttp ? undefined : { headers },
+          headerPolicy: { headers },
           fallbackToSse: false,
           authProvider,
           network: this.options.network,
