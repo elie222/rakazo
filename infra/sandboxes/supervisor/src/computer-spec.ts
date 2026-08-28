@@ -147,7 +147,7 @@ export function legacyNetworkOwnedSolelyBy(
   botId: string,
   attachedBotIds: Array<string | undefined>,
 ): boolean {
-  return !attachedBotIds.some((owner) => owner && owner !== botId);
+  return attachedBotIds.every((owner) => owner === botId);
 }
 
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {

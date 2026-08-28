@@ -210,13 +210,12 @@ const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.na
 
 const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
 
-function shellCFlagProgramIndex(words: string[], interpreterIndex: number): number | undefined {
+function shellCFlagProgram(words: string[], interpreterIndex: number): string | undefined {
   for (let index = interpreterIndex + 1; index < words.length; index += 1) {
     const word = words[index] ?? "";
-    if (word === "--") return index + 1 < words.length ? index + 1 : undefined;
-    if (!word.startsWith("-") || word === "-") return undefined;
-    // bash -c / -lc / -ce: the next argument is the program string.
-    if (/c/.test(word.slice(1))) return index + 1 < words.length ? index + 1 : undefined;
+    if (word.startsWith("--command=")) return word.slice("--command=".length);
+    // bash -c / -lc / -ce and fish --command: the next argument is the program string.
+    if (word === "--command" || /^-[^-]*c/.test(word)) return words[index + 1];
   }
   return undefined;
 }
@@ -267,9 +266,8 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
   for (let index = 0; index < words.length; index += 1) {
     const name = words[index]?.split("/").at(-1) ?? "";
     if (!SHELL_INTERPRETER_NAMES.test(name)) continue;
-    const programIndex = shellCFlagProgramIndex(words, index);
-    if (programIndex === undefined) continue;
-    if (isProtectedComputerLifecycleCommand(words[programIndex] ?? "")) return true;
+    const program = shellCFlagProgram(words, index);
+    if (program && isProtectedComputerLifecycleCommand(program)) return true;
   }
   return false;
 }

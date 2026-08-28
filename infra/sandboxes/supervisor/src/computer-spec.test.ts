@@ -103,9 +103,10 @@ describe("graphical computer spec", () => {
   });
 
   it("skips legacy network removal when another bot is still attached", () => {
-    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(true);
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "a/b"])).toBe(true);
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(false);
     expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "ab"])).toBe(false);
-    expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(true);
+    expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(false);
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {

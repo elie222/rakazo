@@ -17,6 +17,8 @@ describe("computer lifecycle command guard", () => {
       "rm -f /tmp/.X1-lock",
       "bash -c 'pkill chromium'",
       'bash -lc "killall chrome"',
+      "bash -o posix -c 'pkill chromium'",
+      "bash --rcfile /tmp/bashrc -c 'pkill chromium'",
       "sh -c 'systemctl restart chromium'",
       `bash -c 'eval "pkill chromium"'`,
       'bash -lc "source /tmp/kill-chrome.sh"',
