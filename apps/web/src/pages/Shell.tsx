@@ -3769,7 +3769,7 @@ const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 border-0 px-3 pb-4 pt-3 md:px-6 md:pb-6 ${
+      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-6 md:pb-6 ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-[#8B5CF6]" : ""
       }`}
     >
