@@ -3,6 +3,7 @@ import {
   type BrowserNotificationApi,
   type BrowserNotificationContext,
   browserNotificationMessage,
+  deliverBrowserRunNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "./browser-notifications.js";
@@ -85,6 +86,30 @@ describe("browser run notifications", () => {
       title: "Chief stopped",
       body: "Stopped.",
     });
+  });
+
+  it("dedupes only after a notification is delivered", () => {
+    const notifiedRunIds = new Set<string>();
+    const show = vi.fn().mockImplementationOnce(() => {
+      throw new Error("notification construction failed");
+    });
+    const delivery = (permission: "default" | "granted") =>
+      deliverBrowserRunNotification(event(), "Chief", {
+        enabled: true,
+        pageVisible: false,
+        windowFocused: false,
+        permission,
+        notifiedRunIds,
+        show,
+      });
+
+    expect(delivery("default")).toBe("pending");
+    expect(delivery("granted")).toBe("pending");
+    expect(notifiedRunIds).toEqual(new Set());
+    expect(delivery("granted")).toBe("delivered");
+    expect(notifiedRunIds).toEqual(new Set(["run-1"]));
+    expect(delivery("granted")).toBe("discarded");
+    expect(show).toHaveBeenCalledTimes(2);
   });
 
   it("allows a later send gesture to retry a dismissed permission prompt", async () => {

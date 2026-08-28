@@ -121,7 +121,7 @@ import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open"
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
-  browserNotificationMessage,
+  deliverBrowserRunNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
@@ -216,6 +216,12 @@ type PendingAttachment = {
   threadKey: string;
   file: File;
   previewUrl?: string;
+};
+
+type PendingBrowserNotification = {
+  event: Pick<ProductEvent, "type" | "runId" | "botId">;
+  botId: string;
+  botName: string;
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
@@ -423,6 +429,7 @@ export function ShellPage() {
   const manuallyUnread = useRef(new Set<string>());
   const readVisibleGroups = useRef(new Set<string>());
   const notifiedBrowserRuns = useRef(new Set<string>());
+  const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
   const autoSpoken = useRef<string | null>(null);
@@ -494,44 +501,66 @@ export function ShellPage() {
     },
     [markBotRead],
   );
+  const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
+    const runId = pending.event.runId;
+    if (typeof runId !== "string") return true;
+    const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
+    if (!currentBot || typeof Notification === "undefined") return true;
+    const result = deliverBrowserRunNotification(
+      pending.event,
+      currentBot.name || pending.botName,
+      {
+        enabled: currentBot.notifyOnFinish,
+        pageVisible: document.visibilityState === "visible",
+        windowFocused: document.hasFocus(),
+        permission: Notification.permission,
+        notifiedRunIds: notifiedBrowserRuns.current,
+        show: (title, body) => new Notification(title, { body }),
+      },
+    );
+    return result !== "pending";
+  }, []);
+  const flushPendingBrowserNotifications = useCallback(() => {
+    for (const [runId, pending] of pendingBrowserNotifications.current) {
+      if (deliverBrowserNotification(pending)) {
+        pendingBrowserNotifications.current.delete(runId);
+      }
+    }
+  }, [deliverBrowserNotification]);
   const notifyBrowserForTerminalEvent = useCallback(
     (
-      event: Pick<ProductEvent, "type" | "threadId" | "runId" | "seq">,
+      event: Pick<ProductEvent, "type" | "threadId" | "runId" | "seq" | "botId">,
       subscribedThreadId: string | undefined,
       initialCursor: number,
       streamReady: boolean,
       botName: string,
-      notifyOnFinish: boolean,
     ) => {
       const runId = event.runId;
-      if (typeof runId !== "string") return;
-      const permission = typeof Notification === "undefined" ? "denied" : Notification.permission;
-      const shouldNotify = shouldNotifyBrowser(event, {
+      const botId = event.botId;
+      if (typeof runId !== "string" || typeof botId !== "string") return;
+      const eligible = shouldNotifyBrowser(event, {
         subscribedThreadId: subscribedThreadId ?? "",
         initialCursor,
         streamReady,
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
-        permission,
+        permission: "granted",
         notifiedRunIds: notifiedBrowserRuns.current,
       });
-      if (
-        streamReady &&
-        isRunTerminalEvent(event) &&
-        event.threadId === subscribedThreadId &&
-        event.seq > initialCursor
-      ) {
-        notifiedBrowserRuns.current.add(runId);
+      if (!eligible || !botsRef.current.find((bot) => bot.id === botId)?.notifyOnFinish) return;
+      const pending = { event, botId, botName } satisfies PendingBrowserNotification;
+      if (typeof Notification === "undefined" || Notification.permission === "denied") return;
+      if (Notification.permission === "default") {
+        pendingBrowserNotifications.current.set(runId, pending);
+        return;
       }
-      if (!shouldNotify || !notifyOnFinish || typeof Notification === "undefined") return;
-      const message = browserNotificationMessage(event, botName);
-      try {
-        new Notification(message.title, { body: message.body });
-      } catch {
-        // Permission can change between the check and construction.
+      if (deliverBrowserNotification(pending)) {
+        pendingBrowserNotifications.current.delete(runId);
+      } else {
+        pendingBrowserNotifications.current.set(runId, pending);
       }
     },
-    [],
+    [deliverBrowserNotification],
   );
 
   const refreshBots = useCallback(
@@ -961,10 +990,30 @@ export function ShellPage() {
         retryMs = Math.min(retryMs * 2, 5_000);
       }
       if (abort.signal.aborted) return;
-      const streamReady = Boolean(snap?.threadId);
-      const subscribedThreadId = snap?.threadId;
-      const initialCursor = snap?.cursor ?? -1;
+      let streamReady = Boolean(snap?.threadId);
+      let subscribedThreadId = snap?.threadId;
+      let initialCursor = snap?.cursor ?? -1;
       let cursor = initialCursor;
+      if (!streamReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!streamReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            const refreshed = await refreshThread(active.id).catch(() => null);
+            if (refreshed?.threadId) {
+              subscribedThreadId = refreshed.threadId;
+              initialCursor = Math.max(cursor, refreshed.cursor);
+              streamReady = true;
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
       retryMs = 250;
       while (!abort.signal.aborted) {
         try {
@@ -984,7 +1033,6 @@ export function ShellPage() {
               initialCursor,
               streamReady,
               currentBot?.name ?? active.name,
-              currentBot?.notifyOnFinish ?? active.notifyOnFinish,
             );
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
@@ -1088,10 +1136,30 @@ export function ShellPage() {
         retryMs = Math.min(retryMs * 2, 5_000);
       }
       if (abort.signal.aborted) return;
-      const streamReady = Boolean(snap?.threadId);
-      const subscribedThreadId = snap?.threadId;
-      const initialCursor = snap?.cursor ?? -1;
+      let streamReady = Boolean(snap?.threadId);
+      let subscribedThreadId = snap?.threadId;
+      let initialCursor = snap?.cursor ?? -1;
       let cursor = initialCursor;
+      if (!streamReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!streamReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            const refreshed = await refreshGroupThread(groupId).catch(() => null);
+            if (refreshed?.threadId) {
+              subscribedThreadId = refreshed.threadId;
+              initialCursor = Math.max(cursor, refreshed.cursor);
+              streamReady = true;
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
       retryMs = 250;
       while (!abort.signal.aborted) {
         try {
@@ -1108,7 +1176,6 @@ export function ShellPage() {
               initialCursor,
               streamReady,
               eventBot?.name ?? activeGroup.name,
-              eventBot?.notifyOnFinish ?? true,
             );
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
@@ -1594,7 +1661,8 @@ export function ShellPage() {
         plan.shouldSend &&
         (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
       ) {
-        requestBrowserNotificationPermission();
+        const permissionRequest = requestBrowserNotificationPermission();
+        if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);
       }
       const trimmed = plan.trimmed;
       setSending(true);
@@ -1687,7 +1755,14 @@ export function ShellPage() {
         setSending(false);
       }
     },
-    [activeReplyTarget?.id, navigate, pendingAttachments, sending, t],
+    [
+      activeReplyTarget?.id,
+      flushPendingBrowserNotifications,
+      navigate,
+      pendingAttachments,
+      sending,
+      t,
+    ],
   );
   const followUpMessage = useCallback(async (text: string) => {
     const id = activeBotId.current;
