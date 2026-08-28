@@ -6,19 +6,25 @@ import { describe, expect, it } from "vitest";
 import { resolveDockerSocketPath, supervisorApp, waitForScreenReady } from "./index.js";
 import {
   assertRequestIdentity,
+  attemptComputerControl,
+  ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  computerControlTimeoutMs,
   containerActionStep,
   ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
+  isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
   parseObservation,
+  preferComputerControl,
   releaseAssignedScreen,
   type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  shouldReplayComputerActions,
   stopExtraScreenCommand,
 } from "./supervisor-logic.js";
 
@@ -194,6 +200,129 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
     });
+  });
+
+  it("falls back to docker-exec when computer control fails", async () => {
+    await expect(
+      preferComputerControl(
+        async () => {
+          throw new Error("connection refused");
+        },
+        async () => "docker-exec",
+      ),
+    ).resolves.toBe("docker-exec");
+    await expect(preferComputerControl(undefined, async () => "docker-exec")).resolves.toBe(
+      "docker-exec",
+    );
+    await expect(
+      preferComputerControl(
+        async () => "fast-path",
+        async () => "docker-exec",
+      ),
+    ).resolves.toBe("fast-path");
+  });
+
+  it("replays actions only when control was never reached", async () => {
+    await expect(attemptComputerControl(undefined)).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      attemptComputerControl(async () => {
+        throw new ComputerControlUnavailableError("fetch failed");
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+    await expect(
+      attemptComputerControl(async () => {
+        throw new Error("computer action failed");
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    await expect(
+      attemptComputerControl(async () => {
+        throw timeout;
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(isComputerControlUnavailable(new TypeError("fetch failed"))).toBe(false);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("connect ECONNREFUSED 127.0.0.1:7070"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("connect ENETUNREACH 172.18.0.4:7070"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: new Error("read ECONNRESET"),
+        }),
+      ),
+    ).toBe(false);
+    expect(isComputerControlUnavailable(timeout)).toBe(false);
+    await expect(attemptComputerControl(async () => ({ completed: 2 }))).resolves.toEqual({
+      status: "ok",
+      value: { completed: 2 },
+    });
+  });
+
+  it("falls back on connection refused but does not replay after a request-sent failure", async () => {
+    const refused = await attemptComputerControl(async () => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error("connect ECONNREFUSED 172.18.0.4:7070"),
+      });
+    });
+    expect(refused).toEqual({ status: "unavailable" });
+    expect(shouldReplayComputerActions(refused)).toBe(true);
+
+    const afterWrite = await attemptComputerControl(async () => {
+      throw new Error("computer control failed");
+    });
+    expect(afterWrite).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(afterWrite)).toBe(false);
+
+    const timedOut = await attemptComputerControl(async () => {
+      throw Object.assign(new Error("The operation was aborted due to timeout"), {
+        name: "TimeoutError",
+      });
+    });
+    expect(timedOut).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(timedOut)).toBe(false);
+
+    const reset = await attemptComputerControl(async () => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: new Error("read ECONNRESET"),
+      });
+    });
+    expect(reset).toMatchObject({ status: "failed" });
+    expect(shouldReplayComputerActions(reset)).toBe(false);
+  });
+
+  it("extends the computer control deadline for mapped waits", () => {
+    expect(computerControlTimeoutMs([])).toBe(15_000);
+    expect(computerControlTimeoutMs([{ kind: "wait", ms: 5_000 }], 5_000)).toBe(25_000);
+    expect(
+      computerControlTimeoutMs(
+        [
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+          { kind: "wait", ms: 5_000 },
+        ],
+        5_000,
+      ),
+    ).toBe(60_000);
   });
 
   it("wraps sandbox commands in a process-tree timeout", () => {

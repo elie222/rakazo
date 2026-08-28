@@ -12,7 +12,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.goto("/sign-up");
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
-  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "new-password");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "new-password",
+  );
 
   await signup(page, email, password, userName);
   await completeOnboarding(page);
@@ -38,7 +41,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
-  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "current-password");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "current-password",
+  );
   await captureScreenshot(page, testInfo, "38-protected-deep-link-sign-in");
 
   await page.getByPlaceholder("Your email address").fill(email);

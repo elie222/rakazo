@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 export const TEAM_SCREEN_LIMIT = 8;
+export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 
 export function screenPorts(index: number) {
@@ -30,6 +31,8 @@ export function computerPortBindings() {
     PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
     PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   }
+  // Control stays on the container network only (0.0.0.0 inside the container).
+  // Do not publish 7070 to the host.
   return { ExposedPorts, PortBindings };
 }
 
@@ -39,6 +42,7 @@ export interface ComputerCreateInput {
   botId: string;
   workspaceId: string;
   homePath: string;
+  controlToken?: string;
   networkMode?: string;
 }
 
@@ -67,6 +71,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
+      ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
     ],
     Labels: {
       "rakazo.managed": "true",
@@ -141,6 +146,24 @@ export function resolveScreenPublishTarget(input: {
   }
   if (input.hostPort) return { host: input.screenHost ?? SCREEN_HOST, port: input.hostPort };
   return undefined;
+}
+
+/**
+ * Resolve the in-container control service via its Docker network IP.
+ * Control is never host-published; the supervisor reaches 7070 on the
+ * container network while the process binds 0.0.0.0 inside the sandbox.
+ */
+export function resolveComputerControlEndpoint(input: {
+  token: string | undefined;
+  networkMode: string | null | undefined;
+  networks: Record<string, { IPAddress?: string } | undefined> | null | undefined;
+}): { url: string; token: string } | undefined {
+  if (!input.token) return undefined;
+  const address =
+    (input.networkMode ? input.networks?.[input.networkMode]?.IPAddress : undefined) ||
+    Object.values(input.networks ?? {}).find((network) => network?.IPAddress)?.IPAddress;
+  if (!address) return undefined;
+  return { url: `http://${address}:${COMPUTER_CONTROL_PORT}/v1/desktop`, token: input.token };
 }
 
 export function xdotoolCommand(input: SandboxInput): string[] {

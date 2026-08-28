@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
   type PlaywrightScreenshot,
@@ -103,9 +104,9 @@ async function collectScreenshots(
   resultsPath: string,
   outputPath: string,
 ): Promise<Array<Omit<PlaywrightScreenshot, "comparison">>> {
-  const files = (await findPngFiles(resultsPath)).sort((left, right) =>
-    path.basename(left).localeCompare(path.basename(right)),
-  );
+  const files = (await findPngFiles(resultsPath))
+    .filter((file) => classifyPlaywrightScreenshot(file) !== undefined)
+    .sort((left, right) => path.basename(left).localeCompare(path.basename(right)));
   if (files.length > MAX_SCREENSHOT_COUNT) {
     throw new Error(
       `Playwright artifact contains ${files.length} screenshots; maximum is ${MAX_SCREENSHOT_COUNT}`,
@@ -122,11 +123,13 @@ async function collectScreenshots(
     }
     const screenshot = await readFile(file);
     validatePngScreenshot(screenshot, file);
+    const captureType = classifyPlaywrightScreenshot(file);
+    if (captureType === undefined) continue;
     const source = path.relative(resultsPath, file);
     const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
     await copyFile(file, path.join(imagePath, fileName));
     screenshots.push({
-      captureType: isFailureCapture(file) ? "failure" : "checkpoint",
+      captureType,
       fileName: `images/${fileName}`,
       hash: createHash("sha256").update(screenshot).digest("hex"),
       source,
@@ -177,10 +180,6 @@ function titleFromFileName(fileName: string): string {
     .replace(/\.png$/i, "")
     .replace(/^\d+-/, "")
     .replaceAll(/[-_]+/g, " ");
-}
-
-function isFailureCapture(fileName: string): boolean {
-  return /^test-failed(?:-\d+)?\.png$/i.test(path.basename(fileName));
 }
 
 function testIdFromSource(source: string): string {

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  resolveComputerControlEndpoint,
   resolveScreenPublishTarget,
   screenPorts,
   screenUrlFor,
@@ -32,7 +34,7 @@ describe("graphical computer spec", () => {
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
     expect(options.Env).toContain("NPM_CONFIG_PREFIX=/home/rakazo/.local");
-    expect(options.ExposedPorts).toEqual({
+    expect(options.ExposedPorts).toMatchObject({
       "6080/tcp": {},
       "6081/tcp": {},
       "6082/tcp": {},
@@ -50,6 +52,8 @@ describe("graphical computer spec", () => {
       "6094/tcp": {},
       "6095/tcp": {},
     });
+    expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
+    expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.PortBindings["6081/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.PortBindings["6082/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
@@ -97,6 +101,8 @@ describe("graphical computer spec", () => {
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
     const browser = readFileSync(path.join(root, "rakazo-browser"), "utf8");
     expect(dockerfile).toMatch(/chromium/);
+    expect(dockerfile).toMatch(/control.py/);
+    expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
@@ -148,6 +154,87 @@ describe("graphical computer spec", () => {
         containerPort: "6080",
       }),
     ).toEqual({ host: "172.18.0.4", port: "6080" });
+  });
+
+  it("does not publish computer control port 7070 on the host", () => {
+    const options = containerCreateOptions({
+      name: "rakazo-bot-ctrl",
+      image: COMPUTER_IMAGE,
+      botId: "ctrl",
+      workspaceId: "ws",
+      homePath: "/var/rakazo/homes/ctrl",
+    });
+    expect(options.HostConfig.PortBindings["7070/tcp"]).toBeUndefined();
+    expect(options.ExposedPorts["7070/tcp"]).toBeUndefined();
+    expect(JSON.stringify(options.HostConfig.PortBindings)).not.toMatch(/7070/);
+  });
+
+  it("resolves computer control through the container network IP, never a host mapping", () => {
+    const networkMode = "rakazo_default";
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+      }),
+    ).toEqual({ url: "http://172.18.0.4:7070/v1/desktop", token: "secret" });
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode: computerNetworkNameFor("bot_1"),
+        networks: { [computerNetworkNameFor("bot_1")]: { IPAddress: "172.19.0.2" } },
+      }),
+    ).toEqual({ url: "http://172.19.0.2:7070/v1/desktop", token: "secret" });
+    expect(
+      resolveComputerControlEndpoint({
+        token: undefined,
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode,
+        networks: {},
+      }),
+    ).toBeUndefined();
+  });
+
+  it("restricts computer control argv to supervisor shapes", () => {
+    const controlPath = path.resolve(import.meta.dirname, "../../computer/control.py");
+    const result = spawnSync(
+      "python3",
+      [
+        "-c",
+        [
+          "import importlib.util",
+          `spec = importlib.util.spec_from_file_location('control', ${JSON.stringify(controlPath)})`,
+          "module = importlib.util.module_from_spec(spec)",
+          "spec.loader.exec_module(module)",
+          "allow = module.allowed_control_argv",
+          "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'key', '--clearmodifiers', 'a'], ':1')",
+          "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'mousemove', '--', '10', '20', 'click', '1'], ':1')",
+          "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'click', '--repeat', '3', '4'], ':1')",
+          "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'type', '--clearmodifiers', '--', 'hi'], ':1')",
+          "assert allow(['env', 'DISPLAY=:2', 'xdg-open', 'https://example.com'], ':2')",
+          "assert allow(['env', 'DISPLAY=:1', 'chromium', 'https://example.com'], ':1')",
+          "assert allow(['env', 'DISPLAY=:1', 'rakazo-browser'], ':1')",
+          "assert not allow(['bash', '-c', 'id'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', 'bash', '-c', 'id'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', '/bin/sh', '-c', 'id'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', 'xdotool', 'exec', '/bin/sh', '-c', 'id'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', 'xdotool', 'key', 'a'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:2', 'xdotool', 'key', '--clearmodifiers', 'a'], ':1')",
+          "assert not allow(['env', 'DISPLAY=wayland-0', 'xdotool', 'key', '--clearmodifiers', 'a'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', 'xdg-open', 'a', 'b'], ':1')",
+          "print('ok')",
+        ].join("\n"),
+      ],
+      { encoding: "utf8" },
+    );
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("ok");
   });
 
   it("turns takeover input into xdotool", () => {

@@ -207,6 +207,15 @@ const READ_ONLY_AGENT_TOOLS = new Set([
 const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
+export function isProtectedComputerLifecycleCommand(command: string): boolean {
+  const normalized = command.toLowerCase();
+  if (/\b(?:kill|pkill|killall|xkill)\b/.test(normalized)) return true;
+  if (/\b(?:systemctl|service)\b\s+(?:stop|restart|kill)\b/.test(normalized)) return true;
+  return /(?:\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(
+    normalized,
+  );
+}
+
 /** Cap the roster so a large workspace cannot flood the prompt. */
 const BOT_DIRECTORY_LIMIT = 40;
 
@@ -846,7 +855,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
         const computerInstruction = graphicalToolsAllowed
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Batch predictable actions with observe:false; observe before coordinate actions, after navigation, or when the outcome is uncertain. Use open_path and launch_app to open graphical files, URLs, and applications. Never kill, restart, or delete the browser, display, or remote-desktop processes/files; report an unavailable browser instead. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
           : graphical
             ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
             : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
@@ -1314,6 +1323,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
+            if (graphical && isProtectedComputerLifecycleCommand(command)) {
+              return finish({
+                error:
+                  "Computer lifecycle commands are unavailable. Keep the browser and desktop running; use computer_observe, computer_act, open_path, or launch_app instead.",
+              });
+            }
             const cwd = resolveBotWorkspaceCwd(
               computerMode,
               bot.id,
