@@ -2902,13 +2902,13 @@ msgid "{name} stopped"
 msgstr ""
 
 #: src/lib/browser-notifications.ts
-msgid "Your bot run failed."
+msgid "Failed."
 msgstr ""
 
 #: src/lib/browser-notifications.ts
-msgid "Your bot run was stopped."
+msgid "Stopped."
 msgstr ""
 
 #: src/lib/browser-notifications.ts
-msgid "Your bot finished its work."
+msgid "Finished."
 msgstr ""

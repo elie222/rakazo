@@ -954,14 +954,16 @@ export function ShellPage() {
         if (abort.signal.aborted) return;
       }
       let retryMs = 250;
-      while (snap === null && !abort.signal.aborted) {
+      // Short retries for a better initial snap; then subscribe even without one.
+      while (snap === null && !abort.signal.aborted && retryMs < 5_000) {
         await abortableDelay(retryMs, abort.signal);
         snap = await refreshThread(active.id).catch(() => null);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
-      if (!snap || abort.signal.aborted) return;
-      const subscribedThreadId = snap.threadId;
-      const initialCursor = snap.cursor;
+      if (abort.signal.aborted) return;
+      const streamReady = Boolean(snap?.threadId);
+      const subscribedThreadId = snap?.threadId;
+      const initialCursor = snap?.cursor ?? -1;
       let cursor = initialCursor;
       retryMs = 250;
       while (!abort.signal.aborted) {
@@ -975,13 +977,14 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            const currentBot = botsRef.current.find((bot) => bot.id === active.id);
             notifyBrowserForTerminalEvent(
               event,
               subscribedThreadId,
               initialCursor,
-              true,
-              active.name,
-              active.notifyOnFinish,
+              streamReady,
+              currentBot?.name ?? active.name,
+              currentBot?.notifyOnFinish ?? active.notifyOnFinish,
             );
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
@@ -1078,14 +1081,16 @@ export function ShellPage() {
         if (abort.signal.aborted) return;
       }
       let retryMs = 250;
-      while (snap === null && !abort.signal.aborted) {
+      // Short retries for a better initial snap; then subscribe even without one.
+      while (snap === null && !abort.signal.aborted && retryMs < 5_000) {
         await abortableDelay(retryMs, abort.signal);
         snap = await refreshGroupThread(groupId).catch(() => null);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
-      if (!snap || abort.signal.aborted) return;
-      const subscribedThreadId = snap.threadId;
-      const initialCursor = snap.cursor;
+      if (abort.signal.aborted) return;
+      const streamReady = Boolean(snap?.threadId);
+      const subscribedThreadId = snap?.threadId;
+      const initialCursor = snap?.cursor ?? -1;
       let cursor = initialCursor;
       retryMs = 250;
       while (!abort.signal.aborted) {
@@ -1101,7 +1106,7 @@ export function ShellPage() {
               event,
               subscribedThreadId,
               initialCursor,
-              true,
+              streamReady,
               eventBot?.name ?? activeGroup.name,
               eventBot?.notifyOnFinish ?? true,
             );

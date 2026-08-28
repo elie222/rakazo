@@ -44,9 +44,9 @@ describe("browser run notifications", () => {
       "{name} failed": "Chief failed",
       "{name} finished": "Chief finished",
       "{name} stopped": "Chief stopped",
-      "Your bot run failed.": "Your bot run failed.",
-      "Your bot run was stopped.": "Your bot run was stopped.",
-      "Your bot finished its work.": "Your bot finished its work.",
+      "Failed.": "Failed.",
+      "Stopped.": "Stopped.",
+      "Finished.": "Finished.",
     });
     i18n.activate("en");
   });
@@ -75,11 +75,15 @@ describe("browser run notifications", () => {
   it("keeps terminal copy stable for the native Notification API", () => {
     expect(browserNotificationMessage(event(), "Chief")).toEqual({
       title: "Chief finished",
-      body: "Your bot finished its work.",
+      body: "Finished.",
     });
     expect(browserNotificationMessage(event({ type: "run.failed" }), "Chief")).toEqual({
       title: "Chief failed",
-      body: "Your bot run failed.",
+      body: "Failed.",
+    });
+    expect(browserNotificationMessage(event({ type: "run.cancelled" }), "Chief")).toEqual({
+      title: "Chief stopped",
+      body: "Stopped.",
     });
   });
 

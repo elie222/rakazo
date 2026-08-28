@@ -62,20 +62,17 @@ export function browserNotificationMessage(
   if (event.type === "run.failed") {
     return {
       title: i18n._({ id: "{name} failed", message: "{name} failed", values: { name } }),
-      body: i18n._({ id: "Your bot run failed.", message: "Your bot run failed." }),
+      body: i18n._({ id: "Failed.", message: "Failed." }),
     };
   }
   if (event.type === "run.cancelled") {
     return {
       title: i18n._({ id: "{name} stopped", message: "{name} stopped", values: { name } }),
-      body: i18n._({
-        id: "Your bot run was stopped.",
-        message: "Your bot run was stopped.",
-      }),
+      body: i18n._({ id: "Stopped.", message: "Stopped." }),
     };
   }
   return {
     title: i18n._({ id: "{name} finished", message: "{name} finished", values: { name } }),
-    body: i18n._({ id: "Your bot finished its work.", message: "Your bot finished its work." }),
+    body: i18n._({ id: "Finished.", message: "Finished." }),
   };
 }
