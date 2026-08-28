@@ -502,10 +502,8 @@ export function ShellPage() {
         // includeArchived request still owns archivedBotsRefreshEpoch — apply
         // whichever slices are still current.
         if (!botsFresh && !archivedFresh) return;
-        if (archivedFresh) {
-          if (archived) setArchivedBots(archived);
-          if (archivedGroupList) setArchivedGroups(archivedGroupList);
-        }
+        if (archivedFresh && archived) setArchivedBots(archived);
+        if (archivedFresh && archivedGroupList) setArchivedGroups(archivedGroupList);
         if (!botsFresh) return;
         setBots(list);
         setBotSections(sections);
