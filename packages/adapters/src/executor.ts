@@ -64,6 +64,7 @@ import {
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { parse as parseShellCommand } from "shell-quote";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
@@ -208,11 +209,37 @@ const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 export function isProtectedComputerLifecycleCommand(command: string): boolean {
-  const normalized = command.toLowerCase();
-  if (/\b(?:kill|pkill|killall|xkill)\b/.test(normalized)) return true;
-  if (/\b(?:systemctl|service)\b\s+(?:stop|restart|kill)\b/.test(normalized)) return true;
-  return /(?:\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(
-    normalized,
+  const fallback = command.toLowerCase();
+  let words: string[];
+  try {
+    words = parseShellCommand(
+      command,
+      (name) => {
+        if (name === "HOME") return "/home/rakazo";
+        if (name === "TMPDIR") return "/tmp";
+        if (name === "XDG_CONFIG_HOME") return "/home/rakazo/.config";
+        return { expansion: name };
+      },
+      { splitUnquoted: true },
+    )
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((word) => word.toLowerCase());
+  } catch {
+    words = fallback.split(/\s+/);
+  }
+
+  const commandNames = words.map((word) => word.split("/").at(-1));
+  if (commandNames.some((word) => /^(?:kill|pkill|killall|xkill)$/.test(word ?? ""))) {
+    return true;
+  }
+  if (
+    commandNames.some((word) => word === "systemctl" || word === "service") &&
+    words.some((word) => /^(?:stop|restart|kill)$/.test(word))
+  ) {
+    return true;
+  }
+  return words.some((word) =>
+    /(?:\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(word),
   );
 }
 
