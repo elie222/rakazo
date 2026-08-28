@@ -11,7 +11,9 @@ import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  COMPUTER_GID,
   COMPUTER_IMAGE,
+  COMPUTER_UID,
   COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -27,7 +29,7 @@ import {
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { assertComputerHomeWritable, ensureComputerHomeOwnership } from "./home-ownership.js";
+import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -118,10 +120,13 @@ app.post("/computers", async (c) => {
       const networkMode = await computerNetworkName(body.botId, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
       assertBotHomePath(serviceHomePath, body.botId);
-      await mkdir(serviceHomePath, { recursive: true });
-      const homePath = hostHomePath(serviceHomePath, runtimeInfo);
       const hostUid = process.getuid?.();
       const hostGid = process.getgid?.();
+      // The API normally creates the home. A non-root standalone supervisor may
+      // do so as the same user, but a root supervisor must never create or chown
+      // user-controlled paths at runtime; Compose data-init handles legacy data.
+      if (hostUid !== 0) await mkdir(serviceHomePath, { recursive: true });
+      const homePath = hostHomePath(serviceHomePath, runtimeInfo);
       const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser(hostUid, hostGid);
       const existing = await findBotContainer(body.botId, body.workspaceId);
       if (existing) {
@@ -139,13 +144,19 @@ app.post("/computers", async (c) => {
             existing,
             info.State.Running ? info : undefined,
           );
-          return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+          return c.json({
+            id: existing.id,
+            image: COMPUTER_IMAGE,
+            screenUrl,
+            resumed: true,
+          });
         }
       }
-      // Only a fresh or replaced container needs the migration. Existing containers
-      // with the current image already use the desired ownership and runtime user.
+      // Existing containers with the current image already use the selected user.
+      // Before a fresh/replaced container starts, validate its home without
+      // privileged filesystem mutations that could escape via concurrent renames.
       if (runtimeInfo || hostUid === 0) {
-        await ensureComputerHomeOwnership(serviceHomePath);
+        await assertComputerHomeWritable(serviceHomePath, COMPUTER_UID, COMPUTER_GID);
       } else if (hostUid !== undefined && hostGid !== undefined) {
         await assertComputerHomeWritable(serviceHomePath, hostUid, hostGid);
       }
@@ -164,7 +175,12 @@ app.post("/computers", async (c) => {
       );
       await container.start();
       const screenUrl = await publishedScreenUrl(container);
-      return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
+      return c.json({
+        id: container.id,
+        image: COMPUTER_IMAGE,
+        screenUrl,
+        resumed: false,
+      });
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -621,7 +637,9 @@ async function ensureComputerImage() {
 async function findBotContainer(botId: string, workspaceId: string) {
   const listed = await docker.listContainers({
     all: true,
-    filters: { label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`] },
+    filters: {
+      label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`],
+    },
   });
   for (const item of listed) {
     const container = docker.getContainer(item.Id);
@@ -705,7 +723,10 @@ async function controlDesktop(
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
-      headers: { authorization: `Bearer ${endpoint.token}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         steps: actions.map((action) => containerActionStep(action, display)),
         display,
