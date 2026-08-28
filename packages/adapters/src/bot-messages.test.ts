@@ -463,8 +463,13 @@ describe("automatic outcome return", () => {
       }),
     );
     expect(harness.enqueue).toHaveBeenCalledOnce();
-    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { botOutcomeReturnedAt: expect.any(Date) } }),
-    );
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: run.id,
+        status: { in: ["completed", "failed"] },
+        botOutcomeReturnedAt: null,
+      },
+      data: { botOutcomeReturnedAt: expect.any(Date) },
+    });
   });
 });

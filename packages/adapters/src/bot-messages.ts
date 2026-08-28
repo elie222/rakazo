@@ -354,7 +354,11 @@ export async function returnBotMessageOutcome(
 
 async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
   await prisma.run.updateMany({
-    where: { id: runId, status: { in: ["completed", "failed"] } },
+    where: {
+      id: runId,
+      status: { in: ["completed", "failed"] },
+      botOutcomeReturnedAt: null,
+    },
     data: { botOutcomeReturnedAt: new Date() },
   });
 }
