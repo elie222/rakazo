@@ -239,6 +239,7 @@ export function ShellPage() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
+  const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(() => new Set<string>());
 
@@ -345,12 +346,18 @@ export function ShellPage() {
     });
   }, []);
   const [botMenu, setBotMenu] = useState<{
-    botId: string;
+    kind: "bot" | "group";
+    id: string;
     position: ContextMenuPosition;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
-  const [clearTarget, setClearTarget] = useState<Bot | null>(null);
-  const [newSectionBot, setNewSectionBot] = useState<Bot | null>(null);
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
+  const [clearTarget, setClearTarget] = useState<
+    { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
+  >(null);
+  const [newSectionTarget, setNewSectionTarget] = useState<
+    { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
+  >(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
@@ -417,7 +424,11 @@ export function ShellPage() {
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const screenRequest = useRef(0);
-  const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
+  const contextBot =
+    botMenu?.kind === "bot" ? bots.find((bot) => bot.id === botMenu.id) : undefined;
+  const contextGroup =
+    botMenu?.kind === "group" ? groups.find((group) => group.id === botMenu.id) : undefined;
+  const contextChat = contextBot ?? contextGroup;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const updateBotUnread = useCallback((id: string, unread: boolean) => {
     setBots((current) => {
@@ -464,11 +475,12 @@ export function ShellPage() {
   const refreshBots = useCallback(
     async (includeArchived = false) => {
       markOnce("rk:renderer:bots-request-start");
-      const [list, sections, archived, groupList] = await Promise.all([
+      const [list, sections, archived, groupList, archivedGroupList] = await Promise.all([
         rpc.bots.list(),
         rpc.botSections.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         rpc.groups.list(),
+        includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
       ]);
       markOnce("rk:renderer:bots-response");
       setBots(list);
@@ -476,11 +488,13 @@ export function ShellPage() {
       setGroups(groupList);
       setInitialBotsLoaded(true);
       if (archived) setArchivedBots(archived);
+      if (archivedGroupList) setArchivedGroups(archivedGroupList);
       if (
         includeArchived &&
         list.length === 0 &&
         archived?.length === 0 &&
-        groupList.length === 0
+        groupList.length === 0 &&
+        archivedGroupList?.length === 0
       ) {
         navigate("/onboarding", { replace: true });
         return;
@@ -666,6 +680,7 @@ export function ShellPage() {
         setBots(bootstrap.bots);
         setBotSections(bootstrap.botSections);
         setArchivedBots(bootstrap.archivedBots);
+        setArchivedGroups(bootstrap.archivedGroups);
         setGroups(groupList);
         setInitialBotsLoaded(true);
         if (!groupId && bootstrap.thread) {
@@ -677,7 +692,12 @@ export function ShellPage() {
           markOnce("rk:renderer:bots-response");
           markOnce("rk:renderer:thread-response");
         }
-        if (bootstrap.bots.length === 0 && bootstrap.archivedBots.length === 0) {
+        if (
+          bootstrap.bots.length === 0 &&
+          bootstrap.archivedBots.length === 0 &&
+          groupList.length === 0 &&
+          bootstrap.archivedGroups.length === 0
+        ) {
           navigate("/onboarding", { replace: true });
           return;
         }
@@ -971,8 +991,15 @@ export function ShellPage() {
     [bots, query],
   );
   const sidebarGroups = useMemo(
-    () => groupBotsForSidebar<Bot>(filtered, botSections),
-    [botSections, filtered],
+    () =>
+      groupBotsForSidebar(
+        [
+          ...filtered.map((chat) => ({ kind: "bot" as const, chat })),
+          ...groups.map((chat) => ({ kind: "group" as const, chat })),
+        ].map((item) => ({ ...item, pinned: item.chat.pinned, sectionId: item.chat.sectionId })),
+        botSections,
+      ),
+    [botSections, filtered, groups],
   );
   const toggleSidebarSection = useCallback(
     (key: string) => {
@@ -1904,51 +1931,72 @@ export function ShellPage() {
                       </div>
                     ) : null}
                     {!collapsed &&
-                      group.bots.map((bot) => (
+                      group.bots.map((item) => (
                         <button
-                          key={bot.id}
+                          key={`${item.kind}:${item.chat.id}`}
                           type="button"
                           onClick={() => {
                             setMobileSidebarOpen(false);
-                            navigate(`/app/${bot.id}`);
+                            navigate(
+                              item.kind === "bot"
+                                ? `/app/${item.chat.id}`
+                                : `/app/g/${item.chat.id}`,
+                            );
                           }}
                           onContextMenu={(event) => {
                             event.preventDefault();
                             setBotMenu({
-                              botId: bot.id,
+                              kind: item.kind,
+                              id: item.chat.id,
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
                           className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
                           style={{
                             background:
-                              !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                              (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
+                              (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
+                                ? "#161618"
+                                : "transparent",
                           }}
                         >
-                          <BotAvatar
-                            color={bot.color}
-                            identity={bot.id}
-                            size={38}
-                            status={bot.status}
-                          />
+                          {item.kind === "bot" ? (
+                            <BotAvatar
+                              color={item.chat.color}
+                              identity={item.chat.id}
+                              size={38}
+                              status={item.chat.status}
+                            />
+                          ) : (
+                            <GroupAvatar
+                              members={
+                                item.chat.id === activeSnapshot?.groupId
+                                  ? (activeSnapshot.members ?? item.chat.members)
+                                  : item.chat.members
+                              }
+                              size={38}
+                            />
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-baseline justify-between gap-2">
                               <span
                                 dir="auto"
                                 className={`truncate text-[15px] text-[#ECECEE] ${
-                                  bot.unread ? "font-semibold" : "font-medium"
+                                  item.chat.unread ? "font-semibold" : "font-medium"
                                 }`}
                               >
-                                {bot.name}
-                                {bot.unread ? (
+                                {item.chat.name}
+                                {item.chat.unread ? (
                                   <span className="sr-only">
                                     <Trans> (unread)</Trans>
                                   </span>
                                 ) : null}
                               </span>
                               <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                                {bot.status === "idle" ? "" : bot.status}
-                                {bot.unread ? (
+                                {item.kind === "bot" && item.chat.status !== "idle"
+                                  ? item.chat.status
+                                  : ""}
+                                {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
                                     className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
@@ -1959,10 +2007,13 @@ export function ShellPage() {
                             <div
                               dir="auto"
                               className={`mt-0.5 truncate text-[13.5px] ${
-                                bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                                item.chat.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
                               }`}
                             >
-                              {bot.preview || bot.title}
+                              {item.kind === "bot"
+                                ? item.chat.preview || item.chat.title
+                                : item.chat.preview ||
+                                  item.chat.members.map((member) => member.name).join(", ")}
                             </div>
                           </div>
                         </button>
@@ -1972,53 +2023,7 @@ export function ShellPage() {
               })}
             </>
           )}
-          {!showWorkspaceSearch
-            ? groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    navigate(`/app/g/${group.id}`);
-                  }}
-                  className="flex gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                  style={{
-                    background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
-                  }}
-                >
-                  <GroupAvatar
-                    members={
-                      group.id === activeSnapshot?.groupId
-                        ? (activeSnapshot.members ?? group.members)
-                        : group.members
-                    }
-                    size={38}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span
-                        dir="auto"
-                        className={`min-w-0 truncate text-[15px] text-[#ECECEE] ${
-                          group.unread ? "font-semibold" : "font-medium"
-                        }`}
-                      >
-                        {group.name}
-                      </span>
-                      {group.unread ? (
-                        <span
-                          aria-hidden="true"
-                          className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                        />
-                      ) : null}
-                    </div>
-                    <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
-                      {group.members.map((member) => member.name).join(", ")}
-                    </div>
-                  </div>
-                </button>
-              ))
-            : null}
-          {archivedBots.length > 0 && !showWorkspaceSearch ? (
+          {archivedBots.length + archivedGroups.length > 0 && !showWorkspaceSearch ? (
             <div className="mt-2 border-t border-[#202023] pt-2">
               <button
                 type="button"
@@ -2029,10 +2034,11 @@ export function ShellPage() {
                 <span>
                   <Trans>Archived</Trans>
                 </span>
-                <span>{archivedBots.length}</span>
+                <span>{archivedBots.length + archivedGroups.length}</span>
               </button>
-              {archivedOpen
-                ? archivedBots.map((bot) => (
+              {archivedOpen ? (
+                <>
+                  {archivedBots.map((bot) => (
                     <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
                       <BotAvatar
                         color={bot.color}
@@ -2064,8 +2070,39 @@ export function ShellPage() {
                         <Trans>Delete</Trans>
                       </button>
                     </div>
-                  ))
-                : null}
+                  ))}
+                  {archivedGroups.map((group) => (
+                    <div key={group.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <GroupAvatar members={group.members} size={28} />
+                      <span
+                        className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]"
+                        dir="auto"
+                      >
+                        {group.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.groups
+                            .restore({ groupId: group.id })
+                            .then(() => refreshBots(true))
+                        }
+                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                      >
+                        <Trans>Restore</Trans>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t`Delete ${group.name}`}
+                        onClick={() => setDeleteGroupTarget(group)}
+                        className="text-[12.5px] text-[#FF5364]"
+                      >
+                        <Trans>Delete</Trans>
+                      </button>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -2620,7 +2657,7 @@ export function ShellPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                onClear={() => setClearTarget(active)}
+                onClear={() => setClearTarget({ kind: "bot", chat: active })}
                 onComputerChanged={async () => {
                   await refreshThread(active.id);
                 }}
@@ -2785,55 +2822,92 @@ export function ShellPage() {
       </aside>
 
       <Suspense fallback={null}>
-        {contextBot && botMenu ? (
+        {contextChat && botMenu ? (
           <BotContextMenu
-            bot={contextBot}
+            bot={contextChat}
             position={botMenu.position}
             onClose={closeBotMenu}
             sections={botSections}
             onTogglePinned={() => {
               setBotMenu(null);
-              void rpc.bots
-                .update({ botId: contextBot.id, pinned: !contextBot.pinned })
-                .then(() => refreshBots());
+              const request = contextBot
+                ? rpc.bots.update({ botId: contextBot.id, pinned: !contextBot.pinned })
+                : rpc.groups.update({
+                    groupId: contextGroup!.id,
+                    pinned: !contextGroup!.pinned,
+                  });
+              void request.then(() => refreshBots());
             }}
             onToggleUnread={() => {
-              const unread = !contextBot.unread;
+              const unread = !contextChat.unread;
               setBotMenu(null);
-              const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
-              void request.catch(() => undefined);
+              if (contextBot) {
+                const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
+                void request.catch(() => undefined);
+              } else {
+                const request = unread
+                  ? rpc.threads.markUnread({ groupId: contextGroup!.id })
+                  : rpc.threads.markRead({ groupId: contextGroup!.id });
+                void request
+                  .then(() =>
+                    setGroups((current) =>
+                      current.map((group) =>
+                        group.id === contextGroup!.id ? { ...group, unread } : group,
+                      ),
+                    ),
+                  )
+                  .catch(() => undefined);
+              }
             }}
             onMoveToSection={(sectionId) => {
               setBotMenu(null);
-              if (sectionId === contextBot.sectionId) return;
-              void rpc.bots.update({ botId: contextBot.id, sectionId }).then(() => refreshBots());
+              if (sectionId === contextChat.sectionId) return;
+              const request = contextBot
+                ? rpc.bots.update({ botId: contextBot.id, sectionId })
+                : rpc.groups.update({ groupId: contextGroup!.id, sectionId });
+              void request.then(() => refreshBots());
             }}
             onCreateSection={() => {
-              setNewSectionBot(contextBot);
+              setNewSectionTarget(
+                contextBot
+                  ? { kind: "bot", chat: contextBot }
+                  : { kind: "group", chat: contextGroup! },
+              );
               setBotMenu(null);
             }}
             onEdit={() => {
-              navigate(`/app/${contextBot.id}`);
-              setPanel("settings");
+              navigate(contextBot ? `/app/${contextBot.id}` : `/app/g/${contextGroup!.id}`);
+              setPanel(contextBot ? "settings" : "group-settings");
               setBotMenu(null);
             }}
             onDuplicate={() => {
               setBotMenu(null);
-              void rpc.bots.duplicate({ botId: contextBot.id }).then(async (bot) => {
+              const request = contextBot
+                ? rpc.bots.duplicate({ botId: contextBot.id })
+                : rpc.groups.duplicate({ groupId: contextGroup!.id });
+              void request.then(async (chat) => {
                 await refreshBots();
-                navigate(`/app/${bot.id}`);
+                navigate(contextBot ? `/app/${chat.id}` : `/app/g/${chat.id}`);
               });
             }}
             onClear={() => {
-              setClearTarget(contextBot);
+              setClearTarget(
+                contextBot
+                  ? { kind: "bot", chat: contextBot }
+                  : { kind: "group", chat: contextGroup! },
+              );
               setBotMenu(null);
             }}
             onArchive={() => {
               setBotMenu(null);
-              void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
+              const request = contextBot
+                ? rpc.bots.archive({ botId: contextBot.id })
+                : rpc.groups.archive({ groupId: contextGroup!.id });
+              void request.then(() => refreshBots(true));
             }}
             onDelete={() => {
-              setDeleteTarget(contextBot);
+              if (contextBot) setDeleteTarget(contextBot);
+              else setDeleteGroupTarget(contextGroup!);
               setBotMenu(null);
             }}
           />
@@ -2852,13 +2926,31 @@ export function ShellPage() {
           />
         ) : null}
 
-        {newSectionBot ? (
+        {deleteGroupTarget ? (
+          <DeleteItemDialog
+            item={deleteGroupTarget}
+            noun="group"
+            onCancel={() => setDeleteGroupTarget(null)}
+            onConfirm={async () => {
+              await rpc.groups.remove({ groupId: deleteGroupTarget.id });
+              setDeleteGroupTarget(null);
+              setPanel(null);
+              await refreshBots(true);
+            }}
+          />
+        ) : null}
+
+        {newSectionTarget ? (
           <NewBotSectionDialog
-            bot={newSectionBot}
-            onCancel={() => setNewSectionBot(null)}
+            bot={newSectionTarget.chat}
+            onCancel={() => setNewSectionTarget(null)}
             onConfirm={async (name) => {
-              await rpc.botSections.create({ botId: newSectionBot.id, name });
-              setNewSectionBot(null);
+              await rpc.botSections.create(
+                newSectionTarget.kind === "bot"
+                  ? { botId: newSectionTarget.chat.id, name }
+                  : { groupId: newSectionTarget.chat.id, name },
+              );
+              setNewSectionTarget(null);
               await refreshBots();
             }}
           />
@@ -2866,11 +2958,18 @@ export function ShellPage() {
 
         {clearTarget ? (
           <ClearConversationDialog
-            bot={clearTarget}
+            bot={clearTarget.chat}
             onCancel={() => setClearTarget(null)}
             onConfirm={async () => {
-              await rpc.threads.clear({ botId: clearTarget.id });
-              if (active?.id === clearTarget.id) {
+              await rpc.threads.clear(
+                clearTarget.kind === "bot"
+                  ? { botId: clearTarget.chat.id }
+                  : { groupId: clearTarget.chat.id },
+              );
+              if (
+                (clearTarget.kind === "bot" && active?.id === clearTarget.chat.id) ||
+                (clearTarget.kind === "group" && activeGroup?.id === clearTarget.chat.id)
+              ) {
                 expandedHistoryThread.current = null;
                 pinnedAroundRef.current = null;
                 historyEpoch.current += 1;
@@ -2885,8 +2984,9 @@ export function ShellPage() {
         ) : null}
 
         {deleteRoutineTarget ? (
-          <DeleteRoutineDialog
-            routine={deleteRoutineTarget}
+          <DeleteItemDialog
+            item={deleteRoutineTarget}
+            noun="routine"
             onCancel={() => setDeleteRoutineTarget(null)}
             onConfirm={async () => {
               const target = deleteRoutineTarget;
@@ -4920,7 +5020,7 @@ function NewBotSectionDialog({
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "name">;
   onCancel: () => void;
   onConfirm: (name: string) => Promise<void>;
 }) {
@@ -5006,7 +5106,7 @@ function ClearConversationDialog({
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "name">;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -5090,7 +5190,6 @@ function DeleteBotDialog({
   onCancel: () => void;
   onConfirm: (deleteMemories: boolean) => Promise<void>;
 }) {
-  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -5196,16 +5295,17 @@ function DeleteBotDialog({
   );
 }
 
-function DeleteRoutineDialog({
-  routine,
+function DeleteItemDialog({
+  item,
+  noun,
   onCancel,
   onConfirm,
 }: {
-  routine: Routine;
+  item: { name: string };
+  noun: "group" | "routine";
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -5228,15 +5328,15 @@ function DeleteRoutineDialog({
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="delete-routine-title"
-        aria-describedby="delete-routine-description"
+        aria-labelledby="delete-item-title"
+        aria-describedby="delete-item-description"
         className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          <Trans>Delete {routine.name}?</Trans>
+        <h2 id="delete-item-title" className="text-[17px] font-medium text-[#F1F1F2]">
+          <Trans>Delete {item.name}?</Trans>
         </h2>
-        <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p id="delete-item-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
           <Trans>This cannot be undone.</Trans>
         </p>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
@@ -5256,7 +5356,7 @@ function DeleteRoutineDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete routine`);
+                setError(err instanceof Error ? err.message : `Could not delete ${noun}`);
                 setDeleting(false);
               });
             }}

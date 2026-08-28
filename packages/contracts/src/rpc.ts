@@ -187,14 +187,18 @@ export const appContract = {
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),
     list: oc.output(z.array(GroupSchema)),
+    listArchived: oc.output(z.array(GroupSchema)),
     get: oc.input(groupId).output(GroupDetailSchema),
+    duplicate: oc.input(groupId).output(GroupSchema),
     update: oc.input(UpdateGroupInput).output(GroupSchema),
+    archive: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
+    restore: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
     remove: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
     create: oc
-      .input(z.object({ botId: Id, name: z.string().trim().min(1).max(60) }))
+      .input(threadTarget.safeExtend({ name: z.string().trim().min(1).max(60) }))
       .output(BotSectionSchema),
   },
   threads: {
@@ -227,7 +231,7 @@ export const appContract = {
     followUp: oc
       .input(threadTarget.safeExtend({ text: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
-    clear: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    clear: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     answer: oc
       .input(
         threadTarget.safeExtend({

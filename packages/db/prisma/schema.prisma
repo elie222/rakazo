@@ -277,6 +277,7 @@ model BotSection {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   bots        Bot[]
+  groups      ChatGroup[]
 
   @@unique([workspaceId, userId, name])
   @@index([workspaceId, userId, position, createdAt])
@@ -302,13 +303,18 @@ model ChatGroup {
   workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId      String
   name        String
+  pinned      Boolean  @default(false)
+  sectionId   String?
+  section     BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  archivedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   members     ChatGroupMember[]
   thread      Thread?
   artifacts   Artifact[]
 
-  @@index([workspaceId, userId, updatedAt])
+  @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
+  @@index([sectionId])
   @@map("chat_groups")
 }
 

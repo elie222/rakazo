@@ -86,19 +86,32 @@ export function createRepos(prisma: PrismaClient) {
       }));
     },
 
-    async createBotSection(actor: Actor, input: { botId: string; name: string }) {
+    async createBotSection(
+      actor: Actor,
+      input: { botId?: string; groupId?: string; name: string },
+    ) {
       const { name } = input;
       return prisma.$transaction(async (tx) => {
-        const bot = await tx.bot.findFirst({
-          where: {
-            id: input.botId,
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            archivedAt: null,
-          },
-          select: { id: true },
-        });
-        if (!bot) throw new IsolationError();
+        const target = input.botId
+          ? await tx.bot.findFirst({
+              where: {
+                id: input.botId,
+                workspaceId: actor.workspaceId,
+                userId: actor.userId,
+                archivedAt: null,
+              },
+              select: { id: true },
+            })
+          : await tx.chatGroup.findFirst({
+              where: {
+                id: input.groupId,
+                workspaceId: actor.workspaceId,
+                userId: actor.userId,
+                archivedAt: null,
+              },
+              select: { id: true },
+            });
+        if (!target) throw new IsolationError();
 
         const aggregate = await tx.botSection.aggregate({
           where: { workspaceId: actor.workspaceId, userId: actor.userId },
@@ -122,7 +135,14 @@ export function createRepos(prisma: PrismaClient) {
             },
           },
         });
-        await tx.bot.update({ where: { id: bot.id }, data: { sectionId: section.id } });
+        if (input.botId) {
+          await tx.bot.update({ where: { id: target.id }, data: { sectionId: section.id } });
+        } else {
+          await tx.chatGroup.update({
+            where: { id: target.id },
+            data: { sectionId: section.id },
+          });
+        }
         return {
           id: section.id,
           name: section.name,

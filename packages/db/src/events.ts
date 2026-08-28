@@ -43,7 +43,9 @@ export interface ThreadEvents {
 export interface ClearThreadInput {
   workspaceId: string;
   threadId: string;
+  /** Event author and the bot-scoped target for one-to-one chats. */
   botId: string;
+  groupId?: string;
 }
 
 export interface ClearThreadResult {
@@ -173,7 +175,7 @@ export async function clearThread(
       where: {
         id: input.threadId,
         workspaceId: input.workspaceId,
-        botId: input.botId,
+        ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
       data: { unread: false },
       select: { nextMessageSeq: true, historyCompactionGeneration: true },
@@ -182,10 +184,10 @@ export async function clearThread(
       where: {
         workspaceId: input.workspaceId,
         threadId: input.threadId,
-        botId: input.botId,
+        ...(input.groupId ? {} : { botId: input.botId }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
-      select: { id: true, taskId: true },
+      select: { id: true, taskId: true, botId: true },
     });
     const now = new Date();
     const runIds = activeRuns.map((run) => run.id);
@@ -209,9 +211,16 @@ export async function clearThread(
         data: { status: "cancelled" },
       });
     }
-    await tx.computerExecutionLease.deleteMany({ where: { botId: input.botId } });
+    const affectedBotIds = input.groupId
+      ? [...new Set(activeRuns.map((run) => run.botId))]
+      : [input.botId];
+    await tx.computerExecutionLease.deleteMany({
+      where: input.groupId ? { botId: { in: affectedBotIds } } : { botId: input.botId },
+    });
     await tx.computer.updateMany({
-      where: { executionBotId: input.botId },
+      where: input.groupId
+        ? { executionBotId: { in: affectedBotIds } }
+        : { executionBotId: input.botId },
       data: {
         executionRunId: null,
         executionBotId: null,
@@ -241,10 +250,14 @@ export async function clearThread(
         },
       });
     }
-    await tx.bot.update({
-      where: { id: input.botId, workspaceId: input.workspaceId },
-      data: { updatedAt: now },
-    });
+    if (input.groupId) {
+      await tx.chatGroup.update({ where: { id: input.groupId }, data: { updatedAt: now } });
+    } else {
+      await tx.bot.update({
+        where: { id: input.botId, workspaceId: input.workspaceId },
+        data: { updatedAt: now },
+      });
+    }
     const event = await appendEventInTransaction(tx, {
       ...input,
       type: "thread.cleared",
