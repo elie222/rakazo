@@ -1,1 +1,1 @@
-DROP INDEX CONCURRENTLY "chat_groups_workspaceId_userId_updatedAt_idx";
+DROP INDEX CONCURRENTLY IF EXISTS "chat_groups_workspaceId_userId_updatedAt_idx";
