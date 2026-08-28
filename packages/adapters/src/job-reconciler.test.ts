@@ -276,9 +276,17 @@ describe("createJobReconciler", () => {
       sourceMessageId: "message-1",
       status: "completed",
       error: null,
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       bot: { name: "Researcher" },
     };
-    const runFindMany = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([terminalRun]);
+    const runFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([terminalRun])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([terminalRun]);
     const prisma = {
       run: { findMany: runFindMany },
       routine: { findMany: vi.fn(async () => []) },
@@ -289,16 +297,28 @@ describe("createJobReconciler", () => {
     } as unknown as PrismaClient;
     const { jobs } = publisher();
     const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(returnBotMessageOutcome)
+      .mockResolvedValue(true)
+      .mockRejectedValueOnce(new Error("temporary failure"));
 
-    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+    const reconciler = createJobReconciler({ prisma, jobs, events }, { batchSize: 1 });
+
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
 
     expect(runFindMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         where: {
-          trigger: "bot_message",
-          status: { in: ["completed", "failed"] },
-          botOutcomeReturnedAt: null,
+          AND: [
+            {
+              trigger: "bot_message",
+              status: { in: ["completed", "failed"] },
+              botOutcomeReturnedAt: null,
+            },
+          ],
         },
       }),
     );
@@ -309,6 +329,25 @@ describe("createJobReconciler", () => {
       "Finished.",
       "result",
     );
+    expect(runFindMany).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.anything(),
+            {
+              OR: [
+                { updatedAt: { gt: terminalRun.updatedAt } },
+                { updatedAt: terminalRun.updatedAt, id: { gt: terminalRun.id } },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalledOnce();
+    consoleError.mockRestore();
   });
 });
 
