@@ -781,11 +781,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
           name: "Closed Signup",
         }),
       });
-      expect(closedSignup.status).toBeGreaterThanOrEqual(400);
+      expect(closedSignup.status).toBe(400);
+      expect(await closedSignup.text()).toContain("Registration is closed");
 
+      const approvedEmail = `approved-${stamp}@example.test`;
       await rpc(app, owner, "deployment/update", {
         signupsEnabled: true,
-        signupAllowlist: ["approved@example.test"],
+        signupAllowlist: [approvedEmail],
       });
       const disallowedSignup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -796,8 +798,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
           name: "Disallowed Signup",
         }),
       });
-      expect(disallowedSignup.status).toBeGreaterThanOrEqual(400);
-      await signup(app, "approved@example.test", "Approved Signup");
+      expect(disallowedSignup.status).toBe(400);
+      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      await signup(app, approvedEmail, "Approved Signup");
     } finally {
       await rpc(app, owner, "deployment/update", {
         signupsEnabled: true,
