@@ -77,6 +77,13 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   const heightWithNewline = await composer.evaluate((el) => el.getBoundingClientRect().height);
   expect(heightWithNewline).toBeGreaterThan(heightBeforeNewline);
 
+  await composer.press("Enter");
+  const multilineMessage = page
+    .getByTestId("transcript")
+    .getByText("line one\nline two", { exact: true });
+  await expect(multilineMessage).toBeVisible();
+  await expect(multilineMessage).toHaveCSS("white-space", "pre-wrap");
+
   const message = "Fake composer regression check.";
   await composer.fill(message);
   await captureScreenshot(page, testInfo, "40-restored-auth-session");
