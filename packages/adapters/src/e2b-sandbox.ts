@@ -102,10 +102,37 @@ export function isUnreachableTransportError(error: unknown): boolean {
  * discarding an uncommitted workspace on a still-reachable box.
  */
 export function isUnrecoverableSandboxError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(
-    message,
-  );
+  if (LEGACY_GONE_MESSAGE.test(errorMessage(error))) return true;
+  return isSandboxGoneError(error);
+}
+
+// How the E2B SDK words a sandbox that no longer exists. It does not always say "not found":
+// an expired sandbox surfaces as a TimeoutError about the *sandbox* timeout (502 / Unavailable
+// from envd), which used to read as a live sandbox and left every later call throwing forever.
+const SANDBOX_GONE_MESSAGE =
+  /probably not running anymore|likely due to sandbox timeout|killed or reached its end of life|sandbox [^:]{0,60}not found|sandbox [^:]{0,60}does not exist/i;
+// The same words from a live sandbox: a missing binary or a missing file inside it.
+const SHELL_MISSING_TARGET = /command not found|no such file|^path .* not found/i;
+const LEGACY_GONE_MESSAGE =
+  /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i;
+
+/**
+ * Narrower than isUnrecoverableSandboxError: the provider itself said this sandbox is gone.
+ * A missing binary or a missing file inside a live sandbox is not proof of death, so callers
+ * that persist "the sandbox is gone" must use this one.
+ */
+export function isSandboxGoneError(error: unknown): boolean {
+  const message = errorMessage(error);
+  if (SHELL_MISSING_TARGET.test(message)) return false;
+  if (SANDBOX_GONE_MESSAGE.test(message)) return true;
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (current.name === "SandboxNotFoundError") return true;
+  }
+  return false;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
@@ -183,11 +210,18 @@ export class E2BSandboxProvider implements SandboxProvider {
     const existing = this.boxes.get(id);
     if (existing) {
       const lastTouched = this.lastTouchedAt.get(id) ?? 0;
-      if (Date.now() - lastTouched >= 60_000) {
-        await existing.setTimeout(sandboxIdleMs()).catch(() => undefined);
+      if (Date.now() - lastTouched < 60_000) return existing;
+      // A cached handle to a sandbox E2B already killed keeps throwing on every call, and the
+      // process never reconnects. The keepalive is the cheapest place to notice and drop it.
+      const gone = await existing.setTimeout(sandboxIdleMs()).then(
+        () => false,
+        (error: unknown) => isSandboxGoneError(error),
+      );
+      if (!gone) {
         this.lastTouchedAt.set(id, Date.now());
+        return existing;
       }
-      return existing;
+      this.forget(id);
     }
     const connected = await this.sdk.connect(id, {
       apiKey: this.apiKey,

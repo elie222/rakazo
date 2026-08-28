@@ -2,7 +2,12 @@ import { type Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import { E2BSandboxProvider, type E2BSandboxSdk } from "./e2b-sandbox.js";
+import {
+  E2BSandboxProvider,
+  type E2BSandboxSdk,
+  isSandboxGoneError,
+  isUnrecoverableSandboxError,
+} from "./e2b-sandbox.js";
 
 const context = {
   operationId: "e2b-test",
@@ -637,5 +642,78 @@ describe("E2B computer backend", () => {
     await expect(provider.observe(computer, { ...context, botId: "bot-9" })).rejects.toThrow(
       /does not support multiple screens/,
     );
+  });
+});
+
+describe("sandbox-gone detection", () => {
+  // Verbatim wordings from @e2b/desktop 2.3.1 (e2b 2.38.3 dist).
+  const gone = [
+    new TimeoutError(
+      "502: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.",
+    ),
+    Object.assign(new Error("Sandbox is probably not running anymore"), {
+      name: "SandboxNotFoundError",
+    }),
+    new TimeoutError(
+      "stream reset: The sandbox was killed or reached its end of life while the request was in flight.",
+    ),
+    Object.assign(new Error("Paused sandbox sandbox-ref-1 not found"), {
+      name: "SandboxNotFoundError",
+    }),
+  ];
+  const alive = [
+    new Error("bash: x11vnc: command not found"),
+    new Error("Path /home/user/rakazo-home/notes.md not found"),
+    new Error("tar: /home/user/x: No such file or directory"),
+    new TimeoutError(
+      "canceled: This error is likely due to exceeding 'requestTimeoutMs'. You can pass the request timeout value as an option when making the request.",
+    ),
+    Object.assign(new Error("fetch failed"), { code: "ECONNRESET" }),
+  ];
+
+  it("recognises every sandbox-gone wording", () => {
+    for (const error of gone) {
+      expect(isSandboxGoneError(error), error.message).toBe(true);
+      expect(isUnrecoverableSandboxError(error), error.message).toBe(true);
+    }
+  });
+
+  it("never reads a live sandbox as gone", () => {
+    for (const error of alive) {
+      expect(isSandboxGoneError(error), error.message).toBe(false);
+    }
+  });
+
+  it("leaves the transport split alone", () => {
+    // a blip is handled by isUnreachableTransportError, and must never read as gone
+    expect(isSandboxGoneError(new Error("fetch failed"))).toBe(false);
+    expect(isUnrecoverableSandboxError(new Error("fetch failed"))).toBe(false);
+  });
+
+  it("drops a cached handle whose sandbox died and reconnects", async () => {
+    const dead = {
+      sandboxId: "box-1",
+      setTimeout: vi.fn(async () => {
+        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
+      }),
+    } as unknown as Sandbox;
+    const revived = { sandboxId: "box-1", setTimeout: vi.fn(async () => undefined) };
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(async () => dead),
+      connect: vi.fn(async () => revived as unknown as Sandbox),
+      pause: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    const ref = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    expect(ref.providerRef).toBe("box-1");
+
+    vi.setSystemTime(Date.now() + 61_000);
+    try {
+      await provider.keepAlive?.(ref);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(dead.setTimeout).toHaveBeenCalledTimes(1);
+    expect(sdk.connect).toHaveBeenCalledTimes(1);
   });
 });

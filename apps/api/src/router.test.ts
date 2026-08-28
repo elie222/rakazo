@@ -390,3 +390,90 @@ describe("updater owner gate", () => {
     expect(message).not.toMatch(/git (fetch|merge|pull)/i);
   });
 });
+
+describe("computer screen url", () => {
+  const actor = {
+    workspaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const computerRow = {
+    id: "computer-1",
+    kind: "e2b",
+    scope: "team",
+    state: "running",
+    providerRef: "sandbox-ref-1",
+    homeKey: "home-1",
+    controlHolder: "none",
+    controlLeaseId: null,
+    controlLeaseExpiresAt: null,
+    controlBotId: null,
+    controlRunId: null,
+  };
+
+  const callScreenUrl = async (connectScreen: () => Promise<unknown>, updateMany = vi.fn()) => {
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: computerRow,
+        }),
+      },
+      computer: { updateMany },
+      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: { connectScreen },
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/computer/screenUrl", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return { response, updateMany };
+  };
+
+  it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(
+        Object.assign(new Error("Sandbox is probably not running anymore"), {
+          name: "SandboxNotFoundError",
+        }),
+      ),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { url: null } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", providerRef: "sandbox-ref-1" },
+      data: { state: "stopped", providerRef: null },
+    });
+    logError.mockRestore();
+  });
+
+  it("keeps a transport blip an error and leaves the row alone", async () => {
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
+    );
+    expect(response.status).toBe(500);
+    expect(updateMany).not.toHaveBeenCalled();
+    logError.mockRestore();
+  });
+});
