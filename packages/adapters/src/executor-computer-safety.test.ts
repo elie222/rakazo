@@ -18,6 +18,8 @@ describe("computer lifecycle command guard", () => {
       "bash -c 'pkill chromium'",
       'bash -lc "killall chrome"',
       "sh -c 'systemctl restart chromium'",
+      `bash -c 'eval "pkill chromium"'`,
+      'bash -lc "source /tmp/kill-chrome.sh"',
     ]) {
       expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
     }

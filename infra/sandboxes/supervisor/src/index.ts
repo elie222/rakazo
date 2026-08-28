@@ -133,12 +133,10 @@ app.post("/computers", async (c) => {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
         if (
-          info.Image !== desired.Id ||
-          (networkMode && info.HostConfig.NetworkMode !== networkMode) ||
-          info.Config.User !== computerUser
+          info.Image === desired.Id &&
+          (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
+          info.Config.User === computerUser
         ) {
-          await existing.remove({ force: true }).catch(() => undefined);
-        } else {
           if (!info.State.Running) await existing.start();
           const screenUrl = await publishedScreenUrl(
             existing,
@@ -153,12 +151,15 @@ app.post("/computers", async (c) => {
         }
       }
       // Existing containers with the current image already use the selected user.
-      // Before a fresh/replaced container starts, validate its home without
+      // Before replacing or creating a container, validate its home without
       // privileged filesystem mutations that could escape via concurrent renames.
       if (runtimeInfo || hostUid === 0) {
         await assertComputerHomeWritable(serviceHomePath, COMPUTER_UID, COMPUTER_GID);
       } else if (hostUid !== undefined && hostGid !== undefined) {
         await assertComputerHomeWritable(serviceHomePath, hostUid, hostGid);
+      }
+      if (existing) {
+        await existing.remove({ force: true }).catch(() => undefined);
       }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
@@ -800,9 +801,10 @@ async function publishedScreenUrl(
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
-    if (screenNetworkMode === "isolated" && supervisorInfo) {
+    if (screenNetworkMode === "isolated") {
+      const runtime = supervisorInfo ?? (await inspectSupervisorContainer());
       const networkName = info.HostConfig.NetworkMode;
-      if (networkName) await connectComposeScreenPeers(networkName, supervisorInfo);
+      if (runtime && networkName) await connectComposeScreenPeers(networkName, runtime);
     }
     const target = resolveScreenPublishTarget({
       screenNetwork: screenNetworkMode,
@@ -851,11 +853,10 @@ async function computerNetworkName(botId: string, info: Docker.ContainerInspectI
     // stay on the supervisor's network rather than an isolated one.
     return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
   }
-  const networkName = await ensureBotNetwork(botId);
-  if (screenNetworkMode === "isolated") {
-    if (!info) throw new Error("isolated Compose screens require a containerized supervisor");
+  if (screenNetworkMode === "isolated" && !info) {
+    throw new Error("isolated Compose screens require a containerized supervisor");
   }
-  return networkName;
+  return ensureBotNetwork(botId);
 }
 
 async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {

@@ -31,6 +31,19 @@ describe("computer home ownership", () => {
     await expect(assertComputerHomeWritable(home, 1000, 1000)).rejects.toThrow(/symbolic link/);
   });
 
+  it("rejects a writable regular file as the home root", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-file-root-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    await writeFile(home, "{}");
+    await chmod(home, 0o600);
+
+    const stat = await lstat(home);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(
+      /must be a directory/,
+    );
+  });
+
   it("rejects an existing entry that the host-run computer cannot write", async () => {
     const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-writable-"));
     roots.push(parent);

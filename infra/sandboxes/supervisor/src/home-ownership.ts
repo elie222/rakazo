@@ -28,6 +28,9 @@ async function assertWritableEntry(
     if (isRoot) throw new Error(`computer home ${root} must not be a symbolic link`);
     return;
   }
+  if (isRoot && !stat.isDirectory()) {
+    throw new Error(`computer home ${root} must be a directory`);
+  }
 
   const required = stat.isDirectory() ? 0b111 : 0b010;
   if (!hasPermissions(stat, uid, gid, required)) {

@@ -245,6 +245,11 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
   if (commandNames.some((word) => /^(?:kill|pkill|killall|xkill)$/.test(word ?? ""))) {
     return true;
   }
+  // eval/source can hide protected commands inside an expansion string that the
+  // outer tokenizer keeps as a single word (e.g. eval "pkill chromium").
+  if (commandNames.some((word) => /^(?:eval|source)$/.test(word ?? ""))) {
+    return true;
+  }
   if (
     commandNames.some((word) => word === "systemctl" || word === "service") &&
     words.some((word) => /^(?:stop|restart|kill)$/.test(word))
