@@ -153,11 +153,16 @@ app.post("/computers", async (c) => {
       // Existing containers with the current image already use the selected user.
       // Before replacing or creating a container, validate its home without
       // privileged filesystem mutations that could escape via concurrent renames.
-      if (runtimeInfo || hostUid === 0) {
-        await assertComputerHomeWritable(serviceHomePath, COMPUTER_UID, COMPUTER_GID);
-      } else if (hostUid !== undefined && hostGid !== undefined) {
-        await assertComputerHomeWritable(serviceHomePath, hostUid, hostGid);
-      }
+      // Match hostComputerUser(): missing/root host identity falls back to 1000:1000.
+      const effectiveUid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_UID
+          : hostUid;
+      const effectiveGid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_GID
+          : hostGid;
+      await assertComputerHomeWritable(serviceHomePath, effectiveUid, effectiveGid);
       if (existing) {
         await existing.remove({ force: true }).catch(() => undefined);
       }

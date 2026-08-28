@@ -209,6 +209,19 @@ const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
+const SAFE_SHELL_CONTROL_OPS = new Set([
+  "&&",
+  "||",
+  ";",
+  "|",
+  "&",
+  ">",
+  "<",
+  ">>",
+  ">&",
+  "<&",
+  "&>",
+]);
 
 function shellCFlagProgram(words: string[], interpreterIndex: number): string | undefined {
   for (let index = interpreterIndex + 1; index < words.length; index += 1) {
@@ -220,11 +233,10 @@ function shellCFlagProgram(words: string[], interpreterIndex: number): string | 
   return undefined;
 }
 
-export function isProtectedComputerLifecycleCommand(command: string): boolean {
+function tokenizeProtectedShellCommand(command: string): string[] | "dynamic" {
   const fallback = command.toLowerCase();
-  let words: string[];
   try {
-    words = parseShellCommand(
+    const parsed = parseShellCommand(
       command,
       (name) => {
         if (name === "HOME") return "/home/rakazo";
@@ -233,20 +245,53 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
         return { expansion: name };
       },
       { splitUnquoted: true },
-    )
-      .filter((entry): entry is string => typeof entry === "string")
-      .map((word) => word.toLowerCase());
+    );
+    const words: string[] = [];
+    let expectCommand = true;
+    for (const entry of parsed) {
+      if (typeof entry === "string") {
+        // Backtick fragments are not fully tokenized; treat them as dynamic.
+        if (entry.includes("`")) return "dynamic";
+        words.push(entry.toLowerCase());
+        expectCommand = false;
+        continue;
+      }
+      if (!entry || typeof entry !== "object") return "dynamic";
+      const token = entry as { op?: string; expansion?: string };
+      if (token.op === "glob") {
+        expectCommand = false;
+        continue;
+      }
+      if (token.op && SAFE_SHELL_CONTROL_OPS.has(token.op)) {
+        expectCommand = true;
+        continue;
+      }
+      if (typeof token.expansion === "string") {
+        // Empty expansion is command substitution ($()); a leading expansion is a
+        // dynamic command name. Known env expansions in argument position are kept.
+        if (token.expansion === "" || expectCommand) return "dynamic";
+        expectCommand = false;
+        continue;
+      }
+      return "dynamic";
+    }
+    return words;
   } catch {
-    words = fallback.split(/\s+/);
+    return fallback.split(/\s+/);
   }
+}
+
+export function isProtectedComputerLifecycleCommand(command: string): boolean {
+  const words = tokenizeProtectedShellCommand(command);
+  if (words === "dynamic") return true;
 
   const commandNames = words.map((word) => word.split("/").at(-1));
   if (commandNames.some((word) => /^(?:kill|pkill|killall|xkill)$/.test(word ?? ""))) {
     return true;
   }
-  // eval/source can hide protected commands inside an expansion string that the
+  // eval/source/. can hide protected commands inside an expansion string that the
   // outer tokenizer keeps as a single word (e.g. eval "pkill chromium").
-  if (commandNames.some((word) => /^(?:eval|source)$/.test(word ?? ""))) {
+  if (commandNames.some((word) => /^(?:eval|source|\.)$/.test(word ?? ""))) {
     return true;
   }
   if (
