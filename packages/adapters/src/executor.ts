@@ -209,6 +209,16 @@ const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
+const STATIC_SHELL_EXPANSIONS: Readonly<Record<string, string>> = {
+  HOME: "/home/rakazo",
+  LOGNAME: "rakazo",
+  PATH: "/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  PWD: "/home/rakazo",
+  TMPDIR: "/tmp",
+  USER: "rakazo",
+  WORKSPACE: "/home/rakazo/workspace",
+  XDG_CONFIG_HOME: "/home/rakazo/.config",
+};
 const SAFE_SHELL_CONTROL_OPS = new Set([
   "&&",
   "||",
@@ -234,50 +244,37 @@ function shellCFlagProgram(words: string[], interpreterIndex: number): string | 
 }
 
 function tokenizeProtectedShellCommand(command: string): string[] | "dynamic" {
-  const fallback = command.toLowerCase();
   try {
-    const parsed = parseShellCommand(
+    const parsed = parseShellCommand<{ expansion: string }>(
       command,
-      (name) => {
-        if (name === "HOME") return "/home/rakazo";
-        if (name === "TMPDIR") return "/tmp";
-        if (name === "XDG_CONFIG_HOME") return "/home/rakazo/.config";
-        return { expansion: name };
-      },
+      (name) => STATIC_SHELL_EXPANSIONS[name] ?? { expansion: name },
       { splitUnquoted: true },
     );
     const words: string[] = [];
-    let expectCommand = true;
     for (const entry of parsed) {
       if (typeof entry === "string") {
         // Backtick fragments are not fully tokenized; treat them as dynamic.
         if (entry.includes("`")) return "dynamic";
         words.push(entry.toLowerCase());
-        expectCommand = false;
         continue;
       }
-      if (!entry || typeof entry !== "object") return "dynamic";
-      const token = entry as { op?: string; expansion?: string };
-      if (token.op === "glob") {
-        expectCommand = false;
+      if ("expansion" in entry) {
+        // Unknown expansions and command substitutions are resolved by bash
+        // after this guard runs, so their eventual value cannot be inspected.
+        return "dynamic";
+      }
+      if ("op" in entry && entry.op === "glob") {
+        words.push(entry.pattern.toLowerCase());
         continue;
       }
-      if (token.op && SAFE_SHELL_CONTROL_OPS.has(token.op)) {
-        expectCommand = true;
-        continue;
-      }
-      if (typeof token.expansion === "string") {
-        // Empty expansion is command substitution ($()); a leading expansion is a
-        // dynamic command name. Known env expansions in argument position are kept.
-        if (token.expansion === "" || expectCommand) return "dynamic";
-        expectCommand = false;
+      if ("op" in entry && SAFE_SHELL_CONTROL_OPS.has(entry.op)) {
         continue;
       }
       return "dynamic";
     }
     return words;
   } catch {
-    return fallback.split(/\s+/);
+    return "dynamic";
   }
 }
 

@@ -26,6 +26,7 @@ describe("computer lifecycle command guard", () => {
       "bash -c `pkill chromium`",
       'bash <<< "pkill chromium"',
       "$KILLER chromium",
+      'rm -rf "$TARGET/.browser-profiles/chromium"',
     ]) {
       expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
     }
@@ -36,5 +37,6 @@ describe("computer lifecycle command guard", () => {
     expect(isProtectedComputerLifecycleCommand("node scripts/check.js")).toBe(false);
     expect(isProtectedComputerLifecycleCommand("systemctl status chromium")).toBe(false);
     expect(isProtectedComputerLifecycleCommand('rm -f "$WORKSPACE/tmp.txt"')).toBe(false);
+    expect(isProtectedComputerLifecycleCommand("printf '%s\\n' *.txt && pwd")).toBe(false);
   });
 });
