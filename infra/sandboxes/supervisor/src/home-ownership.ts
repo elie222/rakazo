@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { type FileHandle, lchown, lstat, open, opendir } from "node:fs/promises";
 import path from "node:path";
 import { COMPUTER_GID, COMPUTER_UID } from "./computer-spec.js";
@@ -40,6 +40,40 @@ async function visitDirectory(handle: FileHandle, uid: number, gid: number): Pro
   await handle.chown(uid, gid);
 }
 
+function hasPermissions(stat: Stats, uid: number, gid: number, required: number): boolean {
+  const shift = stat.uid === uid ? 6 : stat.gid === gid ? 3 : 0;
+  return ((stat.mode >> shift) & required) === required;
+}
+
+async function assertWritableEntry(
+  target: string,
+  root: string,
+  uid: number,
+  gid: number,
+): Promise<void> {
+  let stat: Stats;
+  try {
+    stat = await lstat(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return;
+
+  const required = stat.isDirectory() ? 0b111 : 0b010;
+  if ((stat.isDirectory() || stat.uid !== uid) && !hasPermissions(stat, uid, gid, required)) {
+    throw new Error(
+      `computer home entry ${target} is not writable by uid ${uid}; run sudo chown -R ${uid}:${gid} ${JSON.stringify(root)} or use Compose data-init`,
+    );
+  }
+  if (!stat.isDirectory()) return;
+
+  const directory = await opendir(target);
+  for await (const entry of directory) {
+    await assertWritableEntry(path.join(target, entry.name), root, uid, gid);
+  }
+}
+
 /**
  * Compose runs the supervisor as root while computer containers run as uid 1000.
  * When running as root, normalize existing bind-mount contents without following
@@ -63,31 +97,11 @@ export async function ensureComputerHomeOwnership(
   }
 }
 
-/**
- * Host-run non-root supervisors launch the computer as the supervisor uid/gid.
- * Fail closed when an existing home still contains foreign-owned entries so the
- * bind mount is not silently unwritable. Does not chown (non-root cannot).
- */
-export async function assertHostComputerHomeCompatible(
+/** Fail before container replacement when a host-run supervisor cannot migrate ownership. */
+export async function assertComputerHomeWritable(
   root: string,
-  uid = process.getuid?.(),
-  gid = process.getgid?.(),
+  uid: number,
+  gid: number,
 ): Promise<void> {
-  if (uid === undefined || gid === undefined || uid === 0) return;
-
-  const visit = async (target: string): Promise<void> => {
-    const stat = await lstat(target);
-    if (stat.uid !== uid || stat.gid !== gid) {
-      throw new Error(
-        `computer home ${root} has entries owned by ${stat.uid}:${stat.gid}; host-run containers use ${uid}:${gid}. Fix ownership (chown -R ${uid}:${gid} ${root}) or run via Compose.`,
-      );
-    }
-    if (!stat.isDirectory()) return;
-    const directory = await opendir(target);
-    for await (const entry of directory) {
-      await visit(path.join(target, entry.name));
-    }
-  };
-
-  await visit(root);
+  await assertWritableEntry(root, root, uid, gid);
 }

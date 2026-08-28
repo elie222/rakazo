@@ -27,7 +27,7 @@ import {
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { assertHostComputerHomeCompatible, ensureComputerHomeOwnership } from "./home-ownership.js";
+import { assertComputerHomeWritable, ensureComputerHomeOwnership } from "./home-ownership.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -120,7 +120,9 @@ app.post("/computers", async (c) => {
       assertBotHomePath(serviceHomePath, body.botId);
       await mkdir(serviceHomePath, { recursive: true });
       const homePath = hostHomePath(serviceHomePath, runtimeInfo);
-      const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser();
+      const hostUid = process.getuid?.();
+      const hostGid = process.getgid?.();
+      const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser(hostUid, hostGid);
       const existing = await findBotContainer(body.botId, body.workspaceId);
       if (existing) {
         const info = await existing.inspect();
@@ -142,10 +144,10 @@ app.post("/computers", async (c) => {
       }
       // Only a fresh or replaced container needs the migration. Existing containers
       // with the current image already use the desired ownership and runtime user.
-      if (runtimeInfo || (process.platform === "linux" && process.getuid?.() === 0)) {
+      if (runtimeInfo || hostUid === 0) {
         await ensureComputerHomeOwnership(serviceHomePath);
-      } else {
-        await assertHostComputerHomeCompatible(serviceHomePath);
+      } else if (hostUid !== undefined && hostGid !== undefined) {
+        await assertComputerHomeWritable(serviceHomePath, hostUid, hostGid);
       }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(

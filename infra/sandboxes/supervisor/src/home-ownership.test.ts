@@ -1,8 +1,8 @@
-import { lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertHostComputerHomeCompatible, ensureComputerHomeOwnership } from "./home-ownership.js";
+import { assertComputerHomeWritable, ensureComputerHomeOwnership } from "./home-ownership.js";
 
 const roots: string[] = [];
 
@@ -75,33 +75,33 @@ describe("computer home ownership", () => {
     });
   });
 
-  it("accepts a host-run home owned by the supervisor uid", async () => {
-    const uid = process.getuid?.();
-    const gid = process.getgid?.();
-    if (uid === undefined || gid === undefined || uid === 0) return;
-
-    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-compat-"));
+  it("rejects an existing entry that the host-run computer cannot write", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-writable-"));
     roots.push(parent);
     const home = path.join(parent, "home");
-    await mkdir(path.join(home, "nested"), { recursive: true });
-    await writeFile(path.join(home, "nested", "file.txt"), "inside");
+    const file = path.join(home, "profile.json");
+    await mkdir(home);
+    await chmod(home, 0o777);
+    await writeFile(file, "{}");
+    await chmod(file, 0o400);
 
-    await expect(assertHostComputerHomeCompatible(home, uid, gid)).resolves.toBeUndefined();
+    const stat = await lstat(home);
+    await expect(assertComputerHomeWritable(home, stat.uid + 1, stat.gid + 1)).rejects.toThrow(
+      /chown -R/,
+    );
   });
 
-  it("rejects a host-run home with foreign-owned entries", async () => {
-    const uid = process.getuid?.();
-    const gid = process.getgid?.();
-    if (uid === undefined || gid === undefined) return;
-
-    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-foreign-"));
+  it("does not follow symlinks while checking host-run compatibility", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-writable-link-"));
     roots.push(parent);
     const home = path.join(parent, "home");
-    await mkdir(home, { recursive: true });
-    await writeFile(path.join(home, "file.txt"), "inside");
+    const outside = path.join(parent, "outside");
+    await mkdir(home);
+    await writeFile(outside, "outside");
+    await chmod(outside, 0o400);
+    await symlink(outside, path.join(home, "link"));
 
-    await expect(assertHostComputerHomeCompatible(home, uid + 1, gid)).rejects.toThrow(
-      /host-run containers use/,
-    );
+    const stat = await lstat(home);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).resolves.toBeUndefined();
   });
 });
