@@ -15,6 +15,9 @@ describe("computer lifecycle command guard", () => {
       "rm -rf ~/.browser-profiles/chromium",
       'rm -rf "$HOME/.browser-profiles/chromium"',
       "rm -f /tmp/.X1-lock",
+      "bash -c 'pkill chromium'",
+      "bash -lc \"killall chrome\"",
+      "sh -c 'systemctl restart chromium'",
     ]) {
       expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
     }

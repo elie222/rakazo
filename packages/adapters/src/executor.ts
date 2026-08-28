@@ -208,6 +208,19 @@ const READ_ONLY_AGENT_TOOLS = new Set([
 const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
+const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
+
+function shellCFlagProgramIndex(words: string[], interpreterIndex: number): number | undefined {
+  for (let index = interpreterIndex + 1; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (word === "--") return index + 1 < words.length ? index + 1 : undefined;
+    if (!word.startsWith("-") || word === "-") return undefined;
+    // bash -c / -lc / -ce: the next argument is the program string.
+    if (/c/.test(word.slice(1))) return index + 1 < words.length ? index + 1 : undefined;
+  }
+  return undefined;
+}
+
 export function isProtectedComputerLifecycleCommand(command: string): boolean {
   const fallback = command.toLowerCase();
   let words: string[];
@@ -238,9 +251,22 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
   ) {
     return true;
   }
-  return words.some((word) =>
-    /(?:\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(word),
-  );
+  if (
+    words.some((word) =>
+      /(?:\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(word),
+    )
+  ) {
+    return true;
+  }
+
+  for (let index = 0; index < words.length; index += 1) {
+    const name = words[index]?.split("/").at(-1) ?? "";
+    if (!SHELL_INTERPRETER_NAMES.test(name)) continue;
+    const programIndex = shellCFlagProgramIndex(words, index);
+    if (programIndex === undefined) continue;
+    if (isProtectedComputerLifecycleCommand(words[programIndex] ?? "")) return true;
+  }
+  return false;
 }
 
 /** Cap the roster so a large workspace cannot flood the prompt. */

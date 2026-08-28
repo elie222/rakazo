@@ -47,6 +47,19 @@ describe("computer home ownership", () => {
     );
   });
 
+  it("rejects an owner-owned file that is not writable by that owner", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-mode-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const file = path.join(home, "profile.json");
+    await mkdir(home);
+    await writeFile(file, "{}");
+    await chmod(file, 0o400);
+
+    const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
+  });
+
   it("does not follow symlinks while checking host-run compatibility", async () => {
     const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-writable-link-"));
     roots.push(parent);

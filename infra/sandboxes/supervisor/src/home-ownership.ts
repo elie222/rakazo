@@ -30,7 +30,7 @@ async function assertWritableEntry(
   }
 
   const required = stat.isDirectory() ? 0b111 : 0b010;
-  if ((stat.isDirectory() || stat.uid !== uid) && !hasPermissions(stat, uid, gid, required)) {
+  if (!hasPermissions(stat, uid, gid, required)) {
     throw new Error(
       `computer home entry ${target} is not writable by uid ${uid}; run sudo chown -R ${uid}:${gid} ${JSON.stringify(root)} or use Compose data-init`,
     );
