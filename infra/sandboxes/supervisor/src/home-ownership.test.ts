@@ -1,10 +1,22 @@
-import { chmod, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertComputerHomeWritable } from "./home-ownership.js";
+import { assertComputerHomeWritable, assertOpenedDirectoryBeneathRoot } from "./home-ownership.js";
 
 const roots: string[] = [];
+const DIRECTORY_OPEN_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -86,4 +98,26 @@ describe("computer home ownership", () => {
     const stat = await lstat(home);
     await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).resolves.toBeUndefined();
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "rejects an opened directory that was moved outside the home",
+    async () => {
+      const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-moved-"));
+      roots.push(parent);
+      const home = path.join(parent, "home");
+      const outside = path.join(parent, "outside");
+      const child = path.join(home, "nested");
+      await mkdir(child, { recursive: true });
+      await mkdir(outside, { recursive: true });
+      const handle = await open(child, DIRECTORY_OPEN_FLAGS);
+      try {
+        await rename(child, path.join(outside, "nested"));
+        await expect(assertOpenedDirectoryBeneathRoot(handle, home)).rejects.toThrow(
+          /escaped validated root/,
+        );
+      } finally {
+        await handle.close();
+      }
+    },
+  );
 });
