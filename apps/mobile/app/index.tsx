@@ -196,19 +196,26 @@ export default function Home() {
   }, [query, searching]);
 
   const visible = useMemo(() => filterBots(bots, query), [bots, query]);
+  const visibleGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups.filter((group) =>
+      `${group.name} ${group.preview}`.toLowerCase().includes(needle),
+    );
+  }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
       return searchHits.map((hit) => ({ type: "search", hit }));
     }
     const chats = [
       ...visible.map((chat) => ({ type: "bot" as const, bot: chat, ...chat })),
-      ...groups.map((chat) => ({ type: "group" as const, group: chat, ...chat })),
+      ...visibleGroups.map((chat) => ({ type: "group" as const, group: chat, ...chat })),
     ];
     return groupBotsForSidebar(chats, botSections).flatMap((group) => [
       ...(group.title ? [{ type: "heading" as const, key: group.key, title: group.title }] : []),
       ...group.bots,
     ]);
-  }, [botSections, groups, query, searching, searchHits, visible]);
+  }, [botSections, query, searching, searchHits, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
