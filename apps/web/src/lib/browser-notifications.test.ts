@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  type BrowserNotificationApi,
   type BrowserNotificationContext,
   browserNotificationMessage,
+  requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "./browser-notifications.js";
 
@@ -66,5 +68,25 @@ describe("browser run notifications", () => {
       title: "Chief failed",
       body: "Your bot run failed.",
     });
+  });
+
+  it("allows a later send gesture to retry a dismissed permission prompt", async () => {
+    let resolvePermission: ((permission: "default") => void) | undefined;
+    const requestPermission = vi.fn(
+      () =>
+        new Promise<"default">((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const api: BrowserNotificationApi = { permission: "default", requestPermission };
+
+    requestBrowserNotificationPermission(api);
+    requestBrowserNotificationPermission(api);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+
+    resolvePermission?.("default");
+    await Promise.resolve();
+    requestBrowserNotificationPermission(api);
+    expect(requestPermission).toHaveBeenCalledTimes(2);
   });
 });

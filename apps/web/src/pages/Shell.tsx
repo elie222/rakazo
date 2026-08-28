@@ -120,7 +120,11 @@ import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
-import { browserNotificationMessage, shouldNotifyBrowser } from "../lib/browser-notifications";
+import {
+  browserNotificationMessage,
+  requestBrowserNotificationPermission,
+  shouldNotifyBrowser,
+} from "../lib/browser-notifications";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
@@ -215,24 +219,6 @@ type PendingAttachment = {
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
-
-let browserNotificationPermissionRequested = false;
-
-function requestBrowserNotificationPermission(): void {
-  if (
-    browserNotificationPermissionRequested ||
-    typeof Notification === "undefined" ||
-    Notification.permission !== "default"
-  ) {
-    return;
-  }
-  browserNotificationPermissionRequested = true;
-  try {
-    void Notification.requestPermission().catch(() => undefined);
-  } catch {
-    // Browsers can reject permission requests outside a secure context.
-  }
-}
 
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
   if (!userId) return null;
@@ -681,9 +667,9 @@ export function ShellPage() {
       snapTranscriptToEndAfterFrame();
     }
     const [routines, skills] = await Promise.all([
-      rpc.routines.list({ botId: id }),
-      rpc.skills.list({ botId: id }),
-      refreshComputerScreen(id),
+      rpc.routines.list({ botId: id }).catch(() => null),
+      rpc.skills.list({ botId: id }).catch(() => null),
+      refreshComputerScreen(id).catch(() => null),
     ]);
     if (
       activeBotId.current !== id ||
@@ -692,10 +678,14 @@ export function ShellPage() {
     ) {
       return snap;
     }
-    setRoutines(routines);
-    setRoutinesBotId(id);
-    setTaughtSkills(skills);
-    setTaughtSkillsBotId(id);
+    if (routines) {
+      setRoutines(routines);
+      setRoutinesBotId(id);
+    }
+    if (skills) {
+      setTaughtSkills(skills);
+      setTaughtSkillsBotId(id);
+    }
     return snap;
   }
 

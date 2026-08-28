@@ -3,6 +3,30 @@ import { isRunTerminalEvent } from "@rakazo/core";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
 
+export type BrowserNotificationApi = {
+  readonly permission: BrowserNotificationPermission;
+  requestPermission(): Promise<BrowserNotificationPermission>;
+};
+
+let permissionRequestPending = false;
+
+export function requestBrowserNotificationPermission(
+  api: BrowserNotificationApi | undefined = typeof Notification === "undefined"
+    ? undefined
+    : Notification,
+): void {
+  if (permissionRequestPending || !api || api.permission !== "default") return;
+  permissionRequestPending = true;
+  const clearPending = () => {
+    permissionRequestPending = false;
+  };
+  try {
+    void api.requestPermission().then(clearPending, clearPending);
+  } catch {
+    clearPending();
+  }
+}
+
 export type BrowserNotificationContext = {
   subscribedThreadId: string;
   initialCursor: number;
