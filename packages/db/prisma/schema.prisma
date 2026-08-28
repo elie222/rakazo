@@ -171,6 +171,7 @@ model DeploymentSettings {
   ownerUserId                    String?
   signupsEnabled                 Boolean  @default(true)
   signupAllowlist                String   @default("")
+  signupPolicyInitialized        Boolean  @default(false)
   defaultModelProvider           String?
   defaultModelId                 String?
   deploymentModelCredentialCipher String?

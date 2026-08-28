@@ -85,7 +85,7 @@ export async function loadVoiceCredential(deps: VoiceDeps, actor: Actor, provide
     where: { id: cred.secretId, userId: actor.userId, workspaceId: actor.workspaceId },
   });
   if (!secret) return null;
-  return { cred, apiKey: deps.secrets.load(secret.ciphertext) };
+  return { cred, apiKey: deps.secrets.load(secret.ciphertext, secret.id) };
 }
 
 export async function resolveVoiceTarget(

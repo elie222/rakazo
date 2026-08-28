@@ -104,7 +104,6 @@ export function resolveActionApproval(input: {
   connectorKind?: string;
   rules: ActionApprovalRule[];
 }): "ask" | "allow" {
-  if (APPROVAL_EXEMPT_TOOLS.has(input.toolName)) return "allow";
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
   const matchingRules = input.rules.filter((rule) =>
     ruleMatches(rule, input.toolName, connectorKind),

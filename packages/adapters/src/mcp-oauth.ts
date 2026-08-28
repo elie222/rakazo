@@ -219,8 +219,11 @@ export class McpOAuthBroker {
     return material.oauth ? "reconnect" : "none";
   }
 
-  statusForCiphertext(ciphertext: string | undefined): "none" | "connected" | "reconnect" {
-    const material = ciphertext ? this.read(ciphertext) : {};
+  statusForCiphertext(
+    ciphertext: string | undefined,
+    recordId: string | undefined,
+  ): "none" | "connected" | "reconnect" {
+    const material = ciphertext && recordId ? this.read(ciphertext, recordId) : {};
     if (material.oauth?.tokens) return "connected";
     return material.oauth ? "reconnect" : "none";
   }
@@ -305,14 +308,18 @@ export class McpOAuthBroker {
       }
       return { status: "authorization_not_requested" };
     }
-    const sessionMaterial = await this.secrets.put(JSON.stringify(loaded.material), {
-      operationId: "mcp.oauth.session",
-      traceId: "mcp.oauth.session",
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      botId: "mcp",
-      signal: new AbortController().signal,
-    });
+    const sessionMaterial = await this.secrets.put(
+      JSON.stringify(loaded.material),
+      {
+        operationId: "mcp.oauth.session",
+        traceId: "mcp.oauth.session",
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        botId: "mcp",
+        signal: new AbortController().signal,
+      },
+      sessionId,
+    );
     await this.prisma.mcpOAuthSession.create({
       data: {
         id: sessionId,
@@ -383,7 +390,7 @@ export class McpOAuthBroker {
       if (!server?.endpoint) throw new Error("MCP OAuth session is invalid or expired");
       const context = { workspaceId: input.workspaceId, userId: input.userId };
       const loaded = {
-        material: this.read(session.oauthCiphertext),
+        material: this.read(session.oauthCiphertext, session.id),
         ...(server.secretId ? { secretId: server.secretId } : {}),
       };
       pending = {
@@ -461,7 +468,7 @@ export class McpOAuthBroker {
       where: { id: server.secretId, workspaceId: input.workspaceId, userId: input.userId },
     });
     if (!row) return;
-    const material = this.read(row.ciphertext);
+    const material = this.read(row.ciphertext, row.id);
     delete material.oauth;
     await this.replaceMaterial(server.id, material, input, true);
   }
@@ -474,7 +481,9 @@ export class McpOAuthBroker {
     const row = await this.prisma.secret.findFirst({
       where: { id: server.secretId, workspaceId: context.workspaceId, userId: context.userId },
     });
-    return row ? { material: this.read(row.ciphertext), secretId: row.id } : { material: {} };
+    return row
+      ? { material: this.read(row.ciphertext, row.id), secretId: row.id }
+      : { material: {} };
   }
 
   private createProvider(
@@ -526,7 +535,9 @@ export class McpOAuthBroker {
             },
           })
         : null;
-      const nextMaterial = currentSecret ? this.read(currentSecret.ciphertext) : {};
+      const nextMaterial = currentSecret
+        ? this.read(currentSecret.ciphertext, currentSecret.id)
+        : {};
       if (material.oauth) nextMaterial.oauth = structuredClone(material.oauth);
       else delete nextMaterial.oauth;
       const hasMaterial = Boolean(
@@ -570,9 +581,9 @@ export class McpOAuthBroker {
     });
   }
 
-  private read(ciphertext: string): OAuthMaterial {
+  private read(ciphertext: string, recordId: string): OAuthMaterial {
     try {
-      const value = JSON.parse(this.secrets.load(ciphertext));
+      const value = JSON.parse(this.secrets.load(ciphertext, recordId));
       return value && typeof value === "object" ? (value as OAuthMaterial) : {};
     } catch {
       return {};

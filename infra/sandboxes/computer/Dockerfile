@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     dbus-x11 \
   && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 1000 rakazo \
+  && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
   && mkdir -p /etc/rakazo/fluxbox \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
   && chmod +x /usr/bin/fbsetbg \
@@ -55,4 +57,5 @@ RUN ldconfig \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \
   && chmod +x /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser
 EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 6093 6094 6095
+USER 1000:1000
 CMD ["/usr/local/bin/rakazo-computer"]

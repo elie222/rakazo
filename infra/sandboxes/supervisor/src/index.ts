@@ -11,18 +11,25 @@ import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  COMPUTER_GID,
   COMPUTER_IMAGE,
+  COMPUTER_UID,
+  COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  hostComputerUser,
+  legacyNetworkOwnedSolelyBy,
   resolveComputerControlEndpoint,
+  resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   SCREEN_HOST,
   screenPorts,
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
+import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -62,6 +69,7 @@ const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
+const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
@@ -112,25 +120,51 @@ app.post("/computers", async (c) => {
       const networkMode = await computerNetworkName(body.botId, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
       assertBotHomePath(serviceHomePath, body.botId);
-      await mkdir(serviceHomePath, { recursive: true });
+      const hostUid = process.getuid?.();
+      const hostGid = process.getgid?.();
+      // The API normally creates the home. A non-root standalone supervisor may
+      // do so as the same user, but a root supervisor must never create or chown
+      // user-controlled paths at runtime; Compose data-init handles legacy data.
+      if (hostUid !== 0) await mkdir(serviceHomePath, { recursive: true });
       const homePath = hostHomePath(serviceHomePath, runtimeInfo);
+      const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser(hostUid, hostGid);
       const existing = await findBotContainer(body.botId, body.workspaceId);
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
         if (
-          info.Image !== desired.Id ||
-          (networkMode && info.HostConfig.NetworkMode !== networkMode)
+          info.Image === desired.Id &&
+          (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
+          info.Config.User === computerUser
         ) {
-          await existing.remove({ force: true }).catch(() => undefined);
-        } else {
           if (!info.State.Running) await existing.start();
           const screenUrl = await publishedScreenUrl(
             existing,
             info.State.Running ? info : undefined,
           );
-          return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+          return c.json({
+            id: existing.id,
+            image: COMPUTER_IMAGE,
+            screenUrl,
+            resumed: true,
+          });
         }
+      }
+      // Existing containers with the current image already use the selected user.
+      // Before replacing or creating a container, validate its home without
+      // privileged filesystem mutations that could escape via concurrent renames.
+      // Match hostComputerUser(): missing/root host identity falls back to 1000:1000.
+      const effectiveUid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_UID
+          : hostUid;
+      const effectiveGid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_GID
+          : hostGid;
+      await assertComputerHomeWritable(serviceHomePath, effectiveUid, effectiveGid);
+      if (existing) {
+        await existing.remove({ force: true }).catch(() => undefined);
       }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
@@ -140,13 +174,19 @@ app.post("/computers", async (c) => {
           botId: body.botId,
           workspaceId: body.workspaceId,
           homePath,
+          user: computerUser,
           networkMode,
           controlToken: randomUUID(),
         }),
       );
       await container.start();
       const screenUrl = await publishedScreenUrl(container);
-      return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
+      return c.json({
+        id: container.id,
+        image: COMPUTER_IMAGE,
+        screenUrl,
+        resumed: false,
+      });
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -537,7 +577,7 @@ app.delete("/computers/:id", async (c) => {
       );
       await container.remove({ force: true }).catch(() => undefined);
       clearComputerScreenRegistry(computerScreens, id);
-      if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
+      if (screenNetworkMode !== "internal") {
         await removeBotNetwork(botId);
       }
       return c.json({ ok: true });
@@ -603,7 +643,9 @@ async function ensureComputerImage() {
 async function findBotContainer(botId: string, workspaceId: string) {
   const listed = await docker.listContainers({
     all: true,
-    filters: { label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`] },
+    filters: {
+      label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`],
+    },
   });
   for (const item of listed) {
     const container = docker.getContainer(item.Id);
@@ -687,7 +729,10 @@ async function controlDesktop(
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
-      headers: { authorization: `Bearer ${endpoint.token}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         steps: actions.map((action) => containerActionStep(action, display)),
         display,
@@ -761,8 +806,13 @@ async function publishedScreenUrl(
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
+    if (screenNetworkMode === "isolated") {
+      const runtime = supervisorInfo ?? (await inspectSupervisorContainer());
+      const networkName = info.HostConfig.NetworkMode;
+      if (runtime && networkName) await connectComposeScreenPeers(networkName, runtime);
+    }
     const target = resolveScreenPublishTarget({
-      screenNetwork: process.env.SANDBOX_SCREEN_NETWORK,
+      screenNetwork: screenNetworkMode,
       networkMode: info.HostConfig.NetworkMode,
       networks: info.NetworkSettings?.Networks,
       hostPort: info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort,
@@ -802,36 +852,85 @@ async function setInteractiveScreen(
 // dial any other container's exposed ports, which would let one bot's
 // computer reach another bot's desktop/VNC endpoint with no authentication).
 async function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
-  if (process.env.SANDBOX_SCREEN_NETWORK === "internal") {
+  if (screenNetworkMode === "internal") {
     // The supervisor itself runs in this shared network in that topology and
     // needs to address child containers by their in-network IP, so children
     // stay on the supervisor's network rather than an isolated one.
     return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
   }
+  if (screenNetworkMode === "isolated" && !info) {
+    throw new Error("isolated Compose screens require a containerized supervisor");
+  }
   return ensureBotNetwork(botId);
+}
+
+async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
+  const peerIds = new Set([info.Id]);
+  const project = info.Config.Labels?.["com.docker.compose.project"];
+  if (project) {
+    const webContainers = await docker.listContainers({
+      all: true,
+      filters: {
+        label: [`com.docker.compose.project=${project}`, "com.docker.compose.service=web"],
+      },
+    });
+    for (const container of webContainers) peerIds.add(container.Id);
+  }
+  const network = docker.getNetwork(networkName);
+  const networkInfo = await network.inspect();
+  const connectedIds = new Set(Object.keys(networkInfo.Containers ?? {}));
+  await Promise.all(
+    [...peerIds]
+      .filter((containerId) => !connectedIds.has(containerId))
+      .map((containerId) =>
+        network.connect({ Container: containerId }).catch((error) => {
+          if (!/already exists|already connected/i.test(String(error))) throw error;
+        }),
+      ),
+  );
 }
 
 async function ensureBotNetwork(botId: string) {
   const name = computerNetworkNameFor(botId);
-  try {
-    await docker.getNetwork(name).inspect();
-  } catch {
-    await docker
-      .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
-      .catch((error) => {
-        // Another concurrent provision request may have created it first.
-        if (!/already exists/i.test(String(error))) throw error;
-      });
-  }
+  await docker
+    .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
+    .catch((error) => {
+      // Existing networks and concurrent provision requests are both safe.
+      if (!/already exists/i.test(String(error))) throw error;
+    });
   return name;
 }
 
 async function removeBotNetwork(botId: string) {
+  const currentName = computerNetworkNameFor(botId);
   for (const name of computerNetworkNamesForCleanup(botId)) {
-    await docker
-      .getNetwork(name)
-      .remove()
-      .catch(() => undefined);
+    const network = docker.getNetwork(name);
+    const info = await network.inspect().catch(() => undefined);
+    if (!info) continue;
+    const containerIds = Object.keys(info.Containers ?? {});
+    if (name !== currentName) {
+      const owners: Array<string | undefined> = [];
+      for (const containerId of containerIds) {
+        const labels =
+          (
+            await docker
+              .getContainer(containerId)
+              .inspect()
+              .catch(() => undefined)
+          )?.Config.Labels ?? {};
+        const owner = labels["rakazo.botId"];
+        owners.push(owner);
+        if (owner === botId) {
+          await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+        }
+      }
+      if (!legacyNetworkOwnedSolelyBy(botId, owners)) continue;
+    }
+    const remaining = await network.inspect().catch(() => undefined);
+    for (const containerId of Object.keys(remaining?.Containers ?? {})) {
+      await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+    }
+    await network.remove().catch(() => undefined);
   }
 }
 

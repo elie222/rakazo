@@ -8,7 +8,7 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 ## Docker Compose (single machine)
 
-1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings. Rakazo refuses placeholder or missing secrets outside `development` / `test` (or when `RAKAZO_ALLOW_DEV_SECRETS=1` is set).
+1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
@@ -16,11 +16,13 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 On Windows, if an older clone with `core.autocrlf=true` leaves the computer pane hung on boot (`bash\r` in sandbox logs): from a clean worktree, set `git config core.autocrlf false`, run `git add --renormalize . && git checkout -- .`, then rebuild with `pnpm sandbox:build`.
 
-Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
+Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`) on separate per-bot networks; only the supervisor and screen proxy join each one. The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
 
 Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
-The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
+The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. Docker sandboxes require `SANDBOX_SUPERVISOR_TOKEN` (API, worker, supervisor). `SCREEN_PROXY_SECRET` signs browser-screen capabilities (API and web proxy). Keep both distinct from `BETTER_AUTH_SECRET`.
+
+New credentials use versioned AES-GCM with per-record salt and row-bound AAD. Legacy ciphertext stays readable.
 
 On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
 
@@ -30,7 +32,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 ```
 
-Cookies and CORS follow those origins. Keep `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` tight on a public host.
+Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
 Optional:
 
@@ -119,11 +121,13 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/); reconcile those ranges
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
-   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
+   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`,
+   `E2B_API_KEY`, `OPENROUTER_API_KEY`,
    `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
    the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
    If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
-   characters) that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`.
+   characters) that differs from `BETTER_AUTH_SECRET`, `SANDBOX_SUPERVISOR_TOKEN`, and
+   `SCREEN_PROXY_SECRET`.
 3. Keep registration allowlisted while the service is private:
 
 ```env
@@ -357,8 +361,9 @@ as that allows:
   `cap_drop: ALL` and no socket.
 
 Enabling the `updater` profile requires `RAKAZO_UPDATER_TOKEN` to be a dedicated random value (at
-least 32 characters in production). It must differ from `BETTER_AUTH_SECRET` and
-`SANDBOX_SUPERVISOR_TOKEN`. Leave the profile disabled if you would rather not grant the capability.
+least 32 characters in production). It must differ from `BETTER_AUTH_SECRET`,
+`SANDBOX_SUPERVISOR_TOKEN`, and `SCREEN_PROXY_SECRET`. Leave the profile disabled if you would
+rather not grant the capability.
 
 ## What “Rakazo Cloud” still needs
 

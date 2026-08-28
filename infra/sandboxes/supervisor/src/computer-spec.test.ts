@@ -8,7 +8,10 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  hostComputerUser,
+  legacyNetworkOwnedSolelyBy,
   resolveComputerControlEndpoint,
+  resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   screenPorts,
   screenUrlFor,
@@ -60,6 +63,10 @@ describe("graphical computer spec", () => {
     expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6081" });
     expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6082", controlPort: "6083" });
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
+    expect(options.User).toBe("1000:1000");
+    expect(options.HostConfig.CapDrop).toEqual(["ALL"]);
+    expect(options.HostConfig.SecurityOpt).toEqual(["no-new-privileges:true"]);
+    expect(options.HostConfig.PidsLimit).toBe(2048);
     expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
     expect(options.HostConfig.NetworkMode).toBe("rakazo_default");
   });
@@ -95,6 +102,13 @@ describe("graphical computer spec", () => {
     expect(names.some((name) => /-[0-9a-f]{32}$/.test(name))).toBe(true);
   });
 
+  it("skips legacy network removal when another bot is still attached", () => {
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "a/b"])).toBe(true);
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(false);
+    expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "ab"])).toBe(false);
+    expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(false);
+  });
+
   it("ships a browser desktop, not a fullscreen terminal", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
@@ -102,6 +116,7 @@ describe("graphical computer spec", () => {
     const browser = readFileSync(path.join(root, "rakazo-browser"), "utf8");
     expect(dockerfile).toMatch(/chromium/);
     expect(dockerfile).toMatch(/control.py/);
+    expect(dockerfile).toMatch(/USER 1000:1000/);
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
@@ -125,7 +140,7 @@ describe("graphical computer spec", () => {
     const networkMode = computerNetworkNameFor("bot_1");
     expect(
       resolveScreenPublishTarget({
-        screenNetwork: undefined,
+        screenNetwork: "published",
         networkMode,
         networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
         hostPort: "49152",
@@ -134,13 +149,25 @@ describe("graphical computer spec", () => {
     ).toEqual({ host: "127.0.0.1", port: "49152" });
     expect(
       resolveScreenPublishTarget({
-        screenNetwork: undefined,
+        screenNetwork: "published",
         networkMode,
         networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
         hostPort: undefined,
         containerPort: "6080",
       }),
     ).toBeUndefined();
+  });
+
+  it("validates the configured screen network mode", () => {
+    expect(resolveScreenNetworkMode(undefined)).toBe("published");
+    expect(resolveScreenNetworkMode("published")).toBe("published");
+    expect(resolveScreenNetworkMode("isolated")).toBe("isolated");
+    expect(() => resolveScreenNetworkMode("typo")).toThrow(/Unsupported/);
+  });
+
+  it("uses the host identity for host-run bind mounts without ever using root", () => {
+    expect(hostComputerUser(501, 20)).toBe("501:20");
+    expect(hostComputerUser(0, 0)).toBe("1000:1000");
   });
 
   it("uses the container IP only for the internal screen network topology", () => {
@@ -154,6 +181,15 @@ describe("graphical computer spec", () => {
         containerPort: "6080",
       }),
     ).toEqual({ host: "172.18.0.4", port: "6080" });
+    expect(
+      resolveScreenPublishTarget({
+        screenNetwork: "isolated",
+        networkMode: "rakazo-computer-bot-1",
+        networks: { "rakazo-computer-bot-1": { IPAddress: "172.20.0.4" } },
+        hostPort: "49152",
+        containerPort: "6080",
+      }),
+    ).toEqual({ host: "172.20.0.4", port: "6080" });
   });
 
   it("does not publish computer control port 7070 on the host", () => {

@@ -769,6 +769,44 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
+
+    try {
+      await rpc(app, owner, "deployment/update", { signupsEnabled: false });
+      const closedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `closed-${stamp}@rakazo.test`,
+          password: "password123",
+          name: "Closed Signup",
+        }),
+      });
+      expect(closedSignup.status).toBe(400);
+      expect(await closedSignup.text()).toContain("Registration is closed");
+
+      const approvedEmail = `approved-${stamp}@example.test`;
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [approvedEmail],
+      });
+      const disallowedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `not-approved-${stamp}@rakazo.test`,
+          password: "password123",
+          name: "Disallowed Signup",
+        }),
+      });
+      expect(disallowedSignup.status).toBe(400);
+      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      await signup(app, approvedEmail, "Approved Signup");
+    } finally {
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [],
+      });
+    }
   });
 });
 

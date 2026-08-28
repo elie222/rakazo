@@ -184,7 +184,7 @@ export class McpConnector implements ConnectorProvider {
           })
         : null;
       const material = secret
-        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as OAuthMaterial)
+        ? (JSON.parse(this.secrets.load(secret.ciphertext, secret.id)) as OAuthMaterial)
         : {};
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
