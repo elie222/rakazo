@@ -990,16 +990,21 @@ export function ShellPage() {
     () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
     [bots, query],
   );
+  const filteredGroups = useMemo(
+    () =>
+      groups.filter((g) => `${g.name} ${g.preview}`.toLowerCase().includes(query.toLowerCase())),
+    [groups, query],
+  );
   const sidebarGroups = useMemo(
     () =>
       groupBotsForSidebar(
         [
           ...filtered.map((chat) => ({ kind: "bot" as const, chat })),
-          ...groups.map((chat) => ({ kind: "group" as const, chat })),
+          ...filteredGroups.map((chat) => ({ kind: "group" as const, chat })),
         ].map((item) => ({ ...item, pinned: item.chat.pinned, sectionId: item.chat.sectionId })),
         botSections,
       ),
-    [botSections, filtered, groups],
+    [botSections, filtered, filteredGroups],
   );
   const toggleSidebarSection = useCallback(
     (key: string) => {
@@ -5307,6 +5312,7 @@ function DeleteItemDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useLingui();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -5357,7 +5363,13 @@ function DeleteItemDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete ${noun}`);
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : noun === "group"
+                      ? t`Could not delete group`
+                      : t`Could not delete routine`,
+                );
                 setDeleting(false);
               });
             }}

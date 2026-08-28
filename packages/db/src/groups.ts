@@ -336,7 +336,7 @@ export function createGroupRepos(prisma: PrismaClient) {
     async archiveGroup(actor: Actor, groupId: string) {
       return prisma.$transaction(async (tx) => {
         await lockOwnedGroup(tx, actor, groupId);
-        const group = await tx.chatGroup.findFirst({
+        const current = await tx.chatGroup.findFirst({
           where: {
             id: groupId,
             workspaceId: actor.workspaceId,
@@ -345,21 +345,67 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
           select: { thread: { select: { id: true } } },
         });
-        if (!group?.thread) throw new IsolationError();
+        if (!current?.thread) throw new IsolationError();
+
         const activeRuns = await tx.run.findMany({
-          where: { threadId: group.thread.id, status: { in: activeRunStatuses } },
-          select: { id: true },
+          where: {
+            threadId: current.thread.id,
+            status: { in: activeRunStatuses },
+          },
+          select: { id: true, taskId: true },
         });
-        const cancelledRunIds = activeRuns.map((run) => run.id);
-        await tx.run.updateMany({
-          where: { id: { in: cancelledRunIds } },
-          data: { status: "cancelled", completedAt: new Date() },
-        });
+        const runIds = activeRuns.map((run) => run.id);
+        const now = new Date();
+        const computers = runIds.length
+          ? await tx.computer.findMany({
+              where: { executionRunId: { in: runIds } },
+              select: {
+                homeKey: true,
+                kind: true,
+                providerRef: true,
+                executionBotId: true,
+              },
+            })
+          : [];
+
+        if (runIds.length) {
+          await tx.run.updateMany({
+            where: { id: { in: runIds } },
+            data: {
+              status: "cancelled",
+              completedAt: now,
+              leaseOwner: null,
+              leaseExpiresAt: null,
+            },
+          });
+          await tx.attempt.updateMany({
+            where: { runId: { in: runIds }, status: "running" },
+            data: { status: "cancelled", finishedAt: now },
+          });
+          await tx.task.updateMany({
+            where: { id: { in: activeRuns.map((run) => run.taskId) } },
+            data: { status: "cancelled" },
+          });
+          await tx.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+          await tx.computer.updateMany({
+            where: { executionRunId: { in: runIds } },
+            data: {
+              executionRunId: null,
+              executionBotId: null,
+              executionLeaseExpiresAt: null,
+            },
+          });
+          await tx.event.deleteMany({
+            where: { type: "thread.progress", runId: { in: runIds } },
+          });
+        }
+
         await tx.chatGroup.update({
           where: { id: groupId },
-          data: { archivedAt: new Date(), pinned: false },
+          data: { archivedAt: now, pinned: false },
         });
-        return cancelledRunIds;
+
+        return { cancelledRunIds: runIds, computers };
       });
     },
 

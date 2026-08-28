@@ -811,9 +811,27 @@ export function createRouter(deps: RouterDeps) {
         return updated.group;
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        const cancelledRunIds = await groupRepos.archiveGroup(context.actor, input.groupId);
-        await stopThreadRuns(deps, context.actor, target, cancelledRunIds);
+        const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
+        await Promise.all(
+          archived.cancelledRunIds.map((runId) =>
+            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+          ),
+        );
+        await Promise.all(
+          archived.computers.map(async (computer) => {
+            if (!computer.providerRef || !computer.executionBotId) return;
+            await deps.sandbox
+              .releaseScreen?.(toComputerRef(computer), {
+                operationId: "stop",
+                traceId: "stop",
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                botId: computer.executionBotId,
+                signal: new AbortController().signal,
+              })
+              .catch(() => undefined);
+          }),
+        );
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
@@ -954,7 +972,11 @@ export function createRouter(deps: RouterDeps) {
         const committed = await deps.prisma.$transaction(async (tx) => {
           await lockOwnedGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
-            where: { id: target.groupId, thread: { id: target.threadId } },
+            where: {
+              id: target.groupId,
+              archivedAt: null,
+              thread: { id: target.threadId },
+            },
             include: { members: { orderBy: { createdAt: "asc" } } },
           });
           const botId = group?.members[0]?.botId;

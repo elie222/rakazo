@@ -605,25 +605,20 @@ export async function stopThreadRuns(
   },
   actor: Actor,
   target: ThreadTarget,
-  preCancelledRunIds?: string[],
 ) {
-  const runIds =
-    preCancelledRunIds ??
-    (
-      await deps.prisma.run.findMany({
-        where: {
-          threadId: target.threadId,
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: { id: true },
-      })
-    ).map((run) => run.id);
-  if (!preCancelledRunIds) {
-    await deps.prisma.run.updateMany({
-      where: { id: { in: runIds } },
-      data: { status: "cancelled", completedAt: new Date() },
-    });
-  }
+  const runIds = (
+    await deps.prisma.run.findMany({
+      where: {
+        threadId: target.threadId,
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
+      select: { id: true },
+    })
+  ).map((run) => run.id);
+  await deps.prisma.run.updateMany({
+    where: { id: { in: runIds } },
+    data: { status: "cancelled", completedAt: new Date() },
+  });
   const computers = runIds.length
     ? await deps.prisma.computer.findMany({
         where: { executionRunId: { in: runIds } },

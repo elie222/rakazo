@@ -238,36 +238,4 @@ describe("stopThreadRuns", () => {
       expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),
     );
   });
-
-  it("cleans resources for runs cancelled by the archive transaction", async () => {
-    const findMany = vi.fn();
-    const updateMany = vi.fn();
-    const prisma = {
-      run: { findMany, updateMany },
-      computer: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn() },
-      computerExecutionLease: { deleteMany: vi.fn() },
-      event: { deleteMany: vi.fn() },
-    } as unknown as PrismaClient;
-    const target = {
-      kind: "group",
-      groupId: "group-1",
-      groupName: "Test group",
-      threadId: "thread-1",
-      members: [],
-      memberBotIds: ["bot-a", "bot-b"],
-    } satisfies ThreadTarget;
-
-    await stopThreadRuns(
-      { prisma, sandbox: {} as SandboxProvider },
-      { workspaceId: "workspace-1", userId: "user-1" } as Actor,
-      target,
-      ["run-a"],
-    );
-
-    expect(findMany).not.toHaveBeenCalled();
-    expect(updateMany).not.toHaveBeenCalled();
-    expect(prisma.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
-      where: { runId: { in: ["run-a"] } },
-    });
-  });
 });

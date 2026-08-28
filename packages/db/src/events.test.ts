@@ -1061,6 +1061,77 @@ describe("clearThread", () => {
     });
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 0 }));
   });
+
+  it("scopes group clear lease cleanup to cancelled run ids", async () => {
+    const fanout = new TestFanout();
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
+          .mockResolvedValue({ nextEventSeq: 1 }),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "group-run-1", taskId: "task-1" },
+          { id: "group-run-2", taskId: "task-2" },
+        ]),
+        updateMany: vi.fn(),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      computerExecutionLease: { deleteMany: vi.fn() },
+      computer: { updateMany: vi.fn() },
+      message: { deleteMany: vi.fn() },
+      event: {
+        deleteMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({
+          ...event(0),
+          type: "thread.cleared",
+        }),
+      },
+      chatGroup: { update: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      clearThread(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-group",
+          botId: "bot-1",
+          groupId: "group-1",
+        },
+        fanout,
+      ),
+    ).resolves.toMatchObject({ cancelledRunIds: ["group-run-1", "group-run-2"] });
+
+    expect(tx.run.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          threadId: "thread-group",
+          workspaceId: "workspace-1",
+        }),
+      }),
+    );
+    expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["group-run-1", "group-run-2"] } },
+    });
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
+    expect(tx.computerExecutionLease.deleteMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ botId: expect.anything() }) }),
+    );
+  });
 });
 
 describe("appendEvent", () => {
