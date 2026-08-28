@@ -296,10 +296,7 @@ describe("createJobReconciler", () => {
     } as unknown as PrismaClient;
     const { jobs } = publisher();
     const events = { notify: vi.fn() } as unknown as ThreadEvents;
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(returnBotMessageOutcome)
-      .mockResolvedValue(true)
-      .mockRejectedValueOnce(new Error("temporary failure"));
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true).mockResolvedValueOnce(false);
 
     const reconciler = createJobReconciler({ prisma, jobs, events }, { batchSize: 1 });
 
@@ -332,8 +329,6 @@ describe("createJobReconciler", () => {
       }),
     );
     expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
-    expect(consoleError).toHaveBeenCalledOnce();
-    consoleError.mockRestore();
   });
 });
 

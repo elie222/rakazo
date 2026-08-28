@@ -245,19 +245,22 @@ export function createJobReconciler(
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
                 : messageText(message?.blocks) ||
                   "The delegated bot completed its turn without a written summary.";
-            await returnBotMessageOutcome(
+            const returned = await returnBotMessageOutcome(
               { prisma: deps.prisma, jobs: deps.jobs, events },
               run,
               { id: run.botId, name: run.bot.name },
               text,
               run.status === "failed" ? "status" : "result",
-            ).catch(async (error) => {
+            ).catch((error) => {
               console.error("bot message outcome reconciliation", error);
+              return false;
+            });
+            if (!returned) {
               await deps.prisma.run.updateMany({
                 where: { id: run.id, botOutcomeReturnedAt: null },
                 data: { updatedAt: new Date() },
               });
-            });
+            }
           }),
         );
       }
