@@ -2815,9 +2815,7 @@ export function ShellPage() {
                             name: routineDraft.name || t`Routine`,
                             prompt: routineDraft.prompt || t`Check in.`,
                             crons,
-                            ...(!targetRoutine.active && !targetRoutine.lastRunAt
-                              ? { active: true }
-                              : {}),
+                            ...(armOneShot ? { active: true } : {}),
                             ...(runAt ? { runAt } : {}),
                           });
                         } else {
