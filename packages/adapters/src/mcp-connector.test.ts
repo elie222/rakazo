@@ -204,10 +204,20 @@ describe("allowlistDrift", () => {
     expect(allowlistDrift(["echo", "vanished_tool"], offered)).toEqual({
       missing: ["vanished_tool"],
       offered: 2,
+      stringAllowedCount: 2,
     });
     expect(allowlistDrift(["echo"], offered).missing).toEqual([]);
     // allowedTools is a Json column, so it can hold anything: it must not throw.
-    expect(allowlistDrift(null, offered).missing).toEqual([]);
-    expect(allowlistDrift([42, "vanished_tool"], offered).missing).toEqual(["vanished_tool"]);
+    expect(allowlistDrift(null, offered)).toEqual({
+      missing: [],
+      offered: 2,
+      stringAllowedCount: 0,
+    });
+    // Non-string JSON values are ignored for both missing and the warning ratio.
+    expect(allowlistDrift([42, "vanished_tool"], offered)).toEqual({
+      missing: ["vanished_tool"],
+      offered: 2,
+      stringAllowedCount: 1,
+    });
   });
 });

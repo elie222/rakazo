@@ -17,23 +17,21 @@ type PendingSession = { revision: number; promise: Promise<McpSession> };
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 /**
- * An allowlist entry the server does not offer is silently filtered out below — the tool
- * simply never reaches the model, with no error anywhere. An allowlist is written once, by
- * hand, against the tool names a server offered that day; the server keeps shipping. A
- * renamed or removed tool therefore turns into a capability the bot quietly lost, and the
- * only symptom is the model no longer doing something it used to do.
- *
- * The comparison is free: discovery already holds the server's real tool list.
+ * Stale allowlist entries are filtered out below with no error. Discovery already has the
+ * live tool list, so compare once and warn when string allowlist names are missing from the
+ * server. Non-string JSON values are ignored for both the missing list and the ratio.
  */
 export function allowlistDrift(
   allowedTools: unknown,
   offered: Array<{ name: string }>,
-): { missing: string[]; offered: number } {
+): { missing: string[]; offered: number; stringAllowedCount: number } {
   const names = new Set(offered.map((tool) => tool.name));
   const allowed = Array.isArray(allowedTools) ? allowedTools : [];
+  const stringAllowed = allowed.filter((name): name is string => typeof name === "string");
   return {
-    missing: allowed.filter((name): name is string => typeof name === "string" && !names.has(name)),
+    missing: stringAllowed.filter((name) => !names.has(name)),
     offered: names.size,
+    stringAllowedCount: stringAllowed.length,
   };
 }
 
@@ -45,9 +43,8 @@ function reportAllowlistDrift(
   if (assignment.allowAllTools) return;
   const drift = allowlistDrift(assignment.allowedTools, offered);
   if (drift.missing.length === 0) return;
-  const allowed = Array.isArray(assignment.allowedTools) ? assignment.allowedTools.length : 0;
   console.warn(
-    `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${allowed} allowed tools are not offered (server offers ${drift.offered})`,
+    `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${drift.stringAllowedCount} allowed tools are not offered (server offers ${drift.offered})`,
     {
       workspaceId: context.workspaceId,
       botId: context.botId,
