@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { McpConnector } from "./mcp-connector.js";
+import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -195,5 +195,19 @@ describe("MCP connector session cache", () => {
     expect(state.initializations).toBe(3);
 
     await connector.close();
+  });
+});
+
+describe("allowlistDrift", () => {
+  it("names the allowed tools the server no longer offers", () => {
+    const offered = [{ name: "echo" }, { name: "upper" }];
+    expect(allowlistDrift(["echo", "vanished_tool"], offered)).toEqual({
+      missing: ["vanished_tool"],
+      offered: 2,
+    });
+    expect(allowlistDrift(["echo"], offered).missing).toEqual([]);
+    // allowedTools is a Json column, so it can hold anything: it must not throw.
+    expect(allowlistDrift(null, offered).missing).toEqual([]);
+    expect(allowlistDrift([42, "vanished_tool"], offered).missing).toEqual(["vanished_tool"]);
   });
 });
