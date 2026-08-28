@@ -2552,7 +2552,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
                 terminalCheckpointComplete = true;
                 const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
-                await deps.events.finalizeRun({
+                const stopped = await deps.events.finalizeRun({
                   workspaceId: run.workspaceId,
                   threadId: thread.id,
                   botId: bot.id,
@@ -2564,6 +2564,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   outcome: "completed",
                   blocks: [{ kind: "text", text: stuckText }],
                 });
+                if (!stopped) return;
+                if (run.trigger === "bot_message") {
+                  await returnBotMessageOutcome(
+                    deps,
+                    { ...run, sourceMessageId: run.sourceMessageId },
+                    { id: bot.id, name: bot.name },
+                    stuckText,
+                  ).catch((error) => console.error("bot message loop-guard return", error));
+                }
                 runAbortController?.abort();
                 return;
               }
