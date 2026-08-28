@@ -1,5 +1,5 @@
 import { constants, type Stats } from "node:fs";
-import { type FileHandle, lchown, lstat, open, opendir } from "node:fs/promises";
+import { type FileHandle, lchown, lstat, open, opendir, readlink } from "node:fs/promises";
 import path from "node:path";
 import { COMPUTER_GID, COMPUTER_UID } from "./computer-spec.js";
 
@@ -10,13 +10,41 @@ function isMissingOrNotDirectory(error: unknown): boolean {
   return code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR";
 }
 
+function isPathInside(root: string, candidate: string): boolean {
+  const normalizedRoot = path.resolve(root);
+  const normalizedCandidate = path.resolve(candidate);
+  return (
+    normalizedCandidate === normalizedRoot ||
+    normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`)
+  );
+}
+
+async function resolveFdPath(fd: number): Promise<string> {
+  return readlink(`/proc/self/fd/${fd}`);
+}
+
+async function assertFdBeneathRoot(handle: FileHandle, rootPath: string): Promise<void> {
+  const currentPath = await resolveFdPath(handle.fd);
+  if (!isPathInside(rootPath, currentPath)) {
+    throw new Error(
+      `computer home ownership escaped validated root ${rootPath}; saw ${currentPath}`,
+    );
+  }
+}
+
 async function lchownIfPresent(target: string, uid: number, gid: number): Promise<void> {
   await lchown(target, uid, gid).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   });
 }
 
-async function visitDirectory(handle: FileHandle, uid: number, gid: number): Promise<void> {
+async function visitDirectory(
+  handle: FileHandle,
+  rootPath: string,
+  uid: number,
+  gid: number,
+): Promise<void> {
+  await assertFdBeneathRoot(handle, rootPath);
   const descriptorPath = `/proc/self/fd/${handle.fd}`;
   const directory = await opendir(descriptorPath);
   for await (const entry of directory) {
@@ -32,11 +60,13 @@ async function visitDirectory(handle: FileHandle, uid: number, gid: number): Pro
       continue;
     }
     try {
-      await visitDirectory(child, uid, gid);
+      await assertFdBeneathRoot(child, rootPath);
+      await visitDirectory(child, rootPath, uid, gid);
     } finally {
       await child.close();
     }
   }
+  await assertFdBeneathRoot(handle, rootPath);
   await handle.chown(uid, gid);
 }
 
@@ -91,7 +121,8 @@ export async function ensureComputerHomeOwnership(
   }
   const handle = await open(root, DIRECTORY_OPEN_FLAGS);
   try {
-    await visitDirectory(handle, uid, gid);
+    const rootPath = await resolveFdPath(handle.fd);
+    await visitDirectory(handle, rootPath, uid, gid);
   } finally {
     await handle.close();
   }
@@ -104,4 +135,12 @@ export async function assertComputerHomeWritable(
   gid: number,
 ): Promise<void> {
   await assertWritableEntry(root, root, uid, gid);
+}
+
+/** Exported for regression coverage of the moved-directory escape check. */
+export async function assertOpenedDirectoryBeneathRoot(
+  handle: FileHandle,
+  rootPath: string,
+): Promise<void> {
+  await assertFdBeneathRoot(handle, rootPath);
 }
