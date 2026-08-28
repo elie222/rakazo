@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SANDBOX_IDLE_MS, sandboxIdleMs, sleepComputerIfIdle } from "./computer-idle.js";
 import {
   e2bCreateOptions,
-  isUnrecoverableSandboxError,
   isUnreachableTransportError,
+  isUnrecoverableSandboxError,
   openDesktopBrowser,
   openDesktopUrl,
 } from "./e2b-sandbox.js";
