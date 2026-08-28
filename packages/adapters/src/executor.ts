@@ -2583,10 +2583,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
       } catch (setupError) {
         const computerBusy = setupError instanceof ComputerBusyError;
         if (!computerBusy) {
+          // undici collapses every network failure to "fetch failed"; the cause names the
+          // host and errno, which is the only part worth paging over.
+          const causeMessage =
+            setupError instanceof Error && setupError.cause instanceof Error
+              ? `: ${setupError.cause.message}`
+              : "";
           console.error(
             "run setup failed",
             redactSecrets(
-              setupError instanceof Error ? setupError.message : String(setupError),
+              setupError instanceof Error
+                ? `${setupError.message}${causeMessage}`
+                : String(setupError),
               runSecrets,
             ),
           );

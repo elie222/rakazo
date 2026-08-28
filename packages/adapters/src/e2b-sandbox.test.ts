@@ -19,6 +19,31 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
   });
 
+  it("boots a fresh sandbox when reconnecting to a dead one fails with fetch failed", async () => {
+    const desktop = { sandboxId: "fresh-e2b-box" } as unknown as Sandbox;
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => {
+        throw new Error("fetch failed", {
+          cause: Object.assign(new Error("getaddrinfo ENOTFOUND dead-e2b-box.e2b.app"), {
+            code: "ENOTFOUND",
+          }),
+        });
+      }),
+      pause: vi.fn(async () => undefined),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+
+    const computer = await provider.provision(
+      { botId: "bot-1", homePath: "/unused", providerRef: "dead-e2b-box", providerKind: "e2b" },
+      context,
+    );
+
+    expect(sdk.create).toHaveBeenCalledTimes(1);
+    expect(computer.providerRef).toBe("fresh-e2b-box");
+    expect(computer.fresh).toBe(true);
+  });
+
   it("prepares a reused computer idempotently", async () => {
     let profilesConfigured = false;
     const command = vi.fn(async (value: string) => {

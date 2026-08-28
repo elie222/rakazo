@@ -70,11 +70,41 @@ export function e2bCreateOptions(botId: string, apiKey: string) {
   };
 }
 
+// A sandbox that has expired stops resolving as a host, so reaching it fails at the socket
+// rather than with a 404. undici reports every one of those as a bare "fetch failed" and
+// hides the errno on the cause chain.
+const SANDBOX_UNREACHABLE_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function isUnreachableTransportError(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && SANDBOX_UNREACHABLE_CODES.has(code)) return true;
+    if (current.message === "fetch failed") return true;
+  }
+  return false;
+}
+
+/**
+ * True when the sandbox this error came from cannot be reached again, so the caller should
+ * boot a fresh one. A reconnect that fails must never be fatal: rethrowing left the bot
+ * dialling the same dead sandbox on all 25 retries, with no way out.
+ */
 export function isUnrecoverableSandboxError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(
-    message,
-  );
+  if (
+    /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(message)
+  )
+    return true;
+  return isUnreachableTransportError(error);
 }
 
 export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
