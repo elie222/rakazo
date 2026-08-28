@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
   JobPublisher,
@@ -279,7 +280,9 @@ export async function createApp(
       imageTag: env.imageTag,
     },
   });
-  const rpc = new RPCHandler(router);
+  const rpc = new RPCHandler(router, {
+    clientInterceptors: [onError((error, { path }) => logUnexpectedRpcError(error, path))],
+  });
   const app = new Hono();
   app.use(
     "*",
@@ -371,4 +374,27 @@ function sessionHeaders(request: Request) {
     headers.set("cookie", `better-auth.session_token=${authz.slice(7).trim()}`);
   }
   return headers;
+}
+
+/**
+ * An ORPCError is a decision the router made (BAD_REQUEST, UNAUTHORIZED, ...) and reaches the
+ * caller intact. Everything else is flattened into an opaque "Internal server error", so
+ * unless it is logged here the only record of what actually broke is gone.
+ *
+ * The cause chain matters as much as the message: undici and most SDKs report a bare
+ * "fetch failed" and keep the host and errno one level down.
+ */
+export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
+  if (error instanceof ORPCError) return;
+  const where = `rpc ${path.join("/")} failed`;
+  if (!(error instanceof Error)) {
+    console.error(where, String(error));
+    return;
+  }
+  const chain: string[] = [];
+  for (let current: unknown = error; current instanceof Error && chain.length < 4; ) {
+    chain.push(`${current.name}: ${current.message}`);
+    current = current.cause;
+  }
+  console.error(where, chain.join(" <- "), error.stack ?? "");
 }
