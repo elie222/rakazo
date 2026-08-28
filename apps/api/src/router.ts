@@ -1584,11 +1584,25 @@ export function createRouter(deps: RouterDeps) {
             if (!isSandboxGoneError(error)) throw error;
             // The provider killed this sandbox (idle timeout) while the row still says
             // running. Clear the dead ref so the UI offers a boot instead of 500ing.
+            // Match computer.stop lease cleanup locally — do not call expireComputerControl,
+            // which talks to the provider for a still-reachable box.
             console.error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+            const controlLeaseId = computer.controlLeaseId;
             await deps.prisma.computer.updateMany({
               where: { id: computer.id, providerRef: computer.providerRef },
-              data: { state: "stopped", providerRef: null },
+              data: {
+                state: "stopped",
+                providerRef: null,
+                controlHolder: "none",
+                controlLeaseId: null,
+                controlLeaseExpiresAt: null,
+                controlBotId: null,
+                controlRunId: null,
+              },
             });
+            await deps.jobs.cancel(
+              computerControlExpireJobKey(computer.id, controlLeaseId ?? undefined),
+            );
             return null;
           });
         if (!session?.url) return { url: null };

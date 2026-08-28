@@ -405,14 +405,15 @@ describe("computer screen url", () => {
     state: "running",
     providerRef: "sandbox-ref-1",
     homeKey: "home-1",
-    controlHolder: "none",
-    controlLeaseId: null,
-    controlLeaseExpiresAt: null,
-    controlBotId: null,
-    controlRunId: null,
+    controlHolder: "user",
+    controlLeaseId: "lease-1",
+    controlLeaseExpiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    controlBotId: "bot-1",
+    controlRunId: "run-1",
   };
 
   const callScreenUrl = async (connectScreen: () => Promise<unknown>, updateMany = vi.fn()) => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -427,7 +428,7 @@ describe("computer screen url", () => {
     const deps = {
       prisma,
       sandbox: { connectScreen },
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined), cancel },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -446,12 +447,12 @@ describe("computer screen url", () => {
       }),
       { prefix: "/rpc", context: { actor } },
     );
-    return { response, updateMany };
+    return { response, updateMany, cancel };
   };
 
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
     const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { response, updateMany } = await callScreenUrl(() =>
+    const { response, updateMany, cancel } = await callScreenUrl(() =>
       Promise.reject(
         Object.assign(new Error("Sandbox is probably not running anymore"), {
           name: "SandboxNotFoundError",
@@ -462,18 +463,28 @@ describe("computer screen url", () => {
     await expect(response.json()).resolves.toEqual({ json: { url: null } });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "computer-1", providerRef: "sandbox-ref-1" },
-      data: { state: "stopped", providerRef: null },
+      data: {
+        state: "stopped",
+        providerRef: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
     });
+    expect(cancel).toHaveBeenCalledWith("computer.control-expire:computer-1:lease-1");
     logError.mockRestore();
   });
 
   it("keeps a transport blip an error and leaves the row alone", async () => {
     const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { response, updateMany } = await callScreenUrl(() =>
+    const { response, updateMany, cancel } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
     );
     expect(response.status).toBe(500);
     expect(updateMany).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
     logError.mockRestore();
   });
 });
