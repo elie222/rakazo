@@ -20,17 +20,48 @@ data class AgentRecord(
 
 data class BotSectionRecord(val id: String, val name: String)
 
+data class ActivityRunRecord(
+    val runId: String,
+    val botId: String,
+    val botName: String,
+    val groupId: String?,
+    val groupName: String?,
+    val status: String,
+    val promptSnippet: String,
+    val updatedAt: String,
+)
+
+data class SearchHitRecord(
+    val key: String,
+    val kind: String,
+    val botId: String?,
+    val botName: String?,
+    val groupId: String?,
+    val groupName: String?,
+    val title: String,
+    val snippet: String,
+    val messageId: String?,
+)
+
+data class MessageActionRecord(val id: String, val label: String)
+
 data class MessageBlockRecord(
     val kind: String,
     val text: String,
     val label: String? = null,
     val detail: String? = null,
+    val status: String? = null,
+    val actions: List<MessageActionRecord> = emptyList(),
+    val toolNames: List<String> = emptyList(),
+    val secret: Boolean = false,
+    val peerBotId: String? = null,
 )
 
 data class ThreadMessageRecord(
     val id: String,
     val role: String,
     val blocks: List<MessageBlockRecord>,
+    val runId: String? = null,
 )
 
 data class ThreadSnapshotRecord(
@@ -64,6 +95,48 @@ class RakazoApi {
         val response = request(endpoint, "/rpc/bots/list", token)
         if (response.status !in 200..299) throw response.error("Could not load agents")
         return parseAgents(response.body)
+    }
+
+    fun activity(endpoint: String, token: String, filter: String): List<ActivityRunRecord> {
+        require(filter == "active" || filter == "recent")
+        val response = request(
+            endpoint,
+            "/rpc/runs/list",
+            token,
+            rpcBody(JSONObject().put("filter", filter)),
+        )
+        if (response.status !in 200..299) throw response.error("Could not load activity")
+        return parseActivity(response.body)
+    }
+
+    fun search(endpoint: String, token: String, query: String): List<SearchHitRecord> {
+        val response = request(
+            endpoint,
+            "/rpc/search/query",
+            token,
+            rpcBody(JSONObject().put("q", query.trim())),
+        )
+        if (response.status !in 200..299) throw response.error("Could not search workspace")
+        return parseSearchHits(response.body)
+    }
+
+    fun createAgent(
+        endpoint: String,
+        token: String,
+        name: String,
+        title: String,
+        description: String,
+    ): AgentRecord {
+        val input = JSONObject()
+            .put("name", name.trim())
+            .put("title", title.trim())
+            .put("description", description.trim())
+            .put("instructions", description.trim())
+            .put("notifyOnFinish", true)
+            .put("computerMode", "team")
+        val response = request(endpoint, "/rpc/bots/create", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not create agent")
+        return parseAgentResponse(response.body)
     }
 
     fun sections(endpoint: String, token: String): List<BotSectionRecord> {
@@ -122,6 +195,29 @@ class RakazoApi {
         if (response.status !in 200..299) throw response.error("Could not mark chat as read")
     }
 
+    fun answerMessage(
+        endpoint: String,
+        token: String,
+        botId: String,
+        runId: String,
+        messageId: String,
+        answer: String,
+    ) {
+        val input = JSONObject()
+            .put("botId", botId)
+            .put("runId", runId)
+            .put("messageId", messageId)
+            .put("answer", answer)
+        val response = request(endpoint, "/rpc/threads/answer", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not answer")
+    }
+
+    fun chooseOnboarding(endpoint: String, token: String, botId: String, optionId: String) {
+        val input = JSONObject().put("botId", botId).put("optionId", optionId)
+        val response = request(endpoint, "/rpc/onboarding/choose", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not save this choice")
+    }
+
     fun signOut(endpoint: String, token: String) {
         request(endpoint, "/api/auth/sign-out", token)
     }
@@ -174,6 +270,60 @@ internal fun parseSections(body: String): List<BotSectionRecord> = try {
     throw error
 } catch (_: RuntimeException) {
     throw IOException("Invalid section response")
+}
+
+internal fun parseActivity(body: String): List<ActivityRunRecord> = try {
+    val root = JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid activity response")
+    val runs = root.optJSONArray("runs") ?: throw IOException("Invalid activity response")
+    List(runs.length()) { index ->
+        val value = runs.requiredObject(index)
+        val status = value.requiredString("status")
+        if (status !in RUN_STATUSES) throw IOException("Invalid activity response")
+        ActivityRunRecord(
+            runId = value.requiredString("runId"),
+            botId = value.requiredString("botId"),
+            botName = value.requiredString("botName"),
+            groupId = value.optionalString("groupId"),
+            groupName = value.optionalString("groupName"),
+            status = status,
+            promptSnippet = value.optString("promptSnippet"),
+            updatedAt = value.requiredString("updatedAt"),
+        )
+    }
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid activity response")
+}
+
+internal fun parseSearchHits(body: String): List<SearchHitRecord> = try {
+    val root = JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid search response")
+    val hits = root.optJSONArray("hits") ?: throw IOException("Invalid search response")
+    List(hits.length()) { index ->
+        val value = hits.requiredObject(index)
+        val botId = value.optionalString("botId")
+        val groupId = value.optionalString("groupId")
+        val kind = value.requiredString("kind")
+        if ((botId == null) == (groupId == null)) throw IOException("Invalid search response")
+        if (kind !in SEARCH_KINDS) throw IOException("Invalid search response")
+        SearchHitRecord(
+            key = listOf("messageId", "artifactId", "routineId", "url")
+                .firstNotNullOfOrNull(value::optionalString)
+                ?: "${value.requiredString("title")}:${value.optString("snippet")}",
+            kind = kind,
+            botId = botId,
+            botName = value.optionalString("botName"),
+            groupId = groupId,
+            groupName = value.optionalString("groupName"),
+            title = value.requiredString("title"),
+            snippet = value.requiredString("snippet"),
+            messageId = value.optionalString("messageId"),
+        )
+    }
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid search response")
 }
 
 private fun parseAgentResponse(body: String): AgentRecord = try {
@@ -245,6 +395,7 @@ private fun parseThreadMessage(value: JSONObject): ThreadMessageRecord {
         id = value.requiredString("id"),
         role = role,
         blocks = List(blocks.length()) { index -> parseMessageBlock(blocks.requiredObject(index)) },
+        runId = value.optionalString("runId"),
     )
 }
 
@@ -253,14 +404,16 @@ private fun parseMessageBlock(value: JSONObject): MessageBlockRecord {
     return when (kind) {
         "text" -> MessageBlockRecord(kind, value.requiredString("text"))
         "bot_message_sent" -> MessageBlockRecord(
-            kind,
-            value.requiredString("text"),
-            "Messaged ${value.requiredString("toBotName")}",
+            kind = kind,
+            text = value.requiredString("text"),
+            label = "Messaged ${value.requiredString("toBotName")}",
+            peerBotId = value.requiredString("toBotId"),
         )
         "bot_message_received" -> MessageBlockRecord(
-            kind,
-            value.requiredString("text"),
-            "Message from ${value.requiredString("fromBotName")}",
+            kind = kind,
+            text = value.requiredString("text"),
+            label = "Message from ${value.requiredString("fromBotName")}",
+            peerBotId = value.requiredString("fromBotId"),
         )
         "handoff" -> MessageBlockRecord(kind, value.requiredString("text"), "Agent handoff")
         "ask" -> MessageBlockRecord(
@@ -268,8 +421,18 @@ private fun parseMessageBlock(value: JSONObject): MessageBlockRecord {
             value.requiredString("text"),
             if (value.has("approvalEffectId") || value.has("actions")) "Approval needed" else "Input needed",
             value.optString("detail").takeIf { it.isNotBlank() },
+            value.optString("status").takeIf { it.isNotBlank() },
+            parseActions(value.optJSONArray("actions")),
+            secret = value.optString("input") == "secret",
         )
-        "choice" -> MessageBlockRecord(kind, value.requiredString("question"), "Choice")
+        "choice" -> MessageBlockRecord(
+            kind = kind,
+            text = value.requiredString("question"),
+            label = "Choice",
+            detail = value.optString("subtitle").takeIf { it.isNotBlank() },
+            status = if (value.optionalString("answerId") == null) "pending" else "answered",
+            actions = parseChoiceOptions(value.optJSONArray("options")),
+        )
         "app_connect" -> MessageBlockRecord(
             kind,
             value.requiredString("description"),
@@ -280,25 +443,56 @@ private fun parseMessageBlock(value: JSONObject): MessageBlockRecord {
             kind,
             value.optString("result").ifBlank { value.optString("progress") }.ifBlank { value.optString("task") },
             value.optString("name").ifBlank { "Subagent" },
+            value.optString("task").takeIf { it.isNotBlank() },
+            value.requiredString("status"),
         )
         "child_bot" -> MessageBlockRecord(
             kind,
             value.optString("title"),
             value.requiredString("name"),
+            status = value.requiredString("status"),
         )
         "skill_draft" -> MessageBlockRecord(kind, value.requiredString("goal"), value.requiredString("name"))
         "chart" -> MessageBlockRecord(kind, value.requiredString("name"), "Chart")
         "mcp_approval" -> MessageBlockRecord(kind, value.requiredString("name"), "Approval needed")
         "card" -> MessageBlockRecord(kind, parseCardLines(value.optJSONArray("lines")), "Details")
-        "steps" -> MessageBlockRecord(kind, parseSteps(value.optJSONArray("steps")), "Steps")
+        "steps" -> MessageBlockRecord(kind, parseSteps(value.optJSONArray("steps")), "Tools")
         "image", "file" -> MessageBlockRecord(kind, value.requiredString("name"), "Attachment")
-        "progress" -> MessageBlockRecord(kind, value.requiredString("text"), "Working")
+        "progress" -> MessageBlockRecord(
+            kind = kind,
+            text = value.requiredString("text"),
+            label = "Working",
+            toolNames = parseStrings(value.optJSONArray("pendingToolNames")),
+        )
         "computer", "meta" -> MessageBlockRecord(kind, value.requiredString("text"), null)
         else -> MessageBlockRecord(
             kind = kind,
             text = value.optString("text"),
             label = kind.replace('_', ' ').replaceFirstChar(Char::uppercase),
         )
+    }
+}
+
+private fun parseActions(actions: JSONArray?): List<MessageActionRecord> {
+    if (actions == null) return emptyList()
+    return List(actions.length()) { index ->
+        val action = actions.requiredObject(index)
+        MessageActionRecord(action.requiredString("id"), action.requiredString("label"))
+    }
+}
+
+private fun parseChoiceOptions(options: JSONArray?): List<MessageActionRecord> {
+    if (options == null) throw IOException("Invalid message choice")
+    return List(options.length()) { index ->
+        val option = options.requiredObject(index)
+        MessageActionRecord(option.requiredString("id"), option.requiredString("label"))
+    }
+}
+
+private fun parseStrings(values: JSONArray?): List<String> {
+    if (values == null) return emptyList()
+    return List(values.length()) { index ->
+        values.optString(index).takeIf { it.isNotBlank() } ?: throw IOException("Invalid message block")
     }
 }
 
@@ -320,6 +514,12 @@ private fun JSONArray.requiredObject(index: Int): JSONObject =
 
 private fun JSONObject.requiredString(name: String): String =
     optString(name).takeIf { it.isNotBlank() } ?: throw IOException("Invalid server response")
+
+private fun JSONObject.optionalString(name: String): String? = when {
+    !has(name) || isNull(name) -> null
+    opt(name) is String -> optString(name).takeIf { it.isNotBlank() }
+    else -> throw IOException("Invalid server response")
+}
 
 private fun tokenFrom(response: Response): String {
     val json = runCatching { JSONObject(response.body) }.getOrNull()
@@ -347,6 +547,17 @@ private data class Response(
 
 private val HEX_COLOR = Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 private val MESSAGE_ROLES = setOf("user", "bot", "system")
+private val RUN_STATUSES = setOf(
+    "queued",
+    "leased",
+    "running",
+    "waiting_input",
+    "waiting_takeover",
+    "completed",
+    "failed",
+    "cancelled",
+)
+private val SEARCH_KINDS = setOf("conversation", "message", "file", "link", "routine")
 
 private fun java.io.Reader.readLimitedText(): String {
     val result = StringBuilder()

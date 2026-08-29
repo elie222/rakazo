@@ -60,9 +60,32 @@ class RakazoApiTest {
     }
 
     @Test
+    fun `translates activity search and rich message blocks`() {
+        val activity = parseActivity(
+            """{"json":{"runs":[{"runId":"run-1","botId":"maya","botName":"Maya","groupId":null,"groupName":null,"threadId":"thread-1","status":"waiting_input","trigger":"user","promptSnippet":"Check Gmail","updatedAt":"2026-08-29T00:00:00.000Z"}]}}""",
+        )
+        val hits = parseSearchHits(
+            """{"json":{"hits":[{"kind":"message","botId":"maya","botName":"Maya","title":"Gmail result","snippet":"Found the thread","messageId":"message-2","seq":2}]}}""",
+        )
+        val snapshot = parseThreadSnapshot(
+            """{"json":{"threadId":"thread-1","messages":[{"id":"message-2","role":"bot","runId":"run-1","blocks":[{"kind":"progress","text":"Checking mail","pendingToolNames":["gmail_search"]},{"kind":"ask","text":"Continue?","input":"secret","status":"pending","actions":[{"id":"allow","label":"Allow"}]},{"kind":"subagent","agentId":"agent-1","name":"Research","task":"Verify sources","status":"running","progress":"Reading"}]}],"olderCursor":null,"run":{"id":"run-1","status":"waiting_input","error":null}}}""",
+        )
+
+        assertEquals("waiting_input", activity.single().status)
+        assertEquals("message-2", hits.single().messageId)
+        assertEquals(listOf("gmail_search"), snapshot.messages.single().blocks[0].toolNames)
+        assertEquals(true, snapshot.messages.single().blocks[1].secret)
+        assertEquals("Allow", snapshot.messages.single().blocks[1].actions.single().label)
+        assertEquals("running", snapshot.messages.single().blocks[2].status)
+        assertEquals("run-1", snapshot.messages.single().runId)
+    }
+
+    @Test
     fun `sends the current thread rpc shape to an offline local server`() {
         var requestBody = ""
         var markReadBody = ""
+        var answerBody = ""
+        var choiceBody = ""
         var authorization = ""
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/rpc/threads/send") { exchange ->
@@ -74,6 +97,18 @@ class RakazoApiTest {
         }
         server.createContext("/rpc/threads/markRead") { exchange ->
             markReadBody = exchange.requestBody.bufferedReader().use { it.readText() }
+            val body = """{"json":{"ok":true}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/rpc/threads/answer") { exchange ->
+            answerBody = exchange.requestBody.bufferedReader().use { it.readText() }
+            val body = """{"json":{"ok":true}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/rpc/onboarding/choose") { exchange ->
+            choiceBody = exchange.requestBody.bufferedReader().use { it.readText() }
             val body = """{"json":{"ok":true}}""".toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
@@ -91,6 +126,20 @@ class RakazoApiTest {
                 token = "session-token",
                 botId = "maya",
             )
+            RakazoApi().answerMessage(
+                endpoint = "http://127.0.0.1:${server.address.port}",
+                token = "session-token",
+                botId = "maya",
+                runId = "run-1",
+                messageId = "message-2",
+                answer = "allow",
+            )
+            RakazoApi().chooseOnboarding(
+                endpoint = "http://127.0.0.1:${server.address.port}",
+                token = "session-token",
+                botId = "maya",
+                optionId = "chief-of-staff",
+            )
         } finally {
             server.stop(0)
         }
@@ -100,6 +149,14 @@ class RakazoApiTest {
         assertEquals("maya", json.getString("botId"))
         assertEquals("Hello", json.getString("text"))
         assertEquals("maya", org.json.JSONObject(markReadBody).getJSONObject("json").getString("botId"))
+        val answer = org.json.JSONObject(answerBody).getJSONObject("json")
+        assertEquals("run-1", answer.getString("runId"))
+        assertEquals("message-2", answer.getString("messageId"))
+        assertEquals("allow", answer.getString("answer"))
+        assertEquals(
+            "chief-of-staff",
+            org.json.JSONObject(choiceBody).getJSONObject("json").getString("optionId"),
+        )
     }
 
     @Test
@@ -143,5 +200,36 @@ class RakazoApiTest {
         assertEquals("maya", requests[1].second.getString("botId"))
         assertEquals(org.json.JSONObject.NULL, requests[1].second.get("sectionId"))
         assertEquals("New", requests[2].second.getString("name"))
+    }
+
+    @Test
+    fun `creates an agent with the desktop profile semantics`() {
+        var request = org.json.JSONObject()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/rpc/bots/create") { exchange ->
+            request = org.json.JSONObject(exchange.requestBody.bufferedReader().use { it.readText() })
+                .getJSONObject("json")
+            val body = """{"json":{"id":"research","name":"Research","preview":"","title":"Research analyst","color":"#3478F6","pinned":false,"status":"idle","sectionId":null,"unread":false}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            RakazoApi().createAgent(
+                "http://127.0.0.1:${server.address.port}",
+                "token",
+                " Research ",
+                " Research analyst ",
+                " Verify primary sources. ",
+            )
+        } finally {
+            server.stop(0)
+        }
+
+        assertEquals("Research", request.getString("name"))
+        assertEquals("Research analyst", request.getString("title"))
+        assertEquals("Verify primary sources.", request.getString("description"))
+        assertEquals("Verify primary sources.", request.getString("instructions"))
+        assertEquals("team", request.getString("computerMode"))
     }
 }

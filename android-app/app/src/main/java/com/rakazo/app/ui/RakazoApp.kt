@@ -92,6 +92,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -123,6 +125,7 @@ import com.rakazo.app.ui.theme.TextPrimary
 import com.rakazo.app.ui.theme.TextSecondary
 import com.rakazo.app.ui.theme.UnreadPurple
 import com.rakazo.app.network.AgentRecord
+import com.rakazo.app.network.ActivityRunRecord
 import com.rakazo.app.network.BotSectionRecord
 import com.rakazo.app.network.AndroidSessionStore
 import com.rakazo.app.network.ApiException
@@ -130,6 +133,7 @@ import com.rakazo.app.network.EndpointResult
 import com.rakazo.app.network.RakazoApi
 import com.rakazo.app.network.SessionManager
 import com.rakazo.app.network.MessageBlockRecord
+import com.rakazo.app.network.SearchHitRecord
 import com.rakazo.app.network.ThreadMessageRecord
 import com.rakazo.app.network.ThreadSnapshotRecord
 import com.rakazo.app.network.normalizeEndpoint
@@ -138,6 +142,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.time.Duration
+import java.time.Instant
 
 private enum class AppScreen { Workspace, Thread, Computer }
 private enum class WorkspaceMode { Agents, Activity }
@@ -312,6 +318,30 @@ fun RakazoApp() {
                 markThreadRead = { botId ->
                     withContext(Dispatchers.IO) { api.markThreadRead(session.endpoint, session.token, botId) }
                 },
+                loadActivity = {
+                    withContext(Dispatchers.IO) {
+                        api.activity(session.endpoint, session.token, "active") to
+                            api.activity(session.endpoint, session.token, "recent")
+                    }
+                },
+                searchWorkspace = { query ->
+                    withContext(Dispatchers.IO) { api.search(session.endpoint, session.token, query) }
+                },
+                createAgent = { name, title, description ->
+                    withContext(Dispatchers.IO) {
+                        api.createAgent(session.endpoint, session.token, name, title, description).toAgent()
+                    }
+                },
+                answerMessage = { botId, runId, messageId, answer ->
+                    withContext(Dispatchers.IO) {
+                        api.answerMessage(session.endpoint, session.token, botId, runId, messageId, answer)
+                    }
+                },
+                chooseOnboarding = { botId, optionId ->
+                    withContext(Dispatchers.IO) {
+                        api.chooseOnboarding(session.endpoint, session.token, botId, optionId)
+                    }
+                },
                 onSessionExpired = {
                     session.signedOut()
                     state = RuntimeState.Expired
@@ -356,6 +386,11 @@ private fun LiveWorkspace(
     loadThread: suspend (String) -> ThreadSnapshotRecord,
     sendMessage: suspend (String, String) -> Unit,
     markThreadRead: suspend (String) -> Unit,
+    loadActivity: suspend () -> Pair<List<ActivityRunRecord>, List<ActivityRunRecord>>,
+    searchWorkspace: suspend (String) -> List<SearchHitRecord>,
+    createAgent: suspend (String, String, String) -> Agent,
+    answerMessage: suspend (String, String, String, String) -> Unit,
+    chooseOnboarding: suspend (String, String) -> Unit,
     onSessionExpired: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -405,15 +440,29 @@ private fun LiveWorkspace(
                 sections = liveSections,
                 onOpenAgent = { selectedAgentId = it.id },
                 onOrganizeAgent = { organizeAgentId = it.id },
+                loadActivity = loadActivity,
+                searchWorkspace = searchWorkspace,
+                onSearchHit = { hit ->
+                    hit.botId?.let { botId -> selectedAgentId = botId }
+                },
+                onCreateAgent = { name, title, description ->
+                    val created = createAgent(name, title, description)
+                    liveAgents = liveAgents + created
+                    selectedAgentId = created.id
+                },
+                onSessionExpired = onSessionExpired,
                 onSignOut = onSignOut,
             )
         } else {
             LiveThreadScreen(
                 agent = agent,
+                agents = liveAgents,
                 onBack = ::closeThread,
                 loadThread = loadThread,
                 sendMessage = sendMessage,
                 markThreadRead = markThreadRead,
+                answerMessage = answerMessage,
+                chooseOnboarding = chooseOnboarding,
                 onSessionExpired = onSessionExpired,
             )
         }
@@ -660,37 +709,144 @@ internal fun WorkspaceScreen(
     sections: List<AgentSection> = emptyList(),
     onOpenAgent: (Agent) -> Unit,
     onOrganizeAgent: (Agent) -> Unit = {},
+    loadActivity: (suspend () -> Pair<List<ActivityRunRecord>, List<ActivityRunRecord>>)? = null,
+    searchWorkspace: (suspend (String) -> List<SearchHitRecord>)? = null,
+    onSearchHit: (SearchHitRecord) -> Unit = {},
+    onCreateAgent: (suspend (String, String, String) -> Unit)? = null,
+    onSessionExpired: () -> Unit = {},
     onSignOut: (() -> Unit)? = null,
     demoActivity: Boolean = false,
 ) {
     var mode by rememberSaveable { mutableStateOf(WorkspaceMode.Agents) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var searchHits by remember { mutableStateOf<List<SearchHitRecord>>(emptyList()) }
+    var searchLoading by remember { mutableStateOf(false) }
+    var searchedQuery by remember { mutableStateOf("") }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var activeRuns by remember { mutableStateOf<List<ActivityRunRecord>>(emptyList()) }
+    var recentRuns by remember { mutableStateOf<List<ActivityRunRecord>>(emptyList()) }
+    var activityLoading by remember { mutableStateOf(false) }
+    var activityError by remember { mutableStateOf<String?>(null) }
+    var creatingAgent by rememberSaveable { mutableStateOf(false) }
+
+    fun handle(error: IOException) {
+        if (error is ApiException && error.status == 401) onSessionExpired()
+    }
+
+    LaunchedEffect(mode) {
+        if (mode != WorkspaceMode.Activity || loadActivity == null) return@LaunchedEffect
+        activityLoading = activeRuns.isEmpty() && recentRuns.isEmpty()
+        while (true) {
+            try {
+                val next = loadActivity()
+                activeRuns = next.first
+                recentRuns = next.second
+                activityError = null
+            } catch (error: IOException) {
+                handle(error)
+                activityError = error.message ?: "Could not load activity"
+            } finally {
+                activityLoading = false
+            }
+            delay(15_000)
+        }
+    }
+
+    LaunchedEffect(query, searching) {
+        val trimmed = query.trim()
+        if (!searching || trimmed.isEmpty() || searchWorkspace == null) {
+            searchHits = emptyList()
+            searchLoading = false
+            searchedQuery = ""
+            searchError = null
+            return@LaunchedEffect
+        }
+        delay(250)
+        searchLoading = true
+        searchError = null
+        try {
+            searchHits = searchWorkspace(trimmed)
+            searchedQuery = trimmed
+        } catch (error: IOException) {
+            handle(error)
+            searchHits = emptyList()
+            searchedQuery = trimmed
+            searchError = error.message ?: "Search unavailable"
+        } finally {
+            searchLoading = false
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Page)
             .statusBarsPadding(),
     ) {
-        WorkspaceAppBar(onSignOut)
+        WorkspaceAppBar(
+            activitySelected = mode == WorkspaceMode.Activity,
+            searchSelected = searching,
+            onActivity = { mode = WorkspaceMode.Activity },
+            onSearch = {
+                searching = !searching
+                if (!searching) query = ""
+                mode = WorkspaceMode.Agents
+            },
+            onNewAgent = { creatingAgent = true },
+            onSignOut = onSignOut,
+        )
         WorkspaceTabs(mode = mode, onModeChange = { mode = it })
         HorizontalDivider(color = Border)
+        AnimatedVisibility(visible = searching) {
+            SearchField(query = query, onQueryChange = { query = it })
+        }
         AnimatedContent(
-            targetState = mode,
+            targetState = mode to (searching && query.isNotBlank()),
             transitionSpec = {
                 fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
             },
             modifier = Modifier.weight(1f),
             label = "Workspace mode",
-        ) { selected ->
-            when (selected) {
-                WorkspaceMode.Agents -> AgentList(agents, sections, onOpenAgent, onOrganizeAgent)
-                WorkspaceMode.Activity -> if (demoActivity) ActivityList() else EmptyState("Activity is not connected yet")
+        ) { (selected, showingResults) ->
+            when {
+                showingResults -> SearchResults(
+                    searchHits,
+                    searchLoading || searchedQuery != query.trim(),
+                    searchError,
+                    onSearchHit,
+                )
+                selected == WorkspaceMode.Agents -> AgentList(agents, sections, onOpenAgent, onOrganizeAgent)
+                demoActivity -> ActivityList()
+                else -> LiveActivityList(
+                    active = activeRuns,
+                    recent = recentRuns,
+                    agents = agents,
+                    loading = activityLoading,
+                    error = activityError,
+                    onOpenAgent = onOpenAgent,
+                )
             }
         }
+    }
+    if (creatingAgent && onCreateAgent != null) {
+        NewAgentSheet(
+            onDismiss = { creatingAgent = false },
+            onCreate = onCreateAgent,
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 
 @Composable
-private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
+private fun WorkspaceAppBar(
+    activitySelected: Boolean,
+    searchSelected: Boolean,
+    onActivity: () -> Unit,
+    onSearch: () -> Unit,
+    onNewAgent: () -> Unit,
+    onSignOut: (() -> Unit)?,
+) {
     var accountMenuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
@@ -701,9 +857,9 @@ private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
     ) {
         Text("Rakazo", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.weight(1f))
-        AppBarIcon(Icons.Outlined.NotificationsNone, "Activity")
-        AppBarIcon(Icons.Outlined.Search, "Search")
-        AppBarIcon(Icons.Outlined.Add, "New agent")
+        AppBarIcon(Icons.Outlined.NotificationsNone, "Activity", activitySelected, onActivity)
+        AppBarIcon(Icons.Outlined.Search, "Search", searchSelected, onSearch)
+        AppBarIcon(Icons.Outlined.Add, "New agent", false, onNewAgent)
         Box {
             Surface(
                 modifier = Modifier.size(48.dp)
@@ -733,9 +889,9 @@ private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
 }
 
 @Composable
-private fun AppBarIcon(icon: ImageVector, description: String) {
-    IconButton(onClick = {}, modifier = Modifier.size(48.dp)) {
-        Icon(icon, description, tint = TextSecondary)
+private fun AppBarIcon(icon: ImageVector, description: String, selected: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+        Icon(icon, description, tint = if (selected) FocusBlue else TextSecondary)
     }
 }
 
@@ -774,35 +930,23 @@ private fun AgentList(
     onOpenAgent: (Agent) -> Unit,
     onOrganizeAgent: (Agent) -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    val visible = remember(query, agents) {
-        agents.filter { agent ->
-            query.isBlank() || agent.name.contains(query, ignoreCase = true) ||
-                agent.summary.contains(query, ignoreCase = true)
-        }
-    }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 28.dp),
     ) {
-        item {
-            SearchField(query = query, onQueryChange = { query = it })
-        }
-        val pinned = visible.filter { it.pinned }
+        val pinned = agents.filter { it.pinned }
         if (pinned.isNotEmpty()) {
             item { SectionLabel("Pinned") }
             items(pinned, key = { it.id }) { agent ->
                 AgentRow(
                     agent = agent,
-                    pinned = true,
                     onClick = { onOpenAgent(agent) },
                     onOptions = { onOrganizeAgent(agent) },
                 )
             }
         }
         sections.forEach { section ->
-            val sectionAgents = visible.filter { !it.pinned && it.sectionId == section.id }
+            val sectionAgents = agents.filter { !it.pinned && it.sectionId == section.id }
             if (sectionAgents.isNotEmpty()) {
                 item(key = "section-${section.id}") { SectionLabel(section.name) }
                 items(sectionAgents, key = { it.id }) { agent ->
@@ -815,9 +959,9 @@ private fun AgentList(
             }
         }
         val sectionIds = sections.mapTo(mutableSetOf()) { it.id }
-        val unassigned = visible.filter { !it.pinned && (it.sectionId == null || it.sectionId !in sectionIds) }
+        val unassigned = agents.filter { !it.pinned && (it.sectionId == null || it.sectionId !in sectionIds) }
         if (unassigned.isNotEmpty()) {
-            if (pinned.isNotEmpty() || visible.any { !it.pinned && it.sectionId in sectionIds }) {
+            if (pinned.isNotEmpty() || agents.any { !it.pinned && it.sectionId in sectionIds }) {
                 item { SectionLabel("Unassigned") }
             }
             items(unassigned, key = { it.id }) { agent ->
@@ -828,12 +972,14 @@ private fun AgentList(
                 )
             }
         }
-        if (visible.isEmpty()) item { EmptyState(if (query.isBlank()) "No agents yet" else "No matching agents") }
+        if (agents.isEmpty()) item { EmptyState("No agents yet") }
     }
 }
 
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
         shape = RoundedCornerShape(16.dp),
@@ -848,12 +994,140 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
             Spacer(Modifier.width(12.dp))
             BasicTextField(
                 value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
+                onValueChange = { onQueryChange(it.take(200)) },
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
                 decorationBox = { field ->
-                    if (query.isEmpty()) Text("Search agents", color = TextMuted)
+                    if (query.isEmpty()) Text("Search conversations, files, and routines", color = TextMuted)
+                    field()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResults(
+    hits: List<SearchHitRecord>,
+    loading: Boolean,
+    error: String?,
+    onSelect: (SearchHitRecord) -> Unit,
+) {
+    when {
+        loading -> EmptyState("Searching…")
+        error != null -> EmptyState(error)
+        hits.isEmpty() -> EmptyState("No results")
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 28.dp),
+        ) {
+            items(hits, key = { "${it.kind}:${it.botId ?: it.groupId}:${it.key}" }) { hit ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .clickable { onSelect(hit) }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(hit.title, color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            listOfNotNull(hit.groupName ?: hit.botName, hit.snippet).joinToString(" · "),
+                            color = TextMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(hit.kind, color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                }
+                HorizontalDivider(modifier = Modifier.padding(start = 20.dp), color = Border)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewAgentSheet(
+    onDismiss: () -> Unit,
+    onCreate: suspend (String, String, String) -> Unit,
+    onSessionExpired: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var name by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var pending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Elevated) {
+        Column(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("New agent", style = MaterialTheme.typography.titleLarge)
+            LabeledInput("Name", "Name this agent", name, 80) { name = it }
+            LabeledInput("Title", "Describe what this agent does", title, 500) { title = it }
+            LabeledInput("Description", "What this agent is for", description, 4_000, singleLine = false) {
+                description = it
+            }
+            error?.let { Text(it, color = Color(0xFFFF5364), style = MaterialTheme.typography.bodyMedium) }
+            Button(
+                enabled = name.isNotBlank() && !pending,
+                onClick = {
+                    pending = true
+                    error = null
+                    scope.launch {
+                        try {
+                            onCreate(name.trim(), title.trim(), description.trim())
+                            onDismiss()
+                        } catch (errorValue: IOException) {
+                            if (errorValue is ApiException && errorValue.status == 401) onSessionExpired()
+                            error = errorValue.message ?: "Could not create agent"
+                        } finally {
+                            pending = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = CreamText),
+            ) {
+                Text(if (pending) "Creating…" else "Create")
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun LabeledInput(
+    label: String,
+    placeholder: String,
+    value: String,
+    maxLength: Int,
+    singleLine: Boolean = true,
+    onValueChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(11.dp),
+            color = SurfaceColor,
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = { onValueChange(it.take(maxLength)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = if (singleLine) 50.dp else 112.dp).padding(14.dp),
+                singleLine = singleLine,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
+                decorationBox = { field ->
+                    if (value.isEmpty()) Text(placeholder, color = TextMuted)
                     field()
                 },
             )
@@ -876,7 +1150,6 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun AgentRow(
     agent: Agent,
-    pinned: Boolean = false,
     onClick: () -> Unit,
     onOptions: () -> Unit,
 ) {
@@ -940,8 +1213,12 @@ private fun AgentRow(
                 )
                 Spacer(Modifier.width(18.dp))
             }
-            if (pinned) {
-                Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            if (agent.status.isNotBlank() && agent.status != "idle") {
+                Text(
+                    activityStatusLabel(agent.status),
+                    color = activityStatusColor(agent.status),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             } else {
                 Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
             }
@@ -1142,6 +1419,121 @@ private fun ActivityList() {
 }
 
 @Composable
+private fun LiveActivityList(
+    active: List<ActivityRunRecord>,
+    recent: List<ActivityRunRecord>,
+    agents: List<Agent>,
+    loading: Boolean,
+    error: String?,
+    onOpenAgent: (Agent) -> Unit,
+) {
+    when {
+        loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = FocusBlue, strokeWidth = 2.dp)
+        }
+        active.isEmpty() && recent.isEmpty() && error != null -> EmptyState(error)
+        active.isEmpty() && recent.isEmpty() -> EmptyState("No activity yet")
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 28.dp),
+        ) {
+            if (active.isNotEmpty()) {
+                item { SectionLabel("Now") }
+                items(active, key = { it.runId }) { run ->
+                    RunActivityRow(run, agents.firstOrNull { it.id == run.botId }, onOpenAgent)
+                }
+            }
+            if (recent.isNotEmpty()) {
+                item { SectionLabel("Recent") }
+                items(recent, key = { it.runId }) { run ->
+                    RunActivityRow(run, agents.firstOrNull { it.id == run.botId }, onOpenAgent)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunActivityRow(run: ActivityRunRecord, agent: Agent?, onOpenAgent: (Agent) -> Unit) {
+    val active = run.status in ACTIVE_RUN_STATUSES
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clickable(enabled = agent != null) { agent?.let(onOpenAgent) }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (agent != null) {
+            OrganicAvatar(agent.id, agent.color, size = 46.dp, working = active)
+        } else {
+            Box(Modifier.size(46.dp).clip(CircleShape).background(Elevated))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (run.groupName == null) run.botName else "${run.botName} · ${run.groupName}",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                run.promptSnippet.ifBlank { activityStatusLabel(run.status) },
+                color = TextMuted,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(relativeActivityTime(run.updatedAt), color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                activityStatusLabel(run.status),
+                color = activityStatusColor(run.status),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+    HorizontalDivider(modifier = Modifier.padding(start = 80.dp), color = Border)
+}
+
+private fun activityStatusLabel(status: String): String = when (status) {
+    "queued" -> "Queued"
+    "leased" -> "Starting"
+    "running" -> "Running"
+    "waiting_input" -> "Needs input"
+    "waiting_takeover" -> "Needs takeover"
+    "completed" -> "Done"
+    "failed" -> "Failed"
+    "cancelled" -> "Cancelled"
+    else -> status
+}
+
+private fun activityStatusColor(status: String): Color = when (status) {
+    "failed" -> Color(0xFFFF5364)
+    "cancelled" -> TextMuted
+    "completed" -> Success
+    "waiting_input", "waiting_takeover" -> Color(0xFFF5A03C)
+    else -> FocusBlue
+}
+
+internal fun relativeActivityTime(value: String, now: Instant = Instant.now()): String {
+    val timestamp = runCatching { Instant.parse(value) }.getOrNull() ?: return ""
+    val seconds = Duration.between(timestamp, now).seconds.coerceAtLeast(0)
+    if (seconds < 45) return "just now"
+    val minutes = seconds / 60
+    if (minutes < 60) return "${minutes}m ago"
+    val hours = minutes / 60
+    if (hours < 24) return "${hours}h ago"
+    val days = hours / 24
+    return if (days < 7) "${days}d ago" else value.take(10)
+}
+
+@Composable
 private fun EmptyState(message: String) {
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(message, color = TextMuted, style = MaterialTheme.typography.bodyLarge)
@@ -1186,10 +1578,13 @@ private fun ActivityRow(agent: Agent, summary: String, time: String, running: Bo
 @Composable
 private fun LiveThreadScreen(
     agent: Agent,
+    agents: List<Agent>,
     onBack: () -> Unit,
     loadThread: suspend (String) -> ThreadSnapshotRecord,
     sendMessage: suspend (String, String) -> Unit,
     markThreadRead: suspend (String) -> Unit,
+    answerMessage: suspend (String, String, String, String) -> Unit,
+    chooseOnboarding: suspend (String, String) -> Unit,
     onSessionExpired: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -1293,7 +1688,23 @@ private fun LiveThreadScreen(
                         if (messages.isEmpty()) {
                             item { EmptyThread() }
                         } else {
-                            items(messages, key = { it.id }) { message -> ThreadMessage(message) }
+                            items(messages, key = { it.id }) { message ->
+                                ThreadMessage(message, agents) { block, answer ->
+                                    scope.launch {
+                                        try {
+                                            if (block.kind == "choice") {
+                                                chooseOnboarding(agent.id, answer)
+                                            } else {
+                                                val runId = message.runId ?: return@launch
+                                                answerMessage(agent.id, runId, message.id, answer)
+                                            }
+                                            refreshGeneration += 1
+                                        } catch (errorValue: IOException) {
+                                            handle(errorValue)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         if (working) item(key = "working-${agent.id}") { WorkingAgentMarker(agent) }
                     }
@@ -1402,9 +1813,13 @@ private fun ThreadError(message: String) {
 }
 
 @Composable
-private fun ThreadMessage(message: ThreadMessageRecord) {
+private fun ThreadMessage(
+    message: ThreadMessageRecord,
+    agents: List<Agent> = emptyList(),
+    onAnswer: (MessageBlockRecord, String) -> Unit = { _, _ -> },
+) {
     val text = message.blocks.map(MessageBlockRecord::text).filter(String::isNotBlank).joinToString("\n")
-    if (message.role == "user") {
+    if (message.role == "user" && !message.isPeerTraffic()) {
         if (text.isNotBlank()) UserBubble(text)
         return
     }
@@ -1414,22 +1829,154 @@ private fun ThreadMessage(message: ThreadMessageRecord) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         message.blocks.forEach { block ->
-            if (block.label == null) {
-                if (block.text.isNotBlank()) {
-                    Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            ThreadMessageBlock(
+                block,
+                message.runId != null || block.kind == "choice",
+                agents.firstOrNull { it.id == block.peerBotId },
+            ) { answer -> onAnswer(block, answer) }
+        }
+    }
+}
+
+@Composable
+private fun ThreadMessageBlock(
+    block: MessageBlockRecord,
+    canAnswer: Boolean,
+    peerAgent: Agent?,
+    onAnswer: (String) -> Unit,
+) {
+    var expanded by rememberSaveable(block.kind, block.label) { mutableStateOf(false) }
+    when {
+        block.kind == "bot_message_sent" || block.kind == "bot_message_received" -> Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                block.peerBotId?.let { peerBotId ->
+                    OrganicAvatar(peerBotId, peerAgent?.color ?: TextMuted, size = 18.dp)
                 }
-            } else {
-                SemanticCard(title = block.label) {
-                    if (block.text.isNotBlank()) {
-                        Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
-                    }
-                    block.detail?.let { detail ->
-                        Text(detail, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
-                    }
+                Text(block.label.orEmpty(), color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            }
+            AnimatedVisibility(visible = expanded) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = SurfaceColor,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+                ) {
+                    Text(block.text, modifier = Modifier.padding(14.dp), color = TextPrimary)
                 }
             }
         }
+        block.kind == "handoff" || block.kind == "meta" -> ThreadEvent(
+            listOfNotNull(block.label, block.text.takeIf(String::isNotBlank)).joinToString(" · "),
+        )
+        block.kind == "progress" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            if (block.toolNames.isNotEmpty()) ToolLabels(block.toolNames)
+        }
+        block.kind == "subagent" || block.kind == "child_bot" -> SemanticCard(title = block.label) {
+            block.status?.let { StatusLabel(it) }
+            block.detail?.let { Text(it, color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+        }
+        block.label == null -> if (block.text.isNotBlank()) {
+            Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+        }
+        else -> SemanticCard(title = block.label) {
+            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            block.detail?.let { detail ->
+                Text(detail, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (block.status == "answered") {
+                StatusLabel("answered")
+            } else if (canAnswer && block.actions.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    block.actions.forEach { action ->
+                        TextButton(onClick = { onAnswer(action.id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(action.label, color = FocusBlue)
+                        }
+                    }
+                }
+            } else if (canAnswer && block.kind == "ask") {
+                InlineAnswer(secret = block.secret, onAnswer = onAnswer)
+            }
+        }
     }
+}
+
+internal fun ThreadMessageRecord.isPeerTraffic(): Boolean = blocks.any {
+    it.kind == "bot_message_sent" || it.kind == "bot_message_received"
+}
+
+@Composable
+private fun InlineAnswer(secret: Boolean, onAnswer: (String) -> Unit) {
+    var answer by remember(secret) { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(10.dp),
+            color = Page,
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+        ) {
+            BasicTextField(
+                value = answer,
+                onValueChange = { answer = it },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                singleLine = true,
+                visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        TextButton(
+            enabled = answer.isNotBlank(),
+            onClick = {
+                onAnswer(answer)
+                answer = ""
+            },
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text("Send", color = FocusBlue) }
+    }
+}
+
+@Composable
+private fun ToolLabels(names: List<String>) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        names.distinct().forEach { name ->
+            Surface(shape = RoundedCornerShape(10.dp), color = Elevated) {
+                Text(
+                    name.substringAfterLast("__").replace('_', ' '),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusLabel(status: String) {
+    val color = when (status) {
+        "failed", "deleted", "archived" -> Color(0xFFFF5364)
+        "running", "pending" -> Color(0xFFF5A03C)
+        else -> Success
+    }
+    Text(
+        status.replace('_', ' '),
+        color = color,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
 }
 
 @Composable
@@ -1520,16 +2067,13 @@ private fun AgentTopBar(
         }
         OrganicAvatar(agent.id, agent.color, size = 44.dp, working = demoContent)
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(agent.name, style = MaterialTheme.typography.titleLarge)
-            Text(
-                if (demoContent) "Working" else agent.summary,
-                color = TextMuted,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            agent.name,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (showActions) {
             IconButton(onClick = {}) { Icon(Icons.Outlined.Call, "Start voice call", tint = TextSecondary) }
         }

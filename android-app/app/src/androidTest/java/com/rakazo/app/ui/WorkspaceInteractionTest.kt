@@ -110,4 +110,24 @@ class WorkspaceInteractionTest {
 
         compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
     }
+
+    @Test
+    fun workspaceToolbarOpensSearchActivityAndCreate() {
+        compose.setContent {
+            RakazoTheme {
+                WorkspaceScreen(
+                    agents = emptyList(),
+                    onOpenAgent = {},
+                    onCreateAgent = { _, _, _ -> },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithText("Search conversations, files, and routines").assertExists()
+        compose.onNodeWithContentDescription("Activity").performClick()
+        compose.onNodeWithText("No activity yet").assertExists()
+        compose.onNodeWithContentDescription("New agent").performClick()
+        compose.onNodeWithText("New agent").assertExists()
+    }
 }
