@@ -53,6 +53,8 @@ import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -115,7 +117,7 @@ import java.io.IOException
 private enum class AppScreen { Workspace, Thread, Computer }
 private enum class WorkspaceMode { Agents, Activity }
 
-private data class Agent(
+internal data class Agent(
     val id: String,
     val name: String,
     val summary: String,
@@ -240,9 +242,8 @@ fun RakazoApp() {
                     }
                 },
             )
-            is RuntimeState.Workspace -> WorkspaceScreen(
+            is RuntimeState.Workspace -> LiveWorkspace(
                 agents = current.agents,
-                onOpenAgent = null,
                 onSignOut = {
                     val endpoint = session.endpoint
                     val token = session.token
@@ -267,6 +268,41 @@ fun RakazoApp() {
                 message = "Sign in again to continue.",
                 action = "Sign in",
                 onAction = { state = RuntimeState.SignIn(session.endpoint) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveWorkspace(agents: List<Agent>, onSignOut: () -> Unit) {
+    var selectedAgentId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedAgent = agents.firstOrNull { it.id == selectedAgentId }
+
+    BackHandler(enabled = selectedAgent != null) { selectedAgentId = null }
+
+    AnimatedContent(
+        targetState = selectedAgent,
+        transitionSpec = {
+            val direction = if (targetState != null) 1 else -1
+            (slideInHorizontally(tween(220)) { it / 12 * direction } + fadeIn(tween(180)))
+                .togetherWith(
+                    slideOutHorizontally(tween(180)) { -it / 16 * direction } + fadeOut(tween(140)),
+                )
+        },
+        label = "Agent thread",
+    ) { agent ->
+        if (agent == null) {
+            WorkspaceScreen(
+                agents = agents,
+                onOpenAgent = { selectedAgentId = it.id },
+                onSignOut = onSignOut,
+            )
+        } else {
+            ThreadScreen(
+                agent = agent,
+                demoContent = false,
+                onBack = { selectedAgentId = null },
+                onOpenComputer = null,
             )
         }
     }
@@ -466,6 +502,8 @@ private fun DemoRakazoApp() {
                     demoActivity = true,
                 )
                 AppScreen.Thread -> ThreadScreen(
+                    agent = Maya,
+                    demoContent = true,
                     onBack = { screen = AppScreen.Workspace },
                     onOpenComputer = { screen = AppScreen.Computer },
                 )
@@ -476,9 +514,9 @@ private fun DemoRakazoApp() {
 }
 
 @Composable
-private fun WorkspaceScreen(
+internal fun WorkspaceScreen(
     agents: List<Agent>,
-    onOpenAgent: (() -> Unit)?,
+    onOpenAgent: (Agent) -> Unit,
     onSignOut: (() -> Unit)? = null,
     demoActivity: Boolean = false,
 ) {
@@ -510,6 +548,7 @@ private fun WorkspaceScreen(
 
 @Composable
 private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
+    var accountMenuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -522,15 +561,29 @@ private fun WorkspaceAppBar(onSignOut: (() -> Unit)?) {
         AppBarIcon(Icons.Outlined.NotificationsNone, "Activity")
         AppBarIcon(Icons.Outlined.Search, "Search")
         AppBarIcon(Icons.Outlined.Add, "New agent")
-        Surface(
-            modifier = Modifier.size(48.dp)
-                .semantics { if (onSignOut != null) contentDescription = "Sign out" }
-                .clickable(enabled = onSignOut != null) { onSignOut?.invoke() },
-            shape = CircleShape,
-            color = Elevated,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Person, null, tint = TextSecondary)
+        Box {
+            Surface(
+                modifier = Modifier.size(48.dp)
+                    .semantics { contentDescription = "Account" }
+                    .clickable(enabled = onSignOut != null) { accountMenuOpen = true },
+                shape = CircleShape,
+                color = Elevated,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Person, null, tint = TextSecondary)
+                }
+            }
+            DropdownMenu(
+                expanded = accountMenuOpen,
+                onDismissRequest = { accountMenuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Sign out") },
+                    onClick = {
+                        accountMenuOpen = false
+                        onSignOut?.invoke()
+                    },
+                )
             }
         }
     }
@@ -572,7 +625,7 @@ private fun WorkspaceTabs(mode: WorkspaceMode, onModeChange: (WorkspaceMode) -> 
 }
 
 @Composable
-private fun AgentList(agents: List<Agent>, onOpenAgent: (() -> Unit)?) {
+private fun AgentList(agents: List<Agent>, onOpenAgent: (Agent) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val visible = remember(query) {
         agents.filter { agent ->
@@ -592,14 +645,14 @@ private fun AgentList(agents: List<Agent>, onOpenAgent: (() -> Unit)?) {
         if (pinned.isNotEmpty()) {
             item { SectionLabel("Pinned") }
             items(pinned, key = { it.id }) { agent ->
-                AgentRow(agent = agent, pinned = true, onClick = onOpenAgent)
+                AgentRow(agent = agent, pinned = true, onClick = { onOpenAgent(agent) })
             }
         }
         val unassigned = visible.filterNot { it.pinned }
         if (unassigned.isNotEmpty()) {
             if (pinned.isNotEmpty()) item { SectionLabel("Unassigned") }
             items(unassigned, key = { it.id }) { agent ->
-                AgentRow(agent = agent, onClick = onOpenAgent)
+                AgentRow(agent = agent, onClick = { onOpenAgent(agent) })
             }
         }
         if (visible.isEmpty()) item { EmptyState(if (query.isBlank()) "No agents yet" else "No matching agents") }
@@ -647,11 +700,11 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: (() -> Unit)?) {
+private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = onClick != null) { onClick?.invoke() }
+            .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -672,7 +725,7 @@ private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: (() -> Unit
             Box(Modifier.size(8.dp).clip(CircleShape).background(UnreadPurple))
             Spacer(Modifier.width(18.dp))
             Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
-        } else if (onClick != null) {
+        } else {
             Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
         }
     }
@@ -744,67 +797,83 @@ private fun ActivityRow(agent: Agent, summary: String, time: String, running: Bo
 }
 
 @Composable
-private fun ThreadScreen(onBack: () -> Unit, onOpenComputer: () -> Unit) {
+private fun ThreadScreen(
+    agent: Agent,
+    demoContent: Boolean,
+    onBack: () -> Unit,
+    onOpenComputer: (() -> Unit)?,
+) {
     val sentMessages = remember { mutableStateListOf<String>() }
     var draft by rememberSaveable { mutableStateOf("") }
     Column(
         modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding(),
     ) {
-        AgentTopBar(onBack = onBack, onOpenComputer = onOpenComputer)
+        AgentTopBar(agent = agent, demoContent = demoContent, onBack = onBack, onOpenComputer = onOpenComputer)
         HorizontalDivider(color = Border)
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            item { UserBubble("Rewrite this into a concise launch post.") }
-            item { ThreadEvent("Messaged X Writer") }
-            item {
-                SemanticCard(title = "Message bot", checked = true) {
-                    Text(
-                        "I’ve sent it to X Writer to verify the link and claims.",
-                        color = TextPrimary,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+        if (demoContent) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                item { UserBubble("Rewrite this into a concise launch post.") }
+                item { ThreadEvent("Messaged X Writer") }
+                item {
+                    SemanticCard(title = "Message bot", checked = true) {
+                        Text(
+                            "I’ve sent it to X Writer to verify the link and claims.",
+                            color = TextPrimary,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
                 }
-            }
-            item { ThreadEvent("Message from GitHub") }
-            item {
-                SemanticCard {
-                    Text(
-                        "No new action is needed from GitHub. I’m still waiting on X Writer.",
-                        color = TextPrimary,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                item { ThreadEvent("Message from GitHub") }
+                item {
+                    SemanticCard {
+                        Text(
+                            "No new action is needed from GitHub. I’m still waiting on X Writer.",
+                            color = TextPrimary,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
                 }
-            }
-            item { ThreadEvent("Message from X Writer") }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Here are three polished options:", style = MaterialTheme.typography.bodyLarge)
-                    Text("1.  Rakazo gives every task the right specialist.", color = TextSecondary)
-                    Text("2.  One workspace. A team of focused agents.", color = TextSecondary)
-                    Text("3.  Delegate the work, keep the control.", color = TextSecondary)
+                item { ThreadEvent("Message from X Writer") }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Here are three polished options:", style = MaterialTheme.typography.bodyLarge)
+                        Text("1.  Rakazo gives every task the right specialist.", color = TextSecondary)
+                        Text("2.  One workspace. A team of focused agents.", color = TextSecondary)
+                        Text("3.  Delegate the work, keep the control.", color = TextSecondary)
+                    }
                 }
+                items(sentMessages) { message -> UserBubble(message) }
             }
-            items(sentMessages) { message -> UserBubble(message) }
+            HorizontalDivider(color = Border)
+            Composer(
+                value = draft,
+                onValueChange = { draft = it },
+                onSend = {
+                    if (draft.isNotBlank()) {
+                        sentMessages += draft.trim()
+                        draft = ""
+                    }
+                },
+            )
+        } else {
+            Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Messages aren’t connected yet", color = TextMuted, style = MaterialTheme.typography.bodyLarge)
+            }
         }
-        HorizontalDivider(color = Border)
-        Composer(
-            value = draft,
-            onValueChange = { draft = it },
-            onSend = {
-                if (draft.isNotBlank()) {
-                    sentMessages += draft.trim()
-                    draft = ""
-                }
-            },
-        )
     }
 }
 
 @Composable
-private fun AgentTopBar(onBack: () -> Unit, onOpenComputer: () -> Unit) {
+private fun AgentTopBar(
+    agent: Agent,
+    demoContent: Boolean,
+    onBack: () -> Unit,
+    onOpenComputer: (() -> Unit)?,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -812,16 +881,25 @@ private fun AgentTopBar(onBack: () -> Unit, onOpenComputer: () -> Unit) {
         IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = TextSecondary)
         }
-        OrganicAvatar(Maya.id, Maya.color, size = 44.dp, working = true)
+        OrganicAvatar(agent.id, agent.color, size = 44.dp, working = demoContent)
         Spacer(Modifier.width(12.dp))
-        Column {
-            Text("Maya", style = MaterialTheme.typography.titleLarge)
-            Text("Working", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+        Column(Modifier.weight(1f)) {
+            Text(agent.name, style = MaterialTheme.typography.titleLarge)
+            Text(
+                if (demoContent) "Working" else agent.summary,
+                color = TextMuted,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = {}) { Icon(Icons.Outlined.Call, "Start voice call", tint = TextSecondary) }
-        IconButton(onClick = onOpenComputer) {
-            Icon(Icons.Outlined.DesktopWindows, "Open Maya’s computer", tint = TextSecondary)
+        if (demoContent) {
+            IconButton(onClick = {}) { Icon(Icons.Outlined.Call, "Start voice call", tint = TextSecondary) }
+        }
+        if (onOpenComputer != null) {
+            IconButton(onClick = onOpenComputer) {
+                Icon(Icons.Outlined.DesktopWindows, "Open ${agent.name}’s computer", tint = TextSecondary)
+            }
         }
     }
 }
