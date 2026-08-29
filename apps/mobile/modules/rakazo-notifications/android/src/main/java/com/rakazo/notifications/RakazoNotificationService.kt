@@ -85,7 +85,12 @@ class RakazoNotificationService : Service() {
     while (scope.isActive) {
       val storage = NotificationStorage(this)
       val settings = storage.settings
-      if (!settings.liveConnection || storage.endpoint.isBlank() || storage.token.isBlank()) {
+      if (
+        !settings.liveConnection ||
+        storage.endpoint.isBlank() ||
+        storage.token.isBlank() ||
+        !isAllowedNotificationEndpoint(storage.endpoint)
+      ) {
         stop()
         return
       }
@@ -365,6 +370,7 @@ private fun latestReply(endpoint: String, token: String, botId: String): String 
 }
 
 private fun rpc(endpoint: String, token: String, procedure: String, input: JSONObject): JSONObject {
+  if (!isAllowedNotificationEndpoint(endpoint)) throw IOException("Disallowed notification endpoint")
   val connection = URL("$endpoint/rpc/$procedure").openConnection() as HttpURLConnection
   return try {
     connection.requestMethod = "POST"

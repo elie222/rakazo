@@ -220,12 +220,9 @@ export default function Account() {
         {Platform.OS === "android" ? (
           <View accessibilityLabel="Notifications" style={styles.profile}>
             <Text style={styles.settingsTitle}>Notifications</Text>
-            <Text style={styles.settingsExplanation}>
-              Keep agent status and alerts current in the background
-            </Text>
             <NotificationSwitch
               label="Live working status"
-              detail="Shows while agents are working"
+              detail="While agents are working"
               value={notifications.liveConnection}
               disabled={notificationPending || !notificationsReady}
               onChange={(liveConnection) =>
@@ -241,7 +238,7 @@ export default function Account() {
             />
             <NotificationSwitch
               label="Scheduled tasks"
-              detail="Contextual alerts from routines"
+              detail="Alerts from routines"
               value={notifications.scheduledTasks}
               disabled={notificationPending || !notificationsReady}
               onChange={(scheduledTasks) =>
@@ -250,7 +247,7 @@ export default function Account() {
             />
             <NotificationSwitch
               label="Needs attention"
-              detail="Questions, approvals, and takeover"
+              detail="Questions, approvals, takeover"
               value={notifications.needsAttention}
               disabled={notificationPending || !notificationsReady}
               onChange={(needsAttention) =>
@@ -262,14 +259,14 @@ export default function Account() {
               onPress={() => void openPromotedNotificationSettings()}
               style={{ minHeight: 44, justifyContent: "center" }}
             >
-              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Android live update settings</Text>
+              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Live update settings</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
               style={{ minHeight: 44, justifyContent: "center" }}
             >
-              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Android notification settings</Text>
+              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Notification settings</Text>
             </Pressable>
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
           </View>

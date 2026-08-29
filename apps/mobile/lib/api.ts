@@ -114,6 +114,7 @@ export async function signOut() {
 }
 
 export async function deleteAccount(password: string) {
+  await rpc("notifications/unregisterPush").catch(() => undefined);
   const res = await fetch(`${currentApiBase()}/api/auth/delete-user`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },

@@ -32,15 +32,27 @@ describe("Android mobile platform contract", () => {
     );
     const service = readFileSync(resolve(nativeRoot, "RakazoNotificationService.kt"), "utf8");
     const module = readFileSync(resolve(nativeRoot, "RakazoNotificationsModule.kt"), "utf8");
+    const allowlist = readFileSync(resolve(nativeRoot, "EndpointAllowlist.kt"), "utf8");
+    const live = readFileSync(resolve(mobileRoot, "lib/live-notifications.ts"), "utf8");
     expect(service).toContain("android.requestPromotedOngoing");
     expect(service).toContain("liveStatusIcon(primary, avatarStyle)");
     expect(service).toContain('rpc(endpoint, token, "me"');
     expect(service).not.toContain("showStarting");
     expect(service).not.toContain("catch (_: IOException) {\n        stop()");
     expect(service).toContain("Expo push owns background completion and attention delivery");
+    expect(service).toContain("isAllowedNotificationEndpoint(storage.endpoint)");
+    expect(service).toContain("if (!isAllowedNotificationEndpoint(endpoint)) throw IOException");
     expect(module).toContain("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS");
     expect(module).not.toContain("settings.copy(liveConnection = false)");
     expect(module).toContain("RakazoNotificationService.clearSession(context)");
+    expect(module).toContain("isAllowedNotificationEndpoint(endpoint)");
+    expect(allowlist).toContain("isAllowedNotificationEndpoint");
+    expect(allowlist).toContain('scheme == "https"');
+    expect(allowlist).toContain("isLanOrLocalHost");
+    expect(live).toContain("apiBaseWarning(endpoint)");
+    expect(live).toMatch(
+      /export async function resumeLiveNotifications[\s\S]*apiBaseWarning\(endpoint\)[\s\S]*nativeNotifications\.resume/,
+    );
     expect(service).toContain(
       "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
     );
@@ -57,9 +69,12 @@ describe("Android mobile platform contract", () => {
       "utf8",
     );
     expect(service).toContain("val working = active.filter(::isWorking)");
-    expect(service).toContain("if (working.isEmpty())");
-    expect(service).toContain("val primary = active.first()\n");
+    expect(service).toMatch(/if \(working\.isEmpty\(\)\) clearLive\(\) else showLive\(working/);
+    expect(service).toMatch(
+      /private fun showLive\(active: List<RunRecord>[\s\S]*val primary = active\.first\(\)/,
+    );
     expect(service).toContain('putString("rakazo.botId", run.botId)');
+    expect(service).toMatch(/if \(working\.isEmpty\(\)\) \{[\s\S]*stop\(\)[\s\S]*return[\s\S]*\}/);
   });
 
   it("centers the latest-message control and clears a thread's Android notifications when read", () => {

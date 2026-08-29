@@ -53,7 +53,9 @@ export async function setLiveNotificationSettings(
 }
 
 export async function resumeLiveNotifications(endpoint: string, token: string): Promise<void> {
-  await nativeNotifications?.resume(endpoint, token);
+  if (!nativeNotifications || !token) return;
+  if (apiBaseWarning(endpoint)) return;
+  await nativeNotifications.resume(endpoint, token);
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {

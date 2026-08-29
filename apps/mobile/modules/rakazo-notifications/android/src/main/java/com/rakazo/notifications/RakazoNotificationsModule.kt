@@ -18,6 +18,9 @@ class RakazoNotificationsModule : Module() {
     AsyncFunction("setSettings") { value: Map<String, Boolean>, endpoint: String, token: String ->
       val context = context()
       val storage = NotificationStorage(context)
+      if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
+        throw IllegalArgumentException("Public servers need https://. HTTP only works on your local network.")
+      }
       storage.endpoint = endpoint
       storage.token = token
       storage.settings = NotificationSettings.fromMap(value)
@@ -30,11 +33,15 @@ class RakazoNotificationsModule : Module() {
 
     AsyncFunction("resume") { endpoint: String, token: String ->
       val context = context()
-      val storage = NotificationStorage(context)
-      storage.endpoint = endpoint
-      storage.token = token
-      if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
-        RakazoNotificationService.start(context)
+      if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
+        RakazoNotificationService.stop(context)
+      } else {
+        val storage = NotificationStorage(context)
+        storage.endpoint = endpoint
+        storage.token = token
+        if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
+          RakazoNotificationService.start(context)
+        }
       }
     }
 
