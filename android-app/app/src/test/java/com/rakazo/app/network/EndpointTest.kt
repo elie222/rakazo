@@ -12,18 +12,22 @@ class EndpointTest {
             normalizeEndpoint(" https://user:pass@app.example.com/rpc "),
         )
         assertEquals(
-            EndpointResult.Valid("http://192.168.1.20:3100"),
-            normalizeEndpoint("http://192.168.1.20:3100/api"),
-        )
-        assertEquals(
-            EndpointResult.Valid("http://[::1]:3100"),
-            normalizeEndpoint("http://[::1]:3100/api"),
+            EndpointResult.Valid("http://10.0.2.2:3100"),
+            normalizeEndpoint("http://10.0.2.2:3100/api"),
         )
     }
 
     @Test
     fun `rejects malformed schemes and public cleartext`() {
-        listOf("", "ftp://example.com", "http://", "http://example.com").forEach {
+        listOf(
+            "",
+            "ftp://example.com",
+            "http://",
+            "http://example.com",
+            "http://192.168.1.20:3100",
+            "http://server.local:3100",
+            "http://[::1]:3100",
+        ).forEach {
             assertTrue(normalizeEndpoint(it) is EndpointResult.Invalid)
         }
     }

@@ -62,7 +62,7 @@ class RakazoApiTest {
     @Test
     fun `translates activity search and rich message blocks`() {
         val activity = parseActivity(
-            """{"json":{"runs":[{"runId":"run-1","botId":"maya","botName":"Maya","groupId":null,"groupName":null,"threadId":"thread-1","status":"waiting_input","trigger":"user","promptSnippet":"Check Gmail","updatedAt":"2026-08-29T00:00:00.000Z"}]}}""",
+            """{"json":{"runs":[{"runId":"run-1","botId":"maya","botName":"Maya","groupId":null,"groupName":null,"threadId":"thread-1","status":"waiting_input","trigger":"webhook","promptSnippet":"Check Gmail","updatedAt":"2026-08-29T00:00:00.000Z"}]}}""",
         )
         val hits = parseSearchHits(
             """{"json":{"hits":[{"kind":"message","botId":"maya","botName":"Maya","title":"Gmail result","snippet":"Found the thread","messageId":"message-2","seq":2}]}}""",
@@ -73,7 +73,7 @@ class RakazoApiTest {
 
         assertEquals("waiting_input", activity.single().status)
         assertEquals("thread-1", activity.single().threadId)
-        assertEquals("user", activity.single().trigger)
+        assertEquals("webhook", activity.single().trigger)
         assertEquals("message-2", hits.single().messageId)
         assertEquals(listOf("gmail_search"), snapshot.messages.single().blocks[0].toolNames)
         assertEquals(true, snapshot.messages.single().blocks[1].secret)
