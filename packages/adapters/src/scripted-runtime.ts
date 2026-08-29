@@ -30,6 +30,9 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     running.set(request.runId, controller);
     const signal = context?.signal ?? controller.signal;
     try {
+      if (shouldFail(request.prompt)) {
+        throw new Error("Scripted run failure");
+      }
       if (shouldHang(request.prompt)) {
         yield { type: "progress", text: "still working…" };
         while (!controller.signal.aborted && !signal.aborted) {
@@ -326,6 +329,10 @@ export function inferScript(
       complete: true,
     },
   ];
+}
+
+function shouldFail(prompt: string): boolean {
+  return prompt.toLowerCase().includes("fail this run");
 }
 
 function shouldHang(prompt: string): boolean {

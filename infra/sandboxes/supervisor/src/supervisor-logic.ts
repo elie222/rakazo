@@ -29,6 +29,17 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
 ]);
 
+export const DOCKER_BROWSER_ALIASES = new Set([
+  "browser",
+  "chrome",
+  "chromium",
+  "chromium-browser",
+  "firefox",
+  "google-chrome",
+  "google-chrome-stable",
+  "rakazo-browser",
+]);
+
 export function assertRequestIdentity(
   botId: string | undefined,
   workspaceId: string | undefined,
@@ -44,6 +55,97 @@ export function hasValidBearerToken(authorization: string | undefined, expectedT
   const actual = Buffer.from(expectedToken);
   const candidate = Buffer.from(supplied);
   return actual.length === candidate.length && timingSafeEqual(actual, candidate);
+}
+
+/** Prefer the HTTP control fast path; on failure use the docker-exec fallback. */
+export async function preferComputerControl<T>(
+  run: (() => Promise<T>) | undefined,
+  fallback: () => Promise<T>,
+): Promise<T> {
+  if (!run) return fallback();
+  try {
+    return await run();
+  } catch {
+    return fallback();
+  }
+}
+
+export class ComputerControlUnavailableError extends Error {
+  constructor(message = "computer control unavailable") {
+    super(message);
+    this.name = "ComputerControlUnavailableError";
+  }
+}
+
+function errorText(error: unknown) {
+  if (!(error instanceof Error)) return String(error).toLowerCase();
+  const cause = error.cause instanceof Error ? ` ${error.cause.message}` : "";
+  return `${error.message}${cause}`.toLowerCase();
+}
+
+/** True when the control service was never reached, so actions were not applied. */
+export function isComputerControlUnavailable(error: unknown) {
+  if (error instanceof ComputerControlUnavailableError) return true;
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "AbortError") return false;
+  const text = errorText(error);
+  // Only pre-connect failures prove no actions ran. Mid-flight resets/hang-ups can
+  // happen after the service already applied steps.
+  return (
+    text.includes("econnrefused") ||
+    text.includes("enotfound") ||
+    text.includes("ehostunreach") ||
+    text.includes("enetunreach") ||
+    text.includes("eai_again")
+  );
+}
+
+export type ComputerControlAttempt<T> =
+  | { status: "ok"; value: T }
+  | { status: "unavailable" }
+  | { status: "failed"; error: Error };
+
+/**
+ * Try the HTTP control fast path.
+ * `unavailable` means the service was never reached (safe to fall back for actions).
+ * `failed` means the request may have partially applied actions (do not replay).
+ */
+export async function attemptComputerControl<T>(
+  run: (() => Promise<T>) | undefined,
+): Promise<ComputerControlAttempt<T>> {
+  if (!run) return { status: "unavailable" };
+  try {
+    return { status: "ok", value: await run() };
+  } catch (error) {
+    if (isComputerControlUnavailable(error)) return { status: "unavailable" };
+    return {
+      status: "failed",
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+}
+
+/** Replay actions via docker-exec only when control was never reached. */
+export function shouldReplayComputerActions(attempt: ComputerControlAttempt<unknown>) {
+  return attempt.status === "unavailable";
+}
+
+const CONTROL_BASE_TIMEOUT_MS = 15_000;
+const CONTROL_MAX_TIMEOUT_MS = 60_000;
+
+/** Bound the HTTP control deadline by mapped waits and settle time. */
+export function computerControlTimeoutMs(
+  actions: Array<z.infer<typeof computerActionSchema>>,
+  settleMs = 0,
+) {
+  let waits = 0;
+  for (const action of actions) {
+    if (action.kind === "wait") waits += Math.min(Math.max(action.ms, 0), 5_000);
+  }
+  return Math.min(
+    CONTROL_MAX_TIMEOUT_MS,
+    CONTROL_BASE_TIMEOUT_MS + waits + Math.min(Math.max(settleMs, 0), 5_000),
+  );
 }
 
 export function toSandboxInput(input: {
@@ -209,9 +311,19 @@ export function containerActionStep(
       : workspaceTarget(normalizeWorkspaceRelative(action.path));
     argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
   } else {
-    argv = ["env", `DISPLAY=${display}`, action.application, ...(action.uri ? [action.uri] : [])];
+    const application = DOCKER_BROWSER_ALIASES.has(action.application.toLowerCase())
+      ? "rakazo-browser"
+      : action.application;
+    argv = ["env", `DISPLAY=${display}`, application, ...(action.uri ? [action.uri] : [])];
   }
   return { argv };
+}
+
+export function containerActionSteps(
+  actions: Array<z.infer<typeof computerActionSchema>>,
+  display = ":1",
+) {
+  return actions.map((action) => containerActionStep(action, display));
 }
 
 export function normalizeWorkspaceRelative(value: string) {
@@ -296,5 +408,53 @@ export function parseObservation(output: string) {
       ? { cursor: { x: cursorX, y: cursorY } }
       : {}),
     ...(windowId ? { activeWindow: { id: windowId, ...(title ? { title } : {}) } } : {}),
+  };
+}
+
+/**
+ * True when `buffer` is a complete Docker multiplexed stream: every frame has
+ * type 0/1/2, its payload fits in the remaining bytes, and parsing ends exactly
+ * at the buffer length. Otherwise the buffer is treated as raw (TTY) stdout.
+ */
+function isCompleteDockerMultiplexedStream(buffer: Buffer): boolean {
+  let offset = 0;
+  while (offset < buffer.length) {
+    if (offset + 8 > buffer.length) return false;
+    const type = buffer[offset];
+    if (type !== 0 && type !== 1 && type !== 2) return false;
+    // Bytes 1–3 are reserved padding and must be zero in Docker's multiplex format.
+    if (buffer[offset + 1] !== 0 || buffer[offset + 2] !== 0 || buffer[offset + 3] !== 0) {
+      return false;
+    }
+    const size = buffer.readUInt32BE(offset + 4);
+    if (offset + 8 + size > buffer.length) return false;
+    offset += 8 + size;
+  }
+  return offset === buffer.length;
+}
+
+/**
+ * Split a Docker exec stream into stdout and stderr. Without a TTY the stream is
+ * multiplexed: each frame is an 8-byte header (type byte, 3 reserved bytes, big-endian
+ * length) followed by the payload, and type 2 is stderr. A raw (TTY) stream has no
+ * headers and is all stdout. Only demux when the buffer validates as a complete
+ * multiplexed sequence; otherwise return the whole buffer as stdout.
+ */
+export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: string } {
+  if (!isCompleteDockerMultiplexedStream(buffer)) {
+    return { stdout: buffer.toString("utf8"), stderr: "" };
+  }
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  let offset = 0;
+  while (offset < buffer.length) {
+    const size = buffer.readUInt32BE(offset + 4);
+    const payload = buffer.subarray(offset + 8, offset + 8 + size);
+    (buffer[offset] === 2 ? stderr : stdout).push(payload);
+    offset += 8 + size;
+  }
+  return {
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
   };
 }

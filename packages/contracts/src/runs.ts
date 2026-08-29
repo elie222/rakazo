@@ -9,7 +9,16 @@ export const RunActivityRowSchema = z.object({
   groupName: z.string().nullable(),
   threadId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
+  trigger: z.enum([
+    "user",
+    "routine",
+    "resume",
+    "follow_up",
+    "spawn",
+    "skill",
+    "bot_message",
+    "webhook",
+  ]),
   promptSnippet: z.string(),
   updatedAt: z.string(),
 });

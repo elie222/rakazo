@@ -14,6 +14,7 @@ import {
   prependThreadHistoryPage,
   progressMessageId,
   reduceLiveMessageBlocks,
+  runFailureError,
   subagentBlockFromPayload,
 } from "@rakazo/core";
 
@@ -25,6 +26,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "spawn",
   "skill",
   "bot_message",
+  "webhook",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -80,6 +82,16 @@ export function activeThreadRuns(
   snapshot: ThreadSnapshot | null,
 ): NonNullable<ThreadSnapshot["activeRuns"]> {
   return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
+}
+
+/** Reason the newest run stopped, until the reader dismisses that run's failure. */
+export function threadRunError(
+  snapshot: ThreadSnapshot | null,
+  dismissedRunIds?: ReadonlySet<string>,
+): string | null {
+  const run = snapshot?.run;
+  if (run?.status !== "failed" || dismissedRunIds?.has(run.id)) return null;
+  return run.error ?? null;
 }
 
 export function clearActiveThreadRuns(snapshot: ThreadSnapshot): ThreadSnapshot {
@@ -247,7 +259,9 @@ export function reduceThreadSnapshot(
       ...prev,
       cursor: event.seq,
       members: updateMemberStatus(prev.members, event.botId, "running"),
-      run,
+      // A group failure lives only in run; keep it until dismiss so a late member start
+      // cannot wipe the banner (activeRuns still tracks the new work).
+      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
       activeRuns,
     };
   }
@@ -291,12 +305,25 @@ export function reduceThreadSnapshot(
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
     const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
+    const failure = runFailureError(event);
+    const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
+    // In a group the failing run may be a member run rather than the displayed one, so look
+    // it up in activeRuns as well or its error would be dropped with it.
+    const endedRun =
+      primaryEnded ?? prev.activeRuns?.find((candidate) => candidate.id === event.runId) ?? null;
     return {
       ...prev,
       cursor: event.seq,
       messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
       members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
-      run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
+      // A failed run stays in run (activeRuns already excludes it) so the transcript can say
+      // why it stopped, matching what threads.get returns on the next load.
+      run:
+        endedRun && failure
+          ? { ...endedRun, status: "failed", error: failure }
+          : primaryEnded
+            ? (activeRuns?.[0] ?? null)
+            : prev.run,
       activeRuns,
     };
   }

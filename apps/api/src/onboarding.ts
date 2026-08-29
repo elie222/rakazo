@@ -10,8 +10,8 @@ import {
 
 /**
  * First-run conversational onboarding, seeded deterministically into the bot's
- * thread: greeting, a focus choice, two renames, and Composio app cards the
- * user authorizes inline. No model tokens are spent.
+ * thread: greeting, a focus choice, and Composio app cards the user authorizes
+ * inline. Focus must not rename the bot. No model tokens are spent.
  */
 
 type OnboardingDeps = {
@@ -24,8 +24,6 @@ type FocusOption = {
   id: string;
   letter: string;
   label: string;
-  title: string;
-  persona: string;
   summary: string;
   apps: string[];
 };
@@ -35,8 +33,6 @@ const FOCUS_OPTIONS: FocusOption[] = [
     id: "day",
     letter: "A",
     label: "Day-to-day work",
-    title: "Chief of Staff",
-    persona: "Sarah",
     summary: "Slack, calendar, and email",
     apps: ["slack", "gmail", "googlecalendar"],
   },
@@ -44,8 +40,6 @@ const FOCUS_OPTIONS: FocusOption[] = [
     id: "inbox",
     letter: "B",
     label: "Inbox & email",
-    title: "Inbox Manager",
-    persona: "Maya",
     summary: "email and calendar",
     apps: ["gmail", "googlecalendar", "slack"],
   },
@@ -53,8 +47,6 @@ const FOCUS_OPTIONS: FocusOption[] = [
     id: "research",
     letter: "C",
     label: "Research & writing",
-    title: "Research Partner",
-    persona: "Alex",
     summary: "the web, notes, and docs",
     apps: ["hackernews", "notion", "googledocs"],
   },
@@ -62,8 +54,6 @@ const FOCUS_OPTIONS: FocusOption[] = [
     id: "everything",
     letter: "D",
     label: "A bit of everything",
-    title: "Chief of Staff",
-    persona: "June",
     summary: "Slack, calendar, and email",
     apps: ["slack", "gmail", "googlecalendar"],
   },
@@ -182,19 +172,14 @@ export async function chooseFocus(
   );
   await updateBlocks(deps, target, pending.id, blocks);
 
-  await deps.prisma.bot.update({
-    where: { id: bot.id },
-    data: { name: option.title, title: option.title },
-  });
-  await post(deps, target, [{ kind: "meta", text: `Renamed to ${option.title}` }]);
+  // Keep the name and title the user chose when creating the bot; the focus
+  // step only suggests apps, it must not rename the bot.
   await post(deps, target, [
     {
       kind: "text",
       text: `Got it. ${capitalize(option.summary)}. I’ll see what’s already connected so I don’t make you set something up twice.`,
     },
   ]);
-  await deps.prisma.bot.update({ where: { id: bot.id }, data: { name: option.persona } });
-  await post(deps, target, [{ kind: "meta", text: `Renamed to ${option.persona}` }]);
 
   const catalog = deps.composio
     ? await deps.composio

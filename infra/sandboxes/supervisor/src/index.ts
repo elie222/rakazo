@@ -11,33 +11,48 @@ import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  COMPUTER_GID,
   COMPUTER_IMAGE,
+  COMPUTER_UID,
+  COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  hostComputerUser,
+  legacyNetworkOwnedSolelyBy,
+  resolveComputerControlEndpoint,
+  resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   SCREEN_HOST,
   screenPorts,
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
+import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
   assertRequestIdentity,
+  attemptComputerControl,
+  ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
   computerActionSchema,
-  containerActionStep,
+  computerControlTimeoutMs,
+  containerActionSteps,
+  demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
   interactiveScreenCommand,
+  isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
   parseObservation,
+  preferComputerControl,
   releaseAssignedScreen,
   type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  shouldReplayComputerActions,
   stopExtraScreenCommand,
   toSandboxInput,
   workspaceTarget,
@@ -55,6 +70,7 @@ const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
+const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
@@ -105,25 +121,51 @@ app.post("/computers", async (c) => {
       const networkMode = await computerNetworkName(body.botId, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
       assertBotHomePath(serviceHomePath, body.botId);
-      await mkdir(serviceHomePath, { recursive: true });
+      const hostUid = process.getuid?.();
+      const hostGid = process.getgid?.();
+      // The API normally creates the home. A non-root standalone supervisor may
+      // do so as the same user, but a root supervisor must never create or chown
+      // user-controlled paths at runtime; Compose data-init handles legacy data.
+      if (hostUid !== 0) await mkdir(serviceHomePath, { recursive: true });
       const homePath = hostHomePath(serviceHomePath, runtimeInfo);
+      const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser(hostUid, hostGid);
       const existing = await findBotContainer(body.botId, body.workspaceId);
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
         if (
-          info.Image !== desired.Id ||
-          (networkMode && info.HostConfig.NetworkMode !== networkMode)
+          info.Image === desired.Id &&
+          (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
+          info.Config.User === computerUser
         ) {
-          await existing.remove({ force: true }).catch(() => undefined);
-        } else {
           if (!info.State.Running) await existing.start();
           const screenUrl = await publishedScreenUrl(
             existing,
             info.State.Running ? info : undefined,
           );
-          return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+          return c.json({
+            id: existing.id,
+            image: COMPUTER_IMAGE,
+            screenUrl,
+            resumed: true,
+          });
         }
+      }
+      // Existing containers with the current image already use the selected user.
+      // Before replacing or creating a container, validate its home without
+      // privileged filesystem mutations that could escape via concurrent renames.
+      // Match hostComputerUser(): missing/root host identity falls back to 1000:1000.
+      const effectiveUid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_UID
+          : hostUid;
+      const effectiveGid =
+        runtimeInfo || hostUid === undefined || hostGid === undefined || hostUid === 0
+          ? COMPUTER_GID
+          : hostGid;
+      await assertComputerHomeWritable(serviceHomePath, effectiveUid, effectiveGid);
+      if (existing) {
+        await existing.remove({ force: true }).catch(() => undefined);
       }
       const name = containerNameFor(body.botId);
       const container = await docker.createContainer(
@@ -133,12 +175,19 @@ app.post("/computers", async (c) => {
           botId: body.botId,
           workspaceId: body.workspaceId,
           homePath,
+          user: computerUser,
           networkMode,
+          controlToken: randomUUID(),
         }),
       );
       await container.start();
       const screenUrl = await publishedScreenUrl(container);
-      return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
+      return c.json({
+        id: container.id,
+        image: COMPUTER_IMAGE,
+        screenUrl,
+        resumed: false,
+      });
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -211,14 +260,25 @@ app.post("/computers/:id/exec", async (c) => {
 
 app.post("/computers/:id/observe", async (c) => {
   try {
-    const { container, layout } = await managedScreen(
+    const { container, info, layout } = await managedScreen(
       c.req.param("id"),
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-workspace-id"),
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
     );
-    return c.json(await observeContainer(container, layout.display));
+    const control = computerControlEndpoint(info);
+    const observation = await preferComputerControl(
+      control
+        ? async () => {
+            const result = await controlDesktop(control, [], layout.display, true, 0);
+            if (!result.observation) throw new Error("computer control returned no observation");
+            return result.observation;
+          }
+        : undefined,
+      () => observeContainer(container, layout.display),
+    );
+    return c.json(observation);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: message }, 500);
@@ -234,20 +294,40 @@ app.post("/computers/:id/actions", async (c) => {
     })
     .parse(await c.req.json());
   try {
-    const { container, layout } = await managedScreen(
+    const { container, info, layout } = await managedScreen(
       c.req.param("id"),
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-workspace-id"),
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
     );
-    if (body.actions.length) await applyContainerActions(container, body.actions, layout.display);
-    if (body.settleMs) await new Promise((resolve) => setTimeout(resolve, body.settleMs));
+    const control = computerControlEndpoint(info);
+    const attempt = await attemptComputerControl(
+      control
+        ? () =>
+            controlDesktop(
+              control,
+              body.actions,
+              layout.display,
+              body.observe !== false,
+              body.settleMs ?? 0,
+            )
+        : undefined,
+    );
+    if (attempt.status === "failed") throw attempt.error;
+    const controlResult = attempt.status === "ok" ? attempt.value : undefined;
+    if (shouldReplayComputerActions(attempt) && body.actions.length)
+      await applyContainerActions(container, body.actions, layout.display);
+    if (shouldReplayComputerActions(attempt) && body.settleMs)
+      await new Promise((resolve) => setTimeout(resolve, body.settleMs));
     return c.json({
-      completed: body.actions.length,
+      completed: controlResult?.completed ?? body.actions.length,
       ...(body.observe === false
         ? {}
-        : { observation: await observeContainer(container, layout.display) }),
+        : {
+            observation:
+              controlResult?.observation ?? (await observeContainer(container, layout.display)),
+          }),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -498,7 +578,7 @@ app.delete("/computers/:id", async (c) => {
       );
       await container.remove({ force: true }).catch(() => undefined);
       clearComputerScreenRegistry(computerScreens, id);
-      if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
+      if (screenNetworkMode !== "internal") {
         await removeBotNetwork(botId);
       }
       return c.json({ ok: true });
@@ -541,8 +621,12 @@ async function ensureComputerImage() {
           src: [
             "Dockerfile",
             "start.sh",
+            "control.py",
+            "xcapture.c",
             "rakazo-browser",
+            "rakazo-browser.desktop",
             "embed.html",
+            "clipboard-bridge.js",
             "fluxbox.init",
             "fluxbox.apps",
             "fluxbox.menu",
@@ -562,7 +646,9 @@ async function ensureComputerImage() {
 async function findBotContainer(botId: string, workspaceId: string) {
   const listed = await docker.listContainers({
     all: true,
-    filters: { label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`] },
+    filters: {
+      label: [`rakazo.botId=${botId}`, `rakazo.workspaceId=${workspaceId}`],
+    },
   });
   for (const item of listed) {
     const container = docker.getContainer(item.Id);
@@ -623,6 +709,62 @@ function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo
   if (!dataMount?.Source) return serviceHomePath;
   return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
+
+function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
+  const token = info.Config.Env?.find((value) =>
+    value.startsWith("RAKAZO_COMPUTER_CONTROL_TOKEN="),
+  )?.slice("RAKAZO_COMPUTER_CONTROL_TOKEN=".length);
+  return resolveComputerControlEndpoint({
+    token,
+    networkMode: info.HostConfig.NetworkMode,
+    networks: info.NetworkSettings?.Networks,
+  });
+}
+
+async function controlDesktop(
+  endpoint: { url: string; token: string },
+  actions: Array<z.infer<typeof computerActionSchema>>,
+  display: string,
+  observe: boolean,
+  settleMs: number,
+) {
+  let response: Response;
+  try {
+    response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        steps: containerActionSteps(actions, display),
+        display,
+        observe,
+        settleMs,
+      }),
+      signal: AbortSignal.timeout(computerControlTimeoutMs(actions, settleMs)),
+    });
+  } catch (error) {
+    if (isComputerControlUnavailable(error)) {
+      throw new ComputerControlUnavailableError(
+        error instanceof Error ? error.message : "computer control unavailable",
+      );
+    }
+    throw error;
+  }
+  const payload = (await response.json()) as {
+    completed?: unknown;
+    observation?: unknown;
+    error?: unknown;
+  };
+  if (!response.ok) throw new Error(String(payload.error ?? "computer control failed"));
+  if (typeof payload.completed !== "number")
+    throw new Error("computer control returned no completion count");
+  return {
+    completed: payload.completed,
+    ...(payload.observation ? { observation: payload.observation } : {}),
+  };
+}
 const SCREEN_READY_TIMEOUT_MS = 45_000;
 
 // Docker publishes a container's port mapping (or assigns its internal IP)
@@ -667,8 +809,13 @@ async function publishedScreenUrl(
 ) {
   for (let i = 0; i < 30; i += 1) {
     const info = i === 0 && initialInfo ? initialInfo : await container.inspect();
+    if (screenNetworkMode === "isolated") {
+      const runtime = supervisorInfo ?? (await inspectSupervisorContainer());
+      const networkName = info.HostConfig.NetworkMode;
+      if (runtime && networkName) await connectComposeScreenPeers(networkName, runtime);
+    }
     const target = resolveScreenPublishTarget({
-      screenNetwork: process.env.SANDBOX_SCREEN_NETWORK,
+      screenNetwork: screenNetworkMode,
       networkMode: info.HostConfig.NetworkMode,
       networks: info.NetworkSettings?.Networks,
       hostPort: info.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.[0]?.HostPort,
@@ -708,36 +855,85 @@ async function setInteractiveScreen(
 // dial any other container's exposed ports, which would let one bot's
 // computer reach another bot's desktop/VNC endpoint with no authentication).
 async function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
-  if (process.env.SANDBOX_SCREEN_NETWORK === "internal") {
+  if (screenNetworkMode === "internal") {
     // The supervisor itself runs in this shared network in that topology and
     // needs to address child containers by their in-network IP, so children
     // stay on the supervisor's network rather than an isolated one.
     return info ? Object.keys(info.NetworkSettings.Networks)[0] : undefined;
   }
+  if (screenNetworkMode === "isolated" && !info) {
+    throw new Error("isolated Compose screens require a containerized supervisor");
+  }
   return ensureBotNetwork(botId);
+}
+
+async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
+  const peerIds = new Set([info.Id]);
+  const project = info.Config.Labels?.["com.docker.compose.project"];
+  if (project) {
+    const webContainers = await docker.listContainers({
+      all: true,
+      filters: {
+        label: [`com.docker.compose.project=${project}`, "com.docker.compose.service=web"],
+      },
+    });
+    for (const container of webContainers) peerIds.add(container.Id);
+  }
+  const network = docker.getNetwork(networkName);
+  const networkInfo = await network.inspect();
+  const connectedIds = new Set(Object.keys(networkInfo.Containers ?? {}));
+  await Promise.all(
+    [...peerIds]
+      .filter((containerId) => !connectedIds.has(containerId))
+      .map((containerId) =>
+        network.connect({ Container: containerId }).catch((error) => {
+          if (!/already exists|already connected/i.test(String(error))) throw error;
+        }),
+      ),
+  );
 }
 
 async function ensureBotNetwork(botId: string) {
   const name = computerNetworkNameFor(botId);
-  try {
-    await docker.getNetwork(name).inspect();
-  } catch {
-    await docker
-      .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
-      .catch((error) => {
-        // Another concurrent provision request may have created it first.
-        if (!/already exists/i.test(String(error))) throw error;
-      });
-  }
+  await docker
+    .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
+    .catch((error) => {
+      // Existing networks and concurrent provision requests are both safe.
+      if (!/already exists/i.test(String(error))) throw error;
+    });
   return name;
 }
 
 async function removeBotNetwork(botId: string) {
+  const currentName = computerNetworkNameFor(botId);
   for (const name of computerNetworkNamesForCleanup(botId)) {
-    await docker
-      .getNetwork(name)
-      .remove()
-      .catch(() => undefined);
+    const network = docker.getNetwork(name);
+    const info = await network.inspect().catch(() => undefined);
+    if (!info) continue;
+    const containerIds = Object.keys(info.Containers ?? {});
+    if (name !== currentName) {
+      const owners: Array<string | undefined> = [];
+      for (const containerId of containerIds) {
+        const labels =
+          (
+            await docker
+              .getContainer(containerId)
+              .inspect()
+              .catch(() => undefined)
+          )?.Config.Labels ?? {};
+        const owner = labels["rakazo.botId"];
+        owners.push(owner);
+        if (owner === botId) {
+          await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+        }
+      }
+      if (!legacyNetworkOwnedSolelyBy(botId, owners)) continue;
+    }
+    const remaining = await network.inspect().catch(() => undefined);
+    for (const containerId of Object.keys(remaining?.Containers ?? {})) {
+      await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+    }
+    await network.remove().catch(() => undefined);
   }
 }
 
@@ -770,21 +966,6 @@ async function inspectSupervisorContainer() {
   } catch {
     return undefined;
   }
-}
-
-function stripDockerStream(buffer: Buffer) {
-  // docker multiplexed stream: 8-byte header per frame
-  if (buffer.length >= 8 && (buffer[0] ?? 99) <= 2) {
-    const parts: string[] = [];
-    let offset = 0;
-    while (offset + 8 <= buffer.length) {
-      const size = buffer.readUInt32BE(offset + 4);
-      parts.push(buffer.subarray(offset + 8, offset + 8 + size).toString("utf8"));
-      offset += 8 + size;
-    }
-    return parts.join("");
-  }
-  return buffer.toString("utf8");
 }
 
 async function runContainerCommand(
@@ -821,9 +1002,12 @@ async function runContainerCommand(
       ? await consumeCompletionMarker(container, completionMarker)
       : false;
   const timedOut = sandboxCommandTimedOut(code, completedWithExit124);
+  const output = demuxDockerStream(Buffer.concat(chunks));
   return {
-    stdout: stripDockerStream(Buffer.concat(chunks)),
-    stderr: timedOut ? `command timed out after ${timeoutMs} ms\n` : "",
+    stdout: output.stdout,
+    stderr: timedOut
+      ? `${output.stderr}${output.stderr.endsWith("\n") || output.stderr === "" ? "" : "\n"}command timed out after ${timeoutMs} ms\n`
+      : output.stderr,
     code,
   };
 }
@@ -855,7 +1039,7 @@ async function applyContainerActions(
     "python3",
     "-c",
     script,
-    JSON.stringify(actions.map((action) => containerActionStep(action, display))),
+    JSON.stringify(containerActionSteps(actions, display)),
   ]);
   if (result.code !== 0) throw new Error(result.stderr || "computer action failed");
 }
@@ -909,6 +1093,7 @@ async function writeContainerFile(
   });
   const inspect = await exec.inspect();
   if ((inspect.ExitCode ?? 0) !== 0) {
-    throw new Error(stripDockerStream(Buffer.concat(chunks)) || "file write failed");
+    const output = demuxDockerStream(Buffer.concat(chunks));
+    throw new Error(output.stderr || output.stdout || "file write failed");
   }
 }

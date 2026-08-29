@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
@@ -27,12 +27,15 @@ import {
   checkpointAndRecordComputerWorkspace,
   computerSupportsUpdate,
   createVoiceProvider,
+  deploymentAutoReviewDefault,
   destroyBot,
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
+  isAutoReviewCheckerConfigured,
+  isSandboxGoneError,
   isScratchpadStatus,
   listPiCatalog,
   listScratchpadItems,
@@ -112,6 +115,13 @@ import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import {
+  applyServerUpdate,
+  checkServerUpdate,
+  readServerUpdateStatus,
+  type UpdaterProxyConfig,
+  UpdaterProxyError,
+} from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
@@ -307,6 +317,10 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    gitSha?: string;
+    updaterUrl?: string;
+    updaterToken?: string;
+    imageTag?: string;
   };
 }
 
@@ -344,11 +358,12 @@ export function createRouter(deps: RouterDeps) {
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
-      const [me, bots, botSections, archivedBots] = await Promise.all([
+      const [me, bots, botSections, archivedBots, archivedGroups] = await Promise.all([
         meDto(deps, actor),
         repos.listBots(actor),
         repos.listBotSections(actor),
         repos.listBots(actor, { archived: true }),
+        groupRepos.listGroups(actor, { archived: true }),
       ]);
       const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
       const [thread, routines] = active
@@ -359,7 +374,7 @@ export function createRouter(deps: RouterDeps) {
             listRoutinesDto(deps, actor, active.id),
           ])
         : [null, []];
-      return { me, bots, botSections, archivedBots, thread, routines };
+      return { me, bots, botSections, archivedBots, archivedGroups, thread, routines };
     }),
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
@@ -381,15 +396,41 @@ export function createRouter(deps: RouterDeps) {
             ownerUserId: context.actor.userId,
             signupsEnabled: input.signupsEnabled ?? true,
             signupAllowlist: (input.signupAllowlist ?? []).join(","),
+            signupPolicyInitialized: true,
             computerHost: input.computerHost ?? undefined,
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
             ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
+            ...(input.signupsEnabled === undefined && input.signupAllowlist === undefined
+              ? {}
+              : { signupPolicyInitialized: true }),
             ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });
         return deploymentDto(deps.prisma, deps.env.sandboxProvider);
+      }),
+    },
+    updater: {
+      status: authed.updater.status.handler(async ({ context }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        return readServerUpdateStatus(updaterConfig(deps));
+      }),
+      check: authed.updater.check.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        try {
+          return await checkServerUpdate(updaterConfig(deps), input);
+        } catch (error) {
+          mapUpdaterError(error);
+        }
+      }),
+      apply: authed.updater.apply.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        try {
+          return await applyServerUpdate(updaterConfig(deps), input);
+        } catch (error) {
+          mapUpdaterError(error);
+        }
       }),
     },
     models: {
@@ -415,7 +456,7 @@ export function createRouter(deps: RouterDeps) {
           const ciphertext = ciphertextById.get(row.secretId);
           if (!ciphertext) return modelCredentialDto(row);
           try {
-            return modelCredentialDto(row, deps.secrets.load(ciphertext));
+            return modelCredentialDto(row, deps.secrets.load(ciphertext, row.secretId));
           } catch {
             return modelCredentialDto(row);
           }
@@ -759,12 +800,57 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const plaintext = randomBytes(32).toString("base64url");
+        const stored = await deps.secrets.put(plaintext, {
+          operationId: "bots.rotateWebhookSecret",
+          traceId: "bots.rotateWebhookSecret",
+          workspaceId: context.actor.workspaceId,
+          userId: context.actor.userId,
+          signal: context.signal ?? new AbortController().signal,
+        });
+        await deps.prisma.$transaction(async (tx) => {
+          const previousSecretId = bot.webhookSecretId;
+          await tx.secret.create({
+            data: {
+              id: stored.id,
+              userId: context.actor.userId,
+              workspaceId: context.actor.workspaceId,
+              kind: "webhook",
+              ciphertext: stored.ciphertext,
+            },
+          });
+          await tx.bot.update({
+            where: { id: bot.id },
+            data: { webhookSecretId: stored.id },
+          });
+          if (previousSecretId) {
+            await tx.secret.deleteMany({
+              where: {
+                id: previousSecretId,
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                kind: "webhook",
+              },
+            });
+          }
+        });
+        return {
+          secret: plaintext,
+          path: `/api/v1/bots/${bot.id}/webhook`,
+          webhookConfigured: true as const,
+        };
+      }),
     },
     groups: {
       create: authed.groups.create.handler(async ({ context, input }) =>
         groupRepos.createGroup(context.actor, input),
       ),
       list: authed.groups.list.handler(async ({ context }) => groupRepos.listGroups(context.actor)),
+      listArchived: authed.groups.listArchived.handler(async ({ context }) =>
+        groupRepos.listGroups(context.actor, { archived: true }),
+      ),
       get: authed.groups.get.handler(async ({ context, input }) => {
         const group = await groupRepos.getGroup(context.actor, input.groupId);
         return {
@@ -779,7 +865,25 @@ export function createRouter(deps: RouterDeps) {
           ).messages,
         };
       }),
+      duplicate: authed.groups.duplicate.handler(async ({ context, input }) => {
+        const source = await groupRepos.getGroup(context.actor, input.groupId);
+        return groupRepos.createGroup(context.actor, {
+          name: duplicateBotName(source.name),
+          botIds: source.members.map((member) => member.bot.id),
+        });
+      }),
       update: authed.groups.update.handler(async ({ context, input }) => {
+        if (input.sectionId) {
+          const section = await deps.prisma.botSection.findFirst({
+            where: {
+              id: input.sectionId,
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+            },
+            select: { id: true },
+          });
+          if (!section) throw new IsolationError();
+        }
         const updated = await groupRepos.updateGroup(context.actor, input);
         await Promise.all(
           updated.cancelledRunIds.map((runId) =>
@@ -787,6 +891,34 @@ export function createRouter(deps: RouterDeps) {
           ),
         );
         return updated.group;
+      }),
+      archive: authed.groups.archive.handler(async ({ context, input }) => {
+        const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
+        await Promise.all(
+          archived.cancelledRunIds.map((runId) =>
+            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+          ),
+        );
+        await Promise.all(
+          archived.computers.map(async (computer) => {
+            if (!computer.providerRef || !computer.executionBotId) return;
+            await deps.sandbox
+              .releaseScreen?.(toComputerRef(computer), {
+                operationId: "stop",
+                traceId: "stop",
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                botId: computer.executionBotId,
+                signal: new AbortController().signal,
+              })
+              .catch(() => undefined);
+          }),
+        );
+        return { ok: true as const };
+      }),
+      restore: authed.groups.restore.handler(async ({ context, input }) => {
+        await groupRepos.restoreGroup(context.actor, input.groupId);
+        return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
         const removed = await groupRepos.removeGroup(context.actor, input.groupId);
@@ -850,18 +982,22 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.thread) throw new IsolationError();
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const contextBotId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
+        if (!contextBotId) throw new IsolationError();
         const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
           workspaceId: context.actor.workspaceId,
-          threadId: bot.thread.id,
-          botId: bot.id,
+          threadId: target.threadId,
+          botId: contextBotId,
+          ...(target.kind === "group" ? { groupId: target.groupId } : {}),
         });
         const [configuredMemory] = await Promise.all([
-          deps.memoryProviders.resolve(context.actor.workspaceId).catch((error) => {
-            console.error("semantic memory resolution after thread clear failed", error);
-            return null;
-          }),
+          target.kind === "bot"
+            ? deps.memoryProviders.resolve(context.actor.workspaceId).catch((error) => {
+                console.error("semantic memory resolution after thread clear failed", error);
+                return null;
+              })
+            : Promise.resolve(null),
           Promise.all(
             cancelledRunIds.map((runId) =>
               deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
@@ -871,19 +1007,19 @@ export function createRouter(deps: RouterDeps) {
         // Durable memories remain in their workspace/private containers. Clear only removes
         // conversation-derived summaries from the previous generation; including the new
         // generation also covers a compaction job that began just after the clear committed.
-        if (configuredMemory) {
+        if (configuredMemory && target.kind === "bot") {
           // Best effort: the conversation rows are already deleted, so failing the clear here
           // would help nothing — a failed purge only leaves stale summaries recallable.
           try {
             const purged = await configuredMemory.provider.purgeHistory(
               {
-                botId: bot.id,
+                botId: target.botId,
                 generations: [
                   Math.max(0, historyCompactionGeneration - 1),
                   historyCompactionGeneration,
                 ],
               },
-              computerContext(context.actor, bot.id, `thread-clear:${bot.thread.id}`),
+              computerContext(context.actor, target.botId, `thread-clear:${target.threadId}`),
             );
             if (!purged.ok) {
               console.error("semantic memory purge after thread clear failed", purged.error);
@@ -918,7 +1054,11 @@ export function createRouter(deps: RouterDeps) {
         const committed = await deps.prisma.$transaction(async (tx) => {
           await lockOwnedGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
-            where: { id: target.groupId, thread: { id: target.threadId } },
+            where: {
+              id: target.groupId,
+              archivedAt: null,
+              thread: { id: target.threadId },
+            },
             include: { members: { orderBy: { createdAt: "asc" } } },
           });
           const botId = group?.members[0]?.botId;
@@ -1428,26 +1568,34 @@ export function createRouter(deps: RouterDeps) {
         ) {
           return { url: null };
         }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
-            interactive:
-              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-            controlToken:
-              bot.computer.controlBotId === bot.id
-                ? (bot.computer.controlLeaseId ?? undefined)
-                : undefined,
-          },
-          await computerScreenContext(
-            deps.prisma,
-            context.actor,
-            bot.computer.id,
-            bot.id,
-            "screen",
-          ),
-        );
-        if (!session.url) return { url: null };
+        const computer = bot.computer;
+        const session = await deps.sandbox
+          .connectScreen(
+            toComputerRef(computer),
+            {
+              view: "stream",
+              interactive: hasActiveComputerControl(computer) && computer.controlBotId === bot.id,
+              controlToken:
+                computer.controlBotId === bot.id
+                  ? (computer.controlLeaseId ?? undefined)
+                  : undefined,
+            },
+            await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
+          )
+          .catch(async (error: unknown) => {
+            if (!isSandboxGoneError(error)) throw error;
+            // The provider killed this sandbox (idle timeout) while the row still says
+            // running. Clear the dead ref so the UI offers a boot instead of 500ing.
+            // Leave any active control lease alone — expireComputerControl owns that
+            // release (provider screen-control, events, takeover continuation).
+            console.error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+            await deps.prisma.computer.updateMany({
+              where: { id: computer.id, providerRef: computer.providerRef },
+              data: { state: "stopped", providerRef: null },
+            });
+            return null;
+          });
+        if (!session?.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(
           session.url,
@@ -1590,9 +1738,9 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         const bot = await repos.getBot(context.actor, input.botId);
-        // Validate every recurring cron even when inactive; @once has no next date.
+        // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
         let nextRunAt: Date | null = null;
-        if (!isOneShotRoutineCrons(input.crons)) {
+        if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
           const computedNextRunAt = nextRoutineDate(input.crons, input.timezone);
           nextRunAt = input.active ? computedNextRunAt : null;
         }
@@ -1607,6 +1755,7 @@ export function createRouter(deps: RouterDeps) {
             timezone: input.timezone,
             notify: input.notify,
             active: input.active,
+            webhookEnabled: input.webhookEnabled,
             nextRunAt,
           },
         });
@@ -1636,6 +1785,12 @@ export function createRouter(deps: RouterDeps) {
         const active = input.active ?? existing.active;
         const crons = input.crons ?? existing.crons;
         const timezone = input.timezone ?? existing.timezone;
+        const webhookEnabled = input.webhookEnabled ?? existing.webhookEnabled;
+        if (crons.length === 0 && !webhookEnabled) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Add a schedule or webhook trigger",
+          });
+        }
         if (hasMixedOneShotSchedule(crons)) {
           throw new ORPCError("BAD_REQUEST", {
             message: "A one-time schedule can't be combined with other schedules.",
@@ -1647,9 +1802,9 @@ export function createRouter(deps: RouterDeps) {
               message: "One-shot schedules must be created from chat.",
             });
           }
-          if (!existing.nextRunAt) {
+          if (!existing.nextRunAt && existing.lastRunAt) {
             throw new ORPCError("BAD_REQUEST", {
-              message: "One-shot schedules cannot be reactivated after they fire.",
+              message: "This one-shot already ran.",
             });
           }
         }
@@ -1659,14 +1814,37 @@ export function createRouter(deps: RouterDeps) {
             JSON.stringify(input.crons) !== JSON.stringify(existing.crons)) ||
           (input.timezone !== undefined && input.timezone !== existing.timezone);
         const recalculatedNextRunAt =
-          !isOneShotRoutineCrons(crons) && (scheduleChanged || (active && !existing.nextRunAt))
+          crons.length > 0 &&
+          !isOneShotRoutineCrons(crons) &&
+          (scheduleChanged || (active && !existing.nextRunAt))
             ? nextRoutineDate(crons, timezone)
             : null;
+        let armedOneShotAt: Date | null = null;
+        if (active && isOneShotRoutineCrons(crons) && !existing.nextRunAt && !existing.lastRunAt) {
+          if (!input.runAt) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Add a run time for this one-shot.",
+            });
+          }
+          const parsed = new Date(input.runAt);
+          if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Run time must be in the future.",
+            });
+          }
+          armedOneShotAt = parsed;
+        } else if (input.runAt !== undefined) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A run time is only for one-shots that have not run yet.",
+          });
+        }
         const nextRunAt = !active
           ? null
-          : isOneShotRoutineCrons(crons)
-            ? existing.nextRunAt
-            : (recalculatedNextRunAt ?? existing.nextRunAt);
+          : crons.length === 0
+            ? null
+            : isOneShotRoutineCrons(crons)
+              ? (armedOneShotAt ?? existing.nextRunAt)
+              : (recalculatedNextRunAt ?? existing.nextRunAt);
         const row = await deps.prisma.routine.update({
           where: { id: existing.id },
           data: {
@@ -1676,6 +1854,7 @@ export function createRouter(deps: RouterDeps) {
             timezone: input.timezone,
             active: input.active,
             notify: input.notify,
+            webhookEnabled: input.webhookEnabled,
             nextRunAt,
           },
         });
@@ -2074,6 +2253,7 @@ export function createRouter(deps: RouterDeps) {
               row,
               mcpOAuth.statusForCiphertext(
                 row.secretId ? ciphertextById.get(row.secretId) : undefined,
+                row.secretId ?? undefined,
               ),
             ),
           );
@@ -2148,7 +2328,9 @@ export function createRouter(deps: RouterDeps) {
             let existingMaterial: Record<string, unknown> = {};
             if (existingSecret) {
               try {
-                const value = JSON.parse(deps.secrets.load(existingSecret.ciphertext));
+                const value = JSON.parse(
+                  deps.secrets.load(existingSecret.ciphertext, existingSecret.id),
+                );
                 if (value && typeof value === "object" && !Array.isArray(value))
                   existingMaterial = value as Record<string, unknown>;
               } catch {
@@ -2667,6 +2849,28 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
     },
+    autoReview: {
+      get: authed.autoReview.get.handler(async ({ context }) => {
+        return loadAutoReviewSettings(deps, context.actor);
+      }),
+      set: authed.autoReview.set.handler(async ({ context, input }) => {
+        await deps.prisma.actionAutoReviewPreference.upsert({
+          where: {
+            workspaceId_userId: {
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+            },
+          },
+          create: {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            enabled: input.enabled,
+          },
+          update: { enabled: input.enabled },
+        });
+        return loadAutoReviewSettings(deps, context.actor);
+      }),
+    },
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
@@ -2911,6 +3115,54 @@ export function createRouter(deps: RouterDeps) {
   });
 }
 
+function updaterConfig(deps: RouterDeps): UpdaterProxyConfig {
+  return {
+    url: deps.env.updaterUrl ?? null,
+    token: deps.env.updaterToken ?? null,
+    gitSha: deps.env.gitSha,
+    imageTag: deps.env.imageTag ?? null,
+  };
+}
+
+function mapUpdaterError(error: unknown): never {
+  if (error instanceof UpdaterProxyError) {
+    if (error.status === 401 || error.status === 403) {
+      throw new ORPCError("FORBIDDEN", { message: error.message });
+    }
+    if (error.status >= 500) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", { message: error.message });
+    }
+    throw new ORPCError("BAD_REQUEST", { message: error.message });
+  }
+  throw new ORPCError("INTERNAL_SERVER_ERROR", {
+    message: error instanceof Error ? error.message : "Update failed.",
+  });
+}
+
+async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
+  const [preference, credentials] = await Promise.all([
+    deps.prisma.actionAutoReviewPreference.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+        },
+      },
+      select: { enabled: true },
+    }),
+    deps.prisma.userModelCredential.findMany({
+      where: { userId: actor.userId, workspaceId: actor.workspaceId },
+      select: { provider: true },
+    }),
+  ]);
+  const providers = new Set(credentials.map((row) => row.provider));
+  const enabled = preference?.enabled ?? deploymentAutoReviewDefault(process.env);
+  const checkerAvailable = isAutoReviewCheckerConfigured({
+    hasUserCredentialForProvider: (provider) => providers.has(provider),
+  });
+  return { enabled, checkerAvailable };
+}
+
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, cred, settings] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
@@ -2931,6 +3183,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
+    sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
   };
 }
@@ -3041,6 +3294,7 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
     defaultModel: settings?.defaultModelId ?? null,
     computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
     canChooseHostComputer: sandboxProvider === "docker",
+    sandboxProvider,
   };
 }
 
@@ -3273,6 +3527,7 @@ function mapRoutine(row: {
   timezone: string;
   active: boolean;
   notify: boolean;
+  webhookEnabled: boolean;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
@@ -3286,6 +3541,7 @@ function mapRoutine(row: {
     timezone: row.timezone,
     active: row.active,
     notify: row.notify,
+    webhookEnabled: row.webhookEnabled,
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

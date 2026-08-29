@@ -2,10 +2,13 @@ FROM node:22-bookworm
 
 RUN corepack enable
 WORKDIR /app
-COPY . .
+# Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
+# leave the copied tree unreadable to USER node at runtime.
+COPY --chmod=755 . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @rakazo/db generate
-RUN install -d -m 750 -o node -g node /data
+RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
 
 ENV NODE_ENV=production
 EXPOSE 3100 7091

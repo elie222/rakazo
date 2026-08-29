@@ -47,6 +47,14 @@ export type PlaywrightScreenshotManifest = {
 
 export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "comparison" | "fileName">;
 
+export function classifyPlaywrightScreenshot(
+  fileName: string,
+): PlaywrightScreenshot["captureType"] | undefined {
+  const baseName = fileName.split(/[\\/]/).at(-1) ?? fileName;
+  if (/^test-finished(?:-\d+)?\.png$/i.test(baseName)) return undefined;
+  return /^test-failed(?:-\d+)?\.png$/i.test(baseName) ? "failure" : "checkpoint";
+}
+
 export function createScreenshotManifest(
   screenshots: PlaywrightScreenshot[],
   run?: { attempt: number; id: string },

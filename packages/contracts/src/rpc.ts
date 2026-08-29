@@ -3,6 +3,7 @@ import * as z from "zod";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachments.js";
 import {
   ActionApprovalRuleSchema,
+  ActionAutoReviewSettingsSchema,
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
@@ -39,6 +40,10 @@ import {
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
+  ServerUpdateCheckSchema,
+  ServerUpdateRequestSchema,
+  ServerUpdateRunSchema,
+  ServerUpdateStatusSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -55,7 +60,7 @@ import {
   WorkspaceMemoryConfigSchema,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
-import { Id } from "./ids.js";
+import { Id, IsoDate } from "./ids.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -129,6 +134,16 @@ export const appContract = {
       )
       .output(DeploymentSettingsSchema),
   },
+  /**
+   * Deployment-owner product updates. When the Compose updater sidecar is reachable, these proxy
+   * to its `/state` `/plan` `/apply` contract. Rollback stays on the sidecar for ops only and is
+   * not exposed here. Never git-fetch from the API process.
+   */
+  updater: {
+    status: oc.output(ServerUpdateStatusSchema),
+    check: oc.input(ServerUpdateRequestSchema).output(ServerUpdateCheckSchema),
+    apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
+  },
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
@@ -183,18 +198,29 @@ export const appContract = {
     remove: oc
       .input(z.object({ botId: Id, deleteMemories: z.boolean().default(false) }))
       .output(z.object({ ok: z.literal(true) })),
+    rotateWebhookSecret: oc.input(botId).output(
+      z.object({
+        secret: z.string(),
+        path: z.string(),
+        webhookConfigured: z.literal(true),
+      }),
+    ),
   },
   groups: {
     create: oc.input(CreateGroupInput).output(GroupSchema),
     list: oc.output(z.array(GroupSchema)),
+    listArchived: oc.output(z.array(GroupSchema)),
     get: oc.input(groupId).output(GroupDetailSchema),
+    duplicate: oc.input(groupId).output(GroupSchema),
     update: oc.input(UpdateGroupInput).output(GroupSchema),
+    archive: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
+    restore: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
     remove: oc.input(groupId).output(z.object({ ok: z.literal(true) })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
     create: oc
-      .input(z.object({ botId: Id, name: z.string().trim().min(1).max(60) }))
+      .input(threadTarget.safeExtend({ name: z.string().trim().min(1).max(60) }))
       .output(BotSectionSchema),
   },
   threads: {
@@ -227,7 +253,7 @@ export const appContract = {
     followUp: oc
       .input(threadTarget.safeExtend({ text: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
-    clear: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    clear: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     answer: oc
       .input(
         threadTarget.safeExtend({
@@ -305,15 +331,28 @@ export const appContract = {
     create: oc.input(CreateRoutineInput).output(RoutineSchema),
     update: oc
       .input(
-        z.object({
-          routineId: Id,
-          name: z.string().optional(),
-          prompt: z.string().optional(),
-          crons: z.array(z.string().min(1)).min(1).optional(),
-          timezone: z.string().optional(),
-          active: z.boolean().optional(),
-          notify: z.boolean().optional(),
-        }),
+        z
+          .object({
+            routineId: Id,
+            name: z.string().optional(),
+            prompt: z.string().optional(),
+            crons: z.array(z.string().min(1)).optional(),
+            timezone: z.string().optional(),
+            active: z.boolean().optional(),
+            notify: z.boolean().optional(),
+            webhookEnabled: z.boolean().optional(),
+            /** ISO datetime to arm a never-run one-shot. */
+            runAt: IsoDate.optional(),
+          })
+          .superRefine((value, ctx) => {
+            if (value.crons && value.crons.length === 0 && value.webhookEnabled === false) {
+              ctx.addIssue({
+                code: "custom",
+                message: "Add a schedule or webhook trigger",
+                path: ["crons"],
+              });
+            }
+          }),
       )
       .output(RoutineSchema),
     remove: oc.input(z.object({ routineId: Id })).output(z.object({ ok: z.literal(true) })),
@@ -502,6 +541,10 @@ export const appContract = {
       )
       .output(ActionApprovalRuleSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  autoReview: {
+    get: oc.output(ActionAutoReviewSettingsSchema),
+    set: oc.input(z.object({ enabled: z.boolean() })).output(ActionAutoReviewSettingsSchema),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),

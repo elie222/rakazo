@@ -5,6 +5,7 @@ import type {
   ConnectorProvider,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
@@ -15,6 +16,44 @@ type SessionEntry = { session: McpSession; revision: number };
 type PendingSession = { revision: number; promise: Promise<McpSession> };
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
+/**
+ * Stale allowlist entries are filtered out below with no error. Discovery already has the
+ * live tool list, so compare once and warn when string allowlist names are missing from the
+ * server. Non-string JSON values are ignored for both the missing list and the ratio.
+ */
+export function allowlistDrift(
+  allowedTools: unknown,
+  offered: Array<{ name: string }>,
+): { missing: string[]; offered: number; stringAllowedCount: number } {
+  const names = new Set(offered.map((tool) => tool.name));
+  const allowed = Array.isArray(allowedTools) ? allowedTools : [];
+  const stringAllowed = allowed.filter((name): name is string => typeof name === "string");
+  return {
+    missing: stringAllowed.filter((name) => !names.has(name)),
+    offered: names.size,
+    stringAllowedCount: stringAllowed.length,
+  };
+}
+
+function reportAllowlistDrift(
+  assignment: { allowAllTools: boolean; allowedTools: unknown; server: { slug: string } },
+  offered: Array<{ name: string }>,
+  context: { workspaceId: string; botId?: string },
+): void {
+  if (assignment.allowAllTools) return;
+  const drift = allowlistDrift(assignment.allowedTools, offered);
+  if (drift.missing.length === 0) return;
+  console.warn(
+    `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${drift.stringAllowedCount} allowed tools are not offered (server offers ${drift.offered})`,
+    {
+      workspaceId: context.workspaceId,
+      botId: context.botId,
+      // Cap the list: the point is to name the drift, not to print an allowlist.
+      missing: drift.missing.slice(0, 10),
+    },
+  );
+}
+
 export class McpConnector implements ConnectorProvider {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly connecting = new Map<string, PendingSession>();
@@ -54,6 +93,7 @@ export class McpConnector implements ConnectorProvider {
         try {
           const session = await this.sessionFor(assignment.server, context);
           const listed = await session.listTools({ signal: context.signal });
+          reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
             .filter(
               (tool) =>
@@ -183,7 +223,7 @@ export class McpConnector implements ConnectorProvider {
           })
         : null;
       const material = secret
-        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as OAuthMaterial)
+        ? (JSON.parse(this.secrets.load(secret.ciphertext, secret.id)) as OAuthMaterial)
         : {};
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
@@ -199,9 +239,12 @@ export class McpConnector implements ConnectorProvider {
         });
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
-        const authProvider = this.oauth
-          ? await this.oauth.providerFor(server, context, loaded)
-          : undefined;
+        const endpoint = new URL(server.endpoint);
+        const localHttp = endpoint.protocol === "http:" && isLocalMcpHost(endpoint.hostname);
+        const authProvider =
+          !localHttp && this.oauth
+            ? await this.oauth.providerFor(server, context, loaded)
+            : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
             ? material.secret
@@ -213,6 +256,7 @@ export class McpConnector implements ConnectorProvider {
         };
         await session.connectRemote({
           url: server.endpoint,
+          urlPolicy: { allowHttpLocalhost: true, allowLocalHttpCredentials: localHttp },
           transport: server.transport === "sse" ? "sse" : "streamable-http",
           allowLegacySse: server.transport === "sse",
           headerPolicy: { headers },

@@ -164,6 +164,8 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
     DAYTONA_API_KEY: "",
     BETTER_AUTH_SECRET: "rakazo-benchmark-auth-secret-over-32-characters",
     ENCRYPTION_KEY: "rakazo-benchmark-encryption-key-over-32-characters",
+    SANDBOX_SUPERVISOR_TOKEN: "rakazo-benchmark-supervisor-token-over-32-characters",
+    SCREEN_PROXY_SECRET: "rakazo-benchmark-screen-proxy-secret-over-32-characters",
     BETTER_AUTH_URL: webOrigin,
     WEB_ORIGIN: webOrigin,
     API_PORT: String(apiPort),

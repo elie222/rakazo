@@ -153,7 +153,7 @@ export function RoutineSchedules({
   );
 }
 
-function RoutineSchedule({
+export function RoutineSchedule({
   value,
   onChange,
 }: {

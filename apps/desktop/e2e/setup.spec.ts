@@ -137,6 +137,16 @@ test("Continue verifies and remembers the instance so setup does not run again",
     setup.getByRole("button", { name: "Continue" }).click(),
   ]).then(([window]) => window);
   await expect(firstRun.getByText(APP_MARKER)).toBeVisible();
+  // Continue can paint the app window before setup.json finishes flushing to disk.
+  await expect
+    .poll(async () => {
+      try {
+        return JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
+      } catch {
+        return null;
+      }
+    })
+    .toEqual({ mode: "existing", serverUrl });
   await app.close();
 
   app = await launch();

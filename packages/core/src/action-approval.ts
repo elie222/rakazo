@@ -99,24 +99,78 @@ function ruleSpecificity(rule: ActionApprovalRule): number {
   }
 }
 
+export type ActionApprovalSource = "require_approval" | "always_allow" | "default";
+
+export type ActionApprovalResolved = {
+  decision: "ask" | "allow";
+  source: ActionApprovalSource;
+  matchingRules: ActionApprovalRule[];
+};
+
+/** Deterministic rule resolution. Always-allow and require-approval both beat the default. */
+export function resolveActionApprovalDetail(input: {
+  toolName: string;
+  connectorKind?: string;
+  rules: ActionApprovalRule[];
+}): ActionApprovalResolved {
+  const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
+  const matchingRules = input.rules.filter((rule) =>
+    ruleMatches(rule, input.toolName, connectorKind),
+  );
+  if (matchingRules.length === 0) {
+    return { decision: "allow", source: "default", matchingRules };
+  }
+
+  const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
+  const winners = matchingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity);
+  if (winners.some((rule) => rule.effect === "require_approval")) {
+    return { decision: "ask", source: "require_approval", matchingRules };
+  }
+  return { decision: "allow", source: "always_allow", matchingRules };
+}
+
 export function resolveActionApproval(input: {
   toolName: string;
   connectorKind?: string;
   rules: ActionApprovalRule[];
 }): "ask" | "allow" {
-  if (APPROVAL_EXEMPT_TOOLS.has(input.toolName)) return "allow";
-  const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
-  const matchingRules = input.rules.filter((rule) =>
-    ruleMatches(rule, input.toolName, connectorKind),
-  );
-  if (matchingRules.length === 0) return "allow";
+  return resolveActionApprovalDetail(input).decision;
+}
 
-  const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
-  return matchingRules.some(
-    (rule) => ruleSpecificity(rule) === highestSpecificity && rule.effect === "require_approval",
-  )
-    ? "ask"
-    : "allow";
+export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
+
+/**
+ * Pure combiner for Auto Review after rule resolution.
+ * Rules win: require_approval asks, always_allow runs. Only the default path may call a judge.
+ * The judge only escalates to ask; it never silent-denies.
+ */
+export function planActionGate(input: {
+  resolved: ActionApprovalResolved;
+  consequential: boolean;
+  autoReviewEnabled: boolean;
+  checkerConfigured: boolean;
+}): "ask" | "allow" | "judge" {
+  if (input.resolved.decision === "ask") return "ask";
+  if (input.resolved.source === "always_allow") return "allow";
+  if (
+    input.consequential &&
+    input.autoReviewEnabled &&
+    input.checkerConfigured &&
+    input.resolved.source === "default"
+  ) {
+    return "judge";
+  }
+  return "allow";
+}
+
+/** Map a judge outcome onto ask/allow. Errors fail closed on consequential tools. */
+export function applyJudgeDecision(input: {
+  decision: AutoReviewJudgeDecision;
+  consequential: boolean;
+}): "ask" | "allow" {
+  if (input.decision === "pass") return "allow";
+  if (input.decision === "ask") return "ask";
+  return input.consequential ? "ask" : "allow";
 }
 
 export function isSecretAskBlock(block: {

@@ -34,6 +34,9 @@ export type HomeCopy = {
     eyebrow: string;
     heading: string;
     copy: string;
+    installTitle: string;
+    installHint: string;
+    computersNote: string;
     features: Array<{ title: string; body: string }>;
   };
   roster: {
@@ -71,6 +74,11 @@ export type HomeCopy = {
     eyebrow: string;
     title: string;
     copy: string;
+    selfHostNow: string;
+    selfHostHint: string;
+    cloudWaitlist: string;
+    cloudHint: string;
+    back: string;
     successTitle: string;
     successCopy: string;
     done: string;
@@ -228,7 +236,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "The computer is yours",
-      copy: "Every bot gets a sandboxed browser and shell — running in your Docker, in your account, behind your firewall. Sessions and credentials never leave it.",
+      copy: "Run Rakazo on your machine with published images. Local Docker computers work without an E2B account.",
+      installTitle: "Install with Docker",
+      installHint: "Docker Engine and the Compose plugin required. Default tag is edge (amd64).",
+      computersNote:
+        "Default is Docker computers on this host. E2B, Daytona, and Box are optional remote providers.",
       features: [
         {
           title: "Any model, your key",
@@ -291,12 +303,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "Close get started dialog",
-      eyebrow: "Rakazo Cloud",
-      title: "Get started with Rakazo",
-      copy: "Leave your email and we’ll let you know when your hosted workspace is ready.",
-      successTitle: "You’re in.",
+      eyebrow: "Get started",
+      title: "How do you want to start?",
+      copy: "Self-host now with Docker, or join the Cloud waitlist.",
+      selfHostNow: "Self-host now",
+      selfHostHint: "Published images. UI in minutes. No E2B key required to sign up.",
+      cloudWaitlist: "Cloud waitlist",
+      cloudHint: "Hosted Rakazo is coming. Leave your email.",
+      back: "Back",
+      successTitle: "You're in.",
       successCopy:
-        "We’ll email you when hosted Rakazo is ready. Want to start today? Rakazo is already available on GitHub.",
+        "We'll email you when hosted Rakazo is ready. Want to start today? Jump to Self-host on this page.",
       done: "Done",
       viewOnGithub: "View on GitHub",
     },
@@ -347,7 +364,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "Der Computer gehört dir",
-      copy: "Jeder Bot bekommt einen sandboxierten Browser und eine Shell — in deinem Docker, in deinem Account, hinter deiner Firewall. Sessions und Zugangsdaten verlassen ihn nie.",
+      copy: "Starte Rakazo mit veröffentlichten Images. Lokale Docker-Computer laufen ohne E2B-Account.",
+      installTitle: "Mit Docker installieren",
+      installHint: "Docker Engine und Compose-Plugin nötig. Default-Tag ist edge (amd64).",
+      computersNote:
+        "Standard sind Docker-Computer auf diesem Host. E2B, Daytona und Box sind optionale Remote-Anbieter.",
       features: [
         {
           title: "Beliebiges Modell, dein Key",
@@ -410,12 +431,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "Loslegen-Dialog schließen",
-      eyebrow: "Rakazo Cloud",
-      title: "Mit Rakazo loslegen",
-      copy: "Hinterlasse deine E-Mail — wir melden uns, wenn dein gehosteter Workspace bereit ist.",
+      eyebrow: "Loslegen",
+      title: "Wie willst du starten?",
+      copy: "Jetzt self-hosten mit Docker, oder auf die Cloud-Warteliste.",
+      selfHostNow: "Jetzt self-hosten",
+      selfHostHint: "Veröffentlichte Images. UI in Minuten. Kein E2B-Key für Signup nötig.",
+      cloudWaitlist: "Cloud-Warteliste",
+      cloudHint: "Gehostetes Rakazo kommt. Hinterlasse deine E-Mail.",
+      back: "Zurück",
       successTitle: "Du bist dabei.",
       successCopy:
-        "Wir mailen dir, wenn gehostetes Rakazo bereit ist. Heute starten? Rakazo ist schon auf GitHub verfügbar.",
+        "Wir mailen dir, wenn gehostetes Rakazo bereit ist. Heute starten? Zum Self-host-Abschnitt auf dieser Seite.",
       done: "Fertig",
       viewOnGithub: "Auf GitHub ansehen",
     },
@@ -465,7 +491,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "셀프 호스트",
       heading: "컴퓨터는 당신 것",
-      copy: "모든 봇은 샌드박스 브라우저와 셸을 가집니다 — 당신의 Docker, 당신의 계정, 당신의 방화벽 안에서. 세션과 자격 증명은 밖으로 나가지 않습니다.",
+      copy: "게시된 이미지로 Rakazo를 실행하세요. 로컬 Docker 컴퓨터는 E2B 계정 없이 동작합니다.",
+      installTitle: "Docker로 설치",
+      installHint: "Docker Engine과 Compose 플러그인이 필요합니다. 기본 태그는 edge(amd64)입니다.",
+      computersNote:
+        "기본값은 이 호스트의 Docker 컴퓨터입니다. E2B, Daytona, Box는 선택적 원격 제공자입니다.",
       features: [
         {
           title: "어떤 모델이든, 키는 당신 것",
@@ -528,12 +558,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "시작하기 대화상자 닫기",
-      eyebrow: "Rakazo Cloud",
-      title: "Rakazo 시작하기",
-      copy: "이메일을 남겨 주세요. 호스팅 워크스페이스가 준비되면 알려 드립니다.",
+      eyebrow: "시작하기",
+      title: "어떻게 시작할까요?",
+      copy: "Docker로 지금 셀프 호스트하거나, Cloud 대기열에 등록하세요.",
+      selfHostNow: "지금 셀프 호스트",
+      selfHostHint: "게시된 이미지. 몇 분 안에 UI. 가입에 E2B 키 불필요.",
+      cloudWaitlist: "Cloud 대기열",
+      cloudHint: "호스팅 Rakazo가 곧 옵니다. 이메일을 남겨 주세요.",
+      back: "뒤로",
       successTitle: "등록되었습니다.",
       successCopy:
-        "호스팅 Rakazo가 준비되면 메일로 알려 드립니다. 오늘 시작하려면? Rakazo는 이미 GitHub에서 사용할 수 있습니다.",
+        "호스팅 Rakazo가 준비되면 메일로 알려 드립니다. 오늘 시작하려면 이 페이지의 셀프 호스트 섹션으로 이동하세요.",
       done: "완료",
       viewOnGithub: "GitHub에서 보기",
     },

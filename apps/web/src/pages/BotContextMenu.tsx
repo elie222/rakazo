@@ -4,6 +4,8 @@ import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
 export type ContextMenuPosition = { x: number; y: number };
 
+type ChatMenuTarget = Pick<Bot, "name" | "pinned" | "sectionId" | "unread">;
+
 export function BotContextMenu({
   bot,
   position,
@@ -19,7 +21,7 @@ export function BotContextMenu({
   onArchive,
   onDelete,
 }: {
-  bot: Bot;
+  bot: ChatMenuTarget;
   position: ContextMenuPosition;
   onClose: () => void;
   onTogglePinned: () => void;
@@ -62,7 +64,7 @@ export function BotContextMenu({
     <div className="fixed inset-0 z-40">
       <button
         type="button"
-        aria-label={t`Close bot menu`}
+        aria-label={t`Close`}
         className="absolute inset-0 cursor-default"
         onClick={onClose}
         onContextMenu={(event) => {

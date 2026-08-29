@@ -16,7 +16,7 @@ export function BotOrganizeModal({
   onUpdate,
   onCreateSection,
 }: {
-  bot: MobileBot;
+  bot: Pick<MobileBot, "name" | "pinned" | "sectionId">;
   sections: MobileBotSection[];
   onClose: () => void;
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
@@ -35,7 +35,7 @@ export function BotOrganizeModal({
       await request();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update bot");
+      setError(err instanceof Error ? err.message : "Could not update chat");
       setSaving(false);
     }
   }
@@ -44,7 +44,7 @@ export function BotOrganizeModal({
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable
-          accessibilityLabel="Close bot organization"
+          accessibilityLabel="Close chat organization"
           style={StyleSheet.absoluteFill}
           onPress={onClose}
         />

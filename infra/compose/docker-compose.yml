@@ -19,15 +19,15 @@ services:
     build:
       context: ../..
       dockerfile: infra/sandboxes/supervisor/Dockerfile
-    env_file:
-      - ../../.env
     environment:
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"
       SUPERVISOR_PORT: "7091"
       DOCKER_SOCKET: /var/run/docker.sock
       RAKAZO_COMPUTER_IMAGE: rakazo/computer:local
-      SANDBOX_SCREEN_NETWORK: internal
+      SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
+      SANDBOX_SCREEN_NETWORK: isolated
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ../../data:/data
@@ -58,13 +58,14 @@ services:
       - ../../.env
     environment:
       DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      API_HOST: "0.0.0.0"
       DATA_DIR: /data
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
       AGENT_RUNTIME: pi
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - ../../data:/data
     depends_on:
@@ -81,11 +82,13 @@ services:
     env_file:
       - ../../.env
     environment:
+      BETTER_AUTH_SECRET: ""
       DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
       DATA_DIR: /data
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      SCREEN_PROXY_SECRET: ""
       AGENT_RUNTIME: pi
     volumes:
       - ../../data:/data
@@ -102,10 +105,10 @@ services:
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       API_PROXY_TARGET: http://api:3100
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - api
 

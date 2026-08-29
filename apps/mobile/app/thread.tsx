@@ -782,10 +782,12 @@ export default function Thread() {
   }
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
+  const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20, paddingBottom: 24 }}>
       {error ? <Text style={{ color: "#8E8E93", marginTop: 12 }}>{error}</Text> : null}
+      {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
       <ScrollView
         ref={scroll}
         style={{ flex: 1, marginTop: 8 }}

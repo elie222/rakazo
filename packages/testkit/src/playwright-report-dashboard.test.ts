@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
   type PlaywrightRun,
@@ -9,6 +10,18 @@ import {
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
 } from "./playwright-report-dashboard.js";
+
+describe("classifyPlaywrightScreenshot", () => {
+  it("excludes automatic successful-test captures from visual review", () => {
+    expect(classifyPlaywrightScreenshot("test-finished-1.png")).toBeUndefined();
+    expect(classifyPlaywrightScreenshot("nested/test-finished-12.PNG")).toBeUndefined();
+  });
+
+  it("keeps intentional checkpoints and automatic failure captures", () => {
+    expect(classifyPlaywrightScreenshot("01-onboarding-complete.png")).toBe("checkpoint");
+    expect(classifyPlaywrightScreenshot("nested/test-failed-1.png")).toBe("failure");
+  });
+});
 
 describe("compareScreenshotsWithBaseline", () => {
   it("marks matching, changed, and new screenshots using source and SHA-256", () => {

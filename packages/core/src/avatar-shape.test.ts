@@ -13,4 +13,12 @@ describe("organic avatar geometry", () => {
     expect(path).toMatch(/^M[-0-9. ]+(?:C[-0-9. ]+)+Z$/);
     expect(path).not.toMatch(/<|>|javascript:|url\(/i);
   });
+
+  it("produces ten distinct smooth shape families", () => {
+    const families = Array.from({ length: 10 }, (_, seed) =>
+      organicAvatarPath(seed, -((seed % 360) * Math.PI) / 180),
+    );
+    expect(new Set(families)).toHaveLength(10);
+    expect(families.every((path) => (path.match(/C/g) ?? []).length >= 12)).toBe(true);
+  });
 });

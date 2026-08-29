@@ -2192,6 +2192,63 @@ describeJourneys("required product journeys", () => {
     });
     expect(mixedOneShot.status).toBeGreaterThanOrEqual(400);
   });
+
+  it("23: never-run one-shot templates can be armed with a future runAt", async () => {
+    const cookie = await signup(app, `once-arm-j-${stamp}@rakazo.test`, "Once Arm");
+    const me = await rpc<Me>(app, cookie, "me");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Once Bot",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await prisma.routine.create({
+      data: {
+        workspaceId: me.workspaceId,
+        userId: me.userId,
+        botId: bot.id,
+        name: "Remind once",
+        prompt: "Ping me once",
+        crons: ["@once"],
+        timezone: "UTC",
+        notify: true,
+        active: false,
+        nextRunAt: null,
+      },
+    });
+
+    const withoutTime = await raw(app, cookie, "routines/update", {
+      routineId: routine.id,
+      active: true,
+    });
+    expect(withoutTime.status).toBeGreaterThanOrEqual(400);
+
+    const runAt = new Date(Date.now() + 120_000).toISOString();
+    const armed = await rpc<{ active: boolean; nextRunAt: string | null }>(
+      app,
+      cookie,
+      "routines/update",
+      {
+        routineId: routine.id,
+        active: true,
+        runAt,
+      },
+    );
+    expect(armed.active).toBe(true);
+    expect(armed.nextRunAt).toBe(runAt);
+
+    await prisma.routine.update({
+      where: { id: routine.id },
+      data: { active: false, nextRunAt: null, lastRunAt: new Date() },
+    });
+    const afterFire = await raw(app, cookie, "routines/update", {
+      routineId: routine.id,
+      active: true,
+      runAt: new Date(Date.now() + 180_000).toISOString(),
+    });
+    expect(afterFire.status).toBeGreaterThanOrEqual(400);
+  });
 });
 
 type Me = { workspaceId: string; userId: string; canChooseHostComputer: boolean };
