@@ -41,9 +41,21 @@ export async function loadBotMessageContext(
   if (!sourceMessageId) return undefined;
   const source = await prisma.message.findUnique({
     where: { id: sourceMessageId },
-    select: { blocks: true },
+    select: { blocks: true, replyTo: { select: { blocks: true } } },
   });
-  return botMessageContext(Array.isArray(source?.blocks) ? (source.blocks as MessageBlock[]) : []);
+  const context = botMessageContext(
+    Array.isArray(source?.blocks) ? (source.blocks as MessageBlock[]) : [],
+  );
+  if (!context) return undefined;
+  const replyBlocks = Array.isArray(source?.replyTo?.blocks)
+    ? (source.replyTo.blocks as MessageBlock[])
+    : [];
+  const repliesToRequest = replyBlocks.some(
+    (block) =>
+      block.kind === "bot_message_sent" &&
+      (block.intent === undefined || block.intent === "request" || block.intent === "question"),
+  );
+  return { ...context, repliesToRequest };
 }
 
 export async function messageBot(

@@ -839,11 +839,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
-        const allowSilentPeerMessage = botMessageAllowsSilence(peerMessage?.intent);
+        const allowSilentPeerMessage = botMessageAllowsSilence(
+          peerMessage?.intent,
+          peerMessage?.repliesToRequest,
+        );
         const emptyResponseText = peerMessage
           ? peerMessage.intent === "result" ||
             peerMessage.intent === "status" ||
-            peerMessage.intent === "question"
+            peerMessage.intent === "question" ||
+            peerMessage.repliesToRequest
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : "The delegated bot completed its turn without a written summary."
           : undefined;

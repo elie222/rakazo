@@ -45,8 +45,11 @@ export function botMessageContext(blocks: readonly MessageBlock[]): BotMessageCo
   return blocks.find((block): block is BotMessageContext => block.kind === "bot_message_received");
 }
 
-export function botMessageAllowsSilence(intent: BotMessageIntent | undefined): boolean {
-  return intent === "fyi";
+export function botMessageAllowsSilence(
+  intent: BotMessageIntent | undefined,
+  repliesToRequest = false,
+): boolean {
+  return intent === "fyi" && !repliesToRequest;
 }
 
 /** Resolve a target by id first, then by exact name, then case-insensitively. */

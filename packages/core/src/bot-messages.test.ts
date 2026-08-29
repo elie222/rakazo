@@ -4,6 +4,7 @@ import {
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_HOPS,
   BOT_MESSAGE_MAX_LENGTH,
+  botMessageAllowsSilence,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
   clampBotMessage,
@@ -28,6 +29,13 @@ describe("bot message text", () => {
     const clamped = clampBotMessage("x".repeat(BOT_MESSAGE_MAX_LENGTH + 500));
     expect(clamped).toHaveLength(BOT_MESSAGE_MAX_LENGTH);
     expect(clamped.endsWith("…")).toBe(true);
+  });
+});
+
+describe("bot message silence", () => {
+  it("surfaces an FYI when it replies to a delegated request", () => {
+    expect(botMessageAllowsSilence("fyi", true)).toBe(false);
+    expect(botMessageAllowsSilence("fyi")).toBe(true);
   });
 });
 

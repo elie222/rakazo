@@ -367,10 +367,24 @@ describe("hop lookup", () => {
               intent: "fyi",
             },
           ],
+          replyTo: {
+            blocks: [
+              {
+                kind: "bot_message_sent",
+                toBotId: "b",
+                toBotName: "B",
+                text: "check Gmail",
+                intent: "request",
+              },
+            ],
+          },
         }),
       },
     } as unknown as PrismaClient;
-    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({ intent: "fyi" });
+    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({
+      intent: "fyi",
+      repliesToRequest: true,
+    });
     expect(prisma.message.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "message-old" } }),
     );
