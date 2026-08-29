@@ -117,23 +117,16 @@ class RakazoNotificationService : Service() {
             .forEach { post(it, attentionCopy(it)) }
         }
         alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
-        if (active.isEmpty()) {
-          stop()
-          return
-        }
       } catch (error: ApiException) {
         if (error.status == 401) {
           stop()
           return
         }
-        stop()
-        return
+        clearLive()
       } catch (_: IOException) {
-        stop()
-        return
+        clearLive()
       } catch (_: RuntimeException) {
-        stop()
-        return
+        clearLive()
       }
       delay(POLL_INTERVAL_MS)
     }

@@ -42,10 +42,7 @@ class RakazoNotificationsModule : Module() {
       val context = context()
       RakazoNotificationService.stop(context)
       if (clearSession) {
-        NotificationStorage(context).apply {
-          token = ""
-          settings = settings.copy(liveConnection = false)
-        }
+        NotificationStorage(context).token = ""
       }
     }
 

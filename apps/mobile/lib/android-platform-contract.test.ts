@@ -36,7 +36,10 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("liveStatusIcon(primary, avatarStyle)");
     expect(service).toContain('rpc(endpoint, token, "me"');
     expect(service).not.toContain("showStarting");
+    expect(service).not.toContain("if (active.isEmpty())");
+    expect(service).not.toContain("catch (_: IOException) {\n        stop()");
     expect(module).toContain("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS");
+    expect(module).not.toContain("settings.copy(liveConnection = false)");
   });
 
   it("shows live updates only for working runs and ties the pill to a real bot", () => {
