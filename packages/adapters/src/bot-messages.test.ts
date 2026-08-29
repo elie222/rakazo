@@ -276,6 +276,34 @@ describe("messaging another bot", () => {
     );
   });
 
+  it("does not inherit a request reply link for an FYI to the requester", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "check Gmail",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+
+    await messageBot(harness.deps, { ...run, sourceMessageId: "message-source" }, sender, {
+      bot_id: "bot-target",
+      message: "unrelated update",
+      intent: "fyi",
+    });
+
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ replyToMessageId: undefined }),
+      }),
+    );
+  });
+
   it("does not exempt a terminal reply to another terminal reply", async () => {
     const harness = deps({
       hopBlocks: [
