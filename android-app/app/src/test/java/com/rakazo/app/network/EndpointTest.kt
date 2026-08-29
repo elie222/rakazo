@@ -12,8 +12,8 @@ class EndpointTest {
             normalizeEndpoint(" https://user:pass@app.example.com/rpc "),
         )
         assertEquals(
-            EndpointResult.Valid("http://10.0.2.2:3100"),
-            normalizeEndpoint("http://10.0.2.2:3100/api"),
+            EndpointResult.Valid("http://127.0.0.1:3100"),
+            normalizeEndpoint("http://127.0.0.1:3100/api"),
         )
         assertEquals(
             EndpointResult.Valid("https://app.example.com"),
@@ -32,6 +32,7 @@ class EndpointTest {
             "ftp://example.com",
             "http://",
             "http://example.com",
+            "http://10.0.2.2:3100",
             "http://192.168.1.20:3100",
             "http://server.local:3100",
             "http://[::1]:3100",

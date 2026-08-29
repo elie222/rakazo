@@ -26,7 +26,7 @@ fun normalizeEndpoint(input: String): EndpointResult {
 
 private fun isCleartextDevelopmentHost(hostname: String): Boolean {
     val host = hostname.removePrefix("[").removeSuffix("]").lowercase()
-    return host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2"
+    return host == "localhost" || host == "127.0.0.1"
 }
 
 private fun formatHost(host: String): String {
