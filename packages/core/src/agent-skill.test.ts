@@ -191,12 +191,12 @@ clip: |
 });
 
 describe("skill prompt helpers", () => {
-  it("limits a bot to its explicitly attached skills while preserving legacy all-skills bots", () => {
+  it("limits a bot to its explicitly attached skills", () => {
     const skills = [
       { id: "skill-a", name: "A", description: "A" },
       { id: "skill-b", name: "B", description: "B" },
     ];
-    expect(filterAttachedAgentSkills(skills, null)).toEqual(skills);
+    expect(filterAttachedAgentSkills(skills, null)).toEqual([]);
     expect(filterAttachedAgentSkills(skills, ["skill-b", "missing"])).toEqual([skills[1]]);
     expect(filterAttachedAgentSkills(skills, [])).toEqual([]);
   });

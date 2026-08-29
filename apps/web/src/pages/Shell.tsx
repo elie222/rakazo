@@ -4335,7 +4335,7 @@ function BotSkillsPicker({
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
-  const selectedIds = value ?? skills.map((skill) => skill.id);
+  const selectedIds = value ?? [];
   const selected = new Set(selectedIds);
   const visibleSkills = skills.filter((skill) => {
     const needle = query.trim().toLowerCase();
@@ -4379,14 +4379,14 @@ function BotSkillsPicker({
               onClick={() => onChange(skills.map((skill) => skill.id))}
               className="rounded-[9px] border border-[#303034] px-2.5 text-[12px] text-[#C9C9CE]"
             >
-              <Trans>All</Trans>
+              <Trans>Select all</Trans>
             </button>
             <button
               type="button"
               onClick={() => onChange([])}
               className="rounded-[9px] border border-[#303034] px-2.5 text-[12px] text-[#C9C9CE]"
             >
-              <Trans>None</Trans>
+              <Trans>Clear all</Trans>
             </button>
           </div>
           <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">

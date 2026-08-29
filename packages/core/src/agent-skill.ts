@@ -36,7 +36,7 @@ export function filterAttachedAgentSkills<T extends { id: string }>(
   skills: T[],
   attachedSkillIds: unknown,
 ): T[] {
-  if (attachedSkillIds == null) return skills;
+  if (attachedSkillIds == null) return [];
   if (!Array.isArray(attachedSkillIds)) return [];
   const attached = new Set(attachedSkillIds.filter((id): id is string => typeof id === "string"));
   return skills.filter((skill) => attached.has(skill.id));
