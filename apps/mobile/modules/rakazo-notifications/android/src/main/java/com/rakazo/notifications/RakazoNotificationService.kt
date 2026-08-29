@@ -32,6 +32,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -64,7 +65,9 @@ class RakazoNotificationService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (pollJob?.isActive != true) pollJob = scope.launch { poll() }
+    val generation = sessionGeneration.incrementAndGet()
+    pollJob?.cancel()
+    pollJob = scope.launch { poll(generation) }
     return START_STICKY
   }
 
@@ -75,7 +78,7 @@ class RakazoNotificationService : Service() {
     super.onDestroy()
   }
 
-  private suspend fun poll() {
+  private suspend fun poll(generation: Long) {
     var seeded = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
       .getBoolean(SEEN_RUNS_SEEDED, false)
     var selectedAvatarStyle: String? = null
@@ -92,6 +95,7 @@ class RakazoNotificationService : Service() {
         val active = runs(storage.endpoint, storage.token, "active")
         val working = active.filter(::isWorking)
         val recent = runs(storage.endpoint, storage.token, "recent")
+        if (generation != sessionGeneration.get()) return
         if (working.isEmpty()) clearLive() else showLive(working, avatarStyle)
         if (!seeded) {
           knownCompleted += recent.map { it.runId }
@@ -101,8 +105,10 @@ class RakazoNotificationService : Service() {
             when {
               run.status == "failed" && settings.needsAttention -> post(run, attentionCopy(run))
               run.status != "completed" -> Unit
-              run.trigger == "routine" && settings.scheduledTasks -> postCompletion(storage, run, true)
-              run.trigger != "routine" && settings.messages -> postCompletion(storage, run, false)
+              run.trigger == "routine" && settings.scheduledTasks ->
+                postCompletion(storage, run, true, generation)
+              run.trigger != "routine" && settings.messages ->
+                postCompletion(storage, run, false, generation)
             }
           }
         }
@@ -135,8 +141,14 @@ class RakazoNotificationService : Service() {
     }
   }
 
-  private fun postCompletion(storage: NotificationStorage, run: RunRecord, scheduled: Boolean) {
+  private fun postCompletion(
+    storage: NotificationStorage,
+    run: RunRecord,
+    scheduled: Boolean,
+    generation: Long,
+  ) {
     val reply = runCatching { latestReply(storage.endpoint, storage.token, run.botId) }.getOrDefault("")
+    if (generation != sessionGeneration.get()) return
     post(
       run,
       NotificationCopy(
@@ -276,6 +288,7 @@ class RakazoNotificationService : Service() {
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
+    private val sessionGeneration = AtomicLong()
 
     fun start(context: Context) {
       val intent = Intent(context, RakazoNotificationService::class.java)
@@ -287,6 +300,7 @@ class RakazoNotificationService : Service() {
     }
 
     fun clearSession(context: Context) {
+      sessionGeneration.incrementAndGet()
       stop(context)
       context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
       context.getSystemService(NotificationManager::class.java).cancelAll()
