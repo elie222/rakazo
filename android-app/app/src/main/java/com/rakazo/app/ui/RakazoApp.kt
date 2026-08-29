@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,6 +51,8 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.MicNone
@@ -1828,7 +1831,7 @@ private fun ThreadMessage(
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        message.blocks.forEach { block ->
+        message.blocksForDisplay().forEach { block ->
             ThreadMessageBlock(
                 block,
                 message.runId != null || block.kind == "choice",
@@ -1848,14 +1851,14 @@ private fun ThreadMessageBlock(
     var expanded by rememberSaveable(block.kind, block.label) { mutableStateOf(false) }
     when {
         block.kind == "bot_message_sent" || block.kind == "bot_message_received" -> Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
-                modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 10.dp),
+                modifier = Modifier
+                    .clickable { expanded = !expanded }
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
@@ -1863,6 +1866,12 @@ private fun ThreadMessageBlock(
                     OrganicAvatar(peerBotId, peerAgent?.color ?: TextMuted, size = 18.dp)
                 }
                 Text(block.label.orEmpty(), color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+                Icon(
+                    imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (expanded) "Hide message" else "Show message",
+                    tint = TextMuted,
+                    modifier = Modifier.size(18.dp),
+                )
             }
             AnimatedVisibility(visible = expanded) {
                 Surface(
@@ -1871,27 +1880,27 @@ private fun ThreadMessageBlock(
                     color = SurfaceColor,
                     border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
                 ) {
-                    Text(block.text, modifier = Modifier.padding(14.dp), color = TextPrimary)
+                    MarkdownText(block.text, modifier = Modifier.padding(14.dp))
                 }
             }
         }
         block.kind == "handoff" || block.kind == "meta" -> ThreadEvent(
             listOfNotNull(block.label, block.text.takeIf(String::isNotBlank)).joinToString(" · "),
         )
-        block.kind == "progress" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
-            if (block.toolNames.isNotEmpty()) ToolLabels(block.toolNames)
-        }
+        block.kind == "progress" && (block.toolNames.isNotEmpty() || block.text.startsWith("Using ", ignoreCase = true)) ->
+            ExpandableToolCard(block)
+        block.kind == "progress" -> if (block.text.isNotBlank()) MarkdownText(block.text)
         block.kind == "subagent" || block.kind == "child_bot" -> SemanticCard(title = block.label) {
             block.status?.let { StatusLabel(it) }
             block.detail?.let { Text(it, color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
-            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            if (block.text.isNotBlank()) MarkdownText(block.text)
         }
         block.label == null -> if (block.text.isNotBlank()) {
-            Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            MarkdownText(block.text)
         }
+        block.kind == "steps" -> ExpandableToolCard(block)
         else -> SemanticCard(title = block.label) {
-            if (block.text.isNotBlank()) Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            if (block.text.isNotBlank()) MarkdownText(block.text)
             block.detail?.let { detail ->
                 Text(detail, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
             }
@@ -1912,9 +1921,65 @@ private fun ThreadMessageBlock(
     }
 }
 
+@Composable
+private fun ExpandableToolCard(block: MessageBlockRecord) {
+    var expanded by rememberSaveable(block.kind, block.text, block.toolNames) { mutableStateOf(false) }
+    val provider = Regex("^Using\\s+([^:]+)", RegexOption.IGNORE_CASE)
+        .find(block.text)?.groupValues?.get(1)?.replaceFirstChar(Char::uppercase)
+    val title = provider?.let { "Using $it" } ?: "Tools"
+    val tools = buildList {
+        if (provider != null) block.text.substringAfter(':', "").trim().takeIf(String::isNotBlank)?.let(::add)
+        else if (block.kind == "steps") addAll(block.text.lineSequence().filter(String::isNotBlank))
+        addAll(block.toolNames)
+    }.distinct()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (expanded) "Hide tool details" else "Show tool details",
+                    tint = TextMuted,
+                )
+            }
+            AnimatedVisibility(expanded) {
+                Column(
+                    Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (tools.isNotEmpty()) ToolLabels(tools)
+                    else if (block.text.isNotBlank()) MarkdownText(block.text)
+                }
+            }
+        }
+    }
+}
+
 internal fun ThreadMessageRecord.isPeerTraffic(): Boolean = blocks.any {
     it.kind == "bot_message_sent" || it.kind == "bot_message_received"
 }
+
+internal fun ThreadMessageRecord.blocksForDisplay(): List<MessageBlockRecord> =
+    blocks.firstOrNull { it.kind == "bot_message_sent" || it.kind == "bot_message_received" }
+        ?.let(::listOf)
+        ?: blocks
 
 @Composable
 private fun InlineAnswer(secret: Boolean, onAnswer: (String) -> Unit) {
@@ -1949,7 +2014,10 @@ private fun InlineAnswer(secret: Boolean, onAnswer: (String) -> Unit) {
 
 @Composable
 private fun ToolLabels(names: List<String>) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         names.distinct().forEach { name ->
             Surface(shape = RoundedCornerShape(10.dp), color = Elevated) {
                 Text(
