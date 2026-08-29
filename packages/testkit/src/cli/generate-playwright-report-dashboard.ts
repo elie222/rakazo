@@ -16,7 +16,8 @@ import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validati
 
 const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
   process.argv.slice(2);
-const MAX_SCREENSHOT_COUNT = 100;
+const MAX_SCREENSHOT_COUNT = 250;
+const MAX_TOTAL_SCREENSHOT_BYTES = 250 * 1024 * 1024;
 const MAX_ARTIFACT_ENTRIES = 2_000;
 const MAX_ARTIFACT_DEPTH = 12;
 
@@ -116,10 +117,17 @@ async function collectScreenshots(
   await mkdir(imagePath, { recursive: true });
 
   const screenshots: Array<Omit<PlaywrightScreenshot, "comparison">> = [];
+  let totalScreenshotBytes = 0;
   for (const [index, file] of files.entries()) {
     const info = await stat(file);
     if (!info.isFile() || info.size <= 0 || info.size > MAX_PNG_SCREENSHOT_BYTES) {
       throw new Error(`Invalid screenshot size for ${file}`);
+    }
+    totalScreenshotBytes += info.size;
+    if (totalScreenshotBytes > MAX_TOTAL_SCREENSHOT_BYTES) {
+      throw new Error(
+        `Playwright screenshots exceed maximum total size of ${MAX_TOTAL_SCREENSHOT_BYTES} bytes`,
+      );
     }
     const screenshot = await readFile(file);
     validatePngScreenshot(screenshot, file);
