@@ -1,11 +1,13 @@
 # Rakazo Android handoff
 
+> Historical initial-scaffold snapshot. Current implementation status is documented in `android-app/README.md` and the git history; upstream review is tracked in PR #378.
+
 ## Pickup point
 
 - Fork: https://github.com/luinbytes/rakazo
 - Branch: `android-app`
-- Current implementation commit: `6cd0c9106f7f03730b088079672a9eb95a73a4b6`
-- Upstream is `elie222/rakazo`; do not push to it. No pull request exists.
+- Initial scaffold commit: `6cd0c9106f7f03730b088079672a9eb95a73a4b6`
+- Upstream is `elie222/rakazo`; contribute through the user's fork and upstream PR #378.
 - Clone directly with `git clone --branch android-app https://github.com/luinbytes/rakazo.git`.
 
 ## Product direction
@@ -27,7 +29,7 @@ Read these instead of recreating or restating them:
 - Existing repository CI exclusion for Android-only changes: `.github/workflows/ci.yml`
 - Full scaffold diff: commit `6cd0c91`
 
-The current screens use deterministic local demo data. Search, workspace-mode switching, route transitions, composer sending, computer navigation, and release/take-control state work locally. There is one focused unit test protecting avatar identity parity.
+The initial scaffold used deterministic local demo data. Runtime data is now authenticated server data; preview data remains confined to Compose previews and tests.
 
 ## Verified state
 
@@ -39,7 +41,7 @@ The current screens use deterministic local demo data. Search, workspace-mode sw
 
 ## Continue from here
 
-Wait for the user's next concrete feature priority. The known unconnected product boundaries are server endpoint/auth, secure session storage, real agent/activity data, streaming messages, voice, notifications, attachments, and remote-computer transport. Add only the next requested vertical slice; do not scaffold all of these speculatively.
+Wait for the user's next concrete feature priority. Voice, attachments, and remote-computer transport remain unconnected product boundaries. Add only the next requested vertical slice; do not scaffold all of these speculatively.
 
 For parity, inspect the existing web/Expo implementations and shared contracts before translating behavior. Keep frontend state thin and put transport/provider translation behind an Android-local boundary. Preserve `com.rakazo.app` and the fixed branded color system; do not enable Material dynamic color.
 

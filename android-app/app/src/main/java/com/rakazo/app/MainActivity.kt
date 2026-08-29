@@ -24,7 +24,13 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             RakazoTheme {
-                RakazoApp(openBotId = openBotId, onOpenBotConsumed = { openBotId = null })
+                RakazoApp(
+                    openBotId = openBotId,
+                    onOpenBotConsumed = {
+                        openBotId = null
+                        intent.removeExtra(EXTRA_BOT_ID)
+                    },
+                )
             }
         }
     }
