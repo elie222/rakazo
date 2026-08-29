@@ -221,6 +221,19 @@ describe("sandbox supervisor input containment", () => {
     });
   });
 
+  it("routes mixed-case Docker browser aliases through the safe wrapper", () => {
+    for (const application of ["Chrome", "Firefox", "Chromium", "Google-Chrome"]) {
+      expect(
+        containerActionStep({ kind: "launch", application, uri: "https://example.com" }, ":2"),
+      ).toEqual({
+        argv: ["env", "DISPLAY=:2", "rakazo-browser", "https://example.com"],
+      });
+    }
+    expect(containerActionStep({ kind: "launch", application: "XTerm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "XTerm"],
+    });
+  });
+
   it("keeps browser routing argv identical for control and Docker exec fallback", () => {
     const action = { kind: "launch" as const, application: "chromium", uri: "https://example.com" };
     expect(containerActionSteps([action], ":2")).toEqual([

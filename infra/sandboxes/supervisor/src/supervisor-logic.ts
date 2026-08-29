@@ -311,7 +311,7 @@ export function containerActionStep(
       : workspaceTarget(normalizeWorkspaceRelative(action.path));
     argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
   } else {
-    const application = DOCKER_BROWSER_ALIASES.has(action.application)
+    const application = DOCKER_BROWSER_ALIASES.has(action.application.toLowerCase())
       ? "rakazo-browser"
       : action.application;
     argv = ["env", `DISPLAY=${display}`, application, ...(action.uri ? [action.uri] : [])];

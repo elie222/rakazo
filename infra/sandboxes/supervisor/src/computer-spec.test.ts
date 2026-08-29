@@ -123,9 +123,17 @@ describe("graphical computer spec", () => {
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/SingletonLock/);
-    expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop x-scheme-handler\/http/);
-    expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop x-scheme-handler\/https/);
-    expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop text\/html/);
+    expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop/);
+    expect(start).toMatch(/register_browser_handler x-scheme-handler\/http/);
+    expect(start).toMatch(/register_browser_handler x-scheme-handler\/https/);
+    expect(start).toMatch(/register_browser_handler text\/html/);
+    expect(start).toMatch(/xdg-mime query default/);
+    expect(start).toMatch(/failed to register rakazo-browser/);
+    expect(start).toMatch(/failed to set default web browser/);
+    expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
+    expect(start).not.toMatch(
+      /xdg-mime default rakazo-browser\.desktop .*\|\| true/,
+    );
     expect(start).toMatch(/x11vnc .* -viewonly /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
