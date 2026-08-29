@@ -62,6 +62,7 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain(
       "private fun runIfCurrent(generation: Long, action: () -> Unit): Boolean",
     );
+    expect(service).toContain("private fun stopIfCurrent(generation: Long)");
     expect(service).toContain("synchronized(sessionLock)");
     expect(service).toContain(
       "fun clearSession(context: Context) {\n      synchronized(sessionLock)",

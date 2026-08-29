@@ -91,7 +91,7 @@ class RakazoNotificationService : Service() {
         storage.token.isBlank() ||
         !isAllowedNotificationEndpoint(storage.endpoint)
       ) {
-        stop()
+        stopIfCurrent(generation)
         return
       }
       try {
@@ -157,12 +157,12 @@ class RakazoNotificationService : Service() {
         if (working.isEmpty()) {
           // Expo push owns background completion and attention delivery. Keeping this service
           // foreground while idle would require the persistent notification the product avoids.
-          stop()
+          stopIfCurrent(generation)
           return
         }
       } catch (error: ApiException) {
         if (error.status == 401) {
-          stop()
+          stopIfCurrent(generation)
           return
         }
       } catch (_: IOException) {
@@ -300,6 +300,10 @@ class RakazoNotificationService : Service() {
   private fun stop() {
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
+  }
+
+  private fun stopIfCurrent(generation: Long) {
+    runIfCurrent(generation) { stop() }
   }
 
   companion object {
