@@ -37,6 +37,16 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.onLayout()).toBe(null);
   });
 
+  it("keeps the initial jump pending while another scroll target blocks it", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+
+    expect(behavior.onContentChanged(true, "m1")).toBe(null);
+    expect(behavior.onLayout()).toBe(null);
+    expect(behavior.onContentChanged(false, "m1")).toBe("jump");
+    expect(behavior.onContentChanged(false, "m1")).toBe(null);
+  });
+
   it("leaves a detached reader in place and records unread messages", () => {
     const behavior = new ThreadScrollBehavior();
     behavior.openThread("thread-1");

@@ -28,6 +28,7 @@ import {
 } from "./session";
 
 const ENDPOINT_KEY = "rakazo.api_base";
+const RPC_TIMEOUT_MS = 8_000;
 
 let cachedApiBase: string | undefined;
 
@@ -130,21 +131,32 @@ export async function deleteAccount(password: string) {
 export async function rpc<T>(
   proc: string,
   body: unknown = {},
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number | null } = {},
 ): Promise<T> {
-  const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: "rakazo://",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ json: body }),
-    signal: options.signal,
-  });
-  const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
-  if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
-  return parsed.json as T;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener("abort", abort, { once: true });
+  const timer =
+    options.timeoutMs === null ? undefined : setTimeout(abort, options.timeoutMs ?? RPC_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ json: body }),
+      signal: controller.signal,
+    });
+    const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
+    if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
+    return parsed.json as T;
+  } finally {
+    if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
+  }
 }
 
 export type MobileBot = Pick<

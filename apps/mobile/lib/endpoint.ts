@@ -1,9 +1,10 @@
-const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
+const LOCAL_API = "http://127.0.0.1:3100";
+const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
 
 export function defaultApiBase() {
-  return originOnly(DEFAULT_API) ?? DEFAULT_API.replace(/\/+$/, "");
+  return originOnly(DEFAULT_API) ?? LOCAL_API;
 }
 
 export function normalizeApiBase(input: string): EndpointResult {

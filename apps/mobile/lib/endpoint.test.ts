@@ -44,6 +44,15 @@ describe("normalizeApiBase", () => {
 });
 
 describe("display and warnings", () => {
+  it("falls back to loopback when the compile-time endpoint is invalid", async () => {
+    vi.stubEnv("EXPO_PUBLIC_API_URL", "ftp://files.example.com");
+    vi.resetModules();
+    const endpoint = await import("./endpoint.js");
+
+    expect(endpoint.defaultApiBase()).toBe("http://127.0.0.1:3100");
+    vi.unstubAllEnvs();
+  });
+
   it("shows host and non-default port", () => {
     expect(displayApiHost("https://rakazo.example.com")).toBe("rakazo.example.com");
     expect(displayApiHost("http://10.0.0.8:3100")).toBe("10.0.0.8:3100");

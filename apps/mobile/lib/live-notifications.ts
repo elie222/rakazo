@@ -1,7 +1,7 @@
 import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { apiBaseWarning } from "./endpoint";
+import { apiBaseWarning, normalizeApiBase } from "./endpoint";
 
 export interface LiveNotificationSettings {
   liveConnection: boolean;
@@ -42,20 +42,23 @@ export async function setLiveNotificationSettings(
   token: string,
 ): Promise<void> {
   if (!nativeNotifications) return;
-  const endpointWarning = apiBaseWarning(endpoint);
+  const parsed = normalizeApiBase(endpoint);
+  if (!parsed.ok) throw new Error(parsed.error);
+  const endpointWarning = apiBaseWarning(parsed.url);
   if (endpointWarning) throw new Error(endpointWarning);
   if (settings.liveConnection) {
     const existing = await Notifications.getPermissionsAsync();
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
     if (!granted) throw new Error("Android blocked notifications.");
   }
-  await nativeNotifications.setSettings(settings, endpoint, token);
+  await nativeNotifications.setSettings(settings, parsed.url, token);
 }
 
 export async function resumeLiveNotifications(endpoint: string, token: string): Promise<void> {
   if (!nativeNotifications || !token) return;
-  if (apiBaseWarning(endpoint)) return;
-  await nativeNotifications.resume(endpoint, token);
+  const parsed = normalizeApiBase(endpoint);
+  if (!parsed.ok || apiBaseWarning(parsed.url)) return;
+  await nativeNotifications.resume(parsed.url, token);
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {

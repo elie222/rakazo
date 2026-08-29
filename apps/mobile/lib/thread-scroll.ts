@@ -28,11 +28,11 @@ export class ThreadScrollBehavior {
   }
 
   onContentChanged(blocked: boolean, latestMessageId: string | null): ThreadScrollAction {
+    if (blocked) return null;
     this.contentReady = true;
     if (latestMessageId === null || latestMessageId === this.latestMessageId) return null;
     const initial = this.latestMessageId === null;
     this.latestMessageId = latestMessageId;
-    if (blocked) return null;
     if (initial) return this.laidOut ? "jump" : null;
     if (this.currentState.detached) {
       this.currentState = { detached: true, unread: true };

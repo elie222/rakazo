@@ -49,9 +49,9 @@ describe("Android mobile platform contract", () => {
     expect(allowlist).toContain("isAllowedNotificationEndpoint");
     expect(allowlist).toContain('scheme == "https"');
     expect(allowlist).toContain("isLanOrLocalHost");
-    expect(live).toContain("apiBaseWarning(endpoint)");
+    expect(live).toContain("normalizeApiBase(endpoint)");
     expect(live).toMatch(
-      /export async function resumeLiveNotifications[\s\S]*apiBaseWarning\(endpoint\)[\s\S]*nativeNotifications\.resume/,
+      /export async function resumeLiveNotifications[\s\S]*normalizeApiBase\(endpoint\)[\s\S]*nativeNotifications\.resume\(parsed\.url/,
     );
     expect(service).toContain(
       "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
