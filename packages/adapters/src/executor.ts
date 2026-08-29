@@ -30,6 +30,7 @@ import {
   applyJudgeDecision,
   assertTransition,
   blocksToAgentHistoryText,
+  botMessageAllowsSilence,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -89,7 +90,7 @@ import {
   resolveAutoReviewChecker,
   runAutoReviewJudge,
 } from "./auto-review.js";
-import { messageBot } from "./bot-messages.js";
+import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -699,6 +700,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           bot,
           thread,
           messages,
+          peerMessage,
           task,
           storedConnections,
           defaultCredential,
@@ -718,6 +720,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             take: LEGACY_HISTORY_WINDOW_SIZE,
             select: { id: true, seq: true, role: true, runId: true, blocks: true },
           }),
+          run.trigger === "bot_message"
+            ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
+            : Promise.resolve(undefined),
           deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
           deps.prisma.connection.findMany({
             where: { userId: run.userId, workspaceId: run.workspaceId },
@@ -834,6 +839,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
+        const allowSilentPeerMessage = botMessageAllowsSilence(peerMessage?.intent);
+        const emptyResponseText = peerMessage
+          ? peerMessage.intent === "result" ||
+            peerMessage.intent === "status" ||
+            peerMessage.intent === "question"
+            ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
+            : "The delegated bot completed its turn without a written summary."
+          : undefined;
         const recallPromise =
           semanticMemory && memoryScope && thread.historyCompactedUpToSeq != null
             ? semanticMemory.recall(
@@ -2158,6 +2171,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 bot_id: args.bot_id ? String(args.bot_id) : undefined,
                 confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
                 message: redactSecrets(String(args.message ?? ""), runSecrets),
+                intent: args.intent as
+                  | "request"
+                  | "result"
+                  | "question"
+                  | "status"
+                  | "fyi"
+                  | undefined,
                 deliveryKey: executionId,
               },
             );
@@ -2369,7 +2389,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
-              allowSilentEmpty: run.trigger === "bot_message",
+              allowSilentEmpty: allowSilentPeerMessage,
+              emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
             },
             context,
@@ -2526,7 +2547,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
                 terminalCheckpointComplete = true;
                 const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
-                await deps.events.finalizeRun({
+                const stopped = await deps.events.finalizeRun({
                   workspaceId: run.workspaceId,
                   threadId: thread.id,
                   botId: bot.id,
@@ -2538,6 +2559,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   outcome: "completed",
                   blocks: [{ kind: "text", text: stuckText }],
                 });
+                if (!stopped) return;
+                if (run.trigger === "bot_message") {
+                  await returnBotMessageOutcome(
+                    deps,
+                    { ...run, sourceMessageId: run.sourceMessageId },
+                    { id: bot.id, name: bot.name },
+                    stuckText,
+                  ).catch((error) => console.error("bot message loop-guard return", error));
+                }
                 runAbortController?.abort();
                 return;
               }
@@ -2645,7 +2675,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           flushPendingTools();
           if (!assembled) {
             messageSegments = completionMessageSegments(messageSegments, {
-              allowSilentEmpty: run.trigger === "bot_message",
+              allowSilentEmpty: allowSilentPeerMessage,
+              emptyResponseText,
             });
           }
           const blocks = redactBlocks(messageSegments, runSecrets);
@@ -2667,6 +2698,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          if (run.trigger === "bot_message" && text) {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              text,
+            ).catch((error) => console.error("bot message result return", error));
+          }
           if (bot.notifyOnFinish && text) {
             await notifyRun(deps, run, {
               kind: "completion",
@@ -2726,6 +2765,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          if (run.trigger === "bot_message") {
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              `Could not complete the delegated request: ${message}`,
+              "status",
+            ).catch((returnError) => console.error("bot message failure return", returnError));
+          }
           if (bot.notifyOnFinish) {
             await notifyRun(deps, run, {
               kind: "failure",
@@ -2848,11 +2896,21 @@ function computerRetryDelay(fence: number): number {
 
 export function completionMessageSegments(
   segments: MessageBlock[],
-  options?: { allowSilentEmpty?: boolean },
+  options?: { allowSilentEmpty?: boolean; emptyResponseText?: string },
 ): MessageBlock[] {
-  if (segments.length > 0) return segments;
+  const fallback = options?.emptyResponseText?.trim() || "done.";
+  if (segments.length > 0) {
+    if (
+      !options?.allowSilentEmpty &&
+      options?.emptyResponseText !== undefined &&
+      !segments.some((segment) => segment.kind === "text" && segment.text)
+    ) {
+      return [...segments, { kind: "text", text: fallback }];
+    }
+    return segments;
+  }
   if (options?.allowSilentEmpty) return [];
-  return [{ kind: "text", text: "done." }];
+  return [{ kind: "text", text: fallback }];
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */

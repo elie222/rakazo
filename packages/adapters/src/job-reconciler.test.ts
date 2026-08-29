@@ -1,11 +1,14 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
-import type { Pool, PrismaClient } from "@rakazo/db";
+import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { returnBotMessageOutcome } from "./bot-messages.js";
 import {
   createJobReconciler,
   createPostgresReconciliationLeadership,
   type ReconciliationLeadership,
 } from "./job-reconciler.js";
+
+vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
 
 function publisher() {
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
@@ -261,6 +264,71 @@ describe("createJobReconciler", () => {
     expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(leadership.release).toHaveBeenCalledOnce();
+  });
+
+  it("retries terminal bot outcomes that were not returned", async () => {
+    const terminalRun = {
+      id: "run-terminal",
+      workspaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "completed",
+      error: null,
+      bot: { name: "Researcher" },
+    };
+    const runFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([terminalRun])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([terminalRun]);
+    const prisma = {
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      message: {
+        findFirst: vi.fn(async () => ({ blocks: [{ kind: "text", text: "Finished." }] })),
+      },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true).mockResolvedValueOnce(false);
+
+    const reconciler = createJobReconciler({ prisma, jobs, events }, { batchSize: 1 });
+
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+    await reconciler.reconcileOnce();
+
+    expect(runFindMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+        where: {
+          trigger: "bot_message",
+          status: { in: ["completed", "failed"] },
+          botOutcomeReturnedAt: null,
+        },
+      }),
+    );
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      "Finished.",
+      "result",
+    );
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: terminalRun.id, botOutcomeReturnedAt: null },
+        data: { updatedAt: expect.any(Date) },
+      }),
+    );
+    expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
   });
 });
 

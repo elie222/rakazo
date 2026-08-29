@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -114,16 +115,74 @@ describe("graphical computer spec", () => {
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
     const browser = readFileSync(path.join(root, "rakazo-browser"), "utf8");
+    const desktop = readFileSync(path.join(root, "rakazo-browser.desktop"), "utf8");
     expect(dockerfile).toMatch(/chromium/);
+    expect(dockerfile).toMatch(/rakazo-browser\.desktop/);
     expect(dockerfile).toMatch(/control.py/);
     expect(dockerfile).toMatch(/USER 1000:1000/);
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/SingletonLock/);
+    expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop/);
+    expect(start).toMatch(/register_browser_handler x-scheme-handler\/http/);
+    expect(start).toMatch(/register_browser_handler x-scheme-handler\/https/);
+    expect(start).toMatch(/register_browser_handler text\/html/);
+    expect(start).toMatch(/xdg-mime query default/);
+    expect(start).toMatch(/failed to register rakazo-browser/);
+    expect(start).toMatch(/failed to set default web browser/);
+    expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
+    expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
+    expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
+    expect(browser).toMatch(/USER_DATA_DIR_SET/);
+    expect(desktop).toMatch(/Exec=\/usr\/local\/bin\/rakazo-browser %U/);
+    expect(desktop).toMatch(/x-scheme-handler\/http/);
+    expect(desktop).toMatch(/x-scheme-handler\/https/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "selects a display-specific browser profile and preserves explicit profiles",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-wrapper-"));
+      const bin = path.join(temp, "bin");
+      const capture = path.join(temp, "args");
+      const home = path.join(temp, "home");
+      const chromium = path.join(bin, "chromium");
+      mkdirSync(bin);
+      writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@" > "$RAKAZO_TEST_ARGS"\n');
+      chmodSync(chromium, 0o755);
+
+      const run = (display: string, args: string[] = []) => {
+        const result = spawnSync("bash", [path.join(root, "rakazo-browser"), ...args], {
+          env: {
+            ...process.env,
+            DISPLAY: display,
+            HOME: home,
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        return readFileSync(capture, "utf8").trim().split(/\r?\n/);
+      };
+
+      try {
+        expect(run(":1")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium`);
+        expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
+        const explicit = run(":3", [`--user-data-dir=${home}/custom-profile`]);
+        expect(explicit).toContain(`--user-data-dir=${home}/custom-profile`);
+        expect(explicit).not.toContain(
+          `--user-data-dir=${home}/.browser-profiles/chromium-screen-3`,
+        );
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("keeps container names stable so a bot can resume", () => {
     expect(containerNameFor("bot_1")).toBe("rakazo-bot-bot_1");
@@ -262,8 +321,10 @@ describe("graphical computer spec", () => {
           "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'click', '--repeat', '3', '4'], ':1')",
           "assert allow(['env', 'DISPLAY=:1', 'xdotool', 'type', '--clearmodifiers', '--', 'hi'], ':1')",
           "assert allow(['env', 'DISPLAY=:2', 'xdg-open', 'https://example.com'], ':2')",
-          "assert allow(['env', 'DISPLAY=:1', 'chromium', 'https://example.com'], ':1')",
           "assert allow(['env', 'DISPLAY=:1', 'rakazo-browser'], ':1')",
+          "assert allow(['env', 'DISPLAY=:2', 'rakazo-browser', 'https://example.com'], ':2')",
+          "assert allow(['env', 'DISPLAY=:1', 'xterm'], ':1')",
+          "assert not allow(['env', 'DISPLAY=:1', 'chromium', 'https://example.com'], ':1')",
           "assert not allow(['bash', '-c', 'id'], ':1')",
           "assert not allow(['env', 'DISPLAY=:1', 'bash', '-c', 'id'], ':1')",
           "assert not allow(['env', 'DISPLAY=:1', '/bin/sh', '-c', 'id'], ':1')",

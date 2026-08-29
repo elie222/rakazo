@@ -463,6 +463,7 @@ model Run {
   routine       Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
   startedAt     DateTime?
   completedAt   DateTime?
+  botOutcomeReturnedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   attempts      Attempt[]
@@ -472,6 +473,7 @@ model Run {
   @@unique([workspaceId, clientNonce])
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
+  @@index([botOutcomeReturnedAt, status])
   @@index([workspaceId, botId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
