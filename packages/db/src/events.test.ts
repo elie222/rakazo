@@ -750,6 +750,131 @@ describe("answerRunInput", () => {
     ).resolves.toBe(false);
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
+
+  it("stores secret asks without writing plaintext to the task prompt", async () => {
+    const fanout = new TestFanout();
+    const store = vi.fn().mockResolvedValue(undefined);
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Enter your code",
+              input: "secret",
+              status: "pending",
+            },
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      task: { updateMany: vi.fn() },
+      externalEffect: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "123456",
+        },
+        fanout,
+        { store },
+      ),
+    ).resolves.toBe(true);
+
+    expect(store).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        plaintext: "123456",
+      }),
+    );
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(tx.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: {
+        runId: "run-1",
+        workspaceId: "workspace-1",
+        kind: "request_secret",
+        status: "intended",
+      },
+      data: { status: "approved" },
+    });
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        blocks: [
+          {
+            kind: "ask",
+            text: "Enter your code",
+            input: "secret",
+            status: "answered",
+            answer: "",
+          },
+        ],
+      },
+    });
+  });
+
+  it("rejects secret asks when no run secret writer is configured", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Enter your code",
+              input: "secret",
+              status: "pending",
+            },
+          ],
+        }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        updateMany: vi.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(prisma, {
+        workspaceId: "workspace-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        messageId: "message-1",
+        answeredByUserId: "user-1",
+        answer: "123456",
+      }),
+    ).resolves.toBe(false);
+
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendUserMessage", () => {
@@ -915,10 +1040,10 @@ describe("clearThread", () => {
       cancelledRunIds: ["run-1"],
     });
     expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
-      where: { botId: "bot-1" },
+      where: { runId: { in: ["run-1"] } },
     });
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
-      where: { executionBotId: "bot-1" },
+      where: { executionRunId: { in: ["run-1"] } },
       data: {
         executionRunId: null,
         executionBotId: null,
@@ -935,6 +1060,77 @@ describe("clearThread", () => {
       },
     });
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 0 }));
+  });
+
+  it("scopes group clear lease cleanup to cancelled run ids", async () => {
+    const fanout = new TestFanout();
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
+          .mockResolvedValue({ nextEventSeq: 1 }),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "group-run-1", taskId: "task-1" },
+          { id: "group-run-2", taskId: "task-2" },
+        ]),
+        updateMany: vi.fn(),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      computerExecutionLease: { deleteMany: vi.fn() },
+      computer: { updateMany: vi.fn() },
+      message: { deleteMany: vi.fn() },
+      event: {
+        deleteMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({
+          ...event(0),
+          type: "thread.cleared",
+        }),
+      },
+      chatGroup: { update: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      clearThread(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          threadId: "thread-group",
+          botId: "bot-1",
+          groupId: "group-1",
+        },
+        fanout,
+      ),
+    ).resolves.toMatchObject({ cancelledRunIds: ["group-run-1", "group-run-2"] });
+
+    expect(tx.run.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          threadId: "thread-group",
+          workspaceId: "workspace-1",
+        }),
+      }),
+    );
+    expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["group-run-1", "group-run-2"] } },
+    });
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
+      data: {
+        executionRunId: null,
+        executionBotId: null,
+        executionLeaseExpiresAt: null,
+      },
+    });
+    expect(tx.computerExecutionLease.deleteMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ botId: expect.anything() }) }),
+    );
   });
 });
 

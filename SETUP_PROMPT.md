@@ -1,6 +1,63 @@
 # Set up Rakazo with a coding agent
 
-Copy the prompt below into a coding agent. It sets up the local web app first; Electron is an optional final step.
+Copy one of the prompts below into a coding agent.
+
+## Published images (no checkout)
+
+Prefer this when the user wants a running web UI with Docker only (no Node/pnpm clone).
+
+```text
+Set up Rakazo from published GHCR images and leave the web UI running.
+
+Work like a careful onboarding engineer: perform the setup yourself, explain only decisions or blockers, and verify the product through the UI.
+
+Safety rules:
+
+- Never overwrite an existing `.env`. If one exists, inspect only which keys are present (never print values), preserve it, and ask before changing existing values.
+- Never print, log, commit, or paste secrets into tracked files.
+- Do not kill unrelated processes or containers to free ports. Identify conflicts and ask before stopping anything.
+- Treat model or integration credentials as security-sensitive.
+
+Before making changes, ask me these concise questions:
+
+1. Which directory should contain the Rakazo folder (or use the current directory)?
+2. How should models be connected?
+   - Add a deployment-wide `OPENROUTER_API_KEY` to `.env`.
+   - Connect during Rakazo onboarding with a provider API key or with ChatGPT Plus/Pro, GitHub Copilot, or SuperGrok / X Premium.
+   - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
+3. Do I want remote computers instead of local Docker? If yes, choose E2B (`E2B_API_KEY`), Daytona (`DAYTONA_API_KEY`), or Box (`BOX_API_KEY`) and set `SANDBOX_PROVIDER` accordingly. If no, keep the default `SANDBOX_PROVIDER=docker` (local computers via the in-stack supervisor).
+
+Do not ask me to invent secrets; generate strong random values with openssl yourself.
+
+Preflight:
+
+- Verify Docker Engine and the Compose plugin are installed and the daemon is running.
+- Check whether `127.0.0.1` ports 3100 and 5173 are available.
+
+Setup:
+
+1. Create the directory if needed and enter it.
+2. Download only these two files (do not clone the repository):
+   - https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.images.yml
+   - https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/.env.images.example
+3. If `.env` does not exist, copy `.env.images.example` to `.env`. Generate secrets with openssl into shell variables (including `SANDBOX_SUPERVISOR_TOKEN`), abort if any are empty (`: "${VAR:?}"`), then write them into `.env` with portable `sed -i.bak` (see comments in the example file). Keep `SANDBOX_PROVIDER=docker` unless I chose a remote computer provider. Add only the model key I selected.
+4. Run:
+   `docker compose --env-file .env -f docker-compose.images.yml pull`
+   `docker compose --env-file .env -f docker-compose.images.yml up -d`
+5. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64). Do not pin `latest` unless that tag exists in GHCR.
+
+Verification:
+
+- Request `http://127.0.0.1:3100/health`. Require `ok: true` and `sandbox: "docker"` (or the remote provider you configured). A missing `SANDBOX_SUPERVISOR_TOKEN` is a setup failure: Compose will not start the supervisor; restore the token and recreate the stack. Do not treat `sandbox: "none"` as success for this path.
+- Open `http://127.0.0.1:5173`, create a local test account with fake data, and complete first-run onboarding.
+- If a model is connected, send a harmless test message. Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
+
+When finished, report the directory path, effective Docker/Compose versions, configured options without secrets, app URL, health result, and how to stop without deleting volumes (`docker compose … down` without `-v`).
+```
+
+## Local source checkout (pnpm)
+
+Use this for development, Docker sandboxes on the host, or Electron.
 
 ```text
 Set up Rakazo locally and leave it running in a usable state.

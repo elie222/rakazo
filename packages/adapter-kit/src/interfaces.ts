@@ -181,7 +181,10 @@ export interface SemanticMemoryProvider {
 
 export interface AgentRuntime {
   describe(): AdapterDescriptor<AgentRuntimeCapabilities>;
-  run(request: AgentRunRequest, context: AdapterContext): AsyncIterable<AgentRuntimeEvent>;
+  run(
+    request: AgentRunRequest,
+    context?: Partial<AdapterContext>,
+  ): AsyncIterable<AgentRuntimeEvent>;
   abort(runId: string): Promise<void>;
 }
 
@@ -230,7 +233,8 @@ export interface ArtifactStore {
 
 export interface SecretStore {
   describe(): AdapterDescriptor<{ rotate: boolean }>;
-  put(plaintext: string, context: AdapterContext): Promise<SecretRecord>;
+  /** Optional recordId binds ciphertext AAD to the persisted secret/session row id. */
+  put(plaintext: string, context: AdapterContext, recordId?: string): Promise<SecretRecord>;
   get(id: string, context: AdapterContext): Promise<string>;
   redact(value: string): string;
 }

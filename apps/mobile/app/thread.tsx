@@ -13,6 +13,7 @@ import {
   type ComposerMention,
   isApprovalAskBlock,
   isRunTerminalEvent,
+  isSecretAskBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
   resolveComposerSendPlan,
@@ -24,6 +25,7 @@ import {
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import {
   MarkdownArtifactPreview,
@@ -46,6 +48,7 @@ import {
 } from "../lib/api";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { saveLastBotId } from "../lib/last-bot";
 import {
   type PickedAttachment,
   pickDocuments,
@@ -449,8 +452,9 @@ export default function Thread() {
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
     useCallback(() => {
+      if (botId) void saveLastBotId(botId).catch(() => undefined);
       markReadIfVisible();
-    }, [markReadIfVisible]),
+    }, [botId, markReadIfVisible]),
   );
 
   useEffect(() => {
@@ -778,10 +782,12 @@ export default function Thread() {
   }
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
+  const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20, paddingBottom: 24 }}>
       {error ? <Text style={{ color: "#8E8E93", marginTop: 12 }}>{error}</Text> : null}
+      {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
       <ScrollView
         ref={scroll}
         style={{ flex: 1, marginTop: 8 }}
@@ -1361,11 +1367,25 @@ function MessageBubble({
 }) {
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
+  const cardBotId = message.botId ?? botId;
+  const appConnectBlocks = message.blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "app_connect" }> =>
+      block.kind === "app_connect",
+  );
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
       block.kind === "ask" && !isApprovalAskBlock(block),
   );
-  if (ask) return <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />;
+  if (ask) {
+    return (
+      <View style={{ gap: 8, width: "100%" }}>
+        <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        ))}
+      </View>
+    );
+  }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
     const from = memberName(members, handoff.fromBotId) ?? "bot";
@@ -1507,45 +1527,63 @@ function MessageBubble({
       </Pressable>
     );
   }
+  if (appConnectBlocks.length > 0 && appConnectBlocks.length === message.blocks.length) {
+    return (
+      <View style={{ gap: 8, width: "100%" }}>
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        ))}
+      </View>
+    );
+  }
   const askBlock = message.blocks.find(isApprovalAskBlock);
   if (askBlock?.kind === "ask" && askBlock.actions?.length) {
     return (
-      <View
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          borderWidth: 1,
-          borderColor: "#232326",
-          backgroundColor: "#17171A",
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-      >
-        {askBlock.text ? (
-          <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>{askBlock.text}</Text>
-        ) : null}
-        {askBlock.detail ? (
-          <Text
-            style={{
-              color: "#85858A",
-              marginTop: 8,
-              fontSize: 12.5,
-              fontFamily: "Menlo",
-              lineHeight: 20,
-            }}
-          >
-            {askBlock.detail}
-          </Text>
-        ) : null}
-        {askBlock.status === "answered" ? (
-          <Text style={{ color: "#4ECB71", marginTop: 12, fontSize: 13.5, fontWeight: "600" }}>
-            {formatApprovalAnswer(askBlock.answer)}
-          </Text>
-        ) : canAnswer && onAnswer ? (
-          <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
-        ) : (
-          <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>No longer active</Text>
-        )}
+      <View style={{ gap: 8, width: "100%" }}>
+        <View
+          style={{
+            width: "90%",
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: "#232326",
+            backgroundColor: "#17171A",
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+          }}
+        >
+          {askBlock.text ? (
+            <Text style={{ color: "#ECECEE", fontSize: 15.5, lineHeight: 23 }}>
+              {askBlock.text}
+            </Text>
+          ) : null}
+          {askBlock.detail ? (
+            <Text
+              style={{
+                color: "#85858A",
+                marginTop: 8,
+                fontSize: 12.5,
+                fontFamily: "Menlo",
+                lineHeight: 20,
+              }}
+            >
+              {askBlock.detail}
+            </Text>
+          ) : null}
+          {askBlock.status === "answered" ? (
+            <Text style={{ color: "#4ECB71", marginTop: 12, fontSize: 13.5, fontWeight: "600" }}>
+              {formatApprovalAnswer(askBlock.answer)}
+            </Text>
+          ) : canAnswer && onAnswer ? (
+            <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
+          ) : (
+            <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>
+              No longer active
+            </Text>
+          )}
+        </View>
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        ))}
       </View>
     );
   }
@@ -1647,47 +1685,61 @@ function MessageBubble({
             </Pressable>
           ),
         )}
+        {appConnectBlocks.map((block, index) => (
+          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        ))}
       </View>
     );
   }
   const speaker = message.role === "bot" ? memberName(members, message.botId) : undefined;
   return (
-    <View
-      style={{
-        flexShrink: 1,
-        minWidth: 0,
-        maxWidth: "100%",
-        backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
-        padding: 12,
-        borderRadius: 20,
-      }}
-    >
-      {speaker ? (
-        <Text style={{ color: "#85858A", fontSize: 12.5, fontWeight: "600", marginBottom: 4 }}>
-          {speaker}
-        </Text>
-      ) : null}
-      {replyPreview ? (
-        <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 6 }} numberOfLines={2}>
-          {previewMessageText(replyPreview)}
-        </Text>
-      ) : null}
-      {message.role === "user" ? (
-        <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
-          {blockText(message)}
-        </Text>
-      ) : (
-        <>
-          <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+    <View style={{ gap: 8, width: "100%" }}>
+      <View
+        style={{
+          flexShrink: 1,
+          minWidth: 0,
+          maxWidth: "100%",
+          backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
+          padding: 12,
+          borderRadius: 20,
+        }}
+      >
+        {speaker ? (
+          <Text style={{ color: "#85858A", fontSize: 12.5, fontWeight: "600", marginBottom: 4 }}>
+            {speaker}
+          </Text>
+        ) : null}
+        {replyPreview ? (
+          <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 6 }} numberOfLines={2}>
+            {previewMessageText(replyPreview)}
+          </Text>
+        ) : null}
+        {message.role === "user" ? (
+          <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
             {blockText(message)}
-          </ChatMarkdown>
-          {onSpeak ? (
-            <Pressable onPress={onSpeak} hitSlop={8} style={{ marginTop: 8 }}>
-              <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
-            </Pressable>
-          ) : null}
-        </>
-      )}
+          </Text>
+        ) : (
+          <>
+            <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+              {blockText(message)}
+            </ChatMarkdown>
+            {onSpeak ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Speak message"
+                onPress={onSpeak}
+                hitSlop={8}
+                style={{ marginTop: 8 }}
+              >
+                <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
+              </Pressable>
+            ) : null}
+          </>
+        )}
+      </View>
+      {appConnectBlocks.map((block, index) => (
+        <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+      ))}
     </View>
   );
 }
@@ -1705,14 +1757,16 @@ function AskBlock({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const answered = ask.status === "answered";
+  const secretInput = isSecretAskBlock(ask);
 
   async function submit() {
-    const text = answer.trim();
-    if (!text || submitting) return;
+    if (submitting) return;
+    if (secretInput ? answer.length === 0 : !answer.trim()) return;
+    const submitValue = secretInput ? answer : answer.trim();
     setSubmitting(true);
     setError(null);
     try {
-      await onAnswer(text);
+      await onAnswer(submitValue);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not send answer");
     } finally {
@@ -1736,15 +1790,19 @@ function AskBlock({
       <Text style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "600" }}>{ask.text}</Text>
       {ask.detail ? <Text style={{ color: "#85858A", fontSize: 13.5 }}>{ask.detail}</Text> : null}
       {answered ? (
-        <Text style={{ color: "#4ECB71", fontSize: 14 }}>Answered: {ask.answer ?? "Done"}</Text>
+        <Text style={{ color: "#4ECB71", fontSize: 14 }}>
+          {secretInput ? "Submitted" : `Answered: ${ask.answer ?? "Done"}`}
+        </Text>
       ) : canAnswer ? (
         <>
           <TextInput
-            accessibilityLabel="Answer"
+            accessibilityLabel={secretInput ? "Code" : "Answer"}
             value={answer}
             onChangeText={setAnswer}
-            placeholder="Type your answer"
+            placeholder={secretInput ? "Code" : "Type your answer"}
             placeholderTextColor="#6C6C70"
+            secureTextEntry={secretInput}
+            autoComplete="off"
             onSubmitEditing={() => void submit()}
             style={{
               minHeight: 42,
@@ -1759,13 +1817,13 @@ function AskBlock({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Send answer"
-            disabled={!answer.trim() || submitting}
+            disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
             onPress={() => void submit()}
             style={{
               alignSelf: "flex-end",
               borderRadius: 999,
               backgroundColor: "#ECECEE",
-              opacity: !answer.trim() || submitting ? 0.5 : 1,
+              opacity: (secretInput ? answer.length === 0 : !answer.trim()) || submitting ? 0.5 : 1,
               paddingHorizontal: 16,
               paddingVertical: 9,
             }}

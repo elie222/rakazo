@@ -116,13 +116,14 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it("tells the sender not to wait for a reply", async () => {
+  it("tells the sender to continue independent work", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
       bot_id: "bot-target",
       message: "ping",
     });
-    expect(sent.ok && sent.note).toContain("asynchronous");
+    expect(sent.ok && sent.note).toContain("async");
+    expect(sent.ok && sent.note).toContain("Continue independent work");
   });
 
   it("refuses a bot messaging itself", async () => {

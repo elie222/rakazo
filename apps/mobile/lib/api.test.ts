@@ -501,6 +501,32 @@ describe("mobile thread event reduction", () => {
     expect(next?.cursor).toBe(10);
   });
 
+  it("keeps a failed member run's error while another member run is still active", () => {
+    const runA = { id: "run-a", status: "running" };
+    const runB = { id: "run-b", status: "running" };
+    const initial: MobileSnapshot = {
+      ...snapshot([
+        {
+          ...mobileMessage("progress:run-b", [{ kind: "progress", text: "B" }]),
+          runId: runB.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.failed",
+      seq: 11,
+      runId: runB.id,
+      payload: { error: "member exploded" },
+    });
+
+    expect(next?.activeRuns).toEqual([runA]);
+    expect(next?.run).toEqual({ id: runB.id, status: "failed", error: "member exploded" });
+    expect(next?.messages).toEqual([]);
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);

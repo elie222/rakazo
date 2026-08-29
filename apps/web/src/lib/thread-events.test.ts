@@ -17,6 +17,7 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  threadRunError,
   userHoldsComputerControl,
 } from "./thread-events.js";
 
@@ -278,6 +279,19 @@ describe("thread event reduction", () => {
     expect(started?.run?.trigger).toBe("bot_message");
   });
 
+  it("preserves webhook when event-sourcing an inbound wake", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        runId: "webhook-run-1",
+        payload: { trigger: "webhook" },
+      }),
+    );
+
+    expect(started?.run?.trigger).toBe("webhook");
+  });
+
   it("marks the run as waiting when computer takeover is requested", () => {
     const run = threadRun("run-1");
     const initial: ThreadSnapshot = {
@@ -520,6 +534,112 @@ describe("thread event reduction", () => {
     expect(next?.run).toEqual(runB);
     expect(next?.activeRuns).toEqual([runB]);
     expect(next?.cursor).toBe(10);
+  });
+
+  it("keeps a failed run and its error so the thread can surface the failure", () => {
+    const failing = threadRun("run-a");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        { ...message("progress:run-a", [{ kind: "progress", text: "A" }]), runId: failing.id },
+      ]),
+      run: failing,
+    };
+    const failed = event({
+      type: "run.failed",
+      seq: 11,
+      runId: failing.id,
+      payload: { error: "Provider is not configured: openrouter" },
+    });
+
+    const next = reduceThreadSnapshot(initial, failed);
+
+    expect(next?.messages).toEqual([]);
+    expect(next?.run).toMatchObject({
+      id: failing.id,
+      status: "failed",
+      error: "Provider is not configured: openrouter",
+    });
+    expect(threadRunError(next)).toBe("Provider is not configured: openrouter");
+    expect(threadRunError(next, new Set([failing.id]))).toBeNull();
+    expect(threadRunError(next, new Set(["other-run"]))).toBe(
+      "Provider is not configured: openrouter",
+    );
+  });
+
+  it("keeps the error when a member run fails while another member is still running", () => {
+    const runA = threadRun("run-a", "bot-a");
+    const runB = threadRun("run-b", "bot-b");
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      run: runA,
+      activeRuns: [runA, runB],
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "run.failed",
+        seq: 13,
+        botId: "bot-b",
+        runId: runB.id,
+        payload: { error: "member exploded" },
+      }),
+    );
+
+    expect(next?.activeRuns).toEqual([runA]);
+    expect(next?.run).toMatchObject({ id: runB.id, status: "failed", error: "member exploded" });
+    expect(threadRunError(next)).toBe("member exploded");
+  });
+
+  it("keeps a group failure visible when another member starts before dismiss", () => {
+    const failed = {
+      ...threadRun("run-b", "bot-b"),
+      status: "failed" as const,
+      error: "member exploded",
+    };
+    const runA = threadRun("run-a", "bot-a");
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      groupId: "group-1",
+      run: failed,
+      activeRuns: [runA],
+    };
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "run.started",
+        seq: 14,
+        botId: "bot-c",
+        runId: "run-c",
+      }),
+    );
+
+    expect(next?.run).toMatchObject({ id: failed.id, status: "failed", error: "member exploded" });
+    expect(next?.activeRuns).toEqual([
+      runA,
+      expect.objectContaining({ id: "run-c", botId: "bot-c", status: "running" }),
+    ]);
+    expect(threadRunError(next)).toBe("member exploded");
+  });
+
+  it("clears the run and reports no error when it completes or fails without a message", () => {
+    const finishing = threadRun("run-a");
+    const initial: ThreadSnapshot = { ...snapshot([]), run: finishing };
+
+    const completed = reduceThreadSnapshot(
+      initial,
+      event({ type: "run.completed", seq: 12, runId: finishing.id }),
+    );
+    const blank = reduceThreadSnapshot(
+      initial,
+      event({ type: "run.failed", seq: 12, runId: finishing.id, payload: { error: "  " } }),
+    );
+
+    expect(completed?.run).toBeNull();
+    expect(threadRunError(completed)).toBeNull();
+    expect(blank?.run).toBeNull();
+    expect(threadRunError(blank)).toBeNull();
   });
 
   it("applies the durable waiting-input run transition without a refresh", () => {

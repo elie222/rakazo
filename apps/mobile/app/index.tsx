@@ -60,7 +60,10 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [organizeTarget, setOrganizeTarget] = useState<{
+    kind: "bot" | "group";
+    id: string;
+  } | null>(null);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
     active: [],
@@ -193,21 +196,32 @@ export default function Home() {
   }, [query, searching]);
 
   const visible = useMemo(() => filterBots(bots, query), [bots, query]);
+  const visibleGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups.filter((group) =>
+      `${group.name} ${group.preview}`.toLowerCase().includes(needle),
+    );
+  }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
       return searchHits.map((hit) => ({ type: "search", hit }));
     }
-    const items: InboxItem[] = groupBotsForSidebar(visible, botSections).flatMap((group) => [
+    const chats = [
+      ...visible.map((chat) => ({ type: "bot" as const, bot: chat, ...chat })),
+      ...visibleGroups.map((chat) => ({ type: "group" as const, group: chat, ...chat })),
+    ];
+    return groupBotsForSidebar(chats, botSections).flatMap((group) => [
       ...(group.title ? [{ type: "heading" as const, key: group.key, title: group.title }] : []),
-      ...group.bots.map((bot) => ({ type: "bot" as const, bot })),
+      ...group.bots,
     ]);
-    for (const group of groups) {
-      items.push({ type: "group", group });
-    }
-    return items;
-  }, [botSections, groups, query, searching, searchHits, visible]);
+  }, [botSections, query, searching, searchHits, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
-  const organizeBot = bots.find((bot) => bot.id === organizeBotId) ?? null;
+  const organizeChat = organizeTarget
+    ? organizeTarget.kind === "bot"
+      ? bots.find((bot) => bot.id === organizeTarget.id)
+      : groups.find((group) => group.id === organizeTarget.id)
+    : null;
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -344,23 +358,35 @@ export default function Home() {
           ) : item.type === "heading" ? (
             <Text style={styles.sectionHeading}>{item.title}</Text>
           ) : item.type === "group" ? (
-            <GroupRow group={item.group} />
+            <GroupRow
+              group={item.group}
+              onLongPress={() => setOrganizeTarget({ kind: "group", id: item.group.id })}
+            />
           ) : (
-            <BotRow bot={item.bot} onLongPress={() => setOrganizeBotId(item.bot.id)} />
+            <BotRow
+              bot={item.bot}
+              onLongPress={() => setOrganizeTarget({ kind: "bot", id: item.bot.id })}
+            />
           )
         }
       />
-      {organizeBot ? (
+      {organizeChat && organizeTarget ? (
         <BotOrganizeModal
-          bot={organizeBot}
+          bot={organizeChat}
           sections={botSections}
-          onClose={() => setOrganizeBotId(null)}
+          onClose={() => setOrganizeTarget(null)}
           onUpdate={async (update) => {
-            await rpc("bots/update", { botId: organizeBot.id, ...update });
+            await rpc(`${organizeTarget.kind}s/update`, {
+              [`${organizeTarget.kind}Id`]: organizeChat.id,
+              ...update,
+            });
             await loadBots();
           }}
           onCreateSection={async (name) => {
-            await rpc("botSections/create", { botId: organizeBot.id, name });
+            await rpc("botSections/create", {
+              [`${organizeTarget.kind}Id`]: organizeChat.id,
+              name,
+            });
             await loadBots();
           }}
         />
@@ -508,7 +534,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <BotAvatar color={bot.color || FALLBACK_COLOR} status={bot.status} />
+      <BotAvatar color={bot.color || FALLBACK_COLOR} identity={bot.id} status={bot.status} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <View style={styles.titleRow}>
@@ -540,7 +566,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
   );
 }
 
-function GroupRow({ group }: { group: MobileGroup }) {
+function GroupRow({ group, onLongPress }: { group: MobileGroup; onLongPress: () => void }) {
   const router = useRouter();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
@@ -553,6 +579,8 @@ function GroupRow({ group }: { group: MobileGroup }) {
       onPress={() =>
         router.push({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } })
       }
+      onLongPress={onLongPress}
+      accessibilityHint="Long press to pin or move to a section"
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
       <GroupAvatar members={group.members} size={54} />

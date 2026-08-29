@@ -60,11 +60,11 @@ export function App() {
           <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
           <Route
             path="/sign-in"
-            element={user ? <Navigate to="/app" replace /> : <AuthPage mode="in" />}
+            element={user ? <Navigate to="/app" replace /> : <AuthPage key="in" mode="in" />}
           />
           <Route
             path="/sign-up"
-            element={user ? <Navigate to="/onboarding" replace /> : <AuthPage mode="up" />}
+            element={user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />}
           />
           <Route
             path="/onboarding"

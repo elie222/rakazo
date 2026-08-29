@@ -2,7 +2,13 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "android-app/**"
+      - ".github/workflows/android-app.yml"
   pull_request:
+    paths-ignore:
+      - "android-app/**"
+      - ".github/workflows/android-app.yml"
 
 permissions:
   contents: read

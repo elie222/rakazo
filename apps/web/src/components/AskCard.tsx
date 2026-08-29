@@ -2,12 +2,17 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { isApprovalAskBlock } from "@rakazo/core";
+import { isApprovalAskBlock, isSecretAskBlock } from "@rakazo/core";
 import { useState } from "react";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
-function formatAnsweredState(answer: string | undefined, approval: boolean): string {
+function formatAnsweredState(
+  answer: string | undefined,
+  approval: boolean,
+  secret: boolean,
+): string {
+  if (secret) return t`Submitted`;
   if (!answer) return t`Answered`;
   if (!approval) return t`Answered: ${answer}`;
   if (answer === "allow") return t`Allowed once`;
@@ -39,14 +44,16 @@ export function AskCard({
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
+  const secretInput = isSecretAskBlock(block);
 
   async function submitAnswer(value: string) {
-    const text = value.trim();
-    if (!text || submitting) return;
-    setPendingAction(text);
+    if (submitting) return;
+    if (secretInput ? value.length === 0 : !value.trim()) return;
+    const submitValue = secretInput ? value : value.trim();
+    setPendingAction(secretInput ? "submit" : submitValue);
     setError(null);
     try {
-      await onAnswer(text);
+      await onAnswer(submitValue);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not submit this answer`);
     } finally {
@@ -66,7 +73,7 @@ export function AskCard({
       ) : null}
       {block.status === "answered" ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
-          {formatAnsweredState(block.answer, Boolean(approvalActions))}
+          {formatAnsweredState(block.answer, Boolean(approvalActions), secretInput)}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">
@@ -94,6 +101,31 @@ export function AskCard({
             </button>
           ))}
         </div>
+      ) : secretInput ? (
+        <form
+          className="mt-3.5 flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitAnswer(answer);
+          }}
+        >
+          <input
+            aria-label={t`Code`}
+            type="password"
+            autoComplete="off"
+            value={answer}
+            onChange={(event) => setAnswer(event.target.value)}
+            placeholder={t`Code`}
+            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
+          />
+          <button
+            type="submit"
+            disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
+            className="self-start rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
+          >
+            {submitting ? <Trans>Sending…</Trans> : <Trans>Submit</Trans>}
+          </button>
+        </form>
       ) : editing ? (
         <form
           className="mt-3.5 flex flex-col gap-2"

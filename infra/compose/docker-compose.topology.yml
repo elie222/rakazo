@@ -37,10 +37,10 @@ services:
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"
       SUPERVISOR_PORT: "7091"
-      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token
+      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token-at-least-32-characters
       DOCKER_SOCKET: /var/run/docker.sock
       RAKAZO_COMPUTER_IMAGE: ${TOPOLOGY_COMPUTER_IMAGE:-rakazo/computer:topology}
-      SANDBOX_SCREEN_NETWORK: internal
+      SANDBOX_SCREEN_NETWORK: isolated
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data
@@ -70,16 +70,18 @@ services:
       DATABASE_URL: postgres://rakazo:topology-only-password@postgres:5432/rakazo
       DATA_DIR: /data
       BETTER_AUTH_SECRET: topology-only-auth-secret-at-least-32-characters
+      SCREEN_PROXY_SECRET: topology-only-screen-proxy-secret-at-least-32-characters
       BETTER_AUTH_URL: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       WEB_ORIGIN: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       ENCRYPTION_KEY: topology-only-encryption-key-at-least-32-characters
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
-      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token
+      SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token-at-least-32-characters
       SIGNUPS_ENABLED: "true"
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
       AGENT_RUNTIME: scripted
       API_PORT: "3100"
+      API_HOST: "0.0.0.0"
     ports:
       - "127.0.0.1:${TOPOLOGY_API_PORT:-3199}:3100"
     volumes:
@@ -100,6 +102,27 @@ services:
       interval: 2s
       timeout: 5s
       retries: 45
+
+  web:
+    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:3100
+      RAKAZO_HOST: localhost
+      SCREEN_PROXY_SECRET: topology-only-screen-proxy-secret-at-least-32-characters
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5173').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   worker:
     image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}

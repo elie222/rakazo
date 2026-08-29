@@ -199,6 +199,7 @@ type LifecycleBot = {
   name: string;
   archivedAt: Date | null;
   computerId?: string | null;
+  webhookSecretId?: string | null;
 };
 
 export async function archiveSpawnedBot(
@@ -356,12 +357,13 @@ export async function destroyBot(
   }
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT id
+      const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
+        SELECT id, "webhookSecretId"
         FROM bots
         WHERE id = ${bot.id} AND "workspaceId" = ${bot.workspaceId}
         FOR UPDATE
       `;
+      const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, workspaceId: bot.workspaceId },
         select: { storageKey: true },
@@ -399,6 +401,11 @@ export async function destroyBot(
         },
       });
       await tx.bot.delete({ where: { id: bot.id } });
+      if (webhookSecretId) {
+        await tx.secret.deleteMany({
+          where: { id: webhookSecretId, kind: "webhook", workspaceId: bot.workspaceId },
+        });
+      }
       if (dedicated) await tx.computer.delete({ where: { id: dedicated.id } });
       return {
         artifactKeys: [

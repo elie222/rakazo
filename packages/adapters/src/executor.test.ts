@@ -433,6 +433,31 @@ description: Prepare standup notes
     );
   });
 
+  it("withholds the deployment key when settings name a different provider", async () => {
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({
+          defaultModelProvider: "anthropic",
+          defaultModelId: "claude-sonnet-5",
+        })),
+      },
+      secret: { findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+      // PI_DEFAULT_PROVIDER is unset here, so this key belongs to OpenRouter.
+      deploymentModelKey: "deployment-openrouter-key",
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    const model = await executor.resolveModel({ userId: "user-1", workspaceId: "ws-1" });
+
+    expect(model.provider).toBe("anthropic");
+    expect(model.apiKey).toBeUndefined();
+  });
+
   it("keeps per-bot thinking when using the workspace default model", async () => {
     const findFirst = vi.fn(async (args: { where: { provider?: string; isDefault?: boolean } }) => {
       if (args.where.isDefault) {

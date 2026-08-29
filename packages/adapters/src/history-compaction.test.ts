@@ -394,9 +394,10 @@ describe("compactHistory", () => {
       expect.objectContaining({ workspaceId: "workspace-1", botId: "bot-1" }),
     );
 
-    const [, context] = harness.runtime.run.mock.calls[0]!;
-    expect(context.workspaceId).toBe("workspace-1");
-    expect(context.userId).toBe("user-1");
+    const context = harness.runtime.run.mock.calls[0]![1];
+    expect(context).toBeDefined();
+    expect(context!.workspaceId).toBe("workspace-1");
+    expect(context!.userId).toBe("user-1");
 
     expect(harness.prisma.thread.updateMany).toHaveBeenCalledWith({
       where: {

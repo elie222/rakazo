@@ -280,6 +280,114 @@ export function resolveExecutionMode(input: {
   };
 }
 
+/**
+ * What the deployment-owner Settings UI should show. Distinct from {@link resolveExecutionMode}:
+ * Compose without the opt-in sidecar is still a Compose install, and source checkouts must never
+ * look like they can one-click apply from the API process (no `.git` in the app image; no Docker
+ * socket either).
+ */
+export type InstallKind = "sidecar" | "compose" | "source";
+
+export interface InstallKindDecision {
+  kind: InstallKind;
+  /** Maps onto ServerUpdateMode for contracts that already use that enum. */
+  mode: ExecutionMode;
+  reason: string | null;
+}
+
+/**
+ * `updaterUrlConfigured` means the API was given `RAKAZO_UPDATER_URL` (Compose prod always sets
+ * this). Reachability requires both URL and token and a live sidecar. A source checkout is only
+ * claimed when there is no Compose updater wiring and `.git` is present on disk.
+ */
+export function resolveInstallKind(input: {
+  updaterUrlConfigured?: boolean;
+  updaterReachable?: boolean;
+  hasCheckout?: boolean;
+  disabled?: boolean;
+}): InstallKindDecision {
+  if (input.disabled === true) {
+    return {
+      kind:
+        input.updaterUrlConfigured === true
+          ? "compose"
+          : input.hasCheckout === true
+            ? "source"
+            : "compose",
+      mode: "unavailable",
+      reason: "Self-update is switched off for this deployment.",
+    };
+  }
+  if (input.updaterReachable === true) {
+    return { kind: "sidecar", mode: "sidecar", reason: null };
+  }
+  if (input.updaterUrlConfigured === true) {
+    return {
+      kind: "compose",
+      mode: "unavailable",
+      reason:
+        "The updater sidecar is not reachable. Start the opt-in `updater` profile, or upgrade from the host with the Compose commands below.",
+    };
+  }
+  if (input.hasCheckout === true) {
+    return {
+      kind: "source",
+      mode: "checkout",
+      reason: "This is a source checkout. Upgrade from a terminal; Settings cannot apply it.",
+    };
+  }
+  return {
+    kind: "compose",
+    mode: "unavailable",
+    reason:
+      "This deployment has no updater sidecar. Upgrade from the host with the Compose commands below, or enable the `updater` profile.",
+  };
+}
+
+/** Exact host commands from docs/self-host.md for Compose on a published release tag. */
+export const COMPOSE_PULL_UPGRADE_COMMANDS = [
+  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web",
+  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never api worker web",
+] as const;
+
+/** Exact host commands from docs/self-host.md for Compose on the default `local` tag. */
+export const COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS = [
+  "git pull",
+  "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+] as const;
+
+/** @deprecated Prefer {@link COMPOSE_PULL_UPGRADE_COMMANDS}; kept for call-site clarity in tests. */
+export const COMPOSE_MANUAL_UPGRADE_COMMANDS = COMPOSE_PULL_UPGRADE_COMMANDS;
+
+/** Exact host commands from docs/self-host.md for source / `pnpm dev` installs. */
+export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
+  "git pull",
+  "pnpm --filter @rakazo/db migrate",
+  "# Restart the API and worker processes",
+] as const;
+
+/**
+ * Host commands Settings should show when the sidecar cannot apply.
+ * Compose picks pull vs rebuild from the current image tag when known; otherwise both documented
+ * paths from self-host.md so a `local` install is not told to `pull` a tag the registry never serves.
+ */
+export function manualUpgradeCommands(
+  kind: InstallKind,
+  options: { imageTag?: string | null } = {},
+): readonly string[] {
+  if (kind === "source") return SOURCE_MANUAL_UPGRADE_COMMANDS;
+  if (kind !== "compose") return [];
+  const tag = options.imageTag?.trim() ?? "";
+  if (tag !== "" && isLocalImageTag(tag)) return COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS;
+  if (tag !== "" && !isLocalImageTag(tag)) return COMPOSE_PULL_UPGRADE_COMMANDS;
+  return [
+    "# Published release tag",
+    ...COMPOSE_PULL_UPGRADE_COMMANDS,
+    "# Local tag (rebuild from checkout)",
+    ...COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS,
+  ];
+}
+
 export interface ComposeInvocation {
   command: string;
   args: string[];

@@ -111,7 +111,7 @@ export class WorkspaceMemoryProviderResolver implements MemoryProviderResolver {
     if (!config) return null;
     const credentials = decodeCredentials(
       config.provider,
-      this.secrets.load(config.secret.ciphertext),
+      this.secrets.load(config.secret.ciphertext, config.secret.id),
     );
     return {
       provider: createMemoryProvider(config.provider, toStringRecord(config.settings), credentials),

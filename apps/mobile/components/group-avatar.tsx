@@ -35,7 +35,14 @@ export const GroupAvatar = memo(function GroupAvatar({
   }
 
   if (members.length === 1) {
-    return <BotAvatar color={firstMember.color} size={size} status={firstMember.status} />;
+    return (
+      <BotAvatar
+        color={firstMember.color}
+        identity={firstMember.botId ?? firstMember.name}
+        size={size}
+        status={firstMember.status}
+      />
+    );
   }
 
   const pair = members.length === 2;
@@ -66,7 +73,12 @@ export const GroupAvatar = memo(function GroupAvatar({
             borderColor: "#121215",
           }}
         >
-          <BotAvatar color={member.color} size={miniSize} status={member.status} />
+          <BotAvatar
+            color={member.color}
+            identity={member.botId ?? member.name}
+            size={miniSize}
+            status={member.status}
+          />
         </View>
       ))}
       {members.length > 3 ? (

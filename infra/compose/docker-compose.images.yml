@@ -1,0 +1,207 @@
+# Pull-based self-host: published GHCR images + Postgres + local Docker computers.
+# Drop this file and .env into any directory, then:
+#   docker compose --env-file .env -f docker-compose.images.yml up -d
+#
+# Tag contract matches docs/self-host.md (edge from main; release tags when published).
+# Default is edge because that tag is published on every main build (linux/amd64 only).
+# Pin a published release tag (vX.Y.Z or latest, when present) for multi-arch and fixed versions.
+# Default SANDBOX_PROVIDER=docker boots a local computer via the in-stack supervisor (no E2B key).
+# Optional: set e2b / daytona / box plus the matching API key for remote computers.
+name: rakazo
+
+services:
+  postgres:
+    image: postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 2g
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rakazo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rakazo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rakazo} -d ${POSTGRES_DB:-rakazo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Pull-only stub so `compose up` fetches the published desktop image without a checkout.
+  computer:
+    image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+    command: ["true"]
+    restart: "no"
+
+  data-init:
+    image: busybox:1
+    command: ["chown", "-R", "1000:1000", "/data"]
+    restart: "no"
+    volumes:
+      - appdata:/data
+
+  # Runs from the app image. Not published as its own image and not exposed on the host:
+  # access to the supervisor is equivalent to control of the Docker host.
+  supervisor:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
+    init: true
+    user: root
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data
+      SUPERVISOR_HOST: "0.0.0.0"
+      SUPERVISOR_PORT: "7091"
+      DOCKER_SOCKET: /var/run/docker.sock
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+      SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
+      SANDBOX_SCREEN_NETWORK: isolated
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - appdata:/data
+    networks:
+      - app
+    depends_on:
+      computer:
+        condition: service_completed_successfully
+      data-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7091/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    restart: unless-stopped
+    command:
+      - bash
+      - -lc
+      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1536m
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      API_HOST: "0.0.0.0"
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: graphile
+      AGENT_RUNTIME: pi
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
+      supervisor:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 2g
+    env_file:
+      - .env
+    environment:
+      BETTER_AUTH_SECRET: ""
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATA_DIR: /data
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      SCREEN_PROXY_SECRET: ""
+      WAKEUP_DRIVER: graphile
+      AGENT_RUNTIME: pi
+    volumes:
+      - appdata:/data
+    networks:
+      - app
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
+      supervisor:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    restart: unless-stopped
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:3100
+      RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
+    ports:
+      - "127.0.0.1:5173:5173"
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
+
+networks:
+  app:
+  data:
+    internal: true

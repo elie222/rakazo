@@ -7,6 +7,8 @@ import {
   completeExternalEffect,
   createApprovedEffectReplayQueue,
   isApprovalPausedResult,
+  isToolPauseResult,
+  replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
 } from "./approval-effect.js";
@@ -143,6 +145,25 @@ describe("claimIntendedEffect", () => {
   });
 });
 
+describe("replaceCompletedExternalEffectResult", () => {
+  it("updates the stored result for a completed effect", async () => {
+    const store = {
+      externalEffect: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const result = { ok: true, submitted: true, connected: true };
+
+    await expect(replaceCompletedExternalEffectResult(store, "effect-1", result)).resolves.toBe(
+      true,
+    );
+    expect(store.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: { id: "effect-1", status: "completed" },
+      data: { result },
+    });
+  });
+});
+
 describe("completeExternalEffect", () => {
   it("does not let a stale worker overwrite a reconciled effect", async () => {
     const store = {
@@ -257,6 +278,20 @@ describe("approved effect resume", () => {
 
     expect(second).toEqual({ executed: false, result: { ok: true, written: true } });
     expect(harness.getDestinationWrites()).toBe(1);
+  });
+});
+
+describe("isToolPauseResult", () => {
+  it("detects approval and secret pauses", () => {
+    expect(isToolPauseResult(approvalPausedToolResult())).toBe(true);
+    expect(
+      isToolPauseResult({
+        kind: "agent_tool_result",
+        terminate: true,
+        details: { secret: "paused" },
+      }),
+    ).toBe(true);
+    expect(isToolPauseResult({ ok: true })).toBe(false);
   });
 });
 

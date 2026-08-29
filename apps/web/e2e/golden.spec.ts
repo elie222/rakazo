@@ -113,21 +113,31 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
-  await page.getByText("+ New routine").click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
     .locator("label:has-text('Instruction') textarea")
     .fill("write a file in your home called notes/result.txt that says routine-ok");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "On a schedule" }).hover();
+  await page.getByRole("menuitem", { name: "Every day", exact: true }).click();
+  const savedRoutine = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
   await page.getByRole("button", { name: "Save" }).click();
+  await savedRoutine;
+  await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+  await page.getByRole("button", { name: "Back" }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
   await page.getByText("Integrations").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
-  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
-  await expect(page.getByText("Slack", { exact: true })).toBeVisible();
+  const featured = page.getByTestId("featured-connectors");
+  await expect(featured).toContainText(
+    /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
+  );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-  await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -137,7 +147,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
+  const gmailRow = featured
+    .getByText("Gmail", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
@@ -146,7 +159,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
-  const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
+  const linearRow = page
+    .getByText("Linear", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   const connectPopup = page.waitForEvent("popup");
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;

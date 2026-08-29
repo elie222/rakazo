@@ -8,6 +8,7 @@ import {
   humanizeToolName,
   isRunTerminalEvent,
   projectMessages,
+  runFailureError,
   trackToolCallStreak,
   trackToolNameStreak,
 } from "./events.js";
@@ -18,6 +19,29 @@ describe("isRunTerminalEvent", () => {
     expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
+
+describe("runFailureError", () => {
+  it("returns the error only for run.failed with a real message", () => {
+    expect(runFailureError({ type: "run.failed", payload: { error: "provider missing" } })).toBe(
+      "provider missing",
+    );
+    expect(runFailureError({ type: "run.failed", payload: {} })).toBeNull();
+    expect(runFailureError({ type: "run.failed", payload: { error: "   " } })).toBeNull();
+    expect(runFailureError({ type: "run.failed", payload: { error: 42 } })).toBeNull();
+    expect(runFailureError({ type: "run.failed" })).toBeNull();
+    expect(runFailureError({ type: "run.completed", payload: { error: "nope" } })).toBeNull();
+    expect(runFailureError({ type: "run.cancelled", payload: { error: "nope" } })).toBeNull();
+  });
+
+  it("trims surrounding space and clamps a runaway message", () => {
+    expect(runFailureError({ type: "run.failed", payload: { error: "  spaced  " } })).toBe(
+      "spaced",
+    );
+    const long = runFailureError({ type: "run.failed", payload: { error: "x".repeat(400) } });
+    expect(long).toHaveLength(301);
+    expect(long?.endsWith("…")).toBe(true);
   });
 });
 

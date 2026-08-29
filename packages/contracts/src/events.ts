@@ -89,6 +89,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
+    input: z.enum(["text", "secret"]).optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z.array(z.object({ id: z.string(), label: z.string() })).optional(),

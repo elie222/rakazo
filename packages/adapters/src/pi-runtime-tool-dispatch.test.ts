@@ -2,7 +2,7 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
-  mode: "dispatch" as "dispatch" | "subagent-limit" | "parent-limit",
+  mode: "dispatch" as "dispatch" | "empty" | "subagent-limit" | "parent-limit",
   abortCount: 0,
   tools: [] as Array<{
     name: string;
@@ -32,12 +32,17 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     }
 
     async prompt() {
+      if (fakeAgentState.mode === "empty") {
+        return;
+      }
+
       if (fakeAgentState.mode === "dispatch") {
         const target =
           this.tools.find((tool) => tool.name === fakeAgentState.invoke.name) ?? this.tools[0];
         if (!target) throw new Error("expected tool was not exposed");
         const rawArgs = fakeAgentState.invoke.args;
         const args = target.prepareArguments?.(rawArgs) ?? rawArgs;
+        this.emit({ type: "tool_execution_start", toolName: target.name, args });
         await target.execute("call-1", args);
         return;
       }
@@ -195,6 +200,102 @@ describe("Pi connector tool dispatch", () => {
       "call-1",
       { connectorId: "destination", toolName: "destination.write" },
     );
+  });
+
+  it("does not claim a tool-only turn finished work the model never described", async () => {
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "tool-only",
+        prompt: "send the update",
+        instructions: "Use the destination tool.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "tool-only",
+        traceId: "tool-only",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).not.toContainEqual({ type: "text", text: "I finished the work." });
+    expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("keeps FYI bot-message wakes silent when the model produces nothing", async () => {
+    fakeAgentState.mode = "empty";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "bot-wake-silent",
+        prompt: "[bot] FYI only",
+        instructions: "Stay silent when there is nothing to do.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        allowSilentEmpty: true,
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "bot-wake-silent",
+        traceId: "bot-wake-silent",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).not.toContainEqual({ type: "text", text: "No response. Try again." });
+    expect(events).toEqual([{ type: "done" }]);
+  });
+
+  it("still asks the user to retry when a normal empty turn produces nothing", async () => {
+    fakeAgentState.mode = "empty";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "user-empty",
+        prompt: "hello",
+        instructions: "Reply to the user.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "user-empty",
+        traceId: "user-empty",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "text", text: "No response. Try again." });
+    expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
   });
 
   it("allows more than 80 tool calls by default when no fuse is configured", async () => {

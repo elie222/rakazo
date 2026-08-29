@@ -14,6 +14,7 @@ import {
   prependThreadHistoryPage,
   progressMessageId,
   reduceLiveMessageBlocks,
+  runFailureError,
   type ThreadHistory,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
@@ -163,7 +164,13 @@ export type MobileBotSection = BotSection;
 
 export type MobileMe = Pick<
   Me,
-  "name" | "email" | "workspaceId" | "defaultProvider" | "defaultModel" | "needsModel"
+  | "name"
+  | "email"
+  | "workspaceId"
+  | "defaultProvider"
+  | "defaultModel"
+  | "needsModel"
+  | "avatarStyle"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -183,7 +190,15 @@ export type MobileMessage = {
 
 export type MobileGroup = Pick<
   Group,
-  "id" | "name" | "preview" | "unread" | "updatedAt" | "members"
+  | "id"
+  | "name"
+  | "preview"
+  | "pinned"
+  | "sectionId"
+  | "archivedAt"
+  | "unread"
+  | "updatedAt"
+  | "members"
 >;
 
 export type MobileSnapshot = {
@@ -194,7 +209,7 @@ export type MobileSnapshot = {
   cursor?: number;
   messages: MobileMessage[];
   olderCursor: number | null;
-  run: { id: string; status: string } | null;
+  run: { id: string; status: string; error?: string | null } | null;
   activeRuns?: Array<{ id: string; status: string }>;
   members?: MobileGroup["members"];
   computer?: {
@@ -371,11 +386,22 @@ export function applyMobileThreadEvent(
   }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    const failure = runFailureError(event);
+    const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
+    // A group member run can fail while another is displayed; see reduceThreadSnapshot.
+    const endedRun =
+      primaryEnded ?? prev.activeRuns?.find((candidate) => candidate.id === event.runId) ?? null;
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
       messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
-      run: prev.run?.id === event.runId ? (activeRuns?.[0] ?? null) : prev.run,
+      // A failed run stays in run so the thread can say why it stopped (see reduceThreadSnapshot).
+      run:
+        endedRun && failure
+          ? { ...endedRun, status: "failed", error: failure }
+          : primaryEnded
+            ? (activeRuns?.[0] ?? null)
+            : prev.run,
       activeRuns,
     };
   }

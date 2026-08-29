@@ -5,6 +5,7 @@ import type {
   ConnectorProvider,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
@@ -15,6 +16,44 @@ type SessionEntry = { session: McpSession; revision: number };
 type PendingSession = { revision: number; promise: Promise<McpSession> };
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
+/**
+ * Stale allowlist entries are filtered out below with no error. Discovery already has the
+ * live tool list, so compare once and warn when string allowlist names are missing from the
+ * server. Non-string JSON values are ignored for both the missing list and the ratio.
+ */
+export function allowlistDrift(
+  allowedTools: unknown,
+  offered: Array<{ name: string }>,
+): { missing: string[]; offered: number; stringAllowedCount: number } {
+  const names = new Set(offered.map((tool) => tool.name));
+  const allowed = Array.isArray(allowedTools) ? allowedTools : [];
+  const stringAllowed = allowed.filter((name): name is string => typeof name === "string");
+  return {
+    missing: stringAllowed.filter((name) => !names.has(name)),
+    offered: names.size,
+    stringAllowedCount: stringAllowed.length,
+  };
+}
+
+function reportAllowlistDrift(
+  assignment: { allowAllTools: boolean; allowedTools: unknown; server: { slug: string } },
+  offered: Array<{ name: string }>,
+  context: { workspaceId: string; botId?: string },
+): void {
+  if (assignment.allowAllTools) return;
+  const drift = allowlistDrift(assignment.allowedTools, offered);
+  if (drift.missing.length === 0) return;
+  console.warn(
+    `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${drift.stringAllowedCount} allowed tools are not offered (server offers ${drift.offered})`,
+    {
+      workspaceId: context.workspaceId,
+      botId: context.botId,
+      // Cap the list: the point is to name the drift, not to print an allowlist.
+      missing: drift.missing.slice(0, 10),
+    },
+  );
+}
+
 export class McpConnector implements ConnectorProvider {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly connecting = new Map<string, PendingSession>();
@@ -54,6 +93,7 @@ export class McpConnector implements ConnectorProvider {
         try {
           const session = await this.sessionFor(assignment.server, context);
           const listed = await session.listTools({ signal: context.signal });
+          reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
             .filter(
               (tool) =>
@@ -76,7 +116,7 @@ export class McpConnector implements ConnectorProvider {
             `mcp discovery failed for server ${assignment.server.slug}:`,
             error instanceof Error ? error.message : error,
           );
-          await this.evict(assignment.server.id);
+          await this.evict(this.sessionKey(assignment.server, context));
           return [];
         }
       }),
@@ -120,7 +160,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "result", data: result };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
-      await this.evict(assignment.server.id);
+      await this.evict(this.sessionKey(assignment.server, context));
       yield { type: "error", message: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -132,25 +172,31 @@ export class McpConnector implements ConnectorProvider {
     this.connecting.clear();
   }
 
-  private async evict(serverId: string): Promise<void> {
-    const entry = this.sessions.get(String(serverId));
+  private sessionKey(server: McpServer, context: AdapterContext): string {
+    // Identity headers are applied once, at connect time, so a session is only
+    // valid for the identity it connected as. The key has to carry that identity.
+    return `${server.id} ${context.workspaceId} ${context.userId}`;
+  }
+
+  private async evict(sessionKey: string): Promise<void> {
+    const entry = this.sessions.get(sessionKey);
     if (!entry) return;
-    this.sessions.delete(String(serverId));
+    this.sessions.delete(sessionKey);
     await entry.session.close();
   }
 
   private async sessionFor(server: McpServer, context: AdapterContext): Promise<McpSession> {
-    const sessionKey = String(server.id);
+    const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) return existing.session;
     const pending = this.connecting.get(sessionKey);
     if (pending?.revision === server.revision) return pending.promise;
     if (pending) {
       await pending.promise.catch(() => undefined);
-      await this.evict(server.id);
+      await this.evict(sessionKey);
       return this.sessionFor(server, context);
     }
-    if (existing) await this.evict(server.id);
+    if (existing) await this.evict(sessionKey);
 
     const promise = this.connectSession(server, context).then((session) => {
       this.sessions.set(sessionKey, { session, revision: server.revision });
@@ -177,7 +223,7 @@ export class McpConnector implements ConnectorProvider {
           })
         : null;
       const material = secret
-        ? (JSON.parse(this.secrets.load(secret.ciphertext)) as OAuthMaterial)
+        ? (JSON.parse(this.secrets.load(secret.ciphertext, secret.id)) as OAuthMaterial)
         : {};
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
@@ -193,9 +239,12 @@ export class McpConnector implements ConnectorProvider {
         });
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
-        const authProvider = this.oauth
-          ? await this.oauth.providerFor(server, context, loaded)
-          : undefined;
+        const endpoint = new URL(server.endpoint);
+        const localHttp = endpoint.protocol === "http:" && isLocalMcpHost(endpoint.hostname);
+        const authProvider =
+          !localHttp && this.oauth
+            ? await this.oauth.providerFor(server, context, loaded)
+            : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
             ? material.secret
@@ -207,6 +256,7 @@ export class McpConnector implements ConnectorProvider {
         };
         await session.connectRemote({
           url: server.endpoint,
+          urlPolicy: { allowHttpLocalhost: true, allowLocalHttpCredentials: localHttp },
           transport: server.transport === "sse" ? "sse" : "streamable-http",
           allowLegacySse: server.transport === "sse",
           headerPolicy: { headers },

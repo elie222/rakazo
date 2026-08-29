@@ -260,7 +260,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         userId: context.userId,
       },
     });
-    return row ? this.secrets.load(row.ciphertext) : undefined;
+    return row ? this.secrets.load(row.ciphertext, row.id) : undefined;
   }
 }
 

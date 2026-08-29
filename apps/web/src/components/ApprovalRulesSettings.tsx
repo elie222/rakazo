@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ActionApprovalRule } from "@rakazo/contracts";
+import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
@@ -26,15 +26,22 @@ function describeRule(rule: ActionApprovalRule): string {
 export function ApprovalRulesSettings() {
   const { t } = useLingui();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
+  const [autoReview, setAutoReview] = useState<ActionAutoReviewSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingPreset, setSavingPreset] = useState<"email" | "purchase" | null>(null);
+  const [savingAutoReview, setSavingAutoReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      setRules(await rpc.approvalRules.list());
+      const [nextRules, nextAutoReview] = await Promise.all([
+        rpc.approvalRules.list(),
+        rpc.autoReview.get(),
+      ]);
+      setRules(nextRules);
+      setAutoReview(nextAutoReview);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not load approval rules`);
     } finally {
@@ -84,6 +91,19 @@ export function ApprovalRulesSettings() {
     }
   }
 
+  async function toggleAutoReview(enabled: boolean) {
+    if (loading || savingAutoReview) return;
+    setSavingAutoReview(true);
+    setError(null);
+    try {
+      setAutoReview(await rpc.autoReview.set({ enabled }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not save Auto Review`);
+    } finally {
+      setSavingAutoReview(false);
+    }
+  }
+
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
       <h3 className="text-[15px] font-medium text-[#ECECEE]">
@@ -113,6 +133,26 @@ export function ApprovalRulesSettings() {
           <Trans>Ask before purchases</Trans>
         </button>
       </div>
+      <label className="mt-5 flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          data-testid="auto-review-toggle"
+          className="mt-1"
+          checked={autoReview?.enabled ?? false}
+          disabled={loading || savingAutoReview || !autoReview}
+          onChange={(event) => void toggleAutoReview(event.target.checked)}
+        />
+        <span>
+          <span className="block text-[14px] text-[#C9C9CE]">
+            <Trans>Flag unexpected actions</Trans>
+          </span>
+          {autoReview?.enabled && !autoReview.checkerAvailable ? (
+            <span className="mt-1 block text-[13px] text-[#85858A]">
+              <Trans>Add a model in Settings to use this.</Trans>
+            </span>
+          ) : null}
+        </span>
+      </label>
       {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
       {loading ? (
         <p className="mt-4 text-[13px] text-[#85858A]">

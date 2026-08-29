@@ -54,6 +54,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["me"],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
+      ["updater/status"],
+      ["updater/check", {}],
+      ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
@@ -760,9 +763,50 @@ describeWithDatabase("API authorization and resource isolation", () => {
       signupsEnabled: false,
       signupAllowlist: ["attacker@example.test"],
     });
+    await expectForbidden(app, other, "updater/status", {});
+    await expectForbidden(app, other, "updater/check", {});
+    await expectForbidden(app, other, "updater/apply", {});
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
+
+    try {
+      await rpc(app, owner, "deployment/update", { signupsEnabled: false });
+      const closedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `closed-${stamp}@rakazo.test`,
+          password: "password123",
+          name: "Closed Signup",
+        }),
+      });
+      expect(closedSignup.status).toBe(400);
+      expect(await closedSignup.text()).toContain("Registration is closed");
+
+      const approvedEmail = `approved-${stamp}@example.test`;
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [approvedEmail],
+      });
+      const disallowedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: `not-approved-${stamp}@rakazo.test`,
+          password: "password123",
+          name: "Disallowed Signup",
+        }),
+      });
+      expect(disallowedSignup.status).toBe(400);
+      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      await signup(app, approvedEmail, "Approved Signup");
+    } finally {
+      await rpc(app, owner, "deployment/update", {
+        signupsEnabled: true,
+        signupAllowlist: [],
+      });
+    }
   });
 });
 
@@ -851,6 +895,12 @@ async function expectDenied(app: App, cookie: string, procedure: string, body: u
     return;
   }
   expect(response.status, procedure).toBeGreaterThanOrEqual(400);
+}
+
+async function expectForbidden(app: App, cookie: string, procedure: string, body: unknown) {
+  const response = await raw(app, cookie, procedure, body);
+  expect(response.status, procedure).toBe(403);
+  expect(await response.text(), procedure).toMatch(/forbidden/i);
 }
 
 interface Actor {

@@ -9,6 +9,9 @@ export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
+export const AvatarStyleSchema = z.enum(["robot", "organic"]);
+export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
+
 export const ThinkingLevelSchema = z.enum([
   "off",
   "minimal",
@@ -46,6 +49,7 @@ export const BotSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
+  webhookConfigured: z.boolean(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -64,6 +68,9 @@ export const GroupSchema = z.object({
   id: Id,
   workspaceId: Id,
   name: z.string(),
+  pinned: z.boolean(),
+  sectionId: Id.nullable(),
+  archivedAt: z.string().nullable(),
   members: z.array(GroupMemberSchema),
   threadId: Id,
   preview: z.string(),
@@ -89,6 +96,8 @@ export const UpdateGroupInput = z.object({
   groupId: Id,
   name: z.string().trim().min(1).max(80).optional(),
   botIds: GroupBotIds.optional(),
+  pinned: z.boolean().optional(),
+  sectionId: Id.nullable().optional(),
 });
 export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
 
@@ -182,25 +191,37 @@ export const RoutineSchema = z.object({
   botId: Id,
   name: z.string(),
   prompt: z.string(),
-  crons: z.array(z.string()).min(1),
+  crons: z.array(z.string()),
   timezone: z.string(),
   active: z.boolean(),
   notify: z.boolean(),
+  webhookEnabled: z.boolean(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 
-export const CreateRoutineInput = z.object({
-  botId: Id,
-  name: z.string().min(1).max(80),
-  prompt: z.string().min(1),
-  crons: z.array(z.string().min(1)).min(1),
-  timezone: z.string().default("UTC"),
-  notify: z.boolean().default(true),
-  active: z.boolean().default(false),
-});
+export const CreateRoutineInput = z
+  .object({
+    botId: Id,
+    name: z.string().min(1).max(80),
+    prompt: z.string().min(1),
+    crons: z.array(z.string().min(1)).default([]),
+    timezone: z.string().default("UTC"),
+    notify: z.boolean().default(true),
+    active: z.boolean().default(false),
+    webhookEnabled: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.crons.length === 0 && !value.webhookEnabled) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a schedule or webhook trigger",
+        path: ["crons"],
+      });
+    }
+  });
 
 export const ScratchpadItemStatusSchema = z.enum(["open", "parked", "done"]);
 export type ScratchpadItemStatus = z.infer<typeof ScratchpadItemStatusSchema>;
@@ -386,6 +407,12 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+export const ActionAutoReviewSettingsSchema = z.object({
+  enabled: z.boolean(),
+  checkerAvailable: z.boolean(),
+});
+export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSchema>;
+
 export const CapabilityInstallSchema = z.object({
   id: Id,
   kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
@@ -525,7 +552,16 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
+  trigger: z.enum([
+    "user",
+    "routine",
+    "resume",
+    "follow_up",
+    "spawn",
+    "skill",
+    "bot_message",
+    "webhook",
+  ]),
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -698,6 +734,7 @@ export const DeploymentSettingsSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
 });
 
 export const ServerUpdateSourceSchema = z.object({
@@ -722,6 +759,15 @@ export type ServerUpdateStrategy = z.infer<typeof ServerUpdateStrategySchema>;
 /** `sidecar` is the Compose deployment; `checkout` is a supervised source install. */
 export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailable"]);
 export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
+
+/**
+ * What Settings should render for a deployment owner.
+ * `sidecar`: Check / Update / Rollback through the updater sidecar.
+ * `compose`: Compose install without a reachable sidecar; show host pull/up commands.
+ * `source`: git checkout / `pnpm dev`; show terminal commands, never a fake Apply.
+ */
+export const ServerUpdateInstallKindSchema = z.enum(["sidecar", "compose", "source"]);
+export type ServerUpdateInstallKind = z.infer<typeof ServerUpdateInstallKindSchema>;
 
 export const ServerUpdateRunSchema = z.object({
   startedAt: z.iso.datetime(),
@@ -748,6 +794,9 @@ export type ServerUpdateRun = z.infer<typeof ServerUpdateRunSchema>;
 export const ServerUpdateStatusSchema = z.object({
   supported: z.boolean(),
   unsupportedReason: z.string().nullable(),
+  installKind: ServerUpdateInstallKindSchema,
+  /** Host commands to run when `installKind` is not `sidecar`. Empty when the sidecar applies. */
+  manualCommands: z.array(z.string()),
   mode: ServerUpdateModeSchema,
   strategy: ServerUpdateStrategySchema.nullable(),
   strategyNote: z.string().nullable(),
@@ -777,9 +826,16 @@ export const ServerUpdateCheckSchema = z.object({
   changed: z.array(z.string()),
   commit: z.string().nullable(),
   targetCommit: z.string().nullable(),
+  targetTag: z.string().nullable(),
   behindBy: z.number().int().nonnegative(),
 });
 export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
+
+export const ServerUpdateRequestSchema = z.object({
+  repoUrl: z.string().max(400).optional(),
+  branch: z.string().max(200).optional(),
+});
+export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
   userId: Id,
@@ -792,6 +848,8 @@ export const MeSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
+  avatarStyle: AvatarStyleSchema,
 });
 export type Me = z.infer<typeof MeSchema>;
 
@@ -800,6 +858,7 @@ export const AppBootstrapSchema = z.object({
   bots: z.array(BotSchema),
   botSections: z.array(BotSectionSchema),
   archivedBots: z.array(BotSchema),
+  archivedGroups: z.array(GroupSchema),
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),
 });

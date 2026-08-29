@@ -10,6 +10,7 @@ import {
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
+  createRunSecretWriter,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -26,10 +27,12 @@ import {
   PipedreamConnector,
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
+  resolveDeploymentModel,
+  resolveSandboxProvider,
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
@@ -41,12 +44,19 @@ async function main() {
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
   });
-  const events = createThreadEvents(prisma, realtime);
+  const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
+  const events = createThreadEvents(prisma, realtime, {
+    runSecretWriter: createRunSecretWriter(secrets),
+  });
   const runtime =
     process.env.AGENT_RUNTIME === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const dataDir = process.env.DATA_DIR ?? "./data";
-  const sandbox = createRunSandbox(process.env.SANDBOX_PROVIDER ?? "docker", {
+  // Same resolver the API uses, so both processes agree on provider, model and key.
+  const { key: deploymentModelKey } = resolveDeploymentModel();
+  const sandboxProvider = resolveSandboxProvider(process.env);
+  const sandbox = createRunSandbox(sandboxProvider, {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
+    supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
     e2bApiKey: process.env.E2B_API_KEY,
     daytonaApiKey: process.env.DAYTONA_API_KEY,
     daytonaApiUrl: process.env.DAYTONA_API_URL,
@@ -56,7 +66,6 @@ async function main() {
     dataDir,
     prisma,
   });
-  const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
   const mcpOAuth = new McpOAuthBroker(prisma, secrets);
   const mcp = new McpConnector(
     prisma,
@@ -102,12 +111,11 @@ async function main() {
     home,
     artifacts,
     connector: stack.connector,
+    connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
-      Boolean,
-    ),
+    secrets: [deploymentModelKey ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
     secretStore: secrets,
-    deploymentModelKey: process.env.OPENROUTER_API_KEY,
+    deploymentModelKey,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
     jobs,
@@ -125,7 +133,7 @@ async function main() {
     runtime,
     secretStore: secrets,
     memoryProviders,
-    deploymentModelKey: process.env.OPENROUTER_API_KEY,
+    deploymentModelKey,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

@@ -325,6 +325,11 @@ export interface AgentRunRequest {
   };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
+  /**
+   * Bot-message wakes may finish with no text and no tools (FYI silence).
+   * When set, skip synthetic empty-turn fallbacks.
+   */
+  allowSilentEmpty?: boolean;
   executeTool?: (
     name: string,
     args: Record<string, unknown>,

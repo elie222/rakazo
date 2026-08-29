@@ -133,11 +133,25 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for login or human judgment. Protected input stays off the thread.",
+      "Ask the user to take over the computer screen for passwords, 2FA, CAPTCHA, payment, passkeys, or other protected input. Never ask the user to paste protected values in chat.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },
       required: ["reason"],
+    },
+  },
+  {
+    name: "request_secret",
+    description:
+      "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        connectionId: { type: "string" },
+      },
+      required: ["label", "purpose"],
     },
   },
   {
@@ -509,7 +523,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "message_bot",
     description:
-      "Send a message to one of the user's other bots. Asynchronous: this returns as soon as the message is sent, and any reply arrives later as a new message that wakes you. Never wait for a reply in this turn.",
+      "Send a useful update, question, or result to another of the user's bots. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.",
     inputSchema: {
       type: "object",
       properties: {

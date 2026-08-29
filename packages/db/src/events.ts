@@ -4,7 +4,7 @@ import {
   MessageBlock as MessageBlockSchema,
   type ProductEvent,
 } from "@rakazo/contracts";
-import { isApprovalAskBlock } from "@rakazo/core";
+import { isApprovalAskBlock, isSecretAskBlock } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
   assertRunCanWriteHistory,
@@ -43,7 +43,9 @@ export interface ThreadEvents {
 export interface ClearThreadInput {
   workspaceId: string;
   threadId: string;
+  /** Event author and the bot-scoped target for one-to-one chats. */
   botId: string;
+  groupId?: string;
 }
 
 export interface ClearThreadResult {
@@ -118,7 +120,7 @@ export interface SendUserMessageInput {
   userId: string;
   blocks: MessageBlock[];
   prompt: string;
-  trigger: "user" | "follow_up";
+  trigger: "user" | "follow_up" | "webhook";
   clientNonce?: string;
   /** Skip task/run creation when the bot already has active work (follow-up behavior). */
   onlyIfIdle?: boolean;
@@ -132,13 +134,23 @@ export interface SendUserMessageResult {
   runId: string | null;
 }
 
+export interface RunSecretWriter {
+  store(input: {
+    runId: string;
+    userId: string;
+    workspaceId: string;
+    plaintext: string;
+    tx: Prisma.TransactionClient;
+  }): Promise<void>;
+}
+
 export function createThreadEvents(
   prisma: PrismaClient,
   realtime?: RealtimeFanout,
-  options: { catchUpMs?: number } = {},
+  options: { catchUpMs?: number; runSecretWriter?: RunSecretWriter } = {},
 ): ThreadEvents {
   return {
-    answerRunInput: (input) => answerRunInput(prisma, input, realtime),
+    answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime),
     clearThread: (input) => clearThread(prisma, input, realtime),
     finalizeComputerControlRelease: (input) =>
@@ -163,7 +175,7 @@ export async function clearThread(
       where: {
         id: input.threadId,
         workspaceId: input.workspaceId,
-        botId: input.botId,
+        ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId }),
       },
       data: { unread: false },
       select: { nextMessageSeq: true, historyCompactionGeneration: true },
@@ -172,7 +184,7 @@ export async function clearThread(
       where: {
         workspaceId: input.workspaceId,
         threadId: input.threadId,
-        botId: input.botId,
+        ...(input.groupId ? {} : { botId: input.botId }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true },
@@ -199,9 +211,11 @@ export async function clearThread(
         data: { status: "cancelled" },
       });
     }
-    await tx.computerExecutionLease.deleteMany({ where: { botId: input.botId } });
+    await tx.computerExecutionLease.deleteMany({
+      where: { runId: { in: runIds } },
+    });
     await tx.computer.updateMany({
-      where: { executionBotId: input.botId },
+      where: { executionRunId: { in: runIds } },
       data: {
         executionRunId: null,
         executionBotId: null,
@@ -231,10 +245,14 @@ export async function clearThread(
         },
       });
     }
-    await tx.bot.update({
-      where: { id: input.botId, workspaceId: input.workspaceId },
-      data: { updatedAt: now },
-    });
+    if (input.groupId) {
+      await tx.chatGroup.update({ where: { id: input.groupId }, data: { updatedAt: now } });
+    } else {
+      await tx.bot.update({
+        where: { id: input.botId, workspaceId: input.workspaceId },
+        data: { updatedAt: now },
+      });
+    }
     const event = await appendEventInTransaction(tx, {
       ...input,
       type: "thread.cleared",
@@ -363,6 +381,7 @@ export async function answerRunInput(
   prisma: PrismaClient,
   input: AnswerRunInput,
   realtime?: RealtimeFanout,
+  runSecretWriter?: RunSecretWriter,
 ): Promise<boolean> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
@@ -393,6 +412,8 @@ export async function answerRunInput(
     );
     if (pendingAsk?.kind !== "ask") return null;
     const approvalAsk = isApprovalAskBlock(pendingAsk);
+    const secretAsk = isSecretAskBlock(pendingAsk);
+    if (secretAsk && !runSecretWriter) return null;
     let approvalEffect: { id: string; kind: string } | null = null;
     let approvalUserId: string | null = null;
 
@@ -451,6 +472,23 @@ export async function answerRunInput(
           update: {},
         });
       }
+    } else if (secretAsk) {
+      await runSecretWriter!.store({
+        runId: input.runId,
+        userId: run.userId,
+        workspaceId: input.workspaceId,
+        plaintext: input.answer,
+        tx,
+      });
+      await tx.externalEffect.updateMany({
+        where: {
+          runId: input.runId,
+          workspaceId: input.workspaceId,
+          kind: "request_secret",
+          status: "intended",
+        },
+        data: { status: "approved" },
+      });
     } else {
       const task = await tx.task.updateMany({
         where: { runs: { some: { id: input.runId } } },
@@ -461,7 +499,11 @@ export async function answerRunInput(
 
     const blocks = parsed.data.map((block) =>
       block === pendingAsk
-        ? { ...block, status: "answered" as const, answer: input.answer }
+        ? {
+            ...block,
+            status: "answered" as const,
+            answer: secretAsk ? "" : input.answer,
+          }
         : block,
     );
     await tx.message.update({ where: { id: message.id }, data: { blocks } });

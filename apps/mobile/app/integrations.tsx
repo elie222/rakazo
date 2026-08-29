@@ -1,6 +1,11 @@
 import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
-import { useEffect, useRef, useState } from "react";
+import {
+  abortableDelay,
+  buildFeaturedConnectorTiles,
+  EMPTY_PLUGIN_CATALOG_MESSAGE,
+  matchFeaturedConnectorId,
+} from "@rakazo/core";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
+import { loadLastBotId } from "../lib/last-bot";
 import { native } from "../lib/native";
 
 type SourceKind = "treg" | "mcp" | "api";
@@ -33,21 +39,39 @@ export default function Integrations() {
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [lastBotId, setLastBotId] = useState("");
+  const [catalogReady, setCatalogReady] = useState(false);
   const connectionAttempt = useRef<AbortController | null>(null);
 
+  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const catalogApps = useMemo(
+    () =>
+      catalog.filter(
+        (item) =>
+          matchFeaturedConnectorId(item.slug) === null &&
+          matchFeaturedConnectorId(item.name) === null,
+      ),
+    [catalog],
+  );
+
   async function refresh() {
-    const [nextCatalog, installs] = await Promise.all([
-      rpc<ConnectionCatalogItem[]>("connections/catalog"),
-      rpc<CapabilityInstall[]>("capabilities/list"),
-    ]);
-    setCatalog(nextCatalog);
-    setSources(installs.filter((item) => item.kind === "mcp" || item.kind === "api"));
+    const catalogResult = await rpc<ConnectionCatalogItem[]>("connections/catalog");
+    setCatalog(catalogResult);
+    setCatalogReady(true);
+    try {
+      const installs = await rpc<CapabilityInstall[]>("capabilities/list");
+      setSources(installs.filter((item) => item.kind === "mcp" || item.kind === "api"));
+    } catch {
+      // Tool sources are optional; keep featured/catalog usable if this fails.
+    }
   }
 
   useEffect(() => {
-    void refresh().catch((reason) =>
-      setCatalogError(reason instanceof Error ? reason.message : "Could not load integrations"),
-    );
+    void refresh().catch((reason) => {
+      setCatalogReady(false);
+      setCatalogError(reason instanceof Error ? reason.message : "Could not load integrations");
+    });
+    void loadLastBotId().then(setLastBotId);
     return () => connectionAttempt.current?.abort();
   }, []);
 
@@ -59,6 +83,13 @@ export default function Integrations() {
     setUrl("");
     setCredential("");
     setRequiresAuth(true);
+  }
+
+  async function notifyAppConnected(item: ConnectionCatalogItem) {
+    const botId = lastBotId || (await loadLastBotId());
+    if (!botId) return;
+    if (botId !== lastBotId) setLastBotId(botId);
+    void rpc("onboarding/appConnected", { botId, provider: item.slug }).catch(() => undefined);
   }
 
   async function connect(item: ConnectionCatalogItem) {
@@ -85,6 +116,7 @@ export default function Integrations() {
         }).catch(() => undefined);
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
+          void notifyAppConnected(item);
           await refresh();
           return;
         }
@@ -186,36 +218,78 @@ export default function Integrations() {
 
         {catalogError ? <Text style={styles.error}>{catalogError}</Text> : null}
 
-        <Text style={styles.section}>Apps</Text>
-        {catalog.length === 0 ? (
-          <Text style={styles.secondary}>No managed app catalog configured.</Text>
+        {!catalogReady ? <ActivityIndicator color={native.fillPressed} /> : null}
+
+        {catalogReady && catalog.length === 0 ? (
+          <Text style={styles.secondary}>{EMPTY_PLUGIN_CATALOG_MESSAGE}</Text>
         ) : null}
-        <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
-          {catalog.map((item) => {
-            const key = `${item.connectorId}:${item.slug}`;
-            return (
-              <View
-                key={key}
-                style={[styles.row, catalogColumns === 2 ? styles.catalogCell : null]}
-              >
-                <View style={styles.grow}>
-                  <Text numberOfLines={1} style={styles.title}>
-                    {item.name}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={pending === key}
-                  onPress={() => void (item.connected ? revoke(item) : connect(item))}
+
+        {catalogReady && catalog.length > 0 ? (
+          <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
+            {featuredTiles.map((tile) => {
+              const item = tile.item;
+              const key = item ? `${item.connectorId}:${item.slug}` : tile.id;
+              const disabled = tile.missing || !item;
+              const connected = item?.connected ?? false;
+              return (
+                <View
+                  key={key}
+                  style={[
+                    styles.row,
+                    catalogColumns === 2 ? styles.catalogCell : null,
+                    disabled ? { opacity: 0.7 } : null,
+                  ]}
                 >
-                  <Text style={styles.link}>
-                    {pending === key ? "Working…" : item.connected ? "Remove" : "Add"}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })}
-        </View>
+                  <View style={styles.grow}>
+                    <Text numberOfLines={1} style={styles.title}>
+                      {tile.label}
+                    </Text>
+                    {disabled ? (
+                      <Text style={styles.secondary}>Not in the plugin catalog</Text>
+                    ) : null}
+                  </View>
+                  {disabled || !item ? null : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={connected ? `Remove ${tile.label}` : `Add ${tile.label}`}
+                      disabled={pending === key}
+                      onPress={() => void (connected ? revoke(item) : connect(item))}
+                    >
+                      <Text style={styles.link}>
+                        {pending === key ? "Working…" : connected ? "Remove" : "Add"}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+            {catalogApps.map((item) => {
+              const key = `${item.connectorId}:${item.slug}`;
+              return (
+                <View
+                  key={key}
+                  style={[styles.row, catalogColumns === 2 ? styles.catalogCell : null]}
+                >
+                  <View style={styles.grow}>
+                    <Text numberOfLines={1} style={styles.title}>
+                      {item.name}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={item.connected ? `Remove ${item.name}` : `Add ${item.name}`}
+                    disabled={pending === key}
+                    onPress={() => void (item.connected ? revoke(item) : connect(item))}
+                  >
+                    <Text style={styles.link}>
+                      {pending === key ? "Working…" : item.connected ? "Remove" : "Add"}
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"

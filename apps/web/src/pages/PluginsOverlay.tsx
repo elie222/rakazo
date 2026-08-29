@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
+import {
+  abortableDelay,
+  buildFeaturedConnectorTiles,
+  EMPTY_PLUGIN_CATALOG_MESSAGE,
+  matchFeaturedConnectorId,
+} from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
@@ -25,9 +30,11 @@ function markConnected(
 export function PluginsOverlay({
   onClose,
   onOpenMcp,
+  activeBotId,
 }: {
   onClose: () => void;
   onOpenMcp?: () => void;
+  activeBotId?: string;
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
@@ -64,16 +71,33 @@ export function PluginsOverlay({
     return () => connectionAttempt.current?.abort();
   }, []);
 
+  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const showFeatured = !query.trim();
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return catalog;
-    return catalog.filter(
+    const scoped = showFeatured
+      ? catalog.filter(
+          (item) =>
+            matchFeaturedConnectorId(item.slug) === null &&
+            matchFeaturedConnectorId(item.name) === null,
+        )
+      : catalog;
+    if (!needle) return scoped;
+    return scoped.filter(
       (item) =>
         item.name.toLowerCase().includes(needle) ||
         item.slug.toLowerCase().includes(needle) ||
         item.connectorId.toLowerCase().includes(needle),
     );
-  }, [catalog, query]);
+  }, [catalog, query, showFeatured]);
+
+  async function notifyAppConnected(item: ConnectionCatalogItem) {
+    if (!activeBotId) return;
+    await rpc.onboarding
+      .appConnected({ botId: activeBotId, provider: item.slug })
+      .catch(() => undefined);
+  }
 
   function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
     setCatalog((prev) => markConnected(prev, item.connectorId, item.slug, connected));
@@ -97,6 +121,7 @@ export function PluginsOverlay({
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
+        void notifyAppConnected(item);
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -107,6 +132,7 @@ export function PluginsOverlay({
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
           setItemConnected(item, true);
+          void notifyAppConnected(item);
           return;
         }
         await abortableDelay(2_000, controller.signal);
@@ -238,12 +264,82 @@ export function PluginsOverlay({
             </p>
           ) : null}
 
-          {!loading && catalog.length === 0 ? (
+          {showFeatured ? (
+            <div className="mb-6" data-testid="featured-connectors">
+              {!loading && catalog.length === 0 ? (
+                <p className="text-[13.5px] leading-6 text-[#6C6C70]">
+                  {EMPTY_PLUGIN_CATALOG_MESSAGE}
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {featuredTiles.map((tile) => {
+                    const item = tile.item;
+                    const key = item ? itemKey(item) : tile.id;
+                    const disabled = tile.missing || !item;
+                    const connected = item?.connected ?? false;
+                    return (
+                      <div
+                        key={key}
+                        className={`flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${
+                          disabled ? "opacity-70" : ""
+                        }`}
+                      >
+                        {item?.logo ? (
+                          <img
+                            src={item.logo}
+                            alt=""
+                            className="h-9 w-9 shrink-0 rounded-xl bg-[#2C2C30] object-contain"
+                          />
+                        ) : (
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2C2C30] text-sm font-semibold text-[#ECECEE]">
+                            {tile.label[0]}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[15px] font-medium text-[#ECECEE]">
+                            {tile.label}
+                          </div>
+                          {disabled ? (
+                            <div className="truncate text-[12.5px] text-[#707077]">
+                              <Trans>Not in the plugin catalog</Trans>
+                            </div>
+                          ) : null}
+                        </div>
+                        {item && !tile.missing ? (
+                          <Button
+                            type="button"
+                            variant="pill"
+                            size="sm"
+                            disabled={pending === key}
+                            onClick={() => void (connected ? revoke(item) : connect(item))}
+                          >
+                            {pending === key ? (
+                              connected ? (
+                                <Trans>Removing…</Trans>
+                              ) : (
+                                <Trans>Adding…</Trans>
+                              )
+                            ) : connected ? (
+                              <Trans>Remove</Trans>
+                            ) : (
+                              <Trans>Add</Trans>
+                            )}
+                          </Button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {!loading && catalog.length === 0 && !showFeatured ? (
             <p className="text-[#6C6C70]">
               <Trans>No managed app catalog is configured on this deployment.</Trans>
             </p>
           ) : null}
-          {!loading && catalog.length > 0 && visible.length === 0 ? (
+          {!loading && catalog.length > 0 && visible.length === 0 && !showFeatured ? (
             <p className="text-[#6C6C70]">
               <Trans>No apps match your search.</Trans>
             </p>

@@ -6,9 +6,64 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up.
 
+## Published images (no checkout)
+
+Pull Postgres and `ghcr.io/elie222/rakazo/app` into any empty folder. No clone or image build.
+Requires Docker Engine and the Compose plugin.
+
+```bash
+mkdir rakazo && cd rakazo
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.images.yml
+curl -fsSO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/.env.images.example
+cp .env.images.example .env
+```
+
+Generate secrets and write them into `.env` (after `cp .env.images.example .env`):
+
+```bash
+POSTGRES_PASSWORD=$(openssl rand -hex 16) &&
+BETTER_AUTH_SECRET=$(openssl rand -hex 32) &&
+ENCRYPTION_KEY=$(openssl rand -hex 32) &&
+SCREEN_PROXY_SECRET=$(openssl rand -hex 32) &&
+SANDBOX_SUPERVISOR_TOKEN=$(openssl rand -hex 32) &&
+: "${POSTGRES_PASSWORD:?}" "${BETTER_AUTH_SECRET:?}" "${ENCRYPTION_KEY:?}" "${SCREEN_PROXY_SECRET:?}" "${SANDBOX_SUPERVISOR_TOKEN:?}" &&
+sed -i.bak \
+  -e "s/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/" \
+  -e "s/^BETTER_AUTH_SECRET=$/BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}/" \
+  -e "s/^ENCRYPTION_KEY=$/ENCRYPTION_KEY=${ENCRYPTION_KEY}/" \
+  -e "s/^SCREEN_PROXY_SECRET=$/SCREEN_PROXY_SECRET=${SCREEN_PROXY_SECRET}/" \
+  -e "s/^SANDBOX_SUPERVISOR_TOKEN=$/SANDBOX_SUPERVISOR_TOKEN=${SANDBOX_SUPERVISOR_TOKEN}/" \
+  .env && rm -f .env.bak
+```
+
+`SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
+(from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
+Signup and local Docker computers work without an E2B account. Optional remote providers: set
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. Compose requires
+`SANDBOX_SUPERVISOR_TOKEN` for the Docker path; leave it empty and `compose up` fails closed.
+
+Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
+
+The example defaults to `edge` (main builds, `linux/amd64` only). On arm64 hosts, set both
+`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published multi-arch release tag
+when one exists (see [Published images and tags](#published-images-and-tags)). Changing only
+`RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Do not assume `latest` is
+published.
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml pull
+docker compose --env-file .env -f docker-compose.images.yml up -d
+```
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
+deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
+that HTTPS URL. Open **Agent computer** on a bot, or send a message that uses the desktop, to see
+the local Docker computer. For automatic HTTPS via Caddy and remote E2B computers, use the
+production Compose path below.
+
 ## Docker Compose (single machine)
 
-1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings. Rakazo refuses placeholder or missing secrets outside `development` / `test` (or when `RAKAZO_ALLOW_DEV_SECRETS=1` is set).
+1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
@@ -16,11 +71,17 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 On Windows, if an older clone with `core.autocrlf=true` leaves the computer pane hung on boot (`bash\r` in sandbox logs): from a clean worktree, set `git config core.autocrlf false`, run `git add --renormalize . && git checkout -- .`, then rebuild with `pnpm sandbox:build`.
 
-Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
+Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`) on separate per-bot networks; only the supervisor and screen proxy join each one. The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
 
 Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
-The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
+The Docker supervisor is not published as its own image and is not exposed on the host. It runs from
+the app image, stays on the internal Compose network, and holds the Docker socket because access to
+it is equivalent to control of the Docker host. Docker sandboxes require `SANDBOX_SUPERVISOR_TOKEN`
+(API, worker, supervisor). `SCREEN_PROXY_SECRET` signs browser-screen capabilities (API and web
+proxy). Keep both distinct from `BETTER_AUTH_SECRET`.
+
+New credentials use versioned AES-GCM with per-record salt and row-bound AAD. Legacy ciphertext stays readable.
 
 On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
 
@@ -30,14 +91,14 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 ```
 
-Cookies and CORS follow those origins. Keep `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` tight on a public host.
+Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
 Optional:
 
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or e2b, daytona, box. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, daytona, box. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
@@ -78,12 +139,29 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
 
-- **Docker** is the default for local use and the quickest self-hosted setup. Workspace bots share a persistent Team Computer by default; Private computers are optional. Keep the supervisor private, as the included Compose file does.
-- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
-- **Daytona** provides the same remote-computer contract through Daytona sandboxes. Configure `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET`.
-- **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. A Box currently exposes one shared desktop, so concurrent Team bots can still use shell and files but only one can use graphical tools at a time.
-- **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
+- **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
+  local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
+  Optional: set `e2b`, `daytona`, or `box` plus the matching API key for remote computers.
+- **Docker** is the quick-start default for published images and for a source checkout / full local
+  Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
+  optional. Keep the supervisor private, as the included Compose files do.
+- **E2B** runs bot computers away from the Rakazo host and is a good choice for public or multi-user
+  production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to
+  `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
+- **Daytona** provides the same remote-computer contract through Daytona sandboxes. Configure
+  `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET`.
+- **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally
+  `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable
+  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. A Box currently exposes one
+  shared desktop, so concurrent Team bots can still use shell and files but only one can use
+  graphical tools at a time.
+- **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default.
+  The Electron app asks once; if you choose This Mac, bots can use working directories under your home
+  folder. Do not enable it on a public or shared service. macOS does not show its own permission
+  dialog for this.
 - **Fake** is only an emulator for verification.
+- **None** boots the product without a computer host (fallback when Docker/supervisor is not
+  configured, or when a remote provider is selected without its API key).
 
 ## Backup
 
@@ -119,11 +197,13 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/); reconcile those ranges
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
-   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
+   `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`,
+   `E2B_API_KEY`, `OPENROUTER_API_KEY`,
    `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
    the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
    If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
-   characters) that differs from `BETTER_AUTH_SECRET` and `SANDBOX_SUPERVISOR_TOKEN`.
+   characters) that differs from `BETTER_AUTH_SECRET`, `SANDBOX_SUPERVISOR_TOKEN`, and
+   `SCREEN_PROXY_SECRET`.
 3. Keep registration allowlisted while the service is private:
 
 ```env
@@ -236,8 +316,14 @@ this repository that is:
 
 | Image | Contents |
 | --- | --- |
-| `ghcr.io/elie222/rakazo/app` | api, worker, and web — one image, three commands |
+| `ghcr.io/elie222/rakazo/app` | api, worker, web, and sandbox supervisor — one image, multiple commands |
+| `ghcr.io/elie222/rakazo/computer` | Linux desktop used as each bot computer |
 | `ghcr.io/elie222/rakazo/updater` | the updater sidecar, plus the Docker CLI |
+
+`infra/compose/docker-compose.images.yml` is the no-checkout path for those app and computer tags
+plus Postgres. The supervisor runs from the app image on the internal network only (not a separate
+published supervisor image, and no host port). Production Compose (`docker-compose.prod.yml`) can
+also pull the same app tags once `RAKAZO_IMAGE_TAG` is set to a published value.
 
 If you deploy from your own fork, set `RAKAZO_IMAGE` and `RAKAZO_UPDATER_IMAGE` to your namespace —
 your CI cannot publish into someone else's.
@@ -250,6 +336,13 @@ your CI cannot publish into someone else's.
 | `latest` | stable `vX.Y.Z` tags only (not prereleases) | yes, to the newest stable release |
 | `sha-<full-commit>` | every push and manual run | source-addressed; used by the updater sidecar |
 | `edge` | pushes to main | yes, to the newest main build |
+
+`edge` from everyday main merges is `linux/amd64` only. Release tags (`v*`) and manual
+`workflow_dispatch` publishes are multi-arch (`amd64` + `arm64`). On arm64 hosts, set both
+`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published release tag rather than
+`edge`. Changing only `RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Until a
+stable `vX.Y.Z` has been published, GHCR may only have `edge` and `sha-*` tags; do not pin
+`latest` unless that tag exists in the registry.
 
 The updater resolves the newest stable `vX.Y.Z` source tag but deploys its `sha-<full-commit>` image,
 not `latest` or a moving minor tag. A registry tag is not an OCI digest and GHCR package writers can
@@ -357,8 +450,9 @@ as that allows:
   `cap_drop: ALL` and no socket.
 
 Enabling the `updater` profile requires `RAKAZO_UPDATER_TOKEN` to be a dedicated random value (at
-least 32 characters in production). It must differ from `BETTER_AUTH_SECRET` and
-`SANDBOX_SUPERVISOR_TOKEN`. Leave the profile disabled if you would rather not grant the capability.
+least 32 characters in production). It must differ from `BETTER_AUTH_SECRET`,
+`SANDBOX_SUPERVISOR_TOKEN`, and `SCREEN_PROXY_SECRET`. Leave the profile disabled if you would
+rather not grant the capability.
 
 ## What “Rakazo Cloud” still needs
 

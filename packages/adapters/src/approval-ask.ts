@@ -9,9 +9,10 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
+  options?: { reviewReason?: string },
 ): MessageBlock {
   const summary = describeApprovalAction(toolName, args);
-  const detail = formatApprovalDetail(args);
+  const detail = formatApprovalDetail(args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -41,8 +42,14 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
   return target ? `${toolName} → ${target}` : toolName;
 }
 
-function formatApprovalDetail(args: Record<string, unknown>): string | undefined {
+function formatApprovalDetail(
+  args: Record<string, unknown>,
+  reviewReason?: string,
+): string | undefined {
   const lines: string[] = [];
+  if (reviewReason?.trim()) {
+    lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
+  }
   for (const key of ["collection", "title", "to", "subject", "amount", "body"]) {
     const value = args[key];
     if (value == null || value === "") continue;

@@ -1,0 +1,44 @@
+name: android-app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - ".github/workflows/android-app.yml"
+  pull_request:
+    paths:
+      - "android-app/**"
+      - ".github/workflows/android-app.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-app-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Android verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+      - name: Install Android SDK 37
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-37.0"
+          "build-tools;37.0.0"
+      - name: Verify Android app
+        run: ./gradlew lintDebug testDebugUnitTest assembleDebug --stacktrace

@@ -254,7 +254,7 @@ export async function messageBot(
     botId: target.id,
     name: target.name,
     delivered: message,
-    note: `Sent to ${target.name}. Delivery is asynchronous — if they reply it arrives later as a new message that wakes you. Do not wait for it now.`,
+    note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
   };
 }
 
