@@ -224,6 +224,12 @@ export const appContract = {
       .output(BotSectionSchema),
   },
   threads: {
+    head: oc.input(threadTarget).output(
+      z.object({
+        threadId: Id,
+        cursor: z.number().int().min(-1),
+      }),
+    ),
     get: oc.input(threadTarget).output(ThreadSnapshotSchema),
     messages: oc
       .input(

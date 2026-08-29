@@ -129,6 +129,7 @@ import {
   sendThreadMessage,
   setThreadUnreadState,
   stopThreadRuns,
+  threadHead,
   threadSnapshot,
 } from "./thread-target.js";
 import {
@@ -945,6 +946,10 @@ export function createRouter(deps: RouterDeps) {
       ),
     },
     threads: {
+      head: authed.threads.head.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        return threadHead(deps.prisma, target);
+      }),
       get: authed.threads.get.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         return threadSnapshot(deps, target);

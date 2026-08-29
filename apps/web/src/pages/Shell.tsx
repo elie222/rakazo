@@ -225,6 +225,11 @@ type PendingBrowserNotification = {
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
+
+function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
+  return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
+}
 
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
   if (!userId) return null;
@@ -633,12 +638,12 @@ export function ShellPage() {
     });
   }
 
-  async function refreshGroupThread(id: string) {
+  async function refreshGroupThread(id: string, signal?: AbortSignal) {
     const scrollElement = messageScroll.current;
     const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
-    const snap = await rpc.threads.get({ groupId: id });
+    const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id || request !== groupRefreshEpoch.current) return snap;
     const reconciled = reconcileRefreshedThread(
@@ -662,7 +667,7 @@ export function ShellPage() {
     return snap;
   }
 
-  async function refreshThread(id: string) {
+  async function refreshThread(id: string, signal?: AbortSignal) {
     const scrollElement = messageScroll.current;
     const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
@@ -670,7 +675,7 @@ export function ShellPage() {
     const request = ++threadRefreshEpoch.current;
     // Apply threads.get as soon as it returns so stop/takeover status is not held behind
     // routines/skills/screen fetches (progress can advance the cursor meanwhile).
-    const snap = await rpc.threads.get({ botId: id });
+    const snap = await rpc.threads.get({ botId: id }, signal ? { signal } : undefined);
     markOnce("rk:renderer:thread-response");
     if (
       activeBotId.current !== id ||
@@ -695,26 +700,27 @@ export function ShellPage() {
     ) {
       snapTranscriptToEndAfterFrame();
     }
-    const [routines, skills] = await Promise.all([
+    void Promise.all([
       rpc.routines.list({ botId: id }).catch(() => null),
       rpc.skills.list({ botId: id }).catch(() => null),
       refreshComputerScreen(id).catch(() => null),
-    ]);
-    if (
-      activeBotId.current !== id ||
-      epoch !== historyEpoch.current ||
-      request !== threadRefreshEpoch.current
-    ) {
-      return snap;
-    }
-    if (routines) {
-      setRoutines(routines);
-      setRoutinesBotId(id);
-    }
-    if (skills) {
-      setTaughtSkills(skills);
-      setTaughtSkillsBotId(id);
-    }
+    ]).then(([routines, skills]) => {
+      if (
+        activeBotId.current !== id ||
+        epoch !== historyEpoch.current ||
+        request !== threadRefreshEpoch.current
+      ) {
+        return;
+      }
+      if (routines) {
+        setRoutines(routines);
+        setRoutinesBotId(id);
+      }
+      if (skills) {
+        setTaughtSkills(skills);
+        setTaughtSkillsBotId(id);
+      }
+    });
     return snap;
   }
 
@@ -971,50 +977,66 @@ export function ShellPage() {
       const primed = bootstrappedThread.current;
       bootstrappedThread.current = null;
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      let snap =
+      const snap =
         primed?.botId === active.id
           ? primed
           : pendingJump
-            ? await rpc.threads.get({ botId: active.id }).catch(() => null)
-            : await refreshThread(active.id).catch(() => null);
+            ? await rpc.threads
+                .get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+                .catch(() => null)
+            : await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
       if (abort.signal.aborted) return;
-      if (snap === null) {
-        snap = await refreshThread(active.id).catch(() => null);
-        if (abort.signal.aborted) return;
-      }
-      let retryMs = 250;
-      // Short retries for a better initial snap; then subscribe even without one.
-      while (snap === null && !abort.signal.aborted && retryMs < 5_000) {
-        await abortableDelay(retryMs, abort.signal);
-        snap = await refreshThread(active.id).catch(() => null);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-      if (abort.signal.aborted) return;
-      let streamReady = Boolean(snap?.threadId);
       let subscribedThreadId = snap?.threadId;
       let initialCursor = snap?.cursor ?? -1;
+      let headRetryMs = 250;
+      while (!subscribedThreadId && !abort.signal.aborted) {
+        const head = await rpc.threads
+          .head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+          .catch(() => null);
+        if (head) {
+          subscribedThreadId = head.threadId;
+          initialCursor = head.cursor;
+          break;
+        }
+        try {
+          await abortableDelay(headRetryMs, abort.signal);
+        } catch {
+          return;
+        }
+        headRetryMs = Math.min(headRetryMs * 2, 5_000);
+      }
+      if (!subscribedThreadId || abort.signal.aborted) return;
       let cursor = initialCursor;
-      if (!streamReady) {
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
         void (async () => {
           let snapshotRetryMs = 250;
-          while (!streamReady && !abort.signal.aborted) {
+          while (!snapshotReady && !abort.signal.aborted) {
             try {
               await abortableDelay(snapshotRetryMs, abort.signal);
             } catch {
               return;
             }
-            const refreshed = await refreshThread(active.id).catch(() => null);
-            if (refreshed?.threadId) {
-              subscribedThreadId = refreshed.threadId;
-              initialCursor = Math.max(cursor, refreshed.cursor);
-              streamReady = true;
+            await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
               return;
             }
             snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
           }
         })();
       }
-      retryMs = 250;
+      const streamReady = true;
+      let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
           const events = await rpc.threads.subscribe(
@@ -1025,7 +1047,11 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
+              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
+            }
             const currentBot = botsRef.current.find((bot) => bot.id === active.id);
             notifyBrowserForTerminalEvent(
               event,
@@ -1072,7 +1098,7 @@ export function ShellPage() {
           // The durable cursor below makes reconnects safe after a transient network failure.
         }
         if (abort.signal.aborted) break;
-        await refreshThread(active.id).catch(() => null);
+        await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
         await abortableDelay(retryMs, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
@@ -1120,47 +1146,63 @@ export function ShellPage() {
     historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
-      let snap = pendingJump
-        ? await rpc.threads.get({ groupId }).catch(() => null)
-        : await refreshGroupThread(groupId).catch(() => null);
+      const snap = pendingJump
+        ? await rpc.threads
+            .get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+            .catch(() => null)
+        : await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
       if (abort.signal.aborted) return;
-      if (snap === null) {
-        snap = await refreshGroupThread(groupId).catch(() => null);
-        if (abort.signal.aborted) return;
-      }
-      let retryMs = 250;
-      // Short retries for a better initial snap; then subscribe even without one.
-      while (snap === null && !abort.signal.aborted && retryMs < 5_000) {
-        await abortableDelay(retryMs, abort.signal);
-        snap = await refreshGroupThread(groupId).catch(() => null);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-      if (abort.signal.aborted) return;
-      let streamReady = Boolean(snap?.threadId);
       let subscribedThreadId = snap?.threadId;
       let initialCursor = snap?.cursor ?? -1;
+      let headRetryMs = 250;
+      while (!subscribedThreadId && !abort.signal.aborted) {
+        const head = await rpc.threads
+          .head({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+          .catch(() => null);
+        if (head) {
+          subscribedThreadId = head.threadId;
+          initialCursor = head.cursor;
+          break;
+        }
+        try {
+          await abortableDelay(headRetryMs, abort.signal);
+        } catch {
+          return;
+        }
+        headRetryMs = Math.min(headRetryMs * 2, 5_000);
+      }
+      if (!subscribedThreadId || abort.signal.aborted) return;
       let cursor = initialCursor;
-      if (!streamReady) {
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
         void (async () => {
           let snapshotRetryMs = 250;
-          while (!streamReady && !abort.signal.aborted) {
+          while (!snapshotReady && !abort.signal.aborted) {
             try {
               await abortableDelay(snapshotRetryMs, abort.signal);
             } catch {
               return;
             }
-            const refreshed = await refreshGroupThread(groupId).catch(() => null);
-            if (refreshed?.threadId) {
-              subscribedThreadId = refreshed.threadId;
-              initialCursor = Math.max(cursor, refreshed.cursor);
-              streamReady = true;
+            await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
               return;
             }
             snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
           }
         })();
       }
-      retryMs = 250;
+      const streamReady = true;
+      let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
           const events = await rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal });
@@ -1168,7 +1210,11 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
+              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
+            }
             const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
             notifyBrowserForTerminalEvent(
               event,
@@ -1193,7 +1239,7 @@ export function ShellPage() {
           // reconnect safely
         }
         if (abort.signal.aborted) break;
-        await refreshGroupThread(groupId).catch(() => null);
+        await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
         await abortableDelay(retryMs, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
