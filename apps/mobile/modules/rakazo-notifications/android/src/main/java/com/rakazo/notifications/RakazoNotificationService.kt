@@ -65,7 +65,7 @@ class RakazoNotificationService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val generation = sessionGeneration.incrementAndGet()
+    val generation = synchronized(sessionLock) { sessionGeneration.incrementAndGet() }
     pollJob?.cancel()
     pollJob = scope.launch { poll(generation) }
     return START_STICKY
@@ -100,34 +100,60 @@ class RakazoNotificationService : Service() {
         val active = runs(storage.endpoint, storage.token, "active")
         val working = active.filter(::isWorking)
         val recent = runs(storage.endpoint, storage.token, "recent")
-        if (generation != sessionGeneration.get()) return
-        if (working.isEmpty()) clearLive() else showLive(working, avatarStyle)
-        if (!seeded) {
-          knownCompleted += recent.map { it.runId }
-          seeded = true
-        } else {
-          recent.asReversed().filter { knownCompleted.add(it.runId) }.forEach { run ->
-            when {
-              run.status == "failed" && settings.needsAttention -> post(run, attentionCopy(run))
-              run.status != "completed" -> Unit
-              run.trigger == "routine" && settings.scheduledTasks ->
-                postCompletion(storage, run, true, generation)
-              run.trigger != "routine" && settings.messages ->
-                postCompletion(storage, run, false, generation)
+        val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
+        val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
+        if (!runIfCurrent(generation) {
+            if (working.isEmpty()) clearLive() else showLive(working, avatarStyle)
+            if (!seeded) {
+              knownCompleted += recent.map { it.runId }
+              seeded = true
+            } else {
+              recent.asReversed().filter { knownCompleted.add(it.runId) }.forEach { run ->
+                when {
+                  run.status == "failed" && settings.needsAttention ->
+                    immediate += run to attentionCopy(run)
+                  run.status != "completed" -> Unit
+                  run.trigger == "routine" && settings.scheduledTasks ->
+                    replyLookups += run to true
+                  run.trigger != "routine" && settings.messages ->
+                    replyLookups += run to false
+                }
+              }
             }
+            knownCompleted.retainAll(recent.map { it.runId }.toSet())
+            getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
+              .putStringSet(SEEN_RUNS, knownCompleted.toSet())
+              .putBoolean(SEEN_RUNS_SEEDED, true)
+              .apply()
+            if (settings.needsAttention) {
+              active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
+                .filter { alertedAttention.add("${it.runId}:${it.status}") }
+                .forEach { immediate += it to attentionCopy(it) }
+            }
+            alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
+            immediate.forEach { (run, copy) -> post(run, copy) }
+          }
+        ) {
+          return
+        }
+        for ((run, scheduled) in replyLookups) {
+          val reply = runCatching {
+            latestReply(storage.endpoint, storage.token, run.botId)
+          }.getOrDefault("")
+          if (!runIfCurrent(generation) {
+              post(
+                run,
+                NotificationCopy(
+                  title = if (scheduled) "${run.botName} · Scheduled task" else "${run.botName} replied",
+                  body = reply.ifBlank { run.prompt },
+                  channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
+                ),
+              )
+            }
+          ) {
+            return
           }
         }
-        knownCompleted.retainAll(recent.map { it.runId }.toSet())
-        getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
-          .putStringSet(SEEN_RUNS, knownCompleted.toSet())
-          .putBoolean(SEEN_RUNS_SEEDED, true)
-          .apply()
-        if (settings.needsAttention) {
-          active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
-            .filter { alertedAttention.add("${it.runId}:${it.status}") }
-            .forEach { post(it, attentionCopy(it)) }
-        }
-        alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
         if (working.isEmpty()) {
           // Expo push owns background completion and attention delivery. Keeping this service
           // foreground while idle would require the persistent notification the product avoids.
@@ -146,22 +172,12 @@ class RakazoNotificationService : Service() {
     }
   }
 
-  private fun postCompletion(
-    storage: NotificationStorage,
-    run: RunRecord,
-    scheduled: Boolean,
-    generation: Long,
-  ) {
-    val reply = runCatching { latestReply(storage.endpoint, storage.token, run.botId) }.getOrDefault("")
-    if (generation != sessionGeneration.get()) return
-    post(
-      run,
-      NotificationCopy(
-        title = if (scheduled) "${run.botName} · Scheduled task" else "${run.botName} replied",
-        body = reply.ifBlank { run.prompt },
-        channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
-      ),
-    )
+  private fun runIfCurrent(generation: Long, action: () -> Unit): Boolean {
+    synchronized(sessionLock) {
+      if (generation != sessionGeneration.get()) return false
+      action()
+      return true
+    }
   }
 
   private fun post(run: RunRecord, copy: NotificationCopy) {
@@ -293,6 +309,7 @@ class RakazoNotificationService : Service() {
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
+    private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
 
     fun start(context: Context) {
@@ -305,10 +322,12 @@ class RakazoNotificationService : Service() {
     }
 
     fun clearSession(context: Context) {
-      sessionGeneration.incrementAndGet()
-      stop(context)
-      context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
-      context.getSystemService(NotificationManager::class.java).cancelAll()
+      synchronized(sessionLock) {
+        sessionGeneration.incrementAndGet()
+        stop(context)
+        context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
+        context.getSystemService(NotificationManager::class.java).cancelAll()
+      }
     }
   }
 }

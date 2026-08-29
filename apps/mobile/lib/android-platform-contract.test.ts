@@ -56,8 +56,17 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain(
       "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
     );
-    expect(service).toContain("val generation = sessionGeneration.incrementAndGet()");
-    expect(service).toContain("if (generation != sessionGeneration.get()) return");
+    expect(service).toContain(
+      "val generation = synchronized(sessionLock) { sessionGeneration.incrementAndGet() }",
+    );
+    expect(service).toContain(
+      "private fun runIfCurrent(generation: Long, action: () -> Unit): Boolean",
+    );
+    expect(service).toContain("synchronized(sessionLock)");
+    expect(service).toContain(
+      "fun clearSession(context: Context) {\n      synchronized(sessionLock)",
+    );
+    expect(service).not.toContain("private fun postCompletion(");
   });
 
   it("shows live updates only for working runs and ties the pill to a real bot", () => {
