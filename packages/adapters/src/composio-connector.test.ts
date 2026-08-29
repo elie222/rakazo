@@ -1,3 +1,4 @@
+import console from "node:console";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
@@ -167,6 +168,33 @@ describe("composio tool mapping", () => {
     expect(events).toEqual([{ type: "result", data: { provider: "composio" } }]);
   });
 
+  it("logs sanitized connector discovery failures", async () => {
+    const destination = new DestinationEmulator();
+    const failing = {
+      describe: () => ({ ...destination.describe(), id: "failing" }),
+      discoverTools: async () => {
+        throw new Error("denied ak_secretvaluehere");
+      },
+      execute: async function* () {},
+    } as never;
+    const connector = new CompositeConnector(destination, [failing]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await expect(connector.discoverTools({ userId: "u" } as AdapterContext)).resolves.toEqual([
+        expect.objectContaining({ name: "destination.write" }),
+      ]);
+      expect(error).toHaveBeenCalledWith(
+        "connector discovery failed",
+        "failing",
+        expect.stringContaining("[redacted]"),
+      );
+      expect(error.mock.calls.flat().join(" ")).not.toContain("ak_secretvaluehere");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("redacts project keys from errors", () => {
     expect(sanitizeComposioError("denied ak_secretvaluehere")).toContain("[redacted]");
     expect(sanitizeComposioError("denied ak_secretvaluehere")).not.toContain("ak_secret");
@@ -213,7 +241,7 @@ describe("composio tool mapping", () => {
     expect(executeSessionKey([])).toBe("");
   });
 
-  it("uses catalog-canonical toolkit slugs for direct-tool sessions", async () => {
+  it("uses catalog-canonical toolkit slugs without preloading every tool", async () => {
     composioSdkState.created.length = 0;
     composioSdkState.executions.length = 0;
     composioSdkState.sessions.clear();
@@ -247,7 +275,7 @@ describe("composio tool mapping", () => {
       })),
     ).toEqual([
       { userId: "__rakazo_catalog__", toolkits: undefined, sessionPreset: undefined },
-      { userId: "user-1", toolkits: ["GITHUB"], sessionPreset: "direct_tools" },
+      { userId: "user-1", toolkits: ["GITHUB"], sessionPreset: undefined },
     ]);
 
     const events: ConnectorEvent[] = [];

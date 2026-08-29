@@ -1,3 +1,4 @@
+import console from "node:console";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -227,7 +228,6 @@ export class ComposioConnector implements ComposioProvider {
       manageConnections: false,
       sandbox: { enable: false },
       toolkits: canonicalToolkits,
-      sessionPreset: "direct_tools",
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
@@ -417,7 +417,8 @@ export class ConnectorRegistry implements ConnectorProvider {
       [...this.providers].map(async ([connectorId, provider]) => {
         try {
           return [connectorId, await provider.discoverTools(context)] as const;
-        } catch {
+        } catch (error) {
+          console.error("connector discovery failed", connectorId, sanitizeComposioError(error));
           return [connectorId, []] as const;
         }
       }),
