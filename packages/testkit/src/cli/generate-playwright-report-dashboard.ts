@@ -11,13 +11,12 @@ import {
   renderScreenshotGallery,
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
+  validatePlaywrightScreenshotBudget,
 } from "../playwright-report-dashboard.js";
 import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
 
 const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
   process.argv.slice(2);
-const MAX_SCREENSHOT_COUNT = 250;
-const MAX_TOTAL_SCREENSHOT_BYTES = 250 * 1024 * 1024;
 const MAX_ARTIFACT_ENTRIES = 2_000;
 const MAX_ARTIFACT_DEPTH = 12;
 
@@ -108,11 +107,7 @@ async function collectScreenshots(
   const files = (await findPngFiles(resultsPath))
     .filter((file) => classifyPlaywrightScreenshot(file) !== undefined)
     .sort((left, right) => path.basename(left).localeCompare(path.basename(right)));
-  if (files.length > MAX_SCREENSHOT_COUNT) {
-    throw new Error(
-      `Playwright artifact contains ${files.length} screenshots; maximum is ${MAX_SCREENSHOT_COUNT}`,
-    );
-  }
+  validatePlaywrightScreenshotBudget(files.length, 0);
   const imagePath = path.join(outputPath, "images");
   await mkdir(imagePath, { recursive: true });
 
@@ -124,11 +119,7 @@ async function collectScreenshots(
       throw new Error(`Invalid screenshot size for ${file}`);
     }
     totalScreenshotBytes += info.size;
-    if (totalScreenshotBytes > MAX_TOTAL_SCREENSHOT_BYTES) {
-      throw new Error(
-        `Playwright screenshots exceed maximum total size of ${MAX_TOTAL_SCREENSHOT_BYTES} bytes`,
-      );
-    }
+    validatePlaywrightScreenshotBudget(files.length, totalScreenshotBytes);
     const screenshot = await readFile(file);
     validatePngScreenshot(screenshot, file);
     const captureType = classifyPlaywrightScreenshot(file);

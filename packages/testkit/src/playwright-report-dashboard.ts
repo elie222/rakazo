@@ -1,4 +1,6 @@
 const MAX_HISTORY_LENGTH = 100;
+export const MAX_PLAYWRIGHT_SCREENSHOT_COUNT = 250;
+export const MAX_PLAYWRIGHT_SCREENSHOT_BYTES = 250 * 1024 * 1024;
 const SHARED_PAGE_STYLES = `
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09090b; color: #fafafa; }
     * { box-sizing: border-box; }
@@ -46,6 +48,19 @@ export type PlaywrightScreenshotManifest = {
 };
 
 export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "comparison" | "fileName">;
+
+export function validatePlaywrightScreenshotBudget(count: number, totalBytes: number): void {
+  if (count > MAX_PLAYWRIGHT_SCREENSHOT_COUNT) {
+    throw new Error(
+      `Playwright artifact contains ${count} screenshots; maximum is ${MAX_PLAYWRIGHT_SCREENSHOT_COUNT}`,
+    );
+  }
+  if (totalBytes > MAX_PLAYWRIGHT_SCREENSHOT_BYTES) {
+    throw new Error(
+      `Playwright screenshots exceed maximum total size of ${MAX_PLAYWRIGHT_SCREENSHOT_BYTES} bytes`,
+    );
+  }
+}
 
 export function classifyPlaywrightScreenshot(
   fileName: string,

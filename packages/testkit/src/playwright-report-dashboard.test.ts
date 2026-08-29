@@ -3,13 +3,36 @@ import {
   classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
+  MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
+  MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
   type PlaywrightRun,
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
+  validatePlaywrightScreenshotBudget,
 } from "./playwright-report-dashboard.js";
+
+describe("validatePlaywrightScreenshotBudget", () => {
+  it("accepts the exact screenshot count and aggregate byte limits", () => {
+    expect(() =>
+      validatePlaywrightScreenshotBudget(
+        MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
+        MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects the first screenshot and byte beyond their limits", () => {
+    expect(() =>
+      validatePlaywrightScreenshotBudget(MAX_PLAYWRIGHT_SCREENSHOT_COUNT + 1, 0),
+    ).toThrow(/251 screenshots; maximum is 250/);
+    expect(() =>
+      validatePlaywrightScreenshotBudget(1, MAX_PLAYWRIGHT_SCREENSHOT_BYTES + 1),
+    ).toThrow(/maximum total size of 262144000 bytes/);
+  });
+});
 
 describe("classifyPlaywrightScreenshot", () => {
   it("excludes automatic successful-test captures from visual review", () => {
