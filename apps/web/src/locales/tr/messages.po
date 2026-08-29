@@ -2891,24 +2891,24 @@ msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
 
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} başarısız oldu"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} tamamlandı"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} durduruldu"
 
 #: src/lib/browser-notifications.ts
 msgid "Failed."
-msgstr ""
+msgstr "Başarısız oldu."
 
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
-msgstr ""
+msgstr "Durduruldu."
 
 #: src/lib/browser-notifications.ts
 msgid "Finished."
-msgstr ""
+msgstr "Tamamlandı."

@@ -2891,24 +2891,24 @@ msgstr "हमेशा चालू रहने वाले एजेंट�
 
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} विफल रहा"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} पूरा हुआ"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} रोक दिया गया"
 
 #: src/lib/browser-notifications.ts
 msgid "Failed."
-msgstr ""
+msgstr "विफल।"
 
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
-msgstr ""
+msgstr "रोक दिया गया।"
 
 #: src/lib/browser-notifications.ts
 msgid "Finished."
-msgstr ""
+msgstr "पूरा हुआ।"

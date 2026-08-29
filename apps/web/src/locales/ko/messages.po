@@ -2891,24 +2891,24 @@ msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} 실패"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} 완료"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} 중지됨"
 
 #: src/lib/browser-notifications.ts
 msgid "Failed."
-msgstr ""
+msgstr "실패했습니다."
 
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
-msgstr ""
+msgstr "중지되었습니다."
 
 #: src/lib/browser-notifications.ts
 msgid "Finished."
-msgstr ""
+msgstr "완료되었습니다."

@@ -2891,24 +2891,24 @@ msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} ist fehlgeschlagen"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} ist fertig"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} wurde gestoppt"
 
 #: src/lib/browser-notifications.ts
 msgid "Failed."
-msgstr ""
+msgstr "Fehlgeschlagen."
 
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
-msgstr ""
+msgstr "Gestoppt."
 
 #: src/lib/browser-notifications.ts
 msgid "Finished."
-msgstr ""
+msgstr "Fertig."
