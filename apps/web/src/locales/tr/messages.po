@@ -2895,7 +2895,7 @@ msgstr "{name} başarısız oldu"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} finished"
-msgstr "{name} tamamlandı"
+msgstr "{name} çalışmasını tamamladı"
 
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
