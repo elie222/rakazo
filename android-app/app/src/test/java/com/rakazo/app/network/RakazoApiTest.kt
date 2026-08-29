@@ -72,6 +72,8 @@ class RakazoApiTest {
         )
 
         assertEquals("waiting_input", activity.single().status)
+        assertEquals("thread-1", activity.single().threadId)
+        assertEquals("user", activity.single().trigger)
         assertEquals("message-2", hits.single().messageId)
         assertEquals(listOf("gmail_search"), snapshot.messages.single().blocks[0].toolNames)
         assertEquals(true, snapshot.messages.single().blocks[1].secret)

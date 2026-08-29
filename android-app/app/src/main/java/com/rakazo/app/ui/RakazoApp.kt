@@ -1,10 +1,19 @@
 package com.rakazo.app.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color.parseColor
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -17,6 +26,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -29,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,6 +49,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -75,6 +87,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -100,6 +113,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -112,6 +126,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.rakazo.app.ui.theme.Border
 import com.rakazo.app.ui.theme.BorderStrong
@@ -129,6 +144,8 @@ import com.rakazo.app.ui.theme.TextSecondary
 import com.rakazo.app.ui.theme.UnreadPurple
 import com.rakazo.app.network.AgentRecord
 import com.rakazo.app.network.ActivityRunRecord
+import com.rakazo.app.network.AccountRecord
+import com.rakazo.app.network.ApprovalRuleRecord
 import com.rakazo.app.network.BotSectionRecord
 import com.rakazo.app.network.AndroidSessionStore
 import com.rakazo.app.network.ApiException
@@ -139,7 +156,11 @@ import com.rakazo.app.network.MessageBlockRecord
 import com.rakazo.app.network.SearchHitRecord
 import com.rakazo.app.network.ThreadMessageRecord
 import com.rakazo.app.network.ThreadSnapshotRecord
+import com.rakazo.app.network.UsageSummaryRecord
 import com.rakazo.app.network.normalizeEndpoint
+import com.rakazo.app.notifications.NotificationSettings
+import com.rakazo.app.notifications.NotificationSettingsStore
+import com.rakazo.app.notifications.RakazoNotificationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -204,7 +225,7 @@ private sealed interface RuntimeState {
 }
 
 @Composable
-fun RakazoApp() {
+fun RakazoApp(openBotId: String? = null, onOpenBotConsumed: () -> Unit = {}) {
     val context = LocalContext.current.applicationContext
     val api = remember { RakazoApi() }
     val session = remember { SessionManager(AndroidSessionStore(context)) }
@@ -345,13 +366,40 @@ fun RakazoApp() {
                         api.chooseOnboarding(session.endpoint, session.token, botId, optionId)
                     }
                 },
+                loadAccount = {
+                    withContext(Dispatchers.IO) { api.account(session.endpoint, session.token) }
+                },
+                loadUsage = {
+                    withContext(Dispatchers.IO) { api.usageSummary(session.endpoint, session.token) }
+                },
+                loadApprovalRules = {
+                    withContext(Dispatchers.IO) { api.approvalRules(session.endpoint, session.token) }
+                },
+                setApprovalRule = { category ->
+                    withContext(Dispatchers.IO) {
+                        api.setApprovalRule(session.endpoint, session.token, category)
+                    }
+                },
+                removeApprovalRule = { id ->
+                    withContext(Dispatchers.IO) {
+                        api.removeApprovalRule(session.endpoint, session.token, id)
+                    }
+                },
+                openBotId = openBotId,
+                onOpenBotConsumed = onOpenBotConsumed,
                 onSessionExpired = {
+                    NotificationSettingsStore(context).settings =
+                        NotificationSettingsStore(context).settings.copy(liveConnection = false)
+                    RakazoNotificationService.stop(context)
                     session.signedOut()
                     state = RuntimeState.Expired
                 },
                 onSignOut = {
                     val endpoint = session.endpoint
                     val token = session.token
+                    NotificationSettingsStore(context).settings =
+                        NotificationSettingsStore(context).settings.copy(liveConnection = false)
+                    RakazoNotificationService.stop(context)
                     session.signedOut()
                     state = RuntimeState.SignIn(endpoint)
                     scope.launch(Dispatchers.IO) { runCatching { api.signOut(endpoint, token) } }
@@ -364,6 +412,9 @@ fun RakazoApp() {
                 onAction = ::loadAgents,
                 secondaryAction = "Sign out",
                 onSecondaryAction = {
+                    NotificationSettingsStore(context).settings =
+                        NotificationSettingsStore(context).settings.copy(liveConnection = false)
+                    RakazoNotificationService.stop(context)
                     session.signedOut()
                     state = RuntimeState.SignIn(session.endpoint)
                 },
@@ -394,6 +445,13 @@ private fun LiveWorkspace(
     createAgent: suspend (String, String, String) -> Agent,
     answerMessage: suspend (String, String, String, String) -> Unit,
     chooseOnboarding: suspend (String, String) -> Unit,
+    loadAccount: suspend () -> AccountRecord,
+    loadUsage: suspend () -> UsageSummaryRecord,
+    loadApprovalRules: suspend () -> List<ApprovalRuleRecord>,
+    setApprovalRule: suspend (String) -> ApprovalRuleRecord,
+    removeApprovalRule: suspend (String) -> Unit,
+    openBotId: String?,
+    onOpenBotConsumed: () -> Unit,
     onSessionExpired: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -402,8 +460,18 @@ private fun LiveWorkspace(
     var liveAgents by remember(agents) { mutableStateOf(agents) }
     var liveSections by remember(sections) { mutableStateOf(sections) }
     var organizeAgentId by rememberSaveable { mutableStateOf<String?>(null) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     val selectedAgent = liveAgents.firstOrNull { it.id == selectedAgentId }
     val organizeAgent = liveAgents.firstOrNull { it.id == organizeAgentId }
+
+    LaunchedEffect(openBotId, liveAgents) {
+        val requested = openBotId ?: return@LaunchedEffect
+        if (liveAgents.any { it.id == requested }) {
+            settingsOpen = false
+            selectedAgentId = requested
+        }
+        onOpenBotConsumed()
+    }
 
     fun handleWorkspaceError(error: IOException) {
         if (error is ApiException && error.status == 401) onSessionExpired()
@@ -424,20 +492,33 @@ private fun LiveWorkspace(
         }
     }
 
-    BackHandler(enabled = selectedAgent != null) { closeThread() }
+    BackHandler(enabled = selectedAgent != null || settingsOpen) {
+        if (settingsOpen) settingsOpen = false else closeThread()
+    }
 
     AnimatedContent(
-        targetState = selectedAgent,
+        targetState = selectedAgent to settingsOpen,
         transitionSpec = {
-            val direction = if (targetState != null) 1 else -1
+            val direction = if (targetState.first != null || targetState.second) 1 else -1
             (slideInHorizontally(tween(220)) { it / 12 * direction } + fadeIn(tween(180)))
                 .togetherWith(
                     slideOutHorizontally(tween(180)) { -it / 16 * direction } + fadeOut(tween(140)),
                 )
         },
         label = "Agent thread",
-    ) { agent ->
-        if (agent == null) {
+    ) { (agent, showSettings) ->
+        if (showSettings) {
+            SettingsScreen(
+                loadAccount = loadAccount,
+                loadUsage = loadUsage,
+                loadApprovalRules = loadApprovalRules,
+                setApprovalRule = setApprovalRule,
+                removeApprovalRule = removeApprovalRule,
+                onBack = { settingsOpen = false },
+                onSessionExpired = onSessionExpired,
+                onSignOut = onSignOut,
+            )
+        } else if (agent == null) {
             WorkspaceScreen(
                 agents = liveAgents,
                 sections = liveSections,
@@ -454,7 +535,7 @@ private fun LiveWorkspace(
                     selectedAgentId = created.id
                 },
                 onSessionExpired = onSessionExpired,
-                onSignOut = onSignOut,
+                onOpenSettings = { settingsOpen = true },
             )
         } else {
             LiveThreadScreen(
@@ -717,7 +798,7 @@ internal fun WorkspaceScreen(
     onSearchHit: (SearchHitRecord) -> Unit = {},
     onCreateAgent: (suspend (String, String, String) -> Unit)? = null,
     onSessionExpired: () -> Unit = {},
-    onSignOut: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
     demoActivity: Boolean = false,
 ) {
     var mode by rememberSaveable { mutableStateOf(WorkspaceMode.Agents) }
@@ -797,7 +878,7 @@ internal fun WorkspaceScreen(
                 mode = WorkspaceMode.Agents
             },
             onNewAgent = { creatingAgent = true },
-            onSignOut = onSignOut,
+            onOpenSettings = onOpenSettings,
         )
         WorkspaceTabs(mode = mode, onModeChange = { mode = it })
         HorizontalDivider(color = Border)
@@ -848,9 +929,8 @@ private fun WorkspaceAppBar(
     onActivity: () -> Unit,
     onSearch: () -> Unit,
     onNewAgent: () -> Unit,
-    onSignOut: (() -> Unit)?,
+    onOpenSettings: (() -> Unit)?,
 ) {
-    var accountMenuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -863,29 +943,15 @@ private fun WorkspaceAppBar(
         AppBarIcon(Icons.Outlined.NotificationsNone, "Activity", activitySelected, onActivity)
         AppBarIcon(Icons.Outlined.Search, "Search", searchSelected, onSearch)
         AppBarIcon(Icons.Outlined.Add, "New agent", false, onNewAgent)
-        Box {
-            Surface(
-                modifier = Modifier.size(48.dp)
-                    .semantics { contentDescription = "Account" }
-                    .clickable(enabled = onSignOut != null) { accountMenuOpen = true },
-                shape = CircleShape,
-                color = Elevated,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.Person, null, tint = TextSecondary)
-                }
-            }
-            DropdownMenu(
-                expanded = accountMenuOpen,
-                onDismissRequest = { accountMenuOpen = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Sign out") },
-                    onClick = {
-                        accountMenuOpen = false
-                        onSignOut?.invoke()
-                    },
-                )
+        Surface(
+            modifier = Modifier.size(48.dp)
+                .semantics { contentDescription = "Settings" }
+                .clickable(enabled = onOpenSettings != null) { onOpenSettings?.invoke() },
+            shape = CircleShape,
+            color = Elevated,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Person, null, tint = TextSecondary)
             }
         }
     }
@@ -895,6 +961,286 @@ private fun WorkspaceAppBar(
 private fun AppBarIcon(icon: ImageVector, description: String, selected: Boolean, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
         Icon(icon, description, tint = if (selected) FocusBlue else TextSecondary)
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    loadAccount: suspend () -> AccountRecord,
+    loadUsage: suspend () -> UsageSummaryRecord,
+    loadApprovalRules: suspend () -> List<ApprovalRuleRecord>,
+    setApprovalRule: suspend (String) -> ApprovalRuleRecord,
+    removeApprovalRule: suspend (String) -> Unit,
+    onBack: () -> Unit,
+    onSessionExpired: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val notificationStore = remember { NotificationSettingsStore(context) }
+    var notifications by remember { mutableStateOf(notificationStore.settings) }
+    var account by remember { mutableStateOf<AccountRecord?>(null) }
+    var usage by remember { mutableStateOf<UsageSummaryRecord?>(null) }
+    var rules by remember { mutableStateOf<List<ApprovalRuleRecord>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var savingRule by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun handle(errorValue: IOException) {
+        if (errorValue is ApiException && errorValue.status == 401) onSessionExpired()
+        else error = errorValue.message ?: "Could not load settings"
+    }
+
+    fun saveNotifications(next: NotificationSettings) {
+        notifications = next
+        notificationStore.settings = next
+        if (next.liveConnection) {
+            runCatching { RakazoNotificationService.start(context) }.onFailure {
+                notifications = next.copy(liveConnection = false)
+                notificationStore.settings = notifications
+                error = "Android could not start the live connection."
+            }
+        } else {
+            RakazoNotificationService.stop(context)
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) saveNotifications(notifications.copy(liveConnection = true))
+        else error = "Android blocked notifications. You can allow them in system settings."
+    }
+
+    fun setLiveConnection(enabled: Boolean) {
+        if (!enabled) {
+            saveNotifications(notifications.copy(liveConnection = false))
+        } else if (
+            Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            saveNotifications(notifications.copy(liveConnection = true))
+        } else {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            account = loadAccount()
+            usage = loadUsage()
+            rules = loadApprovalRules()
+        } catch (errorValue: IOException) {
+            handle(errorValue)
+        } finally {
+            loading = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Page).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = TextSecondary)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        }
+        HorizontalDivider(color = Border)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                SettingsCard("Account") {
+                    Text(account?.name ?: if (loading) "Loading…" else "Your account", color = TextPrimary)
+                    account?.email?.let { Text(it, color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+                }
+            }
+            item {
+                SettingsCard("Language") {
+                    Text(
+                        LocalConfiguration.current.locales[0].displayLanguage,
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text("Uses your Android language", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                SettingsCard("Avatars") {
+                    Text(
+                        "Organic",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
+            item {
+                SettingsCard("Usage") {
+                    usage?.let {
+                        Text(
+                            "${it.runs} runs · ${it.inputTokens + it.outputTokens} tokens",
+                            color = TextSecondary,
+                        )
+                    }
+                    Text("Model spend uses your provider keys.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                SettingsCard("Notifications") {
+                    Text(
+                        "A live connection keeps agent status and alerts current when Rakazo is in the background.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    SettingsSwitch(
+                        "Live connection",
+                        "Shows working or idle status",
+                        notifications.liveConnection,
+                        onCheckedChange = ::setLiveConnection,
+                    )
+                    SettingsSwitch("Agent messages", "Replies and completed work", notifications.messages) {
+                        saveNotifications(notifications.copy(messages = it))
+                    }
+                    SettingsSwitch("Scheduled tasks", "Contextual alerts from routines", notifications.scheduledTasks) {
+                        saveNotifications(notifications.copy(scheduledTasks = it))
+                    }
+                    SettingsSwitch("Needs attention", "Questions, approvals, and takeover", notifications.needsAttention) {
+                        saveNotifications(notifications.copy(needsAttention = it))
+                    }
+                    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        TextButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                                )
+                            },
+                        ) { Text("Open Android notification settings", color = FocusBlue) }
+                    }
+                }
+            }
+            item {
+                SettingsCard("Action confirmations") {
+                    Text(
+                        "Bots act without asking by default. Add exceptions for actions you want to review.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    listOf("email" to "Ask before sending external email", "purchase" to "Ask before purchases")
+                        .forEach { (category, label) ->
+                            val enabled = rules.any {
+                                it.effect == "require_approval" && it.matchKind == "category" &&
+                                    it.matchValue == category
+                            }
+                            SettingsSwitch(label, null, enabled, enabled = savingRule == null) { checked ->
+                                val current = rules.firstOrNull {
+                                    it.effect == "require_approval" && it.matchKind == "category" &&
+                                        it.matchValue == category
+                                }
+                                savingRule = category
+                                scope.launch {
+                                    try {
+                                        if (checked) rules = rules + setApprovalRule(category)
+                                        else if (current != null) {
+                                            removeApprovalRule(current.id)
+                                            rules = rules.filterNot { it.id == current.id }
+                                        }
+                                    } catch (errorValue: IOException) {
+                                        handle(errorValue)
+                                    } finally {
+                                        savingRule = null
+                                    }
+                                }
+                            }
+                        }
+                    rules.filterNot { it.matchKind == "category" && it.matchValue in setOf("email", "purchase") }
+                        .forEach { rule ->
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(rule.matchValue, Modifier.weight(1f), color = TextSecondary)
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        try {
+                                            removeApprovalRule(rule.id)
+                                            rules = rules.filterNot { it.id == rule.id }
+                                        } catch (errorValue: IOException) {
+                                            handle(errorValue)
+                                        }
+                                    }
+                                }) { Text("Remove", color = TextMuted) }
+                            }
+                        }
+                    if (savingRule != null) Text("Saving…", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            error?.let { message -> item { ThreadError(message) } }
+            item {
+                Button(
+                    onClick = onSignOut,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(27.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceColor, contentColor = TextPrimary),
+                ) { Text("Sign out") }
+            }
+            item {
+                Text(
+                    "Connected to ${runCatching { java.net.URI(AndroidSessionStore(context).endpoint).authority }.getOrNull().orEmpty()}",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(title, color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitch(
+    title: String,
+    subtitle: String?,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = TextSecondary, style = MaterialTheme.typography.bodyLarge)
+            subtitle?.let { Text(it, color = TextMuted, style = MaterialTheme.typography.bodySmall) }
+        }
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -1579,6 +1925,7 @@ private fun ActivityRow(agent: Agent, summary: String, time: String, running: Bo
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 private fun LiveThreadScreen(
     agent: Agent,
     agents: List<Agent>,
@@ -1659,7 +2006,7 @@ private fun LiveThreadScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding()) {
+    Column(modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding().imePadding()) {
         AgentTopBar(
             agent = agent,
             demoContent = working,
@@ -1681,7 +2028,7 @@ private fun LiveThreadScreen(
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().imeNestedScroll(),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
@@ -1692,18 +2039,20 @@ private fun LiveThreadScreen(
                             item { EmptyThread() }
                         } else {
                             items(messages, key = { it.id }) { message ->
-                                ThreadMessage(message, agents) { block, answer ->
-                                    scope.launch {
-                                        try {
-                                            if (block.kind == "choice") {
-                                                chooseOnboarding(agent.id, answer)
-                                            } else {
-                                                val runId = message.runId ?: return@launch
-                                                answerMessage(agent.id, runId, message.id, answer)
+                                Box(Modifier.animateItem()) {
+                                    ThreadMessage(message, agents) { block, answer ->
+                                        scope.launch {
+                                            try {
+                                                if (block.kind == "choice") {
+                                                    chooseOnboarding(agent.id, answer)
+                                                } else {
+                                                    val runId = message.runId ?: return@launch
+                                                    answerMessage(agent.id, runId, message.id, answer)
+                                                }
+                                                refreshGeneration += 1
+                                            } catch (errorValue: IOException) {
+                                                handle(errorValue)
                                             }
-                                            refreshGeneration += 1
-                                        } catch (errorValue: IOException) {
-                                            handle(errorValue)
                                         }
                                     }
                                 }
@@ -2216,6 +2565,11 @@ private fun Composer(
     enabled: Boolean = true,
     showSecondaryActions: Boolean = true,
 ) {
+    val sendAlpha by animateFloatAsState(
+        targetValue = if (enabled && value.isNotBlank()) 1f else 0.5f,
+        animationSpec = tween(180),
+        label = "Send availability",
+    )
     Row(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2255,7 +2609,7 @@ private fun Composer(
         Surface(
             modifier = Modifier.size(54.dp).clickable(enabled = enabled && value.isNotBlank(), onClick = onSend),
             shape = CircleShape,
-            color = Cream.copy(alpha = if (enabled && value.isNotBlank()) 1f else 0.5f),
+            color = Cream.copy(alpha = sendAlpha),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.ArrowUpward, "Send", tint = CreamText)

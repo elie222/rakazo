@@ -29,6 +29,23 @@ data class ActivityRunRecord(
     val status: String,
     val promptSnippet: String,
     val updatedAt: String,
+    val threadId: String,
+    val trigger: String,
+)
+
+data class AccountRecord(
+    val name: String,
+    val email: String,
+    val avatarStyle: String,
+)
+
+data class UsageSummaryRecord(val runs: Int, val inputTokens: Int, val outputTokens: Int)
+
+data class ApprovalRuleRecord(
+    val id: String,
+    val effect: String,
+    val matchKind: String,
+    val matchValue: String,
 )
 
 data class SearchHitRecord(
@@ -95,6 +112,45 @@ class RakazoApi {
         val response = request(endpoint, "/rpc/bots/list", token)
         if (response.status !in 200..299) throw response.error("Could not load agents")
         return parseAgents(response.body)
+    }
+
+    fun account(endpoint: String, token: String): AccountRecord {
+        val response = request(endpoint, "/rpc/me", token)
+        if (response.status !in 200..299) throw response.error("Could not load account")
+        return parseAccount(response.body)
+    }
+
+    fun usageSummary(endpoint: String, token: String): UsageSummaryRecord {
+        val response = request(endpoint, "/rpc/usage/summary", token)
+        if (response.status !in 200..299) throw response.error("Could not load usage")
+        return parseUsageSummary(response.body)
+    }
+
+    fun approvalRules(endpoint: String, token: String): List<ApprovalRuleRecord> {
+        val response = request(endpoint, "/rpc/approvalRules/list", token)
+        if (response.status !in 200..299) throw response.error("Could not load action confirmations")
+        return parseApprovalRules(response.body)
+    }
+
+    fun setApprovalRule(endpoint: String, token: String, category: String): ApprovalRuleRecord {
+        require(category == "email" || category == "purchase")
+        val input = JSONObject()
+            .put("effect", "require_approval")
+            .put("matchKind", "category")
+            .put("matchValue", category)
+        val response = request(endpoint, "/rpc/approvalRules/set", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not save action confirmation")
+        return parseApprovalRule(response.body)
+    }
+
+    fun removeApprovalRule(endpoint: String, token: String, id: String) {
+        val response = request(
+            endpoint,
+            "/rpc/approvalRules/remove",
+            token,
+            rpcBody(JSONObject().put("id", id)),
+        )
+        if (response.status !in 200..299) throw response.error("Could not remove action confirmation")
     }
 
     fun activity(endpoint: String, token: String, filter: String): List<ActivityRunRecord> {
@@ -288,12 +344,71 @@ internal fun parseActivity(body: String): List<ActivityRunRecord> = try {
             status = status,
             promptSnippet = value.optString("promptSnippet"),
             updatedAt = value.requiredString("updatedAt"),
+            threadId = value.requiredString("threadId"),
+            trigger = value.requiredString("trigger").also {
+                if (it !in RUN_TRIGGERS) throw IOException("Invalid activity response")
+            },
         )
     }
 } catch (error: IOException) {
     throw error
 } catch (_: RuntimeException) {
     throw IOException("Invalid activity response")
+}
+
+internal fun parseAccount(body: String): AccountRecord = try {
+    val value = JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid account response")
+    val avatarStyle = value.requiredString("avatarStyle")
+    if (avatarStyle != "organic" && avatarStyle != "robot") throw IOException("Invalid account response")
+    AccountRecord(value.requiredString("name"), value.requiredString("email"), avatarStyle)
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid account response")
+}
+
+internal fun parseUsageSummary(body: String): UsageSummaryRecord = try {
+    val value = JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid usage response")
+    UsageSummaryRecord(
+        runs = value.requiredInt("runs"),
+        inputTokens = value.requiredInt("inputTokens"),
+        outputTokens = value.requiredInt("outputTokens"),
+    )
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid usage response")
+}
+
+internal fun parseApprovalRules(body: String): List<ApprovalRuleRecord> = try {
+    val values = JSONObject(body).optJSONArray("json") ?: throw IOException("Invalid approval response")
+    List(values.length()) { parseApprovalRule(values.requiredObject(it)) }
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid approval response")
+}
+
+private fun parseApprovalRule(body: String): ApprovalRuleRecord = try {
+    parseApprovalRule(JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid approval response"))
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid approval response")
+}
+
+private fun parseApprovalRule(value: JSONObject): ApprovalRuleRecord {
+    val effect = value.requiredString("effect")
+    val matchKind = value.requiredString("matchKind")
+    if (effect !in APPROVAL_EFFECTS || matchKind !in APPROVAL_MATCH_KINDS) {
+        throw IOException("Invalid approval response")
+    }
+    return ApprovalRuleRecord(
+        id = value.requiredString("id"),
+        effect = effect,
+        matchKind = matchKind,
+        matchValue = value.requiredString("matchValue"),
+    )
 }
 
 internal fun parseSearchHits(body: String): List<SearchHitRecord> = try {
@@ -515,6 +630,9 @@ private fun JSONArray.requiredObject(index: Int): JSONObject =
 private fun JSONObject.requiredString(name: String): String =
     optString(name).takeIf { it.isNotBlank() } ?: throw IOException("Invalid server response")
 
+private fun JSONObject.requiredInt(name: String): Int =
+    if (has(name) && opt(name) is Number) getInt(name) else throw IOException("Invalid server response")
+
 private fun JSONObject.optionalString(name: String): String? = when {
     !has(name) || isNull(name) -> null
     opt(name) is String -> optString(name).takeIf { it.isNotBlank() }
@@ -558,6 +676,9 @@ private val RUN_STATUSES = setOf(
     "cancelled",
 )
 private val SEARCH_KINDS = setOf("conversation", "message", "file", "link", "routine")
+private val RUN_TRIGGERS = setOf("user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message")
+private val APPROVAL_EFFECTS = setOf("always_allow", "require_approval")
+private val APPROVAL_MATCH_KINDS = setOf("tool", "connector", "category")
 
 private fun java.io.Reader.readLimitedText(): String {
     val result = StringBuilder()
