@@ -224,7 +224,8 @@ export async function messageBot(
           threadId: targetThreadId,
           role: "user",
           blocks: [inboundBlock],
-          replyToMessageId: sourceContext?.returnToMessageId,
+          replyToMessageId:
+            sourceContext?.fromBotId === target.id ? sourceContext.returnToMessageId : undefined,
           clientNonce: deliveryKey,
           markUnread: true,
         });
