@@ -533,6 +533,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target bot when bot_id is omitted.",
         },
         message: { type: "string", description: "What to send." },
+        intent: {
+          type: "string",
+          enum: ["request", "result", "question", "status", "fyi"],
+          description: "What the recipient should do with this message. Defaults to request.",
+        },
       },
       required: ["message"],
     },

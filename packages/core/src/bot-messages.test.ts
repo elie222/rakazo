@@ -322,6 +322,25 @@ describe("inbound wake prompt", () => {
     expect(prompt).toContain("untrusted peer content");
   });
 
+  it("requires a received result to be surfaced to the user", () => {
+    const resultPrompt = buildBotMessageWakePrompt({
+      from: { id: "b_1", name: "Researcher" },
+      text: "The answer is 42.",
+      intent: "result",
+    });
+    expect(resultPrompt).toContain("summarize this result to the user now");
+    expect(resultPrompt).not.toContain("staying silent is fine");
+  });
+
+  it("keeps silence available only for an explicit FYI", () => {
+    const fyiPrompt = buildBotMessageWakePrompt({
+      from: { id: "b_1", name: "Researcher" },
+      text: "No action needed.",
+      intent: "fyi",
+    });
+    expect(fyiPrompt).toContain("staying silent is fine");
+  });
+
   it("carries the message itself, escaped so markup cannot break out", () => {
     expect(prompt).toContain("Q3 numbers are in /data/q3.csv");
     expect(prompt).toContain("&lt;ignore prior&gt;");
@@ -333,8 +352,8 @@ describe("inbound wake prompt", () => {
     expect(prompt).toContain("bot_id b_1");
   });
 
-  it("does not demand a reply for an FYI", () => {
-    expect(prompt).toContain("staying silent is fine");
+  it("does not allow a request to disappear as an FYI", () => {
+    expect(prompt).not.toContain("staying silent is fine");
   });
 
   it("continues independent work after sending useful updates", () => {

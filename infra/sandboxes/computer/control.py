@@ -18,11 +18,6 @@ MAX_ARGV = 32
 MAX_ARG_LEN = 16_384
 KNOWN_LAUNCH = frozenset(
     {
-        "chromium",
-        "chromium-browser",
-        "firefox",
-        "google-chrome",
-        "google-chrome-stable",
         "rakazo-browser",
         "xterm",
     }

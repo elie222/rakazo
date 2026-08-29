@@ -9,6 +9,7 @@ export interface CreateThreadMessageInput {
   replyToMessageId?: string;
   runId?: string;
   clientNonce?: string;
+  markUnread?: boolean;
 }
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
@@ -25,7 +26,7 @@ export async function createThreadMessageInTransaction(
     where: { id: input.threadId },
     data: {
       nextMessageSeq: { increment: 1 },
-      unread: input.role === "bot" ? true : undefined,
+      unread: input.role === "bot" || input.markUnread ? true : undefined,
     },
     select: { nextMessageSeq: true },
   });

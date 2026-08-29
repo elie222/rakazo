@@ -49,6 +49,23 @@ EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
+register_browser_handler() {
+  local mime="$1"
+  if ! xdg-mime default rakazo-browser.desktop "$mime" >/dev/null 2>&1 \
+    || [[ "$(xdg-mime query default "$mime" 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+    echo "failed to register rakazo-browser for $mime" >&2
+    exit 1
+  fi
+}
+register_browser_handler x-scheme-handler/http
+register_browser_handler x-scheme-handler/https
+register_browser_handler text/html
+if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1 \
+  || [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+  echo "failed to set default web browser to rakazo-browser" >&2
+  exit 1
+fi
+
 rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
   "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
   "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"

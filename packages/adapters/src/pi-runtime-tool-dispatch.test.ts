@@ -298,6 +298,77 @@ describe("Pi connector tool dispatch", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
   });
 
+  it("surfaces a contextual peer fallback when that run produces nothing", async () => {
+    fakeAgentState.mode = "empty";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "peer-result-empty",
+        prompt: "[bot] result",
+        instructions: "Summarize the result.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        emptyResponseText: "Update from Researcher: The answer is 42.",
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "peer-result-empty",
+        traceId: "peer-result-empty",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({
+      type: "text",
+      text: "Update from Researcher: The answer is 42.",
+    });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "Update from Researcher: The answer is 42.",
+    });
+  });
+
+  it("normalizes a blank contextual fallback", async () => {
+    fakeAgentState.mode = "empty";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "peer-result-blank",
+        prompt: "[bot] result",
+        instructions: "Summarize the result.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        emptyResponseText: "   ",
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "peer-result-blank",
+        traceId: "peer-result-blank",
+        workspaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
+  });
+
   it("allows more than 80 tool calls by default when no fuse is configured", async () => {
     fakeAgentState.mode = "parent-limit";
     const executeTool = vi.fn(async () => ({ ok: true }));
