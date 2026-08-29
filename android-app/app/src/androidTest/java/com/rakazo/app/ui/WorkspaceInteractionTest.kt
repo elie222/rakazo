@@ -6,6 +6,10 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.runtime.mutableStateOf
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rakazo.app.ui.theme.RakazoTheme
 import org.junit.Assert.assertFalse
@@ -53,5 +57,38 @@ class WorkspaceInteractionTest {
         assertFalse(signedOut)
         compose.onNodeWithText("Sign out").assertHasClickAction().performClick()
         assertTrue(signedOut)
+    }
+
+    @Test
+    fun longPressAndSwipeOpenChatOptions() {
+        var optionRequests = 0
+        compose.setContent {
+            RakazoTheme {
+                WorkspaceScreen(
+                    agents = listOf(Agent("maya", "Maya", "Chief of Staff", Color.Cyan)),
+                    onOpenAgent = {},
+                    onOrganizeAgent = { optionRequests += 1 },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Maya").performTouchInput { longClick() }
+        compose.runOnIdle { assertEquals(1, optionRequests) }
+        compose.onNodeWithText("Maya").performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(2, optionRequests) }
+    }
+
+    @Test
+    fun agentPreviewUpdatesWhenTheWorkspaceSnapshotRefreshes() {
+        val agents = mutableStateOf(listOf(Agent("maya", "Maya", "Old Gmail task", Color.Cyan)))
+        compose.setContent {
+            RakazoTheme {
+                WorkspaceScreen(agents = agents.value, onOpenAgent = {})
+            }
+        }
+
+        compose.onNodeWithText("Old Gmail task").assertExists()
+        compose.runOnIdle { agents.value = listOf(Agent("maya", "Maya", "Hi", Color.Cyan)) }
+        compose.onNodeWithText("Hi").assertExists()
     }
 }

@@ -14,7 +14,10 @@ data class AgentRecord(
     val color: String,
     val pinned: Boolean,
     val status: String,
+    val sectionId: String?,
 )
+
+data class BotSectionRecord(val id: String, val name: String)
 
 data class MessageBlockRecord(
     val kind: String,
@@ -62,6 +65,38 @@ class RakazoApi {
         return parseAgents(response.body)
     }
 
+    fun sections(endpoint: String, token: String): List<BotSectionRecord> {
+        val response = request(endpoint, "/rpc/botSections/list", token)
+        if (response.status !in 200..299) throw response.error("Could not load sections")
+        return parseSections(response.body)
+    }
+
+    fun setAgentPinned(endpoint: String, token: String, botId: String, pinned: Boolean): AgentRecord =
+        updateAgent(endpoint, token, JSONObject().put("botId", botId).put("pinned", pinned))
+
+    fun moveAgentToSection(
+        endpoint: String,
+        token: String,
+        botId: String,
+        sectionId: String?,
+    ): AgentRecord = updateAgent(
+        endpoint,
+        token,
+        JSONObject().put("botId", botId).put("sectionId", sectionId ?: JSONObject.NULL),
+    )
+
+    fun createSection(
+        endpoint: String,
+        token: String,
+        botId: String,
+        name: String,
+    ): BotSectionRecord {
+        val input = JSONObject().put("botId", botId).put("name", name.trim())
+        val response = request(endpoint, "/rpc/botSections/create", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not create section")
+        return parseSection(response.body)
+    }
+
     fun thread(endpoint: String, token: String, botId: String): ThreadSnapshotRecord {
         val body = JSONObject().put("json", JSONObject().put("botId", botId)).toString()
         val response = request(endpoint, "/rpc/threads/get", token, body)
@@ -82,6 +117,12 @@ class RakazoApi {
 
     fun signOut(endpoint: String, token: String) {
         request(endpoint, "/api/auth/sign-out", token)
+    }
+
+    private fun updateAgent(endpoint: String, token: String, input: JSONObject): AgentRecord {
+        val response = request(endpoint, "/rpc/bots/update", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not update chat")
+        return parseAgentResponse(response.body)
     }
 
     private fun request(endpoint: String, path: String, token: String?, body: String = "{\"json\":{}}"):
@@ -110,18 +151,7 @@ internal fun parseAgents(body: String): List<AgentRecord> {
         val array = JSONObject(body).optJSONArray("json") ?: throw IOException("Invalid agent response")
         List(array.length()) { index ->
             val value = array.optJSONObject(index) ?: throw IOException("Invalid agent response")
-            val id = value.requiredString("id")
-            val name = value.requiredString("name")
-            val color = value.requiredString("color")
-            if (!HEX_COLOR.matches(color)) throw IOException("Invalid agent color")
-            AgentRecord(
-                id = id,
-                name = name,
-                summary = value.optString("preview").ifBlank { value.optString("title") },
-                color = color,
-                pinned = value.optBoolean("pinned"),
-                status = value.optString("status"),
-            )
+            parseAgent(value)
         }
     } catch (error: IOException) {
         throw error
@@ -129,6 +159,57 @@ internal fun parseAgents(body: String): List<AgentRecord> {
         throw IOException("Invalid agent response")
     }
 }
+
+internal fun parseSections(body: String): List<BotSectionRecord> = try {
+    val array = JSONObject(body).optJSONArray("json") ?: throw IOException("Invalid section response")
+    List(array.length()) { index -> parseSection(array.requiredObject(index)) }
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid section response")
+}
+
+private fun parseAgentResponse(body: String): AgentRecord = try {
+    parseAgent(JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid agent response"))
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid agent response")
+}
+
+private fun parseAgent(value: JSONObject): AgentRecord {
+    val color = value.requiredString("color")
+    if (!HEX_COLOR.matches(color)) throw IOException("Invalid agent color")
+    val sectionId = when {
+        !value.has("sectionId") || value.isNull("sectionId") -> null
+        value.opt("sectionId") is String -> value.requiredString("sectionId")
+        else -> throw IOException("Invalid agent response")
+    }
+    return AgentRecord(
+        id = value.requiredString("id"),
+        name = value.requiredString("name"),
+        summary = value.optString("preview").ifBlank { value.optString("title") },
+        color = color,
+        pinned = value.optBoolean("pinned"),
+        status = value.optString("status"),
+        sectionId = sectionId,
+    )
+}
+
+private fun parseSection(body: String): BotSectionRecord = try {
+    parseSection(JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid section response"))
+} catch (error: IOException) {
+    throw error
+} catch (_: RuntimeException) {
+    throw IOException("Invalid section response")
+}
+
+private fun parseSection(value: JSONObject) = BotSectionRecord(
+    id = value.requiredString("id"),
+    name = value.requiredString("name"),
+)
+
+private fun rpcBody(input: JSONObject) = JSONObject().put("json", input).toString()
 
 internal fun parseThreadSnapshot(body: String): ThreadSnapshotRecord {
     return try {

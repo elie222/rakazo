@@ -8,10 +8,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +27,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -38,15 +44,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TouchApp
@@ -55,14 +65,20 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -71,12 +87,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -88,6 +107,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.rakazo.app.ui.theme.Border
 import com.rakazo.app.ui.theme.BorderStrong
 import com.rakazo.app.ui.theme.Cream
@@ -103,6 +123,7 @@ import com.rakazo.app.ui.theme.TextPrimary
 import com.rakazo.app.ui.theme.TextSecondary
 import com.rakazo.app.ui.theme.UnreadPurple
 import com.rakazo.app.network.AgentRecord
+import com.rakazo.app.network.BotSectionRecord
 import com.rakazo.app.network.AndroidSessionStore
 import com.rakazo.app.network.ApiException
 import com.rakazo.app.network.EndpointResult
@@ -130,7 +151,10 @@ internal data class Agent(
     val color: Color,
     val pinned: Boolean = false,
     val status: String = "",
+    val sectionId: String? = null,
 )
+
+internal data class AgentSection(val id: String, val name: String)
 
 private data class ActivityItem(
     val agent: Agent,
@@ -164,7 +188,7 @@ private sealed interface RuntimeState {
     data object Starting : RuntimeState
     data class Server(val draft: String = "", val error: String? = null, val pending: Boolean = false) : RuntimeState
     data class SignIn(val endpoint: String, val error: String? = null, val pending: Boolean = false) : RuntimeState
-    data class Workspace(val agents: List<Agent>) : RuntimeState
+    data class Workspace(val agents: List<Agent>, val sections: List<AgentSection>) : RuntimeState
     data class Offline(val message: String) : RuntimeState
     data object Expired : RuntimeState
 }
@@ -181,8 +205,13 @@ fun RakazoApp() {
         state = RuntimeState.Starting
         scope.launch {
             state = try {
-                val agents = withContext(Dispatchers.IO) { api.agents(session.endpoint, session.token) }
-                RuntimeState.Workspace(agents.map(AgentRecord::toAgent))
+                val workspace = withContext(Dispatchers.IO) {
+                    api.agents(session.endpoint, session.token) to api.sections(session.endpoint, session.token)
+                }
+                RuntimeState.Workspace(
+                    workspace.first.map(AgentRecord::toAgent),
+                    workspace.second.map(BotSectionRecord::toAgentSection),
+                )
             } catch (error: ApiException) {
                 if (error.status == 401) {
                     session.signedOut()
@@ -251,6 +280,28 @@ fun RakazoApp() {
             )
             is RuntimeState.Workspace -> LiveWorkspace(
                 agents = current.agents,
+                sections = current.sections,
+                refreshWorkspace = {
+                    withContext(Dispatchers.IO) {
+                        api.agents(session.endpoint, session.token).map(AgentRecord::toAgent) to
+                            api.sections(session.endpoint, session.token).map(BotSectionRecord::toAgentSection)
+                    }
+                },
+                setAgentPinned = { botId, pinned ->
+                    withContext(Dispatchers.IO) {
+                        api.setAgentPinned(session.endpoint, session.token, botId, pinned).toAgent()
+                    }
+                },
+                moveAgentToSection = { botId, sectionId ->
+                    withContext(Dispatchers.IO) {
+                        api.moveAgentToSection(session.endpoint, session.token, botId, sectionId).toAgent()
+                    }
+                },
+                createSection = { botId, name ->
+                    withContext(Dispatchers.IO) {
+                        api.createSection(session.endpoint, session.token, botId, name).toAgentSection()
+                    }
+                },
                 loadThread = { botId ->
                     withContext(Dispatchers.IO) { api.thread(session.endpoint, session.token, botId) }
                 },
@@ -293,15 +344,42 @@ fun RakazoApp() {
 @Composable
 private fun LiveWorkspace(
     agents: List<Agent>,
+    sections: List<AgentSection>,
+    refreshWorkspace: suspend () -> Pair<List<Agent>, List<AgentSection>>,
+    setAgentPinned: suspend (String, Boolean) -> Agent,
+    moveAgentToSection: suspend (String, String?) -> Agent,
+    createSection: suspend (String, String) -> AgentSection,
     loadThread: suspend (String) -> ThreadSnapshotRecord,
     sendMessage: suspend (String, String) -> Unit,
     onSessionExpired: () -> Unit,
     onSignOut: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var selectedAgentId by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedAgent = agents.firstOrNull { it.id == selectedAgentId }
+    var liveAgents by remember(agents) { mutableStateOf(agents) }
+    var liveSections by remember(sections) { mutableStateOf(sections) }
+    var organizeAgentId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedAgent = liveAgents.firstOrNull { it.id == selectedAgentId }
+    val organizeAgent = liveAgents.firstOrNull { it.id == organizeAgentId }
 
-    BackHandler(enabled = selectedAgent != null) { selectedAgentId = null }
+    fun handleWorkspaceError(error: IOException) {
+        if (error is ApiException && error.status == 401) onSessionExpired()
+    }
+
+    fun closeThread() {
+        selectedAgentId = null
+        scope.launch {
+            try {
+                val refreshed = refreshWorkspace()
+                liveAgents = refreshed.first
+                liveSections = refreshed.second
+            } catch (error: IOException) {
+                handleWorkspaceError(error)
+            }
+        }
+    }
+
+    BackHandler(enabled = selectedAgent != null) { closeThread() }
 
     AnimatedContent(
         targetState = selectedAgent,
@@ -316,19 +394,45 @@ private fun LiveWorkspace(
     ) { agent ->
         if (agent == null) {
             WorkspaceScreen(
-                agents = agents,
+                agents = liveAgents,
+                sections = liveSections,
                 onOpenAgent = { selectedAgentId = it.id },
+                onOrganizeAgent = { organizeAgentId = it.id },
                 onSignOut = onSignOut,
             )
         } else {
             LiveThreadScreen(
                 agent = agent,
-                onBack = { selectedAgentId = null },
+                onBack = ::closeThread,
                 loadThread = loadThread,
                 sendMessage = sendMessage,
                 onSessionExpired = onSessionExpired,
             )
         }
+    }
+
+    if (organizeAgent != null) {
+        AgentOrganizeSheet(
+            agent = organizeAgent,
+            sections = liveSections,
+            onDismiss = { organizeAgentId = null },
+            onSetPinned = { pinned ->
+                val updated = setAgentPinned(organizeAgent.id, pinned)
+                liveAgents = liveAgents.map { if (it.id == updated.id) updated else it }
+            },
+            onMoveToSection = { sectionId ->
+                val updated = moveAgentToSection(organizeAgent.id, sectionId)
+                liveAgents = liveAgents.map { if (it.id == updated.id) updated else it }
+            },
+            onCreateSection = { name ->
+                val created = createSection(organizeAgent.id, name)
+                liveSections = liveSections + created
+                liveAgents = liveAgents.map {
+                    if (it.id == organizeAgent.id) it.copy(sectionId = created.id) else it
+                }
+            },
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 
@@ -339,7 +443,10 @@ private fun AgentRecord.toAgent() = Agent(
     color = Color(runCatching { parseColor(color) }.getOrDefault(0xFF7567F7.toInt())),
     pinned = pinned,
     status = status,
+    sectionId = sectionId,
 )
+
+private fun BotSectionRecord.toAgentSection() = AgentSection(id, name)
 
 @Composable
 private fun LoadingScreen() {
@@ -541,7 +648,9 @@ private fun DemoRakazoApp() {
 @Composable
 internal fun WorkspaceScreen(
     agents: List<Agent>,
+    sections: List<AgentSection> = emptyList(),
     onOpenAgent: (Agent) -> Unit,
+    onOrganizeAgent: (Agent) -> Unit = {},
     onSignOut: (() -> Unit)? = null,
     demoActivity: Boolean = false,
 ) {
@@ -564,7 +673,7 @@ internal fun WorkspaceScreen(
             label = "Workspace mode",
         ) { selected ->
             when (selected) {
-                WorkspaceMode.Agents -> AgentList(agents, onOpenAgent)
+                WorkspaceMode.Agents -> AgentList(agents, sections, onOpenAgent, onOrganizeAgent)
                 WorkspaceMode.Activity -> if (demoActivity) ActivityList() else EmptyState("Activity is not connected yet")
             }
         }
@@ -650,9 +759,14 @@ private fun WorkspaceTabs(mode: WorkspaceMode, onModeChange: (WorkspaceMode) -> 
 }
 
 @Composable
-private fun AgentList(agents: List<Agent>, onOpenAgent: (Agent) -> Unit) {
+private fun AgentList(
+    agents: List<Agent>,
+    sections: List<AgentSection>,
+    onOpenAgent: (Agent) -> Unit,
+    onOrganizeAgent: (Agent) -> Unit,
+) {
     var query by rememberSaveable { mutableStateOf("") }
-    val visible = remember(query) {
+    val visible = remember(query, agents) {
         agents.filter { agent ->
             query.isBlank() || agent.name.contains(query, ignoreCase = true) ||
                 agent.summary.contains(query, ignoreCase = true)
@@ -670,14 +784,39 @@ private fun AgentList(agents: List<Agent>, onOpenAgent: (Agent) -> Unit) {
         if (pinned.isNotEmpty()) {
             item { SectionLabel("Pinned") }
             items(pinned, key = { it.id }) { agent ->
-                AgentRow(agent = agent, pinned = true, onClick = { onOpenAgent(agent) })
+                AgentRow(
+                    agent = agent,
+                    pinned = true,
+                    onClick = { onOpenAgent(agent) },
+                    onOptions = { onOrganizeAgent(agent) },
+                )
             }
         }
-        val unassigned = visible.filterNot { it.pinned }
+        sections.forEach { section ->
+            val sectionAgents = visible.filter { !it.pinned && it.sectionId == section.id }
+            if (sectionAgents.isNotEmpty()) {
+                item(key = "section-${section.id}") { SectionLabel(section.name) }
+                items(sectionAgents, key = { it.id }) { agent ->
+                    AgentRow(
+                        agent = agent,
+                        onClick = { onOpenAgent(agent) },
+                        onOptions = { onOrganizeAgent(agent) },
+                    )
+                }
+            }
+        }
+        val sectionIds = sections.mapTo(mutableSetOf()) { it.id }
+        val unassigned = visible.filter { !it.pinned && (it.sectionId == null || it.sectionId !in sectionIds) }
         if (unassigned.isNotEmpty()) {
-            if (pinned.isNotEmpty()) item { SectionLabel("Unassigned") }
+            if (pinned.isNotEmpty() || visible.any { !it.pinned && it.sectionId in sectionIds }) {
+                item { SectionLabel("Unassigned") }
+            }
             items(unassigned, key = { it.id }) { agent ->
-                AgentRow(agent = agent, onClick = { onOpenAgent(agent) })
+                AgentRow(
+                    agent = agent,
+                    onClick = { onOpenAgent(agent) },
+                    onOptions = { onOrganizeAgent(agent) },
+                )
             }
         }
         if (visible.isEmpty()) item { EmptyState(if (query.isBlank()) "No agents yet" else "No matching agents") }
@@ -724,37 +863,243 @@ private fun SectionLabel(text: String) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OrganicAvatar(agent.id, agent.color, size = 54.dp, working = agent.status in ACTIVE_RUN_STATUSES)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(agent.name, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(3.dp))
-            Text(
-                agent.summary,
-                color = TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+private fun AgentRow(
+    agent: Agent,
+    pinned: Boolean = false,
+    onClick: () -> Unit,
+    onOptions: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * 0.25f },
+    )
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue != SwipeToDismissBoxValue.Settled) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onOptions()
+            dismissState.snapTo(SwipeToDismissBoxValue.Settled)
         }
-        if (pinned) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(UnreadPurple))
-            Spacer(Modifier.width(18.dp))
-            Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
-        } else {
-            Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
+    }
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Elevated).padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text("Options", color = TextSecondary, style = MaterialTheme.typography.labelLarge)
+            }
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Page)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClickLabel = "Chat options",
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onOptions()
+                    },
+                )
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OrganicAvatar(agent.id, agent.color, size = 54.dp, working = agent.status in ACTIVE_RUN_STATUSES)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(agent.name, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    agent.summary,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (pinned) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(UnreadPurple))
+                Spacer(Modifier.width(18.dp))
+                Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            } else {
+                Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
+            }
         }
     }
     HorizontalDivider(modifier = Modifier.padding(start = 90.dp), color = Border)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgentOrganizeSheet(
+    agent: Agent,
+    sections: List<AgentSection>,
+    onDismiss: () -> Unit,
+    onSetPinned: suspend (Boolean) -> Unit,
+    onMoveToSection: suspend (String?) -> Unit,
+    onCreateSection: suspend (String) -> Unit,
+    onSessionExpired: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var creating by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun save(request: suspend () -> Unit) {
+        if (saving) return
+        saving = true
+        error = null
+        scope.launch {
+            try {
+                request()
+                onDismiss()
+            } catch (errorValue: IOException) {
+                if (errorValue is ApiException && errorValue.status == 401) {
+                    onDismiss()
+                    onSessionExpired()
+                } else {
+                    error = errorValue.message ?: "Could not update chat"
+                    saving = false
+                }
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Elevated,
+        contentColor = TextPrimary,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp),
+        ) {
+            Text(
+                agent.name,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            OrganizeAction(
+                icon = Icons.Outlined.PushPin,
+                label = if (agent.pinned) "Unpin" else "Pin",
+                enabled = !saving,
+                onClick = { save { onSetPinned(!agent.pinned) } },
+            )
+            Text(
+                "Move to",
+                modifier = Modifier.padding(start = 10.dp, top = 12.dp, bottom = 4.dp),
+                color = TextMuted,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
+                items(sections, key = { it.id }) { section ->
+                    OrganizeAction(
+                        icon = Icons.Outlined.Folder,
+                        label = section.name,
+                        selected = agent.sectionId == section.id,
+                        enabled = !saving && agent.sectionId != section.id,
+                        onClick = { save { onMoveToSection(section.id) } },
+                    )
+                }
+                item {
+                    OrganizeAction(
+                        icon = Icons.Outlined.Folder,
+                        label = "Unassigned",
+                        selected = agent.sectionId == null,
+                        enabled = !saving && agent.sectionId != null,
+                        onClick = { save { onMoveToSection(null) } },
+                    )
+                }
+            }
+            if (creating) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        color = SurfaceColor,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+                    ) {
+                        BasicTextField(
+                            value = name,
+                            onValueChange = { if (it.length <= 60) name = it },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
+                            decorationBox = { field ->
+                                if (name.isBlank()) Text("Section name", color = TextMuted)
+                                field()
+                            },
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        enabled = !saving && name.isNotBlank(),
+                        onClick = { save { onCreateSection(name.trim()) } },
+                    ) { Text("Create", color = FocusBlue) }
+                }
+            } else {
+                OrganizeAction(
+                    icon = Icons.Outlined.CreateNewFolder,
+                    label = "New section",
+                    enabled = !saving,
+                    onClick = { creating = true },
+                )
+            }
+            if (error != null) {
+                Text(
+                    error.orEmpty(),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = Color(0xFFFF5364),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp),
+            ) { Text("Cancel", color = TextSecondary) }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun OrganizeAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(11.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, modifier = Modifier.size(20.dp), tint = if (enabled) TextSecondary else TextMuted)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            color = if (enabled) TextPrimary else TextMuted,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (selected) Icon(Icons.Outlined.Check, null, modifier = Modifier.size(18.dp), tint = TextSecondary)
+    }
 }
 
 @Composable
@@ -830,6 +1175,9 @@ private fun LiveThreadScreen(
     onSessionExpired: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val scrollBehavior = remember(agent.id) { ThreadScrollBehavior() }
+    var autoScrolling by remember(agent.id) { mutableStateOf(false) }
     var snapshot by remember(agent.id) { mutableStateOf<ThreadSnapshotRecord?>(null) }
     var loading by remember(agent.id) { mutableStateOf(true) }
     var error by remember(agent.id) { mutableStateOf<String?>(null) }
@@ -864,8 +1212,29 @@ private fun LiveThreadScreen(
         }
     }
 
+    val working = snapshot?.runStatus in ACTIVE_RUN_STATUSES
+    val atLatest by remember { derivedStateOf { !listState.canScrollForward } }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress to listState.canScrollForward }.collect { (scrolling, canScrollForward) ->
+            if (scrolling && !autoScrolling) scrollBehavior.onUserScroll(canScrollForward)
+        }
+    }
+
+    LaunchedEffect(snapshot?.threadId, snapshot?.messages?.lastOrNull()?.id, working) {
+        val threadId = snapshot?.threadId ?: return@LaunchedEffect
+        if (!scrollBehavior.shouldScrollToLatest(threadId)) return@LaunchedEffect
+        autoScrolling = true
+        try {
+            withFrameNanos { }
+            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+            if (lastIndex >= 0) listState.scrollToItem(lastIndex)
+        } finally {
+            autoScrolling = false
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding()) {
-        val working = snapshot?.runStatus in ACTIVE_RUN_STATUSES
         AgentTopBar(
             agent = agent,
             demoContent = working,
@@ -884,20 +1253,55 @@ private fun LiveThreadScreen(
                 modifier = Modifier.weight(1f),
             )
             else -> {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    error?.let { message -> item { ThreadError(message) } }
-                    snapshot?.runError?.let { message -> item { ThreadError(message) } }
-                    val messages = snapshot?.messages.orEmpty()
-                    if (messages.isEmpty()) {
-                        item { EmptyThread() }
-                    } else {
-                        items(messages, key = { it.id }) { message -> ThreadMessage(message) }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        error?.let { message -> item { ThreadError(message) } }
+                        snapshot?.runError?.let { message -> item { ThreadError(message) } }
+                        val messages = snapshot?.messages.orEmpty()
+                        if (messages.isEmpty()) {
+                            item { EmptyThread() }
+                        } else {
+                            items(messages, key = { it.id }) { message -> ThreadMessage(message) }
+                        }
+                        if (working) item(key = "working-${agent.id}") { WorkingAgentMarker(agent) }
                     }
-                    if (working) item { ThreadEvent("${agent.name} is working") }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !atLatest,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                        enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 3 },
+                        exit = fadeOut(tween(140)) + slideOutVertically(tween(140)) { it / 3 },
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .semantics { contentDescription = "Jump to latest" }
+                                .clickable {
+                                    scrollBehavior.jumpToLatest()
+                                    scope.launch {
+                                        autoScrolling = true
+                                        try {
+                                            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                                            if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
+                                        } finally {
+                                            autoScrolling = false
+                                        }
+                                    }
+                                },
+                            shape = CircleShape,
+                            color = Elevated,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+                            shadowElevation = 8.dp,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.ArrowDownward, null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
                 }
                 HorizontalDivider(color = Border)
                 Composer(
@@ -926,6 +1330,18 @@ private fun LiveThreadScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun WorkingAgentMarker(agent: Agent) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OrganicAvatar(agent.id, agent.color, size = 28.dp, working = true)
+        Spacer(Modifier.width(10.dp))
+        Text("${agent.name} is working", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

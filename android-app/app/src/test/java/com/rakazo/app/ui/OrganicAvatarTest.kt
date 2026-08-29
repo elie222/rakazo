@@ -26,4 +26,15 @@ class OrganicAvatarTest {
             }.toSet().size,
         )
     }
+
+    @Test
+    fun workingMotionUsesTheUpstreamFamilySpecificChoreography() {
+        val floatingStart = workingAvatarFrame(seed = 0, progress = 0f)
+        val floatingMiddle = workingAvatarFrame(seed = 0, progress = 0.5f)
+        val swayingMiddle = workingAvatarFrame(seed = 2, progress = 0.5f)
+
+        assertNotEquals(floatingStart.translationY, floatingMiddle.translationY)
+        assertNotEquals(floatingMiddle.rotationZ, swayingMiddle.rotationZ)
+        assertNotEquals(floatingMiddle.eyeOffsetX, swayingMiddle.eyeOffsetX)
+    }
 }

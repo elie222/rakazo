@@ -2,14 +2,21 @@ package com.rakazo.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -101,6 +108,53 @@ private fun radialOffsets(count: Int, radius: (Double) -> Double) = List(count) 
     val value = radius(angle)
     Offset((cos(angle) * value).toFloat(), (sin(angle) * value).toFloat())
 }
+
+internal data class WorkingAvatarFrame(
+    val translationX: Float = 0f,
+    val translationY: Float = 0f,
+    val scaleX: Float = 1f,
+    val scaleY: Float = 1f,
+    val rotationZ: Float = 0f,
+    val eyeOffsetX: Float = 0f,
+    val eyeOffsetY: Float = 0f,
+)
+
+internal fun workingAvatarFrame(seed: Long, progress: Float): WorkingAvatarFrame {
+    val middle = ((1 - cos(progress * PI * 2)) / 2).toFloat()
+    val body = when ((seed % 10).toInt()) {
+        0 -> WorkingAvatarFrame(translationY = 2f - 5f * middle, scaleX = 1.02f - 0.04f * middle)
+        1 -> WorkingAvatarFrame(
+            translationY = 2f - 5f * middle,
+            scaleX = 1.04f - 0.08f * middle,
+            scaleY = 0.96f + 0.09f * middle,
+        )
+        2, 8 -> WorkingAvatarFrame(translationX = -1f + 2f * middle, rotationZ = -3f + 6f * middle)
+        3, 4 -> WorkingAvatarFrame(
+            scaleX = 0.98f + 0.06f * middle,
+            scaleY = 0.98f + 0.06f * middle,
+            rotationZ = -4f + 8f * middle,
+        )
+        5, 9 -> WorkingAvatarFrame(scaleX = 1.04f - 0.08f * middle, scaleY = 0.96f + 0.08f * middle)
+        6 -> WorkingAvatarFrame(scaleX = 0.96f + 0.10f * middle, scaleY = 0.96f + 0.10f * middle)
+        else -> WorkingAvatarFrame(rotationZ = -4f + 9f * middle)
+    }
+    val angle = progress * PI * 2
+    val eyeX = when ((seed % 4).toInt()) {
+        0 -> (sin(angle) * 9).toFloat()
+        1 -> (cos(angle) * 7).toFloat()
+        2 -> (cos(angle) * 8).toFloat()
+        else -> (sin(angle * 2) * 6).toFloat()
+    }
+    val eyeY = when ((seed % 4).toInt()) {
+        0 -> (cos(angle) * 2).toFloat()
+        1 -> (sin(angle) * 4).toFloat()
+        2 -> (sin(angle) * 3).toFloat()
+        else -> (cos(angle * 2) * 3).toFloat()
+    }
+    return body.copy(eyeOffsetX = eyeX, eyeOffsetY = eyeY)
+}
+
+private val WORKING_DURATIONS_MS = intArrayOf(1800, 1350, 1600, 2400, 1350, 1350, 1100, 1350, 1600, 1350)
 @Composable
 fun OrganicAvatar(
     identity: String,
@@ -110,7 +164,35 @@ fun OrganicAvatar(
     working: Boolean = false,
 ) {
     val seed = avatarIdentitySeed(identity)
-    val points = organicAvatarPoints(seed)
+    if (working) {
+        val transition = rememberInfiniteTransition(label = "Working avatar")
+        val progress by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(WORKING_DURATIONS_MS[(seed % 10).toInt()], easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "Working avatar motion",
+        )
+        OrganicAvatarCanvas(seed, color, modifier, size, working = true, progress = progress)
+    } else {
+        OrganicAvatarCanvas(seed, color, modifier, size, working = false, progress = 0f)
+    }
+}
+
+@Composable
+private fun OrganicAvatarCanvas(
+    seed: Long,
+    color: Color,
+    modifier: Modifier,
+    size: Dp,
+    working: Boolean,
+    progress: Float,
+) {
+    val morph = ((1 - cos(progress * PI * 2)) / 2) * 0.42
+    val points = organicAvatarPoints(seed, morph)
+    val frame = if (working) workingAvatarFrame(seed, progress) else WorkingAvatarFrame()
     Canvas(modifier = modifier.size(size)) {
         val scale = min(this.size.width, this.size.height) / 120f
         fun map(point: Offset) = Offset(
@@ -138,19 +220,26 @@ fun OrganicAvatar(
             val stroke = 2.dp.toPx()
             drawCircle(Color.White, radius = min(this.size.width, this.size.height) / 2 - stroke / 2, style = Stroke(stroke))
         }
-        drawPath(path, color)
-
-        rotate(degrees = ((seed % 9) - 4).toFloat()) {
-            listOf(-14f, 7f).forEach { x ->
-                drawRoundRect(
-                    color = Color(0xFF101014),
-                    topLeft = Offset(
-                        this.size.width / 2 + x * scale,
-                        this.size.height / 2 - 12f * scale,
-                    ),
-                    size = Size(7f * scale, 24f * scale),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.5f * scale),
-                )
+        val center = Offset(this.size.width / 2, this.size.height / 2)
+        withTransform({
+            translate(frame.translationX * scale, frame.translationY * scale)
+            rotate(frame.rotationZ, center)
+            scale(frame.scaleX, frame.scaleY, center)
+        }) {
+            drawPath(path, color)
+            val eyeCenter = Offset(frame.eyeOffsetX * scale, frame.eyeOffsetY * scale)
+            withTransform({ rotate(((seed % 9) - 4).toFloat(), center) }) {
+                listOf(-14f, 7f).forEach { x ->
+                    drawRoundRect(
+                        color = Color(0xFF101014),
+                        topLeft = Offset(
+                            this.size.width / 2 + x * scale + eyeCenter.x,
+                            this.size.height / 2 - 12f * scale + eyeCenter.y,
+                        ),
+                        size = Size(7f * scale, 24f * scale),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.5f * scale),
+                    )
+                }
             }
         }
     }

@@ -12,13 +12,18 @@ class RakazoApiTest {
     @Test
     fun `translates agent response and rejects malformed colors`() {
         assertEquals(
-            listOf(AgentRecord("maya", "Maya", "Ready", "#45D8BB", true, "running")),
+            listOf(AgentRecord("maya", "Maya", "Ready", "#45D8BB", true, "running", "priority")),
             parseAgents(
-                """{"json":[{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":true,"status":"running"}]}""",
+                """{"json":[{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":true,"status":"running","sectionId":"priority"}]}""",
             ),
         )
         assertThrows(IOException::class.java) {
             parseAgents("""{"json":[{"id":"bad","name":"Bad","color":"blue"}]}""")
+        }
+        assertThrows(IOException::class.java) {
+            parseAgents(
+                """{"json":[{"id":"bad","name":"Bad","color":"#45D8BB","sectionId":12}]}""",
+            )
         }
     }
 
@@ -82,5 +87,48 @@ class RakazoApiTest {
         assertEquals("Bearer session-token", authorization)
         assertEquals("maya", json.getString("botId"))
         assertEquals("Hello", json.getString("text"))
+    }
+
+    @Test
+    fun `translates sections and sends organization updates to the current rpc routes`() {
+        val requests = mutableListOf<Pair<String, org.json.JSONObject>>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/rpc/botSections/list") { exchange ->
+            exchange.requestBody.close()
+            val body = """{"json":[{"id":"priority","name":"Priority","position":0,"createdAt":"2026-08-29T00:00:00.000Z","updatedAt":"2026-08-29T00:00:00.000Z"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/rpc/bots/update") { exchange ->
+            val request = org.json.JSONObject(exchange.requestBody.bufferedReader().use { it.readText() })
+            requests += exchange.requestURI.path to request.getJSONObject("json")
+            val input = request.getJSONObject("json")
+            val section = if (input.has("sectionId")) input.optString("sectionId").takeIf { it.isNotBlank() } else "priority"
+            val body = """{"json":{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":${input.optBoolean("pinned")},"status":"idle","sectionId":${section?.let { "\"$it\"" } ?: "null"}}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/rpc/botSections/create") { exchange ->
+            val request = org.json.JSONObject(exchange.requestBody.bufferedReader().use { it.readText() })
+            requests += exchange.requestURI.path to request.getJSONObject("json")
+            val body = """{"json":{"id":"new","name":"New","position":1,"createdAt":"2026-08-29T00:00:00.000Z","updatedAt":"2026-08-29T00:00:00.000Z"}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        val endpoint = "http://127.0.0.1:${server.address.port}"
+        try {
+            assertEquals(listOf(BotSectionRecord("priority", "Priority")), RakazoApi().sections(endpoint, "token"))
+            RakazoApi().setAgentPinned(endpoint, "token", "maya", true)
+            RakazoApi().moveAgentToSection(endpoint, "token", "maya", null)
+            RakazoApi().createSection(endpoint, "token", "maya", "New")
+        } finally {
+            server.stop(0)
+        }
+
+        assertEquals(true, requests[0].second.getBoolean("pinned"))
+        assertEquals("maya", requests[1].second.getString("botId"))
+        assertEquals(org.json.JSONObject.NULL, requests[1].second.get("sectionId"))
+        assertEquals("New", requests[2].second.getString("name"))
     }
 }
