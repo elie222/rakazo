@@ -1,5 +1,6 @@
 package com.rakazo.app.network
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -12,6 +13,27 @@ data class AgentRecord(
     val summary: String,
     val color: String,
     val pinned: Boolean,
+    val status: String,
+)
+
+data class MessageBlockRecord(
+    val kind: String,
+    val text: String,
+    val label: String? = null,
+    val detail: String? = null,
+)
+
+data class ThreadMessageRecord(
+    val id: String,
+    val role: String,
+    val blocks: List<MessageBlockRecord>,
+)
+
+data class ThreadSnapshotRecord(
+    val threadId: String,
+    val messages: List<ThreadMessageRecord>,
+    val runStatus: String?,
+    val runError: String?,
 )
 
 class ApiException(val status: Int, message: String) : IOException(message)
@@ -38,6 +60,24 @@ class RakazoApi {
         val response = request(endpoint, "/rpc/bots/list", token)
         if (response.status !in 200..299) throw response.error("Could not load agents")
         return parseAgents(response.body)
+    }
+
+    fun thread(endpoint: String, token: String, botId: String): ThreadSnapshotRecord {
+        val body = JSONObject().put("json", JSONObject().put("botId", botId)).toString()
+        val response = request(endpoint, "/rpc/threads/get", token, body)
+        if (response.status !in 200..299) throw response.error("Could not load messages")
+        return parseThreadSnapshot(response.body)
+    }
+
+    fun sendMessage(endpoint: String, token: String, botId: String, text: String) {
+        val input = JSONObject().put("botId", botId).put("text", text.trim())
+        val response = request(
+            endpoint,
+            "/rpc/threads/send",
+            token,
+            JSONObject().put("json", input).toString(),
+        )
+        if (response.status !in 200..299) throw response.error("Could not send message")
     }
 
     fun signOut(endpoint: String, token: String) {
@@ -80,6 +120,7 @@ internal fun parseAgents(body: String): List<AgentRecord> {
                 summary = value.optString("preview").ifBlank { value.optString("title") },
                 color = color,
                 pinned = value.optBoolean("pinned"),
+                status = value.optString("status"),
             )
         }
     } catch (error: IOException) {
@@ -89,8 +130,107 @@ internal fun parseAgents(body: String): List<AgentRecord> {
     }
 }
 
+internal fun parseThreadSnapshot(body: String): ThreadSnapshotRecord {
+    return try {
+        val value = JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid thread response")
+        val messages = value.optJSONArray("messages") ?: throw IOException("Invalid thread response")
+        val run = value.optJSONObject("run")
+        ThreadSnapshotRecord(
+            threadId = value.requiredString("threadId"),
+            messages = List(messages.length()) { index -> parseThreadMessage(messages.requiredObject(index)) },
+            runStatus = run?.requiredString("status"),
+            runError = run?.optString("error", "")?.takeIf { it.isNotBlank() },
+        )
+    } catch (error: IOException) {
+        throw error
+    } catch (_: RuntimeException) {
+        throw IOException("Invalid thread response")
+    }
+}
+
+private fun parseThreadMessage(value: JSONObject): ThreadMessageRecord {
+    val role = value.requiredString("role")
+    if (role !in MESSAGE_ROLES) throw IOException("Invalid message role")
+    val blocks = value.optJSONArray("blocks") ?: throw IOException("Invalid thread response")
+    return ThreadMessageRecord(
+        id = value.requiredString("id"),
+        role = role,
+        blocks = List(blocks.length()) { index -> parseMessageBlock(blocks.requiredObject(index)) },
+    )
+}
+
+private fun parseMessageBlock(value: JSONObject): MessageBlockRecord {
+    val kind = value.requiredString("kind")
+    return when (kind) {
+        "text" -> MessageBlockRecord(kind, value.requiredString("text"))
+        "bot_message_sent" -> MessageBlockRecord(
+            kind,
+            value.requiredString("text"),
+            "Messaged ${value.requiredString("toBotName")}",
+        )
+        "bot_message_received" -> MessageBlockRecord(
+            kind,
+            value.requiredString("text"),
+            "Message from ${value.requiredString("fromBotName")}",
+        )
+        "handoff" -> MessageBlockRecord(kind, value.requiredString("text"), "Agent handoff")
+        "ask" -> MessageBlockRecord(
+            kind,
+            value.requiredString("text"),
+            if (value.has("approvalEffectId") || value.has("actions")) "Approval needed" else "Input needed",
+            value.optString("detail").takeIf { it.isNotBlank() },
+        )
+        "choice" -> MessageBlockRecord(kind, value.requiredString("question"), "Choice")
+        "app_connect" -> MessageBlockRecord(
+            kind,
+            value.requiredString("description"),
+            value.requiredString("name"),
+        )
+        "connect" -> MessageBlockRecord(kind, value.requiredString("initial"), value.requiredString("name"))
+        "subagent" -> MessageBlockRecord(
+            kind,
+            value.optString("result").ifBlank { value.optString("progress") }.ifBlank { value.optString("task") },
+            value.optString("name").ifBlank { "Subagent" },
+        )
+        "child_bot" -> MessageBlockRecord(
+            kind,
+            value.optString("title"),
+            value.requiredString("name"),
+        )
+        "skill_draft" -> MessageBlockRecord(kind, value.requiredString("goal"), value.requiredString("name"))
+        "chart" -> MessageBlockRecord(kind, value.requiredString("name"), "Chart")
+        "mcp_approval" -> MessageBlockRecord(kind, value.requiredString("name"), "Approval needed")
+        "card" -> MessageBlockRecord(kind, parseCardLines(value.optJSONArray("lines")), "Details")
+        "steps" -> MessageBlockRecord(kind, parseSteps(value.optJSONArray("steps")), "Steps")
+        "image", "file" -> MessageBlockRecord(kind, value.requiredString("name"), "Attachment")
+        "progress" -> MessageBlockRecord(kind, value.requiredString("text"), "Working")
+        "computer", "meta" -> MessageBlockRecord(kind, value.requiredString("text"), null)
+        else -> MessageBlockRecord(
+            kind = kind,
+            text = value.optString("text"),
+            label = kind.replace('_', ' ').replaceFirstChar(Char::uppercase),
+        )
+    }
+}
+
+private fun parseCardLines(lines: JSONArray?): String {
+    if (lines == null) throw IOException("Invalid message card")
+    return List(lines.length()) { index ->
+        val line = lines.requiredObject(index)
+        "${line.requiredString("k")}: ${line.requiredString("v")}"
+    }.joinToString("\n")
+}
+
+private fun parseSteps(steps: JSONArray?): String {
+    if (steps == null) throw IOException("Invalid message steps")
+    return List(steps.length()) { index -> steps.requiredObject(index).requiredString("label") }.joinToString("\n")
+}
+
+private fun JSONArray.requiredObject(index: Int): JSONObject =
+    optJSONObject(index) ?: throw IOException("Invalid thread response")
+
 private fun JSONObject.requiredString(name: String): String =
-    optString(name).takeIf { it.isNotBlank() } ?: throw IOException("Invalid agent response")
+    optString(name).takeIf { it.isNotBlank() } ?: throw IOException("Invalid server response")
 
 private fun tokenFrom(response: Response): String {
     val json = runCatching { JSONObject(response.body) }.getOrNull()
@@ -117,6 +257,7 @@ private data class Response(
 )
 
 private val HEX_COLOR = Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+private val MESSAGE_ROLES = setOf("user", "bot", "system")
 
 private fun java.io.Reader.readLimitedText(): String {
     val result = StringBuilder()

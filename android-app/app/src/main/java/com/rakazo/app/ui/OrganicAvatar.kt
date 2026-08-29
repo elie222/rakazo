@@ -16,30 +16,90 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sign
 import kotlin.math.sin
+import kotlin.math.sqrt
 
-internal fun avatarIdentitySeed(identity: String): Int {
+internal fun avatarIdentitySeed(identity: String): Long {
     var hash = 0
     identity.forEach { character -> hash = (hash shl 5) - hash + character.code }
-    return abs(hash)
+    return abs(hash.toLong())
 }
 
-private fun organicAvatarPoints(seed: Int): List<Offset> {
-    val phase = (seed % 360) * PI / 180
-    val family = (seed + 1) % 4
-    val lobes = listOf(2, 3, 4, 5)[family]
-    val amplitude = listOf(0.045, 0.14, 0.09, 0.025)[family]
-    return List(12) { index ->
-        val angle = index / 12.0 * PI * 2
-        val radius = 50 * (
-            1 + amplitude * sin(angle * lobes + phase) +
-                0.025 * sin(angle * 2 - phase)
-            )
+internal fun organicAvatarPoints(seed: Long, phaseOffset: Double = 0.0): List<Offset> {
+    val phase = (seed % 360) * PI / 180 + phaseOffset
+    val family = (seed % 10).toInt()
+    val xScale = 1 + sin(phase) * 0.035
+    val yScale = 1 + cos(phase) * 0.025
+    val shear = sin(phase * 1.7) * 0.025
+    var points = ORGANIC_AVATAR_TEMPLATES[family].map { point ->
         Offset(
-            x = (cos(angle) * radius * 1.08).toFloat(),
-            y = (sin(angle) * radius * 0.82).toFloat(),
+            x = (point.x * xScale + point.y * shear).toFloat(),
+            y = (point.y * yScale).toFloat(),
         )
     }
+    repeat(if (family in 3..5) 1 else 2) {
+        val source = points
+        points = source.flatMapIndexed { index, point ->
+            val next = source[(index + 1) % source.size]
+            listOf(
+                point * 0.75f + next * 0.25f,
+                point * 0.25f + next * 0.75f,
+            )
+        }
+    }
+    return points
+}
+
+private val ORGANIC_AVATAR_TEMPLATES = listOf(
+    offsets(
+        -43 to 22, -51 to 16, -53 to 6, -49 to -4, -40 to -12, -30 to -13, -27 to -24,
+        -18 to -34, -6 to -36, 4 to -32, 12 to -42, 25 to -45, 37 to -38, 43 to -27,
+        42 to -17, 51 to -11, 56 to 0, 54 to 12, 46 to 20, 30 to 24, 0 to 25, -29 to 25,
+    ),
+    offsets(
+        0 to -52, 12 to -35, 28 to -17, 39 to 2, 42 to 21, 34 to 38, 19 to 49,
+        0 to 52, -19 to 49, -34 to 38, -42 to 21, -39 to 2, -28 to -17, -12 to -35,
+    ),
+    offsets(
+        -42 to -23, -27 to -40, -7 to -46, 14 to -40, 33 to -27, 46 to -8, 46 to 14,
+        35 to 34, 14 to 46, -8 to 46, -29 to 38, -43 to 21, -48 to 0,
+    ),
+    radialOffsets(40) { angle -> 44 + cos(angle * 5) * 5 },
+    radialOffsets(36) { angle -> 43 + cos(angle * 6) * 7 },
+    List(32) { index ->
+        val angle = index / 32.0 * PI * 2
+        val x = cos(angle)
+        val y = sin(angle)
+        Offset(
+            (sign(x) * sqrt(abs(x)) * 46).toFloat(),
+            (sign(y) * sqrt(abs(y)) * 43).toFloat(),
+        )
+    },
+    offsets(
+        0 to 48, -14 to 36, -32 to 20, -45 to 0, -43 to -20, -29 to -36, -10 to -39,
+        0 to -27, 10 to -39, 29 to -36, 43 to -20, 45 to 0, 32 to 20, 14 to 36,
+    ),
+    offsets(
+        -48 to 35, -38 to 22, -34 to -8, -27 to -31, -12 to -44, 0 to -48, 12 to -44,
+        27 to -31, 34 to -8, 38 to 22, 48 to 35, 26 to 42, 0 to 44, -26 to 42,
+    ),
+    offsets(
+        -45 to -19, -28 to -38, -4 to -46, 22 to -41, 42 to -25, 49 to -2,
+        42 to 23, 22 to 42, -4 to 47, -29 to 38, -46 to 18, -50 to 0,
+    ),
+    offsets(
+        -50 to 0, -45 to -20, -30 to -38, 0 to -48, 30 to -38, 45 to -20, 50 to 0,
+        35 to 10, 18 to 12, 16 to 38, 0 to 46, -16 to 38, -18 to 12, -35 to 10,
+    ),
+)
+
+private fun offsets(vararg points: Pair<Int, Int>) = points.map { (x, y) -> Offset(x.toFloat(), y.toFloat()) }
+
+private fun radialOffsets(count: Int, radius: (Double) -> Double) = List(count) { index ->
+    val angle = index / count.toDouble() * PI * 2
+    val value = radius(angle)
+    Offset((cos(angle) * value).toFloat(), (sin(angle) * value).toFloat())
 }
 @Composable
 fun OrganicAvatar(
@@ -75,7 +135,8 @@ fun OrganicAvatar(
         }
 
         if (working) {
-            drawPath(path, Color.White, style = Stroke(width = 2.dp.toPx()))
+            val stroke = 2.dp.toPx()
+            drawCircle(Color.White, radius = min(this.size.width, this.size.height) / 2 - stroke / 2, style = Stroke(stroke))
         }
         drawPath(path, color)
 

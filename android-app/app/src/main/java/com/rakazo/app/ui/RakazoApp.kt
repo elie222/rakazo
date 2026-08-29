@@ -108,14 +108,20 @@ import com.rakazo.app.network.ApiException
 import com.rakazo.app.network.EndpointResult
 import com.rakazo.app.network.RakazoApi
 import com.rakazo.app.network.SessionManager
+import com.rakazo.app.network.MessageBlockRecord
+import com.rakazo.app.network.ThreadMessageRecord
+import com.rakazo.app.network.ThreadSnapshotRecord
 import com.rakazo.app.network.normalizeEndpoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
 private enum class AppScreen { Workspace, Thread, Computer }
 private enum class WorkspaceMode { Agents, Activity }
+private val ACTIVE_RUN_STATUSES = setOf("queued", "leased", "running", "waiting_input", "waiting_takeover")
+private val POLLING_RUN_STATUSES = setOf("queued", "leased", "running")
 
 internal data class Agent(
     val id: String,
@@ -123,6 +129,7 @@ internal data class Agent(
     val summary: String,
     val color: Color,
     val pinned: Boolean = false,
+    val status: String = "",
 )
 
 private data class ActivityItem(
@@ -244,6 +251,16 @@ fun RakazoApp() {
             )
             is RuntimeState.Workspace -> LiveWorkspace(
                 agents = current.agents,
+                loadThread = { botId ->
+                    withContext(Dispatchers.IO) { api.thread(session.endpoint, session.token, botId) }
+                },
+                sendMessage = { botId, message ->
+                    withContext(Dispatchers.IO) { api.sendMessage(session.endpoint, session.token, botId, message) }
+                },
+                onSessionExpired = {
+                    session.signedOut()
+                    state = RuntimeState.Expired
+                },
                 onSignOut = {
                     val endpoint = session.endpoint
                     val token = session.token
@@ -274,7 +291,13 @@ fun RakazoApp() {
 }
 
 @Composable
-private fun LiveWorkspace(agents: List<Agent>, onSignOut: () -> Unit) {
+private fun LiveWorkspace(
+    agents: List<Agent>,
+    loadThread: suspend (String) -> ThreadSnapshotRecord,
+    sendMessage: suspend (String, String) -> Unit,
+    onSessionExpired: () -> Unit,
+    onSignOut: () -> Unit,
+) {
     var selectedAgentId by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedAgent = agents.firstOrNull { it.id == selectedAgentId }
 
@@ -298,11 +321,12 @@ private fun LiveWorkspace(agents: List<Agent>, onSignOut: () -> Unit) {
                 onSignOut = onSignOut,
             )
         } else {
-            ThreadScreen(
+            LiveThreadScreen(
                 agent = agent,
-                demoContent = false,
                 onBack = { selectedAgentId = null },
-                onOpenComputer = null,
+                loadThread = loadThread,
+                sendMessage = sendMessage,
+                onSessionExpired = onSessionExpired,
             )
         }
     }
@@ -314,6 +338,7 @@ private fun AgentRecord.toAgent() = Agent(
     summary = summary,
     color = Color(runCatching { parseColor(color) }.getOrDefault(0xFF7567F7.toInt())),
     pinned = pinned,
+    status = status,
 )
 
 @Composable
@@ -708,7 +733,7 @@ private fun AgentRow(agent: Agent, pinned: Boolean = false, onClick: () -> Unit)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OrganicAvatar(agent.id, agent.color, size = 54.dp)
+        OrganicAvatar(agent.id, agent.color, size = 54.dp, working = agent.status in ACTIVE_RUN_STATUSES)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(agent.name, style = MaterialTheme.typography.titleMedium)
@@ -797,6 +822,174 @@ private fun ActivityRow(agent: Agent, summary: String, time: String, running: Bo
 }
 
 @Composable
+private fun LiveThreadScreen(
+    agent: Agent,
+    onBack: () -> Unit,
+    loadThread: suspend (String) -> ThreadSnapshotRecord,
+    sendMessage: suspend (String, String) -> Unit,
+    onSessionExpired: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var snapshot by remember(agent.id) { mutableStateOf<ThreadSnapshotRecord?>(null) }
+    var loading by remember(agent.id) { mutableStateOf(true) }
+    var error by remember(agent.id) { mutableStateOf<String?>(null) }
+    var draft by rememberSaveable(agent.id) { mutableStateOf("") }
+    var sending by remember(agent.id) { mutableStateOf(false) }
+    var refreshGeneration by remember(agent.id) { mutableStateOf(0) }
+
+    fun handle(errorValue: IOException) {
+        if (errorValue is ApiException && errorValue.status == 401) {
+            onSessionExpired()
+            return
+        }
+        error = errorValue.message ?: "Could not reach the server"
+    }
+
+    LaunchedEffect(agent.id, refreshGeneration) {
+        loading = snapshot == null
+        error = null
+        while (true) {
+            val next = try {
+                loadThread(agent.id)
+            } catch (errorValue: IOException) {
+                handle(errorValue)
+                loading = false
+                break
+            }
+            snapshot = next
+            loading = false
+            if (next.runStatus !in POLLING_RUN_STATUSES) break
+            // ponytail: poll active runs; use threads/subscribe when live event rendering lands.
+            delay(1_500)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(Page).statusBarsPadding()) {
+        val working = snapshot?.runStatus in ACTIVE_RUN_STATUSES
+        AgentTopBar(
+            agent = agent,
+            demoContent = working,
+            showActions = false,
+            onBack = onBack,
+            onOpenComputer = null,
+        )
+        HorizontalDivider(color = Border)
+        when {
+            loading && snapshot == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = FocusBlue, strokeWidth = 2.dp)
+            }
+            snapshot == null -> ThreadLoadFailure(
+                message = error ?: "Could not load messages",
+                onRetry = { refreshGeneration += 1 },
+                modifier = Modifier.weight(1f),
+            )
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    error?.let { message -> item { ThreadError(message) } }
+                    snapshot?.runError?.let { message -> item { ThreadError(message) } }
+                    val messages = snapshot?.messages.orEmpty()
+                    if (messages.isEmpty()) {
+                        item { EmptyThread() }
+                    } else {
+                        items(messages, key = { it.id }) { message -> ThreadMessage(message) }
+                    }
+                    if (working) item { ThreadEvent("${agent.name} is working") }
+                }
+                HorizontalDivider(color = Border)
+                Composer(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    onSend = {
+                        val message = draft.trim()
+                        if (message.isEmpty() || sending) return@Composer
+                        sending = true
+                        error = null
+                        scope.launch {
+                            try {
+                                sendMessage(agent.id, message)
+                                draft = ""
+                                refreshGeneration += 1
+                            } catch (errorValue: IOException) {
+                                handle(errorValue)
+                            } finally {
+                                sending = false
+                            }
+                        }
+                    },
+                    placeholder = "Message ${agent.name}",
+                    enabled = !sending,
+                    showSecondaryActions = false,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThreadLoadFailure(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(message, color = TextMuted, style = MaterialTheme.typography.bodyLarge)
+            TextButton(onClick = onRetry) { Text("Retry", color = FocusBlue) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyThread() {
+    Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+        Text("No messages yet", color = TextMuted, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun ThreadError(message: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
+    ) {
+        Text(message, modifier = Modifier.padding(16.dp), color = Color(0xFFFF8A8A))
+    }
+}
+
+@Composable
+private fun ThreadMessage(message: ThreadMessageRecord) {
+    val text = message.blocks.map(MessageBlockRecord::text).filter(String::isNotBlank).joinToString("\n")
+    if (message.role == "user") {
+        if (text.isNotBlank()) UserBubble(text)
+        return
+    }
+    if (message.role == "system") {
+        if (text.isNotBlank()) ThreadEvent(text)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        message.blocks.forEach { block ->
+            if (block.label == null) {
+                if (block.text.isNotBlank()) {
+                    Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+                }
+            } else {
+                SemanticCard(title = block.label) {
+                    if (block.text.isNotBlank()) {
+                        Text(block.text, color = TextPrimary, style = MaterialTheme.typography.bodyLarge)
+                    }
+                    block.detail?.let { detail ->
+                        Text(detail, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ThreadScreen(
     agent: Agent,
     demoContent: Boolean,
@@ -871,6 +1064,7 @@ private fun ThreadScreen(
 private fun AgentTopBar(
     agent: Agent,
     demoContent: Boolean,
+    showActions: Boolean = demoContent,
     onBack: () -> Unit,
     onOpenComputer: (() -> Unit)?,
 ) {
@@ -893,7 +1087,7 @@ private fun AgentTopBar(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (demoContent) {
+        if (showActions) {
             IconButton(onClick = {}) { Icon(Icons.Outlined.Call, "Start voice call", tint = TextSecondary) }
         }
         if (onOpenComputer != null) {
@@ -959,13 +1153,22 @@ private fun SemanticCard(
 }
 
 @Composable
-private fun Composer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
+private fun Composer(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+    placeholder: String = "Message Maya",
+    enabled: Boolean = true,
+    showSecondaryActions: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircleIconButton(Icons.Outlined.Add, "Attach") {}
-        Spacer(Modifier.width(8.dp))
+        if (showSecondaryActions) {
+            CircleIconButton(Icons.Outlined.Add, "Attach") {}
+            Spacer(Modifier.width(8.dp))
+        }
         Surface(
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(28.dp),
@@ -979,22 +1182,25 @@ private fun Composer(value: String, onValueChange: (String) -> Unit, onSend: () 
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
+                    enabled = enabled,
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
                     decorationBox = { field ->
-                        if (value.isEmpty()) Text("Message Maya", color = TextMuted)
+                        if (value.isEmpty()) Text(placeholder, color = TextMuted)
                         field()
                     },
                 )
-                IconButton(onClick = {}) { Icon(Icons.Outlined.MicNone, "Voice message", tint = TextMuted) }
+                if (showSecondaryActions) {
+                    IconButton(onClick = {}) { Icon(Icons.Outlined.MicNone, "Voice message", tint = TextMuted) }
+                }
             }
         }
         Spacer(Modifier.width(8.dp))
         Surface(
-            modifier = Modifier.size(54.dp).clickable(onClick = onSend),
+            modifier = Modifier.size(54.dp).clickable(enabled = enabled && value.isNotBlank(), onClick = onSend),
             shape = CircleShape,
-            color = Cream,
+            color = Cream.copy(alpha = if (enabled && value.isNotBlank()) 1f else 0.5f),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.ArrowUpward, "Send", tint = CreamText)
