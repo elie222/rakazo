@@ -172,8 +172,8 @@ export function PeerMessagesOverlay({
             </Trans>
           </div>
         ) : (
-          <div className="mt-5 flex min-h-0 flex-1 gap-4 px-6 pb-6 sm:px-8 sm:pb-7">
-            <div className="w-[240px] shrink-0 overflow-y-auto">
+          <div className="mt-5 flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 sm:flex-row sm:px-8 sm:pb-7">
+            <div className="max-h-40 w-full shrink-0 overflow-y-auto sm:max-h-none sm:w-[240px]">
               {conversations.map((conversation) => {
                 const active = conversation.peerBotId === selected?.peerBotId;
                 return (
