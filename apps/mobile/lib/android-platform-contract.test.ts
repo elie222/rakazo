@@ -51,6 +51,7 @@ describe("Android mobile platform contract", () => {
       "utf8",
     );
     expect(service).toContain("val working = active.filter(::isWorking)");
+    expect(service).toContain("if (working.isEmpty())");
     expect(service).toContain("val primary = active.first()\n");
     expect(service).toContain('putString("rakazo.botId", run.botId)');
   });
