@@ -285,6 +285,12 @@ class RakazoNotificationService : Service() {
     fun stop(context: Context) {
       context.stopService(Intent(context, RakazoNotificationService::class.java))
     }
+
+    fun clearSession(context: Context) {
+      stop(context)
+      context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
+      context.getSystemService(NotificationManager::class.java).cancelAll()
+    }
   }
 }
 

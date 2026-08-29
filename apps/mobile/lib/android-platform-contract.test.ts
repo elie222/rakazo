@@ -40,6 +40,10 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("Expo push owns background completion and attention delivery");
     expect(module).toContain("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS");
     expect(module).not.toContain("settings.copy(liveConnection = false)");
+    expect(module).toContain("RakazoNotificationService.clearSession(context)");
+    expect(service).toContain(
+      "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
+    );
   });
 
   it("shows live updates only for working runs and ties the pill to a real bot", () => {

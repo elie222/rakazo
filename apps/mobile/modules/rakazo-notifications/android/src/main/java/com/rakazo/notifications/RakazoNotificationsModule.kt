@@ -40,9 +40,11 @@ class RakazoNotificationsModule : Module() {
 
     AsyncFunction("stop") { clearSession: Boolean ->
       val context = context()
-      RakazoNotificationService.stop(context)
       if (clearSession) {
+        RakazoNotificationService.clearSession(context)
         NotificationStorage(context).token = ""
+      } else {
+        RakazoNotificationService.stop(context)
       }
     }
 
