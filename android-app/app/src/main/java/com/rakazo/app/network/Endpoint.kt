@@ -13,14 +13,15 @@ fun normalizeEndpoint(input: String): EndpointResult {
     val candidate = if (SCHEME.containsMatchIn(trimmed)) trimmed else "https://$trimmed"
     val uri = runCatching { URI(candidate) }.getOrNull()
         ?: return EndpointResult.Invalid("That doesn’t look like a URL")
-    if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+    val scheme = uri.scheme.lowercase()
+    if (scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
         return EndpointResult.Invalid("Use an http or https URL")
     }
-    if (uri.scheme == "http" && !isCleartextDevelopmentHost(uri.host)) {
+    if (scheme == "http" && !isCleartextDevelopmentHost(uri.host)) {
         return EndpointResult.Invalid("Use https:// for servers outside this device")
     }
     val port = if (uri.port == -1) "" else ":${uri.port}"
-    return EndpointResult.Valid("${uri.scheme}://${formatHost(uri.host)}$port")
+    return EndpointResult.Valid("$scheme://${formatHost(uri.host)}$port")
 }
 
 private fun isCleartextDevelopmentHost(hostname: String): Boolean {

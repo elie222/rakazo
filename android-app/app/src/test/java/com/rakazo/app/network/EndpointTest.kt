@@ -15,6 +15,14 @@ class EndpointTest {
             EndpointResult.Valid("http://10.0.2.2:3100"),
             normalizeEndpoint("http://10.0.2.2:3100/api"),
         )
+        assertEquals(
+            EndpointResult.Valid("https://app.example.com"),
+            normalizeEndpoint("HTTPS://app.example.com"),
+        )
+        assertEquals(
+            EndpointResult.Valid("http://127.0.0.1:3100"),
+            normalizeEndpoint("HTTP://127.0.0.1:3100"),
+        )
     }
 
     @Test

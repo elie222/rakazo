@@ -300,6 +300,7 @@ fun RakazoApp(openBotId: String? = null, onOpenBotConsumed: () -> Unit = {}) {
                                 val token = withContext(Dispatchers.IO) {
                                     api.signIn(current.endpoint, email.trim(), password)
                                 }
+                                if ((state as? RuntimeState.SignIn)?.endpoint != current.endpoint) return@launch
                                 session.signedIn(token)
                                 loadAgents()
                             } catch (error: IOException) {
