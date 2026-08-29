@@ -1,5 +1,4 @@
 import type { ProductEvent } from "@rakazo/contracts";
-import { isRunTerminalEvent } from "@rakazo/core";
 import { i18n } from "./i18n";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
@@ -43,30 +42,46 @@ export type BrowserNotificationContext = {
   pageVisible: boolean;
   windowFocused: boolean;
   permission: BrowserNotificationPermission;
-  notifiedRunIds: ReadonlySet<string>;
+  notifiedEventIds: ReadonlySet<string>;
 };
 
 export function shouldNotifyBrowser(
-  event: Pick<ProductEvent, "type" | "threadId" | "runId" | "seq">,
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "payload">,
   context: BrowserNotificationContext,
 ): boolean {
+  const notifiable =
+    (event.type === "thread.message.created" && event.payload.role === "bot") ||
+    event.type === "run.failed" ||
+    event.type === "run.cancelled";
   return (
     context.streamReady &&
-    isRunTerminalEvent(event) &&
+    notifiable &&
     event.threadId === context.subscribedThreadId &&
     event.seq > context.initialCursor &&
     (!context.pageVisible || !context.windowFocused) &&
     context.permission === "granted" &&
-    typeof event.runId === "string" &&
-    !context.notifiedRunIds.has(event.runId)
+    !context.notifiedEventIds.has(event.id)
   );
 }
 
 export function browserNotificationMessage(
-  event: Pick<ProductEvent, "type">,
+  event: Pick<ProductEvent, "type" | "payload">,
   botName: string,
 ): { title: string; body: string } {
   const name = botName.trim() || i18n._({ id: "Bot", message: "Bot" });
+  if (event.type === "thread.message.created") {
+    const blocks = Array.isArray(event.payload.blocks) ? event.payload.blocks : [];
+    const body = blocks
+      .map((block) =>
+        block && typeof block === "object" && "text" in block && typeof block.text === "string"
+          ? block.text
+          : "",
+      )
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    return { title: name, body: body || i18n._({ id: "Message", message: "Message" }) };
+  }
   if (event.type === "run.failed") {
     return {
       title: i18n._({ id: "{name} failed", message: "{name} failed", values: { name } }),
@@ -85,24 +100,22 @@ export function browserNotificationMessage(
   };
 }
 
-export function deliverBrowserRunNotification(
-  event: Pick<ProductEvent, "type" | "runId">,
+export function deliverBrowserNotification(
+  event: Pick<ProductEvent, "id" | "type" | "payload">,
   botName: string,
   context: {
     enabled: boolean;
     pageVisible: boolean;
     windowFocused: boolean;
     permission: BrowserNotificationPermission;
-    notifiedRunIds: Set<string>;
+    notifiedEventIds: Set<string>;
     show: (title: string, body: string) => void;
   },
 ): "delivered" | "pending" | "discarded" {
-  const runId = event.runId;
   if (
-    typeof runId !== "string" ||
     !context.enabled ||
     (context.pageVisible && context.windowFocused) ||
-    context.notifiedRunIds.has(runId) ||
+    context.notifiedEventIds.has(event.id) ||
     context.permission === "denied"
   ) {
     return "discarded";
@@ -111,7 +124,7 @@ export function deliverBrowserRunNotification(
   const message = browserNotificationMessage(event, botName);
   try {
     context.show(message.title, message.body);
-    context.notifiedRunIds.add(runId);
+    context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {
     return "pending";

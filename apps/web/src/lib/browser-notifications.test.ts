@@ -3,7 +3,7 @@ import {
   type BrowserNotificationApi,
   type BrowserNotificationContext,
   browserNotificationMessage,
-  deliverBrowserRunNotification,
+  deliverBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "./browser-notifications.js";
@@ -11,17 +11,26 @@ import { i18n } from "./i18n.js";
 
 function event(
   overrides: Partial<{
-    type: "run.completed" | "run.failed" | "run.cancelled" | "run.started";
+    type:
+      | "thread.message.created"
+      | "run.completed"
+      | "run.failed"
+      | "run.cancelled"
+      | "run.started";
     threadId: string;
+    id: string;
     runId: string;
     seq: number;
+    payload: Record<string, unknown>;
   }> = {},
 ) {
   return {
-    type: "run.completed" as const,
+    type: "thread.message.created" as const,
+    id: "event-1",
     threadId: "thread-1",
     runId: "run-1",
     seq: 8,
+    payload: { role: "bot", blocks: [{ kind: "text", text: "The pool is balanced." }] },
     ...overrides,
   };
 }
@@ -34,12 +43,12 @@ function context(overrides: Partial<BrowserNotificationContext> = {}): BrowserNo
     pageVisible: false,
     windowFocused: false,
     permission: "granted",
-    notifiedRunIds: new Set(),
+    notifiedEventIds: new Set(),
     ...overrides,
   };
 }
 
-describe("browser run notifications", () => {
+describe("browser notifications", () => {
   beforeEach(() => {
     i18n.load("en", {
       "{name} failed": "Chief failed",
@@ -52,9 +61,15 @@ describe("browser run notifications", () => {
     i18n.activate("en");
   });
 
-  it("only accepts a new terminal event for the hidden or unfocused subscribed thread", () => {
+  it("only accepts a new bot message for the hidden or unfocused subscribed thread", () => {
     expect(shouldNotifyBrowser(event(), context())).toBe(true);
     expect(shouldNotifyBrowser(event({ type: "run.started" }), context())).toBe(false);
+    expect(shouldNotifyBrowser(event({ type: "run.failed" }), context())).toBe(true);
+    expect(shouldNotifyBrowser(event({ type: "run.cancelled" }), context())).toBe(true);
+    expect(shouldNotifyBrowser(event({ payload: { role: "user", blocks: [] } }), context())).toBe(
+      false,
+    );
+    expect(shouldNotifyBrowser(event({ type: "run.completed" }), context())).toBe(false);
     expect(shouldNotifyBrowser(event({ threadId: "other-thread" }), context())).toBe(false);
     expect(shouldNotifyBrowser(event({ seq: 7 }), context())).toBe(false);
     expect(shouldNotifyBrowser(event(), context({ pageVisible: true, windowFocused: false }))).toBe(
@@ -68,15 +83,15 @@ describe("browser run notifications", () => {
       false,
     );
     expect(shouldNotifyBrowser(event(), context({ permission: "default" }))).toBe(false);
-    expect(shouldNotifyBrowser(event(), context({ notifiedRunIds: new Set(["run-1"]) }))).toBe(
+    expect(shouldNotifyBrowser(event(), context({ notifiedEventIds: new Set(["event-1"]) }))).toBe(
       false,
     );
   });
 
-  it("keeps terminal copy stable for the native Notification API", () => {
+  it("puts the bot message in the native notification", () => {
     expect(browserNotificationMessage(event(), "Chief")).toEqual({
-      title: "Chief finished",
-      body: "Finished.",
+      title: "Chief",
+      body: "The pool is balanced.",
     });
     expect(browserNotificationMessage(event({ type: "run.failed" }), "Chief")).toEqual({
       title: "Chief failed",
@@ -88,28 +103,29 @@ describe("browser run notifications", () => {
     });
   });
 
-  it("dedupes only after a notification is delivered", () => {
-    const notifiedRunIds = new Set<string>();
+  it("dedupes a replay but delivers another message from the same run", () => {
+    const notifiedEventIds = new Set<string>();
     const show = vi.fn().mockImplementationOnce(() => {
       throw new Error("notification construction failed");
     });
-    const delivery = (permission: "default" | "granted") =>
-      deliverBrowserRunNotification(event(), "Chief", {
+    const delivery = (permission: "default" | "granted", nextEvent = event()) =>
+      deliverBrowserNotification(nextEvent, "Chief", {
         enabled: true,
         pageVisible: false,
         windowFocused: false,
         permission,
-        notifiedRunIds,
+        notifiedEventIds,
         show,
       });
 
     expect(delivery("default")).toBe("pending");
     expect(delivery("granted")).toBe("pending");
-    expect(notifiedRunIds).toEqual(new Set());
+    expect(notifiedEventIds).toEqual(new Set());
     expect(delivery("granted")).toBe("delivered");
-    expect(notifiedRunIds).toEqual(new Set(["run-1"]));
+    expect(notifiedEventIds).toEqual(new Set(["event-1"]));
     expect(delivery("granted")).toBe("discarded");
-    expect(show).toHaveBeenCalledTimes(2);
+    expect(delivery("granted", event({ id: "event-2" }))).toBe("delivered");
+    expect(show).toHaveBeenCalledTimes(3);
   });
 
   it("allows a later send gesture to retry a dismissed permission prompt", async () => {

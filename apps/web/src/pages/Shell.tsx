@@ -122,7 +122,7 @@ import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open"
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
-  deliverBrowserRunNotification,
+  deliverBrowserNotification as deliverNativeBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
@@ -220,7 +220,7 @@ type PendingAttachment = {
 };
 
 type PendingBrowserNotification = {
-  event: Pick<ProductEvent, "type" | "runId" | "botId">;
+  event: Pick<ProductEvent, "id" | "type" | "botId" | "payload">;
   botId: string;
   botName: string;
 };
@@ -434,7 +434,7 @@ export function ShellPage() {
   } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
   const readVisibleGroups = useRef(new Set<string>());
-  const notifiedBrowserRuns = useRef(new Set<string>());
+  const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
@@ -508,11 +508,9 @@ export function ShellPage() {
     [markBotRead],
   );
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
-    const runId = pending.event.runId;
-    if (typeof runId !== "string") return true;
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
     if (!currentBot || typeof Notification === "undefined") return true;
-    const result = deliverBrowserRunNotification(
+    const result = deliverNativeBrowserNotification(
       pending.event,
       currentBot.name || pending.botName,
       {
@@ -520,30 +518,29 @@ export function ShellPage() {
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
-        notifiedRunIds: notifiedBrowserRuns.current,
+        notifiedEventIds: notifiedBrowserEvents.current,
         show: (title, body) => new Notification(title, { body }),
       },
     );
     return result !== "pending";
   }, []);
   const flushPendingBrowserNotifications = useCallback(() => {
-    for (const [runId, pending] of pendingBrowserNotifications.current) {
+    for (const [eventId, pending] of pendingBrowserNotifications.current) {
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(runId);
+        pendingBrowserNotifications.current.delete(eventId);
       }
     }
   }, [deliverBrowserNotification]);
-  const notifyBrowserForTerminalEvent = useCallback(
+  const notifyBrowserForEvent = useCallback(
     (
-      event: Pick<ProductEvent, "type" | "threadId" | "runId" | "seq" | "botId">,
+      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "botId" | "payload">,
       subscribedThreadId: string | undefined,
       initialCursor: number,
       streamReady: boolean,
       botName: string,
     ) => {
-      const runId = event.runId;
       const botId = event.botId;
-      if (typeof runId !== "string" || typeof botId !== "string") return;
+      if (typeof botId !== "string") return;
       const eligible = shouldNotifyBrowser(event, {
         subscribedThreadId: subscribedThreadId ?? "",
         initialCursor,
@@ -551,19 +548,19 @@ export function ShellPage() {
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: "granted",
-        notifiedRunIds: notifiedBrowserRuns.current,
+        notifiedEventIds: notifiedBrowserEvents.current,
       });
       if (!eligible || !botsRef.current.find((bot) => bot.id === botId)?.notifyOnFinish) return;
       const pending = { event, botId, botName } satisfies PendingBrowserNotification;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(runId, pending);
+        pendingBrowserNotifications.current.set(event.id, pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(runId);
+        pendingBrowserNotifications.current.delete(event.id);
       } else {
-        pendingBrowserNotifications.current.set(runId, pending);
+        pendingBrowserNotifications.current.set(event.id, pending);
       }
     },
     [deliverBrowserNotification],
@@ -1054,7 +1051,7 @@ export function ShellPage() {
               pendingSnapshotEvents.push(event);
             }
             const currentBot = botsRef.current.find((bot) => bot.id === active.id);
-            notifyBrowserForTerminalEvent(
+            notifyBrowserForEvent(
               event,
               subscribedThreadId,
               initialCursor,
@@ -1107,7 +1104,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForTerminalEvent]);
+  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -1217,7 +1214,7 @@ export function ShellPage() {
               pendingSnapshotEvents.push(event);
             }
             const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
-            notifyBrowserForTerminalEvent(
+            notifyBrowserForEvent(
               event,
               subscribedThreadId,
               initialCursor,
@@ -1250,7 +1247,7 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
-  }, [activeGroup?.id, groupId, notifyBrowserForTerminalEvent]);
+  }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
 
   const filtered = useMemo(
     () =>
