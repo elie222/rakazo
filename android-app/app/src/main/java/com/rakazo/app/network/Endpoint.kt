@@ -16,22 +16,16 @@ fun normalizeEndpoint(input: String): EndpointResult {
     if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
         return EndpointResult.Invalid("Use an http or https URL")
     }
-    if (uri.scheme == "http" && !isLocalHost(uri.host)) {
-        return EndpointResult.Invalid("Public servers require https://")
+    if (uri.scheme == "http" && !isCleartextDevelopmentHost(uri.host)) {
+        return EndpointResult.Invalid("Use https:// for servers outside this device")
     }
     val port = if (uri.port == -1) "" else ":${uri.port}"
     return EndpointResult.Valid("${uri.scheme}://${formatHost(uri.host)}$port")
 }
 
-private fun isLocalHost(hostname: String): Boolean {
+private fun isCleartextDevelopmentHost(hostname: String): Boolean {
     val host = hostname.removePrefix("[").removeSuffix("]").lowercase()
-    if (host == "localhost" || host.endsWith(".local")) return true
-    if (host == "::1") return true
-    val octets = host.split('.').map { it.toIntOrNull() ?: return false }
-    if (octets.size != 4 || octets.any { it !in 0..255 }) return false
-    return octets[0] == 10 || octets[0] == 127 ||
-        octets[0] == 192 && octets[1] == 168 ||
-        octets[0] == 172 && octets[1] in 16..31
+    return host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2"
 }
 
 private fun formatHost(host: String): String {

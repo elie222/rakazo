@@ -676,7 +676,7 @@ private val RUN_STATUSES = setOf(
     "cancelled",
 )
 private val SEARCH_KINDS = setOf("conversation", "message", "file", "link", "routine")
-private val RUN_TRIGGERS = setOf("user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message")
+private val RUN_TRIGGERS = setOf("user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message", "webhook")
 private val APPROVAL_EFFECTS = setOf("always_allow", "require_approval")
 private val APPROVAL_MATCH_KINDS = setOf("tool", "connector", "category")
 
