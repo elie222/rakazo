@@ -2,7 +2,13 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { stopThreadRuns, type ThreadTarget, threadHead, threadSnapshot } from "./thread-target.js";
+import {
+  cancelSupersededQueuedRuns,
+  stopThreadRuns,
+  type ThreadTarget,
+  threadHead,
+  threadSnapshot,
+} from "./thread-target.js";
 
 describe("threadHead", () => {
   it("returns the durable cursor without loading a snapshot", async () => {
@@ -19,6 +25,31 @@ describe("threadHead", () => {
       orderBy: { seq: "desc" },
       select: { seq: true },
     });
+  });
+});
+
+describe("queued run supersession", () => {
+  it("only cancels queued runs started by a user message", async () => {
+    const tx = {
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+      },
+      task: { updateMany: vi.fn() },
+    };
+    await cancelSupersededQueuedRuns(tx as never, {
+      threadId: "thread-1",
+      botIds: ["bot-1"],
+      keepRunIds: ["run-new"],
+    });
+    expect(tx.run.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          trigger: "user",
+          sourceMessage: { role: "user" },
+        }),
+      }),
+    );
   });
 });
 

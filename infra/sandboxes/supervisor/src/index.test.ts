@@ -12,6 +12,8 @@ import {
   completeReleasedScreen,
   computerControlTimeoutMs,
   containerActionStep,
+  containerActionSteps,
+  DOCKER_BROWSER_ALIASES,
   demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
@@ -201,6 +203,42 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
     });
+  });
+
+  it("routes Docker browser aliases through the safe wrapper on every display", () => {
+    for (const application of DOCKER_BROWSER_ALIASES) {
+      expect(
+        containerActionStep({ kind: "launch", application, uri: "https://example.com" }, ":2"),
+      ).toEqual({
+        argv: ["env", "DISPLAY=:2", "rakazo-browser", "https://example.com"],
+      });
+    }
+    expect(containerActionStep({ kind: "launch", application: "xterm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "xterm"],
+    });
+    expect(containerActionStep({ kind: "open", path: "https://example.com" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "xdg-open", "https://example.com"],
+    });
+  });
+
+  it("routes mixed-case Docker browser aliases through the safe wrapper", () => {
+    for (const application of ["Chrome", "Firefox", "Chromium", "Google-Chrome"]) {
+      expect(
+        containerActionStep({ kind: "launch", application, uri: "https://example.com" }, ":2"),
+      ).toEqual({
+        argv: ["env", "DISPLAY=:2", "rakazo-browser", "https://example.com"],
+      });
+    }
+    expect(containerActionStep({ kind: "launch", application: "XTerm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "XTerm"],
+    });
+  });
+
+  it("keeps browser routing argv identical for control and Docker exec fallback", () => {
+    const action = { kind: "launch" as const, application: "chromium", uri: "https://example.com" };
+    expect(containerActionSteps([action], ":2")).toEqual([
+      { argv: ["env", "DISPLAY=:2", "rakazo-browser", "https://example.com"] },
+    ]);
   });
 
   it("falls back to docker-exec when computer control fails", async () => {

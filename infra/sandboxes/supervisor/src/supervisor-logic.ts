@@ -29,6 +29,17 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
 ]);
 
+export const DOCKER_BROWSER_ALIASES = new Set([
+  "browser",
+  "chrome",
+  "chromium",
+  "chromium-browser",
+  "firefox",
+  "google-chrome",
+  "google-chrome-stable",
+  "rakazo-browser",
+]);
+
 export function assertRequestIdentity(
   botId: string | undefined,
   workspaceId: string | undefined,
@@ -300,9 +311,19 @@ export function containerActionStep(
       : workspaceTarget(normalizeWorkspaceRelative(action.path));
     argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
   } else {
-    argv = ["env", `DISPLAY=${display}`, action.application, ...(action.uri ? [action.uri] : [])];
+    const application = DOCKER_BROWSER_ALIASES.has(action.application.toLowerCase())
+      ? "rakazo-browser"
+      : action.application;
+    argv = ["env", `DISPLAY=${display}`, application, ...(action.uri ? [action.uri] : [])];
   }
   return { argv };
+}
+
+export function containerActionSteps(
+  actions: Array<z.infer<typeof computerActionSchema>>,
+  display = ":1",
+) {
+  return actions.map((action) => containerActionStep(action, display));
 }
 
 export function normalizeWorkspaceRelative(value: string) {

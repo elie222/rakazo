@@ -330,6 +330,8 @@ export interface AgentRunRequest {
    * When set, skip synthetic empty-turn fallbacks.
    */
   allowSilentEmpty?: boolean;
+  /** Contextual fallback when a non-silent run produces no written response. */
+  emptyResponseText?: string;
   executeTool?: (
     name: string,
     args: Record<string, unknown>,
