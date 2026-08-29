@@ -38,7 +38,7 @@ import {
   completeReleasedScreen,
   computerActionSchema,
   computerControlTimeoutMs,
-  containerActionStep,
+  containerActionSteps,
   demuxDockerStream,
   ensureScreenCommand,
   hasValidBearerToken,
@@ -624,6 +624,7 @@ async function ensureComputerImage() {
             "control.py",
             "xcapture.c",
             "rakazo-browser",
+            "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
             "fluxbox.init",
@@ -736,7 +737,7 @@ async function controlDesktop(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        steps: actions.map((action) => containerActionStep(action, display)),
+        steps: containerActionSteps(actions, display),
         display,
         observe,
         settleMs,
@@ -1038,7 +1039,7 @@ async function applyContainerActions(
     "python3",
     "-c",
     script,
-    JSON.stringify(actions.map((action) => containerActionStep(action, display))),
+    JSON.stringify(containerActionSteps(actions, display)),
   ]);
   if (result.code !== 0) throw new Error(result.stderr || "computer action failed");
 }

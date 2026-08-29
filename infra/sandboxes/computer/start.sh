@@ -49,6 +49,11 @@ EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
+xdg-mime default rakazo-browser.desktop x-scheme-handler/http >/dev/null 2>&1 || true
+xdg-mime default rakazo-browser.desktop x-scheme-handler/https >/dev/null 2>&1 || true
+xdg-mime default rakazo-browser.desktop text/html >/dev/null 2>&1 || true
+xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1 || true
+
 rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
   "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
   "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"
