@@ -15,6 +15,7 @@ data class AgentRecord(
     val pinned: Boolean,
     val status: String,
     val sectionId: String?,
+    val unread: Boolean,
 )
 
 data class BotSectionRecord(val id: String, val name: String)
@@ -115,6 +116,12 @@ class RakazoApi {
         if (response.status !in 200..299) throw response.error("Could not send message")
     }
 
+    fun markThreadRead(endpoint: String, token: String, botId: String) {
+        val input = JSONObject().put("botId", botId)
+        val response = request(endpoint, "/rpc/threads/markRead", token, rpcBody(input))
+        if (response.status !in 200..299) throw response.error("Could not mark chat as read")
+    }
+
     fun signOut(endpoint: String, token: String) {
         request(endpoint, "/api/auth/sign-out", token)
     }
@@ -193,6 +200,7 @@ private fun parseAgent(value: JSONObject): AgentRecord {
         pinned = value.optBoolean("pinned"),
         status = value.optString("status"),
         sectionId = sectionId,
+        unread = value.opt("unread") as? Boolean ?: throw IOException("Invalid agent response"),
     )
 }
 

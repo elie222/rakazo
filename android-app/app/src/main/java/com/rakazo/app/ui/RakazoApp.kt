@@ -152,6 +152,7 @@ internal data class Agent(
     val pinned: Boolean = false,
     val status: String = "",
     val sectionId: String? = null,
+    val unread: Boolean = false,
 )
 
 internal data class AgentSection(val id: String, val name: String)
@@ -308,6 +309,9 @@ fun RakazoApp() {
                 sendMessage = { botId, message ->
                     withContext(Dispatchers.IO) { api.sendMessage(session.endpoint, session.token, botId, message) }
                 },
+                markThreadRead = { botId ->
+                    withContext(Dispatchers.IO) { api.markThreadRead(session.endpoint, session.token, botId) }
+                },
                 onSessionExpired = {
                     session.signedOut()
                     state = RuntimeState.Expired
@@ -351,6 +355,7 @@ private fun LiveWorkspace(
     createSection: suspend (String, String) -> AgentSection,
     loadThread: suspend (String) -> ThreadSnapshotRecord,
     sendMessage: suspend (String, String) -> Unit,
+    markThreadRead: suspend (String) -> Unit,
     onSessionExpired: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -367,9 +372,11 @@ private fun LiveWorkspace(
     }
 
     fun closeThread() {
+        val closingAgentId = selectedAgentId
         selectedAgentId = null
         scope.launch {
             try {
+                if (closingAgentId != null) markThreadRead(closingAgentId)
                 val refreshed = refreshWorkspace()
                 liveAgents = refreshed.first
                 liveSections = refreshed.second
@@ -406,6 +413,7 @@ private fun LiveWorkspace(
                 onBack = ::closeThread,
                 loadThread = loadThread,
                 sendMessage = sendMessage,
+                markThreadRead = markThreadRead,
                 onSessionExpired = onSessionExpired,
             )
         }
@@ -444,6 +452,7 @@ private fun AgentRecord.toAgent() = Agent(
     pinned = pinned,
     status = status,
     sectionId = sectionId,
+    unread = unread,
 )
 
 private fun BotSectionRecord.toAgentSection() = AgentSection(id, name)
@@ -921,9 +930,17 @@ private fun AgentRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (pinned) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(UnreadPurple))
+            if (agent.unread) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(UnreadPurple)
+                        .semantics { contentDescription = "Unread" },
+                )
                 Spacer(Modifier.width(18.dp))
+            }
+            if (pinned) {
                 Text("Now", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
             } else {
                 Icon(Icons.Outlined.ChevronRight, null, tint = TextMuted)
@@ -1172,6 +1189,7 @@ private fun LiveThreadScreen(
     onBack: () -> Unit,
     loadThread: suspend (String) -> ThreadSnapshotRecord,
     sendMessage: suspend (String, String) -> Unit,
+    markThreadRead: suspend (String) -> Unit,
     onSessionExpired: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -1209,6 +1227,15 @@ private fun LiveThreadScreen(
             if (next.runStatus !in POLLING_RUN_STATUSES) break
             // ponytail: poll active runs; use threads/subscribe when live event rendering lands.
             delay(1_500)
+        }
+    }
+
+    LaunchedEffect(snapshot?.threadId, snapshot?.messages?.lastOrNull()?.id) {
+        if (snapshot == null) return@LaunchedEffect
+        try {
+            markThreadRead(agent.id)
+        } catch (errorValue: IOException) {
+            if (errorValue is ApiException && errorValue.status == 401) onSessionExpired()
         }
     }
 

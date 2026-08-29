@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -90,5 +92,22 @@ class WorkspaceInteractionTest {
         compose.onNodeWithText("Old Gmail task").assertExists()
         compose.runOnIdle { agents.value = listOf(Agent("maya", "Maya", "Hi", Color.Cyan)) }
         compose.onNodeWithText("Hi").assertExists()
+    }
+
+    @Test
+    fun unreadIndicatorUsesUnreadStateInsteadOfPinnedState() {
+        compose.setContent {
+            RakazoTheme {
+                WorkspaceScreen(
+                    agents = listOf(
+                        Agent("maya", "Maya", "Read", Color.Cyan, pinned = true, unread = false),
+                        Agent("github", "GitHub", "Unread", Color.Yellow, unread = true),
+                    ),
+                    onOpenAgent = {},
+                )
+            }
+        }
+
+        compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
     }
 }

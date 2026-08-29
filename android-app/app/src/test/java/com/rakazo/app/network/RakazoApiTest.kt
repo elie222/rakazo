@@ -12,9 +12,9 @@ class RakazoApiTest {
     @Test
     fun `translates agent response and rejects malformed colors`() {
         assertEquals(
-            listOf(AgentRecord("maya", "Maya", "Ready", "#45D8BB", true, "running", "priority")),
+            listOf(AgentRecord("maya", "Maya", "Ready", "#45D8BB", true, "running", "priority", true)),
             parseAgents(
-                """{"json":[{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":true,"status":"running","sectionId":"priority"}]}""",
+                """{"json":[{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":true,"status":"running","sectionId":"priority","unread":true}]}""",
             ),
         )
         assertThrows(IOException::class.java) {
@@ -62,12 +62,19 @@ class RakazoApiTest {
     @Test
     fun `sends the current thread rpc shape to an offline local server`() {
         var requestBody = ""
+        var markReadBody = ""
         var authorization = ""
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/rpc/threads/send") { exchange ->
             authorization = exchange.requestHeaders.getFirst("Authorization").orEmpty()
             requestBody = exchange.requestBody.bufferedReader().use { it.readText() }
             val body = """{"json":{"taskId":"task-1","runId":"run-1","seq":2}}""".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/rpc/threads/markRead") { exchange ->
+            markReadBody = exchange.requestBody.bufferedReader().use { it.readText() }
+            val body = """{"json":{"ok":true}}""".toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
         }
@@ -79,6 +86,11 @@ class RakazoApiTest {
                 botId = "maya",
                 text = "Hello",
             )
+            RakazoApi().markThreadRead(
+                endpoint = "http://127.0.0.1:${server.address.port}",
+                token = "session-token",
+                botId = "maya",
+            )
         } finally {
             server.stop(0)
         }
@@ -87,6 +99,7 @@ class RakazoApiTest {
         assertEquals("Bearer session-token", authorization)
         assertEquals("maya", json.getString("botId"))
         assertEquals("Hello", json.getString("text"))
+        assertEquals("maya", org.json.JSONObject(markReadBody).getJSONObject("json").getString("botId"))
     }
 
     @Test
@@ -104,7 +117,7 @@ class RakazoApiTest {
             requests += exchange.requestURI.path to request.getJSONObject("json")
             val input = request.getJSONObject("json")
             val section = if (input.has("sectionId")) input.optString("sectionId").takeIf { it.isNotBlank() } else "priority"
-            val body = """{"json":{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":${input.optBoolean("pinned")},"status":"idle","sectionId":${section?.let { "\"$it\"" } ?: "null"}}}""".toByteArray()
+            val body = """{"json":{"id":"maya","name":"Maya","preview":"Ready","title":"Chief","color":"#45D8BB","pinned":${input.optBoolean("pinned")},"status":"idle","sectionId":${section?.let { "\"$it\"" } ?: "null"},"unread":false}}""".toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
         }
