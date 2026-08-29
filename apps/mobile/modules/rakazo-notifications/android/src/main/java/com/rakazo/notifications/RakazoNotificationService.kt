@@ -117,16 +117,19 @@ class RakazoNotificationService : Service() {
             .forEach { post(it, attentionCopy(it)) }
         }
         alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
+        if (active.isEmpty()) {
+          // Expo push owns background completion and attention delivery. Keeping this service
+          // foreground while idle would require the persistent notification the product avoids.
+          stop()
+          return
+        }
       } catch (error: ApiException) {
         if (error.status == 401) {
           stop()
           return
         }
-        clearLive()
       } catch (_: IOException) {
-        clearLive()
       } catch (_: RuntimeException) {
-        clearLive()
       }
       delay(POLL_INTERVAL_MS)
     }
