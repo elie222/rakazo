@@ -22,6 +22,7 @@ export class ThreadScrollBehavior {
   }
 
   onLayout(): ThreadScrollAction {
+    if (this.laidOut) return null;
     this.laidOut = true;
     return this.contentReady ? "jump" : null;
   }

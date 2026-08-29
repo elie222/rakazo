@@ -1,6 +1,7 @@
 import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { apiBaseWarning } from "./endpoint";
 
 export interface LiveNotificationSettings {
   liveConnection: boolean;
@@ -41,6 +42,8 @@ export async function setLiveNotificationSettings(
   token: string,
 ): Promise<void> {
   if (!nativeNotifications) return;
+  const endpointWarning = apiBaseWarning(endpoint);
+  if (endpointWarning) throw new Error(endpointWarning);
   if (settings.liveConnection) {
     const existing = await Notifications.getPermissionsAsync();
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;

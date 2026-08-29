@@ -104,6 +104,7 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
+  await rpc("notifications/unregisterPush").catch(() => undefined);
   const headers = await authHeaders();
   await fetch(`${currentApiBase()}/api/auth/sign-out`, {
     method: "POST",

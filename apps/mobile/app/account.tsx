@@ -49,6 +49,7 @@ export default function Account() {
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
+  const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,8 @@ export default function Account() {
     if (Platform.OS === "android") {
       void getLiveNotificationSettings()
         .then(setNotifications)
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => setNotificationsReady(true));
     }
   }, []);
 
@@ -225,7 +227,7 @@ export default function Account() {
               label="Live working status"
               detail="Shows while agents are working"
               value={notifications.liveConnection}
-              disabled={notificationPending}
+              disabled={notificationPending || !notificationsReady}
               onChange={(liveConnection) =>
                 void updateNotifications({ ...notifications, liveConnection })
               }
@@ -234,14 +236,14 @@ export default function Account() {
               label="Agent messages"
               detail="Replies and completed work"
               value={notifications.messages}
-              disabled={notificationPending}
+              disabled={notificationPending || !notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
             <NotificationSwitch
               label="Scheduled tasks"
               detail="Contextual alerts from routines"
               value={notifications.scheduledTasks}
-              disabled={notificationPending}
+              disabled={notificationPending || !notificationsReady}
               onChange={(scheduledTasks) =>
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
@@ -250,7 +252,7 @@ export default function Account() {
               label="Needs attention"
               detail="Questions, approvals, and takeover"
               value={notifications.needsAttention}
-              disabled={notificationPending}
+              disabled={notificationPending || !notificationsReady}
               onChange={(needsAttention) =>
                 void updateNotifications({ ...notifications, needsAttention })
               }
@@ -420,7 +422,13 @@ function NotificationSwitch({
         <Text style={{ color: native.label, fontSize: 15 }}>{label}</Text>
         <Text style={{ color: native.secondaryLabel, fontSize: 12.5, marginTop: 2 }}>{detail}</Text>
       </View>
-      <Switch disabled={disabled} value={value} onValueChange={onChange} />
+      <Switch
+        accessibilityLabel={label}
+        accessibilityHint={detail}
+        disabled={disabled}
+        value={value}
+        onValueChange={onChange}
+      />
     </View>
   );
 }

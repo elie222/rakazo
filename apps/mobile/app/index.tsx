@@ -41,6 +41,17 @@ import { queryWorkspaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
 
 const FALLBACK_COLOR = "#9B5CF6";
+const INBOX_REQUEST_TIMEOUT_MS = 8_000;
+
+async function inboxRpc<T>(procedure: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), INBOX_REQUEST_TIMEOUT_MS);
+  try {
+    return await rpc<T>(procedure, {}, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type InboxItem =
   | { type: "bot"; bot: MobileBot }
@@ -90,9 +101,9 @@ export default function Home() {
     setError(null);
     try {
       const [nextBots, nextSections, nextGroups] = await Promise.all([
-        rpc<MobileBot[]>("bots/list"),
-        rpc<MobileBotSection[]>("botSections/list"),
-        rpc<MobileGroup[]>("groups/list"),
+        inboxRpc<MobileBot[]>("bots/list"),
+        inboxRpc<MobileBotSection[]>("botSections/list"),
+        inboxRpc<MobileGroup[]>("groups/list"),
       ]);
       if (requestId !== inboxRequestId.current) return;
       setBots(nextBots);

@@ -33,49 +33,66 @@ export const BotAvatar = memo(function BotAvatar({
 }) {
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
-  if ((variant ?? avatarStyle) === "organic") {
-    return <OrganicAvatar color={color} identity={identity} size={size} isWorking={isWorking} />;
-  }
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(3, Math.round(size * 0.11));
   const eyeH = Math.max(4, Math.round(size * 0.17));
   const gap = Math.max(3, Math.round(size * 0.11));
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: color,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <View
-        style={{
-          width: visorW,
-          height: visorH,
-          borderRadius: Math.round(visorH * 0.52),
-          backgroundColor: "#0C0C0E",
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          gap,
-        }}
-      >
-        {[0, 1].map((eye) => (
+    <View style={{ width: size, height: size }}>
+      {(variant ?? avatarStyle) === "organic" ? (
+        <OrganicAvatar color={color} identity={identity} size={size} isWorking={isWorking} />
+      ) : (
+        <View
+          style={{
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: color,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <View
-            key={eye}
             style={{
-              width: eyeW,
-              height: eyeH,
-              borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-              backgroundColor: "#fff",
+              width: visorW,
+              height: visorH,
+              borderRadius: Math.round(visorH * 0.52),
+              backgroundColor: "#0C0C0E",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap,
             }}
-          />
-        ))}
-      </View>
+          >
+            {[0, 1].map((eye) => (
+              <View
+                key={eye}
+                style={{
+                  width: eyeW,
+                  height: eyeH,
+                  borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
+                  backgroundColor: "#fff",
+                }}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+      {isWorking ? (
+        <View
+          accessibilityLabel="Working"
+          style={{
+            position: "absolute",
+            right: 0,
+            bottom: 0,
+            width: Math.max(6, Math.round(size * 0.18)),
+            height: Math.max(6, Math.round(size * 0.18)),
+            borderRadius: size,
+            backgroundColor: "#F5A03C",
+          }}
+        />
+      ) : null}
     </View>
   );
 });

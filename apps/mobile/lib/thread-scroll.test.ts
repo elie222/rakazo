@@ -28,6 +28,15 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.onContentChanged(false, "m2")).toBe("smooth");
   });
 
+  it("does not jump again when keyboard resizing emits another layout", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onContentChanged(false, "m1");
+
+    expect(behavior.onLayout()).toBe("jump");
+    expect(behavior.onLayout()).toBe(null);
+  });
+
   it("leaves a detached reader in place and records unread messages", () => {
     const behavior = new ThreadScrollBehavior();
     behavior.openThread("thread-1");
