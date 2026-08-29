@@ -814,18 +814,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
-        const visibleMessages = [...messages].reverse().map((m) => ({
-          seq: m.seq,
-          role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-            | "user"
-            | "assistant"
-            | "system",
-          content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
-        }));
-        const compactedHistory = selectCompactedHistory({
-          messages: visibleMessages,
+        const threadContext = threadContextForRun(run.trigger, {
+          messages: [...messages].reverse().map((m) => ({
+            seq: m.seq,
+            role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+              | "user"
+              | "assistant"
+              | "system",
+            content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
+          })),
           summary: thread.historyCompactionSummary,
           historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+        });
+        const compactedHistory = selectCompactedHistory({
+          messages: threadContext.messages,
+          summary: threadContext.summary,
+          historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
         let history = compactedHistory.history.map(({ role, content }) => ({ role, content }));
         const turnBlocks = userTurnBlocksForRun(
@@ -848,7 +852,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : "The delegated bot completed its turn without a written summary."
           : undefined;
         const recallPromise =
-          semanticMemory && memoryScope && thread.historyCompactedUpToSeq != null
+          threadContext.includeSemanticRecall &&
+          semanticMemory &&
+          memoryScope &&
+          thread.historyCompactedUpToSeq != null
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
@@ -2892,6 +2899,24 @@ async function renewRunLease(
 
 function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+export function threadContextForRun<T>(
+  trigger: string,
+  context: {
+    messages: T[];
+    summary: string | null;
+    historyCompactedUpToSeq: number | null;
+  },
+) {
+  return trigger === "routine"
+    ? {
+        messages: [] as T[],
+        summary: null,
+        historyCompactedUpToSeq: null,
+        includeSemanticRecall: false,
+      }
+    : { ...context, includeSemanticRecall: true };
 }
 
 export function completionMessageSegments(
