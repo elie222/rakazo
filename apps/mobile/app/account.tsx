@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -15,9 +17,26 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
 import type { MobileBot } from "../lib/api";
-import { deleteAccount, type MobileMe, rpc, signOut } from "../lib/api";
+import {
+  currentApiBase,
+  deleteAccount,
+  loadSessionToken,
+  type MobileMe,
+  rpc,
+  signOut,
+} from "../lib/api";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import {
+  canPostPromotedNotifications,
+  DEFAULT_LIVE_NOTIFICATION_SETTINGS,
+  getLiveNotificationSettings,
+  type LiveNotificationSettings,
+  openLiveNotificationSettings,
+  openPromotedNotificationSettings,
+  setLiveNotificationSettings,
+} from "../lib/live-notifications";
 import { native } from "../lib/native";
+import { registerPushToken } from "../lib/push";
 
 export default function Account() {
   const router = useRouter();
@@ -27,6 +46,11 @@ export default function Account() {
   const [pending, setPending] = useState(false);
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<LiveNotificationSettings>(
+    DEFAULT_LIVE_NOTIFICATION_SETTINGS,
+  );
+  const [notificationPending, setNotificationPending] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
@@ -46,6 +70,11 @@ export default function Account() {
     void rpc<{ runs: number; inputTokens: number; outputTokens: number }>("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
+    if (Platform.OS === "android") {
+      void getLiveNotificationSettings()
+        .then(setNotifications)
+        .catch(() => undefined);
+    }
   }, []);
 
   const usageBlock = (
@@ -90,6 +119,27 @@ export default function Account() {
     await signOut();
     router.dismissAll();
     router.replace("/sign-in");
+  }
+
+  async function updateNotifications(next: LiveNotificationSettings) {
+    const previous = notifications;
+    setNotifications(next);
+    setNotificationPending(true);
+    setNotificationError(null);
+    try {
+      await setLiveNotificationSettings(next, currentApiBase(), await loadSessionToken());
+      if (next.liveConnection && !(await canPostPromotedNotifications())) {
+        await openPromotedNotificationSettings();
+      }
+      await registerPushToken();
+    } catch (cause) {
+      setNotifications(previous);
+      setNotificationError(
+        cause instanceof Error ? cause.message : "Could not update notifications",
+      );
+    } finally {
+      setNotificationPending(false);
+    }
   }
 
   function confirmDeletion() {
@@ -164,6 +214,64 @@ export default function Account() {
           </View>
           {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
         </View>
+
+        {Platform.OS === "android" ? (
+          <View accessibilityLabel="Notifications" style={styles.profile}>
+            <Text style={styles.settingsTitle}>Notifications</Text>
+            <Text style={styles.settingsExplanation}>
+              Keep agent status and alerts current in the background
+            </Text>
+            <NotificationSwitch
+              label="Live working status"
+              detail="Shows while agents are working"
+              value={notifications.liveConnection}
+              disabled={notificationPending}
+              onChange={(liveConnection) =>
+                void updateNotifications({ ...notifications, liveConnection })
+              }
+            />
+            <NotificationSwitch
+              label="Agent messages"
+              detail="Replies and completed work"
+              value={notifications.messages}
+              disabled={notificationPending}
+              onChange={(messages) => void updateNotifications({ ...notifications, messages })}
+            />
+            <NotificationSwitch
+              label="Scheduled tasks"
+              detail="Contextual alerts from routines"
+              value={notifications.scheduledTasks}
+              disabled={notificationPending}
+              onChange={(scheduledTasks) =>
+                void updateNotifications({ ...notifications, scheduledTasks })
+              }
+            />
+            <NotificationSwitch
+              label="Needs attention"
+              detail="Questions, approvals, and takeover"
+              value={notifications.needsAttention}
+              disabled={notificationPending}
+              onChange={(needsAttention) =>
+                void updateNotifications({ ...notifications, needsAttention })
+              }
+            />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void openPromotedNotificationSettings()}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Android live update settings</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void openLiveNotificationSettings()}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>Android notification settings</Text>
+            </Pressable>
+            {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
+          </View>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"
@@ -283,6 +391,37 @@ export default function Account() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function NotificationSwitch({
+  label,
+  detail,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  detail: string;
+  value: boolean;
+  disabled: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <View
+      style={{
+        minHeight: 54,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: native.label, fontSize: 15 }}>{label}</Text>
+        <Text style={{ color: native.secondaryLabel, fontSize: 12.5, marginTop: 2 }}>{detail}</Text>
+      </View>
+      <Switch disabled={disabled} value={value} onValueChange={onChange} />
+    </View>
   );
 }
 

@@ -12,6 +12,9 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./live-notifications.js", () => ({
+  stopLiveNotifications: vi.fn(async () => undefined),
+}));
 
 describe("mobile session storage", () => {
   beforeEach(() => {

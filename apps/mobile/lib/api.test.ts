@@ -19,6 +19,10 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./live-notifications.js", () => ({
+  resumeLiveNotifications: vi.fn(async () => undefined),
+  stopLiveNotifications: vi.fn(async () => undefined),
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();

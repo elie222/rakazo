@@ -68,9 +68,6 @@ export const GroupAvatar = memo(function GroupAvatar({
             position: "absolute",
             ...positions[index],
             zIndex: index + 1,
-            borderRadius: miniSize / 2,
-            borderWidth: 1.5,
-            borderColor: "#121215",
           }}
         >
           <BotAvatar
@@ -94,8 +91,6 @@ export const GroupAvatar = memo(function GroupAvatar({
             backgroundColor: "#202026",
             alignItems: "center",
             justifyContent: "center",
-            borderWidth: 1.5,
-            borderColor: "#121215",
           }}
         >
           <Text style={{ color: "#E0E0E6", fontSize: 10, fontWeight: "600" }}>

@@ -60,6 +60,8 @@
     },
     "android": {
       "package": "com.rakazo.app",
+      "versionCode": 10,
+      "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

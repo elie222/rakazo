@@ -1,9 +1,22 @@
 import type { AvatarStyle } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import { View } from "react-native";
-import Svg, { Path, Rect } from "react-native-svg";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
+import Svg, { G, Path, Rect } from "react-native-svg";
+import { workingAvatarDuration, workingAvatarFrame } from "../lib/avatar-motion";
 import { useAvatarStyle } from "./avatar-style";
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 export const BotAvatar = memo(function BotAvatar({
   color,
@@ -21,42 +34,7 @@ export const BotAvatar = memo(function BotAvatar({
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
   if ((variant ?? avatarStyle) === "organic") {
-    const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
-    return (
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: isWorking ? 2 : 0,
-          borderColor: "#FFFFFF",
-        }}
-      >
-        <Svg width={size} height={size} viewBox="-60 -60 120 120">
-          <Path d={organicAvatarPath(seed)} fill={color} />
-          <Rect
-            x={-14}
-            y={-12}
-            width={7}
-            height={24}
-            rx={3.5}
-            fill="#101014"
-            rotation={(seed % 9) - 4}
-            origin="0, 0"
-          />
-          <Rect
-            x={7}
-            y={-12}
-            width={7}
-            height={24}
-            rx={3.5}
-            fill="#101014"
-            rotation={(seed % 9) - 4}
-            origin="0, 0"
-          />
-        </Svg>
-      </View>
-    );
+    return <OrganicAvatar color={color} identity={identity} size={size} isWorking={isWorking} />;
   }
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
@@ -72,8 +50,6 @@ export const BotAvatar = memo(function BotAvatar({
         backgroundColor: color,
         alignItems: "center",
         justifyContent: "center",
-        borderWidth: isWorking ? 2 : 0,
-        borderColor: "#FFFFFF",
       }}
     >
       <View
@@ -103,3 +79,81 @@ export const BotAvatar = memo(function BotAvatar({
     </View>
   );
 });
+
+function OrganicAvatar({
+  color,
+  identity,
+  size,
+  isWorking,
+}: {
+  color: string;
+  identity?: string;
+  size: number;
+  isWorking: boolean;
+}) {
+  const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
+  const progress = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.value = 0;
+    if (isWorking && !reducedMotion) {
+      progress.value = withRepeat(
+        withTiming(1, {
+          duration: workingAvatarDuration(seed),
+          easing: Easing.linear,
+        }),
+        -1,
+      );
+    }
+    return () => cancelAnimation(progress);
+  }, [isWorking, progress, reducedMotion, seed]);
+
+  const bodyStyle = useAnimatedStyle(() => {
+    const frame = workingAvatarFrame(seed, progress.value);
+    return {
+      transform: [
+        { translateX: (frame.translationX * size) / 120 },
+        { translateY: (frame.translationY * size) / 120 },
+        { rotate: `${frame.rotation}deg` },
+        { scaleX: frame.scaleX },
+        { scaleY: frame.scaleY },
+      ],
+    };
+  });
+  const leftEyeProps = useAnimatedProps(() => {
+    const frame = workingAvatarFrame(seed, progress.value);
+    return { x: -14 + frame.eyeOffsetX, y: -12 + frame.eyeOffsetY };
+  });
+  const rightEyeProps = useAnimatedProps(() => {
+    const frame = workingAvatarFrame(seed, progress.value);
+    return { x: 7 + frame.eyeOffsetX, y: -12 + frame.eyeOffsetY };
+  });
+
+  return (
+    <View style={{ width: size, height: size }}>
+      <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
+        <Svg width={size} height={size} viewBox="-60 -60 120 120">
+          <Path d={organicAvatarPath(seed)} fill={color} />
+          <G transform={`rotate(${(seed % 9) - 4})`}>
+            <AnimatedRect
+              animatedProps={leftEyeProps}
+              width={7}
+              height={24}
+              rx={3.5}
+              fill="#101014"
+            />
+            <AnimatedRect
+              animatedProps={rightEyeProps}
+              width={7}
+              height={24}
+              rx={3.5}
+              fill="#101014"
+            />
+          </G>
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}

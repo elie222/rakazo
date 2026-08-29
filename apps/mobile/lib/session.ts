@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { stopLiveNotifications } from "./live-notifications";
 
 const SESSION_KEY = "rakazo.session_token";
 
@@ -15,6 +16,7 @@ export async function saveSessionToken(token: string) {
 }
 
 export async function clearSessionToken() {
+  await stopLiveNotifications(true).catch(() => undefined);
   await SecureStore.deleteItemAsync(SESSION_KEY);
 }
 

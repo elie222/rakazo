@@ -19,6 +19,7 @@ import {
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
+import { resumeLiveNotifications } from "./live-notifications";
 import {
   clearSessionToken,
   loadSessionToken,
@@ -99,6 +100,7 @@ export async function signIn(email: string, password: string) {
   const token = tokenFromAuthResponse(res, body);
   if (!token) throw new Error("Sign-in did not return a session");
   await saveSessionToken(token);
+  await resumeLiveNotifications(currentApiBase(), token).catch(() => undefined);
 }
 
 export async function signOut() {
@@ -209,8 +211,8 @@ export type MobileSnapshot = {
   cursor?: number;
   messages: MobileMessage[];
   olderCursor: number | null;
-  run: { id: string; status: string; error?: string | null } | null;
-  activeRuns?: Array<{ id: string; status: string }>;
+  run: { id: string; botId?: string; status: string; error?: string | null } | null;
+  activeRuns?: Array<{ id: string; botId?: string; status: string }>;
   members?: MobileGroup["members"];
   computer?: {
     state: string;

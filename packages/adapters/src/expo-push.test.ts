@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deletePushToken,
   ExpoPushProvider,
   expoPushErrorMessage,
   loadPushToken,
@@ -52,6 +53,14 @@ describe("expo push tickets", () => {
 });
 
 describe("expo push", () => {
+  it("removes a registered token", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    await deletePushToken(dataDir, "user-1");
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
+  });
+
   it("does not call Expo when the user has no token", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);

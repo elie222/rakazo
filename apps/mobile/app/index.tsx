@@ -5,6 +5,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Pressable,
   RefreshControl,
@@ -70,6 +71,7 @@ export default function Home() {
     recent: [],
   });
   const activityRequestId = useRef(0);
+  const inboxRequestId = useRef(0);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -84,6 +86,7 @@ export default function Home() {
   }, []);
 
   const loadBots = useCallback(async () => {
+    const requestId = ++inboxRequestId.current;
     setError(null);
     try {
       const [nextBots, nextSections, nextGroups] = await Promise.all([
@@ -91,10 +94,12 @@ export default function Home() {
         rpc<MobileBotSection[]>("botSections/list"),
         rpc<MobileGroup[]>("groups/list"),
       ]);
+      if (requestId !== inboxRequestId.current) return;
       setBots(nextBots);
       setBotSections(nextSections);
       setGroups(nextGroups);
     } catch (err) {
+      if (requestId !== inboxRequestId.current) return;
       setError(err instanceof Error ? err.message : "Could not load bots");
     }
   }, []);
@@ -125,7 +130,18 @@ export default function Home() {
 
   useFocusEffect(
     useCallback(() => {
-      if (hasSession) void loadBots();
+      if (!hasSession) return;
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = async () => {
+        if (AppState.currentState === "active") await loadBots();
+        if (!cancelled) timer = setTimeout(() => void tick(), 5_000);
+      };
+      void tick();
+      return () => {
+        cancelled = true;
+        if (timer !== undefined) clearTimeout(timer);
+      };
     }, [hasSession, loadBots]),
   );
 
