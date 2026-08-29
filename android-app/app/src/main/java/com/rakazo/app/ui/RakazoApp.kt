@@ -174,6 +174,9 @@ private enum class WorkspaceMode { Agents, Activity }
 private val ACTIVE_RUN_STATUSES = setOf("queued", "leased", "running", "waiting_input", "waiting_takeover")
 private val POLLING_RUN_STATUSES = setOf("queued", "leased", "running")
 
+internal fun threadRefreshDelayMillis(runStatus: String?): Long =
+    if (runStatus in POLLING_RUN_STATUSES) 1_500 else 5_000
+
 internal data class Agent(
     val id: String,
     val name: String,
@@ -1970,9 +1973,8 @@ private fun LiveThreadScreen(
             }
             snapshot = next
             loading = false
-            if (next.runStatus !in POLLING_RUN_STATUSES) break
-            // ponytail: poll active runs; use threads/subscribe when live event rendering lands.
-            delay(1_500)
+            // ponytail: poll slowly while idle; use threads/subscribe when live event rendering lands.
+            delay(threadRefreshDelayMillis(next.runStatus))
         }
     }
 

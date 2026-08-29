@@ -43,4 +43,10 @@ class ActivityTimeTest {
             ).isPeerTraffic(),
         )
     }
+
+    @Test
+    fun `keeps refreshing an idle open thread`() {
+        assertEquals(5_000L, threadRefreshDelayMillis(null))
+        assertEquals(1_500L, threadRefreshDelayMillis("running"))
+    }
 }
