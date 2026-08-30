@@ -23,8 +23,18 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  AppState,
+  FlatList,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import {
@@ -85,8 +95,8 @@ export default function Thread() {
     messageId?: string;
   }>();
   const inGroup = Boolean(groupId);
-  const scroll = useRef<ScrollView>(null);
-  const loadingOlderContent = useRef(false);
+  const scroll = useRef<FlatList<MobileMessage>>(null);
+  const pinnedScroll = useRef<ScrollView>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
   const pinnedAroundRef = useRef<{
@@ -136,6 +146,7 @@ export default function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
+
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerMentionTargets = useMemo(
     () =>
@@ -264,9 +275,11 @@ export default function Thread() {
     };
   }, [mentionBots]);
 
-  function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
-    return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
-  }
+  const isCurrentTarget = useCallback(
+    (targetBotId: string | undefined, targetGroupId: string | undefined) =>
+      activeBotId.current === targetBotId && activeGroupId.current === targetGroupId,
+    [],
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -350,7 +363,7 @@ export default function Thread() {
     ]);
   }
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!botId && !groupId) return;
     const targetBotId = botId;
     const targetGroupId = groupId;
@@ -374,7 +387,7 @@ export default function Thread() {
       mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId),
     );
     return next;
-  }
+  }, [botId, groupId]);
 
   async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
@@ -411,7 +424,6 @@ export default function Thread() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
     pinnedAroundRef.current = null;
     jumpScrollTarget.current = null;
-    loadingOlderContent.current = true;
     setLoadingOlder(true);
     const epoch = historyEpoch.current;
     try {
@@ -419,14 +431,10 @@ export default function Thread() {
         ...(groupId ? { groupId } : { botId: botId! }),
         before: snap.olderCursor,
       });
-      if (epoch !== historyEpoch.current) {
-        loadingOlderContent.current = false;
-        return;
-      }
+      if (epoch !== historyEpoch.current) return;
       expandedHistoryThread.current = page.threadId;
       setSnap((prev) => prependMobileMessagePage(prev, page));
     } catch (err) {
-      loadingOlderContent.current = false;
       setError(err instanceof Error ? err.message : "Could not load earlier messages");
     } finally {
       setLoadingOlder(false);
@@ -736,18 +744,35 @@ export default function Thread() {
     }
   }
 
-  async function answerMessage(message: MobileMessage, answer: string) {
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || !message.runId) return;
-    await rpc("threads/answer", {
-      ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
-      runId: message.runId,
-      messageId: message.id,
-      answer,
-    });
-    if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
-  }
+  const answerMessage = useCallback(
+    async (message: MobileMessage, answer: string) => {
+      const targetBotId = botId;
+      const targetGroupId = groupId;
+      if ((!targetBotId && !targetGroupId) || !message.runId) return;
+      await rpc("threads/answer", {
+        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+        runId: message.runId,
+        messageId: message.id,
+        answer,
+      });
+      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
+    },
+    [botId, groupId, isCurrentTarget, refresh],
+  );
+
+  const openBot = useCallback(
+    (id: string, botName: string) =>
+      router.push({ pathname: "/thread", params: { botId: id, name: botName } }),
+    [router],
+  );
+
+  const speak = useCallback(
+    (message: MobileMessage) =>
+      void speakMessage(message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "", message).catch(
+        (err) => Alert.alert("Could not speak", err instanceof Error ? err.message : "Try again."),
+      ),
+    [botId, snap?.members],
+  );
 
   function showAttachMenu() {
     Alert.alert("Attach", undefined, [
@@ -783,107 +808,118 @@ export default function Thread() {
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
-
+  const messages = useMemo(() => [...(snap?.messages ?? [])].reverse(), [snap?.messages]);
+  const messagesById = useMemo(
+    () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
+    [snap?.messages],
+  );
+  const pinnedTarget = pinnedAroundRef.current;
+  const showPinnedPage = Boolean(
+    jumpScrollTarget.current ||
+      (pinnedTarget &&
+        ((pinnedTarget.botId && pinnedTarget.botId === botId) ||
+          (pinnedTarget.groupId && pinnedTarget.groupId === groupId))),
+  );
+  function renderMessage(message: MobileMessage) {
+    return (
+      <View
+        key={message.id}
+        onLayout={
+          jumpScrollTarget.current === message.id
+            ? (event) => {
+                const y = Math.max(0, event.nativeEvent.layout.y - 24);
+                requestAnimationFrame(() => {
+                  if (jumpScrollTarget.current !== message.id) return;
+                  pinnedScroll.current?.scrollTo({ y, animated: true });
+                  jumpScrollTarget.current = null;
+                });
+              }
+            : undefined
+        }
+        style={{
+          marginTop: 12,
+          width: "100%",
+          flexDirection: "row",
+          justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+        }}
+      >
+        <View style={{ maxWidth: "90%", flexShrink: 1 }}>
+          <Pressable
+            accessibilityLabel="Reply"
+            onPress={() => setReplyTarget(message)}
+            style={{
+              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+              marginBottom: 4,
+            }}
+          >
+            <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
+          </Pressable>
+          <MessageBubble
+            botId={botId ?? snap?.members?.[0]?.botId ?? ""}
+            groupId={groupId}
+            message={message}
+            members={snap?.members}
+            replyPreview={
+              message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
+            }
+            canAnswer={message.id === answerableAskMessageId}
+            onAnswer={answerMessage}
+            onOpenBot={openBot}
+            onPreviewMarkdown={setMarkdownPreview}
+            onSpeak={message.role === "bot" ? speak : undefined}
+          />
+        </View>
+      </View>
+    );
+  }
   return (
     <View style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20, paddingBottom: 24 }}>
       {error ? <Text style={{ color: "#8E8E93", marginTop: 12 }}>{error}</Text> : null}
       {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
-      <ScrollView
-        ref={scroll}
-        style={{ flex: 1, marginTop: 8 }}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        onContentSizeChange={() => {
-          if (loadingOlderContent.current) {
-            loadingOlderContent.current = false;
-            return;
-          }
-          if (
-            jumpScrollTarget.current ||
-            (pinnedAroundRef.current &&
-              ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                (pinnedAroundRef.current.groupId &&
-                  pinnedAroundRef.current.groupId === groupId))) ||
-            expandedHistoryThread.current === snap?.threadId
-          )
-            return;
-          scroll.current?.scrollToEnd({ animated: false });
-        }}
-      >
-        {snap?.olderCursor != null ? (
-          <Pressable
-            disabled={loadingOlder}
-            onPress={() => void loadOlderMessages()}
-            style={{ alignSelf: "center", paddingHorizontal: 12, paddingVertical: 10 }}
-          >
-            <Text style={{ color: "#85858A", fontSize: 13 }}>
-              {loadingOlder ? "Loading…" : "Load earlier messages"}
-            </Text>
-          </Pressable>
-        ) : null}
-        {(snap?.messages ?? []).map((message) => (
-          <View
-            key={message.id}
-            onLayout={(event) => {
-              if (jumpScrollTarget.current !== message.id) return;
-              scroll.current?.scrollTo({
-                y: Math.max(0, event.nativeEvent.layout.y - 24),
-                animated: true,
-              });
-              jumpScrollTarget.current = null;
-            }}
-            style={{
-              marginTop: 12,
-              width: "100%",
-              flexDirection: "row",
-              justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-            }}
-          >
-            <View style={{ maxWidth: "90%", flexShrink: 1 }}>
+      {showPinnedPage ? (
+        <ScrollView
+          key={jumpScrollTarget.current ?? pinnedTarget?.messageId}
+          ref={pinnedScroll}
+          style={{ flex: 1, marginTop: 8 }}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        >
+          {snap?.olderCursor != null ? (
+            <Pressable
+              disabled={loadingOlder}
+              onPress={() => void loadOlderMessages()}
+              style={{ alignSelf: "center", paddingHorizontal: 12, paddingVertical: 10 }}
+            >
+              <Text style={{ color: "#85858A", fontSize: 13 }}>
+                {loadingOlder ? "Loading…" : "Load earlier messages"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {(snap?.messages ?? []).map(renderMessage)}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ref={scroll}
+          data={messages}
+          inverted
+          keyExtractor={(message) => message.id}
+          style={{ flex: 1, marginTop: 8 }}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          ListFooterComponent={
+            snap?.olderCursor != null ? (
               <Pressable
-                accessibilityLabel="Reply"
-                onPress={() => setReplyTarget(message)}
-                style={{
-                  alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-                  marginBottom: 4,
-                }}
+                disabled={loadingOlder}
+                onPress={() => void loadOlderMessages()}
+                style={{ alignSelf: "center", paddingHorizontal: 12, paddingVertical: 10 }}
               >
-                <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
+                <Text style={{ color: "#85858A", fontSize: 13 }}>
+                  {loadingOlder ? "Loading…" : "Load earlier messages"}
+                </Text>
               </Pressable>
-              <MessageBubble
-                botId={botId ?? snap?.members?.[0]?.botId ?? ""}
-                groupId={groupId}
-                message={message}
-                members={snap?.members}
-                replyPreview={
-                  message.replyToMessageId
-                    ? snap?.messages.find((row) => row.id === message.replyToMessageId)
-                    : undefined
-                }
-                canAnswer={message.id === answerableAskMessageId}
-                onAnswer={(answer) => answerMessage(message, answer)}
-                onOpenBot={(id, botName) =>
-                  router.push({ pathname: "/thread", params: { botId: id, name: botName } })
-                }
-                onPreviewMarkdown={setMarkdownPreview}
-                onSpeak={
-                  message.role === "bot"
-                    ? () =>
-                        void speakMessage(
-                          message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "",
-                          message,
-                        ).catch((err) =>
-                          Alert.alert(
-                            "Could not speak",
-                            err instanceof Error ? err.message : "Try again.",
-                          ),
-                        )
-                    : undefined
-                }
-              />
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+            ) : null
+          }
+          renderItem={({ item }) => renderMessage(item)}
+        />
+      )}
       {replyTarget ? (
         <View
           style={{
@@ -1342,7 +1378,7 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   botId,
   groupId,
   message,
@@ -1360,10 +1396,10 @@ function MessageBubble({
   members?: MobileSnapshot["members"];
   replyPreview?: MobileMessage;
   canAnswer: boolean;
-  onAnswer: (answer: string) => Promise<void>;
+  onAnswer: (message: MobileMessage, answer: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
-  onSpeak?: () => void;
+  onSpeak?: (message: MobileMessage) => void;
 }) {
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
@@ -1379,7 +1415,11 @@ function MessageBubble({
   if (ask) {
     return (
       <View style={{ gap: 8, width: "100%" }}>
-        <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />
+        <AskBlock
+          ask={ask}
+          canAnswer={canAnswer}
+          onAnswer={(answer) => onAnswer(message, answer)}
+        />
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
         ))}
@@ -1574,7 +1614,10 @@ function MessageBubble({
               {formatApprovalAnswer(askBlock.answer)}
             </Text>
           ) : canAnswer && onAnswer ? (
-            <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
+            <AskActions
+              actions={askBlock.actions}
+              onAnswer={(answer) => onAnswer(message, answer)}
+            />
           ) : (
             <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>
               No longer active
@@ -1727,7 +1770,7 @@ function MessageBubble({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Speak message"
-                onPress={onSpeak}
+                onPress={() => onSpeak(message)}
                 hitSlop={8}
                 style={{ marginTop: 8 }}
               >
@@ -1742,7 +1785,7 @@ function MessageBubble({
       ))}
     </View>
   );
-}
+});
 
 function AskBlock({
   ask,
