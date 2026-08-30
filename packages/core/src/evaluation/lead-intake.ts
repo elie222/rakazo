@@ -244,7 +244,7 @@ function presentFields(input: LeadIntakeCaseInput): IntakeField[] {
   return REQUIRED_INTAKE_FIELDS.filter((field) => !missing.has(field));
 }
 
-function staleFields(input: LeadIntakeCaseInput): IntakeField[] {
+export function staleFields(input: LeadIntakeCaseInput): IntakeField[] {
   const required = new Set<string>(REQUIRED_INTAKE_FIELDS);
   return unique(
     input.sources
