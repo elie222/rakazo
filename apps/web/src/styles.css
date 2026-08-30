@@ -36,6 +36,7 @@ body,
 
 .app-drag {
   -webkit-app-region: drag;
+  user-select: none;
 }
 
 .app-no-drag {
