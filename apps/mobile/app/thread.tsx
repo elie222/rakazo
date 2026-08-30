@@ -257,7 +257,7 @@ function Thread() {
   );
   const visibleMessages = useMemo(
     () =>
-      userVisibleMessages(snap?.messages ?? []).filter((message) =>
+      userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
         hasVisibleMessagePresentation(message.blocks),
       ),
     [snap?.messages],

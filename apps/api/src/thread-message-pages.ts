@@ -1,4 +1,4 @@
-import type { ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
+import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -83,7 +83,7 @@ export async function loadAllMessages(
   return pages.reverse().flat();
 }
 
-async function withoutPeerRunMessages<T extends { runId: string | null }>(
+async function withoutPeerRunMessages<T extends { runId: string | null; blocks: Prisma.JsonValue }>(
   prisma: MessageDb,
   rows: T[],
 ): Promise<T[]> {
@@ -94,7 +94,14 @@ async function withoutPeerRunMessages<T extends { runId: string | null }>(
     select: { id: true },
   });
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
-  return rows.filter((row) => !row.runId || !peerRunIds.has(row.runId));
+  return rows.filter((row) => {
+    if (!row.runId || !peerRunIds.has(row.runId)) return true;
+    // Keep compact sent/received receipts for mobile; web client still hides them.
+    const blocks = row.blocks as MessageBlock[];
+    return blocks.some(
+      (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+    );
+  });
 }
 
 export async function isPeerRun(

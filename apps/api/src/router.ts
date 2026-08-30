@@ -1028,7 +1028,22 @@ export function createRouter(deps: RouterDeps) {
           input.cursor,
           context.signal,
         )) {
-          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) continue;
+          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
+            // Let compact peer receipts through for mobile; drop peer activity/replies.
+            const blocks = event.payload.blocks;
+            const isReceipt =
+              (event.type === "thread.message.created" ||
+                event.type === "thread.message.updated") &&
+              Array.isArray(blocks) &&
+              blocks.some(
+                (block) =>
+                  !!block &&
+                  typeof block === "object" &&
+                  "kind" in block &&
+                  (block.kind === "bot_message_received" || block.kind === "bot_message_sent"),
+              );
+            if (!isReceipt) continue;
+          }
           yield event;
         }
       }),

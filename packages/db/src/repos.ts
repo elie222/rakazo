@@ -238,40 +238,15 @@ export function createRepos(prisma: PrismaClient) {
         },
         orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
       });
-      const candidateRunIds = [
-        ...new Set(
-          bots.flatMap((bot) =>
-            (bot.thread?.messages ?? []).flatMap((message) =>
-              message.runId ? [message.runId] : [],
-            ),
-          ),
-        ),
-      ];
-      const peerRuns = candidateRunIds.length
-        ? await prisma.run.findMany({
-            where: { id: { in: candidateRunIds }, trigger: "bot_message" },
-            select: { id: true },
-          })
-        : [];
-      const peerRunIds = peerRuns.map((run) => run.id);
       return bots.map((bot) => {
-<<<<<<< HEAD
-        const preview = previewFromBlocks(bot.thread?.messages[0]?.blocks);
-=======
         const visible = userVisibleMessages(
           (bot.thread?.messages ?? []).map((message) => ({
             ...message,
             blocks: message.blocks as MessageBlock[],
             runId: message.runId ?? undefined,
           })),
-          peerRunIds,
         );
-        const blocks = (visible[0]?.blocks ?? []) as Array<{
-          kind?: string;
-          text?: string;
-        }>;
-        const preview = blocks.find((block) => block.text)?.text ?? "";
->>>>>>> 873c54d (fix(chat): keep peer history accessible)
+        const preview = previewFromBlocks(visible[0]?.blocks);
         return mapBot(bot, preview, bot.runs[0]?.status ?? "idle");
       });
     },
