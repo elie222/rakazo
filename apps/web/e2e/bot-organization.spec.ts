@@ -129,23 +129,39 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   await page.reload();
   await expect.poll(order).toEqual([chiefId, beta.id, alpha.id]);
 
-  let markRejectedReorder!: () => void;
-  const rejectedReorder = new Promise<void>((resolve) => {
-    markRejectedReorder = resolve;
+  let releaseRejectedReorder!: () => void;
+  let markRejectedReorderStarted!: () => void;
+  const rejectedReorderStarted = new Promise<void>((resolve) => {
+    markRejectedReorderStarted = resolve;
+  });
+  const rejectReorder = new Promise<void>((resolve) => {
+    releaseRejectedReorder = resolve;
   });
   await page.route(
     "**/rpc/bots/reorder",
     async (route) => {
+      markRejectedReorderStarted();
+      await rejectReorder;
       await route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-      markRejectedReorder();
     },
     { times: 1 },
   );
   await sidebar
     .locator(`[data-roster-bot-id="${alpha.id}"]`)
     .dragTo(sidebar.locator(`[data-roster-bot-id="${chiefId}"]`));
-  await rejectedReorder;
-  await expect.poll(order).toEqual([chiefId, beta.id, alpha.id]);
+  await rejectedReorderStarted;
+
+  const queuedReorderSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/reorder") && response.ok(),
+  );
+  await sidebar
+    .locator(`[data-roster-bot-id="${beta.id}"]`)
+    .dragTo(sidebar.locator(`[data-roster-bot-id="${alpha.id}"]`));
+  releaseRejectedReorder();
+  await queuedReorderSaved;
+  await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
+  await page.reload();
+  await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
 });
 
 test("chat composer controls are vertically centered", async ({ page }) => {
