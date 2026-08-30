@@ -247,6 +247,110 @@ export const EvaluationBudgetSchema = z.strictObject({
 });
 export type EvaluationBudget = z.infer<typeof EvaluationBudgetSchema>;
 
+export const EVALUATION_ALLOWED_TOOL_IDS = [
+  "evaluation_read_case",
+  "evaluation_write_result",
+  "evaluation_halt",
+  "evaluation_request_review",
+] as const;
+
+export const EvaluationToolIdSchema = z.enum(EVALUATION_ALLOWED_TOOL_IDS);
+export type EvaluationToolId = z.infer<typeof EvaluationToolIdSchema>;
+
+export const EVALUATION_DEFAULT_BUDGET: EvaluationBudget = {
+  max_turns: 12,
+  max_tool_calls: 8,
+  max_wall_time_ms: 120_000,
+  max_retries: 1,
+  max_input_tokens: 16_000,
+  max_output_tokens: 4_000,
+  max_cost_microdollars: 100_000,
+  max_child_agents: 0,
+};
+
+const EvaluationIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/);
+const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const EvaluationRunPolicySchema = z.strictObject({
+  kind: z.literal("evaluation_pack_v1"),
+  pack_id: z.literal(EVALUATION_PACK_ID),
+  campaign_id: EvaluationIdSchema,
+  case_id: EvaluationCaseIdSchema,
+  run_id: z.string().min(1),
+  user_id: z.string().min(1),
+  workspace_id: z.string().min(1),
+  allowed_tool_ids: z
+    .array(EvaluationToolIdSchema)
+    .length(EVALUATION_ALLOWED_TOOL_IDS.length)
+    .refine((items) => new Set(items).size === EVALUATION_ALLOWED_TOOL_IDS.length, {
+      message: "evaluation tool IDs must be unique",
+    }),
+  evidence_root: z
+    .string()
+    .regex(/^evaluations\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/LIQR-\d{3}\/[A-Za-z0-9_-]+$/),
+  budgets: EvaluationBudgetSchema,
+  issued_at: z.string().datetime({ offset: true }),
+  expires_at: z.string().datetime({ offset: true }),
+  revoked_at: z.string().datetime({ offset: true }).nullable(),
+  policy_hash: Sha256Schema,
+});
+export type EvaluationRunPolicy = z.infer<typeof EvaluationRunPolicySchema>;
+
+export const EvaluationUsageSchema = z.strictObject({
+  turns: z.number().int().nonnegative(),
+  tool_calls: z.number().int().nonnegative(),
+  wall_time_ms: z.number().int().nonnegative(),
+  retries: z.number().int().nonnegative(),
+  input_tokens: z.number().int().nonnegative(),
+  output_tokens: z.number().int().nonnegative(),
+  cost_microdollars: z.number().int().nonnegative(),
+  child_agents: z.number().int().nonnegative(),
+});
+export type EvaluationUsage = z.infer<typeof EvaluationUsageSchema>;
+
+export const EvaluationApprovalActionSchema = z.enum([
+  "CORPUS_FREEZE",
+  "CANDIDATE_ACTIVATION",
+  "EXPECTED_OUTCOME_CHANGE",
+  "MANUAL_VERDICT_OVERRIDE",
+]);
+export type EvaluationApprovalAction = z.infer<typeof EvaluationApprovalActionSchema>;
+
+export const EvaluationApprovalReceiptSchema = z.strictObject({
+  receipt_id: EvaluationIdSchema,
+  campaign_id: EvaluationIdSchema,
+  actor_id: z.string().min(1),
+  action: EvaluationApprovalActionSchema,
+  artifact_hash: Sha256Schema,
+  policy_hash: Sha256Schema,
+  nonce: EvaluationIdSchema,
+  issued_at: z.string().datetime({ offset: true }),
+  expires_at: z.string().datetime({ offset: true }),
+  decision: z.enum(["APPROVE", "REJECT"]),
+});
+export type EvaluationApprovalReceipt = z.infer<typeof EvaluationApprovalReceiptSchema>;
+
+export const EvaluationPolicyDenialReceiptSchema = z.strictObject({
+  receipt_id: EvaluationIdSchema,
+  campaign_id: EvaluationIdSchema,
+  case_id: EvaluationCaseIdSchema,
+  run_id: z.string().min(1),
+  requested_tool: z.string().min(1),
+  normalized_tool: z.string().min(1),
+  execution_id: z.string().min(1),
+  argument_keys: z.array(z.string()),
+  reason: z.enum([
+    "TOOL_NOT_ALLOWED",
+    "TOOL_ALIAS_NOT_ALLOWED",
+    "EVIDENCE_TARGET_MISMATCH",
+    "POLICY_REVOKED",
+  ]),
+  occurred_at: z.string().datetime({ offset: true }),
+});
+export type EvaluationPolicyDenialReceipt = z.infer<
+  typeof EvaluationPolicyDenialReceiptSchema
+>;
+
 export const EvaluationTerminalReasonSchema = z.enum([
   "complete",
   "policy_violation",
