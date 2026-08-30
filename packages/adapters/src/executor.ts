@@ -184,6 +184,7 @@ import {
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
+  filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
   listSchedulesFromTool,
 } from "./schedule-tools.js";
@@ -1008,12 +1009,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .join("\n\n")
           : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
-        const availableBuiltins = filterBuiltinToolsForThread(
-          filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed),
-          thread.groupId,
-        );
         const builtins = [
-          ...selectMemoryTools(availableBuiltins, semanticMemoryEnabled),
+          ...selectBuiltinToolsForRun({
+            graphicalToolsAllowed,
+            groupId: thread.groupId,
+            trigger: run.trigger,
+            semanticMemoryEnabled,
+          }),
           // Cross-owner agent connections only exist for phone-linked bots.
           ...(hasPhoneIdentity ? agentConnectionTools : []),
         ];
@@ -3034,6 +3036,24 @@ async function renewRunLease(
 
 function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+export function selectBuiltinToolsForRun(options: {
+  graphicalToolsAllowed: boolean;
+  groupId: string | null;
+  trigger: string;
+  semanticMemoryEnabled: boolean;
+}) {
+  return selectMemoryTools(
+    filterBuiltinToolsForRun(
+      filterBuiltinToolsForThread(
+        filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+        options.groupId,
+      ),
+      options.trigger,
+    ),
+    options.semanticMemoryEnabled,
+  );
 }
 
 export function threadContextForRun<T>(

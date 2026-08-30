@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
+  filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
   isOneShotRoutineCron,
   listSchedulesFromTool,
@@ -91,6 +92,8 @@ describe("filterBuiltinToolsForThread", () => {
     { name: "handoff_to_bot" },
     { name: "message_bot" },
     { name: "schedule_create" },
+    { name: "schedule_list" },
+    { name: "schedule_cancel" },
     { name: "remember" },
   ];
 
@@ -98,13 +101,43 @@ describe("filterBuiltinToolsForThread", () => {
     expect(filterBuiltinToolsForThread(tools, "group-1").map((tool) => tool.name)).toEqual([
       "handoff_to_bot",
       "schedule_create",
+      "schedule_list",
+      "schedule_cancel",
       "remember",
     ]);
     expect(filterBuiltinToolsForThread(tools, null).map((tool) => tool.name)).toEqual([
       "message_bot",
       "schedule_create",
+      "schedule_list",
+      "schedule_cancel",
       "remember",
     ]);
+  });
+
+  it("hides schedule creation from routine runs without removing schedule management", () => {
+    expect(filterBuiltinToolsForRun(tools, "routine").map((tool) => tool.name)).toEqual([
+      "handoff_to_bot",
+      "message_bot",
+      "schedule_list",
+      "schedule_cancel",
+      "remember",
+    ]);
+    expect(filterBuiltinToolsForRun(tools, "user").map((tool) => tool.name)).toContain(
+      "schedule_create",
+    );
+  });
+
+  it("composes thread then run filters without dropping group schedule tools", () => {
+    const groupTools = filterBuiltinToolsForRun(
+      filterBuiltinToolsForThread(tools, "group-1"),
+      "routine",
+    ).map((tool) => tool.name);
+    expect(groupTools).toEqual(["handoff_to_bot", "schedule_list", "schedule_cancel", "remember"]);
+    expect(
+      filterBuiltinToolsForRun(filterBuiltinToolsForThread(tools, "group-1"), "user").map(
+        (tool) => tool.name,
+      ),
+    ).toContain("schedule_create");
   });
 
   it("covers every schedule tool name", () => {

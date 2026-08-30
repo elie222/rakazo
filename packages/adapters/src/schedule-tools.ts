@@ -13,6 +13,13 @@ export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
 export const SCHEDULE_TOOL_NAMES = new Set(["schedule_create", "schedule_list", "schedule_cancel"]);
 
+export function filterBuiltinToolsForRun<T extends { name: string }>(
+  tools: T[],
+  runTrigger: string,
+): T[] {
+  return runTrigger === "routine" ? tools.filter((tool) => tool.name !== "schedule_create") : tools;
+}
+
 /** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],
