@@ -114,6 +114,7 @@ import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
+import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -4512,27 +4513,29 @@ function MessageHoverActions({
   }
 
   return (
-    <div
-      data-testid="message-hover-actions"
-      className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
-    >
-      <button
-        type="button"
-        aria-label={t`Reply`}
-        onClick={() => onReply(message)}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+    <MessageHoverMetadata createdAt={message.createdAt}>
+      <div
+        data-testid="message-hover-actions"
+        className="flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
       >
-        <Reply size={14} strokeWidth={1.8} />
-      </button>
-      <button
-        type="button"
-        aria-label={t`Copy`}
-        onClick={copyMessage}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
-      >
-        <Copy size={14} strokeWidth={1.8} />
-      </button>
-    </div>
+        <button
+          type="button"
+          aria-label={t`Reply`}
+          onClick={() => onReply(message)}
+          className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+        >
+          <Reply size={14} strokeWidth={1.8} />
+        </button>
+        <button
+          type="button"
+          aria-label={t`Copy`}
+          onClick={copyMessage}
+          className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+        >
+          <Copy size={14} strokeWidth={1.8} />
+        </button>
+      </div>
+    </MessageHoverMetadata>
   );
 }
 
