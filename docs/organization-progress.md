@@ -3,12 +3,13 @@
 ## Git recovery — 2026-08-30
 
 - Snapshot backup: `/Users/ufuksamet/Desktop/rakazo-main-snapshot-backup-20260830`.
-- Git worktree: `/Users/ufuksamet/Desktop/rakazo-git` from upstream `d9f37db` on `feat/autonomous-organization-runtime`.
+- Git worktree: `/Users/ufuksamet/Desktop/rakazo-git` from upstream `d9f37db` on `feat/autonomous-organization-runtime`; it was subsequently merged with upstream `main` at `9fc328a`.
 - Recovered implementation commit: `06f76e7 feat: add autonomous organization runtime`.
 - Organization source, migrations, tests, and documentation were transferred through a file inventory; generated output and machine-local artifacts were excluded.
 - `FLAGSHIP POSTGRESQL INTEGRATION TEST — IMPLEMENTED / CI VERIFICATION PENDING`.
 - Local PostgreSQL verification remains unavailable because Docker is absent and the local macOS 27 + Node 26 Prisma schema engine fails before migration execution. The supported Linux/Testcontainers CI harness remains authoritative.
-- Push and CI are blocked only by missing GitHub write authentication in this environment: `gh` is not installed, SSH authentication is denied, and HTTPS has no non-interactive credential. Once authenticated, push the branch to a writable fork and open a PR to trigger the existing `test-integration` workflow.
+- Writable fork remote: `https://github.com/ufuksamet0/rakazo.git`; branch commits including `f1ad447 fix: wire organization API and fence reviews` are pushed.
+- Pull request: [#394](https://github.com/elie222/rakazo/pull/394). The upstream GitHub Actions run is not yet created because GitHub requires a repository maintainer to approve workflows from this external fork. This is an external authorization blocker, not a migration or flagship-test result.
 
 > **Takeover correction — 2026-08-30:** the earlier phase labels describe
 > scaffolding, not completed autonomous-company behavior. The authoritative
@@ -18,8 +19,9 @@
 
 ## Current phase
 
-**Phase 4B — first autonomous vertical slice IN PROGRESS.** The source snapshot
-has no Git metadata, so history/diff provenance cannot be verified here.
+**Phase 5H — first autonomous vertical slice IN PROGRESS.** The recovered Git
+worktree and PR now preserve provenance; PostgreSQL CI verification is awaiting
+the upstream maintainer's workflow approval.
 
 ### 2026-08-30 Phase 2 implementation status
 
