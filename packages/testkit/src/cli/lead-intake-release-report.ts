@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   currentPhaseLocalPiInput,
@@ -32,14 +32,6 @@ function parseArgs(argv: string[]): { offlineCampaignDir: string; out: string } 
   };
 }
 
-function readFrozenBundleManifest(): { path: string; lines: string[] } | null {
-  const manifestPath = path.resolve(
-    "../../inbox/rakazo-beta-planning/evaluation-pack-v1/FROZEN-BUNDLE-SHA256-20260829.txt",
-  );
-  if (!existsSync(manifestPath)) return null;
-  return { path: manifestPath, lines: readFileSync(manifestPath, "utf8").trim().split("\n") };
-}
-
 function requirementRow(
   id: string,
   statement: string,
@@ -50,7 +42,6 @@ function requirementRow(
 }
 
 function renderReport(report: VerdictReport, candidateRevision: string): string {
-  const frozenBundle = readFrozenBundleManifest();
   const localPi = evaluateLocalPiPreflight(currentPhaseLocalPiInput("policy-hash-not-yet-issued"));
   const generatedAt = new Date().toISOString();
   const m = report.metrics;
@@ -75,7 +66,7 @@ function renderReport(report: VerdictReport, candidateRevision: string): string 
 
 **Generated:** ${generatedAt}
 **Candidate revision:** \`${candidateRevision}\`
-**Governing approval:** \`inbox/rakazo-beta-planning/evaluation-pack-v1/SOLO-OPERATOR-APPROVAL-20260829.md\`
+**Governing approval:** Private operator receipt retained outside this public repository
 **This document is generated, not hand-authored** — see \`lead-intake-release-report.ts\`. Regenerate it rather than editing numbers by hand.
 
 ## 1. Requirement coverage
@@ -111,7 +102,7 @@ ${report.reasons.length > 0 ? `**Reasons:**\n${report.reasons.map((r) => `- \`${
 - Authorized: \`${localPi.authorized}\`
 - Failures: ${localPi.failures.length > 0 ? localPi.failures.map((f) => `\`${f}\``).join(", ") : "none"}
 
-This is not a test failure — it is the fail-closed gate working as designed. \`SOLO-OPERATOR-APPROVAL-20260829.md\` authorizes isolated synthetic implementation and testing only; it explicitly prohibits Dell deployment and Docker mutation. Running this leg requires a **new, separate operator approval** naming a dedicated computer, before \`preflight.ts\` will report \`authorized: true\`.
+This is not a test failure — it is the fail-closed gate working as designed. The governing operator receipt authorizes isolated synthetic implementation and testing only; it explicitly prohibits deployment and Docker mutation. Running this leg requires a **new, separate operator approval** naming a dedicated computer, before \`preflight.ts\` will report \`authorized: true\`.
 
 ## 4. Shutdown and rollback rehearsal (Plan 04 item 4)
 
@@ -125,16 +116,16 @@ pnpm vitest run packages/testkit/src/evaluations/lead-intake-v1/rollback.test.ts
 
 ## 5. Corpus freeze
 
-${frozenBundle ? `Frozen bundle manifest: \`${frozenBundle.path}\` (${frozenBundle.lines.length} artifacts). Re-verify with:\n\n\`\`\`bash\ncd inbox/rakazo-beta-planning/evaluation-pack-v1 && shasum -a 256 -c FROZEN-BUNDLE-SHA256-20260829.txt\n\`\`\`` : "Frozen bundle manifest not found at the expected path — treat corpus freeze status as **UNVERIFIED** until located."}
+The operator-held planning-bundle manifest remains outside this public repository and is not embedded here. The campaign verifier independently validates the 20 case inputs, 20 expected outcomes, packet hashes, and campaign manifest used for this run. Reconcile the private planning manifest separately before any later promotion decision.
 
 ## 6. Reviewer decisions
 
-Per \`SOLO-OPERATOR-APPROVAL-20260829.md\`:
+Per the private operator approval receipt:
 
 | Role | Status |
 | --- | --- |
-| Business owner | Maysam Tehranchi |
-| Technical implementation owner | Maysam Tehranchi |
+| Business owner | Assigned to the single operator; identity retained in private receipt |
+| Technical implementation owner | Assigned to the single operator; identity retained in private receipt |
 | Independent reviewer | **NONE AVAILABLE** — not recorded, not implied. Substitute: deterministic verifier (Section 2), pre-registered before this run. |
 | Security/compliance reviewer | **NONE AVAILABLE**. Cases LIQR-011/012/013 (\`COMPLIANCE_REVIEW\` queue) remain \`PROVISIONAL_COMPLIANCE\` until a qualified reviewer confirms them. |
 

@@ -1,8 +1,8 @@
 # Release Readiness Report — Lead Intake QA & Quote Readiness Evaluation Pack v1
 
-**Generated:** 2026-08-30T04:28:02.466Z
-**Candidate revision:** `d308051d151d8df2405f296bc6b722f309e131af`
-**Governing approval:** `inbox/rakazo-beta-planning/evaluation-pack-v1/SOLO-OPERATOR-APPROVAL-20260829.md`
+**Generated:** 2026-08-30T04:58:55.861Z
+**Candidate revision:** `ae18ed7c36c8f24cf81d9e28d972d80b7c52831a`
+**Governing approval:** Private operator receipt retained outside this public repository
 **This document is generated, not hand-authored** — see `lead-intake-release-report.ts`. Regenerate it rather than editing numbers by hand.
 
 ## 1. Requirement coverage
@@ -25,7 +25,7 @@ pnpm verify:eval:lead-intake-v1 -- --campaign=test-report/lead-intake-quote-read
 ```
 
 **Verdict:** `ACCEPT` (exit code 0)
-**Campaign ID:** `offline-run-1`
+**Campaign ID:** `lead-intake-v1-1788065809254`
 
 | Metric | Value | ACCEPT threshold |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ pnpm verify:eval:lead-intake-v1 -- --campaign=test-report/lead-intake-quote-read
 - Authorized: `false`
 - Failures: `PHASE_DOES_NOT_AUTHORIZE_LOCAL_PI`
 
-This is not a test failure — it is the fail-closed gate working as designed. `SOLO-OPERATOR-APPROVAL-20260829.md` authorizes isolated synthetic implementation and testing only; it explicitly prohibits Dell deployment and Docker mutation. Running this leg requires a **new, separate operator approval** naming a dedicated computer, before `preflight.ts` will report `authorized: true`.
+This is not a test failure — it is the fail-closed gate working as designed. The governing operator receipt authorizes isolated synthetic implementation and testing only; it explicitly prohibits deployment and Docker mutation. Running this leg requires a **new, separate operator approval** naming a dedicated computer, before `preflight.ts` will report `authorized: true`.
 
 ## 4. Shutdown and rollback rehearsal (Plan 04 item 4)
 
@@ -64,20 +64,16 @@ pnpm vitest run packages/testkit/src/evaluations/lead-intake-v1/rollback.test.ts
 
 ## 5. Corpus freeze
 
-Frozen bundle manifest: `/Users/maysamtehranchi/aios/inbox/rakazo-beta-planning/evaluation-pack-v1/FROZEN-BUNDLE-SHA256-20260829.txt` (11 artifacts). Re-verify with:
-
-```bash
-cd inbox/rakazo-beta-planning/evaluation-pack-v1 && shasum -a 256 -c FROZEN-BUNDLE-SHA256-20260829.txt
-```
+The operator-held planning-bundle manifest remains outside this public repository and is not embedded here. The campaign verifier independently validates the 20 case inputs, 20 expected outcomes, packet hashes, and campaign manifest used for this run. Reconcile the private planning manifest separately before any later promotion decision.
 
 ## 6. Reviewer decisions
 
-Per `SOLO-OPERATOR-APPROVAL-20260829.md`:
+Per the private operator approval receipt:
 
 | Role | Status |
 | --- | --- |
-| Business owner | Maysam Tehranchi |
-| Technical implementation owner | Maysam Tehranchi |
+| Business owner | Assigned to the single operator; identity retained in private receipt |
+| Technical implementation owner | Assigned to the single operator; identity retained in private receipt |
 | Independent reviewer | **NONE AVAILABLE** — not recorded, not implied. Substitute: deterministic verifier (Section 2), pre-registered before this run. |
 | Security/compliance reviewer | **NONE AVAILABLE**. Cases LIQR-011/012/013 (`COMPLIANCE_REVIEW` queue) remain `PROVISIONAL_COMPLIANCE` until a qualified reviewer confirms them. |
 
