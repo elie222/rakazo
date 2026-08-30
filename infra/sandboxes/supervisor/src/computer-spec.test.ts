@@ -20,6 +20,7 @@ describe("graphical computer spec", () => {
       networkMode: "rakazo_default",
     });
     expect(options.Image).toBe("rakazo/computer:local");
+    expect(options.User).toBe("1000:1000");
     expect(options.Image).not.toMatch(/alpine/);
     expect(options).not.toHaveProperty("Entrypoint");
     expect(JSON.stringify(options)).not.toMatch(/sleep/);
@@ -32,6 +33,12 @@ describe("graphical computer spec", () => {
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.PortBindings["6081/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
+    expect(options.HostConfig.Memory).toBe(2 * 1024 * 1024 * 1024);
+    expect(options.HostConfig.MemorySwap).toBe(2 * 1024 * 1024 * 1024);
+    expect(options.HostConfig.NanoCpus).toBe(2 * 1_000_000_000);
+    expect(options.HostConfig.PidsLimit).toBe(150);
+    expect(options.HostConfig.SecurityOpt).toEqual(["no-new-privileges:true"]);
+    expect(options.HostConfig.CapDrop).toEqual(["ALL"]);
     expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
     expect(options.HostConfig.NetworkMode).toBe("rakazo_default");
   });
