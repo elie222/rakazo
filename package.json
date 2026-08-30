@@ -25,6 +25,7 @@
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
     "test:eval:lead-intake-v1": "tsx packages/testkit/src/cli/lead-intake-eval.ts",
     "verify:eval:lead-intake-v1": "tsx packages/testkit/src/cli/lead-intake-verify.ts",
+    "generate:eval-report:lead-intake-v1": "tsx packages/testkit/src/cli/lead-intake-release-report.ts",
     "perf:desktop": "tsx packages/testkit/src/cli/desktop-performance.ts",
     "perf:compare": "tsx packages/testkit/src/cli/compare-performance.ts",
     "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
