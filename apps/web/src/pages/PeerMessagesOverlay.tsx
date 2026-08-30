@@ -135,7 +135,7 @@ export function PeerMessagesOverlay({
             </div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
               {!historyReady ? (
-                <Trans>Loading peer messages…</Trans>
+                <Trans>Loading bot messages…</Trans>
               ) : historyFailed ? (
                 <Trans>Could not load bot messages.</Trans>
               ) : conversations.length === 0 ? (
@@ -157,7 +157,7 @@ export function PeerMessagesOverlay({
 
         {!historyReady ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
-            <Trans>Loading peer messages…</Trans>
+            <Trans>Loading bot messages…</Trans>
           </div>
         ) : conversations.length === 0 ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
