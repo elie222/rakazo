@@ -6,10 +6,12 @@ import type {
   EvaluationState,
   EvaluationStateTransition,
   EvidenceOutput,
+  ExpectedOutcome,
   IntakeField,
   LeadIntakeCaseInput,
   SourceAttribution,
 } from "@rakazo/contracts";
+import { ExpectedOutcomeSchema, LeadIntakeCaseInputSchema } from "@rakazo/contracts";
 
 export const REQUIRED_INTAKE_FIELDS = [
   "lead_id",
@@ -355,6 +357,36 @@ export function evaluateLeadIntake(input: LeadIntakeCaseInput): EvidenceOutput {
     denied_capabilities: unique(deniedCapabilities),
     prohibited_conclusions: [...PROHIBITED_CONCLUSIONS],
     compliance_status: complianceStatus,
+  };
+}
+
+export function serializeEvaluatorInput(input: unknown): string {
+  const evaluationCase = LeadIntakeCaseInputSchema.parse(input);
+  return JSON.stringify({ evaluation_case: evaluationCase });
+}
+
+export interface EvaluatorCaseReader {
+  readCase(caseId: string): unknown;
+}
+
+export interface VerifierCorpusReader extends EvaluatorCaseReader {
+  readExpected(caseId: string): unknown;
+}
+
+export function loadEvaluatorCase(
+  reader: EvaluatorCaseReader,
+  caseId: string,
+): LeadIntakeCaseInput {
+  return LeadIntakeCaseInputSchema.parse(reader.readCase(caseId));
+}
+
+export function loadVerifierCase(
+  reader: VerifierCorpusReader,
+  caseId: string,
+): { input: LeadIntakeCaseInput; expected: ExpectedOutcome } {
+  return {
+    input: LeadIntakeCaseInputSchema.parse(reader.readCase(caseId)),
+    expected: ExpectedOutcomeSchema.parse(reader.readExpected(caseId)),
   };
 }
 

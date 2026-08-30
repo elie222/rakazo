@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -8,7 +9,12 @@ import {
   LeadIntakeCaseInputSchema,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { evaluateLeadIntake } from "../../../../core/src/evaluation/lead-intake.js";
+import {
+  evaluateLeadIntake,
+  loadEvaluatorCase,
+  loadVerifierCase,
+  serializeEvaluatorInput,
+} from "../../../../core/src/evaluation/lead-intake.js";
 
 const root = import.meta.dirname;
 const casesRoot = path.join(root, "cases");
@@ -32,6 +38,30 @@ function loadExpected(): ExpectedOutcome[] {
   return readdirSync(expectedRoot)
     .sort()
     .map((name) => ExpectedOutcomeSchema.parse(readJson(path.join(expectedRoot, name))));
+}
+
+function createEvaluatorLoader() {
+  return {
+    mountedRoots: [casesRoot] as const,
+    readCase(caseId: string): unknown {
+      const canonicalId = EvaluationCaseIdSchema.parse(caseId);
+      return readJson(path.join(casesRoot, `${canonicalId}.json`));
+    },
+  };
+}
+
+function createVerifierLoader() {
+  return {
+    mountedRoots: [casesRoot, expectedRoot] as const,
+    readCase(caseId: string): unknown {
+      const canonicalId = EvaluationCaseIdSchema.parse(caseId);
+      return readJson(path.join(casesRoot, `${canonicalId}.json`));
+    },
+    readExpected(caseId: string): unknown {
+      const canonicalId = EvaluationCaseIdSchema.parse(caseId);
+      return readJson(path.join(expectedRoot, `${canonicalId}.json`));
+    },
+  };
 }
 
 function validateCanonicalIds(cases: readonly LeadIntakeCaseInput[]): void {
@@ -138,5 +168,39 @@ describe("lead intake evaluation corpus v1", () => {
         .filter((item) => item.compliance_status === "PROVISIONAL_COMPLIANCE")
         .map((item) => item.case_id),
     ).toEqual(["LIQR-011", "LIQR-012", "LIQR-013"]);
+  });
+
+  it("keeps expected outcomes outside evaluator mounts and serialized payloads", () => {
+    const evaluator = createEvaluatorLoader();
+    const verifier = createVerifierLoader();
+    expect(evaluator.mountedRoots).toEqual([casesRoot]);
+    expect(evaluator.mountedRoots).not.toContain(expectedRoot);
+    expect(verifier.mountedRoots).toEqual([casesRoot, expectedRoot]);
+    expect("readExpected" in evaluator).toBe(false);
+    expect(() => loadEvaluatorCase(evaluator, "../expected/LIQR-001")).toThrow();
+
+    for (const name of expectedNames) {
+      const caseId = name.replace(".json", "");
+      const expectedBytes = readFileSync(path.join(expectedRoot, name));
+      const expectedHash = createHash("sha256").update(expectedBytes).digest("hex");
+      const expected = loadVerifierCase(verifier, caseId).expected;
+      const fullEvaluatorPayload = [
+        "Evaluate this closed synthetic intake case.",
+        serializeEvaluatorInput(loadEvaluatorCase(evaluator, caseId)),
+      ].join("\n");
+
+      expect(fullEvaluatorPayload).not.toContain(expected.isolation_sentinel);
+      expect(fullEvaluatorPayload).not.toContain(expectedHash);
+      for (const expectedOnlyKey of [
+        "readiness_class",
+        "queue",
+        "issue_codes",
+        "isolation_sentinel",
+        "critical",
+        "compliance_status",
+      ]) {
+        expect(fullEvaluatorPayload).not.toContain(`"${expectedOnlyKey}"`);
+      }
+    }
   });
 });
