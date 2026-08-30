@@ -954,7 +954,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed),
           thread.groupId,
         );
-        const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
+        const builtins = selectMemoryTools(
+          availableBuiltins,
+          semanticMemoryEnabled,
+          threadContext.includeSemanticRecall,
+        );
         const exposedConnectorTools = discovered.filter(
           (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
         );
