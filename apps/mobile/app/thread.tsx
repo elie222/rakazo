@@ -422,8 +422,6 @@ export default function Thread() {
 
   async function loadOlderMessages() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
-    pinnedAroundRef.current = null;
-    jumpScrollTarget.current = null;
     setLoadingOlder(true);
     const epoch = historyEpoch.current;
     try {
