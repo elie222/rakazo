@@ -102,4 +102,50 @@ describe("OrganizationExecutionBridge", () => {
       expect.objectContaining({ data: { status: "completed" } }),
     );
   });
+
+  it("fences duplicate reviewer finalization before emitting follow-up work", async () => {
+    const tx = {
+      workItemReview: {
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 }),
+        update: vi.fn(async () => undefined),
+      },
+      workItem: { update: vi.fn(async () => undefined) },
+      companyEvent: { create: vi.fn(async () => undefined) },
+    };
+    const prisma = {
+      workItemExecution: { findUnique: vi.fn(async () => null) },
+      workItemReview: {
+        findFirst: vi.fn(async () => ({
+          id: "review",
+          workspaceId: "workspace",
+          workItemId: "work",
+          reviewerBotId: "qa",
+          workItem: { assignedToBotId: "dev", projectId: "project" },
+        })),
+      },
+      $transaction: vi.fn(async (fn: (value: typeof tx) => unknown) => fn(tx)),
+    } as unknown as PrismaClient;
+    const jobs = { enqueue: vi.fn(async () => undefined) } as unknown as JobPublisher;
+    const bridge = createOrganizationExecutionBridge({ prisma, jobs });
+    const blocks = [
+      {
+        kind: "text" as const,
+        text: JSON.stringify({
+          decision: "changes_requested",
+          summary: "Needs a fix",
+          feedback: "Fix layout",
+          evidence: [],
+        }),
+      },
+    ];
+
+    await expect(
+      bridge.finalize({ runId: "review-run", outcome: "completed", blocks }),
+    ).resolves.toBe(true);
+    await expect(
+      bridge.finalize({ runId: "review-run", outcome: "completed", blocks }),
+    ).resolves.toBe(false);
+    expect(tx.companyEvent.create).toHaveBeenCalledTimes(1);
+    expect(jobs.enqueue).toHaveBeenCalledTimes(2);
+  });
 });

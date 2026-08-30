@@ -113,6 +113,48 @@ import {
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
+import {
+  assignWorkItem,
+  completeReview,
+  createDepartment,
+  createEmployeeProfile,
+  createEscalation,
+  createGoal,
+  createProject,
+  createReview,
+  createSop,
+  createWorkItem,
+  delegateWorkItem,
+  getDepartment,
+  getEmployee,
+  getGoal,
+  getOverview,
+  getProject,
+  getWorkItem,
+  listCompanyEvents,
+  listDepartments,
+  listEmployees,
+  listEscalations,
+  listGoals,
+  listProjects,
+  listReviews,
+  listSops,
+  listWorkItems,
+  removeDepartment,
+  removeEmployee,
+  removeGoal,
+  removeProject,
+  removeSop,
+  resolveEscalation,
+  transitionWorkItem,
+  updateDepartment,
+  updateEmployeeProfile,
+  updateGoal,
+  updateProject,
+  updateSop,
+  updateWorkItem,
+  wakeEmployee,
+} from "./organization.js";
 import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
@@ -421,6 +463,146 @@ export function createRouter(deps: RouterDeps) {
         });
         return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
+    },
+    organization: {
+      departments: {
+        list: authed.organization.departments.list.handler(({ context }) =>
+          listDepartments(deps.prisma, context.actor),
+        ),
+        get: authed.organization.departments.get.handler(({ context, input }) =>
+          getDepartment(deps.prisma, context.actor, input.departmentId),
+        ),
+        create: authed.organization.departments.create.handler(({ context, input }) =>
+          createDepartment(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.departments.update.handler(({ context, input }) =>
+          updateDepartment(deps.prisma, context.actor, input),
+        ),
+        remove: authed.organization.departments.remove.handler(({ context, input }) =>
+          removeDepartment(deps.prisma, context.actor, input.departmentId),
+        ),
+      },
+      employees: {
+        list: authed.organization.employees.list.handler(({ context }) =>
+          listEmployees(deps.prisma, context.actor),
+        ),
+        get: authed.organization.employees.get.handler(({ context, input }) =>
+          getEmployee(deps.prisma, context.actor, input.botId),
+        ),
+        create: authed.organization.employees.create.handler(({ context, input }) =>
+          createEmployeeProfile(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.employees.update.handler(({ context, input }) =>
+          updateEmployeeProfile(deps.prisma, context.actor, input),
+        ),
+        remove: authed.organization.employees.remove.handler(({ context, input }) =>
+          removeEmployee(deps.prisma, context.actor, input.botId),
+        ),
+        wake: authed.organization.employees.wake.handler(({ context, input }) =>
+          wakeEmployee(deps.prisma, context.actor, input.botId),
+        ),
+      },
+      goals: {
+        list: authed.organization.goals.list.handler(({ context }) =>
+          listGoals(deps.prisma, context.actor),
+        ),
+        get: authed.organization.goals.get.handler(({ context, input }) =>
+          getGoal(deps.prisma, context.actor, input.goalId),
+        ),
+        create: authed.organization.goals.create.handler(({ context, input }) =>
+          createGoal(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.goals.update.handler(({ context, input }) =>
+          updateGoal(deps.prisma, context.actor, input),
+        ),
+        remove: authed.organization.goals.remove.handler(({ context, input }) =>
+          removeGoal(deps.prisma, context.actor, input.goalId),
+        ),
+      },
+      projects: {
+        list: authed.organization.projects.list.handler(({ context }) =>
+          listProjects(deps.prisma, context.actor),
+        ),
+        get: authed.organization.projects.get.handler(({ context, input }) =>
+          getProject(deps.prisma, context.actor, input.projectId),
+        ),
+        create: authed.organization.projects.create.handler(({ context, input }) =>
+          createProject(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.projects.update.handler(({ context, input }) =>
+          updateProject(deps.prisma, context.actor, input),
+        ),
+        remove: authed.organization.projects.remove.handler(({ context, input }) =>
+          removeProject(deps.prisma, context.actor, input.projectId),
+        ),
+      },
+      workItems: {
+        list: authed.organization.workItems.list.handler(({ context, input }) =>
+          listWorkItems(deps.prisma, context.actor, input),
+        ),
+        get: authed.organization.workItems.get.handler(({ context, input }) =>
+          getWorkItem(deps.prisma, context.actor, input.workItemId),
+        ),
+        create: authed.organization.workItems.create.handler(({ context, input }) =>
+          createWorkItem(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.workItems.update.handler(({ context, input }) =>
+          updateWorkItem(deps.prisma, context.actor, input),
+        ),
+        transition: authed.organization.workItems.transition.handler(({ context, input }) =>
+          transitionWorkItem(deps.prisma, context.actor, input),
+        ),
+        assign: authed.organization.workItems.assign.handler(({ context, input }) =>
+          assignWorkItem(deps.prisma, context.actor, input),
+        ),
+        delegate: authed.organization.workItems.delegate.handler(({ context, input }) =>
+          delegateWorkItem(deps.prisma, context.actor, input),
+        ),
+      },
+      reviews: {
+        list: authed.organization.reviews.list.handler(({ context, input }) =>
+          listReviews(deps.prisma, context.actor, input.workItemId),
+        ),
+        create: authed.organization.reviews.create.handler(({ context, input }) =>
+          createReview(deps.prisma, context.actor, input),
+        ),
+        complete: authed.organization.reviews.complete.handler(({ context, input }) =>
+          completeReview(deps.prisma, context.actor, input),
+        ),
+      },
+      sops: {
+        list: authed.organization.sops.list.handler(({ context }) =>
+          listSops(deps.prisma, context.actor),
+        ),
+        create: authed.organization.sops.create.handler(({ context, input }) =>
+          createSop(deps.prisma, context.actor, input),
+        ),
+        update: authed.organization.sops.update.handler(({ context, input }) =>
+          updateSop(deps.prisma, context.actor, input),
+        ),
+        remove: authed.organization.sops.remove.handler(({ context, input }) =>
+          removeSop(deps.prisma, context.actor, input.sopId),
+        ),
+      },
+      escalations: {
+        list: authed.organization.escalations.list.handler(({ context }) =>
+          listEscalations(deps.prisma, context.actor),
+        ),
+        create: authed.organization.escalations.create.handler(({ context, input }) =>
+          createEscalation(deps.prisma, context.actor, input),
+        ),
+        resolve: authed.organization.escalations.resolve.handler(({ context, input }) =>
+          resolveEscalation(deps.prisma, context.actor, input),
+        ),
+      },
+      events: {
+        list: authed.organization.events.list.handler(({ context, input }) =>
+          listCompanyEvents(deps.prisma, context.actor, input.limit),
+        ),
+      },
+      overview: authed.organization.overview.handler(({ context }) =>
+        getOverview(deps.prisma, context.actor),
+      ),
     },
     updater: {
       status: authed.updater.status.handler(async ({ context }) => {

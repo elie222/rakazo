@@ -65,6 +65,35 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id, IsoDate } from "./ids.js";
+import {
+  CompanyEventSchema,
+  CompanyGoalSchema,
+  CompleteReviewInput,
+  CreateDepartmentInput,
+  CreateEmployeeProfileInput,
+  CreateEscalationInput,
+  CreateGoalInput,
+  CreateProjectInput,
+  CreateReviewInput,
+  CreateSopInput,
+  CreateWorkItemInput,
+  DepartmentSchema,
+  EmployeeProfileSchema,
+  EscalationSchema,
+  ProjectSchema,
+  ResolveEscalationInput,
+  SopSchema,
+  UpdateDepartmentInput,
+  UpdateEmployeeProfileInput,
+  UpdateGoalInput,
+  UpdateProjectInput,
+  UpdateSopInput,
+  UpdateWorkItemInput,
+  WorkItemFilterSchema,
+  WorkItemReviewSchema,
+  WorkItemSchema,
+  WorkItemTransitionInput,
+} from "./organization/index.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -137,6 +166,86 @@ export const appContract = {
         }),
       )
       .output(DeploymentSettingsSchema),
+  },
+  organization: {
+    departments: {
+      list: oc.output(z.array(DepartmentSchema)),
+      get: oc.input(z.object({ departmentId: Id })).output(DepartmentSchema),
+      create: oc.input(CreateDepartmentInput).output(DepartmentSchema),
+      update: oc.input(UpdateDepartmentInput).output(DepartmentSchema),
+      remove: oc.input(z.object({ departmentId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
+    employees: {
+      list: oc.output(z.array(EmployeeProfileSchema)),
+      get: oc.input(z.object({ botId: Id })).output(EmployeeProfileSchema),
+      create: oc.input(CreateEmployeeProfileInput).output(EmployeeProfileSchema),
+      update: oc.input(UpdateEmployeeProfileInput).output(EmployeeProfileSchema),
+      remove: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
+      wake: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
+    goals: {
+      list: oc.output(z.array(CompanyGoalSchema)),
+      get: oc.input(z.object({ goalId: Id })).output(CompanyGoalSchema),
+      create: oc.input(CreateGoalInput).output(CompanyGoalSchema),
+      update: oc.input(UpdateGoalInput).output(CompanyGoalSchema),
+      remove: oc.input(z.object({ goalId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
+    projects: {
+      list: oc.output(z.array(ProjectSchema)),
+      get: oc.input(z.object({ projectId: Id })).output(ProjectSchema),
+      create: oc.input(CreateProjectInput).output(ProjectSchema),
+      update: oc.input(UpdateProjectInput).output(ProjectSchema),
+      remove: oc.input(z.object({ projectId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
+    workItems: {
+      list: oc.input(WorkItemFilterSchema).output(z.array(WorkItemSchema)),
+      get: oc.input(z.object({ workItemId: Id })).output(WorkItemSchema),
+      create: oc.input(CreateWorkItemInput).output(WorkItemSchema),
+      update: oc.input(UpdateWorkItemInput).output(WorkItemSchema),
+      transition: oc.input(WorkItemTransitionInput).output(WorkItemSchema),
+      assign: oc
+        .input(
+          z.object({
+            workItemId: Id,
+            assignedToBotId: Id.nullable(),
+            reviewerBotId: Id.nullable().optional(),
+          }),
+        )
+        .output(WorkItemSchema),
+      delegate: oc
+        .input(
+          z.object({
+            workItemId: Id,
+            title: z.string().trim().min(1).max(300),
+            description: z.string().max(8000).optional(),
+            assignedToBotId: Id,
+            expectedOutcome: z.string().max(4000).optional(),
+          }),
+        )
+        .output(WorkItemSchema),
+    },
+    reviews: {
+      list: oc.input(z.object({ workItemId: Id })).output(z.array(WorkItemReviewSchema)),
+      create: oc.input(CreateReviewInput).output(WorkItemReviewSchema),
+      complete: oc.input(CompleteReviewInput).output(WorkItemReviewSchema),
+    },
+    sops: {
+      list: oc.output(z.array(SopSchema)),
+      create: oc.input(CreateSopInput).output(SopSchema),
+      update: oc.input(UpdateSopInput).output(SopSchema),
+      remove: oc.input(z.object({ sopId: Id })).output(z.object({ ok: z.literal(true) })),
+    },
+    escalations: {
+      list: oc.output(z.array(EscalationSchema)),
+      create: oc.input(CreateEscalationInput).output(EscalationSchema),
+      resolve: oc.input(ResolveEscalationInput).output(EscalationSchema),
+    },
+    events: {
+      list: oc
+        .input(z.object({ limit: z.number().int().min(1).max(200).optional() }))
+        .output(z.array(CompanyEventSchema)),
+    },
+    overview: oc.output(z.unknown()),
   },
   /**
    * Deployment-owner product updates. When the Compose updater sidecar is reachable, these proxy
