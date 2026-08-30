@@ -177,7 +177,7 @@ export function createRepos(prisma: PrismaClient) {
           },
           computer: { select: { scope: true } },
         },
-        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
       });
       return bots.map((bot) => {
         const blocks = (bot.thread?.messages[0]?.blocks ?? []) as Array<{
@@ -255,6 +255,10 @@ export function createRepos(prisma: PrismaClient) {
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
       const bot = await prisma.$transaction(async (tx) => {
+        const positions = await tx.bot.aggregate({
+          where: { workspaceId: actor.workspaceId, userId: actor.userId },
+          _max: { position: true },
+        });
         const teamComputer = await ensureComputerRecord(tx, {
           mode: "team",
           workspaceId: actor.workspaceId,
@@ -271,6 +275,7 @@ export function createRepos(prisma: PrismaClient) {
             instructions: input.instructions,
             notifyOnFinish: input.notifyOnFinish,
             color,
+            position: (positions._max.position ?? -1) + 1,
             parentBotId: input.parentBotId ?? null,
             computerId: teamComputer.id,
             spawnKey: input.spawnKey,
@@ -325,6 +330,27 @@ export function createRepos(prisma: PrismaClient) {
         });
       });
       return mapBot(bot);
+    },
+
+    async reorderBots(actor: Actor, botIds: string[]): Promise<void> {
+      await prisma.$transaction(async (tx) => {
+        const bots = await tx.bot.findMany({
+          where: {
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            archivedAt: null,
+          },
+          select: { id: true },
+        });
+        const existing = new Set(bots.map((bot) => bot.id));
+        if (existing.size !== botIds.length || botIds.some((id) => !existing.has(id))) {
+          throw new IsolationError();
+        }
+        // ponytail: rosters are small; switch to one SQL CASE update only if this becomes hot.
+        await Promise.all(
+          botIds.map((id, position) => tx.bot.update({ where: { id }, data: { position } })),
+        );
+      });
     },
 
     async setBotComputer(actor: Actor, botId: string, mode: ComputerMode): Promise<Bot> {

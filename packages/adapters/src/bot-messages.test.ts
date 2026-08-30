@@ -244,6 +244,66 @@ describe("messaging another bot", () => {
     );
   });
 
+  it("does not inherit a request reply link when messaging another bot", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-other", name: "Writer", title: "", thread: { id: "thread-other" } },
+      ],
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "check Gmail",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+
+    await messageBot(harness.deps, { ...run, sourceMessageId: "message-source" }, sender, {
+      bot_id: "bot-other",
+      message: "unrelated update",
+      intent: "fyi",
+    });
+
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ replyToMessageId: undefined }),
+      }),
+    );
+  });
+
+  it("does not inherit a request reply link for an FYI to the requester", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "check Gmail",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+
+    await messageBot(harness.deps, { ...run, sourceMessageId: "message-source" }, sender, {
+      bot_id: "bot-target",
+      message: "unrelated update",
+      intent: "fyi",
+    });
+
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ replyToMessageId: undefined }),
+      }),
+    );
+  });
+
   it("does not exempt a terminal reply to another terminal reply", async () => {
     const harness = deps({
       hopBlocks: [
@@ -367,10 +427,24 @@ describe("hop lookup", () => {
               intent: "fyi",
             },
           ],
+          replyTo: {
+            blocks: [
+              {
+                kind: "bot_message_sent",
+                toBotId: "b",
+                toBotName: "B",
+                text: "check Gmail",
+                intent: "request",
+              },
+            ],
+          },
         }),
       },
     } as unknown as PrismaClient;
-    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({ intent: "fyi" });
+    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({
+      intent: "fyi",
+      repliesToRequest: true,
+    });
     expect(prisma.message.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "message-old" } }),
     );

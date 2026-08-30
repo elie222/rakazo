@@ -839,11 +839,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })),
           run.sourceMessageId,
         );
-        const allowSilentPeerMessage = botMessageAllowsSilence(peerMessage?.intent);
+        const allowSilentPeerMessage = botMessageAllowsSilence(
+          peerMessage?.intent,
+          peerMessage?.repliesToRequest,
+        );
         const emptyResponseText = peerMessage
           ? peerMessage.intent === "result" ||
             peerMessage.intent === "status" ||
-            peerMessage.intent === "question"
+            peerMessage.intent === "question" ||
+            peerMessage.repliesToRequest
             ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
             : "The delegated bot completed its turn without a written summary."
           : undefined;
@@ -940,7 +944,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           deps.runtime.describe().capabilities.scripted ||
           modelAcceptsImageInput(runModelProvider, runModelId);
         const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId)
+          ? await loadGroupContext(deps.prisma, thread.groupId, { id: bot.id, name: bot.name })
           : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
         const availableBuiltins = filterBuiltinToolsForThread(
@@ -1027,6 +1031,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
+        let handedOff = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
@@ -1072,6 +1077,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          if (handedOff) {
+            return { error: "This stage was handed off. End the turn without more tool calls." };
+          }
           if (IMAGE_RETURNING_COMPUTER_TOOLS.has(name) && !acceptsImages) {
             return { error: MODEL_CANNOT_SEE_MESSAGE };
           }
@@ -2191,6 +2199,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
               message: String(args.message ?? ""),
             });
+            if ("ok" in result && result.ok) handedOff = true;
             return finish(result);
           }
           if (name === "archive_bot" || name === "delete_bot") {
@@ -2677,10 +2686,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             messageSegments = completionMessageSegments(messageSegments, {
               allowSilentEmpty: allowSilentPeerMessage,
               emptyResponseText,
+              suppressOutput: handedOff,
             });
           }
-          const blocks = redactBlocks(messageSegments, runSecrets);
-          const text = redactSecrets(completionNotificationBody(assembled, blocks), runSecrets);
+          const blocks = handedOff ? [] : redactBlocks(messageSegments, runSecrets);
+          const text = handedOff
+            ? ""
+            : redactSecrets(completionNotificationBody(assembled, blocks), runSecrets);
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
@@ -2706,7 +2718,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               text,
             ).catch((error) => console.error("bot message result return", error));
           }
-          if (bot.notifyOnFinish && text) {
+          if (text) {
             await notifyRun(deps, run, {
               kind: "completion",
               title: `${bot.name} finished`,
@@ -2774,15 +2786,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               "status",
             ).catch((returnError) => console.error("bot message failure return", returnError));
           }
-          if (bot.notifyOnFinish) {
-            await notifyRun(deps, run, {
-              kind: "failure",
-              title: `${bot.name} failed`,
-              body: message.slice(0, 180),
-              botId: bot.id,
-              threadId: thread.id,
-            });
-          }
+          await notifyRun(deps, run, {
+            kind: "failure",
+            title: `${bot.name} failed`,
+            body: message.slice(0, 180),
+            botId: bot.id,
+            threadId: thread.id,
+          });
         }
       } catch (setupError) {
         const computerBusy = setupError instanceof ComputerBusyError;
@@ -2857,12 +2867,36 @@ async function computerScreenToolResult(
   return finish ? finish(result) : result;
 }
 
+export async function runNotificationsEnabled(
+  prisma: PrismaClient,
+  run: { workspaceId: string; userId: string; botId: string; threadId: string },
+): Promise<boolean> {
+  const source = await prisma.run.findFirst({
+    where: {
+      botId: run.botId,
+      threadId: run.threadId,
+      workspaceId: run.workspaceId,
+      userId: run.userId,
+    },
+    select: {
+      bot: { select: { notifyOnFinish: true } },
+      thread: { select: { groupId: true } },
+    },
+  });
+  return Boolean(source && (source.thread.groupId || source.bot.notifyOnFinish));
+}
+
 async function notifyRun(
   deps: ExecutorDeps,
   run: { workspaceId: string; userId: string; botId: string; threadId: string },
   message: NotificationMessage,
 ) {
   if (!deps.notifications) return;
+  const enabled = await runNotificationsEnabled(deps.prisma, run).catch((error) => {
+    console.error("notification preference lookup", error);
+    return false;
+  });
+  if (!enabled) return;
   await deps.notifications
     .send(message, {
       operationId: "notify",
@@ -2896,8 +2930,9 @@ function computerRetryDelay(fence: number): number {
 
 export function completionMessageSegments(
   segments: MessageBlock[],
-  options?: { allowSilentEmpty?: boolean; emptyResponseText?: string },
+  options?: { allowSilentEmpty?: boolean; emptyResponseText?: string; suppressOutput?: boolean },
 ): MessageBlock[] {
+  if (options?.suppressOutput) return [];
   const fallback = options?.emptyResponseText?.trim() || "done.";
   if (segments.length > 0) {
     if (

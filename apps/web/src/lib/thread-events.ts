@@ -16,6 +16,7 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   subagentBlockFromPayload,
+  upsertMessageById,
 } from "@rakazo/core";
 
 const runTriggers = new Set<Run["trigger"]>([
@@ -407,10 +408,8 @@ export function reduceThreadSnapshot(
     );
     const liveId = progressMessageId(event);
     const { remaining } = takeLiveMessage(prev.messages, liveId);
-    const without = remaining.filter(
-      (message) => message.id !== next.id && !replacedSubagent(message, replacedSubagentIds),
-    );
-    return { ...prev, cursor: event.seq, messages: [...without, next] };
+    const without = remaining.filter((message) => !replacedSubagent(message, replacedSubagentIds));
+    return { ...prev, cursor: event.seq, messages: upsertMessageById(without, next) };
   }
   return prev;
 }

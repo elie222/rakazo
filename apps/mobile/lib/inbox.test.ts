@@ -74,6 +74,8 @@ function bot(id: string, name: string, title: string, preview: string) {
     title,
     preview,
     color: "#9B5CF6",
+    notifyOnFinish: true,
+    threadId: `thread-${id}`,
     status: "idle",
     pinned: false,
     sectionId: null,
