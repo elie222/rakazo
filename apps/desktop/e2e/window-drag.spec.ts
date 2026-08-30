@@ -7,6 +7,7 @@ const fixture = `<!doctype html>
 <html lang="en">
   <head><meta charset="utf-8"><title>Rakazo window drag</title><style>${styles}</style></head>
   <body>
+    <main>Desktop fixture ready</main>
     <header class="app-drag" id="conversation-header">
       <span>Chief</span>
       <button class="app-no-drag" id="bot-settings">Bot settings</button>
