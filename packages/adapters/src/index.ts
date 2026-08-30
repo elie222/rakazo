@@ -56,6 +56,7 @@ export * from "./remote-mcp.js";
 export * from "./run-secret.js";
 export * from "./sandbox-factory.js";
 export * from "./sandbox-provider-env.js";
+export * from "./schedule-tools.js";
 export * from "./scratchpad-context.js";
 export * from "./scratchpad-tools.js";
 export * from "./scripted-runtime.js";

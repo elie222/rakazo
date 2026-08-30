@@ -78,6 +78,136 @@ describe("createRunExecutor", () => {
     );
   });
 
+  it("wakes a tool-created group routine into the group thread, not the bot DM", async () => {
+    const scheduledAt = new Date(Date.now() - 1_000);
+    const taskCreate = vi.fn(async () => ({ id: "task-1" }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
+    const append = vi.fn(async () => undefined);
+    const findFirst = vi.fn(async () => ({ id: "group-thread-1" }));
+    const prisma = {
+      routine: {
+        findUnique: vi.fn(async () => ({
+          id: "routine-1",
+          workspaceId: "ws-1",
+          botId: "bot-1",
+          userId: "user-1",
+          prompt: "remind the group",
+          crons: [ONCE_ROUTINE_CRON],
+          timezone: "UTC",
+          active: true,
+          nextRunAt: scheduledAt,
+          threadId: "group-thread-1",
+        })),
+      },
+      bot: {
+        findUnique: vi.fn(async () => ({
+          id: "bot-1",
+          thread: { id: "dm-thread-1" },
+        })),
+      },
+      thread: { findFirst },
+      agentSkill: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+          task: { create: taskCreate },
+          run: { create: runCreate },
+        }),
+      ),
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+      },
+      events: { append },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "group-thread-1", workspaceId: "ws-1" }),
+      }),
+    );
+    expect(taskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "group-thread-1" }) }),
+    );
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "group-thread-1" }) }),
+    );
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "routine.fired", threadId: "group-thread-1" }),
+    );
+  });
+
+  it("wakes a tool-created 1:1 routine into the bot DM thread", async () => {
+    const scheduledAt = new Date(Date.now() - 1_000);
+    const taskCreate = vi.fn(async () => ({ id: "task-1" }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
+    const append = vi.fn(async () => undefined);
+    const findFirst = vi.fn(async () => ({ id: "dm-thread-1" }));
+    const prisma = {
+      routine: {
+        findUnique: vi.fn(async () => ({
+          id: "routine-1",
+          workspaceId: "ws-1",
+          botId: "bot-1",
+          userId: "user-1",
+          prompt: "remind me",
+          crons: [ONCE_ROUTINE_CRON],
+          timezone: "UTC",
+          active: true,
+          nextRunAt: scheduledAt,
+          threadId: "dm-thread-1",
+        })),
+      },
+      bot: {
+        findUnique: vi.fn(async () => ({
+          id: "bot-1",
+          thread: { id: "dm-thread-1" },
+        })),
+      },
+      thread: { findFirst },
+      agentSkill: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+          task: { create: taskCreate },
+          run: { create: runCreate },
+        }),
+      ),
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+      },
+      events: { append },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "dm-thread-1", workspaceId: "ws-1" }),
+      }),
+    );
+    expect(taskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "dm-thread-1" }) }),
+    );
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "dm-thread-1" }) }),
+    );
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "routine.fired", threadId: "dm-thread-1" }),
+    );
+  });
+
   it("expands @skill mentions in the routine prompt at fire time", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const enqueue = vi.fn(async () => undefined);

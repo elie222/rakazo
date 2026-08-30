@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   ComposioEmulator,
+  createScheduleFromTool,
   DesktopSandboxProvider,
   FakeSandboxProvider,
   handoffToGroupBot,
   ManagedSandboxEmulator,
 } from "@rakazo/adapters";
+import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import {
   appendEvent,
   createThreadEvents,
@@ -916,6 +918,128 @@ describeJourneys("required product journeys", () => {
     expect(await prisma.run.count({ where: { botId: bot.id, trigger: "routine" } })).toBe(
       legacyRunsBefore + 1,
     );
+  });
+
+  it("5b: tool-created schedules wake in the creating group or 1:1 thread", async () => {
+    const cookie = await signup(app, `schedule-dest-j-${stamp}@rakazo.test`, "Schedule Dest");
+    const me = await rpc<Me>(app, cookie, "me");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Scheduler",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const peer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Peer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const dmThread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Schedule room",
+      botIds: [bot.id, peer.id],
+    });
+    const events = createThreadEvents(prisma);
+    const scheduleDeps = { prisma, events, jobs };
+
+    const groupCreated = await createScheduleFromTool(scheduleDeps, {
+      workspaceId: me.workspaceId,
+      botId: bot.id,
+      userId: me.userId,
+      threadId: group.threadId,
+      name: "Group ping",
+      prompt: "say group-reminder-ok",
+      schedule: { delaySeconds: 30 },
+    });
+    expect(groupCreated).toMatchObject({ ok: true });
+    if (!("ok" in groupCreated) || !groupCreated.ok)
+      throw new Error("group schedule create failed");
+    const groupRoutine = await prisma.routine.findUniqueOrThrow({
+      where: { id: groupCreated.routineId },
+    });
+    expect(groupRoutine.threadId).toBe(group.threadId);
+    expect(groupRoutine.crons).toEqual([ONCE_ROUTINE_CRON]);
+
+    const groupDueAt = new Date(Date.now() - 1_000);
+    await prisma.routine.update({
+      where: { id: groupRoutine.id },
+      data: { nextRunAt: groupDueAt },
+    });
+    await executor.wakeRoutine(groupRoutine.id, groupDueAt.toISOString());
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({
+        where: { routineId: groupRoutine.id, trigger: "routine" },
+      });
+      return run?.threadId === group.threadId;
+    });
+    const groupRun = await prisma.run.findFirstOrThrow({
+      where: { routineId: groupRoutine.id, trigger: "routine" },
+    });
+    expect(groupRun.threadId).toBe(group.threadId);
+    expect(groupRun.threadId).not.toBe(dmThread.id);
+    expect(
+      await prisma.event.count({
+        where: {
+          threadId: group.threadId,
+          type: "routine.fired",
+          runId: groupRun.id,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.event.count({
+        where: {
+          threadId: dmThread.id,
+          type: "routine.fired",
+          runId: groupRun.id,
+        },
+      }),
+    ).toBe(0);
+
+    const dmCreated = await createScheduleFromTool(scheduleDeps, {
+      workspaceId: me.workspaceId,
+      botId: bot.id,
+      userId: me.userId,
+      threadId: dmThread.id,
+      name: "DM ping",
+      prompt: "say dm-reminder-ok",
+      schedule: { delaySeconds: 30 },
+    });
+    expect(dmCreated).toMatchObject({ ok: true });
+    if (!("ok" in dmCreated) || !dmCreated.ok) throw new Error("dm schedule create failed");
+    const dmRoutine = await prisma.routine.findUniqueOrThrow({
+      where: { id: dmCreated.routineId },
+    });
+    expect(dmRoutine.threadId).toBe(dmThread.id);
+
+    const dmDueAt = new Date(Date.now() - 1_000);
+    await prisma.routine.update({
+      where: { id: dmRoutine.id },
+      data: { nextRunAt: dmDueAt },
+    });
+    await executor.wakeRoutine(dmRoutine.id, dmDueAt.toISOString());
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findFirst({
+        where: { routineId: dmRoutine.id, trigger: "routine" },
+      });
+      return run?.threadId === dmThread.id;
+    });
+    const dmRun = await prisma.run.findFirstOrThrow({
+      where: { routineId: dmRoutine.id, trigger: "routine" },
+    });
+    expect(dmRun.threadId).toBe(dmThread.id);
+    expect(
+      await prisma.event.count({
+        where: {
+          threadId: dmThread.id,
+          type: "routine.fired",
+          runId: dmRun.id,
+        },
+      }),
+    ).toBe(1);
   });
 
   it("allocates event and message cursors atomically under concurrent writes", async () => {
