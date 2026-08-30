@@ -22,7 +22,7 @@ Build the frozen Lead Intake QA and Quote Readiness pack in three dependency wav
 **Plans**: 4 plans
 
 Plans:
-- [ ] 01-01: Contracts, corpus, and deterministic domain rules
+- [x] 01-01: Contracts, corpus, and deterministic domain rules
 - [ ] 01-02: Task-scoped policy, budgets, approvals, and shutdown
 - [ ] 01-03: Hermetic campaign runner, evidence, and verifier
 - [ ] 01-04: Offline UAT, shutdown/rollback rehearsal, and release-readiness report
@@ -31,4 +31,4 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Lead Intake QA and Quote Readiness Evaluation Pack | 0/4 | In progress | - |
+| 1. Lead Intake QA and Quote Readiness Evaluation Pack | 1/4 | In progress | - |
