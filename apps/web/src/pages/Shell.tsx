@@ -1294,12 +1294,19 @@ export function ShellPage() {
         try {
           await rpc.bots.reorder({ botIds });
         } catch {
-          pendingBotOrderRef.current = null;
-          await refreshBots(false, true).catch(() => undefined);
+          // Keep a newer order queued during this failed save; only roll back
+          // when nothing else is pending.
+          if (pendingBotOrderRef.current === null) {
+            await refreshBots(false, true).catch(() => undefined);
+          }
         }
       }
     } finally {
       savingBotOrderRef.current = false;
+      // A reorder may have arrived while saving=true and returned early.
+      if (pendingBotOrderRef.current) {
+        void flushBotOrder();
+      }
     }
   }, [refreshBots]);
   const reorderRosterBot = useCallback(
