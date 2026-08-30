@@ -369,6 +369,7 @@ model Thread {
   events                  Event[]
   tasks                   Task[]
   runs                    Run[]
+  routines                Routine[]
 
   @@index([workspaceId])
   @@map("threads")
@@ -524,6 +525,8 @@ model Routine {
   botId          String
   bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId         String
+  threadId       String?
+  thread         Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
   name           String
   prompt         String
   crons          String[]

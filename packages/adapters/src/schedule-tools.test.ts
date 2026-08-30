@@ -155,6 +155,7 @@ describe("schedule tool persistence", () => {
         data: expect.objectContaining({
           workspaceId: "ws-1",
           userId: "user-1",
+          threadId: "thread-1",
           crons: ["*/1 * * * *"],
           active: true,
         }),

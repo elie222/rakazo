@@ -13,6 +13,7 @@ export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
 export const SCHEDULE_TOOL_NAMES = new Set(["schedule_create", "schedule_list", "schedule_cancel"]);
 
+/** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],
   groupId: string | null | undefined,
@@ -191,6 +192,7 @@ export async function createScheduleFromTool(
       workspaceId: input.workspaceId,
       botId: input.botId,
       userId: input.userId,
+      threadId: input.threadId,
       name,
       prompt,
       crons: [resolved.cron],

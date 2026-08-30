@@ -10,6 +10,8 @@ describe("createRunExecutor", () => {
     const cancel = vi.fn(async () => undefined);
     const append = vi.fn(async () => undefined);
     const updateMany = vi.fn(async () => ({ count: 1 }));
+    const taskCreate = vi.fn(async () => ({ id: "task-1" }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
     const prisma = {
       routine: {
         findUnique: vi.fn(async () => ({
@@ -22,6 +24,7 @@ describe("createRunExecutor", () => {
           timezone: "UTC",
           active: true,
           nextRunAt: scheduledAt,
+          threadId: "group-thread-1",
         })),
       },
       bot: {
@@ -30,14 +33,17 @@ describe("createRunExecutor", () => {
           thread: { id: "thread-1" },
         })),
       },
+      thread: {
+        findFirst: vi.fn(async () => ({ id: "group-thread-1" })),
+      },
       agentSkill: {
         findMany: vi.fn(async () => []),
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
           routine: { updateMany },
-          task: { create: vi.fn(async () => ({ id: "task-1" })) },
-          run: { create: vi.fn(async () => ({ id: "run-1" })) },
+          task: { create: taskCreate },
+          run: { create: runCreate },
         }),
       ),
     } as unknown as PrismaClient;
@@ -57,8 +63,18 @@ describe("createRunExecutor", () => {
     expect(cancel).toHaveBeenCalledWith("routine:routine-1");
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+    expect(taskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "group-thread-1" }) }),
+    );
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ threadId: "group-thread-1" }) }),
+    );
     expect(append).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "routine.fired", runId: "run-1" }),
+      expect.objectContaining({
+        type: "routine.fired",
+        runId: "run-1",
+        threadId: "group-thread-1",
+      }),
     );
   });
 
