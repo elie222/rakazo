@@ -47,6 +47,7 @@ import {
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   mentionChipKey,
+  reorderBotTo,
   resolveComposerSendPlan,
   SLASH_ACTIONS,
   type SlashActionId,
@@ -267,6 +268,9 @@ export function ShellPage() {
   const [bots, setBots] = useState<Bot[]>([]);
   const botsRef = useRef(bots);
   botsRef.current = bots;
+  const botOrderEpochRef = useRef(0);
+  const pendingBotOrderRef = useRef<string[] | null>(null);
+  const savingBotOrderRef = useRef(false);
   const [botSections, setBotSections] = useState<BotSection[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
@@ -373,6 +377,7 @@ export function ShellPage() {
   );
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [activityMode, setActivityMode] = useState(readActivityMode);
   const toggleActivityMode = useCallback(() => {
@@ -567,9 +572,11 @@ export function ShellPage() {
   );
 
   const refreshBots = useCallback(
-    async (includeArchived = false) => {
+    async (includeArchived = false, replaceBotOrder = false) => {
       markOnce("rk:renderer:bots-request-start");
       const request = ++botsRefreshEpoch.current;
+      const botOrderEpoch = botOrderEpochRef.current;
+      const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
       botsRefreshInFlight.current += 1;
       try {
@@ -591,7 +598,12 @@ export function ShellPage() {
         if (archivedFresh && archived) setArchivedBots(archived);
         if (archivedFresh && archivedGroupList) setArchivedGroups(archivedGroupList);
         if (!botsFresh) return;
-        setBots(list);
+        if (
+          botOrderEpoch === botOrderEpochRef.current &&
+          (replaceBotOrder || (!preserveBotOrder && !savingBotOrderRef.current))
+        ) {
+          setBots(list);
+        }
         setBotSections(sections);
         setGroups(groupList);
         setInitialBotsLoaded(true);
@@ -1271,6 +1283,39 @@ export function ShellPage() {
         botSections,
       ),
     [botSections, filtered, filteredGroups],
+  );
+  const flushBotOrder = useCallback(async () => {
+    if (savingBotOrderRef.current) return;
+    savingBotOrderRef.current = true;
+    try {
+      while (pendingBotOrderRef.current) {
+        const botIds = pendingBotOrderRef.current;
+        pendingBotOrderRef.current = null;
+        try {
+          await rpc.bots.reorder({ botIds });
+        } catch {
+          pendingBotOrderRef.current = null;
+          await refreshBots(false, true).catch(() => undefined);
+        }
+      }
+    } finally {
+      savingBotOrderRef.current = false;
+    }
+  }, [refreshBots]);
+  const reorderRosterBot = useCallback(
+    (sourceId: string, targetId: string, groupBotIds: string[]) => {
+      if (!groupBotIds.includes(sourceId) || !groupBotIds.includes(targetId)) return;
+      const current = botsRef.current;
+      const reordered = reorderBotTo(current, sourceId, targetId);
+      if (reordered === current) return;
+      const next = [...reordered];
+      botOrderEpochRef.current += 1;
+      botsRef.current = next;
+      setBots(next);
+      pendingBotOrderRef.current = next.map((bot) => bot.id);
+      void flushBotOrder();
+    },
+    [flushBotOrder],
   );
   const toggleSidebarSection = useCallback(
     (key: string) => {
@@ -2200,6 +2245,9 @@ export function ShellPage() {
               ) : null}
               {sidebarGroups.map((group) => {
                 const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
+                const groupBotIds = group.bots.flatMap((item) =>
+                  item.kind === "bot" ? [item.chat.id] : [],
+                );
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title ? (
@@ -2230,6 +2278,47 @@ export function ShellPage() {
                         <button
                           key={`${item.kind}:${item.chat.id}`}
                           type="button"
+                          draggable={item.kind === "bot"}
+                          data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
+                          aria-keyshortcuts={
+                            item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                          }
+                          onDragStart={(event) => {
+                            if (item.kind !== "bot") return;
+                            setDraggedBotId(item.chat.id);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", item.chat.id);
+                          }}
+                          onDragOver={(event) => {
+                            if (
+                              item.kind === "bot" &&
+                              draggedBotId &&
+                              groupBotIds.includes(draggedBotId)
+                            ) {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                            }
+                          }}
+                          onDrop={(event) => {
+                            if (item.kind !== "bot" || !draggedBotId) return;
+                            event.preventDefault();
+                            reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
+                            setDraggedBotId(null);
+                          }}
+                          onDragEnd={() => setDraggedBotId(null)}
+                          onKeyDown={(event) => {
+                            if (
+                              item.kind !== "bot" ||
+                              !event.altKey ||
+                              (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+                            )
+                              return;
+                            const index = groupBotIds.indexOf(item.chat.id);
+                            const target = groupBotIds[index + (event.key === "ArrowUp" ? -1 : 1)];
+                            if (!target) return;
+                            event.preventDefault();
+                            reorderRosterBot(item.chat.id, target, groupBotIds);
+                          }}
                           onClick={() => {
                             setMobileSidebarOpen(false);
                             navigate(
@@ -2246,8 +2335,12 @@ export function ShellPage() {
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
-                          className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
+                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                            item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
+                          }`}
                           style={{
+                            opacity:
+                              item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                             background:
                               (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                               (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
@@ -4135,7 +4228,10 @@ const Composer = memo(function Composer({
           })}
         </div>
       ) : null}
-      <div className="flex items-end gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3">
+      <div
+        data-testid="composer-bar"
+        className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3"
+      >
         <input
           ref={fileInputRef}
           type="file"

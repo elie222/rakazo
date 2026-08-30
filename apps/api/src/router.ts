@@ -628,6 +628,10 @@ export function createRouter(deps: RouterDeps) {
         }
         return duplicate;
       }),
+      reorder: authed.bots.reorder.handler(async ({ context, input }) => {
+        await repos.reorderBots(context.actor, input.botIds);
+        return { ok: true as const };
+      }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
         if (input.sectionId) {
