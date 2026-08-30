@@ -19,6 +19,7 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/memory": "workspace:*",
+    "@rakazo/organization": "workspace:*",
     "hono": "^4.9.6"
   },
   "devDependencies": {

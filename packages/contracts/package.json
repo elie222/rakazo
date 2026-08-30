@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./organization/*": {
+      "types": "./src/organization/*.ts",
+      "development": "./src/organization/*.ts",
+      "default": "./src/organization/*.ts"
     }
   },
   "scripts": {

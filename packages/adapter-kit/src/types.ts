@@ -419,6 +419,17 @@ export interface BackgroundJobPayloads {
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
   "history.compact": { threadId: string };
+  "organization.tick": { workspaceId: string };
+  "employee.wakeup": { workspaceId: string; botId: string; reason?: string };
+  "employee.evaluate": { workspaceId: string; botId: string };
+  "manager.evaluate": { workspaceId: string; managerBotId: string };
+  "executive.evaluate": { workspaceId: string; executiveBotId: string };
+  "goal.evaluate": { workspaceId: string; goalId: string };
+  "project.evaluate": { workspaceId: string; projectId: string };
+  "workitem.dispatch": { workspaceId: string; workItemId: string };
+  "workitem.review": { workspaceId: string; reviewId: string };
+  "sop.trigger": { workspaceId: string; sopId: string; triggerPayload?: Record<string, unknown> };
+  "company.health.evaluate": { workspaceId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

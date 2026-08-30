@@ -2,6 +2,8 @@ import { rm } from "node:fs/promises";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
+  AgentRuntime,
+  BackgroundJobHandlers,
   JobPublisher,
   ManagedConnectorProvider,
   RealtimeFanout,
@@ -13,6 +15,9 @@ import {
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
+  createOrganizationExecutionBridge,
+  createOrganizationManagerRuntime,
+  createOrganizationProgressEvaluator,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
@@ -60,6 +65,7 @@ export interface AppHandles {
   composio?: ComposioProvider;
   connectors: ConnectorRegistry;
   executor: ReturnType<typeof createRunExecutor>;
+  jobHandlers: BackgroundJobHandlers;
   stop: () => Promise<void>;
 }
 
@@ -70,6 +76,8 @@ export async function createApp(
     composio?: ComposioProvider;
     pipedream?: ManagedConnectorProvider;
     remoteConnectors?: RemoteConnectorDependencies;
+    runtime?: AgentRuntime;
+    jobs?: JobPublisher;
   } = {},
 ): Promise<AppHandles> {
   const {
@@ -78,6 +86,8 @@ export async function createApp(
     composio: composioOverride,
     pipedream: pipedreamOverride,
     remoteConnectors,
+    runtime: runtimeOverride,
+    jobs: jobsOverride,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -124,8 +134,8 @@ export async function createApp(
   }
 
   const jobKind = env.wakeupDriver;
-  const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs = inMemoryJobs ?? new GraphileJobPublisher(env.databaseUrl);
+  const inMemoryJobs = !jobsOverride && jobKind === "memory" ? new InMemoryJobQueue() : undefined;
+  const jobs = jobsOverride ?? inMemoryJobs ?? new GraphileJobPublisher(env.databaseUrl);
   const sandbox: SandboxProvider = createRunSandbox(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
     supervisorToken: env.sandboxSupervisorToken,
@@ -168,8 +178,7 @@ export async function createApp(
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);
   void pipedream?.warmDirectory?.().catch(() => undefined);
-  const runtime =
-    env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
+  const runtime = runtimeOverride ?? (env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime());
   const notifications = new ExpoPushProvider(env.dataDir);
   const auth = createAuth(prisma, {
     secret: env.authSecret,
@@ -211,6 +220,9 @@ export async function createApp(
       await rm(pushTokenPath(env.dataDir, userId), { force: true }).catch(() => undefined);
     },
   });
+  const organizationBridge = createOrganizationExecutionBridge({ prisma, jobs });
+  const managerRuntime = createOrganizationManagerRuntime({ prisma, jobs });
+  const progressEvaluator = createOrganizationProgressEvaluator({ prisma, jobs });
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -229,6 +241,12 @@ export async function createApp(
     notifications,
     jobs,
     events,
+    onRunFinalized: async (input) => {
+      await organizationBridge.finalize(input);
+      await managerRuntime.finalize(input);
+    },
+    onRunPausedForApproval: (input) => organizationBridge.markWaitingApproval(input),
+    onRunResumed: (input) => organizationBridge.markExecutionResumed(input),
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -243,6 +261,9 @@ export async function createApp(
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey: env.deploymentModelKey,
+    organizationBridge,
+    managerRuntime,
+    progressEvaluator,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -342,6 +363,7 @@ export async function createApp(
     composio: stack.composio,
     connectors: stack.connector,
     executor,
+    jobHandlers,
     stop: async () => {
       oauthLogins.abortAll();
       await reconciler?.stop();

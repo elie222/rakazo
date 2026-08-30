@@ -7,6 +7,9 @@ import {
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
+  createOrganizationExecutionBridge,
+  createOrganizationManagerRuntime,
+  createOrganizationProgressEvaluator,
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
@@ -102,6 +105,9 @@ async function main() {
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
+  const organizationBridge = createOrganizationExecutionBridge({ prisma, jobs });
+  const managerRuntime = createOrganizationManagerRuntime({ prisma, jobs });
+  const progressEvaluator = createOrganizationProgressEvaluator({ prisma, jobs });
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -120,6 +126,12 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
+    onRunFinalized: async (input) => {
+      await organizationBridge.finalize(input);
+      await managerRuntime.finalize(input);
+    },
+    onRunPausedForApproval: (input) => organizationBridge.markWaitingApproval(input),
+    onRunResumed: (input) => organizationBridge.markExecutionResumed(input),
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -134,6 +146,9 @@ async function main() {
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey,
+    organizationBridge,
+    managerRuntime,
+    progressEvaluator,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

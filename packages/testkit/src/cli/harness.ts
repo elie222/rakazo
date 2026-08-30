@@ -90,6 +90,8 @@ async function main() {
           "packages/testkit/src/voice.test.ts",
           "packages/testkit/src/search.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
+          "packages/testkit/src/organization-postgres-smoke.test.ts",
+          "packages/testkit/src/organization-autonomy.postgres.test.ts",
           "packages/testkit/src/connections.test.ts",
           "packages/adapters/src/wakeup.postgres.test.ts",
           "packages/adapters/src/realtime.postgres.test.ts",

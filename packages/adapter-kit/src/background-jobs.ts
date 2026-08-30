@@ -19,6 +19,25 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
+  "organization.tick": z.object({ workspaceId: z.string().min(1) }),
+  "employee.wakeup": z.object({
+    workspaceId: z.string().min(1),
+    botId: z.string().min(1),
+    reason: z.string().max(200).optional(),
+  }),
+  "employee.evaluate": z.object({ workspaceId: z.string().min(1), botId: z.string().min(1) }),
+  "manager.evaluate": z.object({ workspaceId: z.string().min(1), managerBotId: z.string().min(1) }),
+  "executive.evaluate": z.object({ workspaceId: z.string().min(1), executiveBotId: z.string().min(1) }),
+  "goal.evaluate": z.object({ workspaceId: z.string().min(1), goalId: z.string().min(1) }),
+  "project.evaluate": z.object({ workspaceId: z.string().min(1), projectId: z.string().min(1) }),
+  "workitem.dispatch": z.object({ workspaceId: z.string().min(1), workItemId: z.string().min(1) }),
+  "workitem.review": z.object({ workspaceId: z.string().min(1), reviewId: z.string().min(1) }),
+  "sop.trigger": z.object({
+    workspaceId: z.string().min(1),
+    sopId: z.string().min(1),
+    triggerPayload: z.record(z.string(), z.unknown()).optional(),
+  }),
+  "company.health.evaluate": z.object({ workspaceId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -117,5 +136,47 @@ export function historyCompactJob(threadId: string): BackgroundJob {
     name: "history.compact",
     payload: { threadId },
     replaceKey: historyCompactJobKey(threadId),
+  };
+}
+
+export function orgJobKey(name: string, id: string): string {
+  return `${name}:${id}`;
+}
+
+export function employeeWakeupJob(workspaceId: string, botId: string, reason?: string, availableAt?: Date): BackgroundJob {
+  return {
+    name: "employee.wakeup",
+    payload: { workspaceId, botId, reason },
+    replaceKey: orgJobKey("employee.wakeup", botId),
+    ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+export function organizationTickJob(workspaceId: string): BackgroundJob {
+  return { name: "organization.tick", payload: { workspaceId }, replaceKey: orgJobKey("organization.tick", workspaceId) };
+}
+
+export function workItemDispatchJob(workspaceId: string, workItemId: string): BackgroundJob {
+  return { name: "workitem.dispatch", payload: { workspaceId, workItemId }, replaceKey: orgJobKey("workitem.dispatch", workItemId) };
+}
+
+export function workItemReviewJob(workspaceId: string, reviewId: string): BackgroundJob {
+  return { name: "workitem.review", payload: { workspaceId, reviewId }, replaceKey: orgJobKey("workitem.review", reviewId) };
+}
+
+export function projectEvaluateJob(workspaceId: string, projectId: string): BackgroundJob {
+  return { name: "project.evaluate", payload: { workspaceId, projectId }, replaceKey: orgJobKey("project.evaluate", projectId) };
+}
+
+export function goalEvaluateJob(workspaceId: string, goalId: string): BackgroundJob {
+  return { name: "goal.evaluate", payload: { workspaceId, goalId }, replaceKey: orgJobKey("goal.evaluate", goalId) };
+}
+
+export function managerEvaluateJob(workspaceId: string, managerBotId: string, availableAt?: Date): BackgroundJob {
+  return {
+    name: "manager.evaluate",
+    payload: { workspaceId, managerBotId },
+    replaceKey: orgJobKey("manager.evaluate", managerBotId),
+    ...(availableAt ? { availableAt } : {}),
   };
 }

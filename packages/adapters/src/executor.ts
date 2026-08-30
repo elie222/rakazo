@@ -347,6 +347,14 @@ export interface ExecutorDeps {
   notifications?: NotificationProvider;
   jobs: JobPublisher;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+  onRunFinalized?: (input: {
+    runId: string;
+    outcome: "completed" | "failed";
+    blocks?: MessageBlock[];
+    error?: string;
+  }) => Promise<unknown>;
+  onRunPausedForApproval?: (input: { runId: string }) => Promise<unknown>;
+  onRunResumed?: (input: { runId: string }) => Promise<unknown>;
 }
 
 export async function deferFutureRoutine(
@@ -640,6 +648,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         data: { status: "running", startedAt: current.startedAt ?? new Date() },
       });
       if (started.count !== 1) return;
+      await deps.onRunResumed?.({ runId }).catch((error) => console.error("Run resume hook failed", error));
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
         select: { computerId: true, computerSwitching: true },
@@ -1288,6 +1297,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!paused) {
               throw new Error("Could not pause this run for approval; try sending again.");
             }
+            await deps.onRunPausedForApproval?.({ runId }).catch((error) =>
+              console.error("Run approval-pause hook failed", error),
+            );
             await notifyRun(deps, run, {
               kind: "help",
               title: `${bot.name} needs approval`,
@@ -2710,6 +2722,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          await deps
+            .onRunFinalized?.({ runId, outcome: "completed", blocks })
+            .catch((error) => console.error("organization run completion sync failed", error));
           if (run.trigger === "bot_message" && text) {
             await returnBotMessageOutcome(
               deps,
@@ -2777,6 +2792,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          await deps
+            .onRunFinalized?.({ runId, outcome: "failed", error: message })
+            .catch((finalizeError) => console.error("organization run failure sync failed", finalizeError));
           if (run.trigger === "bot_message") {
             await returnBotMessageOutcome(
               deps,

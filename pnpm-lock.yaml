@@ -63,6 +63,9 @@ importers:
       '@rakazo/memory':
         specifier: workspace:*
         version: link:../../packages/memory
+      '@rakazo/organization':
+        specifier: workspace:*
+        version: link:../../packages/organization
       hono:
         specifier: ^4.9.6
         version: 4.13.1
@@ -504,6 +507,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../db
+      '@rakazo/organization':
+        specifier: workspace:*
+        version: link:../organization
       d3-dsv:
         specifier: ^3.0.1
         version: 3.0.1
@@ -694,6 +700,28 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
+
+  packages/organization:
+    dependencies:
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@rakazo/db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
 
   packages/testkit:
     dependencies:

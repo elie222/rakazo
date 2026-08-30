@@ -15,6 +15,17 @@ function handlers(): BackgroundJobHandlers {
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "organization.tick": vi.fn(async () => undefined),
+    "employee.wakeup": vi.fn(async () => undefined),
+    "employee.evaluate": vi.fn(async () => undefined),
+    "manager.evaluate": vi.fn(async () => undefined),
+    "executive.evaluate": vi.fn(async () => undefined),
+    "goal.evaluate": vi.fn(async () => undefined),
+    "project.evaluate": vi.fn(async () => undefined),
+    "workitem.dispatch": vi.fn(async () => undefined),
+    "workitem.review": vi.fn(async () => undefined),
+    "sop.trigger": vi.fn(async () => undefined),
+    "company.health.evaluate": vi.fn(async () => undefined),
   };
 }
 
