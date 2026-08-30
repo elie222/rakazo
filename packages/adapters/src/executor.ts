@@ -4,6 +4,7 @@ import type {
   AgentRuntime,
   ComputerRef,
   ConnectorProvider,
+  EvaluationToolHandlers,
   JobPublisher,
   MemoryStore,
   NotificationMessage,
@@ -11,7 +12,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import type { EvaluationRunPolicy, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
   containsSecret,
@@ -50,6 +51,12 @@ import {
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import {
+  EvaluationToolDispatcher,
+  modelVisibleEvaluationTools,
+  storedRunPolicyToContract,
+  validateEvaluationPreflight,
+} from "./evaluation-policy.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
@@ -92,6 +99,7 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
+  evaluationPackV1Enabled?: boolean;
 }
 
 export async function deferFutureRoutine(
@@ -167,6 +175,34 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
       if (isTerminal(run.status as RunStatus)) return;
+      const storedRunPolicy = await deps.prisma.runPolicy.findUnique({ where: { runId } });
+      const evaluationRequested = run.trigger === "evaluation" || Boolean(storedRunPolicy);
+      let evaluationPolicy: EvaluationRunPolicy | null = null;
+      if (evaluationRequested) {
+        if (!storedRunPolicy) {
+          await denyEvaluationPreflight(deps, run, "MISSING_POLICY");
+          return;
+        }
+        const rawPolicy = storedRunPolicyToContract(storedRunPolicy);
+        const preflight = validateEvaluationPreflight({
+          featureEnabled: deps.evaluationPackV1Enabled === true,
+          policy: rawPolicy,
+          identity: {
+            runId: run.id,
+            workspaceId: run.workspaceId,
+            userId: run.userId,
+            campaignId: storedRunPolicy.campaignId,
+            caseId: storedRunPolicy.caseId,
+            policyHash: storedRunPolicy.policyHash,
+          },
+          now: new Date(),
+        });
+        if (!preflight.ok) {
+          await denyEvaluationPreflight(deps, run, preflight.reason);
+          return;
+        }
+        evaluationPolicy = preflight.policy;
+      }
       const resumeFromTakeover = run.status === "waiting_takeover";
 
       const fence = nextFence(run.leaseFence);
@@ -275,11 +311,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               select: { role: true, blocks: true },
             }),
             deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
-            deps.prisma.connection.findMany({
-              where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
-              select: { provider: true, displayName: true },
-            }),
-            findDefaultModelCredential(deps.prisma, run),
+            evaluationPolicy
+              ? Promise.resolve([])
+              : deps.prisma.connection.findMany({
+                  where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
+                  select: { provider: true, displayName: true },
+                }),
+            evaluationPolicy ? Promise.resolve(null) : findDefaultModelCredential(deps.prisma, run),
             deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
           ]);
         runAbortController = new AbortController();
@@ -304,7 +342,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           payload: { trigger: run.trigger },
         });
 
-        const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
+        const discovered =
+          !evaluationPolicy && deps.connector ? await deps.connector.discoverTools(context) : [];
         const history = [...messages].reverse().map((m) => ({
           role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
             | "user"
@@ -312,14 +351,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             | "system",
           content: blocksToText(m.blocks as MessageBlock[]),
         }));
-        const memoryContext = await loadAgentMemoryContext(deps.memory, bot.id, context);
-        const resolved = await resolveModelKey(
-          deps,
-          run.userId,
-          run.workspaceId,
-          credential,
-          (values) => runSecrets.push(...values),
-        );
+        const memoryContext = evaluationPolicy
+          ? ""
+          : await loadAgentMemoryContext(deps.memory, bot.id, context);
+        const resolved = evaluationPolicy
+          ? { redact: [] as string[] }
+          : await resolveModelKey(deps, run.userId, run.workspaceId, credential, (values) =>
+              runSecrets.push(...values),
+            );
         runSecrets.push(...resolved.redact);
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;
@@ -331,12 +370,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const builtins = graphical
           ? builtinAgentTools
           : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name));
-        const tools = [
-          ...builtins,
-          ...discovered.filter(
-            (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
-          ),
-        ];
+        const tools = evaluationPolicy
+          ? modelVisibleEvaluationTools(evaluationPolicy)
+          : [
+              ...builtins,
+              ...discovered.filter(
+                (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
+              ),
+            ];
         const computerInstruction = graphical
           ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Another user may interact with the same desktop while you run, so re-observe when it may have changed."
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
@@ -352,6 +393,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let terminalCheckpointComplete = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
+        if (evaluationPolicy && !scripted) {
+          await denyEvaluationPreflight(deps, run, "LIVE_RUNTIME_PROHIBITED");
+          return;
+        }
         const script = scripted
           ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
           : undefined;
@@ -363,12 +408,62 @@ export function createRunExecutor(deps: ExecutorDeps) {
           lastComputerFrameId = observation.frameId;
           return result;
         };
+        const evaluationDispatcher = evaluationPolicy
+          ? new EvaluationToolDispatcher(evaluationPolicy, {
+              appendDenial: async (receipt) => {
+                await deps.events.append({
+                  workspaceId: run.workspaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  type: "evaluation.policy.denied",
+                  runId,
+                  payload: receipt,
+                });
+              },
+            })
+          : null;
 
         const applyTool = async (
           name: string,
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          if (evaluationPolicy && evaluationDispatcher) {
+            const emitEvaluationTool = async (
+              type:
+                | "evaluation.result.written"
+                | "evaluation.halt.requested"
+                | "evaluation.review.requested",
+              invocation: { args: Record<string, unknown> },
+            ) => {
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                type,
+                runId,
+                payload: {
+                  caseId: evaluationPolicy.case_id,
+                  argumentKeys: Object.keys(invocation.args).sort(),
+                },
+              });
+              return { ok: true };
+            };
+            const handlers: EvaluationToolHandlers = {
+              evaluation_read_case: async () => ({
+                ok: true,
+                synthetic: true,
+                caseId: evaluationPolicy.case_id,
+              }),
+              evaluation_write_result: (invocation) =>
+                emitEvaluationTool("evaluation.result.written", invocation),
+              evaluation_halt: (invocation) =>
+                emitEvaluationTool("evaluation.halt.requested", invocation),
+              evaluation_request_review: (invocation) =>
+                emitEvaluationTool("evaluation.review.requested", invocation),
+            };
+            return evaluationDispatcher.dispatch(name, args, executionId, handlers);
+          }
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined
             : await recordEffect(deps, run, name, executionId, args);
@@ -674,15 +769,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
               runId,
               prompt: task.prompt,
               instructions: [
-                bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+                evaluationPolicy
+                  ? `Synthetic evaluation ${evaluationPolicy.pack_id} case ${evaluationPolicy.case_id}. Use only the four exposed evaluation tools. No external action is authorized.`
+                  : bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
-                `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
-                workspaceInstruction,
+                evaluationPolicy
+                  ? undefined
+                  : `${computerInstruction} Use remember for durable facts. Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
+                evaluationPolicy ? undefined : workspaceInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
-                pluginLine,
+                evaluationPolicy
+                  ? "No connectors or plugins are exposed in evaluation mode."
+                  : pluginLine,
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
               ]
                 .filter((instruction): instruction is string => Boolean(instruction))
@@ -1057,6 +1158,40 @@ async function notifyRun(
       signal: new AbortController().signal,
     })
     .catch(() => undefined);
+}
+
+async function denyEvaluationPreflight(
+  deps: ExecutorDeps,
+  run: {
+    id: string;
+    workspaceId: string;
+    threadId: string;
+    botId: string;
+    taskId: string;
+  },
+  reason: string,
+): Promise<void> {
+  const stopped = await deps.prisma.run.updateMany({
+    where: { id: run.id, status: { notIn: ["completed", "cancelled", "failed"] } },
+    data: {
+      status: "cancelled",
+      error: `Evaluation preflight denied: ${reason}`,
+      completedAt: new Date(),
+    },
+  });
+  if (stopped.count !== 1) return;
+  await deps.prisma.task.updateMany({
+    where: { id: run.taskId, status: { notIn: ["completed", "cancelled", "failed"] } },
+    data: { status: "cancelled" },
+  });
+  await deps.events.append({
+    workspaceId: run.workspaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    type: "evaluation.preflight.denied",
+    runId: run.id,
+    payload: { reason, terminalState: "HALTED_POLICY" },
+  });
 }
 
 async function renewRunLease(

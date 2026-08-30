@@ -32,6 +32,11 @@ export const ProductEventType = z.enum([
   "bot.spawned",
   "bot.archived",
   "bot.deleted",
+  "evaluation.preflight.denied",
+  "evaluation.policy.denied",
+  "evaluation.result.written",
+  "evaluation.halt.requested",
+  "evaluation.review.requested",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
 

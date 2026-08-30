@@ -1,4 +1,9 @@
 import type {
+  EvaluationPolicyDenialReceipt,
+  EvaluationRunPolicy,
+  EvaluationToolId,
+} from "@rakazo/contracts";
+import type {
   AdapterContext,
   AdapterDescriptor,
   AgentRunRequest,
@@ -36,6 +41,21 @@ import type {
   SecretRecord,
   SnapshotRef,
 } from "./types.js";
+
+export interface EvaluationToolInvocation {
+  policy: EvaluationRunPolicy;
+  tool: EvaluationToolId;
+  args: Record<string, unknown>;
+  executionId: string;
+}
+
+export type EvaluationToolHandlers = {
+  [Tool in EvaluationToolId]: (invocation: EvaluationToolInvocation) => Promise<unknown>;
+};
+
+export interface EvaluationEvidenceSink {
+  appendDenial(receipt: EvaluationPolicyDenialReceipt): Promise<void>;
+}
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
