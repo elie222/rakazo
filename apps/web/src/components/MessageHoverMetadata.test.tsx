@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
-import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it } from "vitest";
 import { MessageHoverMetadata } from "./MessageHoverMetadata";
 
 describe("MessageHoverMetadata", () => {
