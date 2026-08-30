@@ -1,7 +1,49 @@
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createRunExecutor } from "./executor.js";
+import { createRunExecutor, runNotificationsEnabled } from "./executor.js";
+
+describe("run notification preference", () => {
+  it("silences direct messages but leaves group notifications enabled", async () => {
+    let source: { bot: { notifyOnFinish: boolean }; thread: { groupId: string | null } } | null = {
+      bot: { notifyOnFinish: false },
+      thread: { groupId: null },
+    };
+    const findFirst = vi.fn(async () => source);
+    const prisma = { run: { findFirst } } as unknown as PrismaClient;
+
+    await expect(
+      runNotificationsEnabled(prisma, {
+        botId: "bot-1",
+        threadId: "thread-1",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+      }),
+    ).resolves.toBe(false);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        botId: "bot-1",
+        threadId: "thread-1",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+      },
+      select: {
+        bot: { select: { notifyOnFinish: true } },
+        thread: { select: { groupId: true } },
+      },
+    });
+
+    source = { bot: { notifyOnFinish: false }, thread: { groupId: "group-1" } };
+    await expect(
+      runNotificationsEnabled(prisma, {
+        botId: "bot-1",
+        threadId: "thread-1",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+      }),
+    ).resolves.toBe(true);
+  });
+});
 
 describe("createRunExecutor", () => {
   it("deactivates one-shot routines after wake without scheduling another wakeup", async () => {

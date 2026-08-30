@@ -22,6 +22,7 @@ type NativeNotifications = {
   setSettings(settings: LiveNotificationSettings, endpoint: string, token: string): Promise<void>;
   resume(endpoint: string, token: string): Promise<void>;
   stop(clearSession: boolean): Promise<void>;
+  setOpenThread(botId: string | null, threadId: string | null): Promise<void>;
   openSettings(): Promise<void>;
   canPostPromotedNotifications(): Promise<boolean>;
   openPromotedSettings(): Promise<void>;
@@ -31,6 +32,39 @@ const nativeNotifications =
   Platform.OS === "android"
     ? requireNativeModule<NativeNotifications>("RakazoNotifications")
     : null;
+
+export type NotificationThreadTarget = { botId?: string; threadId?: string };
+
+let openThread: NotificationThreadTarget | null = null;
+let foregroundHandlerConfigured = false;
+
+export function notificationTargetsThread(
+  data: Record<string, unknown> | null | undefined,
+  target: NotificationThreadTarget | null,
+): boolean {
+  if (!data || !target) return false;
+  const dataThreadId = data.threadId ?? data["rakazo.threadId"];
+  if (target.threadId && dataThreadId) return dataThreadId === target.threadId;
+  return Boolean(
+    target.botId && (data.botId === target.botId || data["rakazo.botId"] === target.botId),
+  );
+}
+
+export function configureForegroundNotifications(): void {
+  if (foregroundHandlerConfigured) return;
+  foregroundHandlerConfigured = true;
+  Notifications.setNotificationHandler({
+    handleNotification: async ({ request }) => {
+      const show = !notificationTargetsThread(request.content.data, openThread);
+      return {
+        shouldShowBanner: show,
+        shouldShowList: show,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      };
+    },
+  });
+}
 
 export async function getLiveNotificationSettings(): Promise<LiveNotificationSettings> {
   return nativeNotifications?.getSettings() ?? DEFAULT_LIVE_NOTIFICATION_SETTINGS;
@@ -65,6 +99,13 @@ export async function stopLiveNotifications(clearSession = false): Promise<void>
   await nativeNotifications?.stop(clearSession);
 }
 
+export async function setOpenNotificationThread(
+  target: NotificationThreadTarget | null,
+): Promise<void> {
+  openThread = target;
+  await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
+}
+
 export async function dismissThreadNotifications(target: {
   botId?: string;
   threadId?: string;
@@ -75,12 +116,7 @@ export async function dismissThreadNotifications(target: {
     presented
       .filter(({ request }) => {
         const data = request.content.data ?? {};
-        return (
-          (target.botId &&
-            (data.botId === target.botId || data["rakazo.botId"] === target.botId)) ||
-          (target.threadId &&
-            (data.threadId === target.threadId || data["rakazo.threadId"] === target.threadId))
-        );
+        return notificationTargetsThread(data, target);
       })
       .map(({ request }) => Notifications.dismissNotificationAsync(request.identifier)),
   );

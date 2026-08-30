@@ -99,10 +99,14 @@ describe("expo push", () => {
     const body = JSON.parse(String(init.body)) as {
       to: string;
       title: string;
+      collapseId: string;
+      tag: string;
       data: { kind: string };
     };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
+    expect(body.collapseId).toBe("th-1");
+    expect(body.tag).toBe("th-1");
     expect(body.data.kind).toBe("takeover");
   });
 

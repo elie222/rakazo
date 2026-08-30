@@ -22,9 +22,8 @@ export class ThreadScrollBehavior {
   }
 
   onLayout(): ThreadScrollAction {
-    if (this.laidOut) return null;
     this.laidOut = true;
-    return this.contentReady ? "jump" : null;
+    return this.contentReady && !this.currentState.detached ? "jump" : null;
   }
 
   onContentChanged(blocked: boolean, latestMessageId: string | null): ThreadScrollAction {

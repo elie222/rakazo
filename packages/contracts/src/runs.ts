@@ -19,6 +19,7 @@ export const RunActivityRowSchema = z.object({
     "bot_message",
     "webhook",
   ]),
+  notificationsEnabled: z.boolean(),
   promptSnippet: z.string(),
   updatedAt: z.string(),
 });

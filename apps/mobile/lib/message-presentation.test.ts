@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
+  messagePresentationSegments,
   toolBlocksForMessage,
   toolOwnerId,
 } from "./message-presentation";
@@ -56,5 +57,31 @@ describe("mobile message presentation", () => {
       undefined,
     );
     expect(toolOwnerId(progress, false)).toBe(undefined);
+  });
+
+  it("keeps tool usage in its original place between response content", () => {
+    const tool: Extract<MessageBlock, { kind: "steps" }> = {
+      kind: "steps",
+      steps: [{ label: "Read file", count: 1 }],
+    };
+
+    expect(
+      messagePresentationSegments([
+        { kind: "text", text: "Checking." },
+        tool,
+        { kind: "text", text: "Done." },
+      ]),
+    ).toEqual([
+      { kind: "content", blocks: [{ kind: "text", text: "Checking." }] },
+      { kind: "tool", block: tool },
+      { kind: "content", blocks: [{ kind: "text", text: "Done." }] },
+    ]);
+
+    expect(
+      messagePresentationSegments([
+        { kind: "steps", steps: [{ label: "Message bot", count: 1 }] },
+        { kind: "text", text: "Done." },
+      ]),
+    ).toEqual([{ kind: "content", blocks: [{ kind: "text", text: "Done." }] }]);
   });
 });

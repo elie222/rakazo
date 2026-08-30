@@ -197,6 +197,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     fromBotId: Id,
     toBotId: Id,
     text: z.string(),
+    /** Links ownership transfers in one user-started group turn. */
+    hop: z.number().int().positive().optional(),
   }),
   z.object({
     /** Shown in the sending bot's own chat, so the user can see what it sent. */

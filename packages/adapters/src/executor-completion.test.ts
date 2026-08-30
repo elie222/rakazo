@@ -15,6 +15,14 @@ describe("completionMessageSegments", () => {
     expect(completionMessageSegments([], { allowSilentEmpty: true })).toEqual([]);
   });
 
+  it("drops narration after a successful group handoff", () => {
+    expect(
+      completionMessageSegments([{ kind: "text", text: "Research is checking this." }], {
+        suppressOutput: true,
+      }),
+    ).toEqual([]);
+  });
+
   it("uses a contextual fallback for a non-silent peer result", () => {
     expect(
       completionMessageSegments([], { emptyResponseText: "Update from Researcher: 42" }),

@@ -15,6 +15,7 @@ import Animated, {
 import Svg, { G, Path, Rect } from "react-native-svg";
 import { workingAvatarDuration, workingAvatarFrame } from "../lib/avatar-motion";
 import { useAvatarStyle } from "./avatar-style";
+import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
@@ -24,12 +25,14 @@ export const BotAvatar = memo(function BotAvatar({
   status,
   identity,
   variant,
+  muted = false,
 }: {
   color: string;
   size?: number;
   status?: string;
   identity?: string;
   variant?: AvatarStyle;
+  muted?: boolean;
 }) {
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
@@ -84,7 +87,8 @@ export const BotAvatar = memo(function BotAvatar({
           accessibilityLabel="Working"
           style={{
             position: "absolute",
-            right: 0,
+            right: muted ? undefined : 0,
+            left: muted ? 0 : undefined,
             bottom: 0,
             width: Math.max(6, Math.round(size * 0.18)),
             height: Math.max(6, Math.round(size * 0.18)),
@@ -92,6 +96,32 @@ export const BotAvatar = memo(function BotAvatar({
             backgroundColor: "#F5A03C",
           }}
         />
+      ) : null}
+      {muted ? (
+        <View
+          accessible
+          accessibilityLabel="Notifications silenced"
+          style={{
+            position: "absolute",
+            right: -2,
+            bottom: -2,
+            width: Math.max(14, Math.round(size * 0.34)),
+            height: Math.max(14, Math.round(size * 0.34)),
+            borderRadius: size,
+            borderWidth: 2,
+            borderColor: "#000",
+            backgroundColor: "#242428",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <NativeSymbol
+            ios="bell.slash.fill"
+            android="notifications-off"
+            size={Math.max(8, Math.round(size * 0.17))}
+            color="#ECECEE"
+          />
+        </View>
       ) : null}
     </View>
   );

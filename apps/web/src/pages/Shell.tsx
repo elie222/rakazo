@@ -220,9 +220,10 @@ type PendingAttachment = {
 };
 
 type PendingBrowserNotification = {
-  event: Pick<ProductEvent, "id" | "type" | "botId" | "payload">;
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
   botId: string;
   botName: string;
+  groupNotification: boolean;
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
@@ -514,20 +515,20 @@ export function ShellPage() {
       pending.event,
       currentBot.name || pending.botName,
       {
-        enabled: currentBot.notifyOnFinish,
+        enabled: pending.groupNotification || currentBot.notifyOnFinish,
         pageVisible: document.visibilityState === "visible",
         windowFocused: document.hasFocus(),
         permission: Notification.permission,
         notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body) => new Notification(title, { body }),
+        show: (title, body, tag) => new Notification(title, { body, tag }),
       },
     );
     return result !== "pending";
   }, []);
   const flushPendingBrowserNotifications = useCallback(() => {
-    for (const [eventId, pending] of pendingBrowserNotifications.current) {
+    for (const [threadId, pending] of pendingBrowserNotifications.current) {
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(eventId);
+        pendingBrowserNotifications.current.delete(threadId);
       }
     }
   }, [deliverBrowserNotification]);
@@ -538,6 +539,8 @@ export function ShellPage() {
       initialCursor: number,
       streamReady: boolean,
       botName: string,
+      enabled: boolean,
+      groupNotification: boolean,
     ) => {
       const botId = event.botId;
       if (typeof botId !== "string") return;
@@ -550,17 +553,22 @@ export function ShellPage() {
         permission: "granted",
         notifiedEventIds: notifiedBrowserEvents.current,
       });
-      if (!eligible || !botsRef.current.find((bot) => bot.id === botId)?.notifyOnFinish) return;
-      const pending = { event, botId, botName } satisfies PendingBrowserNotification;
+      if (!eligible || !enabled) return;
+      const pending = {
+        event,
+        botId,
+        botName,
+        groupNotification,
+      } satisfies PendingBrowserNotification;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(event.id, pending);
+        pendingBrowserNotifications.current.set(event.threadId, pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(event.id);
+        pendingBrowserNotifications.current.delete(event.threadId);
       } else {
-        pendingBrowserNotifications.current.set(event.id, pending);
+        pendingBrowserNotifications.current.set(event.threadId, pending);
       }
     },
     [deliverBrowserNotification],
@@ -1057,6 +1065,8 @@ export function ShellPage() {
               initialCursor,
               streamReady,
               currentBot?.name ?? active.name,
+              currentBot?.notifyOnFinish ?? false,
+              false,
             );
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
@@ -1220,6 +1230,8 @@ export function ShellPage() {
               initialCursor,
               streamReady,
               eventBot?.name ?? activeGroup.name,
+              true,
+              true,
             );
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);

@@ -67,12 +67,15 @@ import {
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { saveLastBotId } from "../lib/last-bot";
-import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
+import {
+  dismissThreadNotifications,
+  resumeLiveNotifications,
+  setOpenNotificationThread,
+} from "../lib/live-notifications";
 import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
-  isToolBlock,
-  toolBlocksForMessage,
+  messagePresentationSegments,
   toolOwnerId,
 } from "../lib/message-presentation";
 import {
@@ -144,10 +147,17 @@ export default function Thread() {
   activeGroupId.current = groupId;
   const readVisibleTarget = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
-  scrollBehavior.current.openThread(threadKey ?? "");
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
     scrollBehavior.current.state(),
   );
+  useLayoutEffect(() => {
+    scrollBehavior.current.openThread(threadKey ?? "");
+    expandedHistoryThread.current = null;
+    pinnedAroundRef.current = null;
+    jumpScrollTarget.current = null;
+    loadingOlderContent.current = false;
+    setThreadScrollState(scrollBehavior.current.state());
+  }, [threadKey]);
   const reducedMotion = useReducedMotion();
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
@@ -156,7 +166,6 @@ export default function Thread() {
       : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const activeThreadId = useRef<string | undefined>(undefined);
-  activeThreadId.current = snap?.threadId;
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
@@ -243,8 +252,22 @@ export default function Thread() {
         )
       : [];
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
-  const currentBotStatus = snap?.run?.status ?? currentBot?.status;
+  const notificationThreadId = snap?.threadId ?? currentBot?.threadId;
+  activeThreadId.current = notificationThreadId;
+  const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
+  const workingGroupBots = useMemo(() => {
+    if (!inGroup) return [];
+    const seen = new Set<string>();
+    const working = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
+    return working.flatMap((run) => {
+      if (!run.botId || seen.has(run.botId) || !isWorkingStatus(run.status)) return [];
+      const member = snap?.members?.find((candidate) => candidate.botId === run.botId);
+      if (!member) return [];
+      seen.add(run.botId);
+      return [{ ...member, status: run.status }];
+    });
+  }, [inGroup, snap?.activeRuns, snap?.members, snap?.run]);
 
   useEffect(() => {
     void rpc<AgentSkillCatalogEntry[]>("agentSkills/list")
@@ -352,6 +375,7 @@ export default function Thread() {
               identity={currentBot.id}
               size={34}
               status={currentBotStatus}
+              muted={!currentBot.notifyOnFinish}
             />
           ) : null}
           <Text numberOfLines={1} style={{ color: "#ECECEE", fontSize: 18, fontWeight: "600" }}>
@@ -534,10 +558,9 @@ export default function Thread() {
     const target = groupId ?? botId;
     if (!target || readVisibleTarget.current === target) return;
     readVisibleTarget.current = target;
-    void dismissThreadNotifications({
-      botId,
-      threadId: activeThreadId.current,
-    }).catch(() => undefined);
+    if (activeThreadId.current) {
+      void dismissThreadNotifications({ threadId: activeThreadId.current }).catch(() => undefined);
+    }
     if (groupId) {
       void rpc("threads/markRead", { groupId }).catch(() => {
         if (readVisibleTarget.current === target) readVisibleTarget.current = null;
@@ -550,24 +573,46 @@ export default function Thread() {
   }, [botId, groupId, navigation]);
 
   useEffect(() => {
-    if (!snap?.threadId || AppState.currentState !== "active" || !navigation.isFocused()) return;
-    void dismissThreadNotifications({ botId, threadId: snap.threadId }).catch(() => undefined);
-  }, [botId, navigation, snap?.threadId]);
+    if (!notificationThreadId || AppState.currentState !== "active" || !navigation.isFocused())
+      return;
+    void setOpenNotificationThread({ botId, threadId: notificationThreadId }).catch(
+      () => undefined,
+    );
+    void dismissThreadNotifications({ threadId: notificationThreadId }).catch(() => undefined);
+  }, [botId, navigation, notificationThreadId]);
 
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
     useCallback(() => {
       if (botId) void saveLastBotId(botId).catch(() => undefined);
+      if (AppState.currentState === "active" && notificationThreadId) {
+        void setOpenNotificationThread({
+          botId,
+          threadId: notificationThreadId,
+        }).catch(() => undefined);
+      }
       markReadIfVisible();
-    }, [botId, markReadIfVisible]),
+      return () => {
+        void setOpenNotificationThread(null).catch(() => undefined);
+      };
+    }, [botId, markReadIfVisible, notificationThreadId]),
   );
 
   useEffect(() => {
     const appState = AppState.addEventListener("change", (state) => {
-      if (state === "active") markReadIfVisible();
+      if (state === "active") {
+        if (!navigation.isFocused() || !notificationThreadId) return;
+        void setOpenNotificationThread({
+          botId,
+          threadId: notificationThreadId,
+        }).catch(() => undefined);
+        markReadIfVisible();
+        return;
+      }
+      void setOpenNotificationThread(null).catch(() => undefined);
     });
     return () => appState.remove();
-  }, [markReadIfVisible]);
+  }, [botId, markReadIfVisible, navigation, notificationThreadId]);
 
   useEffect(() => {
     if (!botId && !groupId) return;
@@ -948,6 +993,7 @@ export default function Thread() {
       {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
       <View style={{ flex: 1, position: "relative" }}>
         <ScrollView
+          key={threadKey}
           ref={scroll}
           style={{ flex: 1, marginTop: 8 }}
           scrollEventThrottle={16}
@@ -1118,6 +1164,41 @@ export default function Thread() {
                 status={currentBotStatus}
               />
               <Text style={{ color: "#85858A", fontSize: 13.5 }}>{currentBot.name} is working</Text>
+            </View>
+          ) : null}
+          {inGroup && workingGroupBots.length > 0 ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                minHeight: 40,
+                marginTop: 12,
+              }}
+            >
+              <View style={{ flexDirection: "row", paddingRight: 8 }}>
+                {workingGroupBots.map((bot, index) => (
+                  <View
+                    key={bot.botId}
+                    style={{
+                      marginLeft: index === 0 ? 0 : -8,
+                      zIndex: workingGroupBots.length - index,
+                    }}
+                  >
+                    <BotAvatar
+                      color={bot.color}
+                      identity={bot.botId}
+                      size={28}
+                      status={bot.status}
+                    />
+                  </View>
+                ))}
+              </View>
+              <Text style={{ color: "#85858A", fontSize: 13.5, flexShrink: 1 }}>
+                {workingGroupBots.length === 1
+                  ? `${workingGroupBots[0]?.name ?? "Agent"} is working`
+                  : `${workingGroupBots.length} agents working`}
+              </Text>
             </View>
           ) : null}
         </ScrollView>
@@ -2014,69 +2095,88 @@ function MessageBubble({
       </View>
     );
   }
-  const toolBlocks = toolBlocksForMessage(message.blocks);
-  const contentBlocks = message.blocks.filter((block) => !isToolBlock(block));
-  const contentText = blockText({ ...message, blocks: contentBlocks });
+  const segments = messagePresentationSegments(message.blocks);
   const speaker =
     message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+  const firstContent = segments.findIndex((segment) => segment.kind === "content");
+  const lastContent = segments.reduce(
+    (last, segment, index) => (segment.kind === "content" ? index : last),
+    -1,
+  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
-      {contentText ? (
-        <View
-          style={{
-            flexShrink: 1,
-            minWidth: 0,
-            maxWidth: "100%",
-            backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
-            padding: 12,
-            borderRadius: 20,
-          }}
-        >
-          {speaker ? (
-            <Text
-              style={{
-                color: "#85858A",
-                fontSize: 12.5,
-                fontWeight: "600",
-                marginBottom: 4,
-              }}
-            >
-              {speaker}
-            </Text>
-          ) : null}
-          {replyPreview ? (
-            <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 6 }} numberOfLines={2}>
-              {previewMessageText(replyPreview)}
-            </Text>
-          ) : null}
-          {message.role === "user" ? (
-            <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>{contentText}</Text>
-          ) : (
-            <>
-              <ChatMarkdown streaming={message.id.startsWith("progress:")}>
-                {contentText}
-              </ChatMarkdown>
-              {onSpeak ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Speak message"
-                  onPress={onSpeak}
-                  hitSlop={8}
-                  style={{ marginTop: 8 }}
-                >
-                  <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
-                </Pressable>
-              ) : null}
-            </>
-          )}
-        </View>
-      ) : null}
-      {toolBlocks.map((block, index) => (
-        <ExpandableToolBlock key={`${message.id}-tools-${index}`} block={block} />
-      ))}
+      {segments.map((segment, index) =>
+        segment.kind === "tool" ? (
+          <ExpandableToolBlock key={`${message.id}-tools-${index}`} block={segment.block} />
+        ) : (
+          <MessageTextCard
+            key={`${message.id}-content-${index}`}
+            message={{ ...message, blocks: segment.blocks }}
+            speaker={index === firstContent ? speaker : undefined}
+            replyPreview={index === firstContent ? replyPreview : undefined}
+            onSpeak={index === lastContent ? onSpeak : undefined}
+          />
+        ),
+      )}
       {appConnectBlocks.map((block, index) => (
         <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
       ))}
+    </View>
+  );
+}
+
+function MessageTextCard({
+  message,
+  speaker,
+  replyPreview,
+  onSpeak,
+}: {
+  message: MobileMessage;
+  speaker?: string;
+  replyPreview?: MobileMessage;
+  onSpeak?: () => void;
+}) {
+  const contentText = blockText(message);
+  if (!contentText) return null;
+  return (
+    <View
+      style={{
+        flexShrink: 1,
+        minWidth: 0,
+        maxWidth: "100%",
+        backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
+        padding: 12,
+        borderRadius: 20,
+      }}
+    >
+      {speaker ? (
+        <Text style={{ color: "#85858A", fontSize: 12.5, fontWeight: "600", marginBottom: 4 }}>
+          {speaker}
+        </Text>
+      ) : null}
+      {replyPreview ? (
+        <Text style={{ color: "#85858A", fontSize: 12.5, marginBottom: 6 }} numberOfLines={2}>
+          {previewMessageText(replyPreview)}
+        </Text>
+      ) : null}
+      {message.role === "user" ? (
+        <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>{contentText}</Text>
+      ) : (
+        <>
+          <ChatMarkdown streaming={message.id.startsWith("progress:")}>{contentText}</ChatMarkdown>
+          {onSpeak ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Speak message"
+              onPress={onSpeak}
+              hitSlop={8}
+              style={{ marginTop: 8 }}
+            >
+              <Text style={{ color: "#85858A", fontSize: 13 }}>Speak</Text>
+            </Pressable>
+          ) : null}
+        </>
+      )}
     </View>
   );
 }

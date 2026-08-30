@@ -11,6 +11,10 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
 
 type ToolBlock = Extract<MessageBlock, { kind: "progress" | "steps" }>;
 
+export type MessagePresentationSegment =
+  | { kind: "content"; blocks: MessageBlock[] }
+  | { kind: "tool"; block: ToolBlock };
+
 export function toolBlocksForMessage(blocks: readonly MessageBlock[]): ToolBlock[] {
   const visible: ToolBlock[] = [];
   for (const block of blocks) {
@@ -28,6 +32,32 @@ export function toolBlocksForMessage(blocks: readonly MessageBlock[]): ToolBlock
     }
   }
   return visible;
+}
+
+export function messagePresentationSegments(
+  blocks: readonly MessageBlock[],
+): MessagePresentationSegment[] {
+  const segments: MessagePresentationSegment[] = [];
+  let content: MessageBlock[] = [];
+  const flushContent = () => {
+    if (content.length === 0) return;
+    segments.push({ kind: "content", blocks: content });
+    content = [];
+  };
+
+  for (const block of blocks) {
+    if (block.kind === "app_connect") continue;
+    if (!isToolBlock(block)) {
+      content.push(block);
+      continue;
+    }
+    const visibleTool = toolBlocksForMessage([block])[0];
+    if (!visibleTool) continue;
+    flushContent();
+    segments.push({ kind: "tool", block: visibleTool });
+  }
+  flushContent();
+  return segments;
 }
 
 export function toolOwnerId(

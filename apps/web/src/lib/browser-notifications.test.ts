@@ -123,6 +123,7 @@ describe("browser notifications", () => {
     expect(notifiedEventIds).toEqual(new Set());
     expect(delivery("granted")).toBe("delivered");
     expect(notifiedEventIds).toEqual(new Set(["event-1"]));
+    expect(show).toHaveBeenLastCalledWith("Chief", "The pool is balanced.", "thread-1");
     expect(delivery("granted")).toBe("discarded");
     expect(delivery("granted", event({ id: "event-2" }))).toBe("delivered");
     expect(show).toHaveBeenCalledTimes(3);

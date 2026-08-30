@@ -16,6 +16,7 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   type ThreadHistory,
+  upsertMessageById,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
@@ -166,6 +167,8 @@ export type MobileBot = Pick<
   | "preview"
   | "title"
   | "color"
+  | "notifyOnFinish"
+  | "threadId"
   | "pinned"
   | "status"
   | "sectionId"
@@ -500,10 +503,9 @@ export function applyMobileThreadEvent(
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
-      messages: [
-        ...remaining.filter(
+      messages: upsertMessageById(
+        remaining.filter(
           (message) =>
-            message.id !== next.id &&
             !(
               message.id.startsWith("subagent:") &&
               next.blocks.some(
@@ -512,7 +514,7 @@ export function applyMobileThreadEvent(
             ),
         ),
         next,
-      ],
+      ),
     };
   }
   return prev;

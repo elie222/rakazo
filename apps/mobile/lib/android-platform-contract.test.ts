@@ -34,6 +34,7 @@ describe("Android mobile platform contract", () => {
     const module = readFileSync(resolve(nativeRoot, "RakazoNotificationsModule.kt"), "utf8");
     const allowlist = readFileSync(resolve(nativeRoot, "EndpointAllowlist.kt"), "utf8");
     const live = readFileSync(resolve(mobileRoot, "lib/live-notifications.ts"), "utf8");
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     expect(service).toContain("android.requestPromotedOngoing");
     expect(service).toContain("liveStatusIcon(primary, avatarStyle)");
     expect(service).toContain('rpc(endpoint, token, "me"');
@@ -56,18 +57,33 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain(
       "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
     );
-    expect(service).toContain(
-      "val generation = synchronized(sessionLock) { sessionGeneration.incrementAndGet() }",
-    );
+    expect(service).toContain("val generation = synchronized(sessionLock)");
+    expect(service).toContain("ACTION_THREAD_CHANGED");
     expect(service).toContain(
       "private fun runIfCurrent(generation: Long, action: () -> Unit): Boolean",
     );
     expect(service).toContain("private fun stopIfCurrent(generation: Long)");
     expect(service).toContain("synchronized(sessionLock)");
+    expect(service).toContain("working.filterNot(::isOpenThread)");
+    expect(service).toContain("!run.notificationsEnabled || isOpenThread(run)");
+    expect(service).toContain(
+      "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
+    );
+    expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
+    expect(service).toContain("THREAD_NOTIFICATION_IDS");
+    expect(service).toContain("cancel(threadId.hashCode())");
+    expect(module).toContain('AsyncFunction("setOpenThread")');
+    expect(live).toContain("setOpenNotificationThread");
+    expect(thread).toContain("if (!navigation.isFocused() || !notificationThreadId) return");
     expect(service).toContain(
       "fun clearSession(context: Context) {\n      synchronized(sessionLock)",
     );
     expect(service).not.toContain("private fun postCompletion(");
+    expect(service).toContain('"rakazo://group-thread?groupId=');
+    expect(service).toContain('if (run.groupId != null) put("groupId", run.groupId)');
+    expect(service).toContain('if (message.optString("runId") != run.runId) continue');
+    expect(service).toContain('if (block.optString("kind") == "handoff") return null');
+    expect(service).toContain("run?.threadId?.hashCode() ?: 0");
   });
 
   it("shows live updates only for working runs and ties the pill to a real bot", () => {
@@ -78,8 +94,12 @@ describe("Android mobile platform contract", () => {
       ),
       "utf8",
     );
-    expect(service).toContain("val working = active.filter(::isWorking)");
-    expect(service).toMatch(/if \(working\.isEmpty\(\)\) clearLive\(\) else showLive\(working/);
+    expect(service).toContain(
+      "val working = active.filter(::isWorking).filter { it.notificationsEnabled }",
+    );
+    expect(service).toMatch(
+      /if \(visibleWorking\.isEmpty\(\)\) clearLive\(\) else showLive\(visibleWorking/,
+    );
     expect(service).toMatch(
       /private fun showLive\(active: List<RunRecord>[\s\S]*val primary = active\.first\(\)/,
     );
@@ -94,5 +114,37 @@ describe("Android mobile platform contract", () => {
     expect(thread).toContain("dismissThreadNotifications");
     expect(notifications).toContain("getPresentedNotificationsAsync");
     expect(notifications).toContain("dismissNotificationAsync");
+  });
+
+  it("reconciles finished agents and opens ordinary chats at the latest message", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const scroll = readFileSync(resolve(mobileRoot, "lib/thread-scroll.ts"), "utf8");
+    expect(thread).toContain(
+      "const currentBotStatus = snap ? snap.run?.status : currentBot?.status",
+    );
+    expect(thread).toContain("key={threadKey}");
+    expect(scroll).toContain('this.contentReady && !this.currentState.detached ? "jump" : null');
+  });
+
+  it("stacks every currently working agent in a group footer", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    expect(thread).toContain("workingGroupBots.map");
+    expect(thread).toContain("inGroup && workingGroupBots.length > 0 ?");
+    expect(thread).toContain("workingGroupBots.length - index");
+    expect(thread).toContain("agents working");
+  });
+
+  it("shows agent notification silence in the menu, inbox avatar, and DM header only", () => {
+    const index = readFileSync(resolve(mobileRoot, "app/index.tsx"), "utf8");
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const avatar = readFileSync(resolve(mobileRoot, "components/bot-avatar.tsx"), "utf8");
+    const menu = readFileSync(resolve(mobileRoot, "components/bot-organize-modal.tsx"), "utf8");
+    expect(menu).toContain("Silence notifications");
+    expect(menu).toContain("Resume notifications");
+    expect(index).toContain("muted={!bot.notifyOnFinish}");
+    expect(thread).toContain("muted={!currentBot.notifyOnFinish}");
+    expect(avatar).toContain('accessibilityLabel="Notifications silenced"');
+    expect(avatar).toContain('android="notifications-off"');
+    expect(thread.match(/muted=\{/g)).toHaveLength(1);
   });
 });

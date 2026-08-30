@@ -87,6 +87,8 @@ export class ExpoPushProvider implements NotificationProvider {
           to: token,
           title: message.title,
           body: message.body,
+          collapseId: message.threadId,
+          tag: message.threadId,
           data: { kind: message.kind, botId: message.botId, threadId: message.threadId },
         }),
       });

@@ -28,13 +28,13 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.onContentChanged(false, "m2")).toBe("smooth");
   });
 
-  it("does not jump again when keyboard resizing emits another layout", () => {
+  it("keeps the latest message visible when the viewport resizes", () => {
     const behavior = new ThreadScrollBehavior();
     behavior.openThread("thread-1");
     behavior.onContentChanged(false, "m1");
 
     expect(behavior.onLayout()).toBe("jump");
-    expect(behavior.onLayout()).toBe(null);
+    expect(behavior.onLayout()).toBe("jump");
   });
 
   it("keeps the initial jump pending while another scroll target blocks it", () => {
@@ -54,6 +54,7 @@ describe("mobile thread initial scroll", () => {
     behavior.onContentChanged(false, "m1");
 
     expect(behavior.onUserScroll(120)).toEqual({ detached: true, unread: false });
+    expect(behavior.onLayout()).toBe(null);
     expect(behavior.onContentChanged(false, "m2")).toBe(null);
     expect(behavior.state()).toEqual({ detached: true, unread: true });
     expect(behavior.jumpToLatest()).toBe("smooth");

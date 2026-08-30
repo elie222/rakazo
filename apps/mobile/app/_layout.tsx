@@ -6,10 +6,14 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { currentApiBase, loadApiBase, loadSessionToken } from "../lib/api";
-import { resumeLiveNotifications } from "../lib/live-notifications";
+import {
+  configureForegroundNotifications,
+  resumeLiveNotifications,
+} from "../lib/live-notifications";
 import { applyMobileUiDirection } from "../lib/ui-direction";
 
 applyMobileUiDirection();
+configureForegroundNotifications();
 
 export default function Layout() {
   const [ready, setReady] = useState(false);

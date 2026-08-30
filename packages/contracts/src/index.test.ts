@@ -149,6 +149,7 @@ describe("contracts", () => {
         threadId: run.threadId,
         status: run.status,
         trigger: run.trigger,
+        notificationsEnabled: true,
         promptSnippet: "Review the report",
         updatedAt: "2026-08-26T00:00:01.000Z",
       }).success,

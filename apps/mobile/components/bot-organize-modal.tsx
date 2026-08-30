@@ -7,6 +7,7 @@ import { NativeSymbol } from "./native-symbol";
 export type BotOrganizationUpdate = {
   pinned?: boolean;
   sectionId?: string | null;
+  notifyOnFinish?: boolean;
 };
 
 export function BotOrganizeModal({
@@ -16,7 +17,8 @@ export function BotOrganizeModal({
   onUpdate,
   onCreateSection,
 }: {
-  bot: Pick<MobileBot, "name" | "pinned" | "sectionId">;
+  bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> &
+    Partial<Pick<MobileBot, "notifyOnFinish">>;
   sections: MobileBotSection[];
   onClose: () => void;
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
@@ -53,6 +55,7 @@ export function BotOrganizeModal({
             {bot.name}
           </Text>
           <Pressable
+            accessibilityRole="button"
             disabled={saving}
             onPress={() => void save(() => onUpdate({ pinned: !bot.pinned }))}
             style={({ pressed }) => [styles.action, pressed && styles.pressed]}
@@ -64,6 +67,23 @@ export function BotOrganizeModal({
             />
             <Text style={styles.actionLabel}>{bot.pinned ? "Unpin" : "Pin"}</Text>
           </Pressable>
+          {typeof bot.notifyOnFinish === "boolean" ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={saving}
+              onPress={() => void save(() => onUpdate({ notifyOnFinish: !bot.notifyOnFinish }))}
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+            >
+              <NativeSymbol
+                ios={bot.notifyOnFinish ? "bell.slash" : "bell"}
+                android={bot.notifyOnFinish ? "notifications-off-outline" : "notifications-outline"}
+                size={18}
+              />
+              <Text style={styles.actionLabel}>
+                {bot.notifyOnFinish ? "Silence notifications" : "Resume notifications"}
+              </Text>
+            </Pressable>
+          ) : null}
           <Text style={styles.sectionLabel}>Move to</Text>
           <ScrollView style={styles.sectionOptions} keyboardShouldPersistTaps="handled">
             {sections.map((section) => (

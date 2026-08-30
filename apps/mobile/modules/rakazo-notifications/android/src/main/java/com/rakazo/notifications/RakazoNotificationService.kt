@@ -41,10 +41,13 @@ private data class RunRecord(
   val runId: String,
   val botId: String,
   val botName: String,
+  val groupId: String?,
+  val groupName: String?,
   val threadId: String,
   val status: String,
   val prompt: String,
   val trigger: String,
+  val notificationsEnabled: Boolean,
 )
 
 private class ApiException(val status: Int) : IOException()
@@ -61,11 +64,22 @@ class RakazoNotificationService : Service() {
     manager = getSystemService(NotificationManager::class.java)
     knownCompleted += getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
       .getStringSet(SEEN_RUNS, emptySet()).orEmpty()
+    val state = getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE)
+    if (!state.getBoolean(THREAD_NOTIFICATION_IDS, false)) {
+      manager.cancelAll()
+      state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
+    }
     createChannels()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val generation = synchronized(sessionLock) { sessionGeneration.incrementAndGet() }
+    val generation = synchronized(sessionLock) {
+      sessionGeneration.incrementAndGet().also {
+        if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
+          clearLive()
+        }
+      }
+    }
     pollJob?.cancel()
     pollJob = scope.launch { poll(generation) }
     return START_STICKY
@@ -98,18 +112,20 @@ class RakazoNotificationService : Service() {
         val avatarStyle = selectedAvatarStyle
           ?: avatarStyle(storage.endpoint, storage.token).also { selectedAvatarStyle = it }
         val active = runs(storage.endpoint, storage.token, "active")
-        val working = active.filter(::isWorking)
+        val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         val recent = runs(storage.endpoint, storage.token, "recent")
         val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
-            if (working.isEmpty()) clearLive() else showLive(working, avatarStyle)
+            val visibleWorking = working.filterNot(::isOpenThread)
+            if (visibleWorking.isEmpty()) clearLive() else showLive(visibleWorking, avatarStyle)
             if (!seeded) {
               knownCompleted += recent.map { it.runId }
               seeded = true
             } else {
               recent.asReversed().filter { knownCompleted.add(it.runId) }.forEach { run ->
                 when {
+                  !run.notificationsEnabled || isOpenThread(run) -> Unit
                   run.status == "failed" && settings.needsAttention ->
                     immediate += run to attentionCopy(run)
                   run.status != "completed" -> Unit
@@ -138,13 +154,18 @@ class RakazoNotificationService : Service() {
         }
         for ((run, scheduled) in replyLookups) {
           val reply = runCatching {
-            latestReply(storage.endpoint, storage.token, run.botId)
+            latestReply(storage.endpoint, storage.token, run)
           }.getOrDefault("")
+          if (reply == null) continue
           if (!runIfCurrent(generation) {
               post(
                 run,
                 NotificationCopy(
-                  title = if (scheduled) "${run.botName} · Scheduled task" else "${run.botName} replied",
+                  title = when {
+                    scheduled -> "${run.botName} · Scheduled task"
+                    run.groupName != null -> "${run.botName} replied in ${run.groupName}"
+                    else -> "${run.botName} replied"
+                  },
                   body = reply.ifBlank { run.prompt },
                   channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
                 ),
@@ -181,6 +202,7 @@ class RakazoNotificationService : Service() {
   }
 
   private fun post(run: RunRecord, copy: NotificationCopy) {
+    if (!run.notificationsEnabled || isOpenThread(run)) return
     val notification = builder(copy.channel)
       .setSmallIcon(R.drawable.ic_rakazo_notification)
       .setContentTitle(copy.title)
@@ -194,7 +216,7 @@ class RakazoNotificationService : Service() {
       .setAutoCancel(true)
       .setCategory(Notification.CATEGORY_MESSAGE)
       .build()
-    manager.notify(run.runId.hashCode(), notification)
+    manager.notify(run.threadId.hashCode(), notification)
   }
 
   private fun showLive(active: List<RunRecord>, avatarStyle: String) {
@@ -266,6 +288,10 @@ class RakazoNotificationService : Service() {
     manager.cancel(LIVE_NOTIFICATION_ID)
   }
 
+  private fun isOpenThread(run: RunRecord): Boolean = synchronized(sessionLock) {
+    if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId
+  }
+
   @Suppress("DEPRECATION")
   private fun builder(channel: String): Notification.Builder =
     if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, channel) else Notification.Builder(this)
@@ -274,14 +300,19 @@ class RakazoNotificationService : Service() {
     val intent = if (run == null) {
       packageManager.getLaunchIntentForPackage(packageName) ?: Intent(Intent.ACTION_VIEW, Uri.parse("rakazo://"))
     } else {
+      val destination = if (run.groupId != null) {
+        "rakazo://group-thread?groupId=${Uri.encode(run.groupId)}&name=${Uri.encode(run.groupName.orEmpty())}"
+      } else {
+        "rakazo://thread?botId=${Uri.encode(run.botId)}&name=${Uri.encode(run.botName)}"
+      }
       Intent(
         Intent.ACTION_VIEW,
-        Uri.parse("rakazo://thread?botId=${Uri.encode(run.botId)}&name=${Uri.encode(run.botName)}"),
+        Uri.parse(destination),
       ).setPackage(packageName)
     }.apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }
     return PendingIntent.getActivity(
       this,
-      run?.botId?.hashCode() ?: 0,
+      run?.threadId?.hashCode() ?: 0,
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
@@ -308,13 +339,17 @@ class RakazoNotificationService : Service() {
 
   companion object {
     private const val LIVE_NOTIFICATION_ID = 1101
+    private const val ACTION_THREAD_CHANGED = "com.rakazo.notifications.THREAD_CHANGED"
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
     private const val POLL_INTERVAL_MS = 8_000L
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
+    private const val THREAD_NOTIFICATION_IDS = "thread_notification_ids"
     private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
+    private var openBotId: String? = null
+    private var openThreadId: String? = null
 
     fun start(context: Context) {
       val intent = Intent(context, RakazoNotificationService::class.java)
@@ -325,9 +360,24 @@ class RakazoNotificationService : Service() {
       context.stopService(Intent(context, RakazoNotificationService::class.java))
     }
 
+    fun setOpenThread(context: Context, botId: String?, threadId: String?) {
+      synchronized(sessionLock) {
+        openBotId = botId
+        openThreadId = threadId
+      }
+      if (threadId != null) {
+        context.getSystemService(NotificationManager::class.java).cancel(threadId.hashCode())
+      }
+      context.startService(
+        Intent(context, RakazoNotificationService::class.java).setAction(ACTION_THREAD_CHANGED),
+      )
+    }
+
     fun clearSession(context: Context) {
       synchronized(sessionLock) {
         sessionGeneration.incrementAndGet()
+        openBotId = null
+        openThreadId = null
         stop(context)
         context.getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear().apply()
         context.getSystemService(NotificationManager::class.java).cancelAll()
@@ -364,10 +414,13 @@ private fun runs(endpoint: String, token: String, filter: String): List<RunRecor
       runId = row.requiredString("runId"),
       botId = row.requiredString("botId"),
       botName = row.requiredString("botName"),
+      groupId = row.optionalString("groupId"),
+      groupName = row.optionalString("groupName"),
       threadId = row.requiredString("threadId"),
       status = row.requiredString("status"),
       prompt = row.optString("promptSnippet"),
       trigger = row.requiredString("trigger"),
+      notificationsEnabled = row.optBoolean("notificationsEnabled", true),
     )
   }
 }
@@ -378,16 +431,25 @@ private fun isWorking(run: RunRecord): Boolean =
 private fun avatarStyle(endpoint: String, token: String): String =
   rpc(endpoint, token, "me", JSONObject()).optString("avatarStyle", "robot")
 
-private fun latestReply(endpoint: String, token: String, botId: String): String {
-  val root = rpc(endpoint, token, "threads/get", JSONObject().put("botId", botId))
+private fun latestReply(endpoint: String, token: String, run: RunRecord): String? {
+  val target = JSONObject().apply {
+    if (run.groupId != null) put("groupId", run.groupId) else put("botId", run.botId)
+  }
+  val root = rpc(endpoint, token, "threads/get", target)
   val messages = root.optJSONArray("messages") ?: return ""
   for (messageIndex in messages.length() - 1 downTo 0) {
     val message = messages.optJSONObject(messageIndex) ?: continue
     if (message.optString("role") != "bot") continue
+    if (message.optString("runId") != run.runId) continue
+    if (run.groupId != null && message.optString("botId") != run.botId) continue
     val blocks = message.optJSONArray("blocks") ?: return ""
-    return List(blocks.length()) { index -> blocks.optJSONObject(index)?.optString("text").orEmpty() }
-      .filter(String::isNotBlank)
-      .joinToString("\n")
+    val text = mutableListOf<String>()
+    for (blockIndex in 0 until blocks.length()) {
+      val block = blocks.optJSONObject(blockIndex) ?: continue
+      if (block.optString("kind") == "handoff") return null
+      block.optString("text").takeIf(String::isNotBlank)?.let(text::add)
+    }
+    return text.joinToString("\n")
   }
   return ""
 }
@@ -417,3 +479,6 @@ private fun rpc(endpoint: String, token: String, procedure: String, input: JSONO
 
 private fun JSONObject.requiredString(name: String): String =
   optString(name).takeIf(String::isNotBlank) ?: throw IOException("Invalid server response")
+
+private fun JSONObject.optionalString(name: String): String? =
+  if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)

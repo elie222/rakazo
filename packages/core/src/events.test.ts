@@ -282,6 +282,33 @@ describe("projectMessages", () => {
     ]);
   });
 
+  it("places a tool before response text when no narration preceded it", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "The check passed.", streaming: true },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    expect(messages[0]?.blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "The check passed." },
+    ]);
+  });
+
   it("keeps a tool call hidden while narration keeps streaming with no sentence end", () => {
     const messages = projectMessages([
       {

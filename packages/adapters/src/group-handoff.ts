@@ -1,6 +1,6 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
-import { renderGroupMembersContext } from "@rakazo/core";
+import { MessageBlock } from "@rakazo/contracts";
+import { botMessageHopExhausted, nextBotMessageHop, renderGroupMembersContext } from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -23,6 +23,7 @@ export async function handoffToGroupBot(
   groupId: string,
   input: { bot_id?: string; confirm_name?: string; message: string },
 ) {
+  const deliveryKey = `group-handoff:${run.id}`;
   const committed = await deps.prisma.$transaction(async (tx) => {
     try {
       await lockOwnedGroup(tx, run, groupId);
@@ -51,12 +52,33 @@ export async function handoffToGroupBot(
           userId: run.userId,
           status: "running",
         },
-        select: { id: true },
+        select: { id: true, sourceMessage: { select: { blocks: true } } },
       }),
     ]);
     if (!group || !activeSource) return { error: "source run is no longer active" } as const;
     if (!group.members.some((member) => member.bot.id === run.botId)) {
       return { error: "source bot is no longer a group member" } as const;
+    }
+
+    const existing = await tx.message.findUnique({
+      where: { threadId_clientNonce: { threadId: run.threadId, clientNonce: deliveryKey } },
+      select: {
+        sourceRuns: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { id: true, botId: true },
+        },
+      },
+    });
+    if (existing) {
+      const nextRun = existing.sourceRuns[0];
+      const event = await tx.event.findFirst({
+        where: { threadId: run.threadId, runId: run.id, type: "group.handoff" },
+        orderBy: { seq: "desc" },
+        select: { seq: true },
+      });
+      if (!nextRun || !event) return { error: "recorded handoff is incomplete" } as const;
+      return { ok: true, botId: nextRun.botId, runId: nextRun.id, eventSeq: event.seq } as const;
     }
 
     let targetId = input.bot_id?.trim();
@@ -70,11 +92,37 @@ export async function handoffToGroupBot(
       return { error: "handoff target is not a group member" } as const;
     }
 
+    let sourceBlocks: MessageBlock[] = [];
+    if (activeSource.sourceMessage) {
+      const parsedSource = MessageBlock.array().safeParse(activeSource.sourceMessage.blocks);
+      if (!parsedSource.success) {
+        return { error: "cannot verify the group handoff chain" } as const;
+      }
+      sourceBlocks = parsedSource.data;
+    }
+    const sourceHandoff = sourceBlocks.find(
+      (block): block is Extract<MessageBlock, { kind: "handoff" }> => block.kind === "handoff",
+    );
+    if (sourceHandoff?.fromBotId === targetId) {
+      return {
+        error:
+          "do not hand this stage back to its sender; post the result in the shared thread instead",
+      } as const;
+    }
+    const hop = nextBotMessageHop(sourceHandoff?.hop);
+    if (botMessageHopExhausted(hop)) {
+      return {
+        error:
+          "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
+      } as const;
+    }
+
     const handoffBlock: MessageBlock = {
       kind: "handoff",
       fromBotId: run.botId,
       toBotId: targetId,
       text: input.message,
+      hop,
     };
     const message = await createThreadMessageInTransaction(tx, {
       threadId: run.threadId,
@@ -82,6 +130,7 @@ export async function handoffToGroupBot(
       blocks: [handoffBlock],
       botId: run.botId,
       runId: run.id,
+      clientNonce: deliveryKey,
     });
     const task = await tx.task.create({
       data: {
@@ -101,7 +150,7 @@ export async function handoffToGroupBot(
         taskId: task.id,
         userId: run.userId,
         status: "queued",
-        trigger: "user",
+        trigger: "follow_up",
         sourceMessageId: message.id,
       },
     });
@@ -129,12 +178,18 @@ export async function handoffToGroupBot(
     // The queued run is durable and the job reconciler will repair a missed immediate wake.
     console.error("group handoff enqueue", error);
   });
-  return { ok: true, botId: committed.botId, runId: committed.runId };
+  return {
+    ok: true,
+    botId: committed.botId,
+    runId: committed.runId,
+    note: "Handoff recorded. End this turn without narrating it; the next bot owns the next stage.",
+  };
 }
 
 export async function loadGroupContext(
   prisma: PrismaClient,
   groupId: string,
+  self: { id: string; name: string },
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
@@ -152,5 +207,6 @@ export async function loadGroupContext(
   return renderGroupMembersContext(
     group.name,
     group.members.map((member) => member.bot),
+    self,
   );
 }
