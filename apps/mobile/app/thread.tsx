@@ -21,6 +21,7 @@ import {
   type SlashActionId,
   serializeComposerPrompt,
   truncateSlashDescription,
+  userVisibleMessages,
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -255,7 +256,10 @@ function Thread() {
     null,
   );
   const visibleMessages = useMemo(
-    () => (snap?.messages ?? []).filter((message) => hasVisibleMessagePresentation(message.blocks)),
+    () =>
+      userVisibleMessages(snap?.messages ?? []).filter((message) =>
+        hasVisibleMessagePresentation(message.blocks),
+      ),
     [snap?.messages],
   );
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;

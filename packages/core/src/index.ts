@@ -15,6 +15,7 @@ export * from "./featured-connectors.js";
 export * from "./group-mentions.js";
 export * from "./mcp.js";
 export * from "./message-pages.js";
+export * from "./message-visibility.js";
 export * from "./model-oauth.js";
 export * from "./phone-commands.js";
 export * from "./phone-prompts.js";
