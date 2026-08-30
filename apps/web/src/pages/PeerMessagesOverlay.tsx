@@ -16,21 +16,18 @@ const FOCUSABLE =
 export function PeerMessagesOverlay({
   botId,
   botName,
-  messages: initialMessages,
-  olderCursor: initialOlderCursor,
   initialPeerBotId,
   onClose,
 }: {
   botId: string;
   botName: string;
-  messages: readonly ThreadMessage[];
-  olderCursor: number | null;
   initialPeerBotId?: string | null;
   onClose: () => void;
 }) {
   const { t } = useLingui();
-  const [messages, setMessages] = useState<readonly ThreadMessage[]>(initialMessages);
-  const [historyReady, setHistoryReady] = useState(initialOlderCursor == null);
+  const [messages, setMessages] = useState<readonly ThreadMessage[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialPeerBotId ?? null);
   const conversations = useMemo(
     () => (historyReady ? peerConversations(messages) : []),
@@ -41,34 +38,30 @@ export function PeerMessagesOverlay({
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  // Overlay remounts each time it opens; page older history once from that snapshot.
-  const loadRef = useRef({ botId, initialMessages, initialOlderCursor });
+  // Overlay remounts each time it opens; load the dedicated raw peer history once.
+  const loadRef = useRef({ botId });
 
   useEffect(() => {
     let cancelled = false;
-    const { botId: id, initialMessages: seed, initialOlderCursor: older } = loadRef.current;
-    if (older == null) {
-      setMessages(seed);
-      setHistoryReady(true);
-      return;
-    }
+    const { botId: id } = loadRef.current;
     setHistoryReady(false);
+    setHistoryFailed(false);
     void (async () => {
-      let before: number | null = older;
-      let collected: ThreadMessage[] = [...seed];
-      while (before != null) {
-        const page = await rpc.threads.messages({ botId: id, before });
+      let before: number | undefined;
+      let collected: ThreadMessage[] = [];
+      do {
+        const page = await rpc.threads.messages({ botId: id, before, includePeerRuns: true });
         if (cancelled) return;
         collected = [...page.messages, ...collected];
-        before = page.olderCursor;
-      }
+        before = page.olderCursor ?? undefined;
+      } while (before !== undefined);
       if (cancelled) return;
       setMessages(collected);
       setHistoryReady(true);
     })().catch(() => {
       if (cancelled) return;
-      // Fall back to whatever the thread already has rather than claiming none.
-      setMessages(seed);
+      // Leave the empty state visible rather than showing a partial transcript-derived history.
+      setHistoryFailed(true);
       setHistoryReady(true);
     });
     return () => {
@@ -143,6 +136,8 @@ export function PeerMessagesOverlay({
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
               {!historyReady ? (
                 <Trans>Loading peer messages…</Trans>
+              ) : historyFailed ? (
+                <Trans>Could not load bot messages.</Trans>
               ) : conversations.length === 0 ? (
                 t`${botName} has not messaged another bot yet.`
               ) : (

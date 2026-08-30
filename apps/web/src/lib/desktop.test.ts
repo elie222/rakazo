@@ -68,7 +68,7 @@ describe("window chrome", () => {
     );
     expect(shell).toContain('className="app-no-drag grid h-8 w-8');
     expect(shell).toContain('className="app-no-drag flex min-w-0 items-center gap-3"');
-    expect(shell.match(/className="app-no-drag grid h-\[30px\] w-\[34px\]/g)).toHaveLength(2);
+    expect(shell.match(/className="app-no-drag grid h-\[30px\] w-\[34px\]/g)).toHaveLength(3);
   });
 });
 

@@ -86,6 +86,9 @@ describe("createRepos.listBots", () => {
           },
         ]),
       },
+      run: {
+        findMany: vi.fn(async () => [{ id: "run-peer" }]),
+      },
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([

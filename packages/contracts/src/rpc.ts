@@ -246,6 +246,7 @@ export const appContract = {
       .input(
         threadTarget.safeExtend({
           before: z.number().int().nonnegative().optional(),
+          includePeerRuns: z.boolean().optional(),
           around: z
             .object({
               messageId: Id.optional(),

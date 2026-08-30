@@ -2809,13 +2809,7 @@ export function ShellPage() {
             </button>
           </div>
           <div className="flex items-center gap-1">
-            {!inGroup &&
-            activeSnapshot?.messages.some((message) =>
-              message.blocks.some(
-                (block) =>
-                  block.kind === "bot_message_sent" || block.kind === "bot_message_received",
-              ),
-            ) ? (
+            {!inGroup && active ? (
               <button
                 type="button"
                 title={t`Bot messages`}
@@ -3605,8 +3599,6 @@ export function ShellPage() {
           <PeerMessagesOverlay
             botId={active.id}
             botName={active.name}
-            messages={activeSnapshot?.messages ?? []}
-            olderCursor={activeSnapshot?.olderCursor ?? null}
             initialPeerBotId={peerMessagesFocusId}
             onClose={() => {
               setPeerMessagesOpen(false);

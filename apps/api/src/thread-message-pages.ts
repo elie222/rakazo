@@ -9,6 +9,7 @@ export async function loadMessagePage(
   before: number | undefined,
   pageSize: number,
   around?: { messageId?: string; seq?: number },
+  includePeerRuns = false,
 ): Promise<ThreadMessagePage> {
   if (around) {
     let targetSeq = around.seq;
@@ -32,29 +33,39 @@ export async function loadMessagePage(
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
         : false;
+      const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
       return {
         threadId,
-        messages: rows.map(toThreadMessage),
+        messages: messages.map(toThreadMessage),
         olderCursor: hasOlder ? (first?.seq ?? null) : null,
       };
     }
   }
 
-  const rows = await prisma.message.findMany({
-    where: {
-      threadId,
-      ...(before === undefined ? {} : { seq: { lt: before } }),
-    },
-    orderBy: { seq: "desc" },
-    take: pageSize + 1,
-  });
-  const hasOlder = rows.length > pageSize;
-  const messages = rows.slice(0, pageSize).reverse().map(toThreadMessage);
-  return {
-    threadId,
-    messages,
-    olderCursor: hasOlder ? (messages[0]?.seq ?? null) : null,
-  };
+  let cursor = before;
+  while (true) {
+    const rows = await prisma.message.findMany({
+      where: {
+        threadId,
+        ...(cursor === undefined ? {} : { seq: { lt: cursor } }),
+      },
+      orderBy: { seq: "desc" },
+      take: pageSize + 1,
+    });
+    const hasOlder = rows.length > pageSize;
+    const pageRows = rows.slice(0, pageSize).reverse();
+    const visibleRows = includePeerRuns ? pageRows : await withoutPeerRunMessages(prisma, pageRows);
+    if (visibleRows.length > 0 || !hasOlder || includePeerRuns) {
+      return {
+        threadId,
+        messages: visibleRows.map(toThreadMessage),
+        olderCursor: hasOlder ? (pageRows[0]?.seq ?? null) : null,
+      };
+    }
+    // ponytail: only scan again when a raw page is entirely peer output; add a run relation if
+    // long peer-only histories make this path hot.
+    cursor = pageRows[0]?.seq;
+  }
 }
 
 export async function loadAllMessages(
@@ -65,11 +76,41 @@ export async function loadAllMessages(
   const pages: ThreadMessage[][] = [];
   let before: number | undefined;
   do {
-    const page = await loadMessagePage(prisma, threadId, before, pageSize);
+    const page = await loadMessagePage(prisma, threadId, before, pageSize, undefined, true);
     pages.push(page.messages);
     before = page.olderCursor ?? undefined;
   } while (before !== undefined);
   return pages.reverse().flat();
+}
+
+async function withoutPeerRunMessages<T extends { runId: string | null }>(
+  prisma: MessageDb,
+  rows: T[],
+): Promise<T[]> {
+  const runIds = [...new Set(rows.flatMap((row) => (row.runId ? [row.runId] : [])))];
+  if (runIds.length === 0) return rows;
+  const peerRuns = await prisma.run.findMany({
+    where: { id: { in: runIds }, trigger: "bot_message" },
+    select: { id: true },
+  });
+  const peerRunIds = new Set(peerRuns.map((run) => run.id));
+  return rows.filter((row) => !row.runId || !peerRunIds.has(row.runId));
+}
+
+export async function isPeerRun(
+  prisma: MessageDb,
+  runId: string | undefined,
+  cache: Map<string, Promise<boolean>>,
+): Promise<boolean> {
+  if (!runId) return false;
+  let peerRun = cache.get(runId);
+  if (!peerRun) {
+    peerRun = prisma.run
+      .findUnique({ where: { id: runId }, select: { trigger: true } })
+      .then((run) => run?.trigger === "bot_message");
+    cache.set(runId, peerRun);
+  }
+  return peerRun;
 }
 
 function toThreadMessage(row: {

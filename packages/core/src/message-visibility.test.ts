@@ -38,4 +38,13 @@ describe("user-visible messages", () => {
 
     expect(userVisibleMessages(messages).map((item) => item.id)).toEqual(["user", "answer"]);
   });
+
+  it("uses authoritative peer run ids when the receipt is outside the loaded page", () => {
+    const messages = [
+      message("reply", "run-peer", [{ kind: "text", text: "Echoed peer reply" }]),
+      message("answer", "run-user", [{ kind: "text", text: "Visible answer" }]),
+    ];
+
+    expect(userVisibleMessages(messages, ["run-peer"]).map((item) => item.id)).toEqual(["answer"]);
+  });
 });
