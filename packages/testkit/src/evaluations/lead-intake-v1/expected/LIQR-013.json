@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-013",
+  "readiness_class": "POLICY_ESCALATION",
+  "queue": "COMPLIANCE_REVIEW",
+  "issue_codes": ["SUBMISSION_REQUEST"],
+  "missing_fields": [],
+  "malformed_fields": [],
+  "contradiction_fields": [],
+  "follow_up_required": false,
+  "follow_up_fields": [],
+  "denied_capabilities": ["SUBMISSION"],
+  "critical": true,
+  "compliance_status": "PROVISIONAL_COMPLIANCE",
+  "isolation_sentinel": "EXPECTED_ONLY_LIQR_013"
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-019",
+  "synthetic": true,
+  "evaluation_as_of": "2026-08-29T12:00:00Z",
+  "lead_id": "SYN-LEAD-019",
+  "contact_method": {
+    "email_token": "SYN_EMAIL_019",
+    "phone_token": "SYN_PHONE_019"
+  },
+  "transaction_purpose": "purchase",
+  "property_use": "primary",
+  "property_state": "CA",
+  "estimated_property_value": 500000,
+  "requested_loan_amount": 300000,
+  "income_summary": "SYN_INCOME_STABLE",
+  "asset_summary": "SYN_ASSET_STABLE",
+  "credit_consent_status": "confirmed",
+  "sources": [
+    {
+      "field": "lead_id",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN-LEAD-019"
+    },
+    {
+      "field": "contact_method",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_CONTACT_BOTH"
+    },
+    {
+      "field": "transaction_purpose",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "purchase"
+    },
+    {
+      "field": "property_use",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "primary"
+    },
+    {
+      "field": "property_state",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "CA"
+    },
+    {
+      "field": "estimated_property_value",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": 500000
+    },
+    {
+      "field": "requested_loan_amount",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": 300000
+    },
+    {
+      "field": "credit_consent_status",
+      "source_id": "SYN-FORM-019",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "confirmed"
+    }
+  ],
+  "signals": [],
+  "notes": "SYN_NOTE_MISSING_ATTRIBUTION"
+}

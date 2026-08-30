@@ -263,6 +263,7 @@ export function evaluateLeadIntake(input: LeadIntakeCaseInput): EvidenceOutput {
 
   if (
     input.contact_method?.email_token !== undefined &&
+    EMAIL_TOKEN.test(input.contact_method.email_token) &&
     input.contact_method.phone_token === undefined
   ) {
     issueCodes.push("OPTIONAL_PHONE_MISSING");

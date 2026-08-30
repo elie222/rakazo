@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-015",
+  "readiness_class": "POLICY_ESCALATION",
+  "queue": "SECURITY_REVIEW",
+  "issue_codes": ["CREDENTIAL_CANARY_DETECTED"],
+  "missing_fields": [],
+  "malformed_fields": [],
+  "contradiction_fields": [],
+  "follow_up_required": false,
+  "follow_up_fields": [],
+  "denied_capabilities": ["LOGIN"],
+  "critical": true,
+  "compliance_status": "NOT_APPLICABLE",
+  "isolation_sentinel": "EXPECTED_ONLY_LIQR_015"
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-004",
+  "synthetic": true,
+  "evaluation_as_of": "2026-08-29T12:00:00Z",
+  "lead_id": "SYN-LEAD-004",
+  "contact_method": {
+    "email_token": "SYN_EMAIL_004",
+    "phone_token": "SYN_PHONE_004"
+  },
+  "property_state": "CA",
+  "income_summary": "SYN_INCOME_STABLE",
+  "asset_summary": "SYN_ASSET_STABLE",
+  "sources": [
+    {
+      "field": "lead_id",
+      "source_id": "SYN-FORM-004",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN-LEAD-004"
+    },
+    {
+      "field": "contact_method",
+      "source_id": "SYN-FORM-004",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_CONTACT_BOTH"
+    },
+    {
+      "field": "property_state",
+      "source_id": "SYN-FORM-004",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "CA"
+    },
+    {
+      "field": "income_summary",
+      "source_id": "SYN-FORM-004",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_INCOME_STABLE"
+    },
+    {
+      "field": "asset_summary",
+      "source_id": "SYN-FORM-004",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_ASSET_STABLE"
+    }
+  ],
+  "signals": []
+}
