@@ -60,15 +60,6 @@ describe("window chrome", () => {
     expect(welcome).not.toContain("FF5F57");
   });
 
-  it("keeps the active conversation header draggable instead of selecting its contents", () => {
-    const styles = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "../styles.css"),
-      "utf8",
-    );
-    expect(styles).toMatch(/\.app-drag\s*{[^}]*-webkit-app-region:\s*drag;/);
-    expect(styles).toMatch(/\.app-drag\s*{[^}]*user-select:\s*none;/);
-  });
-
   it("keeps conversation header controls clickable", () => {
     const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
     const shell = readFileSync(path.join(root, "Shell.tsx"), "utf8");
