@@ -126,7 +126,7 @@ export function PeerMessagesOverlay({
   }, []);
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#040405] p-4 sm:p-10">
       <div
         ref={panelRef}
         role="dialog"

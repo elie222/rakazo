@@ -55,6 +55,43 @@ describe("createRepos.listBots", () => {
       expect.objectContaining({ memoryScope: "shared" }),
     ]);
   });
+
+  it("keeps bot-to-bot run output out of sidebar previews", async () => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            thread: {
+              ...baseBot.thread,
+              messages: [
+                {
+                  runId: "run-peer",
+                  blocks: [{ kind: "text", text: "Echoed peer reply" }],
+                },
+                {
+                  runId: "run-peer",
+                  blocks: [
+                    {
+                      kind: "bot_message_received",
+                      fromBotId: "bot-2",
+                      fromBotName: "Coder",
+                      text: "Peer result",
+                    },
+                  ],
+                },
+                { runId: "run-user", blocks: [{ kind: "text", text: "Visible answer" }] },
+              ],
+            },
+          },
+        ]),
+      },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Visible answer" }),
+    ]);
+  });
 });
 
 describe("createRepos.listSpaceBotsForSpaces", () => {
