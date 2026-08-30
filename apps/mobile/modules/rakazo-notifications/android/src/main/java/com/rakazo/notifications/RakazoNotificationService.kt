@@ -143,6 +143,7 @@ class RakazoNotificationService : Service() {
               .apply()
             if (settings.needsAttention) {
               active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
+                .filter { it.notificationsEnabled }
                 .filter { alertedAttention.add("${it.runId}:${it.status}") }
                 .forEach { immediate += it to attentionCopy(it) }
             }

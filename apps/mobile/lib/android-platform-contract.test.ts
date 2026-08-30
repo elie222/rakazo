@@ -66,6 +66,9 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("synchronized(sessionLock)");
     expect(service).toContain("working.filterNot(::isOpenThread)");
     expect(service).toContain("!run.notificationsEnabled || isOpenThread(run)");
+    expect(service).toMatch(
+      /waiting_input[\s\S]*filter \{ it\.notificationsEnabled \}[\s\S]*alertedAttention\.add/,
+    );
     expect(service).toContain(
       "if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId",
     );
