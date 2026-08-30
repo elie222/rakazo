@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -22,6 +22,12 @@ export async function loadPushToken(dataDir: string, userId: string): Promise<st
 export async function savePushToken(dataDir: string, userId: string, token: string): Promise<void> {
   await mkdir(path.dirname(pushTokenPath(dataDir, userId)), { recursive: true });
   await writeFile(pushTokenPath(dataDir, userId), token.trim(), "utf8");
+}
+
+export async function deletePushToken(dataDir: string, userId: string): Promise<void> {
+  await unlink(pushTokenPath(dataDir, userId)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
 }
 
 export type ExpoPushTicket = {
@@ -81,6 +87,8 @@ export class ExpoPushProvider implements NotificationProvider {
           to: token,
           title: message.title,
           body: message.body,
+          collapseId: message.threadId,
+          tag: message.threadId,
           data: { kind: message.kind, botId: message.botId, threadId: message.threadId },
         }),
       });

@@ -27,6 +27,7 @@ import {
   checkpointAndRecordComputerWorkspace,
   computerSupportsUpdate,
   createVoiceProvider,
+  deletePushToken,
   deploymentAutoReviewDefault,
   destroyBot,
   displayBotWorkspacePath,
@@ -627,6 +628,10 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         return duplicate;
+      }),
+      reorder: authed.bots.reorder.handler(async ({ context, input }) => {
+        await repos.reorderBots(context.actor, input.botIds);
+        return { ok: true as const };
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
@@ -3027,6 +3032,10 @@ export function createRouter(deps: RouterDeps) {
     notifications: {
       registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
         await savePushToken(deps.dataDir, context.actor.userId, input.token);
+        return { ok: true as const };
+      }),
+      unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
+        await deletePushToken(deps.dataDir, context.actor.userId);
         return { ok: true as const };
       }),
     },

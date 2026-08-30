@@ -545,7 +545,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "In a group chat only: hand the next stage to another current member. Appends a visible handoff in the shared thread and starts that bot asynchronously.",
+      "In a group chat only: transfer a genuinely distinct next stage to another current member. Appends a visible handoff and starts that bot asynchronously. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
     inputSchema: {
       type: "object",
       properties: {

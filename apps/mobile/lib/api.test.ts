@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMobileThreadEvent,
   blockText,
+  deleteAccount,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
@@ -19,8 +20,13 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./live-notifications.js", () => ({
+  resumeLiveNotifications: vi.fn(async () => undefined),
+  stopLiveNotifications: vi.fn(async () => undefined),
+}));
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -68,6 +74,65 @@ describe("mobile API authentication", () => {
 
     await expect(signOut()).resolves.toBeUndefined();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("unregisters push delivery before invalidating the session", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ json: null }))
+      .mockResolvedValueOnce(jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await signOut();
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+  });
+
+  it("continues sign-out when push unregistration times out", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url, options: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+              once: true,
+            });
+          }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/sign-out",
+    ]);
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("unregisters push delivery before deleting the account", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ json: null }))
+      .mockResolvedValueOnce(jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteAccount("correct horse");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:3100/rpc/notifications/unregisterPush",
+      "http://127.0.0.1:3100/api/auth/delete-user",
+    ]);
   });
 
   it("sends authenticated RPC input and reports structured RPC errors", async () => {
@@ -380,8 +445,29 @@ describe("mobile thread event reduction", () => {
       payload: { messageId: "message-1", role: "bot", blocks: [completed] },
     });
 
-    expect(next?.messages.map((item) => item.id)).toEqual(["subagent:other", "message-1"]);
-    expect(next?.messages[1]?.blocks).toEqual([completed]);
+    expect(next?.messages.map((item) => item.id)).toEqual(["message-1", "subagent:other"]);
+    expect(next?.messages[0]?.blocks).toEqual([completed]);
+  });
+
+  it("keeps a replayed bot-to-bot marker in its durable transcript position", () => {
+    const peerBlock = {
+      kind: "bot_message_received" as const,
+      fromBotId: "bot-peer",
+      fromBotName: "Peer",
+      text: "Please check this.",
+    };
+    const initial = snapshot([
+      mobileMessage("peer-message", [peerBlock], 1),
+      mobileMessage("newer-message", [{ kind: "text", text: "Working on it." }], 2),
+    ]);
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.message.created",
+      seq: 9,
+      payload: { messageId: "peer-message", role: "user", blocks: [peerBlock] },
+    });
+
+    expect(next?.messages.map((message) => message.id)).toEqual(["peer-message", "newer-message"]);
   });
 
   it("clears loaded history and active state when another client clears the thread", () => {

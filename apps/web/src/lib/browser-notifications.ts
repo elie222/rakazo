@@ -101,7 +101,7 @@ export function browserNotificationMessage(
 }
 
 export function deliverBrowserNotification(
-  event: Pick<ProductEvent, "id" | "type" | "payload">,
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "payload">,
   botName: string,
   context: {
     enabled: boolean;
@@ -109,7 +109,7 @@ export function deliverBrowserNotification(
     windowFocused: boolean;
     permission: BrowserNotificationPermission;
     notifiedEventIds: Set<string>;
-    show: (title: string, body: string) => void;
+    show: (title: string, body: string, tag: string) => void;
   },
 ): "delivered" | "pending" | "discarded" {
   if (
@@ -123,7 +123,7 @@ export function deliverBrowserNotification(
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
   try {
-    context.show(message.title, message.body);
+    context.show(message.title, message.body, event.threadId);
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {

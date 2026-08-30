@@ -188,8 +188,32 @@ describe("thread event reduction", () => {
       }),
     );
 
-    expect(next?.messages.map((item) => item.id)).toEqual(["subagent:other", "durable"]);
-    expect(next?.messages[1]?.blocks).toEqual([completedBlock]);
+    expect(next?.messages.map((item) => item.id)).toEqual(["durable", "subagent:other"]);
+    expect(next?.messages[0]?.blocks).toEqual([completedBlock]);
+  });
+
+  it("keeps a replayed bot-to-bot marker in its durable transcript position", () => {
+    const peerBlock = {
+      kind: "bot_message_received" as const,
+      fromBotId: "bot-peer",
+      fromBotName: "Peer",
+      text: "Please check this.",
+    };
+    const initial = snapshot([
+      message("peer-message", [peerBlock], 1),
+      message("newer-message", [{ kind: "text", text: "Working on it." }], 2),
+    ]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "peer-message", role: "user", blocks: [peerBlock] },
+      }),
+    );
+
+    expect(next?.messages.map((item) => item.id)).toEqual(["peer-message", "newer-message"]);
   });
 
   it("clears durable and transient history when another client clears the thread", () => {

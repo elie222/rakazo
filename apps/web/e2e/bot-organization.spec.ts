@@ -49,6 +49,138 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText("Chief");
 });
 
+test("bots can be reordered by drag or keyboard and keep that order", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `bot-reorder-${stamp}@rakazo.test`, "password12", "Bot Order");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const chiefId = activeBotId(page);
+  const alpha = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Alpha",
+    title: "",
+    description: "",
+    instructions: "",
+    notifyOnFinish: true,
+    computerMode: "team",
+  });
+  const beta = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Beta",
+    title: "",
+    description: "",
+    instructions: "",
+    notifyOnFinish: true,
+    computerMode: "team",
+  });
+  await page.reload();
+
+  const sidebar = page.locator("aside").first();
+  const rows = sidebar.locator("[data-roster-bot-id]");
+  const order = () =>
+    rows.evaluateAll((items) => items.map((item) => item.getAttribute("data-roster-bot-id")));
+  await expect.poll(order).toEqual([chiefId, alpha.id, beta.id]);
+
+  let releaseStaleList!: () => void;
+  let markStaleListReady!: () => void;
+  let markStaleListDelivered!: () => void;
+  const staleListReady = new Promise<void>((resolve) => {
+    markStaleListReady = resolve;
+  });
+  const staleListDelivered = new Promise<void>((resolve) => {
+    markStaleListDelivered = resolve;
+  });
+  const staleListGate = new Promise<void>((resolve) => {
+    releaseStaleList = resolve;
+  });
+  let interceptedList = false;
+  await page.route("**/rpc/bots/list", async (route) => {
+    if (interceptedList) {
+      await route.continue();
+      return;
+    }
+    interceptedList = true;
+    const staleResponse = await route.fetch();
+    markStaleListReady();
+    await staleListGate;
+    await route.fulfill({ response: staleResponse });
+    markStaleListDelivered();
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await staleListReady;
+
+  const reorderSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/reorder") && response.ok(),
+  );
+  await sidebar
+    .locator(`[data-roster-bot-id="${beta.id}"]`)
+    .dragTo(sidebar.locator(`[data-roster-bot-id="${chiefId}"]`));
+  await reorderSaved;
+  releaseStaleList();
+  await staleListDelivered;
+  await expect.poll(order).toEqual([beta.id, chiefId, alpha.id]);
+  await page.reload();
+  await expect.poll(order).toEqual([beta.id, chiefId, alpha.id]);
+
+  const betaRow = sidebar.locator(`[data-roster-bot-id="${beta.id}"]`);
+  await betaRow.focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(order).toEqual([chiefId, beta.id, alpha.id]);
+  await page.reload();
+  await expect.poll(order).toEqual([chiefId, beta.id, alpha.id]);
+
+  let releaseRejectedReorder!: () => void;
+  let markRejectedReorderStarted!: () => void;
+  const rejectedReorderStarted = new Promise<void>((resolve) => {
+    markRejectedReorderStarted = resolve;
+  });
+  const rejectReorder = new Promise<void>((resolve) => {
+    releaseRejectedReorder = resolve;
+  });
+  await page.route(
+    "**/rpc/bots/reorder",
+    async (route) => {
+      markRejectedReorderStarted();
+      await rejectReorder;
+      await route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+    },
+    { times: 1 },
+  );
+  await sidebar
+    .locator(`[data-roster-bot-id="${alpha.id}"]`)
+    .dragTo(sidebar.locator(`[data-roster-bot-id="${chiefId}"]`));
+  await rejectedReorderStarted;
+
+  const queuedReorderSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/reorder") && response.ok(),
+  );
+  await sidebar
+    .locator(`[data-roster-bot-id="${beta.id}"]`)
+    .dragTo(sidebar.locator(`[data-roster-bot-id="${alpha.id}"]`));
+  releaseRejectedReorder();
+  await queuedReorderSaved;
+  await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
+  await page.reload();
+  await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
+});
+
+test("chat composer controls are vertically centered", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `composer-layout-${stamp}@rakazo.test`, "password12", "Composer Layout");
+  await completeOnboarding(page);
+
+  const centers = await page.getByTestId("composer-bar").evaluate((composer) =>
+    ["Attach file", "Dictate", "Message Chief", "Send"].map((label) => {
+      const element = composer.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+      if (!element) throw new Error(`Missing composer control: ${label}`);
+      const box = element.getBoundingClientRect();
+      return box.top + box.height / 2;
+    }),
+  );
+
+  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+});
+
 test("group chats share every context-menu action", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `group-organize-${stamp}@rakazo.test`, "password12", "Group Menu");
