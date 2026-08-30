@@ -137,6 +137,7 @@ export class PiAgentRuntime implements AgentRuntime {
           nestedAgents,
           subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
           toolCallBudget: { count: 0, exceeded: false, limit: maxToolCallsPerTurn() },
+          toolCallSeq: { value: 0 },
           abortTurn: () => undefined,
           signal,
           depth: 0,
@@ -533,7 +534,8 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     },
     execute: async (toolCallId, params) => {
       const args = (params ?? {}) as Record<string, unknown>;
-      const executionId = toolCallId || `${host.request.runId}:${tool.name}`;
+      const executionId =
+        toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
       host.queue.push({ type: "tool", name: tool.name, args, executionId });
       if (tool.name === "request_takeover") {
         host.queue.push({
@@ -937,6 +939,8 @@ interface ToolHost {
   nestedAgents: Set<Agent>;
   subagentGate: { acquire(): Promise<void>; release(): void };
   toolCallBudget: { count: number; exceeded: boolean; limit: number };
+  /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
+  toolCallSeq: { value: number };
   abortTurn(): void;
   signal: AbortSignal;
   depth: number;

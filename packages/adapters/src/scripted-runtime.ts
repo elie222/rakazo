@@ -44,6 +44,9 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         return;
       }
       const script = request.script ?? inferScript(request.prompt, request.resumeFromCheckpoint);
+      // Per-run call index so repeated tools (e.g. message_agent) get distinct
+      // executionIds — delivery keys and effect replays key off this value.
+      let toolCallSeq = 0;
       for (const turn of script) {
         if (signal.aborted || controller.signal.aborted) {
           yield { type: "done", text: "stopped" };
@@ -54,6 +57,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {
+          const executionId = `${request.runId}:${call.name}:${toolCallSeq++}`;
           if (call.name === "run_subagent") {
             const agentId = `${request.runId}:subagent`;
             const name = String(call.args.name ?? "helper");
@@ -70,7 +74,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
               type: "tool",
               name: call.name,
               args: call.args,
-              executionId: `${request.runId}:${call.name}`,
+              executionId,
             };
             yield {
               type: "subagent",
@@ -86,7 +90,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
             type: "tool",
             name: call.name,
             args: call.args,
-            executionId: `${request.runId}:${call.name}`,
+            executionId,
           };
         }
         if (turn.ask) {

@@ -560,3 +560,50 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
 ];
+
+/** Agent-connection tools, exposed only when the phone surface is enabled. */
+export const agentConnectionTools: ConnectorTool[] = [
+  {
+    name: "connect_agent",
+    description:
+      "Request a standing connection to another person's agent by their phone number. The other owner must approve before either agent can message the other. Only for agents whose owner texted the deployment's phone line.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phone: {
+          type: "string",
+          description: "E.164 phone number of the agent's owner, e.g. +15551234567.",
+        },
+      },
+      required: ["phone"],
+    },
+  },
+  {
+    name: "respond_agent_connection",
+    description:
+      "Approve or decline the newest pending agent connection request addressed to you. Use only on your owner's explicit instruction.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accept: { type: "boolean", description: "true to approve, false to decline." },
+      },
+      required: ["accept"],
+    },
+  },
+  {
+    name: "message_agent",
+    description:
+      "Send a useful update, question, or result to another person's agent over an approved connection. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phone: {
+          type: "string",
+          description: "E.164 phone number of the connected agent's owner.",
+        },
+        message: { type: "string", description: "What to send." },
+      },
+      required: ["phone", "message"],
+    },
+  },
+];

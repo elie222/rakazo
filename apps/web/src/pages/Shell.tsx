@@ -131,6 +131,7 @@ import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
 import { connectMcpOauth } from "../lib/mcp-connect";
+import { copyableMessageText } from "../lib/message-text";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
@@ -178,6 +179,9 @@ const AccountSettingsOverlay = lazy(() =>
   import("./AccountSettingsOverlay").then((module) => ({
     default: module.AccountSettingsOverlay,
   })),
+);
+const PhoneSettingsOverlay = lazy(() =>
+  import("./PhoneSettingsOverlay").then((module) => ({ default: module.PhoneSettingsOverlay })),
 );
 const ModelSettingsOverlay = lazy(() =>
   import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
@@ -360,6 +364,8 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [phoneSettingsOpen, setPhoneSettingsOpen] = useState(false);
+  const [phoneSurfaceEnabled, setPhoneSurfaceEnabled] = useState(false);
   const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
@@ -415,6 +421,19 @@ export function ShellPage() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session.data?.user) return;
+    let cancelled = false;
+    void rpc.phone
+      .status()
+      .then((status) => {
+        if (!cancelled) setPhoneSurfaceEnabled(status.enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [session.data?.user]);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -3415,6 +3434,9 @@ export function ShellPage() {
           />
         ) : null}
         {mcpOpen ? <McpServersOverlay onClose={() => setMcpOpen(false)} /> : null}
+        {phoneSettingsOpen ? (
+          <PhoneSettingsOverlay onClose={() => setPhoneSettingsOpen(false)} />
+        ) : null}
       </Suspense>
 
       <Suspense fallback={null}>
@@ -3427,6 +3449,11 @@ export function ShellPage() {
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
+            phoneEnabled={phoneSurfaceEnabled}
+            onOpenPhone={() => {
+              setAccountSettingsOpen(false);
+              setPhoneSettingsOpen(true);
+            }}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
               setBootstrapMe(nextMe);
@@ -4454,7 +4481,9 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
 
 function previewMessageText(message: ThreadMessage): string {
   const text = message.blocks
-    .map((block) => (block.kind === "text" ? block.text : ""))
+    .map((block) =>
+      block.kind === "text" || block.kind === "phone_channel_message" ? block.text : "",
+    )
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -4463,20 +4492,6 @@ function previewMessageText(message: ThreadMessage): string {
     return t`Attachment`;
   }
   return t`Message`;
-}
-
-/** Plain message text for clipboard copy — text/ask/progress only, no chrome. */
-function copyableMessageText(message: ThreadMessage): string {
-  return message.blocks
-    .map((block) => {
-      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask") {
-        return block.text;
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n")
-    .trim();
 }
 
 function MessageHoverActions({
@@ -4756,6 +4771,18 @@ const MessageView = memo(function MessageView({
               label={label}
               onClick={() => onOpenPeerMessages(peerBotId)}
             />
+          );
+        }
+        if (block.kind === "phone_channel_message") {
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+            >
+              <span>
+                iMessage · {block.fromLabel}: {block.text}
+              </span>
+            </div>
           );
         }
         if (block.kind === "meta") {

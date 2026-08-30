@@ -24,10 +24,11 @@ import {
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
+  FlatList,
   Image,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -126,7 +127,8 @@ export default function Thread() {
     messageId?: string;
   }>();
   const inGroup = Boolean(groupId);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<FlatList<MobileMessage>>(null);
+  const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const userDragging = useRef(false);
   const loadingOlderContent = useRef(false);
@@ -529,8 +531,6 @@ export default function Thread() {
 
   async function loadOlderMessages() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
-    pinnedAroundRef.current = null;
-    jumpScrollTarget.current = null;
     loadingOlderContent.current = true;
     setLoadingOlder(true);
     const epoch = historyEpoch.current;
@@ -913,18 +913,35 @@ export default function Thread() {
     }
   }
 
-  async function answerMessage(message: MobileMessage, answer: string) {
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || !message.runId) return;
-    await rpc("threads/answer", {
-      ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
-      runId: message.runId,
-      messageId: message.id,
-      answer,
-    });
-    if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
-  }
+  const answerMessage = useCallback(
+    async (message: MobileMessage, answer: string) => {
+      const targetBotId = botId;
+      const targetGroupId = groupId;
+      if ((!targetBotId && !targetGroupId) || !message.runId) return;
+      await rpc("threads/answer", {
+        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+        runId: message.runId,
+        messageId: message.id,
+        answer,
+      });
+      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
+    },
+    [botId, groupId],
+  );
+
+  const openBot = useCallback(
+    (id: string, botName: string) =>
+      router.push({ pathname: "/thread", params: { botId: id, name: botName } }),
+    [router],
+  );
+
+  const speak = useCallback(
+    (message: MobileMessage) =>
+      void speakMessage(message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "", message).catch(
+        (err) => Alert.alert("Could not speak", err instanceof Error ? err.message : "Try again."),
+      ),
+    [botId, snap?.members],
+  );
 
   function showAttachMenu() {
     Alert.alert("Attach", undefined, [
@@ -966,22 +983,192 @@ export default function Thread() {
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
+  const liveMessages = useMemo(() => [...visibleMessages].reverse(), [visibleMessages]);
+  const messagesById = useMemo(
+    () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
+    [snap?.messages],
+  );
+  const pinnedTarget = pinnedAroundRef.current;
+  const showPinnedPage = Boolean(
+    jumpScrollTarget.current ||
+      (pinnedTarget &&
+        ((pinnedTarget.botId && pinnedTarget.botId === botId) ||
+          (pinnedTarget.groupId && pinnedTarget.groupId === groupId))),
+  );
 
   function performScroll(action: ThreadScrollAction) {
-    if (!action) return;
-    scroll.current?.scrollToEnd({
+    if (!action || showPinnedPage) return;
+    scroll.current?.scrollToOffset({
+      offset: 0,
       animated: action === "smooth" && !reducedMotion,
     });
   }
 
   function updateUserScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    // Inverted FlatList: contentOffset.y is distance from the latest messages.
     setThreadScrollState(
-      scrollBehavior.current.onUserScroll(
-        Math.max(0, contentSize.height - layoutMeasurement.height - contentOffset.y),
-      ),
+      scrollBehavior.current.onUserScroll(Math.max(0, event.nativeEvent.contentOffset.y)),
     );
   }
+
+  function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
+    const ownerId = toolOwnerId(message, inGroup);
+    const activityBotId =
+      ownerId ??
+      (!inGroup && message.role === "bot" && message.id.startsWith("progress:")
+        ? (message.botId ?? botId)
+        : undefined);
+    const activityBot = activityBotId
+      ? (snap?.members?.find((member) => member.botId === activityBotId) ??
+        (currentBot?.id === activityBotId ? currentBot : undefined))
+      : undefined;
+    const activityStatus = activityBotId
+      ? (snap?.activeRuns?.find((run) => run.botId === activityBotId)?.status ??
+        (snap?.run?.botId === activityBotId ? snap.run.status : currentBotStatus))
+      : undefined;
+    return (
+      <View
+        key={message.id}
+        onLayout={
+          options?.enableJump
+            ? (event) => {
+                if (jumpScrollTarget.current !== message.id) return;
+                const y = Math.max(0, event.nativeEvent.layout.y - 24);
+                requestAnimationFrame(() => {
+                  if (jumpScrollTarget.current !== message.id) return;
+                  pinnedScroll.current?.scrollTo({ y, animated: true });
+                  jumpScrollTarget.current = null;
+                });
+              }
+            : undefined
+        }
+        style={{
+          marginTop: 12,
+          width: "100%",
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 8,
+          justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+        }}
+      >
+        {activityBotId ? (
+          <View style={{ paddingTop: 22 }}>
+            <BotAvatar
+              color={activityBot?.color ?? "#85858A"}
+              identity={activityBotId}
+              size={inGroup ? 20 : 28}
+              status={activityStatus}
+            />
+          </View>
+        ) : null}
+        <View
+          style={{
+            width: isCenteredAgentEvent(message.blocks) ? "100%" : undefined,
+            maxWidth: isCenteredAgentEvent(message.blocks)
+              ? "100%"
+              : activityBotId
+                ? undefined
+                : "90%",
+            flex: activityBotId ? 1 : undefined,
+            flexShrink: 1,
+          }}
+        >
+          <Pressable
+            accessibilityLabel="Reply"
+            onPress={() => setReplyTarget(message)}
+            style={{
+              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+              marginBottom: 4,
+            }}
+          >
+            <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
+          </Pressable>
+          <MessageBubble
+            botId={botId ?? snap?.members?.[0]?.botId ?? ""}
+            groupId={groupId}
+            message={message}
+            botName={name}
+            members={snap?.members}
+            replyPreview={
+              message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
+            }
+            canAnswer={message.id === answerableAskMessageId}
+            onAnswer={answerMessage}
+            onOpenBot={openBot}
+            onPreviewMarkdown={setMarkdownPreview}
+            onSpeak={message.role === "bot" ? speak : undefined}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  const workingFooter =
+    !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+          minHeight: 40,
+          marginTop: 12,
+        }}
+      >
+        <BotAvatar
+          color={currentBot.color}
+          identity={currentBot.id}
+          size={28}
+          status={currentBotStatus}
+        />
+        <Text style={{ color: "#85858A", fontSize: 13.5 }}>{currentBot.name} is working</Text>
+      </View>
+    ) : inGroup && workingGroupBots.length > 0 ? (
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+          minHeight: 40,
+          marginTop: 12,
+        }}
+      >
+        <View style={{ flexDirection: "row", paddingRight: 8 }}>
+          {workingGroupBots.map((bot, index) => (
+            <View
+              key={bot.botId}
+              style={{
+                marginLeft: index === 0 ? 0 : -8,
+                zIndex: workingGroupBots.length - index,
+              }}
+            >
+              <BotAvatar color={bot.color} identity={bot.botId} size={28} status={bot.status} />
+            </View>
+          ))}
+        </View>
+        <Text style={{ color: "#85858A", fontSize: 13.5, flexShrink: 1 }}>
+          {workingGroupBots.length === 1
+            ? `${workingGroupBots[0]?.name ?? "Agent"} is working`
+            : `${workingGroupBots.length} agents working`}
+        </Text>
+      </View>
+    ) : null;
+
+  const loadEarlierControl =
+    snap?.olderCursor != null ? (
+      <Pressable
+        disabled={loadingOlder}
+        onPress={() => void loadOlderMessages()}
+        style={{
+          alignSelf: "center",
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+        }}
+      >
+        <Text style={{ color: "#85858A", fontSize: 13 }}>
+          {loadingOlder ? "Loading…" : "Load earlier messages"}
+        </Text>
+      </Pressable>
+    ) : null;
 
   return (
     <KeyboardAvoidingView
@@ -992,217 +1179,62 @@ export default function Thread() {
       {error ? <Text style={{ color: "#8E8E93", marginTop: 12 }}>{error}</Text> : null}
       {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
       <View style={{ flex: 1, position: "relative" }}>
-        <ScrollView
-          key={threadKey}
-          ref={scroll}
-          style={{ flex: 1, marginTop: 8 }}
-          scrollEventThrottle={16}
-          onScrollBeginDrag={() => {
-            userDragging.current = true;
-          }}
-          onScroll={(event) => {
-            if (userDragging.current) updateUserScroll(event);
-          }}
-          onScrollEndDrag={(event) => {
-            updateUserScroll(event);
-            userDragging.current = false;
-          }}
-          onMomentumScrollEnd={updateUserScroll}
-          onLayout={() => performScroll(scrollBehavior.current.onLayout())}
-          onContentSizeChange={() => {
-            if (loadingOlderContent.current) {
-              loadingOlderContent.current = false;
-              return;
-            }
-            const blocked = Boolean(
-              jumpScrollTarget.current ||
-                (pinnedAroundRef.current &&
-                  ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                    (pinnedAroundRef.current.groupId &&
-                      pinnedAroundRef.current.groupId === groupId))) ||
-                expandedHistoryThread.current === snap?.threadId,
-            );
-            performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
-            setThreadScrollState(scrollBehavior.current.state());
-          }}
-        >
-          {snap?.olderCursor != null ? (
-            <Pressable
-              disabled={loadingOlder}
-              onPress={() => void loadOlderMessages()}
-              style={{
-                alignSelf: "center",
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-              }}
-            >
-              <Text style={{ color: "#85858A", fontSize: 13 }}>
-                {loadingOlder ? "Loading…" : "Load earlier messages"}
-              </Text>
-            </Pressable>
-          ) : null}
-          {visibleMessages.map((message) => {
-            const ownerId = toolOwnerId(message, inGroup);
-            const activityBotId =
-              ownerId ??
-              (!inGroup && message.role === "bot" && message.id.startsWith("progress:")
-                ? (message.botId ?? botId)
-                : undefined);
-            const activityBot = activityBotId
-              ? (snap?.members?.find((member) => member.botId === activityBotId) ??
-                (currentBot?.id === activityBotId ? currentBot : undefined))
-              : undefined;
-            const activityStatus = activityBotId
-              ? (snap?.activeRuns?.find((run) => run.botId === activityBotId)?.status ??
-                (snap?.run?.botId === activityBotId ? snap.run.status : currentBotStatus))
-              : undefined;
-            return (
-              <View
-                key={message.id}
-                onLayout={(event) => {
-                  if (jumpScrollTarget.current !== message.id) return;
-                  scroll.current?.scrollTo({
-                    y: Math.max(0, event.nativeEvent.layout.y - 24),
-                    animated: true,
-                  });
-                  jumpScrollTarget.current = null;
-                }}
-                style={{
-                  marginTop: 12,
-                  width: "100%",
-                  flexDirection: "row",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-                }}
-              >
-                {activityBotId ? (
-                  <View style={{ paddingTop: 22 }}>
-                    <BotAvatar
-                      color={activityBot?.color ?? "#85858A"}
-                      identity={activityBotId}
-                      size={inGroup ? 20 : 28}
-                      status={activityStatus}
-                    />
-                  </View>
-                ) : null}
-                <View
-                  style={{
-                    width: isCenteredAgentEvent(message.blocks) ? "100%" : undefined,
-                    maxWidth: isCenteredAgentEvent(message.blocks)
-                      ? "100%"
-                      : activityBotId
-                        ? undefined
-                        : "90%",
-                    flex: activityBotId ? 1 : undefined,
-                    flexShrink: 1,
-                  }}
-                >
-                  <Pressable
-                    accessibilityLabel="Reply"
-                    onPress={() => setReplyTarget(message)}
-                    style={{
-                      alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
-                  </Pressable>
-                  <MessageBubble
-                    botId={botId ?? snap?.members?.[0]?.botId ?? ""}
-                    groupId={groupId}
-                    message={message}
-                    botName={name}
-                    members={snap?.members}
-                    replyPreview={
-                      message.replyToMessageId
-                        ? snap?.messages.find((row) => row.id === message.replyToMessageId)
-                        : undefined
-                    }
-                    canAnswer={message.id === answerableAskMessageId}
-                    onAnswer={(answer) => answerMessage(message, answer)}
-                    onOpenBot={(id, botName) =>
-                      router.push({
-                        pathname: "/thread",
-                        params: { botId: id, name: botName },
-                      })
-                    }
-                    onPreviewMarkdown={setMarkdownPreview}
-                    onSpeak={
-                      message.role === "bot"
-                        ? () =>
-                            void speakMessage(
-                              message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "",
-                              message,
-                            ).catch((err) =>
-                              Alert.alert(
-                                "Could not speak",
-                                err instanceof Error ? err.message : "Try again.",
-                              ),
-                            )
-                        : undefined
-                    }
-                  />
-                </View>
-              </View>
-            );
-          })}
-          {!inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                minHeight: 40,
-                marginTop: 12,
-              }}
-            >
-              <BotAvatar
-                color={currentBot.color}
-                identity={currentBot.id}
-                size={28}
-                status={currentBotStatus}
-              />
-              <Text style={{ color: "#85858A", fontSize: 13.5 }}>{currentBot.name} is working</Text>
-            </View>
-          ) : null}
-          {inGroup && workingGroupBots.length > 0 ? (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                minHeight: 40,
-                marginTop: 12,
-              }}
-            >
-              <View style={{ flexDirection: "row", paddingRight: 8 }}>
-                {workingGroupBots.map((bot, index) => (
-                  <View
-                    key={bot.botId}
-                    style={{
-                      marginLeft: index === 0 ? 0 : -8,
-                      zIndex: workingGroupBots.length - index,
-                    }}
-                  >
-                    <BotAvatar
-                      color={bot.color}
-                      identity={bot.botId}
-                      size={28}
-                      status={bot.status}
-                    />
-                  </View>
-                ))}
-              </View>
-              <Text style={{ color: "#85858A", fontSize: 13.5, flexShrink: 1 }}>
-                {workingGroupBots.length === 1
-                  ? `${workingGroupBots[0]?.name ?? "Agent"} is working`
-                  : `${workingGroupBots.length} agents working`}
-              </Text>
-            </View>
-          ) : null}
-        </ScrollView>
-        {threadScrollState.detached ? (
+        {showPinnedPage ? (
+          <ScrollView
+            key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
+            ref={pinnedScroll}
+            style={{ flex: 1, marginTop: 8 }}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          >
+            {loadEarlierControl}
+            {visibleMessages.map((message) => renderMessageRow(message, { enableJump: true }))}
+            {workingFooter}
+          </ScrollView>
+        ) : (
+          <FlatList
+            key={threadKey}
+            ref={scroll}
+            data={liveMessages}
+            inverted
+            keyExtractor={(message) => message.id}
+            extraData={answerableAskMessageId}
+            style={{ flex: 1, marginTop: 8 }}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            scrollEventThrottle={16}
+            onScrollBeginDrag={() => {
+              userDragging.current = true;
+            }}
+            onScroll={(event) => {
+              if (userDragging.current) updateUserScroll(event);
+            }}
+            onScrollEndDrag={(event) => {
+              updateUserScroll(event);
+              userDragging.current = false;
+            }}
+            onMomentumScrollEnd={updateUserScroll}
+            onLayout={() => performScroll(scrollBehavior.current.onLayout())}
+            onContentSizeChange={() => {
+              if (loadingOlderContent.current) {
+                loadingOlderContent.current = false;
+                return;
+              }
+              const blocked = Boolean(
+                jumpScrollTarget.current ||
+                  (pinnedAroundRef.current &&
+                    ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
+                      (pinnedAroundRef.current.groupId &&
+                        pinnedAroundRef.current.groupId === groupId))) ||
+                  expandedHistoryThread.current === snap?.threadId,
+              );
+              performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+              setThreadScrollState(scrollBehavior.current.state());
+            }}
+            ListFooterComponent={loadEarlierControl}
+            ListHeaderComponent={workingFooter}
+            renderItem={({ item }) => renderMessageRow(item)}
+          />
+        )}
+        {!showPinnedPage && threadScrollState.detached ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
@@ -1702,7 +1734,12 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
 
 function previewMessageText(message: MobileMessage): string {
   const text = message.blocks
-    .flatMap((block) => (block.kind === "text" && block.text ? [block.text] : []))
+    .flatMap((block) => {
+      if (block.kind === "phone_channel_message" && block.text) {
+        return [`iMessage · ${block.fromLabel}: ${block.text}`];
+      }
+      return block.kind === "text" && block.text ? [block.text] : [];
+    })
     .join(" ")
     .trim();
   if (text) return text;
@@ -1733,7 +1770,7 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
   groupId,
@@ -1753,10 +1790,10 @@ function MessageBubble({
   members?: MobileSnapshot["members"];
   replyPreview?: MobileMessage;
   canAnswer: boolean;
-  onAnswer: (answer: string) => Promise<void>;
+  onAnswer: (message: MobileMessage, answer: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
-  onSpeak?: () => void;
+  onSpeak?: (message: MobileMessage) => void;
 }) {
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
@@ -1772,7 +1809,11 @@ function MessageBubble({
   if (ask) {
     return (
       <View style={{ gap: 8, width: "100%" }}>
-        <AskBlock ask={ask} canAnswer={canAnswer} onAnswer={onAnswer} />
+        <AskBlock
+          ask={ask}
+          canAnswer={canAnswer}
+          onAnswer={(answer) => onAnswer(message, answer)}
+        />
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
         ))}
@@ -1808,6 +1849,19 @@ function MessageBubble({
         expanded={peerExpanded}
         onToggle={() => setPeerExpanded((expanded) => !expanded)}
       />
+    );
+  }
+  const phoneChannel = message.blocks.find(
+    (block): block is Extract<MessageBlock, { kind: "phone_channel_message" }> =>
+      block.kind === "phone_channel_message",
+  );
+  if (phoneChannel) {
+    return (
+      <View style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}>
+        <Text style={{ color: "#85858A", fontSize: 13.5, textAlign: "center" }}>
+          iMessage · {phoneChannel.fromLabel}: {phoneChannel.text}
+        </Text>
+      </View>
     );
   }
   const special = message.blocks.find(
@@ -1966,7 +2020,10 @@ function MessageBubble({
               {formatApprovalAnswer(askBlock.answer)}
             </Text>
           ) : canAnswer && onAnswer ? (
-            <AskActions actions={askBlock.actions} onAnswer={onAnswer} />
+            <AskActions
+              actions={askBlock.actions}
+              onAnswer={(answer) => onAnswer(message, answer)}
+            />
           ) : (
             <Text style={{ color: "#85858A", marginTop: 12, fontSize: 13.5 }}>
               No longer active
@@ -1983,7 +2040,12 @@ function MessageBubble({
     (block) => block.kind === "image" || block.kind === "file",
   );
   const caption = message.blocks
-    .flatMap((block) => (block.kind === "text" && block.text ? [block.text] : []))
+    .flatMap((block) => {
+      if (block.kind === "phone_channel_message" && block.text) {
+        return [`iMessage · ${block.fromLabel}: ${block.text}`];
+      }
+      return block.kind === "text" && block.text ? [block.text] : [];
+    })
     .join("\n");
   if (attachments.length > 0) {
     const speaker =
@@ -2114,7 +2176,7 @@ function MessageBubble({
             message={{ ...message, blocks: segment.blocks }}
             speaker={index === firstContent ? speaker : undefined}
             replyPreview={index === firstContent ? replyPreview : undefined}
-            onSpeak={index === lastContent ? onSpeak : undefined}
+            onSpeak={index === lastContent && onSpeak ? () => onSpeak(message) : undefined}
           />
         ),
       )}
@@ -2123,7 +2185,7 @@ function MessageBubble({
       ))}
     </View>
   );
-}
+});
 
 function MessageTextCard({
   message,

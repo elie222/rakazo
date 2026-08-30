@@ -5,7 +5,8 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
     (block) =>
       block.kind === "handoff" ||
       block.kind === "bot_message_sent" ||
-      block.kind === "bot_message_received",
+      block.kind === "bot_message_received" ||
+      block.kind === "phone_channel_message",
   );
 }
 

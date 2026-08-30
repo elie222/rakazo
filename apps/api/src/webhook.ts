@@ -41,7 +41,7 @@ export function webhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/webhook`;
 }
 
-async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
+export async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
   const contentLengthHeader = request.headers.get("content-length");
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);

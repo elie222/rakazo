@@ -38,6 +38,7 @@ const payloadSchemas = {
     triggerPayload: z.record(z.string(), z.unknown()).optional(),
   }),
   "company.health.evaluate": z.object({ workspaceId: z.string().min(1) }),
+  "phone.deliver": z.object({ runId: z.string().min(1).optional() }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -129,6 +130,15 @@ export function skillTeachingExpireJob(skillId: string, availableAt: Date): Back
 
 export function historyCompactJobKey(threadId: string): string {
   return `history.compact:${threadId}`;
+}
+
+export function phoneDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
+  return {
+    name: "phone.deliver",
+    payload: runId ? { runId } : {},
+    replaceKey: `phone.deliver:${runId ?? "drain"}`,
+    ...(availableAt ? { availableAt } : {}),
+  };
 }
 
 export function historyCompactJob(threadId: string): BackgroundJob {

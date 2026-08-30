@@ -201,6 +201,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     hop: z.number().int().positive().optional(),
   }),
   z.object({
+    /** An iMessage group message delivered into a member bot's own thread. */
+    kind: z.literal("phone_channel_message"),
+    channelId: Id,
+    fromNumber: z.string(),
+    fromLabel: z.string(),
+    text: z.string(),
+    hop: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
     /** Shown in the sending bot's own chat, so the user can see what it sent. */
     kind: z.literal("bot_message_sent"),
     toBotId: Id,

@@ -10,6 +10,7 @@ import {
   resolveScreenProxySecret,
   resolveSupervisorToken,
   resolveUpdaterToken,
+  timingSafeStringEqual,
 } from "./secrets-guard.js";
 
 describe("secrets-guard", () => {
@@ -186,6 +187,15 @@ describe("secrets-guard", () => {
         RAKAZO_UPDATER_TOKEN: "too-short",
       }),
     ).toThrow(/at least 32 characters/);
+  });
+
+  it("compares raw strings in constant time", () => {
+    expect(timingSafeStringEqual("secret-token", "secret-token")).toBe(true);
+    expect(timingSafeStringEqual("secret-token-longer", "secret-token")).toBe(false);
+    expect(timingSafeStringEqual("secret-toke", "secret-token")).toBe(false);
+    expect(timingSafeStringEqual("Secret-token", "secret-token")).toBe(false);
+    expect(timingSafeStringEqual(undefined, "secret-token")).toBe(false);
+    expect(timingSafeStringEqual("", "")).toBe(true);
   });
 
   it("compares bearer tokens without leaking a length or a prefix match", () => {

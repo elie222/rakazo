@@ -28,6 +28,12 @@ import type {
   MemorySearchRequest,
   MemorySearchResult,
   MemorySnapshot,
+  MessagingCapabilities,
+  MessagingDirectRequest,
+  MessagingGroup,
+  MessagingGroupRequest,
+  MessagingSendResult,
+  MessagingTypingRequest,
   NotificationMessage,
   PortableFile,
   ProcessEvent,
@@ -262,4 +268,25 @@ export interface VoiceProvider {
   listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+}
+
+/**
+ * Deployment-wide text messaging surface (one phone line for the whole
+ * deployment). Webhook parsing/verification stays an exported pure function
+ * on the vendor module — that is HTTP shape, not transport.
+ */
+export interface MessagingProvider {
+  describe(): AdapterDescriptor<MessagingCapabilities>;
+  sendDirect(
+    request: MessagingDirectRequest,
+    context: AdapterContext,
+  ): Promise<MessagingSendResult>;
+  sendGroup(request: MessagingGroupRequest, context: AdapterContext): Promise<MessagingSendResult>;
+  getGroup(groupId: string, context: AdapterContext): Promise<MessagingGroup>;
+  /**
+   * Best-effort "…" typing bubbles for 1:1 chats. Optional because vendors
+   * may not support it in groups; it is cosmetic and must never gate message
+   * delivery.
+   */
+  sendTypingIndicator?(request: MessagingTypingRequest, context: AdapterContext): Promise<void>;
 }

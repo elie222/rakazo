@@ -275,6 +275,9 @@ export function prependMobileMessagePage(
 export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
+      if (block.kind === "phone_channel_message") {
+        return `iMessage · ${block.fromLabel}: ${block.text}`;
+      }
       if (block.kind === "subagent") {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
       }

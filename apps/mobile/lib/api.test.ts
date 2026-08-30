@@ -408,6 +408,22 @@ describe("mobile thread event reduction", () => {
     );
   });
 
+  it("formats phone channel messages with iMessage attribution", () => {
+    expect(
+      blockText(
+        mobileMessage("phone-1", [
+          {
+            kind: "phone_channel_message",
+            channelId: "ch-1",
+            fromNumber: "+15551234567",
+            fromLabel: "Alex",
+            text: "Hello from the group",
+          },
+        ]),
+      ),
+    ).toBe("iMessage · Alex: Hello from the group");
+  });
+
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
     const initial = snapshot([
       mobileMessage("message-1", [{ kind: "text", text: "old" }]),

@@ -430,6 +430,7 @@ export interface BackgroundJobPayloads {
   "workitem.review": { workspaceId: string; reviewId: string };
   "sop.trigger": { workspaceId: string; sopId: string; triggerPayload?: Record<string, unknown> };
   "company.health.evaluate": { workspaceId: string };
+  "phone.deliver": { runId?: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -465,3 +466,54 @@ export interface NotificationMessage {
   botId: string;
   threadId: string;
 }
+
+export interface MessagingCapabilities {
+  direct: boolean;
+  groups: boolean;
+  typing: boolean;
+}
+
+export interface MessagingDirectRequest {
+  to: string;
+  body: string;
+}
+
+export interface MessagingGroupRequest {
+  groupId: string;
+  body: string;
+}
+
+export interface MessagingTypingRequest {
+  to: string;
+}
+
+export interface MessagingSendResult {
+  handle: string;
+}
+
+export interface MessagingGroup {
+  id: string;
+  name: string | null;
+  participants: string[];
+}
+
+/** Provider-neutral inbound message after vendor webhook parsing. */
+export interface MessagingInboundMessage {
+  type: "message";
+  handle: string;
+  fromNumber: string;
+  groupId: string | null;
+  groupName: string | null;
+  participants: string[];
+  content: string;
+  mediaUrl: string | null;
+}
+
+/** Provider-neutral outbound delivery status after vendor webhook parsing. */
+export interface MessagingOutboundStatus {
+  type: "status";
+  handle: string;
+  status: string;
+}
+
+export type MessagingInboundEvent = MessagingInboundMessage | MessagingOutboundStatus;

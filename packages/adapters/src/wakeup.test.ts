@@ -21,6 +21,7 @@ function handlers(): BackgroundJobHandlers {
     "workitem.review": vi.fn(async () => undefined),
     "sop.trigger": vi.fn(async () => undefined),
     "company.health.evaluate": vi.fn(async () => undefined),
+    "phone.deliver": vi.fn(async () => undefined),
   };
 }
 

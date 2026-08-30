@@ -1,7 +1,7 @@
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createRunExecutor, runNotificationsEnabled } from "./executor.js";
+import { createRunExecutor, runNotificationsEnabled, threadContextForRun } from "./executor.js";
 
 describe("run notification preference", () => {
   it("silences direct messages but leaves group notifications enabled", async () => {
@@ -46,6 +46,25 @@ describe("run notification preference", () => {
 });
 
 describe("createRunExecutor", () => {
+  it("isolates routine runs from every thread-history source", () => {
+    const threadContext = {
+      messages: [{ role: "user", content: "Create this routine" }],
+      summary: "The user just configured this routine.",
+      historyCompactedUpToSeq: 4,
+    };
+
+    expect(threadContextForRun("routine", threadContext)).toEqual({
+      messages: [],
+      summary: null,
+      historyCompactedUpToSeq: null,
+      includeSemanticRecall: false,
+    });
+    expect(threadContextForRun("user", threadContext)).toEqual({
+      ...threadContext,
+      includeSemanticRecall: true,
+    });
+  });
+
   it("deactivates one-shot routines after wake without scheduling another wakeup", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const enqueue = vi.fn(async () => undefined);

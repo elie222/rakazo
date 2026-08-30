@@ -115,6 +115,23 @@ export function resolveUpdaterToken(env: NodeJS.ProcessEnv = process.env): strin
 }
 
 /**
+ * Constant-time string comparison for shared-secret headers that carry no
+ * `Bearer ` prefix (e.g. a vendor static signing-secret header).
+ * Same XOR rationale as `hasValidBearerToken` below.
+ */
+export function timingSafeStringEqual(supplied: string | undefined, expected: string): boolean {
+  const encoder = new TextEncoder();
+  const actual = encoder.encode(expected);
+  const candidate = encoder.encode(supplied ?? "");
+  if (actual.length !== candidate.length) return false;
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) {
+    difference |= (actual[index] ?? 0) ^ (candidate[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+/**
  * Constant-time bearer comparison, shared by every privileged sidecar.
  *
  * Deliberately not `node:crypto`'s `timingSafeEqual`: this module is reachable from the web bundle
@@ -126,13 +143,5 @@ export function resolveUpdaterToken(env: NodeJS.ProcessEnv = process.env): strin
  */
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
   const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-  const encoder = new TextEncoder();
-  const actual = encoder.encode(expectedToken);
-  const candidate = encoder.encode(supplied);
-  if (actual.length !== candidate.length) return false;
-  let difference = 0;
-  for (let index = 0; index < actual.length; index += 1) {
-    difference |= (actual[index] ?? 0) ^ (candidate[index] ?? 0);
-  }
-  return difference === 0;
+  return timingSafeStringEqual(supplied, expectedToken);
 }

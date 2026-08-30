@@ -41,9 +41,12 @@ import {
   humanizeToolName,
   inferAttachmentMimeType,
   isOneShotRoutineCrons,
+  isPhoneChannelRun,
   isTerminal,
   nextCronDateAcross,
   nextFence,
+  phoneChannelPrivacyBlock,
+  phoneDmSurfaceNote,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -68,6 +71,11 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { parse as parseShellCommand } from "shell-quote";
+import {
+  connectAgent,
+  messageConnectedAgent,
+  respondAgentConnection,
+} from "./agent-connections.js";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
@@ -91,7 +99,7 @@ import {
   runAutoReviewJudge,
 } from "./auto-review.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -346,6 +354,8 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
+  /** Phone surface; absent means zero phone queries and no phone prompts. */
+  phone?: { hasIdentity(botId: string): Promise<boolean> };
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   onRunFinalized?: (input: {
     runId: string;
@@ -823,18 +833,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
-        const visibleMessages = [...messages].reverse().map((m) => ({
-          seq: m.seq,
-          role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-            | "user"
-            | "assistant"
-            | "system",
-          content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
-        }));
-        const compactedHistory = selectCompactedHistory({
-          messages: visibleMessages,
+        const threadContext = threadContextForRun(run.trigger, {
+          messages: [...messages].reverse().map((m) => ({
+            seq: m.seq,
+            role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+              | "user"
+              | "assistant"
+              | "system",
+            content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
+          })),
           summary: thread.historyCompactionSummary,
           historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+        });
+        const compactedHistory = selectCompactedHistory({
+          messages: threadContext.messages,
+          summary: threadContext.summary,
+          historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
         let history = compactedHistory.history.map(({ role, content }) => ({ role, content }));
         const turnBlocks = userTurnBlocksForRun(
@@ -861,7 +875,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : "The delegated bot completed its turn without a written summary."
           : undefined;
         const recallPromise =
-          semanticMemory && memoryScope && thread.historyCompactedUpToSeq != null
+          threadContext.includeSemanticRecall &&
+          semanticMemory &&
+          memoryScope &&
+          thread.historyCompactedUpToSeq != null
             ? semanticMemory.recall(
                 {
                   query: task.prompt,
@@ -955,12 +972,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId, { id: bot.id, name: bot.name })
           : undefined;
+        // Phone runs are rare; the source lookup only happens for them.
+        const phoneSourceBlocks =
+          run.trigger === "phone" && run.sourceMessageId
+            ? ((
+                await deps.prisma.message.findUnique({
+                  where: { id: run.sourceMessageId },
+                  select: { blocks: true },
+                })
+              )?.blocks as MessageBlock[] | undefined)
+            : undefined;
+        const phoneChannelRun = isPhoneChannelRun(run.trigger, phoneSourceBlocks);
+        const hasPhoneIdentity = deps.phone ? await deps.phone.hasIdentity(bot.id) : false;
+        const phoneContext = hasPhoneIdentity
+          ? [phoneDmSurfaceNote(), phoneChannelRun ? phoneChannelPrivacyBlock() : null]
+              .filter(Boolean)
+              .join("\n\n")
+          : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
         const availableBuiltins = filterBuiltinToolsForThread(
           filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed),
           thread.groupId,
         );
-        const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
+        const builtins = [
+          ...selectMemoryTools(availableBuiltins, semanticMemoryEnabled),
+          // Cross-owner agent connections only exist for phone-linked bots.
+          ...(hasPhoneIdentity ? agentConnectionTools : []),
+        ];
         const exposedConnectorTools = discovered.filter(
           (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
         );
@@ -2204,6 +2242,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!sent.ok) return finish({ error: sent.error });
             return finish({ ok: true, botId: sent.botId, name: sent.name, note: sent.note });
           }
+          if (name === "connect_agent") {
+            const result = await connectAgent(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              { phone: args.phone ? String(args.phone) : undefined },
+            );
+            if (!result.ok) return finish({ error: result.error });
+            return finish(result);
+          }
+          if (name === "respond_agent_connection") {
+            const result = await respondAgentConnection(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              { accept: Boolean(args.accept) },
+            );
+            if (!result.ok) return finish({ error: result.error });
+            return finish(result);
+          }
+          if (name === "message_agent") {
+            const result = await messageConnectedAgent(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              {
+                phone: args.phone ? String(args.phone) : undefined,
+                message: redactSecrets(String(args.message ?? ""), runSecrets),
+                deliveryKey: executionId,
+              },
+            );
+            if (!result.ok) return finish({ error: result.error });
+            return finish(result);
+          }
           if (name === "handoff_to_bot") {
             if (!thread.groupId) return finish({ error: "handoff_to_bot is only for group chats" });
             const result = await handoffToGroupBot(deps, run, thread.groupId, {
@@ -2370,6 +2442,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: [
                 bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
                 groupContext,
+                phoneContext,
                 memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
                 scratchpadContext ? redactSecrets(scratchpadContext, runSecrets) : undefined,
                 historicalContext.length > 0
@@ -2410,7 +2483,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
-              allowSilentEmpty: allowSilentPeerMessage,
+              allowSilentEmpty: allowSilentPeerMessage || phoneChannelRun,
               emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
             },
@@ -2696,7 +2769,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           flushPendingTools();
           if (!assembled) {
             messageSegments = completionMessageSegments(messageSegments, {
-              allowSilentEmpty: allowSilentPeerMessage,
+              allowSilentEmpty: allowSilentPeerMessage || phoneChannelRun,
               emptyResponseText,
               suppressOutput: handedOff,
             });
@@ -2944,6 +3017,24 @@ async function renewRunLease(
 
 function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
+}
+
+export function threadContextForRun<T>(
+  trigger: string,
+  context: {
+    messages: T[];
+    summary: string | null;
+    historyCompactedUpToSeq: number | null;
+  },
+) {
+  return trigger === "routine"
+    ? {
+        messages: [] as T[],
+        summary: null,
+        historyCompactedUpToSeq: null,
+        includeSemanticRecall: false,
+      }
+    : { ...context, includeSemanticRecall: true };
 }
 
 export function completionMessageSegments(

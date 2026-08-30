@@ -4,9 +4,10 @@ import type {
   AgentRuntime,
   BackgroundJobHandlers,
   JobPublisher,
+  MessagingProvider,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { workItemDispatchJob } from "@rakazo/adapter-kit";
+import { phoneDeliverJob, workItemDispatchJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { acquireEmployeeEvaluationLease, releaseEmployeeEvaluationLease } from "@rakazo/organization";
 import { expireComputerControl } from "./computer-control.js";
@@ -17,6 +18,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import type { OrganizationExecutionBridge } from "./organization-execution-bridge.js";
 import type { OrganizationManagerRuntime } from "./organization-manager-runtime.js";
 import type { createOrganizationProgressEvaluator } from "./organization-progress-evaluator.js";
+import { deliverPhoneOutbound } from "./phone-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
@@ -35,10 +37,32 @@ export function createBackgroundJobHandlers(deps: {
   organizationBridge?: OrganizationExecutionBridge;
   managerRuntime?: OrganizationManagerRuntime;
   progressEvaluator?: ReturnType<typeof createOrganizationProgressEvaluator>;
+  messaging?: MessagingProvider;
 }): BackgroundJobHandlers {
   return {
     "run.continue": async (payload) => {
       await deps.executor.continueRun(payload.runId, deps.workerId);
+      // Automatic phone mirror: once the run's bot messages are durable,
+      // copy them into the outbox. Never let mirror failures fail the run.
+      if (deps.messaging) {
+        await deps.jobs.enqueue(phoneDeliverJob(payload.runId)).catch((error) => {
+          console.error("phone.deliver enqueue error", error);
+        });
+      }
+    },
+    "phone.deliver": async (payload) => {
+      if (!deps.messaging) return;
+      await deliverPhoneOutbound(
+        { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
+        payload,
+        {
+          operationId: `phone.deliver:${payload.runId ?? "drain"}`,
+          traceId: `phone.deliver:${payload.runId ?? "drain"}`,
+          workspaceId: "",
+          userId: "",
+          signal: new AbortController().signal,
+        },
+      );
     },
     "routine.wakeup": async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);

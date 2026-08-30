@@ -1194,3 +1194,78 @@ model CompanyEvent {
   @@index([workItemId])
   @@map("company_events")
 }
+
+model PhoneIdentity {
+  id                   String    @id @default(cuid())
+  phoneE164            String    @unique
+  userId               String
+  workspaceId          String
+  botId                String    @unique
+  verifiedAt           DateTime?
+  lastInboundAt        DateTime?
+  outboundSinceInbound Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("phone_identities")
+}
+
+model PhoneChannel {
+  id              String               @id @default(cuid())
+  providerGroupId String               @unique
+  name            String?
+  introPostedAt   DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  members         PhoneChannelMember[]
+
+  @@map("phone_channels")
+}
+
+model PhoneChannelMember {
+  id         String       @id @default(cuid())
+  channelId  String
+  channel    PhoneChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  phoneE164  String
+  identityId String?
+  status     String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([channelId, phoneE164])
+  @@index([identityId])
+  @@map("phone_channel_members")
+}
+
+model PhoneOutbound {
+  id              String    @id @default(cuid())
+  idempotencyKey  String    @unique
+  kind            String
+  toNumber        String?
+  providerGroupId String?
+  body            String
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  nextAttemptAt   DateTime?
+  providerHandle  String?
+  sourceMessageId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@map("phone_outbound")
+}
+
+model AgentConnection {
+  id             String   @id @default(cuid())
+  requesterBotId String
+  targetBotId    String
+  status         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([requesterBotId, targetBotId])
+  @@index([targetBotId, status])
+  @@map("agent_connections")
+}

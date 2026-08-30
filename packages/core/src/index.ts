@@ -10,13 +10,14 @@ export * from "./compose-update.js";
 export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
 export * from "./cron.js";
-
 export * from "./events.js";
 export * from "./featured-connectors.js";
 export * from "./group-mentions.js";
 export * from "./mcp.js";
 export * from "./message-pages.js";
 export * from "./model-oauth.js";
+export * from "./phone-commands.js";
+export * from "./phone-prompts.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";
 export * from "./screen-lease.js";

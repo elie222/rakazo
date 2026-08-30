@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   historyCompactJobKey,
   parseBackgroundJob,
+  phoneDeliverJob,
 } from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
@@ -26,10 +27,27 @@ function handlers(): BackgroundJobHandlers {
     "workitem.review": vi.fn(async () => undefined),
     "sop.trigger": vi.fn(async () => undefined),
     "company.health.evaluate": vi.fn(async () => undefined),
+    "phone.deliver": vi.fn(async () => undefined),
   };
 }
 
 describe("background job contracts", () => {
+  it("validates and dispatches phone.deliver", async () => {
+    const target = handlers();
+    await dispatchBackgroundJob(target, "phone.deliver", { runId: "run-1" });
+    expect(target["phone.deliver"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(phoneDeliverJob("run-1")).toEqual({
+      name: "phone.deliver",
+      payload: { runId: "run-1" },
+      replaceKey: "phone.deliver:run-1",
+    });
+    expect(phoneDeliverJob()).toEqual({
+      name: "phone.deliver",
+      payload: {},
+      replaceKey: "phone.deliver:drain",
+    });
+  });
+
   it("validates and dispatches a typed job", async () => {
     const target = handlers();
     await dispatchBackgroundJob(target, "routine.wakeup", {
