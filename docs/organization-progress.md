@@ -4,9 +4,11 @@
 
 - Snapshot backup: `/Users/ufuksamet/Desktop/rakazo-main-snapshot-backup-20260830`.
 - Git worktree: `/Users/ufuksamet/Desktop/rakazo-git` from upstream `d9f37db` on `feat/autonomous-organization-runtime`.
+- Recovered implementation commit: `06f76e7 feat: add autonomous organization runtime`.
 - Organization source, migrations, tests, and documentation were transferred through a file inventory; generated output and machine-local artifacts were excluded.
 - `FLAGSHIP POSTGRESQL INTEGRATION TEST — IMPLEMENTED / CI VERIFICATION PENDING`.
 - Local PostgreSQL verification remains unavailable because Docker is absent and the local macOS 27 + Node 26 Prisma schema engine fails before migration execution. The supported Linux/Testcontainers CI harness remains authoritative.
+- Push and CI are blocked only by missing GitHub write authentication in this environment: `gh` is not installed, SSH authentication is denied, and HTTPS has no non-interactive credential. Once authenticated, push the branch to a writable fork and open a PR to trigger the existing `test-integration` workflow.
 
 > **Takeover correction — 2026-08-30:** the earlier phase labels describe
 > scaffolding, not completed autonomous-company behavior. The authoritative

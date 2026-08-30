@@ -10,6 +10,7 @@ Date: 2026-08-30
 - Upstream: `https://github.com/elie222/rakazo.git`.
 - Base: `d9f37db fix(web): center composer and persist bot order (#392)` on `main`.
 - Transfer branch: `feat/autonomous-organization-runtime`.
+- Recovered commit: `06f76e7 feat: add autonomous organization runtime`.
 
 ## Inventory
 
@@ -40,3 +41,4 @@ No migration was renamed, regenerated, squashed, or reordered.
 
 - The snapshot's macOS 27 + Node 26 Prisma schema-engine failure remains environment-specific; it is not evidence of a PostgreSQL or migration failure.
 - Docker/Testcontainers is unavailable locally, so no PostgreSQL migration or flagship behavioral result is claimed here.
+- GitHub CI is pending writable GitHub authentication. The configured upstream remote is read-only for this environment; neither GitHub CLI nor SSH credentials are available, and HTTPS has no non-interactive credential.
