@@ -82,6 +82,7 @@ async function main() {
     if (computer.state !== "running") {
       throw new Error(`Docker computer did not remain running: ${JSON.stringify(computer)}`);
     }
+    assertManagedComputerIsolation(project);
     await rpc(baseUrl, cookie, "bots/remove", { botId: bot.id });
     botId = undefined;
 
@@ -239,6 +240,61 @@ function removeManagedComputers(projectName: string) {
     console.error(
       `managed computer cleanup failed: ${error instanceof Error ? error.message : error}`,
     );
+  }
+}
+
+function assertManagedComputerIsolation(projectName: string) {
+  const ids = docker([
+    "ps",
+    "--quiet",
+    "--filter",
+    `network=${projectName}_default`,
+    "--filter",
+    "label=rakazo.managed=true",
+  ])
+    .split("\n")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (ids.length !== 1) {
+    throw new Error(`expected one managed computer, found ${ids.length}`);
+  }
+
+  const config = JSON.parse(docker(["inspect", "--format", "{{json .HostConfig}}", ids[0]])) as {
+    Memory?: number;
+    MemorySwap?: number;
+    NanoCpus?: number;
+    PidsLimit?: number;
+    SecurityOpt?: string[];
+    CapDrop?: string[];
+    NetworkMode?: string;
+    PortBindings?: Record<string, Array<{ HostIp?: string }> | null>;
+  };
+  const user = JSON.parse(
+    docker(["inspect", "--format", "{{json .Config.User}}", ids[0]]),
+  ) as string;
+  const expectedMemory = 2 * 1024 * 1024 * 1024;
+  const problems = [
+    user === "1000:1000" ? undefined : `user=${JSON.stringify(user)}`,
+    config.Memory === expectedMemory ? undefined : `memory=${config.Memory}`,
+    config.MemorySwap === expectedMemory ? undefined : `memorySwap=${config.MemorySwap}`,
+    config.NanoCpus === 2_000_000_000 ? undefined : `nanoCpus=${config.NanoCpus}`,
+    config.PidsLimit === 150 ? undefined : `pidsLimit=${config.PidsLimit}`,
+    config.SecurityOpt?.includes("no-new-privileges:true")
+      ? undefined
+      : `securityOpt=${JSON.stringify(config.SecurityOpt)}`,
+    config.CapDrop?.includes("ALL") ? undefined : `capDrop=${JSON.stringify(config.CapDrop)}`,
+    config.NetworkMode === `${projectName}_default`
+      ? undefined
+      : `networkMode=${config.NetworkMode}`,
+    config.PortBindings?.["6080/tcp"]?.[0]?.HostIp === "127.0.0.1"
+      ? undefined
+      : `viewPort=${JSON.stringify(config.PortBindings?.["6080/tcp"])}`,
+    config.PortBindings?.["6081/tcp"]?.[0]?.HostIp === "127.0.0.1"
+      ? undefined
+      : `controlPort=${JSON.stringify(config.PortBindings?.["6081/tcp"])}`,
+  ].filter(Boolean);
+  if (problems.length) {
+    throw new Error(`managed computer isolation mismatch: ${problems.join(", ")}`);
   }
 }
 

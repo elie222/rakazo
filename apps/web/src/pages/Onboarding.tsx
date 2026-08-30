@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BOT_FIELD_LIMITS, validateBotDraft } from "../lib/bot-draft";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
@@ -46,6 +47,7 @@ export function OnboardingPage() {
   const [description, setDescription] = useState("");
   const [answers, setAnswers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [creatingBot, setCreatingBot] = useState(false);
   const [oauth, setOauth] = useState<{
     verificationUri: string;
     userCode: string;
@@ -180,14 +182,34 @@ export function OnboardingPage() {
     const instructions = answers.length
       ? `User setup:\n${answers.map((a) => `- ${a}`).join("\n")}`
       : description;
-    const bot = await rpc.bots.create({
+    const draft = {
       name: name.trim(),
       title,
       description,
       instructions,
-      notifyOnFinish: true,
-    });
-    navigate(`/app/${bot.id}`);
+    };
+    const validationError = validateBotDraft(draft);
+    if (validationError) {
+      setError(validationError);
+      setStep("bot");
+      return;
+    }
+
+    setError(null);
+    setCreatingBot(true);
+    try {
+      const bot = await rpc.bots.create({
+        ...draft,
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      navigate(`/app/${bot.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create bot");
+      setStep("bot");
+    } finally {
+      setCreatingBot(false);
+    }
   }
 
   const question = QUESTIONS[answers.length];
@@ -330,6 +352,7 @@ export function OnboardingPage() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={BOT_FIELD_LIMITS.name}
                 placeholder="Name this bot"
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
@@ -339,6 +362,7 @@ export function OnboardingPage() {
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                maxLength={BOT_FIELD_LIMITS.title}
                 placeholder="Describe what this bot does"
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
@@ -348,11 +372,13 @@ export function OnboardingPage() {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                maxLength={BOT_FIELD_LIMITS.description}
                 placeholder="What this bot is for"
                 rows={4}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
+            {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
             <button
               type="button"
               disabled={!name.trim()}
@@ -390,10 +416,11 @@ export function OnboardingPage() {
             <p className="mt-2 text-[#85858A]">I’ll pick up work the moment you send it.</p>
             <button
               type="button"
+              disabled={creatingBot}
               onClick={() => void createBot()}
-              className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A]"
+              className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
             >
-              Open Rakazo
+              {creatingBot ? "Opening…" : "Open Rakazo"}
             </button>
           </div>
         ) : null}

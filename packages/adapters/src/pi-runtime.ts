@@ -169,17 +169,25 @@ export class PiAgentRuntime implements AgentRuntime {
 }
 
 function modelsForRequest(request: AgentRunRequest, provider: string): Models {
-  const oauth = request.model.oauth;
-  if (!oauth) return catalogModels;
+  if (request.model.oauth) {
+    const persist = request.model.oauth.persist;
+    return builtinModels({
+      credentials: new PiRuntimeCredentialStore(
+        provider,
+        toOAuthCredential(request.model.oauth.credential),
+        persist ? (next) => persist(next) : undefined,
+      ),
+    });
+  }
 
-  const persist = oauth.persist;
-  return builtinModels({
-    credentials: new PiRuntimeCredentialStore(
-      provider,
-      toOAuthCredential(oauth.credential),
-      persist ? (next) => persist(next) : undefined,
-    ),
-  });
+  const apiKey = request.model.apiKey;
+  if (apiKey) {
+    return builtinModels({
+      credentials: new PiRuntimeCredentialStore(provider, { type: "api_key", key: apiKey }),
+    });
+  }
+
+  return catalogModels;
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {

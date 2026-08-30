@@ -1,5 +1,8 @@
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
+const COMPUTER_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
+const COMPUTER_CPU_NANOS = 2 * 1_000_000_000;
+const COMPUTER_PID_LIMIT = 150;
 
 export interface ComputerCreateInput {
   name: string;
@@ -27,6 +30,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
   return {
     Image: input.image,
     name: input.name,
+    User: "1000:1000",
     Tty: true,
     Env: [
       "DISPLAY=:1",
@@ -48,6 +52,12 @@ export function containerCreateOptions(input: ComputerCreateInput) {
         "6081/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
       },
       ShmSize: 256 * 1024 * 1024,
+      Memory: COMPUTER_MEMORY_BYTES,
+      MemorySwap: COMPUTER_MEMORY_BYTES,
+      NanoCpus: COMPUTER_CPU_NANOS,
+      PidsLimit: COMPUTER_PID_LIMIT,
+      SecurityOpt: ["no-new-privileges:true"],
+      CapDrop: ["ALL"],
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",

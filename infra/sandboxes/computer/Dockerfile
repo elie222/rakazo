@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     dbus-x11 \
   && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 1000 rakazo \
+  && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/rakazo rakazo \
   && mkdir -p /etc/rakazo/fluxbox \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
   && chmod +x /usr/bin/fbsetbg \
@@ -34,4 +36,5 @@ COPY fluxbox.menu /etc/rakazo/fluxbox/menu
 COPY embed.html /usr/share/novnc/embed.html
 RUN chmod +x /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-browser
 EXPOSE 6080 6081
+USER rakazo
 CMD ["/usr/local/bin/rakazo-computer"]
