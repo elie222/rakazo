@@ -2536,13 +2536,13 @@ export function ShellPage() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
-        <div className="flex items-center justify-between border-b border-[#141416] px-3 py-[17px] md:px-[22px]">
+        <div className="app-drag flex items-center justify-between border-b border-[#141416] px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
+              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
@@ -2550,7 +2550,7 @@ export function ShellPage() {
               type="button"
               data-testid="bot-settings-trigger"
               onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="flex min-w-0 items-center gap-3"
+              className="app-no-drag flex min-w-0 items-center gap-3"
             >
               {inGroup ? (
                 <GroupAvatar
@@ -2587,7 +2587,7 @@ export function ShellPage() {
                   }
                   setCallOpen(true);
                 }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
                 style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
               >
                 <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
@@ -2605,7 +2605,7 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
                 style={{ background: panel ? "#1B1B1E" : "transparent" }}
               >
                 <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
