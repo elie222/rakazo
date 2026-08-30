@@ -165,6 +165,7 @@ export interface ScheduleToolDeps {
   jobs: JobPublisher;
 }
 
+/** Persist and enqueue a bot routine that wakes in the originating thread. */
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
   input: {
@@ -240,12 +241,18 @@ export async function createScheduleFromTool(
   };
 }
 
+/** List bot routines, optionally restricted to the current group thread. */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { workspaceId: string; botId: string; userId: string },
+  input: { workspaceId: string; botId: string; userId: string; threadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
-    where: { workspaceId: input.workspaceId, botId: input.botId, userId: input.userId },
+    where: {
+      workspaceId: input.workspaceId,
+      botId: input.botId,
+      userId: input.userId,
+      ...(input.threadId ? { threadId: input.threadId } : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
   return {
@@ -261,12 +268,14 @@ export async function listSchedulesFromTool(
   };
 }
 
+/** Cancel a bot routine, optionally restricted to the current group thread. */
 export async function cancelScheduleFromTool(
   deps: ScheduleToolDeps,
   input: {
     workspaceId: string;
     botId: string;
     userId: string;
+    threadId?: string;
     routineId?: string;
     name?: string;
   },
@@ -282,6 +291,7 @@ export async function cancelScheduleFromTool(
       workspaceId: input.workspaceId,
       botId: input.botId,
       userId: input.userId,
+      ...(input.threadId ? { threadId: input.threadId } : {}),
       ...(routineId ? { id: routineId } : { name: name! }),
     },
   });

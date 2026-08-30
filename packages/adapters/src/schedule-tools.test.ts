@@ -325,7 +325,7 @@ describe("schedule tool persistence", () => {
     ).rejects.toThrow("deactivate failed");
   });
 
-  it("scopes list and cancel to workspace and user", async () => {
+  it("scopes group list and cancel to the current thread without narrowing DMs", async () => {
     const findMany = vi.fn(async () => []);
     const findFirst = vi.fn(async () => null);
     const deps = {
@@ -336,10 +336,20 @@ describe("schedule tool persistence", () => {
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
 
-    await listSchedulesFromTool(deps, { workspaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    await listSchedulesFromTool(deps, {
+      workspaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "group-thread-1",
+    });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workspaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+        where: {
+          workspaceId: "ws-1",
+          botId: "bot-1",
+          userId: "user-1",
+          threadId: "group-thread-1",
+        },
       }),
     );
 
@@ -347,9 +357,37 @@ describe("schedule tool persistence", () => {
       workspaceId: "ws-1",
       botId: "bot-1",
       userId: "user-1",
+      threadId: "group-thread-1",
       routineId: "routine-1",
     });
     expect(cancelled).toEqual({ error: "Schedule not found." });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workspaceId: "ws-1",
+          botId: "bot-1",
+          userId: "user-1",
+          threadId: "group-thread-1",
+          id: "routine-1",
+        },
+      }),
+    );
+
+    findMany.mockClear();
+    await listSchedulesFromTool(deps, { workspaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+      }),
+    );
+
+    findFirst.mockClear();
+    await cancelScheduleFromTool(deps, {
+      workspaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      routineId: "routine-1",
+    });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { workspaceId: "ws-1", botId: "bot-1", userId: "user-1", id: "routine-1" },

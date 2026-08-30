@@ -1763,6 +1763,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               workspaceId: run.workspaceId,
               botId: bot.id,
               userId: run.userId,
+              ...(thread.groupId ? { threadId: thread.id } : {}),
             });
           }
           if (name === "schedule_cancel") {
@@ -1770,6 +1771,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               workspaceId: run.workspaceId,
               botId: bot.id,
               userId: run.userId,
+              ...(thread.groupId ? { threadId: thread.id } : {}),
               routineId: args.routineId ? String(args.routineId) : undefined,
               name: args.name ? String(args.name) : undefined,
             });
