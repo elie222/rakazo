@@ -467,6 +467,7 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  thumbsUp         Boolean   @default(false)
   sourceRuns       Run[]     @relation("RunSourceMessage")
   createdAt        DateTime  @default(now())
 

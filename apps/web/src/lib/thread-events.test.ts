@@ -22,6 +22,22 @@ import {
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
+  it("applies a persisted thumbs-up event to its message", () => {
+    const initial = snapshot([message("message-1", [{ kind: "text", text: "Done" }], 1)]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.reaction",
+        seq: 4,
+        payload: { messageId: "message-1", thumbsUp: true },
+      }),
+    );
+
+    expect(next?.messages[0]?.thumbsUp).toBe(true);
+    expect(next?.cursor).toBe(4);
+  });
+
   it("prepends older pages in order, removes overlaps, and advances the history cursor", () => {
     const initial = snapshot([message("m-2", [], 2), message("m-3", [], 3)], 2);
 

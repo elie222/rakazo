@@ -136,6 +136,7 @@ import {
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
+  reactToThreadMessage,
   resolveThreadTarget,
   sendThreadMessage,
   setThreadUnreadState,
@@ -1059,6 +1060,27 @@ export function createRouter(deps: RouterDeps) {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         }
         return sendThreadMessage(deps, context.actor, target, input);
+      }),
+      react: authed.threads.react.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const result = await reactToThreadMessage(
+          deps,
+          context.actor,
+          target,
+          input.messageId,
+          input.thumbsUp,
+        );
+        if (result.eventSeq != null) {
+          await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
+            console.error("thread reaction realtime notification", error);
+          });
+        }
+        if (result.runId) {
+          await deps.jobs.enqueue(runContinueJob(result.runId)).catch((error) => {
+            console.error("thread reaction enqueue", error);
+          });
+        }
+        return { ok: true as const };
       }),
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

@@ -89,6 +89,7 @@ import {
   Reply,
   Settings,
   Square,
+  ThumbsUp,
   Volume2,
   X,
 } from "lucide-react";
@@ -1814,6 +1815,23 @@ export function ShellPage() {
       await refreshThreadRef.current(botId);
     }
   }, []);
+  const reactToMessage = useCallback(
+    async (message: ThreadMessage) => {
+      const botId = activeBotId.current;
+      const groupId = activeGroupId.current;
+      if (!botId && !groupId) return;
+      try {
+        await rpc.threads.react({
+          ...(groupId ? { groupId } : { botId: botId! }),
+          messageId: message.id,
+          thumbsUp: !message.thumbsUp,
+        });
+      } catch (error) {
+        setSendError(error instanceof Error ? error.message : t`Could not update reaction`);
+      }
+    },
+    [t],
+  );
   const onAttachmentPick = useCallback(
     async (files: FileList | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
@@ -2882,6 +2900,7 @@ export function ShellPage() {
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
+          onReact={reactToMessage}
           onJumpToMessage={jumpToReplyMessage}
           onOpenPeerMessages={(peer) => {
             setPeerConversation(peer);
@@ -3802,6 +3821,7 @@ const Transcript = memo(function Transcript({
   onOpenBot,
   onAnswer,
   onReply,
+  onReact,
   onJumpToMessage,
   onOpenPeerMessages,
   memberName,
@@ -3825,6 +3845,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
@@ -3977,7 +3998,9 @@ const Transcript = memo(function Transcript({
               data-message-id={message.id}
               className={peerReceipt ? "relative py-0.5" : "group/message relative pt-9 hover:z-20"}
             >
-              {peerReceipt ? null : <MessageHoverActions message={message} onReply={onReply} />}
+              {peerReceipt ? null : (
+                <MessageHoverActions message={message} onReply={onReply} onReact={onReact} />
+              )}
               <MessageView
                 artifactTarget={artifactTarget}
                 message={message}
@@ -4006,6 +4029,18 @@ const Transcript = memo(function Transcript({
                 speaking={speakingMessageId === message.id}
                 onSpeak={() => onSpeak(message)}
               />
+              {!peerReceipt && message.thumbsUp ? (
+                <button
+                  type="button"
+                  aria-label={t`Remove thumbs-up`}
+                  onClick={() => void onReact(message)}
+                  className={`mt-1 rounded-full border border-[#303034] bg-[#1A1A1D] px-2 py-0.5 text-xs ${
+                    message.role === "user" ? "ml-auto block" : ""
+                  }`}
+                >
+                  👍
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -4642,9 +4677,11 @@ function previewMessageText(message: ThreadMessage): string {
 function MessageHoverActions({
   message,
   onReply,
+  onReact,
 }: {
   message: ThreadMessage;
   onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage) => Promise<void>;
 }) {
   const { t } = useLingui();
   // Streaming progress bubbles keep hover free for selection / stop clicks.
@@ -4669,6 +4706,17 @@ function MessageHoverActions({
           className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
         >
           <Reply size={14} strokeWidth={1.8} />
+        </button>
+        <button
+          type="button"
+          aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
+          aria-pressed={Boolean(message.thumbsUp)}
+          onClick={() => void onReact(message)}
+          className={`grid h-7 w-7 place-items-center rounded-full hover:bg-[#2A2A2F] hover:text-[#ECECEE] ${
+            message.thumbsUp ? "text-[#E9C46A]" : "text-[#C9C9CE]"
+          }`}
+        >
+          <ThumbsUp size={14} strokeWidth={1.8} />
         </button>
         <button
           type="button"

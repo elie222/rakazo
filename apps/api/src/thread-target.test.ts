@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   cancelSupersededQueuedRuns,
+  reactToThreadMessage,
   stopThreadRuns,
   type ThreadTarget,
   threadHead,
@@ -50,6 +51,83 @@ describe("queued run supersession", () => {
         }),
       }),
     );
+  });
+});
+
+describe("message thumbs-up", () => {
+  it("wakes once on add and not on replay or removal", async () => {
+    let thumbsUp = false;
+    let busy = false;
+    let eventSeq = 0;
+    const tx = {
+      $queryRaw: vi.fn(async () => [
+        { id: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }], thumbsUp },
+      ]),
+      message: {
+        update: vi.fn(async ({ data }: { data: { thumbsUp: boolean } }) => {
+          thumbsUp = data.thumbsUp;
+          return { id: "message-1" };
+        }),
+      },
+      run: {
+        findFirst: vi.fn(async () => (busy ? { id: "run-active" } : null)),
+        create: vi.fn().mockResolvedValue({ id: "run-1", status: "queued" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+      thread: {
+        update: vi.fn(async () => ({ nextEventSeq: ++eventSeq })),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: `event-${eventSeq}`,
+          createdAt: new Date(),
+          ...data,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const actor = { workspaceId: "workspace-1", userId: "user-1" } as Actor;
+    const target = {
+      kind: "bot",
+      botId: "bot-1",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+
+    await expect(
+      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
+    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: "run-1" }));
+    await expect(
+      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
+    ).resolves.toEqual(expect.objectContaining({ changed: false, runId: null }));
+    await expect(
+      reactToThreadMessage({ prisma }, actor, target, "message-1", false),
+    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: null }));
+    busy = true;
+    await expect(
+      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
+    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: null }));
+
+    expect(tx.task.create).toHaveBeenCalledOnce();
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "follow_up" }),
+      }),
+    );
+    expect(tx.event.create).toHaveBeenCalledTimes(3);
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "thread.message.reaction",
+          payload: { messageId: "message-1", thumbsUp: true },
+        }),
+      }),
+    );
+    expect(thumbsUp).toBe(true);
   });
 });
 

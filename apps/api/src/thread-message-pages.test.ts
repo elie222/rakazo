@@ -402,6 +402,7 @@ describe("thread message pages", () => {
         role: "bot",
         blocks: [{ kind: "text", text: String(seq) }],
         runId: null,
+        thumbsUp: seq === 4,
         createdAt: new Date(`2026-08-16T00:00:0${seq}.000Z`),
       })),
     );
@@ -415,6 +416,7 @@ describe("thread message pages", () => {
       take: 3,
     });
     expect(page.messages.map((message) => message.seq)).toEqual([4, 5]);
+    expect(page.messages[0]?.thumbsUp).toBe(true);
     expect(page.olderCursor).toBe(4);
   });
 

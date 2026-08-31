@@ -268,6 +268,14 @@ export const appContract = {
         runIds: z.array(Id).optional(),
       }),
     ),
+    react: oc
+      .input(
+        threadTarget.safeExtend({
+          messageId: Id,
+          thumbsUp: z.boolean(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(threadTarget.safeExtend({ text: z.string().min(1) }))

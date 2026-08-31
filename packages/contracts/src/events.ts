@@ -6,6 +6,7 @@ export const ProductEventType = z.enum([
   "thread.message.created",
   "thread.cleared",
   "thread.message.updated",
+  "thread.message.reaction",
   "thread.progress",
   "thread.artifact",
   "thread.ask",
@@ -262,6 +263,7 @@ export const ThreadMessageSchema = z.object({
   botId: Id.optional(),
   replyToMessageId: Id.optional(),
   runId: Id.optional(),
+  thumbsUp: z.boolean().optional(),
   createdAt: z.string(),
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;

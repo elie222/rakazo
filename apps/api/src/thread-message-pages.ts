@@ -139,6 +139,7 @@ function toThreadMessage(row: {
   botId: string | null;
   replyToMessageId: string | null;
   runId: string | null;
+  thumbsUp: boolean;
   createdAt: Date;
 }): ThreadMessage {
   return {
@@ -150,6 +151,7 @@ function toThreadMessage(row: {
     botId: row.botId ?? undefined,
     replyToMessageId: row.replyToMessageId ?? undefined,
     runId: row.runId ?? undefined,
+    thumbsUp: row.thumbsUp,
     createdAt: row.createdAt.toISOString(),
   };
 }

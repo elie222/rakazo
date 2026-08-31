@@ -218,6 +218,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
+    event.type === "thread.message.reaction" ||
     event.type === "run.started" ||
     event.type === "run.waiting_input" ||
     event.type === "computer.takeover.requested" ||
@@ -391,6 +392,18 @@ export function reduceThreadSnapshot(
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
+  if (event.type === "thread.message.reaction") {
+    const messageId = String(event.payload.messageId ?? "");
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) =>
+        message.id === messageId
+          ? { ...message, thumbsUp: event.payload.thumbsUp === true }
+          : message,
+      ),
+    };
+  }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
@@ -402,6 +415,7 @@ export function reduceThreadSnapshot(
       blocks,
       botId: event.botId,
       runId: event.runId,
+      thumbsUp: event.payload.thumbsUp === true,
       createdAt: event.createdAt,
     };
     const replacedSubagentIds = new Set(

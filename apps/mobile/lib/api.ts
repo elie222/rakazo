@@ -402,6 +402,7 @@ export type MobileMessage = {
   role: "user" | "bot" | "system";
   botId?: string;
   replyToMessageId?: string;
+  thumbsUp?: boolean;
   blocks: MessageBlock[];
 };
 
@@ -693,6 +694,18 @@ export function applyMobileThreadEvent(
       messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
     };
   }
+  if (event.type === "thread.message.reaction") {
+    const messageId = String(event.payload?.messageId ?? "");
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.map((message) =>
+        message.id === messageId
+          ? { ...message, thumbsUp: event.payload?.thumbsUp === true }
+          : message,
+      ),
+    };
+  }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const { remaining } = takeMobileLiveMessage(prev, progressMessageId(event));
     const next: MobileMessage = {
@@ -704,6 +717,7 @@ export function applyMobileThreadEvent(
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
         : undefined,
+      thumbsUp: event.payload?.thumbsUp === true,
     };
     return {
       ...prev,
