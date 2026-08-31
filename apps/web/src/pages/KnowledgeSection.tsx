@@ -42,7 +42,7 @@ export function KnowledgeSection({ botId }: { botId: string }) {
       {tab === "memory" ? (
         <MemoryDocumentList
           load={() => rpc.memory.list({ botId, scope: "bot" })}
-          exportDownload={{ request: { botId }, filename: "memory.md" }}
+          exportFilename="memory.md"
           emptyLabel={<Trans>Nothing remembered yet</Trans>}
           testId="bot-knowledge-memory"
         />
@@ -62,7 +62,7 @@ export function SpaceMemorySection() {
       </div>
       <MemoryDocumentList
         load={() => rpc.memory.list({ scope: "user" })}
-        exportDownload={{ request: {}, filename: "space-memory.md" }}
+        exportFilename="space-memory.md"
         emptyLabel={<Trans>Nothing remembered yet</Trans>}
         testId="space-memory-list"
       />
@@ -72,12 +72,12 @@ export function SpaceMemorySection() {
 
 function MemoryDocumentList({
   load,
-  exportDownload,
+  exportFilename,
   emptyLabel,
   testId,
 }: {
   load: () => Promise<MemoryDocument[]>;
-  exportDownload: { request: { botId?: string }; filename: string };
+  exportFilename: string;
   emptyLabel: ReactNode;
   testId: string;
 }) {
@@ -129,23 +129,15 @@ function MemoryDocumentList({
     }
   }
 
-  async function exportMarkdown() {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const markdown = await rpc.memory.exportMarkdown(exportDownload.request);
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = exportDownload.filename;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setError(t`Could not export`);
-    } finally {
-      setBusy(false);
-    }
+  function exportMarkdown() {
+    // Export exactly the documents this section displays.
+    const markdown = docs.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
+    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = exportFilename;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -204,7 +196,7 @@ function MemoryDocumentList({
         <button
           type="button"
           disabled={busy}
-          onClick={() => void exportMarkdown()}
+          onClick={exportMarkdown}
           className="mt-2 px-2.5 text-[13px] text-[#7A7A80] hover:text-[#C9C9CE]"
         >
           <Trans>Download as markdown</Trans>
@@ -231,6 +223,7 @@ function AgentSkills() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const selection = useRef(0);
 
   async function refresh() {
     const current = ++generation.current;
@@ -258,13 +251,17 @@ function AgentSkills() {
 
   async function openSkill(entry: AgentSkillCatalogEntry) {
     if (busy) return;
+    const current = ++selection.current;
     setCreating(false);
     setError(null);
     try {
       const skill = await rpc.agentSkills.get({ skillId: entry.id });
+      // A slower response must not clobber a newer selection or a fresh draft.
+      if (current !== selection.current) return;
       setOpen(skill);
       setDraft(skill.content);
     } catch {
+      if (current !== selection.current) return;
       setError(t`Could not load skill`);
     }
   }
@@ -366,6 +363,7 @@ function AgentSkills() {
             <button
               type="button"
               onClick={() => {
+                selection.current += 1;
                 setOpen(null);
                 setCreating(false);
               }}
@@ -390,6 +388,7 @@ function AgentSkills() {
           type="button"
           disabled={busy}
           onClick={() => {
+            selection.current += 1;
             setOpen(null);
             setCreating(true);
             setDraft(NEW_SKILL_TEMPLATE);

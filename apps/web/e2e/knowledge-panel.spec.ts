@@ -20,9 +20,15 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const knowledge = settings.getByTestId("bot-knowledge");
   await expect(knowledge).toBeVisible();
 
-  // A fresh bot has no memory yet.
-  await expect(knowledge.getByText("Nothing remembered yet")).toBeVisible();
-  await captureScreenshot(page, testInfo, "80-knowledge-memory-empty");
+  // Bot creation seeds a MEMORY.md; edit it in place and watch the revision bump.
+  const botMemoryRow = knowledge.getByRole("button", { name: /MEMORY\.md/ });
+  await expect(botMemoryRow).toBeVisible();
+  await botMemoryRow.click();
+  const botDocEditor = knowledge.locator("textarea");
+  await botDocEditor.fill("# Chief\n\nPrefers short updates.\n");
+  await captureScreenshot(page, testInfo, "80-knowledge-memory-editor");
+  await knowledge.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(knowledge.getByText("rev 2")).toBeVisible();
 
   // Skills: create one through the editor, reopen it, edit, then delete it.
   await knowledge.getByRole("button", { name: "Skills", exact: true }).click();

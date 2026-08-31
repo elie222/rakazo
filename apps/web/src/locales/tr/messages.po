@@ -542,8 +542,8 @@ msgstr "Sunucuya ulaşılamıyor."
 #: src/components/AskCard.tsx:175
 #: src/components/ComputerMaintenanceActions.tsx:108
 #: src/components/teach/TeachComputerSection.tsx:122
-#: src/pages/KnowledgeSection.tsx:196
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:188
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PluginsOverlay.tsx:536
 #: src/pages/Shell.tsx:5895
 #: src/pages/Shell.tsx:5977
@@ -630,7 +630,7 @@ msgid "Clearing…"
 msgstr "Temizleniyor…"
 
 #: src/pages/BotContextMenu.tsx:67
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
 #: src/pages/PeerMessagesOverlay.tsx:209
@@ -937,7 +937,7 @@ msgstr "MCP sunucusu silinemedi"
 msgid "Could not delete routine"
 msgstr "Rutin silinemedi"
 
-#: src/pages/KnowledgeSection.tsx:301
+#: src/pages/KnowledgeSection.tsx:298
 msgid "Could not delete skill"
 msgstr "Beceri silinemedi"
 
@@ -957,10 +957,6 @@ msgstr "{0} indirilemedi. Tekrar dene."
 #: src/components/ArtifactFileCard.tsx:211
 msgid "Could not download {name}. Try again."
 msgstr "{name} indirilemedi. Tekrar dene."
-
-#: src/pages/KnowledgeSection.tsx:145
-msgid "Could not export"
-msgstr "Dışa aktarılamadı"
 
 #: src/pages/PluginsOverlay.tsx:213
 msgid "Could not install connector"
@@ -982,7 +978,7 @@ msgstr "MCP sunucuları yüklenemedi"
 msgid "Could not load model settings"
 msgstr "Model ayarları yüklenemedi"
 
-#: src/pages/KnowledgeSection.tsx:268
+#: src/pages/KnowledgeSection.tsx:265
 msgid "Could not load skill"
 msgstr "Beceri yüklenemedi"
 
@@ -1064,7 +1060,7 @@ msgstr "Rutin kaydedilemedi"
 msgid "Could not save rule"
 msgstr "Kural kaydedilemedi"
 
-#: src/pages/KnowledgeSection.tsx:286
+#: src/pages/KnowledgeSection.tsx:283
 msgid "Could not save skill"
 msgstr "Beceri kaydedilemedi"
 
@@ -1213,7 +1209,7 @@ msgid "Default scope"
 msgstr "Varsayılan kapsam"
 
 #: src/pages/BotContextMenu.tsx:105
-#: src/pages/KnowledgeSection.tsx:383
+#: src/pages/KnowledgeSection.tsx:381
 #: src/pages/McpServersOverlay.tsx:481
 #: src/pages/RoutineEditor.tsx:280
 #: src/pages/Shell.tsx:2664
@@ -1335,7 +1331,7 @@ msgstr "{0} indir"
 msgid "Download {name}"
 msgstr "{name} indir"
 
-#: src/pages/KnowledgeSection.tsx:210
+#: src/pages/KnowledgeSection.tsx:202
 msgid "Download as markdown"
 msgstr "Markdown olarak indir"
 
@@ -1806,27 +1802,27 @@ msgstr "{activeName} sohbetine yaz"
 msgid "Message composer"
 msgstr ""
 
+#: src/pages/Shell.tsx:5039
+msgid "Message from {peer}"
+msgstr "{peer} botundan mesaj"
+
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5056
 msgid "Message from {peer}"
 msgstr ""
 
-#: src/pages/Shell.tsx:5039
-msgid "Message from {peer}"
-msgstr "{peer} botundan mesaj"
-
 #: src/pages/Shell.tsx:4646
 msgid "Message…"
 msgstr "Mesaj…"
+
+#: src/pages/Shell.tsx:5039
+msgid "Messaged {peer}"
+msgstr "{peer} botuna mesaj gönderildi"
 
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5050
 msgid "Messaged {peer}"
 msgstr ""
-
-#: src/pages/Shell.tsx:5039
-msgid "Messaged {peer}"
-msgstr "{peer} botuna mesaj gönderildi"
 
 #: src/pages/CallView.tsx:81
 msgid "Microphone failed"
@@ -1959,7 +1955,7 @@ msgstr "Yeni rutin"
 msgid "New section"
 msgstr "Yeni bölüm"
 
-#: src/pages/KnowledgeSection.tsx:400
+#: src/pages/KnowledgeSection.tsx:399
 msgid "New skill"
 msgstr "Yeni beceri"
 
@@ -2041,7 +2037,7 @@ msgstr "Sonuç yok"
 msgid "No runs yet"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:313
+#: src/pages/KnowledgeSection.tsx:310
 msgid "No skills yet"
 msgstr "Henüz beceri yok"
 
@@ -2276,7 +2272,7 @@ msgstr "Rakazo kaynağı kaydetmeden önce doğrular. Kimlik bilgileri şifrelen
 msgid "Read replies aloud"
 msgstr "Yanıtları sesli oku"
 
-#: src/pages/KnowledgeSection.tsx:330
+#: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
 msgstr ""
 
@@ -2425,7 +2421,7 @@ msgid "Return to Rakazo"
 msgstr "Rakazo'ya dön"
 
 #. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx:169
+#: src/pages/KnowledgeSection.tsx:161
 msgid "rev {0}"
 msgstr "rev {0}"
 
@@ -2479,8 +2475,8 @@ msgstr "Çalışıyor…"
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/KnowledgeSection.tsx:189
-#: src/pages/KnowledgeSection.tsx:363
+#: src/pages/KnowledgeSection.tsx:181
+#: src/pages/KnowledgeSection.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:675
 #: src/pages/RoutineEditor.tsx:479
 #: src/pages/Shell.tsx:5775

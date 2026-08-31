@@ -542,8 +542,8 @@ msgstr "सर्वर तक नहीं पहुंचा जा सका�
 #: src/components/AskCard.tsx:175
 #: src/components/ComputerMaintenanceActions.tsx:108
 #: src/components/teach/TeachComputerSection.tsx:122
-#: src/pages/KnowledgeSection.tsx:196
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:188
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PluginsOverlay.tsx:536
 #: src/pages/Shell.tsx:5895
 #: src/pages/Shell.tsx:5977
@@ -630,7 +630,7 @@ msgid "Clearing…"
 msgstr "साफ़ किया जा रहा है…"
 
 #: src/pages/BotContextMenu.tsx:67
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
 #: src/pages/PeerMessagesOverlay.tsx:209
@@ -937,7 +937,7 @@ msgstr "MCP सर्वर डिलीट नहीं किया जा स
 msgid "Could not delete routine"
 msgstr "रूटीन डिलीट नहीं किया जा सका"
 
-#: src/pages/KnowledgeSection.tsx:301
+#: src/pages/KnowledgeSection.tsx:298
 msgid "Could not delete skill"
 msgstr "स्किल हटाई नहीं जा सकी"
 
@@ -957,10 +957,6 @@ msgstr "{0} डाउनलोड नहीं हो सका। पुनः 
 #: src/components/ArtifactFileCard.tsx:211
 msgid "Could not download {name}. Try again."
 msgstr "{name} डाउनलोड नहीं हो सका। पुनः प्रयास करें।"
-
-#: src/pages/KnowledgeSection.tsx:145
-msgid "Could not export"
-msgstr "एक्सपोर्ट नहीं हो सका"
 
 #: src/pages/PluginsOverlay.tsx:213
 msgid "Could not install connector"
@@ -982,7 +978,7 @@ msgstr "MCP सर्वर लोड नहीं हो सके"
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
-#: src/pages/KnowledgeSection.tsx:268
+#: src/pages/KnowledgeSection.tsx:265
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
 
@@ -1064,7 +1060,7 @@ msgstr "रूटीन सहेजा नहीं जा सका"
 msgid "Could not save rule"
 msgstr "नियम सहेजा नहीं जा सका"
 
-#: src/pages/KnowledgeSection.tsx:286
+#: src/pages/KnowledgeSection.tsx:283
 msgid "Could not save skill"
 msgstr "स्किल सहेजी नहीं जा सकी"
 
@@ -1213,7 +1209,7 @@ msgid "Default scope"
 msgstr "डिफ़ॉल्ट स्कोप"
 
 #: src/pages/BotContextMenu.tsx:105
-#: src/pages/KnowledgeSection.tsx:383
+#: src/pages/KnowledgeSection.tsx:381
 #: src/pages/McpServersOverlay.tsx:481
 #: src/pages/RoutineEditor.tsx:280
 #: src/pages/Shell.tsx:2664
@@ -1335,7 +1331,7 @@ msgstr "{0} डाउनलोड करें"
 msgid "Download {name}"
 msgstr "{name} डाउनलोड करें"
 
-#: src/pages/KnowledgeSection.tsx:210
+#: src/pages/KnowledgeSection.tsx:202
 msgid "Download as markdown"
 msgstr "मार्कडाउन के रूप में डाउनलोड करें"
 
@@ -1806,27 +1802,27 @@ msgstr "{activeName} को संदेश भेजें"
 msgid "Message composer"
 msgstr ""
 
+#: src/pages/Shell.tsx:5039
+msgid "Message from {peer}"
+msgstr "{peer} का संदेश"
+
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5056
 msgid "Message from {peer}"
 msgstr ""
 
-#: src/pages/Shell.tsx:5039
-msgid "Message from {peer}"
-msgstr "{peer} का संदेश"
-
 #: src/pages/Shell.tsx:4646
 msgid "Message…"
 msgstr "संदेश…"
+
+#: src/pages/Shell.tsx:5039
+msgid "Messaged {peer}"
+msgstr "{peer} को संदेश भेजा"
 
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5050
 msgid "Messaged {peer}"
 msgstr ""
-
-#: src/pages/Shell.tsx:5039
-msgid "Messaged {peer}"
-msgstr "{peer} को संदेश भेजा"
 
 #: src/pages/CallView.tsx:81
 msgid "Microphone failed"
@@ -1959,7 +1955,7 @@ msgstr "नया रूटीन"
 msgid "New section"
 msgstr "नया सेक्शन"
 
-#: src/pages/KnowledgeSection.tsx:400
+#: src/pages/KnowledgeSection.tsx:399
 msgid "New skill"
 msgstr "नई स्किल"
 
@@ -2041,7 +2037,7 @@ msgstr "कोई परिणाम नहीं"
 msgid "No runs yet"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:313
+#: src/pages/KnowledgeSection.tsx:310
 msgid "No skills yet"
 msgstr "अभी तक कोई स्किल नहीं"
 
@@ -2276,7 +2272,7 @@ msgstr "Rakazo सहेजने से पहले स्रोत की प
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
 
-#: src/pages/KnowledgeSection.tsx:330
+#: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
 msgstr ""
 
@@ -2425,7 +2421,7 @@ msgid "Return to Rakazo"
 msgstr "Rakazo पर लौटें"
 
 #. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx:169
+#: src/pages/KnowledgeSection.tsx:161
 msgid "rev {0}"
 msgstr "रिवीज़न {0}"
 
@@ -2479,8 +2475,8 @@ msgstr "चल रहा है…"
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/KnowledgeSection.tsx:189
-#: src/pages/KnowledgeSection.tsx:363
+#: src/pages/KnowledgeSection.tsx:181
+#: src/pages/KnowledgeSection.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:675
 #: src/pages/RoutineEditor.tsx:479
 #: src/pages/Shell.tsx:5775

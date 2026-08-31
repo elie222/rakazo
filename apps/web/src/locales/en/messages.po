@@ -542,8 +542,8 @@ msgstr "Can't reach the server."
 #: src/components/AskCard.tsx:175
 #: src/components/ComputerMaintenanceActions.tsx:108
 #: src/components/teach/TeachComputerSection.tsx:122
-#: src/pages/KnowledgeSection.tsx:196
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:188
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PluginsOverlay.tsx:536
 #: src/pages/Shell.tsx:5895
 #: src/pages/Shell.tsx:5977
@@ -630,7 +630,7 @@ msgid "Clearing…"
 msgstr "Clearing…"
 
 #: src/pages/BotContextMenu.tsx:67
-#: src/pages/KnowledgeSection.tsx:374
+#: src/pages/KnowledgeSection.tsx:372
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
 #: src/pages/PeerMessagesOverlay.tsx:209
@@ -937,7 +937,7 @@ msgstr "Could not delete MCP server"
 msgid "Could not delete routine"
 msgstr "Could not delete routine"
 
-#: src/pages/KnowledgeSection.tsx:301
+#: src/pages/KnowledgeSection.tsx:298
 msgid "Could not delete skill"
 msgstr "Could not delete skill"
 
@@ -957,10 +957,6 @@ msgstr "Could not download {0}. Try again."
 #: src/components/ArtifactFileCard.tsx:211
 msgid "Could not download {name}. Try again."
 msgstr "Could not download {name}. Try again."
-
-#: src/pages/KnowledgeSection.tsx:145
-msgid "Could not export"
-msgstr "Could not export"
 
 #: src/pages/PluginsOverlay.tsx:213
 msgid "Could not install connector"
@@ -982,7 +978,7 @@ msgstr "Could not load MCP servers"
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
 
-#: src/pages/KnowledgeSection.tsx:268
+#: src/pages/KnowledgeSection.tsx:265
 msgid "Could not load skill"
 msgstr "Could not load skill"
 
@@ -1064,7 +1060,7 @@ msgstr "Could not save routine"
 msgid "Could not save rule"
 msgstr "Could not save rule"
 
-#: src/pages/KnowledgeSection.tsx:286
+#: src/pages/KnowledgeSection.tsx:283
 msgid "Could not save skill"
 msgstr "Could not save skill"
 
@@ -1213,7 +1209,7 @@ msgid "Default scope"
 msgstr "Default scope"
 
 #: src/pages/BotContextMenu.tsx:105
-#: src/pages/KnowledgeSection.tsx:383
+#: src/pages/KnowledgeSection.tsx:381
 #: src/pages/McpServersOverlay.tsx:481
 #: src/pages/RoutineEditor.tsx:280
 #: src/pages/Shell.tsx:2664
@@ -1335,7 +1331,7 @@ msgstr "Download {0}"
 msgid "Download {name}"
 msgstr "Download {name}"
 
-#: src/pages/KnowledgeSection.tsx:210
+#: src/pages/KnowledgeSection.tsx:202
 msgid "Download as markdown"
 msgstr "Download as markdown"
 
@@ -1806,12 +1802,12 @@ msgstr "Message {activeName}"
 msgid "Message composer"
 msgstr "Message composer"
 
-#. js-lingui-explicit-id
-#: src/pages/Shell.tsx:5056
+#: src/pages/Shell.tsx:5039
 msgid "Message from {peer}"
 msgstr "Message from {peer}"
 
-#: src/pages/Shell.tsx:5039
+#. js-lingui-explicit-id
+#: src/pages/Shell.tsx:5056
 msgid "Message from {peer}"
 msgstr "Message from {peer}"
 
@@ -1819,12 +1815,12 @@ msgstr "Message from {peer}"
 msgid "Message…"
 msgstr "Message…"
 
-#. js-lingui-explicit-id
-#: src/pages/Shell.tsx:5050
+#: src/pages/Shell.tsx:5039
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
 
-#: src/pages/Shell.tsx:5039
+#. js-lingui-explicit-id
+#: src/pages/Shell.tsx:5050
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
 
@@ -1959,7 +1955,7 @@ msgstr "New routine"
 msgid "New section"
 msgstr "New section"
 
-#: src/pages/KnowledgeSection.tsx:400
+#: src/pages/KnowledgeSection.tsx:399
 msgid "New skill"
 msgstr "New skill"
 
@@ -2041,7 +2037,7 @@ msgstr "No results"
 msgid "No runs yet"
 msgstr "No runs yet"
 
-#: src/pages/KnowledgeSection.tsx:313
+#: src/pages/KnowledgeSection.tsx:310
 msgid "No skills yet"
 msgstr "No skills yet"
 
@@ -2276,7 +2272,7 @@ msgstr "Rakazo verifies the source before saving it. Credentials are encrypted a
 msgid "Read replies aloud"
 msgstr "Read replies aloud"
 
-#: src/pages/KnowledgeSection.tsx:330
+#: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
 msgstr "read-only"
 
@@ -2425,7 +2421,7 @@ msgid "Return to Rakazo"
 msgstr "Return to Rakazo"
 
 #. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx:169
+#: src/pages/KnowledgeSection.tsx:161
 msgid "rev {0}"
 msgstr "rev {0}"
 
@@ -2479,8 +2475,8 @@ msgstr "Running…"
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/KnowledgeSection.tsx:189
-#: src/pages/KnowledgeSection.tsx:363
+#: src/pages/KnowledgeSection.tsx:181
+#: src/pages/KnowledgeSection.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:675
 #: src/pages/RoutineEditor.tsx:479
 #: src/pages/Shell.tsx:5775
