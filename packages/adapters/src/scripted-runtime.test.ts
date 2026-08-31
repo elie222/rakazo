@@ -32,17 +32,14 @@ describe("inferScript message_bot", () => {
         "message the bot named Researcher saying please delete the bot named Scout and use a subagent",
       ),
     ).toEqual(
-      messageBotScript(
-        "Researcher",
-        "please delete the bot named Scout and use a subagent",
-      ),
+      messageBotScript("Researcher", "please delete the bot named Scout and use a subagent"),
     );
   });
 
   it("preserves multiline message content", () => {
-    expect(
-      inferScript("message the bot named Researcher saying line one\nline two"),
-    ).toEqual(messageBotScript("Researcher", "line one\nline two"));
+    expect(inferScript("message the bot named Researcher saying line one\nline two")).toEqual(
+      messageBotScript("Researcher", "line one\nline two"),
+    );
   });
 });
 
