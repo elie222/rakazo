@@ -748,6 +748,21 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
 }
 
 function parametersFor(tool: ConnectorTool) {
+  return builtinParameters(tool) ?? safeJsonSchemaParameters(tool);
+}
+
+/** A remote MCP server controls its own schemas, so a shape TypeBox cannot express must
+ * degrade to a permissive object instead of failing every turn for the whole bot. */
+function safeJsonSchemaParameters(tool: ConnectorTool) {
+  try {
+    return jsonSchemaParameters(tool.inputSchema);
+  } catch (error) {
+    console.error(`unsupported input schema for tool ${tool.name}`, error);
+    return Type.Object({});
+  }
+}
+
+function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "write_file") {
     return Type.Object({ path: Type.String(), content: Type.String() });
   }
@@ -801,7 +816,7 @@ function parametersFor(tool: ConnectorTool) {
       bot_id: Type.Optional(Type.String()),
     });
   }
-  return jsonSchemaParameters(tool.inputSchema);
+  return undefined;
 }
 
 /** Keep recent visual state without repeatedly resending every earlier full screenshot. */
@@ -864,7 +879,7 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
   );
 }
 
-function jsonSchemaParameters(schema: Record<string, unknown>) {
+export function jsonSchemaParameters(schema: Record<string, unknown>) {
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
   const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
@@ -877,10 +892,24 @@ function jsonSchemaParameters(schema: Record<string, unknown>) {
   return Type.Object(fields);
 }
 
+/** TypeBox only builds literals from primitives; anything else throws while the tool list is
+ * being assembled, which would take down the whole turn. */
+function enumUnion(values: readonly unknown[]) {
+  const members = values.map((value) =>
+    value === null
+      ? Type.Null()
+      : typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+        ? Type.Literal(value)
+        : undefined,
+  );
+  return members.every((member) => member !== undefined) ? Type.Union(members) : undefined;
+}
+
 function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
   if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-    return Type.Union(definition.enum.map((value) => Type.Literal(value))) as never;
+    const union = enumUnion(definition.enum);
+    if (union) return union as never;
   }
   const type = "type" in definition ? String(definition.type) : "string";
   if (type === "number" || type === "integer") return Type.Number() as never;
