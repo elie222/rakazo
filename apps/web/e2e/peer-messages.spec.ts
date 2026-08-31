@@ -48,13 +48,15 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
 
   const transcript = page.getByTestId("transcript");
-  await expect(transcript.getByText("peer-exchange-alpha")).toHaveCount(0);
   const chip = transcript
     .getByTestId("peer-receipt-chip")
     .filter({ hasText: "Researcher" })
     .first();
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await expect(chip.getByText(/Messaged|Message from/)).toBeVisible();
+  // User bubble still contains the phrase; peer body must not appear outside the chip.
+  await expect(chip).not.toContainText("peer-exchange-alpha");
+  await expect(transcript.getByText("peer-exchange-alpha")).toHaveCount(1);
   await captureScreenshot(page, testInfo, "peer-chip-in-thread");
 
   await chip.getByRole("button", { name: /Messaged Researcher|Message from Researcher/ }).click();
