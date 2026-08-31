@@ -77,6 +77,26 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("routine", "Daily report ready")).toBe(true);
     expect(completionMarksUnread("user", "")).toBe(true);
   });
+
+  it("keeps empty-run done. fallback unread and notifying", () => {
+    const segments = completionMessageSegments([]);
+    const text = completionNotificationBody("", segments);
+    expect(segments).toEqual([{ kind: "text", text: "done." }]);
+    expect(text).toBe("done.");
+    expect(completionMarksUnread("routine", text)).toBe(true);
+    expect(completionMarksUnread("user", text)).toBe(true);
+  });
+
+  it("does not invent done. unread for a routine whose only activity is a completed subagent", () => {
+    // Terminal subagent rows are published separately; skipEmptyFallback mirrors that durable
+    // activity so completion does not synthesize "done." (which would mark unread + notify).
+    const segments = completionMessageSegments([], { skipEmptyFallback: true });
+    const text = completionNotificationBody("", segments);
+    expect(segments).toEqual([]);
+    expect(text).toBe("");
+    expect(completionMarksUnread("routine", text)).toBe(false);
+    expect(completionMarksUnread("user", text)).toBe(true);
+  });
 });
 
 describe("subagentMarksUnread", () => {

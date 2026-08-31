@@ -1080,6 +1080,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let assembled = "";
         let currentTextSegment = "";
         let messageSegments: MessageBlock[] = [];
+        // Terminal subagent rows are published as their own messages (not appended to
+        // messageSegments). Treat that like tool/step durable activity so we do not invent
+        // an empty-run "done." completion afterward.
+        let publishedTerminalSubagent = false;
         // Tool calls that land mid-sentence wait here until the narration catches up to a
         // sentence boundary, so the step chips never render in the middle of a clause.
         let pendingToolNames: string[] = [];
@@ -2754,6 +2758,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               });
               if (event.status === "completed" || event.status === "failed") {
+                publishedTerminalSubagent = true;
                 await publishMessage(
                   deps,
                   run,
@@ -2841,6 +2846,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               allowSilentEmpty: allowSilentPeerMessage || phoneChannelRun,
               emptyResponseText,
               suppressOutput: handedOff,
+              skipEmptyFallback: publishedTerminalSubagent,
             });
           }
           const blocks = handedOff ? [] : redactBlocks(messageSegments, runSecrets);
@@ -3121,7 +3127,12 @@ export function threadContextForRun<T>(
 
 export function completionMessageSegments(
   segments: MessageBlock[],
-  options?: { allowSilentEmpty?: boolean; emptyResponseText?: string; suppressOutput?: boolean },
+  options?: {
+    allowSilentEmpty?: boolean;
+    emptyResponseText?: string;
+    suppressOutput?: boolean;
+    skipEmptyFallback?: boolean;
+  },
 ): MessageBlock[] {
   if (options?.suppressOutput) return [];
   const fallback = options?.emptyResponseText?.trim() || "done.";
@@ -3135,7 +3146,7 @@ export function completionMessageSegments(
     }
     return segments;
   }
-  if (options?.allowSilentEmpty) return [];
+  if (options?.allowSilentEmpty || options?.skipEmptyFallback) return [];
   return [{ kind: "text", text: fallback }];
 }
 
