@@ -175,8 +175,7 @@ export async function cancelSupersededQueuedRuns(
       threadId: input.threadId,
       botId: { in: input.botIds },
       status: "queued",
-      trigger: "user",
-      sourceMessage: { role: "user" },
+      OR: [{ trigger: "user", sourceMessage: { role: "user" } }, { trigger: "reaction" }],
       id: { notIn: input.keepRunIds },
     },
     select: { id: true, taskId: true },
@@ -702,7 +701,7 @@ export async function reactToThreadMessage(
             taskId: task.id,
             userId: actor.userId,
             status: "queued",
-            trigger: "follow_up",
+            trigger: "reaction",
             sourceMessageId: message.id,
           },
         });

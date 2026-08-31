@@ -30,10 +30,10 @@ describe("threadHead", () => {
 });
 
 describe("queued run supersession", () => {
-  it("only cancels queued runs started by a user message", async () => {
+  it("only cancels queued runs started by user messages or reactions", async () => {
     const tx = {
       run: {
-        findMany: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([{ id: "run-old", taskId: "task-old" }]),
         updateMany: vi.fn(),
       },
       task: { updateMany: vi.fn() },
@@ -46,11 +46,17 @@ describe("queued run supersession", () => {
     expect(tx.run.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          trigger: "user",
-          sourceMessage: { role: "user" },
+          OR: [{ trigger: "user", sourceMessage: { role: "user" } }, { trigger: "reaction" }],
         }),
       }),
     );
+    expect(tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["run-old"] } } }),
+    );
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["task-old"] } },
+      data: { status: "cancelled" },
+    });
   });
 });
 
@@ -121,7 +127,7 @@ describe("message thumbs-up", () => {
     expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain("FOR UPDATE");
     expect(tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "follow_up" }),
+        data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "reaction" }),
       }),
     );
     expect(tx.event.create).toHaveBeenCalledTimes(3);
