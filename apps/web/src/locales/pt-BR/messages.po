@@ -225,6 +225,10 @@ msgstr "Adicionar OpenAPI"
 msgid "Add remote MCP server"
 msgstr "Adicionar servidor MCP remoto"
 
+#: src/pages/Shell.tsx:4572
+msgid "Add thumbs-up"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:363
 msgid "Add server"
 msgstr "Adicionar servidor"
@@ -2232,6 +2236,11 @@ msgstr "Libere"
 #: src/pages/ScratchpadSection.tsx:162
 msgid "Remove"
 msgstr "Remover"
+
+#: src/pages/Shell.tsx:3895
+#: src/pages/Shell.tsx:4572
+msgid "Remove thumbs-up"
+msgstr ""
 
 #. placeholder {0}: attachment.file.name
 #: src/pages/Shell.tsx:4229
