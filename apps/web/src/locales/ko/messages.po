@@ -91,17 +91,17 @@ msgstr "{minutes}분 전"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:87
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} 실패"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:98
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} 완료"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:93
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} 중지됨"
 
 #: src/components/teach/TeachRecordingChrome.tsx:46
 #: src/components/teach/TeachRecordingChrome.tsx:64
@@ -1392,7 +1392,7 @@ msgstr "작업을 중지하지 못했습니다."
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:88
 msgid "Failed."
-msgstr ""
+msgstr "실패했습니다."
 
 #: src/components/teach/SkillDraftCard.tsx:147
 msgid "Failure handling"
@@ -1417,7 +1417,7 @@ msgstr "<0>{0}</0>에서 로그인을 마치세요. 마지막 페이지가 열�
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:99
 msgid "Finished."
-msgstr ""
+msgstr "완료되었습니다."
 
 #: src/pages/McpOAuthCallback.tsx:55
 msgid "Finishing MCP connection…"
@@ -2653,7 +2653,7 @@ msgstr "먼저 Bot을 중지하세요"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:94
 msgid "Stopped."
-msgstr ""
+msgstr "중지되었습니다."
 
 #: src/pages/McpServersOverlay.tsx:336
 msgid "Stored encrypted"

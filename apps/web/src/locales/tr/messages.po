@@ -91,17 +91,17 @@ msgstr "{minutes} dk önce"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:87
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} başarısız oldu"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:98
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} çalışmasını tamamladı"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:93
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} durduruldu"
 
 #: src/components/teach/TeachRecordingChrome.tsx:46
 #: src/components/teach/TeachRecordingChrome.tsx:64
@@ -1392,7 +1392,7 @@ msgstr "Durdurulamadı"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:88
 msgid "Failed."
-msgstr ""
+msgstr "Başarısız oldu."
 
 #: src/components/teach/SkillDraftCard.tsx:147
 msgid "Failure handling"
@@ -1417,7 +1417,7 @@ msgstr "<0>{0}</0> adresinde oturum açmayı tamamla. Son sayfa yüklenmeyebilir
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:99
 msgid "Finished."
-msgstr ""
+msgstr "Tamamlandı."
 
 #: src/pages/McpOAuthCallback.tsx:55
 msgid "Finishing MCP connection…"
@@ -2653,7 +2653,7 @@ msgstr "Önce botu durdur"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:94
 msgid "Stopped."
-msgstr ""
+msgstr "Durduruldu."
 
 #: src/pages/McpServersOverlay.tsx:336
 msgid "Stored encrypted"

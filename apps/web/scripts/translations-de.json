@@ -577,7 +577,7 @@
   "No managed app catalog is configured on this deployment.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert.",
   "Messaged": "Nachricht an",
   "Message from": "Nachricht von",
-  "This chat is view-only": "Dieser Chat ist nur Ansicht",
+  "This chat is view-only": "Dieser Chat ist schreibgeschützt",
   "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
   "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}."
 }

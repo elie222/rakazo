@@ -1,18 +1,20 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ActiveBotGlyph, CollaborationMarker } from "./CollaborationMarker";
+import { ActiveBotGlyph, CollaborationMarker, PeerBotChip } from "./CollaborationMarker";
 
 describe("collaboration transcript markers", () => {
-  it("shows a centered Message from prefix and clickable bot chip", () => {
+  it("shows a centered Message from label and clickable bot chip", () => {
     const html = renderToString(
-      <CollaborationMarker
-        ariaLabel="Message from Research"
-        color="#14B8A6"
-        identity="research"
-        prefix="Message from"
-        botName="Research"
-        onClick={() => undefined}
-      />,
+      <CollaborationMarker>
+        Message from{" "}
+        <PeerBotChip
+          ariaLabel="Message from Research"
+          color="#14B8A6"
+          identity="research"
+          botName="Research"
+          onClick={() => undefined}
+        />
+      </CollaborationMarker>,
     );
 
     expect(html).toContain('data-testid="peer-receipt-chip"');

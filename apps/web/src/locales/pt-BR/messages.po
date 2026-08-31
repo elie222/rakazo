@@ -91,17 +91,17 @@ msgstr "{minutes}m atrás"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:87
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} falhou"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:98
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} terminou"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:93
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} foi interrompido"
 
 #: src/components/teach/TeachRecordingChrome.tsx:46
 #: src/components/teach/TeachRecordingChrome.tsx:64
@@ -1392,7 +1392,7 @@ msgstr "Não foi possível parar"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:88
 msgid "Failed."
-msgstr ""
+msgstr "Falhou."
 
 #: src/components/teach/SkillDraftCard.tsx:147
 msgid "Failure handling"
@@ -1417,7 +1417,7 @@ msgstr "Conclua o login em <0>{0}</0>. A página final não pode ser carregada; 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:99
 msgid "Finished."
-msgstr ""
+msgstr "Concluído."
 
 #: src/pages/McpOAuthCallback.tsx:55
 msgid "Finishing MCP connection…"
@@ -2653,7 +2653,7 @@ msgstr "Pare o bot primeiro"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:94
 msgid "Stopped."
-msgstr ""
+msgstr "Interrompido."
 
 #: src/pages/McpServersOverlay.tsx:336
 msgid "Stored encrypted"

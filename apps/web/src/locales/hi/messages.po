@@ -91,17 +91,17 @@ msgstr "{minutes} मिनट पहले"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:87
 msgid "{name} failed"
-msgstr ""
+msgstr "{name} विफल रहा"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:98
 msgid "{name} finished"
-msgstr ""
+msgstr "{name} पूरा हुआ"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:93
 msgid "{name} stopped"
-msgstr ""
+msgstr "{name} रोक दिया गया"
 
 #: src/components/teach/TeachRecordingChrome.tsx:46
 #: src/components/teach/TeachRecordingChrome.tsx:64
@@ -1392,7 +1392,7 @@ msgstr "रोकने में विफल"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:88
 msgid "Failed."
-msgstr ""
+msgstr "विफल।"
 
 #: src/components/teach/SkillDraftCard.tsx:147
 msgid "Failure handling"
@@ -1417,7 +1417,7 @@ msgstr "<0>{0}</0> पर साइन इन पूरा करें। अ�
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:99
 msgid "Finished."
-msgstr ""
+msgstr "पूरा हुआ।"
 
 #: src/pages/McpOAuthCallback.tsx:55
 msgid "Finishing MCP connection…"
@@ -2653,7 +2653,7 @@ msgstr "पहले बॉट रोकें"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:94
 msgid "Stopped."
-msgstr ""
+msgstr "रोक दिया गया।"
 
 #: src/pages/McpServersOverlay.tsx:336
 msgid "Stored encrypted"
