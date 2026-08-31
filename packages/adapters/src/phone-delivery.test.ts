@@ -41,6 +41,7 @@ function createDeps(overrides: {
   existingOutbox?: unknown;
   sendError?: Error;
   connectionStatus?: string | null;
+  groupsCapable?: boolean;
 }) {
   const rows = [...(overrides.outboundRows ?? [])] as Array<Record<string, unknown>>;
   const sendDirect = vi.fn(async () => ({ handle: "handle-out-1" }));
@@ -53,8 +54,7 @@ function createDeps(overrides: {
     describe: () => ({
       id: "sendblue",
       contractVersion: "1",
-      adapterVersion: "0.1.0",
-      capabilities: { direct: true, groups: true },
+      capabilities: { direct: true, groups: overrides.groupsCapable ?? true, typing: true },
     }),
     sendDirect,
     sendGroup,
@@ -280,6 +280,49 @@ describe("deliverPhoneOutbound", () => {
       { to: "+15551234567", body: "pending earlier" },
       context,
     );
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
+  });
+
+  it("fails group rows terminally when the provider reports no group support", async () => {
+    const deps = createDeps({
+      run: null,
+      groupsCapable: false,
+      outboundRows: [
+        {
+          id: "out-10",
+          idempotencyKey: "intro:ch-1",
+          kind: "intro",
+          providerGroupId: "grp-1",
+          body: "intro body",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    await deliverPhoneOutbound(deps, {}, context);
+
+    expect(deps.sendGroup).not.toHaveBeenCalled();
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("still sends group rows through the provider when groups are supported", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        {
+          id: "out-11",
+          idempotencyKey: "intro:ch-2",
+          kind: "intro",
+          providerGroupId: "grp-2",
+          body: "intro body",
+          status: "pending",
+          providerHandle: null,
+        },
+      ],
+    });
+    await deliverPhoneOutbound(deps, {}, context);
+
+    expect(deps.sendGroup).toHaveBeenCalledWith({ groupId: "grp-2", body: "intro body" }, context);
     expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "sent" }));
   });
 
