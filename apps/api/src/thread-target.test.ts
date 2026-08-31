@@ -230,7 +230,7 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:00.000Z"),
     };
     const findManyEvents = vi.fn();
-    const findFirstRun = vi.fn().mockResolvedValue(run);
+    const findFirstRun = vi.fn().mockResolvedValueOnce(run).mockResolvedValueOnce(null);
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: { findMany: vi.fn().mockResolvedValue([]) },
@@ -272,6 +272,59 @@ describe("threadSnapshot", () => {
       }),
     );
     expect(findManyEvents).not.toHaveBeenCalled();
+  });
+
+  it("drops a failed run once a newer run has finished", async () => {
+    const failed = {
+      id: "run-failed",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      status: "failed",
+      trigger: "user",
+      modelProvider: "openrouter",
+      modelId: "openrouter/unknown",
+      error: "This operation was aborted",
+      startedAt: null,
+      completedAt: new Date("2026-08-23T00:00:01.000Z"),
+      createdAt: new Date("2026-08-23T00:00:00.000Z"),
+    };
+    const findFirstRun = vi
+      .fn()
+      .mockResolvedValueOnce(failed)
+      // The supersession probe finds a newer completed run.
+      .mockResolvedValueOnce({ id: "run-completed" });
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn(),
+      },
+      run: { findFirst: findFirstRun },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const target = {
+      kind: "bot",
+      botId: "bot-1",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+
+    const snapshot = await threadSnapshot({ prisma }, target);
+
+    expect(findFirstRun).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["completed", "cancelled"] },
+          createdAt: { gt: failed.createdAt },
+        }),
+      }),
+    );
+    expect(snapshot.run).toBeNull();
   });
 
   it("does not return a cancelled or completed run", async () => {

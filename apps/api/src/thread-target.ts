@@ -303,18 +303,34 @@ export async function threadSnapshot(
             orderBy: { createdAt: "desc" },
           }),
         ]);
+        // A failed run is only the thread's word while nothing has finished
+        // after it; otherwise a stale failure would resurface in the composer
+        // error strip on every load, forever.
+        const supersededFailure =
+          run?.status === "failed"
+            ? await tx.run.findFirst({
+                where: {
+                  botId: target.botId,
+                  threadId: target.threadId,
+                  status: { in: ["completed", "cancelled"] },
+                  createdAt: { gt: run.createdAt },
+                },
+                select: { id: true },
+              })
+            : null;
+        const currentRun = supersededFailure ? null : run;
         const liveEvents =
-          run && isActive(run.status as RunStatus)
+          currentRun && isActive(currentRun.status as RunStatus)
             ? await tx.event.findMany({
                 where: {
                   threadId: target.threadId,
-                  runId: run.id,
+                  runId: currentRun.id,
                   type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
                 },
                 orderBy: { seq: "asc" },
               })
             : [];
-        return { messagePage, last, run, liveEvents };
+        return { messagePage, last, run: currentRun, liveEvents };
       }),
     ]);
     return {
