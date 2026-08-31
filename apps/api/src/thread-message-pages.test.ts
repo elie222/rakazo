@@ -272,6 +272,87 @@ describe("thread message pages", () => {
     expect(findMany).toHaveBeenCalledTimes(2);
   });
 
+  it("scans past a receipt-only page so web can reach older user-visible rows", async () => {
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "message-receipt-b",
+          threadId: "thread-1",
+          seq: 3,
+          role: "user",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Coder",
+              text: "Done.",
+            },
+          ],
+          botId: null,
+          replyToMessageId: null,
+          runId: "run-peer",
+          createdAt: new Date("2026-08-16T00:00:03.000Z"),
+        },
+        {
+          id: "message-receipt-a",
+          threadId: "thread-1",
+          seq: 2,
+          role: "user",
+          blocks: [
+            {
+              kind: "bot_message_sent",
+              toBotId: "bot-2",
+              toBotName: "Coder",
+              text: "Check this.",
+            },
+          ],
+          botId: null,
+          replyToMessageId: null,
+          runId: "run-user",
+          createdAt: new Date("2026-08-16T00:00:02.000Z"),
+        },
+        {
+          id: "message-lookahead",
+          threadId: "thread-1",
+          seq: 1,
+          role: "bot",
+          blocks: [{ kind: "text", text: "Older visible answer" }],
+          botId: "bot-1",
+          replyToMessageId: null,
+          runId: "run-user",
+          createdAt: new Date("2026-08-16T00:00:01.000Z"),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "message-user",
+          threadId: "thread-1",
+          seq: 1,
+          role: "bot",
+          blocks: [{ kind: "text", text: "Older visible answer" }],
+          botId: "bot-1",
+          replyToMessageId: null,
+          runId: "run-user",
+          createdAt: new Date("2026-08-16T00:00:01.000Z"),
+        },
+      ]);
+    const prisma = {
+      message: { findMany },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "run-peer" }])
+          .mockResolvedValueOnce([]),
+      },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+    expect(findMany).toHaveBeenCalledTimes(2);
+  });
+
   it("queries before the cursor and returns an ascending bounded page", async () => {
     const findMany = vi.fn(async () =>
       [5, 4, 3].map((seq) => ({

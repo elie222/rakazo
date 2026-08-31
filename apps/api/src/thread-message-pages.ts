@@ -1,4 +1,5 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
+import { isPeerReceiptBlocks } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -65,7 +66,12 @@ export async function loadMessagePage(
     const hasOlder = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize).reverse();
     const visibleRows = includePeerRuns ? pageRows : await withoutPeerRunMessages(prisma, pageRows);
-    if (visibleRows.length > 0 || !hasOlder || includePeerRuns) {
+    // Receipts stay for mobile, but web hides them client-side. Treat a
+    // receipt-only page as empty so we keep scanning for user-visible rows.
+    const hasSubstantive = visibleRows.some(
+      (row) => !isPeerReceiptBlocks(row.blocks as MessageBlock[]),
+    );
+    if (hasSubstantive || !hasOlder || includePeerRuns) {
       return {
         threadId,
         messages: visibleRows.map(toThreadMessage),
