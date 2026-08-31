@@ -36,6 +36,12 @@ describe("inferScript message_bot", () => {
     );
   });
 
+  it("keeps message_bot when the payload mentions sign in", () => {
+    expect(inferScript("message the bot named Researcher saying please sign in")).toEqual(
+      messageBotScript("Researcher", "please sign in"),
+    );
+  });
+
   it("preserves multiline message content", () => {
     expect(inferScript("message the bot named Researcher saying line one\nline two")).toEqual(
       messageBotScript("Researcher", "line one\nline two"),

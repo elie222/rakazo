@@ -144,6 +144,30 @@ export function inferScript(
       },
     ];
   }
+  // Before every content-based intent so payload text cannot steal the branch.
+  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
+    const name = namedBot(prompt) ?? "Peer";
+    const message =
+      /named\s+[A-Za-z0-9][A-Za-z0-9_-]{0,39}\s+(?:saying|with|:)\s*([\s\S]+)$/i
+        .exec(prompt)?.[1]
+        ?.trim() ?? `Please help with: ${prompt}`;
+    return [
+      {
+        assistant: "messaging that bot now.",
+        toolCalls: [
+          {
+            name: "message_bot",
+            args: {
+              confirm_name: name,
+              message,
+              intent: "request",
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (
     lower.includes("ask me") ||
     lower.includes("which city") ||
@@ -178,30 +202,6 @@ export function inferScript(
             args: {
               actions: [{ kind: "type", text: typed }],
               observe: true,
-            },
-          },
-        ],
-        complete: true,
-      },
-    ];
-  }
-  // Before content-based intents so payload text cannot steal the branch.
-  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
-    const name = namedBot(prompt) ?? "Peer";
-    const message =
-      /named\s+[A-Za-z0-9][A-Za-z0-9_-]{0,39}\s+(?:saying|with|:)\s*([\s\S]+)$/i
-        .exec(prompt)?.[1]
-        ?.trim() ?? `Please help with: ${prompt}`;
-    return [
-      {
-        assistant: "messaging that bot now.",
-        toolCalls: [
-          {
-            name: "message_bot",
-            args: {
-              confirm_name: name,
-              message,
-              intent: "request",
             },
           },
         ],
