@@ -1,6 +1,27 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { ScriptedAgentRuntime } from "./scripted-runtime.js";
+import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
+
+describe("inferScript message_bot", () => {
+  it("messages another bot by name", () => {
+    expect(inferScript("message the bot named Researcher saying peer-exchange-alpha")).toEqual([
+      {
+        assistant: "messaging that bot now.",
+        toolCalls: [
+          {
+            name: "message_bot",
+            args: {
+              confirm_name: "Researcher",
+              message: "peer-exchange-alpha",
+              intent: "request",
+            },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
+});
 
 describe("ScriptedAgentRuntime executionIds", () => {
   it("gives repeated tools distinct executionIds within a run", async () => {

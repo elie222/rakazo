@@ -248,6 +248,29 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
+    const name = namedBot(prompt) ?? "Peer";
+    const message =
+      /named\s+[A-Za-z0-9][A-Za-z0-9_-]{0,39}\s+(?:saying|with|:)\s*(.+)$/i
+        .exec(prompt)?.[1]
+        ?.trim() ?? `Please help with: ${prompt}`;
+    return [
+      {
+        assistant: "messaging that bot now.",
+        toolCalls: [
+          {
+            name: "message_bot",
+            args: {
+              confirm_name: name,
+              message,
+              intent: "request",
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (
     lower.includes("hand this to") ||
     lower.includes("hand off to") ||
