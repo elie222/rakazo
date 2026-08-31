@@ -167,6 +167,7 @@ describe("threadSnapshot", () => {
         where: expect.objectContaining({
           botId: "bot-1",
           threadId: "thread-1",
+          trigger: { not: "bot_message" },
           status: {
             in: ["queued", "leased", "running", "waiting_input", "waiting_takeover", "failed"],
           },
