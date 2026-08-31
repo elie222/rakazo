@@ -23,6 +23,8 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Copy" })).toBeVisible();
+  const thumbsUp = toolbar.getByRole("button", { name: "Add thumbs-up" });
+  await expect(thumbsUp).toBeVisible();
 
   // Pill must float above the bubble text, not cover the first line.
   const bubble = parentRow.locator("div").filter({ hasText: parentText }).last();
@@ -63,6 +65,14 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   });
   await testInfo.attach("message-hover-toolbar", { contentType: "image/png", path: hoverPath });
 
+  await thumbsUp.click();
+  const reactionChip = parentRow
+    .getByRole("button", { name: "Remove thumbs-up" })
+    .filter({ hasText: "👍" });
+  await expect(reactionChip).toBeVisible();
+  await captureScreenshot(page, testInfo, "message-thumbs-up");
+
+  await parentRow.hover();
   await toolbar.getByRole("button", { name: "Copy" }).click();
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
