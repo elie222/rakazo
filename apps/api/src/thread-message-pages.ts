@@ -106,7 +106,7 @@ async function withoutPeerRunMessages<T extends { runId: string | null; blocks: 
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
   return rows.filter((row) => {
     if (!row.runId || !peerRunIds.has(row.runId)) return true;
-    // Keep compact sent/received receipts for mobile; web client still hides them.
+    // Keep compact sent/received receipts; clients render them as chips.
     const blocks = row.blocks as MessageBlock[];
     return blocks.some(
       (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",

@@ -96,7 +96,6 @@
   "Booting up {0}’s computer": "{0} adlı botun bilgisayarı başlatılıyor",
   "bot": "bot",
   "Bot": "Bot",
-  "Bot messages": "Bot mesajları",
   "Bot screen": "Bot ekranı",
   "Bot screen preview": "Bot ekranı önizlemesi",
   "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.": "Botlar varsayılan olarak sormadan hareket eder. Yalnızca belirli bir işlem türünü önce incelemek istediğinde istisna ekle. Bu tercihler tüm botlarında geçerlidir.",
@@ -119,7 +118,6 @@
   "Clearing…": "Temizleniyor…",
   "Close": "Kapat",
   "Close bot menu": "Bot menüsünü kapat",
-  "Close bot messages": "Bot mesajlarını kapat",
   "Close chart": "Grafiği kapat",
   "Close computer": "Bilgisayarı kapat",
   "Close image preview": "Görsel önizlemesini kapat",
@@ -573,5 +571,10 @@
   "Your email address": "E-posta adresin",
   "Your key or subscription token is stored securely and is never shown here.": "Anahtarın veya abonelik token'ın güvenle saklanır ve burada asla gösterilmez.",
   "Your name": "Adın",
-  "Your team of always-on agents<0/>that you can give real work to.": "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+  "Your team of always-on agents<0/>that you can give real work to.": "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın.",
+  "Messaged": "Mesaj gönderildi",
+  "Message from": "Mesaj gönderen",
+  "This chat is view-only": "Bu sohbet yalnızca görüntülenebilir",
+  "Could not load this chat.": "Bu sohbet yüklenemedi.",
+  "No messages with {peerBotName} yet.": "{peerBotName} ile henüz mesaj yok."
 }

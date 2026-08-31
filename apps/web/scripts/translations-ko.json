@@ -102,7 +102,6 @@
   "Booting live desktop…": "라이브 데스크톱 시작 중…",
   "Booting up {0}’s computer": "{0}의 컴퓨터를 켜는 중",
   "bot": "Bot",
-  "Bot messages": "Bot 메시지",
   "Bot screen": "Bot 화면",
   "Bot screen preview": "Bot 화면 미리보기",
   "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.": "Bot은 기본적으로 묻지 않고 작업합니다. 먼저 확인하고 싶은 작업만 예외로 추가하세요. 이 설정은 모든 Bot에 적용됩니다.",
@@ -125,7 +124,6 @@
   "Clearing…": "비우는 중…",
   "Close": "닫기",
   "Close bot menu": "Bot 메뉴 닫기",
-  "Close bot messages": "Bot 메시지 닫기",
   "Close chart": "차트 닫기",
   "Close computer": "컴퓨터 닫기",
   "Close image preview": "이미지 미리보기 닫기",
@@ -576,5 +574,10 @@
   "Your key or subscription token is stored securely and is never shown here.": "API 키 또는 구독 토큰은 서버에 안전하게 저장되며 이 화면에 다시 표시되지 않습니다.",
   "Your name": "이름",
   "Your team of always-on agents<0/>that you can give real work to.": "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀",
-  "No managed app catalog is configured on this deployment.": "이 서버에는 관리형 앱 목록이 설정되지 않았습니다."
+  "No managed app catalog is configured on this deployment.": "이 서버에는 관리형 앱 목록이 설정되지 않았습니다.",
+  "Messaged": "메시지 보냄",
+  "Message from": "메시지 보낸 봇",
+  "This chat is view-only": "이 채팅은 읽기 전용입니다",
+  "Could not load this chat.": "이 채팅을 불러오지 못했습니다.",
+  "No messages with {peerBotName} yet.": "{peerBotName}와의 메시지가 아직 없습니다."
 }

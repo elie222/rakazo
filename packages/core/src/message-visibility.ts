@@ -7,8 +7,8 @@ type PresentableMessage = {
 
 export type UserVisibleMessagesOptions = {
   /**
-   * Keep `bot_message_sent` / `bot_message_received` rows (mobile compact cards).
-   * Web hides them because PeerMessagesOverlay covers that history.
+   * Keep `bot_message_sent` / `bot_message_received` rows as compact chips
+   * (web CollaborationMarker; mobile AgentEventLabel). Peer bodies stay hidden.
    */
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */

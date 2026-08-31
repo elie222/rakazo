@@ -1,29 +1,40 @@
 import { BotAvatar, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
 import { LoadingState } from "./primitives";
 
+/** Centered status line: "Messaged" / "Message from" plus a clickable bot chip. */
 export function CollaborationMarker({
   ariaLabel,
   color,
   identity,
-  label,
+  prefix,
+  botName,
   onClick,
 }: {
   ariaLabel: string;
   color: string;
   identity: string;
-  label: string;
+  prefix: string;
+  botName: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      onClick={onClick}
-      className="flex items-center justify-center gap-1.5 self-center rounded-full px-2.5 py-1 text-[13px] text-[#85858A] transition-colors hover:bg-[#161618] hover:text-[#B8B8BD]"
+    <div
+      data-testid="peer-receipt-chip"
+      className="flex items-center justify-center gap-2 self-center py-1 text-[13.5px] text-[#85858A]"
     >
-      <BotAvatar color={color} identity={identity} size={16} />
-      <span dir="auto">{label}</span>
-    </button>
+      <span>{prefix}</span>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        onClick={onClick}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#1C1C1F] px-2.5 py-1 text-[13px] text-[#ECECEE] transition-colors hover:bg-[#242428]"
+      >
+        <BotAvatar color={color} identity={identity} size={16} />
+        <span dir="auto" className="truncate">
+          {botName}
+        </span>
+      </button>
+    </div>
   );
 }
 

@@ -1,9 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
-test("hides peer exchange in transcript and shows it in Bot messages", async ({
-  page,
-}, testInfo) => {
+test("shows peer chips in transcript and opens view-only peer chat", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `peer-msg-${stamp}@rakazo.test`, "password12", "Peer Msg");
   await completeOnboarding(page);
@@ -50,17 +48,24 @@ test("hides peer exchange in transcript and shows it in Bot messages", async ({
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
 
   const transcript = page.getByTestId("transcript");
-  await expect(transcript.getByText("Messaged Researcher")).toHaveCount(0);
-  await expect(transcript.getByText("Message from Researcher")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "hidden-peer-transcript");
+  await expect(transcript.getByText("peer-exchange-alpha")).toHaveCount(0);
+  const chip = transcript
+    .getByTestId("peer-receipt-chip")
+    .filter({ hasText: "Researcher" })
+    .first();
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  await expect(chip.getByText(/Messaged|Message from/)).toBeVisible();
+  await captureScreenshot(page, testInfo, "peer-chip-in-thread");
 
-  await page.getByRole("button", { name: "Bot messages" }).click();
-  const dialog = page.getByRole("dialog", { name: "Bot messages" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("peer-exchange-alpha").first()).toBeVisible({
+  await chip.getByRole("button", { name: /Messaged Researcher|Message from Researcher/ }).click();
+  const view = page.getByTestId("peer-conversation-view");
+  await expect(view).toBeVisible();
+  await expect(view.getByRole("heading", { name: /Chief · Researcher/ })).toBeVisible();
+  await expect(view.getByText("This chat is view-only")).toBeVisible();
+  await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(dialog.getByText("Researcher").first()).toBeVisible();
-  await expect(dialog.getByText("Loading bot messages")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "bot-messages");
+  await expect(view.getByRole("textbox")).toHaveCount(0);
+  await expect(view.getByText("Loading")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "peer-view-only");
 });

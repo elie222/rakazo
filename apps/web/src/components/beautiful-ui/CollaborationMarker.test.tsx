@@ -3,18 +3,21 @@ import { describe, expect, it } from "vitest";
 import { ActiveBotGlyph, CollaborationMarker } from "./CollaborationMarker";
 
 describe("collaboration transcript markers", () => {
-  it("shows the peer avatar in an accessible message marker", () => {
+  it("shows a centered Message from prefix and clickable bot chip", () => {
     const html = renderToString(
       <CollaborationMarker
         ariaLabel="Message from Research"
         color="#14B8A6"
         identity="research"
-        label="Message from Research"
+        prefix="Message from"
+        botName="Research"
         onClick={() => undefined}
       />,
     );
 
+    expect(html).toContain('data-testid="peer-receipt-chip"');
     expect(html).toContain('aria-label="Message from Research"');
+    expect(html).toContain("Message from");
     expect(html).toContain("rakazo-bot-avatar");
     expect(html).toContain("Research");
   });

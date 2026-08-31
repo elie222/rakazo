@@ -1908,13 +1908,14 @@ const MessageBubble = memo(function MessageBubble({
   if (peerMessage) {
     const sent = peerMessage.kind === "bot_message_sent";
     const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
+    // Compact receipt only: peer bodies stay out of the human thread.
+    // Full view-only peer chat is web-first; mobile keeps the chip without expand.
     return (
-      <AgentEventLabel
-        label={sent ? `Messaged ${peer}` : `Message from ${peer}`}
-        detail={peerMessage.text}
-        expanded={peerExpanded}
-        onToggle={() => setPeerExpanded((expanded) => !expanded)}
-      />
+      <View style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}>
+        <Text style={{ color: "#85858A", fontSize: 13.5, textAlign: "center" }}>
+          {sent ? `Messaged ${peer}` : `Message from ${peer}`}
+        </Text>
+      </View>
     );
   }
   const phoneChannel = message.blocks.find(

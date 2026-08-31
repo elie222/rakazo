@@ -95,7 +95,6 @@
   "Booting up {0}’s computer": "{0} का कंप्यूटर शुरू हो रहा है",
   "bot": "बॉट",
   "Bot": "बॉट",
-  "Bot messages": "बॉट संदेश",
   "Bot screen": "बॉट स्क्रीन",
   "Bot screen preview": "बॉट स्क्रीन प्रीव्यू",
   "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.": "बॉट डिफ़ॉल्ट रूप से बिना पूछे कार्रवाई करते हैं। अपवाद तभी जोड़ें जब आप किसी प्रकार की कार्रवाई की पहले समीक्षा करना चाहते हों। ये प्राथमिकताएं आपके सभी बॉट्स पर लागू होती हैं।",
@@ -118,7 +117,6 @@
   "Clearing…": "साफ़ किया जा रहा है…",
   "Close": "बंद करें",
   "Close bot menu": "बॉट मेन्यू बंद करें",
-  "Close bot messages": "बॉट संदेश बंद करें",
   "Close chart": "चार्ट बंद करें",
   "Close computer": "कंप्यूटर बंद करें",
   "Close image preview": "छवि प्रीव्यू बंद करें",
@@ -579,5 +577,10 @@
   "Your key or subscription token is stored securely and is never shown here.": "आपकी कुंजी या सब्सक्रिप्शन टोकन सुरक्षित रूप से संग्रहीत है और यहां कभी नहीं दिखाया जाता।",
   "Your name": "आपका नाम",
   "Your team of always-on agents<0/>that you can give real work to.": "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।",
-  "Earlier message": "पुराना संदेश"
+  "Earlier message": "पुराना संदेश",
+  "Messaged": "संदेश भेजा",
+  "Message from": "संदेश भेजने वाला",
+  "This chat is view-only": "यह चैट केवल देखने के लिए है",
+  "Could not load this chat.": "यह चैट लोड नहीं हो सकी.",
+  "No messages with {peerBotName} yet.": "{peerBotName} के साथ अभी कोई संदेश नहीं."
 }

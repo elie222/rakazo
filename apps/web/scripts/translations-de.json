@@ -102,7 +102,6 @@
   "Booting live desktop…": "Live-Desktop wird gestartet…",
   "Booting up {0}’s computer": "Computer von {0} wird gestartet",
   "bot": "Bot",
-  "Bot messages": "Bot-Nachrichten",
   "Bot screen": "Bot-Bildschirm",
   "Bot screen preview": "Bot-Bildschirmvorschau",
   "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.": "Bots handeln standardmäßig ohne Nachfrage. Füge nur dann eine Ausnahme hinzu, wenn du eine Aktionsart zuerst prüfen möchtest. Diese Einstellungen gelten für alle deine Bots.",
@@ -125,7 +124,6 @@
   "Clearing…": "Wird geleert…",
   "Close": "Schließen",
   "Close bot menu": "Bot-Menü schließen",
-  "Close bot messages": "Bot-Nachrichten schließen",
   "Close chart": "Diagramm schließen",
   "Close computer": "Computer schließen",
   "Close image preview": "Bildvorschau schließen",
@@ -576,5 +574,10 @@
   "Your key or subscription token is stored securely and is never shown here.": "Dein Schlüssel oder Abonnementtoken wird sicher gespeichert und hier nie angezeigt.",
   "Your name": "Dein Name",
   "Your team of always-on agents<0/>that you can give real work to.": "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben.",
-  "No managed app catalog is configured on this deployment.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert."
+  "No managed app catalog is configured on this deployment.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert.",
+  "Messaged": "Nachricht an",
+  "Message from": "Nachricht von",
+  "This chat is view-only": "Dieser Chat ist nur Ansicht",
+  "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
+  "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}."
 }

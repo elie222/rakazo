@@ -95,7 +95,6 @@
   "Booting up {0}’s computer": "Inicializando o computador do {0}",
   "bot": "bot",
   "Bot": "Bot",
-  "Bot messages": "Mensagens de bot",
   "Bot screen": "Tela do bot",
   "Bot screen preview": "Pré-visualização da tela",
   "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots.": "Os bots agem sem perguntar por padrão. Adicione uma exceção apenas quando quiser analisar um tipo de ação primeiro. Essas preferências se aplicam a todos os seus bots.",
@@ -118,7 +117,6 @@
   "Clearing…": "Limpeza",
   "Close": "Fechar",
   "Close bot menu": "Fechar menu do bot",
-  "Close bot messages": "Fechar mensagens do bot",
   "Close chart": "Fechar gráfico",
   "Close computer": "Fechar computador",
   "Close image preview": "Fechar visualização da imagem",
@@ -578,5 +576,10 @@
   "Your email address": "Seu endereço de e-mail",
   "Your key or subscription token is stored securely and is never shown here.": "Sua chave ou token de assinatura é armazenado com segurança e nunca é mostrado aqui.",
   "Your name": "O seu nome",
-  "Your team of always-on agents<0/>that you can give real work to.": "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+  "Your team of always-on agents<0/>that you can give real work to.": "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade.",
+  "Messaged": "Mensagem para",
+  "Message from": "Mensagem de",
+  "This chat is view-only": "Este chat é somente leitura",
+  "Could not load this chat.": "Não foi possível carregar este chat.",
+  "No messages with {peerBotName} yet.": "Ainda sem mensagens com {peerBotName}."
 }
