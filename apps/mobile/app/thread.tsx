@@ -6,6 +6,7 @@ import type {
   MessageBlock,
   Routine,
 } from "@rakazo/contracts";
+import { canReactToThreadMessage } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
@@ -1170,15 +1171,17 @@ function Thread() {
             <Pressable accessibilityLabel="Reply" onPress={() => setReplyTarget(message)}>
               <Text style={{ color: "#6C6C70", fontSize: 12 }}>Reply</Text>
             </Pressable>
-            <Pressable
-              accessibilityLabel={message.thumbsUp ? "Remove thumbs-up" : "Add thumbs-up"}
-              accessibilityState={{ selected: Boolean(message.thumbsUp) }}
-              onPress={() => void reactToMessage(message)}
-            >
-              <Text style={{ color: message.thumbsUp ? "#E9C46A" : "#6C6C70", fontSize: 13 }}>
-                👍
-              </Text>
-            </Pressable>
+            {canReactToThreadMessage(message) ? (
+              <Pressable
+                accessibilityLabel={message.thumbsUp ? "Remove thumbs-up" : "Add thumbs-up"}
+                accessibilityState={{ selected: Boolean(message.thumbsUp) }}
+                onPress={() => void reactToMessage(message)}
+              >
+                <Text style={{ color: message.thumbsUp ? "#E9C46A" : "#6C6C70", fontSize: 13 }}>
+                  👍
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
           <MessageBubble
             botId={botId ?? snap?.members?.[0]?.botId ?? ""}

@@ -89,7 +89,7 @@ describe("message thumbs-up", () => {
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
-    const actor = { workspaceId: "workspace-1", userId: "user-1" } as Actor;
+    const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
     const target = {
       kind: "bot",
       botId: "bot-1",

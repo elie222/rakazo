@@ -35,6 +35,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
+  canReactToThreadMessage,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
@@ -4707,17 +4708,19 @@ function MessageHoverActions({
         >
           <Reply size={14} strokeWidth={1.8} />
         </button>
-        <button
-          type="button"
-          aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
-          aria-pressed={Boolean(message.thumbsUp)}
-          onClick={() => void onReact(message)}
-          className={`grid h-7 w-7 place-items-center rounded-full hover:bg-[#2A2A2F] hover:text-[#ECECEE] ${
-            message.thumbsUp ? "text-[#E9C46A]" : "text-[#C9C9CE]"
-          }`}
-        >
-          <ThumbsUp size={14} strokeWidth={1.8} />
-        </button>
+        {canReactToThreadMessage(message) ? (
+          <button
+            type="button"
+            aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
+            aria-pressed={Boolean(message.thumbsUp)}
+            onClick={() => void onReact(message)}
+            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-[#2A2A2F] hover:text-[#ECECEE] ${
+              message.thumbsUp ? "text-[#E9C46A]" : "text-[#C9C9CE]"
+            }`}
+          >
+            <ThumbsUp size={14} strokeWidth={1.8} />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label={t`Copy`}

@@ -267,3 +267,11 @@ export const ThreadMessageSchema = z.object({
   createdAt: z.string(),
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
+
+export function canReactToThreadMessage(message: Pick<ThreadMessage, "id" | "blocks">): boolean {
+  return (
+    !message.id.startsWith("progress:") &&
+    !message.id.startsWith("subagent:") &&
+    !message.blocks.some((block) => block.kind === "phone_channel_message")
+  );
+}
