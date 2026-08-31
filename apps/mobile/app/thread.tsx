@@ -195,6 +195,7 @@ function Thread() {
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
+  const jumpGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -257,13 +258,9 @@ function Thread() {
   );
   const visibleMessages = useMemo(
     () =>
-      userVisibleMessages(snap?.messages ?? [], {
-        includePeerReceipts: true,
-        keepMessageIds: [
-          ...(jumpScrollTarget.current ? [jumpScrollTarget.current] : []),
-          ...(pinnedAroundRef.current?.messageId ? [pinnedAroundRef.current.messageId] : []),
-        ],
-      }).filter((message) => hasVisibleMessagePresentation(message.blocks)),
+      userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
+        hasVisibleMessagePresentation(message.blocks),
+      ),
     [snap?.messages],
   );
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;
@@ -569,6 +566,8 @@ function Thread() {
   async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
     const epoch = historyEpoch.current;
+    jumpGeneration.current += 1;
+    const jumpId = jumpGeneration.current;
     const [snap, page] = await Promise.all([
       rpc<MobileSnapshot>("threads/get", threadTarget),
       rpc<MobileMessagePage>("threads/messages", {
@@ -576,24 +575,27 @@ function Thread() {
         around: { messageId: target.messageId },
       }),
     ]);
-    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
-    // the fetched page would pin deleted messages that every later refresh keeps restoring.
-    if (epoch !== historyEpoch.current) return;
+    // The epoch check drops a jump that raced a conversation clear (or a bot switch); the
+    // generation check drops an older same-thread jump that finished after a newer one.
+    if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    expandedHistoryThread.current = page.threadId;
-    pinnedAroundRef.current = {
-      ...threadTarget,
-      messageId: target.messageId,
-      threadId: page.threadId,
-      messages: [...page.messages],
-      olderCursor: page.olderCursor,
-    };
-    jumpScrollTarget.current = target.messageId;
+    const targetInPage = page.messages.some((message) => message.id === target.messageId);
+    expandedHistoryThread.current = targetInPage ? page.threadId : null;
+    pinnedAroundRef.current = targetInPage
+      ? {
+          ...threadTarget,
+          messageId: target.messageId,
+          threadId: page.threadId,
+          messages: [...page.messages],
+          olderCursor: page.olderCursor,
+        }
+      : null;
+    jumpScrollTarget.current = targetInPage ? target.messageId : null;
     setSnap({
       ...snap,
-      messages: [...page.messages],
-      olderCursor: page.olderCursor,
+      messages: targetInPage ? [...page.messages] : snap.messages,
+      olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
     });
   }
 

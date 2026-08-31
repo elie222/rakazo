@@ -104,7 +104,7 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
   });
 
-  it("keeps around-page targets even when they belong to a peer run", async () => {
+  it("omits peer around-page targets from the normal transcript", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-user",
@@ -152,10 +152,7 @@ describe("thread message pages", () => {
       seq: 6,
     });
 
-    expect(page.messages.map((message) => message.id)).toEqual([
-      "message-user",
-      "message-peer-target",
-    ]);
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
     expect(runFindMany).toHaveBeenCalled();
   });
 
@@ -233,9 +230,18 @@ describe("thread message pages", () => {
         createdAt: new Date("2026-08-16T00:00:01.000Z"),
       },
     ]);
-    const prisma = { message: { findMany } } as unknown as PrismaClient;
+    const prisma = {
+      message: { findMany, count: vi.fn(async () => 0) },
+    } as unknown as PrismaClient;
 
-    const page = await loadMessagePage(prisma, "thread-1", undefined, 2, undefined, true);
+    const page = await loadMessagePage(
+      prisma,
+      "thread-1",
+      undefined,
+      2,
+      { messageId: "message-peer", seq: 1 },
+      true,
+    );
 
     expect(page.messages.map((message) => message.id)).toEqual(["message-peer"]);
   });
