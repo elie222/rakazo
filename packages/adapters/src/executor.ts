@@ -2841,9 +2841,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           terminalCheckpointComplete = true;
 
           flushPendingTools();
-          const unreadText = handedOff
-            ? ""
-            : completionNotificationBody(assembled, messageSegments).trim();
           if (!assembled) {
             messageSegments = completionMessageSegments(messageSegments, {
               allowSilentEmpty: allowSilentPeerMessage || phoneChannelRun,
@@ -2871,7 +2868,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "completed",
             blocks,
-            markUnread: completionMarksUnread(run.trigger, unreadText),
+            markUnread: completionMarksUnread(run.trigger, text),
           });
           if (!completed) return;
           if (run.trigger === "bot_message" && text) {

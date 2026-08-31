@@ -78,15 +78,13 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("user", "")).toBe(true);
   });
 
-  it("keeps the empty-run done. fallback visible without routine attention", () => {
-    const originalSegments: never[] = [];
-    const unreadText = completionNotificationBody("", originalSegments).trim();
-    const segments = completionMessageSegments(originalSegments);
+  it("keeps empty-run done. fallback unread and notifying", () => {
+    const segments = completionMessageSegments([]);
     const text = completionNotificationBody("", segments);
     expect(segments).toEqual([{ kind: "text", text: "done." }]);
     expect(text).toBe("done.");
-    expect(completionMarksUnread("routine", unreadText)).toBe(false);
-    expect(completionMarksUnread("user", unreadText)).toBe(true);
+    expect(completionMarksUnread("routine", text)).toBe(true);
+    expect(completionMarksUnread("user", text)).toBe(true);
   });
 
   it("does not invent done. unread for a routine whose only activity is a completed subagent", () => {
