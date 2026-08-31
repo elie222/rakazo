@@ -664,6 +664,7 @@ export async function reactToThreadMessage(
   thumbsUp: boolean,
 ) {
   return deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const [message] = await tx.$queryRaw<
       Array<{ id: string; thumbsUp: boolean }>
     >`SELECT id, "thumbsUp" FROM messages WHERE id = ${messageId} AND "threadId" = ${target.threadId} FOR UPDATE`;

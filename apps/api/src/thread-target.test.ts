@@ -113,6 +113,10 @@ describe("message thumbs-up", () => {
 
     expect(tx.task.create).toHaveBeenCalledOnce();
     expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(String(tx.$queryRaw.mock.calls[0]?.[0])).toContain("SELECT id FROM threads");
+    expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain(
+      'SELECT id, "thumbsUp" FROM messages',
+    );
     expect(tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "follow_up" }),
