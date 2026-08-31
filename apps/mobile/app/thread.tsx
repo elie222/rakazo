@@ -608,6 +608,7 @@ function Thread() {
       const page = await rpc<MobileMessagePage>("threads/messages", {
         ...(groupId ? { groupId } : { botId: botId! }),
         before: snap.olderCursor,
+        includePeerReceipts: true,
       });
       if (epoch !== historyEpoch.current) {
         loadingOlderContent.current = false;

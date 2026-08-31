@@ -278,8 +278,8 @@ describe("thread message pages", () => {
     expect(findMany).toHaveBeenCalledTimes(2);
   });
 
-  it("returns a receipt-only page so mobile can keep compact peer receipts", async () => {
-    const findMany = vi.fn(async () => [
+  it("scans past a receipt-only page so web can reach older user-visible rows", async () => {
+    const receiptRows = [
       {
         id: "message-receipt-b",
         threadId: "thread-1",
@@ -327,19 +327,67 @@ describe("thread message pages", () => {
         runId: "run-user",
         createdAt: new Date("2026-08-16T00:00:01.000Z"),
       },
-    ]);
+    ];
+    const olderRows = [
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Older visible answer" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-user",
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ];
+    const findMany = vi.fn().mockResolvedValueOnce(receiptRows).mockResolvedValueOnce(olderRows);
     const prisma = {
       message: { findMany },
       run: {
-        findMany: vi.fn(async () => [{ id: "run-peer" }]),
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "run-peer" }])
+          .mockResolvedValueOnce([]),
       },
     } as unknown as PrismaClient;
 
     const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
 
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+    expect(findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a receipt-only page when the client displays peer receipts", async () => {
+    const receipt = (seq: number) => ({
+      id: `message-receipt-${seq}`,
+      threadId: "thread-1",
+      seq,
+      role: "user",
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-2",
+          fromBotName: "Coder",
+          text: "Done.",
+        },
+      ],
+      botId: null,
+      replyToMessageId: null,
+      runId: "run-peer",
+      createdAt: new Date(`2026-08-16T00:00:0${seq}.000Z`),
+    });
+    const findMany = vi.fn(async () => [receipt(3), receipt(2), receipt(1)]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2, undefined, false, true);
+
     expect(page.messages.map((message) => message.id)).toEqual([
-      "message-receipt-a",
-      "message-receipt-b",
+      "message-receipt-2",
+      "message-receipt-3",
     ]);
     expect(page.olderCursor).toBe(2);
     expect(findMany).toHaveBeenCalledTimes(1);

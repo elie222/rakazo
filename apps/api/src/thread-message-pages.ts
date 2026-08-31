@@ -1,4 +1,5 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
+import { isPeerReceiptBlocks } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -10,6 +11,7 @@ export async function loadMessagePage(
   pageSize: number,
   around?: { messageId?: string; seq?: number },
   includePeerRuns = false,
+  includePeerReceipts = false,
 ): Promise<ThreadMessagePage> {
   if (around) {
     let targetSeq = around.seq;
@@ -58,10 +60,12 @@ export async function loadMessagePage(
     const hasOlder = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize).reverse();
     const visibleRows = includePeerRuns ? pageRows : await withoutPeerRunMessages(prisma, pageRows);
-    // Stop when the page has anything left after peer filtering (including compact
-    // receipts for mobile). Web hides receipts client-side and backfills older
-    // pages when the filtered transcript is empty.
-    if (visibleRows.length > 0 || !hasOlder || includePeerRuns) {
+    // Web hides receipts client-side, so its receipt-only pages keep scanning.
+    // Mobile explicitly retains them and must receive each page for pagination.
+    const hasSubstantive = visibleRows.some(
+      (row) => !isPeerReceiptBlocks(row.blocks as MessageBlock[]),
+    );
+    if (hasSubstantive || includePeerReceipts || !hasOlder || includePeerRuns) {
       return {
         threadId,
         messages: visibleRows.map(toThreadMessage),

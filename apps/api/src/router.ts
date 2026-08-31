@@ -1018,6 +1018,7 @@ export function createRouter(deps: RouterDeps) {
           THREAD_MESSAGE_PAGE_SIZE,
           input.around,
           input.includePeerRuns,
+          input.includePeerReceipts,
         );
       }),
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {

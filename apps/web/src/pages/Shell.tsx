@@ -1670,23 +1670,6 @@ export function ShellPage() {
   const jumpToMessageRef = useRef(jumpToMessage);
   jumpToMessageRef.current = jumpToMessage;
 
-  // Receipt-only pages stay on the wire for mobile. Web hides those rows, so keep
-  // loading older history until something user-visible appears (or history ends).
-  useEffect(() => {
-    if (!activeSnapshot) return;
-    if (loadingOlder) return;
-    if (activeSnapshot.olderCursor == null) return;
-    if (pinnedAroundRef.current?.threadId === activeSnapshot.threadId) return;
-    if (transcriptMessages.length > 0) return;
-    void loadOlderMessagesRef.current();
-  }, [
-    activeSnapshot,
-    activeSnapshot?.olderCursor,
-    activeSnapshot?.threadId,
-    loadingOlder,
-    transcriptMessages.length,
-  ]);
-
   const mentionBotsKey = useMemo(
     () => bots.map((bot) => `${bot.id}:${bot.name}`).join(","),
     [bots],
