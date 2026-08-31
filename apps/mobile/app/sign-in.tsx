@@ -74,9 +74,6 @@ export default function SignIn() {
         <Text style={{ color: "#1B1B1E", fontSize: 32, fontWeight: "500", textAlign: "center" }}>
           Sign in to Rakazo
         </Text>
-        <Text style={{ color: "#6E6E68", marginTop: 8, textAlign: "center" }}>
-          Same Better Auth session as the web app.
-        </Text>
         <TextInput
           autoCapitalize="none"
           keyboardType="email-address"
