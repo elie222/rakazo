@@ -928,6 +928,11 @@ msgstr "Não foi possível instalar o conector"
 msgid "Could not load approval rules"
 msgstr "Não foi possível carregar as regras de aprovação"
 
+#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:164
+msgid "Could not load bot messages."
+msgstr "Não foi possível carregar as mensagens dos bots."
+
 #: src/pages/PluginsOverlay.tsx:68
 msgid "Could not load integrations"
 msgstr "Não foi possível carregar as integrações"
@@ -1567,6 +1572,11 @@ msgstr "Carregar mensagens anteriores..."
 #: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "Carregando minha atividade"
+
+#: src/pages/PeerMessagesOverlay.tsx:138
+#: src/pages/PeerMessagesOverlay.tsx:160
+msgid "Loading bot messages…"
+msgstr "Carregando mensagens dos bots…"
 
 #: src/pages/PluginsOverlay.tsx:263
 msgid "Loading integrations…"

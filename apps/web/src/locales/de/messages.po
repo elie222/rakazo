@@ -928,6 +928,11 @@ msgstr "Connector konnte nicht installiert werden"
 msgid "Could not load approval rules"
 msgstr "Bestätigungsregeln konnten nicht geladen werden"
 
+#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:164
+msgid "Could not load bot messages."
+msgstr "Bot-Nachrichten konnten nicht geladen werden."
+
 #: src/pages/PluginsOverlay.tsx:68
 msgid "Could not load integrations"
 msgstr "Integrationen konnten nicht geladen werden"
@@ -1567,6 +1572,11 @@ msgstr "Frühere Nachrichten laden"
 #: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "Aktivität wird geladen…"
+
+#: src/pages/PeerMessagesOverlay.tsx:138
+#: src/pages/PeerMessagesOverlay.tsx:160
+msgid "Loading bot messages…"
+msgstr "Bot-Nachrichten werden geladen…"
 
 #: src/pages/PluginsOverlay.tsx:263
 msgid "Loading integrations…"

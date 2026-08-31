@@ -928,6 +928,11 @@ msgstr "도구 연결을 추가하지 못했습니다."
 msgid "Could not load approval rules"
 msgstr "확인 규칙을 불러오지 못했습니다."
 
+#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:164
+msgid "Could not load bot messages."
+msgstr "봇 메시지를 불러오지 못했습니다."
+
 #: src/pages/PluginsOverlay.tsx:68
 msgid "Could not load integrations"
 msgstr "연동 목록을 불러오지 못했습니다."
@@ -1567,6 +1572,11 @@ msgstr "이전 메시지 불러오기"
 #: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "활동을 불러오는 중…"
+
+#: src/pages/PeerMessagesOverlay.tsx:138
+#: src/pages/PeerMessagesOverlay.tsx:160
+msgid "Loading bot messages…"
+msgstr "봇 메시지를 불러오는 중…"
 
 #: src/pages/PluginsOverlay.tsx:263
 msgid "Loading integrations…"

@@ -928,6 +928,11 @@ msgstr "कनेक्टर इंस्टॉल नहीं हो सक�
 msgid "Could not load approval rules"
 msgstr "अनुमोदन नियम लोड नहीं हो सके"
 
+#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:164
+msgid "Could not load bot messages."
+msgstr "बॉट संदेश लोड नहीं हो सके।"
+
 #: src/pages/PluginsOverlay.tsx:68
 msgid "Could not load integrations"
 msgstr "इंटीग्रेशन लोड नहीं हो सके"
@@ -1567,6 +1572,11 @@ msgstr "पुराने संदेश लोड करें"
 #: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "गतिविधि लोड हो रही है…"
+
+#: src/pages/PeerMessagesOverlay.tsx:138
+#: src/pages/PeerMessagesOverlay.tsx:160
+msgid "Loading bot messages…"
+msgstr "बॉट संदेश लोड हो रहे हैं…"
 
 #: src/pages/PluginsOverlay.tsx:263
 msgid "Loading integrations…"

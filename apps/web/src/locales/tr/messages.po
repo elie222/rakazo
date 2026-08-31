@@ -928,6 +928,11 @@ msgstr "Bağlayıcı kurulamadı"
 msgid "Could not load approval rules"
 msgstr "Onay kuralları yüklenemedi"
 
+#: src/pages/PeerMessagesOverlay.tsx:140
+#: src/pages/PeerMessagesOverlay.tsx:164
+msgid "Could not load bot messages."
+msgstr "Bot mesajları yüklenemedi."
+
 #: src/pages/PluginsOverlay.tsx:68
 msgid "Could not load integrations"
 msgstr "Entegrasyonlar yüklenemedi"
@@ -1567,6 +1572,11 @@ msgstr "Önceki mesajları yükle"
 #: src/pages/ActivityList.tsx:60
 msgid "Loading activity…"
 msgstr "Etkinlik yükleniyor…"
+
+#: src/pages/PeerMessagesOverlay.tsx:138
+#: src/pages/PeerMessagesOverlay.tsx:160
+msgid "Loading bot messages…"
+msgstr "Bot mesajları yükleniyor…"
 
 #: src/pages/PluginsOverlay.tsx:263
 msgid "Loading integrations…"
