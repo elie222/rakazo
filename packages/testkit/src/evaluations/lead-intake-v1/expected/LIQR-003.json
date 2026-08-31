@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-003",
+  "readiness_class": "NEEDS_INFORMATION",
+  "queue": "INTAKE_FOLLOW_UP",
+  "issue_codes": ["MISSING_CONTACT_METHOD"],
+  "missing_fields": ["contact_method"],
+  "malformed_fields": [],
+  "contradiction_fields": [],
+  "follow_up_required": true,
+  "follow_up_fields": ["contact_method"],
+  "denied_capabilities": [],
+  "critical": false,
+  "compliance_status": "NOT_APPLICABLE",
+  "isolation_sentinel": "EXPECTED_ONLY_LIQR_003"
+}

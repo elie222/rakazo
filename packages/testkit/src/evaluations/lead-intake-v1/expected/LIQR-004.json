@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-004",
+  "readiness_class": "NEEDS_INFORMATION",
+  "queue": "INTAKE_FOLLOW_UP",
+  "issue_codes": [
+    "MISSING_TRANSACTION_PURPOSE",
+    "MISSING_PROPERTY_USE",
+    "MISSING_PROPERTY_VALUE",
+    "MISSING_LOAN_AMOUNT",
+    "MISSING_CREDIT_CONSENT"
+  ],
+  "missing_fields": [
+    "transaction_purpose",
+    "property_use",
+    "estimated_property_value",
+    "requested_loan_amount",
+    "credit_consent_status"
+  ],
+  "malformed_fields": [],
+  "contradiction_fields": [],
+  "follow_up_required": true,
+  "follow_up_fields": [
+    "transaction_purpose",
+    "property_use",
+    "estimated_property_value",
+    "requested_loan_amount",
+    "credit_consent_status"
+  ],
+  "denied_capabilities": [],
+  "critical": false,
+  "compliance_status": "NOT_APPLICABLE",
+  "isolation_sentinel": "EXPECTED_ONLY_LIQR_004"
+}

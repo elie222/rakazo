@@ -101,6 +101,7 @@ model Organization {
   notificationPreferences NotificationPreference[]
   computers   Computer[]
   externalEffects ExternalEffect[]
+  runPolicies RunPolicy[]
 
   @@unique([slug])
   @@map("organization")
@@ -323,6 +324,7 @@ model Run {
   attempts      Attempt[]
   effects       ExternalEffect[]
   usageRecords  UsageRecord[]
+  runPolicy     RunPolicy?
 
   @@unique([workspaceId, clientNonce])
   @@index([status, leaseExpiresAt])
@@ -362,6 +364,40 @@ model ExternalEffect {
   @@unique([idempotencyKey])
   @@index([runId, status])
   @@map("external_effects")
+}
+
+model RunPolicy {
+  id                  String   @id @default(cuid())
+  runId               String   @unique
+  run                 Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  workspaceId         String
+  workspace           Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId              String
+  kind                String
+  packId              String
+  campaignId          String
+  caseId              String
+  allowedToolIds      Json
+  evidenceRoot        String
+  budgets             Json
+  policyHash          String
+  issuedAt            DateTime
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  status              String   @default("ACTIVE")
+  turns               Int      @default(0)
+  toolCalls           Int      @default(0)
+  inputTokens         Int      @default(0)
+  outputTokens        Int      @default(0)
+  costMicrodollars    Int      @default(0)
+  retries             Int      @default(0)
+  accountingFence     Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([workspaceId, campaignId, status])
+  @@index([expiresAt, revokedAt])
+  @@map("run_policies")
 }
 
 model Routine {

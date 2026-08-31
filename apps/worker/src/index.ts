@@ -70,6 +70,7 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
+    evaluationPackV1Enabled: process.env.EVAL_PACK_V1_ENABLED === "true",
   });
 
   const jobHandlers = createBackgroundJobHandlers({

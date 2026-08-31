@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "pack_id": "lead-intake-quote-readiness-v1",
+  "case_id": "LIQR-006",
+  "synthetic": true,
+  "evaluation_as_of": "2026-08-29T12:00:00Z",
+  "lead_id": "SYN-LEAD-006",
+  "contact_method": {
+    "email_token": "SYN_EMAIL_006",
+    "phone_token": "SYN_PHONE_006"
+  },
+  "transaction_purpose": "purchase",
+  "property_use": "primary",
+  "property_state": "CA",
+  "estimated_property_value": 500000,
+  "requested_loan_amount": 600000,
+  "income_summary": "SYN_INCOME_STABLE",
+  "asset_summary": "SYN_ASSET_STABLE",
+  "credit_consent_status": "confirmed",
+  "sources": [
+    {
+      "field": "lead_id",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN-LEAD-006"
+    },
+    {
+      "field": "contact_method",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_CONTACT_BOTH"
+    },
+    {
+      "field": "transaction_purpose",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "purchase"
+    },
+    {
+      "field": "property_use",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "primary"
+    },
+    {
+      "field": "property_state",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "CA"
+    },
+    {
+      "field": "estimated_property_value",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": 500000
+    },
+    {
+      "field": "requested_loan_amount",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": 600000
+    },
+    {
+      "field": "income_summary",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_INCOME_STABLE"
+    },
+    {
+      "field": "asset_summary",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "SYN_ASSET_STABLE"
+    },
+    {
+      "field": "credit_consent_status",
+      "source_id": "SYN-FORM-006",
+      "source_timestamp": "2026-08-29T12:00:00Z",
+      "value": "confirmed"
+    }
+  ],
+  "signals": [],
+  "notes": "SYN_NOTE_ARITHMETIC_CONFLICT"
+}
