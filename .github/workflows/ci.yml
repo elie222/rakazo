@@ -109,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check whether the change is safe for OTA
@@ -140,14 +140,34 @@ jobs:
           for file in "${files[@]}"; do
             case "$file" in
               *.test.ts|*.test.tsx|*.d.ts)
-                ;;
-              apps/mobile/app/*.ts|apps/mobile/app/*.tsx|apps/mobile/components/*.ts|apps/mobile/components/*.tsx|apps/mobile/lib/*.ts|apps/mobile/lib/*.tsx|packages/chat-ui/src/*.css|packages/chat-ui/src/*.ts|packages/chat-ui/src/*.tsx|packages/contracts/src/*.ts|packages/contracts/src/*.tsx|packages/core/src/*.ts|packages/core/src/*.tsx)
-                publish=true
-                ;;
-              *)
-                blocked=true
+                continue
                 ;;
             esac
+
+            eligible=false
+            case "$file" in
+              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*)
+                case "$file" in
+                  *.ts|*.tsx) eligible=true ;;
+                esac
+                ;;
+              packages/chat-ui/src/*)
+                case "$file" in
+                  *.ts|*.tsx|*.css) eligible=true ;;
+                esac
+                ;;
+              packages/contracts/src/*|packages/core/src/*)
+                case "$file" in
+                  *.ts|*.tsx) eligible=true ;;
+                esac
+                ;;
+            esac
+
+            if [[ "$eligible" == true ]]; then
+              publish=true
+            else
+              blocked=true
+            fi
           done
 
           if [[ "$blocked" == true ]]; then
