@@ -319,6 +319,7 @@ describe("threadSnapshot", () => {
       2,
       expect.objectContaining({
         where: expect.objectContaining({
+          trigger: { not: "bot_message" },
           status: { in: ["completed", "cancelled"] },
           createdAt: { gt: failed.createdAt },
         }),

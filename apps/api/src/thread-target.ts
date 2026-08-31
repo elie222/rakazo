@@ -312,6 +312,8 @@ export async function threadSnapshot(
                 where: {
                   botId: target.botId,
                   threadId: target.threadId,
+                  // Match the selection query — peer bot_message runs must not bury a user-visible failure.
+                  trigger: { not: "bot_message" },
                   status: { in: ["completed", "cancelled"] },
                   createdAt: { gt: run.createdAt },
                 },
