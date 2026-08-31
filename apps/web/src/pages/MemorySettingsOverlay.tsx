@@ -3,6 +3,7 @@ import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { SpaceMemorySection } from "./KnowledgeSection";
 import {
   defaultMemoryProviderSettings,
   MEMORY_PROVIDER_SETTINGS,
@@ -218,6 +219,7 @@ export function MemorySettingsOverlay({
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
+          <SpaceMemorySection />
         </div>
       </div>
     </div>
