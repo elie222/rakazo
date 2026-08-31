@@ -230,7 +230,11 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:00.000Z"),
     };
     const findManyEvents = vi.fn();
-    const findFirstRun = vi.fn().mockResolvedValueOnce(run).mockResolvedValueOnce(null);
+    const findFirstRun = vi
+      .fn()
+      .mockResolvedValueOnce(run)
+      // The failure is itself the newest terminal run, so it stays visible.
+      .mockResolvedValueOnce({ id: run.id });
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: { findMany: vi.fn().mockResolvedValue([]) },
@@ -320,10 +324,9 @@ describe("threadSnapshot", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           trigger: { not: "bot_message" },
-          status: { in: ["completed", "cancelled"] },
-          createdAt: { gte: failed.createdAt },
-          id: { not: failed.id },
+          status: { in: ["failed", "completed", "cancelled"] },
         }),
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       }),
     );
     expect(snapshot.run).toBeNull();
