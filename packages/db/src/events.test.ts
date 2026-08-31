@@ -1219,7 +1219,7 @@ describe("appendEvent", () => {
       appendEvent(
         prisma,
         {
-          workspaceId: "workspace-1",
+          spaceId: "workspace-1",
           threadId: "thread-1",
           botId: "bot-1",
           type: "thread.progress",
