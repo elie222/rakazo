@@ -1,10 +1,22 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { threadRefreshDelayMs } from "./refresh";
+import { subscribeRetryDelayMs } from "./refresh";
 
-describe("thread refresh cadence", () => {
-  it("polls active work quickly and idle chats quietly", () => {
-    expect(threadRefreshDelayMs("running")).toBe(1_500);
-    expect(threadRefreshDelayMs("waiting_input")).toBe(5_000);
-    expect(threadRefreshDelayMs(undefined)).toBe(5_000);
+describe("thread subscribe reconnect", () => {
+  it("backs off after a dropped stream and caps at five seconds", () => {
+    expect(subscribeRetryDelayMs(0)).toBe(250);
+    expect(subscribeRetryDelayMs(1)).toBe(500);
+    expect(subscribeRetryDelayMs(2)).toBe(1_000);
+    expect(subscribeRetryDelayMs(20)).toBe(5_000);
+  });
+
+  it("keeps the open thread on SSE instead of polling snapshots", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const thread = readFileSync(path.join(dir, "../app/thread.tsx"), "utf8");
+    expect(thread).toContain("subscribeThread");
+    expect(thread).not.toContain("threadRefreshDelayMs");
+    expect(thread).not.toMatch(/setTimeout\(\(\) => void tick\(\)/);
   });
 });

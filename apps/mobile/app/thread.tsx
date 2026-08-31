@@ -93,7 +93,7 @@ import {
   pickFromLibrary,
   takePhoto,
 } from "../lib/pick-attachments";
-import { threadRefreshDelayMs } from "../lib/refresh";
+import { subscribeRetryDelayMs } from "../lib/refresh";
 import {
   type ThreadScrollAction,
   ThreadScrollBehavior,
@@ -725,7 +725,7 @@ function Thread() {
           });
       if (abort.signal.aborted) return;
       let cursor = next?.cursor ?? -1;
-      let retryMs = 250;
+      let retryAttempt = 0;
       while (!abort.signal.aborted) {
         try {
           await subscribeThread(
@@ -733,7 +733,7 @@ function Thread() {
             cursor,
             (event) => {
               cursor = Math.max(cursor, event.seq ?? -1);
-              retryMs = 250;
+              retryAttempt = 0;
               if (
                 event.type === "thread.progress" ||
                 event.type === "agent.tool.called" ||
@@ -771,38 +771,14 @@ function Thread() {
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
           await refresh().catch(() => undefined);
         }
-        await abortableDelay(retryMs, abort.signal);
-        retryMs = Math.min(retryMs * 2, 5_000);
+        await abortableDelay(subscribeRetryDelayMs(retryAttempt), abort.signal);
+        retryAttempt += 1;
       }
     })();
     return () => {
       abort.abort();
     };
   }, [botId, groupId, markReadIfVisible]);
-
-  useEffect(() => {
-    if (!botId && !groupId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      if (
-        AppState.currentState === "active" &&
-        navigation.isFocused() &&
-        !jumpScrollTarget.current &&
-        !expandedHistoryThread.current
-      ) {
-        await refresh().catch(() => undefined);
-      }
-      if (!cancelled) {
-        timer = setTimeout(() => void tick(), threadRefreshDelayMs(snap?.run?.status));
-      }
-    };
-    timer = setTimeout(() => void tick(), threadRefreshDelayMs(snap?.run?.status));
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [botId, groupId, navigation, snap?.run?.status]);
 
   useEffect(() => {
     if ((!botId && !groupId) || !messageId) return;
