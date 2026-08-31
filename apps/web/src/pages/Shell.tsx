@@ -1828,6 +1828,10 @@ export function ShellPage() {
           thumbsUp: !message.thumbsUp,
         });
       } catch (error) {
+        const stillHere = groupId
+          ? activeGroupId.current === groupId
+          : activeBotId.current === botId;
+        if (!stillHere) return;
         setSendError(error instanceof Error ? error.message : t`Could not update reaction`);
       }
     },

@@ -1085,14 +1085,17 @@ function Thread() {
   }
 
   async function reactToMessage(message: MobileMessage) {
-    if (!botId && !groupId) return;
+    const targetBotId = botId;
+    const targetGroupId = groupId;
+    if (!targetBotId && !targetGroupId) return;
     try {
       await rpc("threads/react", {
-        ...(groupId ? { groupId } : { botId: botId! }),
+        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
         thumbsUp: !message.thumbsUp,
       });
     } catch (err) {
+      if (!isCurrentTarget(targetBotId, targetGroupId)) return;
       setError(err instanceof Error ? err.message : "Could not update reaction");
     }
   }
