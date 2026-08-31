@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  apiBaseSummary,
   apiBaseWarning,
   currentApiBase,
   defaultApiBase,
@@ -347,6 +348,7 @@ function ServerSheet({
 
   const parsedDraft = normalizeApiBase(draft);
   const warning = parsedDraft.ok ? apiBaseWarning(parsedDraft.url) : null;
+  const summary = parsedDraft.ok ? apiBaseSummary(parsedDraft.url) : null;
 
   async function save() {
     setPending(true);
@@ -440,8 +442,13 @@ function ServerSheet({
               fontSize: 16,
             }}
           />
+          {summary ? (
+            <Text style={{ color: "#8C8C86", marginTop: 12, fontSize: 13 }}>{summary}</Text>
+          ) : null}
           {warning ? (
-            <Text style={{ color: "#8C8C86", marginTop: 12, fontSize: 13 }}>{warning}</Text>
+            <Text style={{ color: "#8C8C86", marginTop: summary ? 6 : 12, fontSize: 13 }}>
+              {warning}
+            </Text>
           ) : null}
           {error ? <Text style={{ color: "#B91C1C", marginTop: 12 }}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (

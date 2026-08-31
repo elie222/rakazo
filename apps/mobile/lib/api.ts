@@ -795,6 +795,7 @@ export function applyMobileThreadEvent(
 }
 
 export {
+  apiBaseSummary,
   apiBaseWarning,
   defaultApiBase,
   displayApiHost,

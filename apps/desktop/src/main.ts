@@ -26,6 +26,7 @@ import {
   safeExternalUrl,
   servesBundledRenderer,
   sessionPartitionForServerUrl,
+  setupReachabilityDetail,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
 import { shouldOpenInAppPopup } from "./window-open.js";
@@ -599,6 +600,11 @@ function fromSetupWindow(event: Electron.IpcMainInvokeEvent) {
   );
 }
 
+function withReachabilityDetail(url: string, error: string): string {
+  const detail = setupReachabilityDetail(url);
+  return detail ? `${error} ${detail}` : error;
+}
+
 async function probeServer(rawUrl: string): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
   if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
@@ -618,7 +624,10 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address redirects elsewhere. Enter the final Rakazo server address.",
+        error: withReachabilityDetail(
+          url,
+          "That address redirects elsewhere. Enter the final Rakazo server address.",
+        ),
       };
     }
     if (!response.ok) {
@@ -626,7 +635,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: `The server answered with HTTP ${response.status}.`,
+        error: withReachabilityDetail(url, `The server answered with HTTP ${response.status}.`),
       };
     }
     const health = await limitedJson(response);
@@ -635,16 +644,18 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address did not respond like a Rakazo server.",
+        error: withReachabilityDetail(url, "That address did not respond like a Rakazo server."),
       };
     }
+    const detail = setupReachabilityDetail(url, { includeHint: false }) ?? undefined;
     return {
       ok: true,
       status: response.status,
       url,
+      detail,
     };
   } catch (error) {
-    return { ok: false, url, error: probeFailureMessage(error) };
+    return { ok: false, url, error: withReachabilityDetail(url, probeFailureMessage(error)) };
   }
 }
 

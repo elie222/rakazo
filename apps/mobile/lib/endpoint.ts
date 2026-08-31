@@ -1,4 +1,8 @@
-import { allowsCleartextHttp } from "@rakazo/core";
+import {
+  allowsCleartextHttp,
+  connectionHintForOrigin,
+  describeConnectionOrigin,
+} from "@rakazo/core";
 
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
@@ -52,7 +56,11 @@ export function apiBaseWarning(url: string): string | null {
   } catch {
     return null;
   }
-  return null;
+  return connectionHintForOrigin(url);
+}
+
+export function apiBaseSummary(url: string): string | null {
+  return describeConnectionOrigin(url);
 }
 
 export async function probeApiBase(

@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { connectionHintForOrigin, describeConnectionOrigin } from "@rakazo/core";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { BuiButton, LoadingState } from "./components/beautiful-ui/primitives";
@@ -151,6 +152,8 @@ function useSessionRetry(refetch: () => Promise<void>) {
 function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   const { t } = useLingui();
   const retryNow = useSessionRetry(refetch);
+  const origin = describeConnectionOrigin(window.location.origin);
+  const hint = connectionHintForOrigin(window.location.origin);
 
   return (
     <div
@@ -162,6 +165,8 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
         <p className="mt-3 text-[13.5px] text-[#6C6C70]">
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
+        {origin ? <p className="mt-1 font-mono text-[12px] text-[#6C6C70]">{origin}</p> : null}
+        {hint ? <p className="mt-1 text-[12px] text-[#85858A]">{hint}</p> : null}
         <div className="mt-4">
           <BuiButton onClick={retryNow}>
             <Trans>Retry now</Trans>
@@ -174,16 +179,20 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
 
 function SessionReconnectBar({ refetch }: { refetch: () => Promise<void> }) {
   const retryNow = useSessionRetry(refetch);
+  const origin = describeConnectionOrigin(window.location.origin);
+  const hint = connectionHintForOrigin(window.location.origin);
 
   return (
     <div
-      className="flex shrink-0 items-center justify-center gap-3 border-b border-[#26262A] bg-[#121214] px-4 py-2"
+      className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-[#26262A] bg-[#121214] px-4 py-2"
       data-rakazo-reconnect="banner"
       role="status"
     >
       <p className="text-[13px] text-[#9A9AA0]">
         <Trans>Can&apos;t reach the server.</Trans>
       </p>
+      {origin ? <p className="font-mono text-[12px] text-[#6C6C70]">{origin}</p> : null}
+      {hint ? <p className="text-[12px] text-[#85858A]">{hint}</p> : null}
       <BuiButton onClick={retryNow}>
         <Trans>Retry now</Trans>
       </BuiButton>

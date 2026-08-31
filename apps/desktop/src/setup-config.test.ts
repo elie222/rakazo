@@ -11,6 +11,7 @@ import {
   serializeSetup,
   servesBundledRenderer,
   sessionPartitionForServerUrl,
+  setupReachabilityDetail,
 } from "./setup-config.js";
 
 describe("server address normalization", () => {
@@ -202,5 +203,16 @@ describe("probe failures", () => {
     ["something else entirely", "Could not reach that address."],
   ])("explains %s", (message, expected) => {
     expect(probeFailureMessage(new Error(message))).toBe(expected);
+  });
+
+  it("appends origin class and overlay hints", () => {
+    expect(setupReachabilityDetail("https://app.example.com")).toBe(
+      "app.example.com · https · public",
+    );
+    expect(setupReachabilityDetail("http://machine.ts.net")).toMatch(/MagicDNS/);
+    expect(setupReachabilityDetail("http://100.64.0.1:3100")).toMatch(/private overlay/);
+    expect(setupReachabilityDetail("https://machine.ts.net", { includeHint: false })).toBe(
+      "machine.ts.net · https · private overlay",
+    );
   });
 });

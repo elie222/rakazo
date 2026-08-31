@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { DesktopSetup } from "@rakazo/contracts";
-import { allowsCleartextHttp, isLoopbackHost } from "@rakazo/core";
+import {
+  allowsCleartextHttp,
+  connectionHintForOrigin,
+  describeConnectionOrigin,
+  isLoopbackHost,
+} from "@rakazo/core";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
@@ -112,6 +117,16 @@ export function probeFailureMessage(error: unknown): string {
     return "The server's HTTPS certificate was rejected.";
   }
   return "Could not reach that address.";
+}
+
+export function setupReachabilityDetail(
+  url: string,
+  options?: { includeHint?: boolean },
+): string | null {
+  const summary = describeConnectionOrigin(url);
+  const hint = options?.includeHint === false ? null : connectionHintForOrigin(url);
+  if (summary && hint) return `${summary}. ${hint}`;
+  return hint ?? summary;
 }
 
 /** The bundled renderer only stands in for a real http(s) origin. */

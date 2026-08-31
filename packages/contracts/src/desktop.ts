@@ -75,6 +75,8 @@ export interface DesktopReachability {
   status?: number;
   /** Normalized URL that was probed, absent when the input was not a usable URL. */
   url?: string;
+  /** Origin class and overlay hint, when the URL could be classified. */
+  detail?: string;
   error?: string;
 }
 

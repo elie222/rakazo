@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  apiBaseSummary,
   apiBaseWarning,
   defaultApiBase,
   displayApiHost,
@@ -75,12 +76,19 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("https://app.example.com")).toBeNull();
     expect(apiBaseWarning("http://127.0.0.1:3100")).toBeNull();
     expect(apiBaseWarning("http://192.168.1.20:3100")).toBeNull();
-    expect(apiBaseWarning("http://100.64.0.1:3100")).toBeNull();
-    expect(apiBaseWarning("http://100.119.57.55:3100")).toBeNull();
-    expect(apiBaseWarning("http://100.127.255.255:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.64.0.1:3100")).toMatch(/Tailscale or EasyTier/);
+    expect(apiBaseWarning("http://100.119.57.55:3100")).toMatch(/Tailscale or EasyTier/);
+    expect(apiBaseWarning("http://100.127.255.255:3100")).toMatch(/Tailscale or EasyTier/);
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
     expect(apiBaseWarning("http://machine.ts.net")).toMatch(/https/i);
-    expect(apiBaseWarning("https://machine.ts.net")).toBeNull();
+    expect(apiBaseWarning("https://machine.ts.net")).toMatch(/Tailscale or EasyTier/);
+  });
+
+  it("summarizes origin, scheme, and network class", () => {
+    expect(apiBaseSummary("https://app.example.com")).toBe("app.example.com · https · public");
+    expect(apiBaseSummary("http://192.168.1.20:3100")).toBe(
+      "192.168.1.20:3100 · http · local network",
+    );
   });
 
   it("treats the compile-time default as not custom", () => {
@@ -121,6 +129,7 @@ describe("mobile custom server UI", () => {
     const signIn = readFileSync(path.join(dir, "../app/sign-in.tsx"), "utf8");
     const api = readFileSync(path.join(dir, "api.ts"), "utf8");
     expect(signIn).toContain("Use a custom server");
+    expect(signIn).toContain("apiBaseSummary");
     expect(signIn).toContain("saveApiBase");
     expect(signIn).toContain("probeApiBase");
     expect(api).toContain("currentApiBase()");

@@ -10,6 +10,7 @@ export * from "./compose-update.js";
 export * from "./composer-mention-picker.js";
 export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
+export * from "./connection-kind.js";
 export * from "./cron.js";
 export * from "./duration.js";
 export * from "./events.js";

@@ -51,7 +51,12 @@
       const result = await bridge.test(value);
       if (result.ok) {
         activeField().value = result.url;
-        setStatus(`Rakazo answered at ${result.url}.`, "ok");
+        setStatus(
+          result.detail
+            ? `Rakazo answered at ${result.url} (${result.detail}).`
+            : `Rakazo answered at ${result.url}.`,
+          "ok",
+        );
       } else {
         setStatus(result.error ?? "Could not reach that address.", "error");
       }
