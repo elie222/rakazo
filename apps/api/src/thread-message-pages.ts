@@ -33,7 +33,8 @@ export async function loadMessagePage(
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
         : false;
-      const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
+      const messages =
+        includePeerRuns || around ? rows : await withoutPeerRunMessages(prisma, rows);
       return {
         threadId,
         messages: messages.map(toThreadMessage),
