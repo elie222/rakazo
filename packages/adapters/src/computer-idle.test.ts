@@ -1,7 +1,15 @@
+import { spawn } from "node:child_process";
+import { unlinkSync } from "node:fs";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SANDBOX_IDLE_MS, sandboxIdleMs, sleepComputerIfIdle } from "./computer-idle.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  BACKGROUND_WORK_LAUNCH,
+  BACKGROUND_WORK_PROBE,
+  DEFAULT_SANDBOX_IDLE_MS,
+  sandboxIdleMs,
+  sleepComputerIfIdle,
+} from "./computer-idle.js";
 import {
   e2bCreateOptions,
   isUnreachableTransportError,
@@ -43,6 +51,21 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("probes background work with the database computer id, not providerRef", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCode: 0 });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: harness.computer.providerRef }),
+      expect.objectContaining({
+        argv: ["bash", "-c", BACKGROUND_WORK_PROBE, "rakazo-background-probe", harness.computer.id],
+      }),
+      expect.anything(),
+    );
+    expect(harness.computer.id).not.toBe(harness.computer.providerRef);
   });
 
   it("fails closed when the provider cannot inspect background work", async () => {
@@ -124,6 +147,46 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
   });
+});
+
+describe("background work launch and probe", () => {
+  const children: ReturnType<typeof spawn>[] = [];
+  const markers = new Set<string>();
+
+  afterEach(() => {
+    for (const child of children.splice(0)) {
+      child.kill("SIGKILL");
+    }
+    for (const marker of markers) {
+      try {
+        unlinkSync(marker);
+      } catch {
+        // Marker may already be cleaned by an idle probe.
+      }
+    }
+    markers.clear();
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "detects active work only when launch and probe share the same marker id",
+    async () => {
+      const databaseId = "computer-db-id";
+      const providerRef = "provider-ref";
+      markers.add(`/tmp/rakazo-background-${databaseId}`);
+      markers.add(`/tmp/rakazo-background-${providerRef}`);
+
+      const launched = spawn(
+        "bash",
+        ["-c", BACKGROUND_WORK_LAUNCH, "rakazo-background-launch", databaseId, "sleep 30"],
+        { stdio: "ignore" },
+      );
+      children.push(launched);
+
+      await expect.poll(() => probeBackgroundWork(databaseId)).toBe(0);
+      // ComputerRef.id is providerRef today; probing that path must not see the DB-id marker.
+      expect(await probeBackgroundWork(providerRef)).toBe(1);
+    },
+  );
 });
 
 describe("e2b create options", () => {
@@ -267,4 +330,16 @@ function idleHarness(
       events: events as unknown as ThreadEvents,
     },
   };
+}
+
+function probeBackgroundWork(markerId: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "bash",
+      ["-c", BACKGROUND_WORK_PROBE, "rakazo-background-probe", markerId],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    child.on("error", reject);
+    child.on("close", (code) => resolve(code ?? 1));
+  });
 }

@@ -21,7 +21,7 @@ export const BACKGROUND_WORK_LAUNCH = [
   'exec bash -lc "$2"',
 ].join("\n");
 
-const BACKGROUND_WORK_PROBE = [
+export const BACKGROUND_WORK_PROBE = [
   `marker="${BACKGROUND_WORK_MARKER_PREFIX}$1"`,
   `idle() { printf '${BACKGROUND_WORK_IDLE_SENTINEL}\\n'; exit 1; }`,
   '[ -e "$marker" ] || idle',

@@ -1695,7 +1695,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "-c",
                 BACKGROUND_WORK_LAUNCH,
                 "rakazo-background-launch",
-                computer.id,
+                // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
+                // (providerRef via toComputerRef).
+                storedComputer.id,
                 command,
               ],
               cwd,
