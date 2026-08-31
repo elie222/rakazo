@@ -1,11 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  rpc,
-  signup,
-} from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("hides peer exchange in transcript and shows it in Bot messages", async ({
   page,
@@ -43,8 +37,7 @@ test("hides peer exchange in transcript and shows it in Bot messages", async ({
         const peerTexts = history.messages.flatMap((message) =>
           message.blocks
             .filter(
-              (block) =>
-                block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+              (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
             )
             .map((block) => block.text ?? ""),
         );
