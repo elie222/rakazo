@@ -53,4 +53,18 @@ describe("user-visible messages", () => {
       userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
     ).toEqual(["answer"]);
   });
+
+  it("keeps an explicit around-jump target even when it is peer traffic", () => {
+    const messages = [
+      message("reply", "run-peer", [{ kind: "text", text: "Echoed peer reply" }]),
+      message("answer", "run-user", [{ kind: "text", text: "Visible answer" }]),
+    ];
+
+    expect(
+      userVisibleMessages(messages, {
+        knownPeerRunIds: ["run-peer"],
+        keepMessageIds: ["reply"],
+      }).map((item) => item.id),
+    ).toEqual(["reply", "answer"]);
+  });
 });

@@ -2863,7 +2863,11 @@ export function ShellPage() {
           key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
           artifactTarget={transcriptArtifactTarget}
-          messages={userVisibleMessages(activeSnapshot?.messages ?? [])}
+          messages={userVisibleMessages(activeSnapshot?.messages ?? [], {
+            keepMessageIds: pinnedAroundRef.current?.messageId
+              ? [pinnedAroundRef.current.messageId]
+              : undefined,
+          })}
           olderCursor={activeSnapshot?.olderCursor ?? null}
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}

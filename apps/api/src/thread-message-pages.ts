@@ -33,10 +33,17 @@ export async function loadMessagePage(
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
         : false;
-      // Peer text/activity stays out of the normal transcript (including the
-      // around target). Receipts remain via withoutPeerRunMessages; full peer
-      // history belongs in the bot-messages overlay (includePeerRuns).
-      const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
+      const filtered = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
+      // Reinsert only the requested around target when it is peer traffic so
+      // search/link jumps can scroll to it. Neighbors stay filtered; clients keep
+      // that single id via userVisibleMessages({ keepMessageIds }).
+      const target = rows.find((row) =>
+        around.messageId ? row.id === around.messageId : row.seq === targetSeq,
+      );
+      const messages =
+        target && !filtered.some((row) => row.id === target.id)
+          ? [...filtered, target].sort((a, b) => a.seq - b.seq)
+          : filtered;
       return {
         threadId,
         messages: messages.map(toThreadMessage),

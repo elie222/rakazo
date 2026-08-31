@@ -257,9 +257,13 @@ function Thread() {
   );
   const visibleMessages = useMemo(
     () =>
-      userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
-        hasVisibleMessagePresentation(message.blocks),
-      ),
+      userVisibleMessages(snap?.messages ?? [], {
+        includePeerReceipts: true,
+        keepMessageIds: [
+          ...(jumpScrollTarget.current ? [jumpScrollTarget.current] : []),
+          ...(pinnedAroundRef.current?.messageId ? [pinnedAroundRef.current.messageId] : []),
+        ],
+      }).filter((message) => hasVisibleMessagePresentation(message.blocks)),
     [snap?.messages],
   );
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;

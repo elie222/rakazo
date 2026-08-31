@@ -1,6 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 
 type PresentableMessage = {
+  id: string;
   runId?: string;
   blocks: readonly MessageBlock[];
 };
@@ -13,6 +14,8 @@ export type UserVisibleMessagesOptions = {
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */
   knownPeerRunIds?: Iterable<string>;
+  /** Force-keep these ids (search/link around jumps to a peer-run target). */
+  keepMessageIds?: Iterable<string>;
 };
 
 export function isPeerReceiptBlocks(blocks: readonly MessageBlock[]): boolean {
@@ -33,8 +36,10 @@ export function userVisibleMessages<T extends PresentableMessage>(
       .flatMap((message) => (message.runId ? [message.runId] : [])),
   ]);
   const includePeerReceipts = options.includePeerReceipts === true;
+  const keepMessageIds = new Set(options.keepMessageIds ?? []);
 
   return messages.filter((message) => {
+    if (keepMessageIds.has(message.id)) return true;
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     return !message.runId || !peerRunIds.has(message.runId);
   });

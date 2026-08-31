@@ -104,7 +104,7 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
   });
 
-  it("omits peer around-page targets from the normal transcript", async () => {
+  it("keeps around-page targets even when they belong to a peer run", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-user",
@@ -152,7 +152,10 @@ describe("thread message pages", () => {
       seq: 6,
     });
 
-    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+    expect(page.messages.map((message) => message.id)).toEqual([
+      "message-user",
+      "message-peer-target",
+    ]);
     expect(runFindMany).toHaveBeenCalled();
   });
 
