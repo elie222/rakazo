@@ -49,6 +49,39 @@ describe("Pi model catalog", () => {
     expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
   });
 
+  it("lists OrcaRouter as a first-class gateway provider", () => {
+    const catalog = listPiCatalog();
+    const orca = catalog.filter((entry) => entry.provider === "orcarouter");
+    expect(orca.length).toBeGreaterThan(0);
+    expect(orca[0]).toMatchObject({
+      provider: "orcarouter",
+      providerName: "OrcaRouter",
+      auth: "api-key",
+    });
+    expect(catalog.find((entry) => entry.id === "orcarouter/auto")).toMatchObject({
+      provider: "orcarouter",
+      reasoning: true,
+    });
+    const vision = catalog.find((entry) => entry.id === "openai/gpt-4o");
+    // The OrcaRouter catalog carries its own vision-capable models.
+    expect(orca.some((entry) => entry.id === "orcarouter/auto")).toBe(true);
+    expect(vision).toBeDefined();
+  });
+
+  it("adds a configured OrcaRouter model that is newer than the static catalog", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", " orcarouter ");
+    vi.stubEnv("PI_DEFAULT_MODEL", " orca-test/future-model ");
+    vi.resetModules();
+
+    const { listPiCatalog: listConfiguredCatalog } = await import("./pi-models.js");
+    expect(listConfiguredCatalog()[0]).toMatchObject({
+      provider: "orcarouter",
+      providerName: "OrcaRouter",
+      id: "orca-test/future-model",
+      label: "orca-test/future-model",
+    });
+  });
+
   it("adds a configured OpenRouter model that is newer than the static catalog", async () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", " openrouter ");
     vi.stubEnv("PI_DEFAULT_MODEL", " rakazo-test/unknown-future-model ");

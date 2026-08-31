@@ -11,10 +11,12 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   // vendor's, which a ternary on one provider would not give.
   const keys: Record<string, string | undefined> = {
     openrouter: env.OPENROUTER_API_KEY,
+    orcarouter: env.ORCAROUTER_API_KEY,
     anthropic: env.ANTHROPIC_API_KEY,
   };
   const models: Record<string, string> = {
     openrouter: "deepseek/deepseek-v4-flash-0731",
+    orcarouter: "orcarouter/auto",
     anthropic: "claude-sonnet-5",
   };
   return {

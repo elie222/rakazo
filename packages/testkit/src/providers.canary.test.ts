@@ -24,11 +24,13 @@ loadEnvFile();
 const liveE2b = Boolean(process.env.VERIFY_PROVIDERS && process.env.E2B_API_KEY);
 const liveBox = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOX_API_KEY);
 const livePi = Boolean(process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY);
+const liveOrca = Boolean(process.env.VERIFY_PROVIDERS && process.env.ORCAROUTER_API_KEY);
 const livePiApp = Boolean(livePi && process.env.DATABASE_URL);
 
 const describeE2b = liveE2b ? describe : describe.skip;
 const describeBox = liveBox ? describe : describe.skip;
 const describePi = livePi ? describe : describe.skip;
+const describeOrca = liveOrca ? describe : describe.skip;
 const describePiApp = livePiApp ? describe : describe.skip;
 
 describeE2b("live E2B canary", () => {
@@ -137,6 +139,41 @@ describePi("live OpenRouter / Pi canary", () => {
     }
     expect(text.toLowerCase()).toMatch(/pong/);
     expect(text).not.toMatch(/sk-or-|OPENROUTER_API_KEY/i);
+  }, 90_000);
+});
+
+describeOrca("live OrcaRouter / Pi canary", () => {
+  it("streams a reply from orcarouter/auto", async () => {
+    const runtime = new PiAgentRuntime();
+    let text = "";
+    for await (const event of runtime.run(
+      {
+        botId: "canary",
+        threadId: "canary",
+        runId: `orca-${Date.now()}`,
+        prompt: "Reply with exactly the word pong and nothing else.",
+        instructions: "You are a concise test bot. Do not call tools.",
+        history: [],
+        tools: [],
+        model: {
+          provider: "orcarouter",
+          id: "orcarouter/auto",
+          apiKey: process.env.ORCAROUTER_API_KEY,
+        },
+      },
+      {
+        operationId: "canary",
+        traceId: "canary",
+        workspaceId: "canary",
+        userId: "canary",
+        signal: new AbortController().signal,
+      },
+    )) {
+      if (event.type === "text") text += event.text;
+      if (event.type === "done" && event.text && !text) text = event.text;
+    }
+    expect(text.toLowerCase()).toMatch(/pong/);
+    expect(text).not.toMatch(/ORCAROUTER_API_KEY/i);
   }, 90_000);
 });
 

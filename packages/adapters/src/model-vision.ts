@@ -5,6 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { ORCAROUTER_PROVIDER_ID, registerOrcaRouterCatalog } from "./pi-orca-router-provider.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -21,7 +22,9 @@ const SCRIPTED_DEFAULT_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
 let catalogModelsCache: Models | undefined;
 
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+    registerLocalProvider(registerOrcaRouterCatalog(builtinModels())),
+  );
   return catalogModelsCache;
 }
 
@@ -59,6 +62,7 @@ export function modelAcceptsImageInput(provider: string, modelId: string): boole
   if (
     !model &&
     resolved.provider !== "openrouter" &&
+    resolved.provider !== ORCAROUTER_PROVIDER_ID &&
     resolved.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
   ) {
     model = models.getModel("openrouter", resolved.id);

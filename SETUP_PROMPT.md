@@ -22,7 +22,7 @@ Before making changes, ask me these concise questions:
 
 1. Which directory should contain the Rakazo folder (or use the current directory)?
 2. How should models be connected?
-   - Add a deployment-wide `OPENROUTER_API_KEY` to `.env`.
+   - Add a deployment-wide `OPENROUTER_API_KEY` or `ORCAROUTER_API_KEY` to `.env`.
    - Connect during Rakazo onboarding with a provider API key or with ChatGPT Plus/Pro, GitHub Copilot, or SuperGrok / X Premium.
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want remote computers instead of local Docker? If yes, choose E2B (`E2B_API_KEY`), Daytona (`DAYTONA_API_KEY`), or Box (`BOX_API_KEY`) and set `SANDBOX_PROVIDER` accordingly. If no, keep the default `SANDBOX_PROVIDER=docker` (local computers via the in-stack supervisor).
@@ -78,7 +78,7 @@ Before making changes, ask me these concise questions:
 
 1. Should you clone into the current directory, or what parent directory should contain `rakazo`? If you are already inside a Rakazo checkout, offer to use it without recloning.
 2. How should models be connected?
-   - Add a deployment-wide `OPENROUTER_API_KEY` to `.env`.
+   - Add a deployment-wide `OPENROUTER_API_KEY` or `ORCAROUTER_API_KEY` to `.env`.
    - Connect during Rakazo onboarding with a provider API key or with ChatGPT Plus/Pro, GitHub Copilot, or SuperGrok / X Premium.
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add Treg, HTTPS MCP, or OpenAPI sources in the app.

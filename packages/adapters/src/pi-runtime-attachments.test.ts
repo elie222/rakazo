@@ -39,6 +39,11 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+vi.mock("./pi-orca-router-provider.js", () => ({
+  ORCAROUTER_PROVIDER_ID: "orcarouter",
+  registerOrcaRouterCatalog: (models: unknown) => models,
+}));
+
 import { PiAgentRuntime } from "./pi-runtime.js";
 
 describe("Pi runtime attachments", () => {

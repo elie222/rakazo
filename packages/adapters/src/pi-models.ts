@@ -8,6 +8,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { ORCAROUTER_PROVIDER_ID, registerOrcaRouterCatalog } from "./pi-orca-router-provider.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -35,7 +36,9 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  const models = registerOpenAiCompatibleCatalog(
+    registerLocalProvider(registerOrcaRouterCatalog(builtinModels())),
+  );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -72,14 +75,17 @@ function buildPiCatalog(): PiCatalogEntry[] {
 
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
   const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
+  // A gateway provider configured with a model newer than its static catalog
+  // still needs a selectable entry. OpenRouter and OrcaRouter share the
+  // provider/model namespace and can both synthesize one.
   if (
-    envDefaultProvider === "openrouter" &&
+    (envDefaultProvider === "openrouter" || envDefaultProvider === ORCAROUTER_PROVIDER_ID) &&
     envDefaultModel &&
-    !models.getModel("openrouter", envDefaultModel)
+    !models.getModel(envDefaultProvider, envDefaultModel)
   ) {
     entries.unshift({
-      provider: "openrouter",
-      providerName: "OpenRouter",
+      provider: envDefaultProvider,
+      providerName: envDefaultProvider === ORCAROUTER_PROVIDER_ID ? "OrcaRouter" : "OpenRouter",
       id: envDefaultModel,
       label: envDefaultModel,
       billing: `Configured via PI_DEFAULT_MODEL (${envDefaultModel}).`,

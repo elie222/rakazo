@@ -54,6 +54,7 @@ export * from "./phone-delivery.js";
 export * from "./pi-models.js";
 export * from "./pi-oauth.js";
 export * from "./pi-openai-compatible-provider.js";
+export * from "./pi-orca-router-provider.js";
 export * from "./pi-runtime.js";
 export * from "./pipedream-connector.js";
 export * from "./realtime.js";

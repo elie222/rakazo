@@ -73,7 +73,8 @@ cp .env.example .env
 
 Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` in `.env` to independent
 long random values. Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. You can
-also set `OPENROUTER_API_KEY`, or connect a supported model provider during onboarding.
+also set `OPENROUTER_API_KEY` or `ORCAROUTER_API_KEY`, or connect a supported model provider
+during onboarding.
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream

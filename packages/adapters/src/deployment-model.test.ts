@@ -20,4 +20,19 @@ describe("resolveDeploymentModel", () => {
       resolveDeploymentModel({ OPENROUTER_API_KEY: "or-key", PI_DEFAULT_PROVIDER: "anthropic" }),
     ).toEqual({ provider: "anthropic", model: "claude-sonnet-5", key: undefined });
   });
+
+  it("pairs the OrcaRouter deployment key with the orcarouter provider", () => {
+    const env = { ORCAROUTER_API_KEY: "orc-key", OPENROUTER_API_KEY: "or-key" };
+    expect(resolveDeploymentModel({ ...env, PI_DEFAULT_PROVIDER: "orcarouter" })).toEqual({
+      provider: "orcarouter",
+      model: "orcarouter/auto",
+      key: "orc-key",
+    });
+    // OpenRouter keeps its own key when it is the default provider.
+    expect(resolveDeploymentModel(env)).toEqual({
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4-flash-0731",
+      key: "or-key",
+    });
+  });
 });

@@ -26,6 +26,7 @@ import {
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
+import { ORCAROUTER_PROVIDER_ID, registerOrcaRouterCatalog } from "./pi-orca-router-provider.js";
 import { textContentArg } from "./tool-text.js";
 
 const running = new Map<string, AbortController>();
@@ -34,7 +35,9 @@ const running = new Map<string, AbortController>();
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+    registerLocalProvider(registerOrcaRouterCatalog(builtinModels())),
+  );
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
@@ -101,16 +104,17 @@ export class PiAgentRuntime implements AgentRuntime {
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
-        if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+        const isGatewayProvider = provider === "openrouter" || provider === ORCAROUTER_PROVIDER_ID;
+        if (!model && !isGatewayProvider && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
           model = models.getModel("openrouter", modelId);
         }
         if (
           !model &&
-          provider === "openrouter" &&
-          envDefaultProvider === "openrouter" &&
+          isGatewayProvider &&
+          envDefaultProvider === provider &&
           modelId === envDefaultModel
         ) {
-          model = configuredOpenRouterModel(modelId);
+          model = configuredGatewayModel(provider, modelId);
         }
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
@@ -122,10 +126,15 @@ export class PiAgentRuntime implements AgentRuntime {
           ? undefined
           : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? request.model.apiKey || "local"
-            : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-              // another provider would ship our key to a vendor it was not issued for.
+            : // Only gateway providers may fall back to their own env key. Handing
+              // the OpenRouter key to another provider would ship our key to a
+              // vendor it was not issued for; OrcaRouter has its own.
               (request.model.apiKey ??
-              (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+              (provider === "openrouter"
+                ? process.env.OPENROUTER_API_KEY
+                : provider === ORCAROUTER_PROVIDER_ID
+                  ? process.env.ORCAROUTER_API_KEY
+                  : undefined));
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -285,17 +294,21 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
+function configuredGatewayModel(provider: string, id: string): Model<"openai-completions"> {
   // A configured model can intentionally be newer than Pi's static catalog. Keep
-  // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
+  // pricing conservative, but enable reasoning: unknown gateway endpoints
   // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
   // thinkingLevel "off" becomes effort "none" which those endpoints reject.
+  const baseUrl =
+    provider === ORCAROUTER_PROVIDER_ID
+      ? "https://api.orcarouter.ai/v1"
+      : "https://openrouter.ai/api/v1";
   return {
     id,
     name: id,
     api: "openai-completions",
-    provider: "openrouter",
-    baseUrl: "https://openrouter.ai/api/v1",
+    provider,
+    baseUrl,
     reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -313,13 +326,15 @@ export function modelsForRequest(
     const persist = oauth.persist;
     return registerOpenAiCompatibleCatalog(
       registerLocalProvider(
-        builtinModels({
-          credentials: new PiRuntimeCredentialStore(
-            provider,
-            toOAuthCredential(oauth.credential),
-            persist ? (next) => persist(next) : undefined,
-          ),
-        }),
+        registerOrcaRouterCatalog(
+          builtinModels({
+            credentials: new PiRuntimeCredentialStore(
+              provider,
+              toOAuthCredential(oauth.credential),
+              persist ? (next) => persist(next) : undefined,
+            ),
+          }),
+        ),
       ),
     );
   }

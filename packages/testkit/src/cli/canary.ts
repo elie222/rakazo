@@ -4,9 +4,10 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 async function main() {
   const runOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
-  if (!process.env.E2B_API_KEY && !process.env.BOX_API_KEY && !runOpenRouter) {
+  const runOrcaRouter = Boolean(process.env.ORCAROUTER_API_KEY);
+  if (!process.env.E2B_API_KEY && !process.env.BOX_API_KEY && !runOpenRouter && !runOrcaRouter) {
     throw new Error(
-      "E2B_API_KEY, BOX_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
+      "E2B_API_KEY, BOX_API_KEY, OPENROUTER_API_KEY, or ORCAROUTER_API_KEY is required for live provider canaries",
     );
   }
 
