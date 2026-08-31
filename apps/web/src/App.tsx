@@ -7,8 +7,8 @@ import { markAfterPaint, markOnce } from "./lib/performance";
 import {
   holdUnreachableGate,
   sessionGate,
+  sessionReconnectKind,
   sessionRetryDelayMs,
-  showSessionUnavailable,
 } from "./lib/session-gate";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
@@ -30,8 +30,15 @@ export function App() {
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
+  const [sawWorkspace, setSawWorkspace] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
+  const reconnect = sessionReconnectKind(session, nextHolding, sawWorkspace);
+  const lastUser = useRef<unknown>(null);
+  if (session.data?.user) {
+    lastUser.current = session.data.user;
+    if (!sawWorkspace) setSawWorkspace(true);
+  }
 
   useLayoutEffect(() => {
     if (session.isPending) return;
@@ -39,10 +46,10 @@ export function App() {
     markAfterPaint("rk:renderer:session-painted");
   }, [session.isPending]);
 
-  if (showSessionUnavailable(gate, nextHolding)) {
+  if (reconnect === "blocking") {
     return <SessionUnavailable refetch={session.refetch} />;
   }
-  if (gate === "loading") {
+  if (gate === "loading" && reconnect === "none") {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (
@@ -55,46 +62,54 @@ export function App() {
     );
   }
 
-  const user = session.data?.user;
+  const user = session.data?.user ?? (reconnect === "banner" ? lastUser.current : null);
   return (
-    <div className="h-full" data-rakazo-app-state="ready">
-      <Suspense fallback={<div className="h-full bg-[#050506]" />}>
-        <Routes>
-          <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
-          <Route
-            path="/sign-in"
-            element={user ? <Navigate to="/app" replace /> : <AuthPage key="in" mode="in" />}
-          />
-          <Route
-            path="/sign-up"
-            element={user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />}
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              user ? <Navigate to="/app" replace /> : <AuthPage key="forgot" mode="forgot" />
-            }
-          />
-          <Route path="/reset-password" element={<PasswordResetPage />} />
-          <Route
-            path="/onboarding"
-            element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/mcp/oauth/callback"
-            element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
-          <Route
-            path="/app/g/:groupId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/:botId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-          />
-        </Routes>
-      </Suspense>
+    <div className="flex h-full flex-col" data-rakazo-app-state="ready">
+      {reconnect === "banner" ? <SessionReconnectBar refetch={session.refetch} /> : null}
+      <div className="min-h-0 flex-1">
+        <Suspense fallback={<div className="h-full bg-[#050506]" />}>
+          <Routes>
+            <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+            <Route
+              path="/sign-in"
+              element={user ? <Navigate to="/app" replace /> : <AuthPage key="in" mode="in" />}
+            />
+            <Route
+              path="/sign-up"
+              element={
+                user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                user ? <Navigate to="/app" replace /> : <AuthPage key="forgot" mode="forgot" />
+              }
+            />
+            <Route path="/reset-password" element={<PasswordResetPage />} />
+            <Route
+              path="/onboarding"
+              element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
+            />
+            <Route
+              path="/mcp/oauth/callback"
+              element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
+            />
+            <Route
+              path="/app"
+              element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+            />
+            <Route
+              path="/app/g/:groupId"
+              element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+            />
+            <Route
+              path="/app/:botId"
+              element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+            />
+          </Routes>
+        </Suspense>
+      </div>
     </div>
   );
 }
@@ -104,8 +119,7 @@ export function App() {
  * waits and retries here instead of routing to sign-in and stranding a signed-in
  * user. Better Auth only polls once a session exists, so the retry lives here.
  */
-function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
-  const { t } = useLingui();
+function useSessionRetry(refetch: () => Promise<void>) {
   const [attempt, setAttempt] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
   const retryImmediately = useRef(false);
@@ -127,25 +141,52 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
     };
   }, [attempt, retryKey]);
 
+  return () => {
+    retryImmediately.current = true;
+    setAttempt(0);
+    setRetryKey((key) => key + 1);
+  };
+}
+
+function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
+  const { t } = useLingui();
+  const retryNow = useSessionRetry(refetch);
+
   return (
-    <div className="grid h-full place-items-center bg-[#050506] px-6 text-center">
+    <div
+      className="grid h-full place-items-center bg-[#050506] px-6 text-center"
+      data-rakazo-reconnect="blocking"
+    >
       <div className="flex flex-col items-center">
         <LoadingState label={t`Reconnecting`} />
         <p className="mt-3 text-[13.5px] text-[#6C6C70]">
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <BuiButton
-            onClick={() => {
-              retryImmediately.current = true;
-              setAttempt(0);
-              setRetryKey((key) => key + 1);
-            }}
-          >
+          <BuiButton onClick={retryNow}>
             <Trans>Retry now</Trans>
           </BuiButton>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SessionReconnectBar({ refetch }: { refetch: () => Promise<void> }) {
+  const retryNow = useSessionRetry(refetch);
+
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center gap-3 border-b border-[#26262A] bg-[#121214] px-4 py-2"
+      data-rakazo-reconnect="banner"
+      role="status"
+    >
+      <p className="text-[13px] text-[#9A9AA0]">
+        <Trans>Can&apos;t reach the server.</Trans>
+      </p>
+      <BuiButton onClick={retryNow}>
+        <Trans>Retry now</Trans>
+      </BuiButton>
     </div>
   );
 }

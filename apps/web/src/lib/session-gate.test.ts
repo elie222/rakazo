@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   holdUnreachableGate,
   sessionGate,
+  sessionReconnectKind,
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./session-gate.js";
@@ -46,6 +47,30 @@ describe("session gate", () => {
     expect(holdUnreachableGate("anonymous", true)).toBe(false);
     expect(showSessionUnavailable("loading", true)).toBe(true);
     expect(showSessionUnavailable("loading", false)).toBe(false);
+  });
+
+  it("blocks a cold unreachable load and banners once the workspace has mounted", () => {
+    const down = { data: null, isPending: false, error: { status: 503 } };
+    expect(sessionReconnectKind(down, false, false)).toBe("blocking");
+    expect(sessionReconnectKind(down, false, true)).toBe("banner");
+    expect(sessionReconnectKind({ data: null, isPending: true, error: null }, true, true)).toBe(
+      "banner",
+    );
+    expect(sessionReconnectKind({ data: null, isPending: true, error: null }, true, false)).toBe(
+      "blocking",
+    );
+  });
+
+  it("banners a live session whose refresh could not reach the server", () => {
+    expect(
+      sessionReconnectKind({ data: user, isPending: false, error: { status: 500 } }, false, true),
+    ).toBe("banner");
+    expect(sessionReconnectKind({ data: user, isPending: false, error: null }, false, true)).toBe(
+      "none",
+    );
+    expect(
+      sessionReconnectKind({ data: null, isPending: false, error: { status: 401 } }, false, false),
+    ).toBe("none");
   });
 
   it("backs off between retries and stops growing", () => {

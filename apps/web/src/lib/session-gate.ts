@@ -37,6 +37,27 @@ export function showSessionUnavailable(gate: SessionGate, holding: boolean): boo
   return gate === "unreachable" || (holding && gate === "loading");
 }
 
+export type SessionReconnectKind = "none" | "blocking" | "banner";
+
+/**
+ * Cold loads that never reached the server still need a full-page wait so we
+ * do not dump a signed-in cookie onto the sign-in screen. Once the workspace
+ * has mounted, keep it and show a reconnect bar — including when Better Auth
+ * still holds the last user while a refresh fails.
+ */
+export function sessionReconnectKind(
+  session: SessionGateInput,
+  holding: boolean,
+  sawWorkspace: boolean,
+): SessionReconnectKind {
+  const gate = sessionGate(session);
+  if (gate === "authenticated") {
+    return session.error && session.error.status !== 401 ? "banner" : "none";
+  }
+  if (!showSessionUnavailable(gate, holding)) return "none";
+  return sawWorkspace ? "banner" : "blocking";
+}
+
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 15_000;
 
