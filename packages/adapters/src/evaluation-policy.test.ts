@@ -5,10 +5,7 @@ import {
   type EvaluationRunPolicy,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  computeEvaluationPolicyHash,
-  validateEvaluationPreflight,
-} from "./evaluation-policy.js";
+import { computeEvaluationPolicyHash, validateEvaluationPreflight } from "./evaluation-policy.js";
 
 function policy(overrides: Partial<EvaluationRunPolicy> = {}): EvaluationRunPolicy {
   const unsigned: Omit<EvaluationRunPolicy, "policy_hash"> = {

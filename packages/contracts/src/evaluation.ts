@@ -347,9 +347,7 @@ export const EvaluationPolicyDenialReceiptSchema = z.strictObject({
   ]),
   occurred_at: z.string().datetime({ offset: true }),
 });
-export type EvaluationPolicyDenialReceipt = z.infer<
-  typeof EvaluationPolicyDenialReceiptSchema
->;
+export type EvaluationPolicyDenialReceipt = z.infer<typeof EvaluationPolicyDenialReceiptSchema>;
 
 export const EvaluationTerminalReasonSchema = z.enum([
   "complete",
