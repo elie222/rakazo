@@ -18,6 +18,48 @@ async function saveAndReturn(page: Page, procedure: "routines/create" | "routine
   await page.getByRole("button", { name: "Back" }).click();
 }
 
+test("routine active switch keeps its thumb inside the track", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-toggle-${stamp}@rakazo.test`, "password12", "Routine Toggle");
+  await completeOnboarding(page);
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "New routine" }).click();
+
+  const toggle = page.getByRole("switch", { name: "Active" });
+  const thumb = toggle.locator("span");
+  async function expectThumbInsets(left: number, right: number) {
+    await thumb.evaluate((element) =>
+      Promise.all(element.getAnimations().map(({ finished }) => finished)),
+    );
+    const [trackBox, thumbBox] = await Promise.all([toggle.boundingBox(), thumb.boundingBox()]);
+    expect(trackBox).not.toBeNull();
+    expect(thumbBox).not.toBeNull();
+    expect(thumbBox!.x - trackBox!.x).toBeCloseTo(left, 1);
+    expect(trackBox!.x + trackBox!.width - thumbBox!.x - thumbBox!.width).toBeCloseTo(right, 1);
+  }
+
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expectThumbInsets(20, 2);
+  await captureScreenshot(page, testInfo, "routine-toggle-desktop-active");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expectThumbInsets(2, 20);
+  await captureScreenshot(page, testInfo, "routine-toggle-desktop-inactive");
+
+  await toggle.focus();
+  await page.keyboard.press("Space");
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  expect(await toggle.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe(
+    "none",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectThumbInsets(20, 2);
+  await captureScreenshot(page, testInfo, "routine-toggle-mobile-active");
+  await toggle.click();
+  await expectThumbInsets(2, 20);
+  await captureScreenshot(page, testInfo, "routine-toggle-mobile-inactive");
+});
+
 test("routine editing updates in place, preserves timezone, and deletion persists", async ({
   page,
 }, testInfo) => {

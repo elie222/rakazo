@@ -263,7 +263,7 @@ export function RoutineEditor({
             }`}
           >
             <span
-              className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white transition-transform ${
+              className={`absolute top-[2px] left-0 h-[18px] w-[18px] rounded-full bg-white transition-transform ${
                 draft.active ? "translate-x-[20px]" : "translate-x-[2px]"
               }`}
             />
