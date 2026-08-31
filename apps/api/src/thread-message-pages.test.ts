@@ -107,17 +107,6 @@ describe("thread message pages", () => {
   it("keeps around-page targets even when they belong to a peer run", async () => {
     const findMany = vi.fn(async () => [
       {
-        id: "message-peer",
-        threadId: "thread-1",
-        seq: 5,
-        role: "bot",
-        blocks: [{ kind: "text", text: "Peer reply" }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-peer",
-        createdAt: new Date("2026-08-16T00:00:05.000Z"),
-      },
-      {
         id: "message-user",
         threadId: "thread-1",
         seq: 4,
@@ -128,17 +117,46 @@ describe("thread message pages", () => {
         runId: "run-user",
         createdAt: new Date("2026-08-16T00:00:04.000Z"),
       },
+      {
+        id: "message-peer-activity",
+        threadId: "thread-1",
+        seq: 5,
+        role: "bot",
+        blocks: [{ kind: "steps", steps: [{ label: "Message bot", count: 1 }] }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        createdAt: new Date("2026-08-16T00:00:05.000Z"),
+      },
+      {
+        id: "message-peer-target",
+        threadId: "thread-1",
+        seq: 6,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Peer reply" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        createdAt: new Date("2026-08-16T00:00:06.000Z"),
+      },
     ]);
     const count = vi.fn(async () => 1);
+    const runFindMany = vi.fn(async () => [{ id: "run-peer" }]);
     const prisma = {
       message: { findMany, count },
-      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      run: { findMany: runFindMany },
     } as unknown as PrismaClient;
 
-    const page = await loadMessagePage(prisma, "thread-1", undefined, 4, { seq: 5 });
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 4, {
+      messageId: "message-peer-target",
+      seq: 6,
+    });
 
-    expect(page.messages.map((message) => message.id)).toEqual(["message-peer", "message-user"]);
-    expect(prisma.run.findMany).not.toHaveBeenCalled();
+    expect(page.messages.map((message) => message.id)).toEqual([
+      "message-user",
+      "message-peer-target",
+    ]);
+    expect(runFindMany).toHaveBeenCalled();
   });
 
   it("returns peer-run output for the dedicated bot messages view", async () => {
