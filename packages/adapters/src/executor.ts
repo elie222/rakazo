@@ -2758,7 +2758,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               });
               if (event.status === "completed" || event.status === "failed") {
-                publishedTerminalSubagent = true;
+                publishedTerminalSubagent ||= !subagentMarksUnread(run.trigger, event.status);
                 await publishMessage(
                   deps,
                   run,
