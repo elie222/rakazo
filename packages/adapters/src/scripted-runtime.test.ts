@@ -3,23 +3,46 @@ import { describe, expect, it } from "vitest";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 
 describe("inferScript message_bot", () => {
-  it("messages another bot by name", () => {
-    expect(inferScript("message the bot named Researcher saying peer-exchange-alpha")).toEqual([
-      {
-        assistant: "messaging that bot now.",
-        toolCalls: [
-          {
-            name: "message_bot",
-            args: {
-              confirm_name: "Researcher",
-              message: "peer-exchange-alpha",
-              intent: "request",
-            },
+  const messageBotScript = (confirmName: string, message: string) => [
+    {
+      assistant: "messaging that bot now.",
+      toolCalls: [
+        {
+          name: "message_bot",
+          args: {
+            confirm_name: confirmName,
+            message,
+            intent: "request",
           },
-        ],
-        complete: true,
-      },
-    ]);
+        },
+      ],
+      complete: true,
+    },
+  ];
+
+  it("messages another bot by name", () => {
+    expect(inferScript("message the bot named Researcher saying peer-exchange-alpha")).toEqual(
+      messageBotScript("Researcher", "peer-exchange-alpha"),
+    );
+  });
+
+  it("keeps message_bot when the payload mentions delete or subagent", () => {
+    expect(
+      inferScript(
+        "message the bot named Researcher saying please delete the bot named Scout and use a subagent",
+      ),
+    ).toEqual(
+      messageBotScript(
+        "Researcher",
+        "please delete the bot named Scout and use a subagent",
+      ),
+    );
+  });
+
+  it("preserves multiline message content", () => {
+    expect(
+      inferScript("message the bot named Researcher saying line one\nline two"),
+    ).toEqual(messageBotScript("Researcher", "line one\nline two"));
   });
 });
 
