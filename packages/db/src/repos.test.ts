@@ -182,6 +182,45 @@ describe("createRepos.listBots", () => {
       take: 16,
     });
   });
+
+  it("uses a visible message from the fourth older window for preview", async () => {
+    const peerWindows = [
+      [{ seq: 80, runId: "run-peer", blocks: [{ kind: "text", text: "peer 80" }] }],
+      [{ seq: 60, runId: "run-peer", blocks: [{ kind: "text", text: "peer 60" }] }],
+      [{ seq: 40, runId: "run-peer", blocks: [{ kind: "text", text: "peer 40" }] }],
+      [{ seq: 20, runId: "run-peer", blocks: [{ kind: "text", text: "peer 20" }] }],
+      [{ seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Fourth-window answer" }] }],
+    ];
+    let windowIndex = 0;
+    const messageFindMany = vi.fn(async () => {
+      windowIndex += 1;
+      return peerWindows[windowIndex] ?? [];
+    });
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            thread: {
+              ...baseBot.thread,
+              messages: peerWindows[0],
+            },
+          },
+        ]),
+      },
+      run: {
+        findMany: vi.fn(async () => [{ id: "run-peer" }]),
+      },
+      message: {
+        findMany: messageFindMany,
+      },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Fourth-window answer" }),
+    ]);
+    expect(messageFindMany).toHaveBeenCalledTimes(4);
+  });
 });
 
 describe("createRepos.listSpaceBotsForSpaces", () => {

@@ -261,7 +261,7 @@ export function createRepos(prisma: PrismaClient) {
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
           let preview = "";
-          for (let attempt = 0; attempt < 4; attempt++) {
+          for (let attempt = 0; attempt < 5; attempt++) {
             const windowRunIds = [
               ...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : []))),
             ].filter((runId) => !peerRunIds.has(runId));
@@ -280,8 +280,17 @@ export function createRepos(prisma: PrismaClient) {
               })),
               { knownPeerRunIds: peerRunIds },
             );
+<<<<<<< HEAD
             preview = previewFromBlocks(visible[0]?.blocks);
             if (preview || messages.length === 0 || !bot.thread) break;
+=======
+            const blocks = (visible[0]?.blocks ?? []) as Array<{
+              kind?: string;
+              text?: string;
+            }>;
+            preview = blocks.find((block) => block.text)?.text ?? "";
+            if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;
+>>>>>>> c9d8bb5 (fix(chat): address CodeRabbit peer-run review notes)
             const oldest = messages[messages.length - 1];
             if (!oldest) break;
             messages = await prisma.message.findMany({
