@@ -34,6 +34,37 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("does not suspend a computer while bot-launched background work is active", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCode: 0 });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the provider cannot inspect background work", async () => {
+    const harness = idleHarness({ backgroundWorkProbeCode: 2 });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the provider reports a command failure as exit one", async () => {
+    const harness = idleHarness({ backgroundWorkProbeFailed: true });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("does not let an abandoned waiting takeover prevent idle suspension", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
@@ -158,7 +189,13 @@ describe("e2b create options", () => {
   });
 });
 
-function idleHarness(options: { exportError?: Error } = {}) {
+function idleHarness(
+  options: {
+    backgroundWorkProbeCode?: number;
+    backgroundWorkProbeFailed?: boolean;
+    exportError?: Error;
+  } = {},
+) {
   const computer = {
     id: "computer-id",
     homeKey: "team-workspace",
@@ -192,6 +229,14 @@ function idleHarness(options: { exportError?: Error } = {}) {
     },
   };
   const sandbox = {
+    execute: vi.fn(async function* () {
+      const code = options.backgroundWorkProbeCode ?? 1;
+      if (code === 1 && !options.backgroundWorkProbeFailed) {
+        yield { type: "stdout", data: "rakazo-background-idle\n" } as const;
+      }
+      yield { type: "exit", code } as const;
+    }),
+    keepAlive: vi.fn().mockResolvedValue(undefined),
     exportWorkspace: vi.fn(async function* () {
       if (options.exportError) throw options.exportError;
       yield { path: "notes/result.txt", content: new TextEncoder().encode("durable") };

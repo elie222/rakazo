@@ -1,4 +1,5 @@
 import {
+  type AdapterContext,
   type AgentHomeStore,
   computerSleepJob,
   type JobPublisher,
@@ -11,6 +12,35 @@ import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
+const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
+const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
+
+export const BACKGROUND_WORK_LAUNCH = [
+  `marker="${BACKGROUND_WORK_MARKER_PREFIX}$1"`,
+  'exec 9>>"$marker"',
+  'exec bash -lc "$2"',
+].join("\n");
+
+const BACKGROUND_WORK_PROBE = [
+  `marker="${BACKGROUND_WORK_MARKER_PREFIX}$1"`,
+  `idle() { printf '${BACKGROUND_WORK_IDLE_SENTINEL}\\n'; exit 1; }`,
+  '[ -e "$marker" ] || idle',
+  "if [ -d /proc ]; then",
+  "  command -v readlink >/dev/null 2>&1 || exit 2",
+  "  for fd in /proc/[0-9]*/fd/*; do",
+  '    [ "$(readlink "$fd" 2>/dev/null)" = "$marker" ] && exit 0',
+  "  done",
+  '  rm -f -- "$marker"',
+  "  idle",
+  "fi",
+  'if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then',
+  "  command -v lsof >/dev/null 2>&1 || exit 2",
+  '  lsof -t -- "$marker" >/dev/null 2>&1 && exit 0',
+  '  rm -f -- "$marker"',
+  "  idle",
+  "fi",
+  "exit 2",
+].join("\n");
 
 export function sandboxIdleMs(): number {
   const raw = Number(process.env.SANDBOX_IDLE_MS ?? DEFAULT_SANDBOX_IDLE_MS);
@@ -57,7 +87,8 @@ export async function sleepComputerIfIdle(
     return;
   }
 
-  const ctx = {
+  const ref = toComputerRef(computer);
+  const ctx: AdapterContext = {
     operationId: "computer.sleep",
     traceId: "computer.sleep",
     spaceId: computer.spaceId,
@@ -65,7 +96,12 @@ export async function sleepComputerIfIdle(
     botId: computer.controlBotId ?? undefined,
     signal: new AbortController().signal,
   };
-  const ref = toComputerRef(computer);
+  if (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId)) {
+    scheduleComputerSleep(deps.jobs, computerId);
+    await deps.sandbox.keepAlive?.(ref);
+    return;
+  }
+
   const revision = await checkpointComputerWorkspace(
     deps.home,
     deps.sandbox,
@@ -182,4 +218,31 @@ function findActiveRun(prisma: PrismaClient, computerId: string, statuses: reado
     },
     select: { id: true },
   });
+}
+
+async function hasActiveBackgroundWork(
+  sandbox: SandboxProvider,
+  computer: ReturnType<typeof toComputerRef>,
+  context: AdapterContext,
+  computerId: string,
+): Promise<boolean> {
+  let exitCode: number | undefined;
+  let stdout = "";
+  try {
+    for await (const event of sandbox.execute(
+      computer,
+      {
+        argv: ["bash", "-c", BACKGROUND_WORK_PROBE, "rakazo-background-probe", computerId],
+        timeoutMs: 10_000,
+      },
+      context,
+    )) {
+      if (event.type === "stdout") stdout += event.data;
+      if (event.type === "exit") exitCode = event.code;
+    }
+  } catch {
+    return true;
+  }
+  // Only the probe's explicit idle result permits suspension; unsupported or failed probes retry.
+  return exitCode !== 1 || stdout.trim() !== BACKGROUND_WORK_IDLE_SENTINEL;
 }
