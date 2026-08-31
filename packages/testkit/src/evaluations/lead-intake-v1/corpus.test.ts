@@ -15,6 +15,7 @@ import {
   loadVerifierCase,
   serializeEvaluatorInput,
 } from "../../../../core/src/evaluation/lead-intake.js";
+import { planCampaign } from "./run.js";
 
 const root = import.meta.dirname;
 const casesRoot = path.join(root, "cases");
@@ -85,6 +86,12 @@ const REALISTIC_OR_SECRET_PATTERNS: readonly [string, RegExp][] = [
 ];
 
 describe("lead intake evaluation corpus v1", () => {
+  it("rejects unbounded or invalid campaign iteration counts", () => {
+    for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 4]) {
+      expect(() => planCampaign(invalid)).toThrow(/iterations must be an integer between 1 and 3/);
+    }
+  });
+
   it("contains exactly the canonical 20 cases and 20 isolated expected outcomes", () => {
     expect(readdirSync(casesRoot).sort()).toEqual(expectedNames);
     expect(readdirSync(expectedRoot).sort()).toEqual(expectedNames);

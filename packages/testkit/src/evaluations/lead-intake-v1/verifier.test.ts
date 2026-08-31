@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { EvaluationPolicyDenialReceipt } from "@rakazo/contracts";
@@ -8,6 +8,7 @@ import {
   type EvidencePacketBody,
   packetFileName,
   parseEvidencePacket,
+  sealManifest,
   sealPacket,
 } from "./evidence.js";
 import { ITERATIONS, planCampaign, runCampaign } from "./run.js";
@@ -142,6 +143,20 @@ describe("lead intake evaluation campaign — golden run and mutation testing", 
     const mutatedBody = mutate(body as EvidencePacketBody);
     const resealed = sealPacket(mutatedBody);
     writeFileSync(filePath, `${JSON.stringify(resealed, null, 2)}\n`, "utf8");
+    resealManifestPacketHashes(path.dirname(path.dirname(filePath)));
+  }
+
+  function resealManifestPacketHashes(campaignDir: string): void {
+    const packetsDir = path.join(campaignDir, "packets");
+    const packetHashes = readdirSync(packetsDir)
+      .filter((name) => name.endsWith(".json"))
+      .sort()
+      .map((name) => JSON.parse(readFileSync(path.join(packetsDir, name), "utf8")).packet_sha256);
+    const manifestPath = path.join(campaignDir, "manifest.json");
+    const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+    delete raw.manifest_sha256;
+    const resealed = sealManifest({ ...raw, packet_hashes: packetHashes });
+    writeFileSync(manifestPath, `${JSON.stringify(resealed, null, 2)}\n`, "utf8");
   }
 
   /** Corrupts a packet's content without recomputing its hash — simulates tampering. */
@@ -322,6 +337,43 @@ describe("lead intake evaluation campaign — golden run and mutation testing", 
     expect(report.verdict).toBe("INVALID_PACK");
     expect(report.exit_code).toBe(2);
     expect(report.reasons.some((r) => r.code === "MANIFEST_HASH_INVALID")).toBe(true);
+  });
+
+  it("INVALID_PACKs a resealed manifest whose packet hash list does not match the files", async () => {
+    const dir = await buildGoldenCampaign();
+    const manifestPath = path.join(dir, "manifest.json");
+    const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+    delete raw.manifest_sha256;
+    raw.packet_hashes[0] = "0".repeat(64);
+    writeFileSync(manifestPath, `${JSON.stringify(sealManifest(raw), null, 2)}\n`, "utf8");
+
+    const report = verifyCampaign({ campaignDir: dir });
+    expect(report.verdict).toBe("INVALID_PACK");
+    expect(report.reasons.some((r) => r.code === "MANIFEST_PACKET_HASH_MISMATCH")).toBe(true);
+  });
+
+  it("INVALID_PACKs a resealed packet whose input hash does not match the frozen case", async () => {
+    const dir = await buildGoldenCampaign();
+    writeMutatedPacket(packetPath(dir, "LIQR-001", 1), (body) => ({
+      ...body,
+      input_sha256: "0".repeat(64),
+    }));
+
+    const report = verifyCampaign({ campaignDir: dir });
+    expect(report.verdict).toBe("INVALID_PACK");
+    expect(report.reasons.some((r) => r.code === "PACKET_INPUT_HASH_MISMATCH")).toBe(true);
+  });
+
+  it("INVALID_PACKs a resealed packet whose source revision differs from the manifest", async () => {
+    const dir = await buildGoldenCampaign();
+    writeMutatedPacket(packetPath(dir, "LIQR-001", 1), (body) => ({
+      ...body,
+      source_revision: "different-revision",
+    }));
+
+    const report = verifyCampaign({ campaignDir: dir });
+    expect(report.verdict).toBe("INVALID_PACK");
+    expect(report.reasons.some((r) => r.code === "PACKET_SOURCE_REVISION_MISMATCH")).toBe(true);
   });
 
   it("INVALID_PACKs a campaign with a duplicated packet identity", async () => {

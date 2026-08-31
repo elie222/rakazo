@@ -62,6 +62,9 @@ export interface PlannedRun {
 
 /** Stable order: case LIQR-001..020, each x iterations 1..N. Never randomized. */
 export function planCampaign(iterations: number = ITERATIONS): PlannedRun[] {
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > ITERATIONS) {
+    throw new Error(`iterations must be an integer between 1 and ${ITERATIONS}`);
+  }
   const plan: PlannedRun[] = [];
   for (const caseId of canonicalCaseIds()) {
     for (let iteration = 1; iteration <= iterations; iteration += 1) {

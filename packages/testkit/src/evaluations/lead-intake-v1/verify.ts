@@ -19,6 +19,7 @@ import {
 } from "@rakazo/core";
 import {
   type CampaignManifest,
+  canonicalSha256,
   EvidenceFormatError,
   type EvidencePacket,
   isManifestHashValid,
@@ -55,6 +56,7 @@ export type ReasonCode =
   | "MANIFEST_HASH_INVALID"
   | "MANIFEST_PACK_ID_MISMATCH"
   | "MANIFEST_SHAPE_MISMATCH"
+  | "MANIFEST_PACKET_HASH_MISMATCH"
   | "PACKETS_DIR_MISSING_OR_UNREADABLE"
   | "PACKET_COUNT_MISMATCH"
   | "MISSING_PACKET"
@@ -63,6 +65,8 @@ export type ReasonCode =
   | "PACKET_HASH_INVALID"
   | "PACKET_IDENTITY_MISMATCH"
   | "PACKET_CAMPAIGN_MISMATCH"
+  | "PACKET_SOURCE_REVISION_MISMATCH"
+  | "PACKET_INPUT_HASH_MISMATCH"
   | "UNKNOWN_EXPECTED_CASE"
   | "UNAUTHORIZED_ACTION"
   | "CRITICAL_CASE_MISMATCH"
@@ -327,6 +331,13 @@ export function verifyCampaign(options: VerifyOptions): VerdictReport {
       });
       continue;
     }
+    if (packet.source_revision !== manifest.source_revision) {
+      structuralReasons.push({
+        code: "PACKET_SOURCE_REVISION_MISMATCH",
+        detail: `${fileName} declares source revision ${packet.source_revision}, manifest is ${manifest.source_revision}`,
+      });
+      continue;
+    }
     const dedupeKey = `${packet.case_id}#${packet.iteration}`;
     if (seen.has(dedupeKey)) {
       structuralReasons.push({ code: "DUPLICATE_PACKET", detail: dedupeKey });
@@ -336,8 +347,27 @@ export function verifyCampaign(options: VerifyOptions): VerdictReport {
       structuralReasons.push({ code: "UNKNOWN_EXPECTED_CASE", detail: packet.case_id });
       continue;
     }
+    const frozenInputHash = canonicalSha256(casesById.get(packet.case_id)!);
+    if (packet.input_sha256 !== frozenInputHash) {
+      structuralReasons.push({
+        code: "PACKET_INPUT_HASH_MISMATCH",
+        detail: `${fileName} input_sha256 does not match frozen ${packet.case_id}`,
+      });
+      continue;
+    }
     seen.add(dedupeKey);
     parsedPackets.push(packet);
+  }
+
+  const actualPacketHashes = parsedPackets.map((packet) => packet.packet_sha256);
+  if (
+    manifest.packet_hashes.length !== actualPacketHashes.length ||
+    manifest.packet_hashes.some((hash, index) => hash !== actualPacketHashes[index])
+  ) {
+    structuralReasons.push({
+      code: "MANIFEST_PACKET_HASH_MISMATCH",
+      detail: "manifest packet_hashes do not exactly match packets in canonical filename order",
+    });
   }
 
   const casesCount = casesById.size;
