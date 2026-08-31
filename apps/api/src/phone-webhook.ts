@@ -29,10 +29,12 @@ export type PhoneWebhookDeps =
     };
 
 /**
- * Deployment phone-line inbound webhook. Verification is a static shared
- * secret (no HMAC available from the vendor), compared in constant time;
- * replay safety comes from the `phone:{message_handle}` client nonce
- * downstream. Mounted only when the phone surface is enabled.
+ * Deployment phone-line inbound webhook. In static-secret mode (SendBlue),
+ * verification is a shared secret (no HMAC available from the vendor),
+ * compared in constant time; replay safety comes from the `phone:{message_handle}`
+ * client nonce downstream. In delegate mode (chat-sdk) the transport owns
+ * verification (challenge handshake, signature checks) and parsing. Mounted
+ * only when the phone surface is enabled.
  */
 export function mountPhoneWebhookRoutes(app: Hono, deps: PhoneWebhookDeps) {
   if ("delegate" in deps) {

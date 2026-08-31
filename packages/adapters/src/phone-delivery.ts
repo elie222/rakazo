@@ -297,6 +297,7 @@ async function drain(deps: PhoneDeliveryDeps, context: AdapterContext): Promise<
   });
   const groupsSupported = deps.messaging.describe().capabilities.groups;
   for (const row of pending) {
+    // Claim before sending: concurrent drains (job keys are per runId) and
     // crash retries must never deliver the same iMessage twice.
     const claim = await deps.prisma.phoneOutbound.updateMany({
       where: { id: row.id, status: "pending" },
