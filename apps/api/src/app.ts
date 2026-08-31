@@ -11,11 +11,14 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   applyPhoneOutboundStatus,
+  ChatSdkMessagingProvider,
   type ComposioProvider,
   type ConnectorRegistry,
+  chatSdkConfigFromEnv,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
+  createMessagingProvider,
   createPhoneContextLoader,
   createRunExecutor,
   createRunSandbox,
@@ -30,7 +33,6 @@ import {
   InMemoryRealtimeFanout,
   InstalledConnectorProvider,
   isComposioEnabled,
-  isPhoneSurfaceEnabled,
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
@@ -45,7 +47,6 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
-  SendBlueMessagingProvider,
   SpaceMemoryProviderResolver,
   sendBlueConfigFromEnv,
 } from "@rakazo/adapters";
@@ -179,11 +180,21 @@ export async function createApp(
     pipedreamOverride ??
     (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
   const sendBlueConfig = sendBlueConfigFromEnv(env);
+  const chatSdkConfig = chatSdkConfigFromEnv({
+    messagingChatSdkAdapter: env.messagingChatSdkAdapter,
+  });
   const messaging =
     messagingOverride ??
-    (isPhoneSurfaceEnabled(sendBlueConfig, env.deploymentModelKey)
-      ? new SendBlueMessagingProvider(sendBlueConfig)
-      : undefined);
+    createMessagingProvider({
+      provider: env.messagingProvider,
+      deploymentModelKey: env.deploymentModelKey,
+      sendBlueConfig,
+      chatSdkConfig,
+    });
+  if (messaging instanceof ChatSdkMessagingProvider) {
+    // Fail fast on a misconfigured adapter instead of at first webhook.
+    await messaging.initialize();
+  }
   const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
     installed,
@@ -344,6 +355,7 @@ export async function createApp(
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
+  mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     if (!session?.user) return null;
@@ -351,9 +363,44 @@ export async function createApp(
       () => null,
     );
   });
-  mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
-  // The phone webhook only exists when the messaging surface is enabled.
-  if (messaging && env.sendblueSigningSecret) {
+  const sendTyping = (toNumber: string) => {
+    // Keep the raw phone number out of trace ids — those reach logs
+    // and telemetry, a different trust boundary than the database.
+    const operationId = `phone.typing:${randomUUID()}`;
+    return (
+      messaging?.sendTypingIndicator?.(
+        { to: toNumber },
+        {
+          operationId,
+          traceId: operationId,
+          spaceId: "",
+          userId: "",
+          // Cosmetic side call: bound it so a stalled vendor response
+          // can never pin the webhook handler's event loop slot.
+          signal: AbortSignal.timeout(2000),
+        },
+      ) ?? Promise.resolve()
+    );
+  };
+  if (messaging instanceof ChatSdkMessagingProvider) {
+    messaging.onInbound(
+      createPhoneInboundHandler({
+        prisma,
+        events,
+        jobs,
+        provision: (phoneE164, policyEnv) => provisionPhoneIdentity(prisma, phoneE164, policyEnv),
+        signupPolicy: {
+          signupsEnabled: env.signupsEnabled,
+          signupAllowlist: env.signupAllowlist,
+        },
+        lineNumber: "",
+        typing: sendTyping,
+      }),
+    );
+    // chat-sdk owns webhook verification and parsing; the route delegates
+    // GET (challenge) and POST events to the transport unchanged.
+    mountPhoneWebhookRoutes(app, { delegate: (request) => messaging.handleWebhook(request) });
+  } else if (messaging && env.sendblueSigningSecret) {
     mountPhoneWebhookRoutes(app, {
       signingSecret: env.sendblueSigningSecret,
       signingHeader: "sb-signing-secret",
@@ -369,25 +416,7 @@ export async function createApp(
           signupAllowlist: env.signupAllowlist,
         },
         lineNumber: env.sendbluePhoneNumber ?? "",
-        typing: (toNumber) => {
-          // Keep the raw phone number out of trace ids — those reach logs
-          // and telemetry, a different trust boundary than the database.
-          const operationId = `phone.typing:${randomUUID()}`;
-          return (
-            messaging.sendTypingIndicator?.(
-              { to: toNumber },
-              {
-                operationId,
-                traceId: operationId,
-                spaceId: "",
-                userId: "",
-                // Cosmetic side call: bound it so a stalled vendor response
-                // can never pin the webhook handler's event loop slot.
-                signal: AbortSignal.timeout(2000),
-              },
-            ) ?? Promise.resolve()
-          );
-        },
+        typing: sendTyping,
       }),
     });
   }

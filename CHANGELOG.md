@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Generic chat-sdk messaging transport behind the messaging provider contract: `MESSAGING_PROVIDER` selects sendblue (default) or chat-sdk, and `MESSAGING_CHATSDK_ADAPTER` names the registered adapter. Phone surfaces stay disabled until a concrete adapter is configured.
 - Voice mode: speak replies, hold-to-talk dictation, and half-duplex calls. Speech sits behind a `VoiceProvider` interface (ElevenLabs, OpenAI, Cartesia) so the product is not tied to one vendor. Keys stay on the server.
 - Electron first-run: Docker (default) or this Mac. This Mac runs the bot shell as you, with working directories under your home folder. macOS does not show its own permission dialog; the consent is Rakazo's. The choice is owner-only and is refused when `SANDBOX_PROVIDER` is not `docker` (so E2B and test fakes cannot enable it).
 - GitHub Copilot and SuperGrok / X Premium sign-in via Pi device-code OAuth (`openai-codex`, `github-copilot`, `xai`). Claude Pro is still omitted because Pi's Claude login uses a localhost callback that does not work from the web app.

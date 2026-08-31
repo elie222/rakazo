@@ -295,6 +295,7 @@ async function drain(deps: PhoneDeliveryDeps, context: AdapterContext): Promise<
     },
     orderBy: { createdAt: "asc" },
   });
+  const groupsSupported = deps.messaging.describe().capabilities.groups;
   for (const row of pending) {
     // Claim before sending: concurrent drains (job keys are per runId) and
     // crash retries must never deliver the same iMessage twice.
@@ -305,7 +306,10 @@ async function drain(deps: PhoneDeliveryDeps, context: AdapterContext): Promise<
     if (claim.count === 0) continue;
     try {
       if (row.kind === "group" || row.kind === "intro") {
-        if (!row.providerGroupId) {
+        // A provider without group support (capabilities.groups false) can
+        // never deliver these rows: fail them terminally instead of burning
+        // the retry budget on calls that are known to be unsupported.
+        if (!row.providerGroupId || !groupsSupported) {
           await deps.prisma.phoneOutbound.update({
             where: { id: row.id },
             data: { status: "failed" },

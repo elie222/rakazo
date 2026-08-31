@@ -8,6 +8,8 @@ export * from "./box-sandbox.js";
 export * from "./builtin-skills.js";
 export * from "./builtin-tools.js";
 export * from "./cartesia-voice.js";
+export * from "./chatsdk.js";
+export * from "./chatsdk-emulator.js";
 export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";
 export * from "./composio-connector.js";

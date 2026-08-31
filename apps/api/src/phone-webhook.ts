@@ -9,23 +9,38 @@ import { readBoundedBody, WEBHOOK_MAX_BODY_BYTES } from "./webhook.js";
 
 export const PHONE_WEBHOOK_PATH = "/api/v1/phone/webhook";
 
-export type PhoneWebhookDeps = {
-  signingSecret: string;
-  /** Vendor auth header name (wired at the composition root). */
-  signingHeader: string;
-  /** Vendor-specific parse stays at the composition root / adapter boundary. */
-  parseInbound: (payload: unknown) => MessagingInboundEvent | null;
-  handle: (event: MessagingInboundMessage) => Promise<void>;
-  handleStatus?: (event: MessagingOutboundStatus) => Promise<void>;
-};
+export type PhoneWebhookDeps =
+  | {
+      /**
+       * chat-sdk mode: the transport owns verification (challenge handshake,
+       * signature checks) and payload parsing, so the raw request — GET and
+       * POST — is delegated unchanged.
+       */
+      delegate: (request: Request) => Promise<Response>;
+    }
+  | {
+      signingSecret: string;
+      /** Vendor auth header name (wired at the composition root). */
+      signingHeader: string;
+      /** Vendor-specific parse stays at the composition root / adapter boundary. */
+      parseInbound: (payload: unknown) => MessagingInboundEvent | null;
+      handle: (event: MessagingInboundMessage) => Promise<void>;
+      handleStatus?: (event: MessagingOutboundStatus) => Promise<void>;
+    };
 
 /**
- * Deployment phone-line inbound webhook. Verification is a static shared
- * secret (no HMAC available from the vendor), compared in constant time;
- * replay safety comes from the `phone:{message_handle}` client nonce
- * downstream. Mounted only when the phone surface is enabled.
+ * Deployment phone-line inbound webhook. In static-secret mode (SendBlue),
+ * verification is a shared secret (no HMAC available from the vendor),
+ * compared in constant time; replay safety comes from the `phone:{message_handle}`
+ * client nonce downstream. In delegate mode (chat-sdk) the transport owns
+ * verification (challenge handshake, signature checks) and parsing. Mounted
+ * only when the phone surface is enabled.
  */
 export function mountPhoneWebhookRoutes(app: Hono, deps: PhoneWebhookDeps) {
+  if ("delegate" in deps) {
+    app.all(PHONE_WEBHOOK_PATH, (c) => deps.delegate(c.req.raw));
+    return;
+  }
   app.post(PHONE_WEBHOOK_PATH, async (c) => {
     // Uniform 401: missing and wrong secrets are indistinguishable.
     if (!timingSafeStringEqual(c.req.header(deps.signingHeader), deps.signingSecret)) {

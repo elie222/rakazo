@@ -4,9 +4,12 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 loadRootEnv();
 
 import {
+  ChatSdkMessagingProvider,
+  chatSdkConfigFromEnv,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
+  createMessagingProvider,
   createPhoneContextLoader,
   createPostgresReconciliationLeadership,
   createRunExecutor,
@@ -20,7 +23,6 @@ import {
   InMemoryJobQueue,
   InstalledConnectorProvider,
   isComposioEnabled,
-  isPhoneSurfaceEnabled,
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
@@ -33,7 +35,6 @@ import {
   resolveDeploymentModel,
   resolveSandboxProvider,
   ScriptedAgentRuntime,
-  SendBlueMessagingProvider,
   SpaceMemoryProviderResolver,
   sendBlueConfigFromEnv,
 } from "@rakazo/adapters";
@@ -100,9 +101,17 @@ async function main() {
     sendblueSigningSecret: process.env.SENDBLUE_SIGNING_SECRET,
     sendbluePhoneNumber: process.env.SENDBLUE_PHONE_NUMBER,
   });
-  const messaging = isPhoneSurfaceEnabled(sendBlueConfig, deploymentModelKey)
-    ? new SendBlueMessagingProvider(sendBlueConfig)
-    : undefined;
+  const messaging = createMessagingProvider({
+    provider: process.env.MESSAGING_PROVIDER,
+    deploymentModelKey,
+    sendBlueConfig,
+    chatSdkConfig: chatSdkConfigFromEnv({
+      messagingChatSdkAdapter: process.env.MESSAGING_CHATSDK_ADAPTER,
+    }),
+  });
+  if (messaging instanceof ChatSdkMessagingProvider) {
+    await messaging.initialize();
+  }
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY), undefined, [
     new InstalledConnectorProvider(prisma, secrets),
     ...(pipedream ? [pipedream] : []),

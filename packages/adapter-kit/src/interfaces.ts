@@ -283,8 +283,9 @@ export interface VoiceProvider {
 
 /**
  * Deployment-wide text messaging surface (one phone line for the whole
- * deployment). Webhook parsing/verification stays an exported pure function
- * on the vendor module — that is HTTP shape, not transport.
+ * deployment). Webhook parsing/verification is owned either by an exported
+ * pure function on the vendor module or by the transport in delegate mode —
+ * that is HTTP shape, not transport.
  */
 export interface MessagingProvider {
   describe(): AdapterDescriptor<MessagingCapabilities>;

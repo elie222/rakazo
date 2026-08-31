@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@asciidev/box-sdk": "^0.0.28",
+    "@chat-adapter/state-memory": "4.39.0",
     "@composio/core": "0.16.0",
     "@daytona/sdk": "^0.204.1",
     "@e2b/desktop": "^2.3.1",
@@ -24,6 +25,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "chat": "4.39.0",
     "d3-dsv": "^3.0.1",
     "graphile-worker": "^0.17.3",
     "jsdom": "^30.0.1",

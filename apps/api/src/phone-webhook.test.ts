@@ -167,3 +167,42 @@ describe("phone webhook HTTP route", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 });
+
+describe("phone webhook delegate mode", () => {
+  it("delegates both GET and POST to the transport and returns its response", async () => {
+    const delegate = vi.fn(async (request: Request) =>
+      request.method === "GET"
+        ? new Response("challenge-echo", { status: 200 })
+        : new Response(null, { status: 200 }),
+    );
+    const app = new Hono();
+    mountPhoneWebhookRoutes(app, { delegate });
+
+    const getResponse = await app.request(PHONE_WEBHOOK_PATH, { method: "GET" });
+    expect(getResponse.status).toBe(200);
+    expect(await getResponse.text()).toBe("challenge-echo");
+
+    const postResponse = await app.request(PHONE_WEBHOOK_PATH, {
+      method: "POST",
+      body: receivePayload,
+      headers: { "content-type": "application/json" },
+    });
+    expect(postResponse.status).toBe(200);
+
+    expect(delegate).toHaveBeenCalledTimes(2);
+    expect(delegate.mock.calls[0]![0]).toBeInstanceOf(Request);
+  });
+
+  it("surfaces a transport failure as 5xx so platform retries see the failure", async () => {
+    const delegate = vi.fn(async () => {
+      throw new Error("transport exploded");
+    });
+    const app = new Hono();
+    mountPhoneWebhookRoutes(app, { delegate });
+
+    // Hono's default error handler converts the rejection into a 500; the
+    // platform only needs a non-2xx to retry.
+    const response = await app.request(PHONE_WEBHOOK_PATH, { method: "POST", body: "{}" });
+    expect(response.status).toBe(500);
+  });
+});

@@ -41,6 +41,10 @@ export interface AppEnv {
   sendblueApiSecret: string | undefined;
   sendblueSigningSecret: string | undefined;
   sendbluePhoneNumber: string | undefined;
+  /** `MESSAGING_PROVIDER`: sendblue (default) | chat-sdk. */
+  messagingProvider: "sendblue" | "chat-sdk";
+  /** `MESSAGING_CHATSDK_ADAPTER`: registry name of the configured chat-sdk adapter. */
+  messagingChatSdkAdapter: string | undefined;
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
@@ -98,6 +102,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
     sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
+    messagingProvider: source.MESSAGING_PROVIDER === "chat-sdk" ? "chat-sdk" : "sendblue",
+    messagingChatSdkAdapter: optional(source.MESSAGING_CHATSDK_ADAPTER),
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
