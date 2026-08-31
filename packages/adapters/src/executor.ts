@@ -2754,17 +2754,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               });
               if (event.status === "completed" || event.status === "failed") {
-                await publishMessage(deps, run, "bot", [
-                  {
-                    kind: "subagent",
-                    agentId: event.agentId,
-                    name: event.name,
-                    task: safeTask,
-                    status: event.status,
-                    progress: safeProgress,
-                    result: safeResult,
-                  },
-                ]);
+                await publishMessage(
+                  deps,
+                  run,
+                  "bot",
+                  [
+                    {
+                      kind: "subagent",
+                      agentId: event.agentId,
+                      name: event.name,
+                      task: safeTask,
+                      status: event.status,
+                      progress: safeProgress,
+                      result: safeResult,
+                    },
+                  ],
+                  subagentMarksUnread(run.trigger, event.status),
+                );
               }
             } else if (event.type === "usage") {
               await deps.prisma.usageRecord.create({
@@ -2856,6 +2862,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "completed",
             blocks,
+            markUnread: completionMarksUnread(run.trigger, text),
           });
           if (!completed) return;
           if (run.trigger === "bot_message" && text) {
@@ -3141,6 +3148,14 @@ export function completionNotificationBody(assembled: string, blocks: MessageBlo
     .join("");
 }
 
+export function completionMarksUnread(trigger: string, text: string): boolean {
+  return trigger !== "routine" || Boolean(text);
+}
+
+export function subagentMarksUnread(trigger: string, status: "running" | "completed" | "failed") {
+  return status === "failed" || trigger !== "routine";
+}
+
 function computerRunRequeueData(
   resumeCheckpoint: TakeoverResumeCheckpoint | null,
   error: string | null = null,
@@ -3189,9 +3204,10 @@ async function publishMessage(
   run: { id: string; spaceId: string; threadId: string; botId: string },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
+  markUnread?: boolean,
 ) {
   const committed = await deps.prisma.$transaction((tx) =>
-    persistMessageInTransaction(tx, run, role, blocks),
+    persistMessageInTransaction(tx, run, role, blocks, markUnread),
   );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     console.error("thread message realtime notification", error);
@@ -3204,6 +3220,7 @@ async function persistMessageInTransaction(
   run: { id: string; spaceId: string; threadId: string; botId: string },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
+  markUnread?: boolean,
 ) {
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
@@ -3211,6 +3228,7 @@ async function persistMessageInTransaction(
     blocks,
     botId: run.botId,
     runId: run.id,
+    markUnread,
   });
   const event = await appendEventInTransaction(tx, {
     spaceId: run.spaceId,

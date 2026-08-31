@@ -80,7 +80,10 @@ interface FinalizeRunBase {
 }
 
 export type FinalizeRunInput = FinalizeRunBase &
-  ({ outcome: "completed"; blocks: MessageBlock[] } | { outcome: "failed"; error: string });
+  (
+    | { outcome: "completed"; blocks: MessageBlock[]; markUnread?: boolean }
+    | { outcome: "failed"; error: string }
+  );
 
 export interface PauseRunForInput {
   spaceId: string;
@@ -794,6 +797,7 @@ export async function finalizeRun(
         blocks: input.blocks,
         botId: input.botId,
         runId: input.runId,
+        markUnread: input.markUnread,
       });
       await appendEventInTransaction(tx, {
         spaceId: input.spaceId,

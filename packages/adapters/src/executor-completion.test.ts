@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { completionMessageSegments, completionNotificationBody } from "./executor.js";
+import {
+  completionMarksUnread,
+  completionMessageSegments,
+  completionNotificationBody,
+  subagentMarksUnread,
+} from "./executor.js";
 
 describe("completionMessageSegments", () => {
   it("keeps visible tool activity without appending a generic completion claim", () => {
@@ -63,5 +68,21 @@ describe("completionNotificationBody", () => {
 
   it("uses the empty-run text when that is all the run produced", () => {
     expect(completionNotificationBody("", completionMessageSegments([]))).toBe("done.");
+  });
+});
+
+describe("completionMarksUnread", () => {
+  it("ignores silent routine activity but keeps routine comments and manual replies unread", () => {
+    expect(completionMarksUnread("routine", "")).toBe(false);
+    expect(completionMarksUnread("routine", "Daily report ready")).toBe(true);
+    expect(completionMarksUnread("user", "")).toBe(true);
+  });
+});
+
+describe("subagentMarksUnread", () => {
+  it("ignores completed routine activity but preserves failures and manual activity", () => {
+    expect(subagentMarksUnread("routine", "completed")).toBe(false);
+    expect(subagentMarksUnread("routine", "failed")).toBe(true);
+    expect(subagentMarksUnread("user", "completed")).toBe(true);
   });
 });

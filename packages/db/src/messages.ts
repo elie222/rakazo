@@ -26,7 +26,7 @@ export async function createThreadMessageInTransaction(
     where: { id: input.threadId },
     data: {
       nextMessageSeq: { increment: 1 },
-      unread: input.role === "bot" || input.markUnread ? true : undefined,
+      unread: (input.markUnread ?? input.role === "bot") ? true : undefined,
     },
     select: { nextMessageSeq: true },
   });
