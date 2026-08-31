@@ -315,7 +315,10 @@ export async function threadSnapshot(
                   // Match the selection query — peer bot_message runs must not bury a user-visible failure.
                   trigger: { not: "bot_message" },
                   status: { in: ["completed", "cancelled"] },
-                  createdAt: { gt: run.createdAt },
+                  // gte + self-exclusion: a terminal run created in the same
+                  // millisecond as the failure still supersedes it.
+                  createdAt: { gte: run.createdAt },
+                  id: { not: run.id },
                 },
                 select: { id: true },
               })
