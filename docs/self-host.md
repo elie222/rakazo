@@ -146,6 +146,27 @@ rejected.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
+## Connecting without a public IP
+
+Rakazo clients (web, Electron, iOS, Android) speak HTTPS to one origin. They do not embed a VPN.
+When the API host has no public address, pick an overlay **outside** the Rakazo process, then point
+the clients at that origin. Prefer TLS whenever a hostname is involved.
+
+1. **Cloudflare Tunnel or Caddy (recommended).** Terminate HTTPS on a public hostname and set
+   `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL` to that URL. Phones and desktops need nothing extra.
+   Production Compose already documents Caddy and an optional Tunnel in place of ports 80/443.
+2. **Tailscale or Headscale.** Join the Rakazo host and each device to the same tailnet. Use
+   `https://<machine>.ts.net` (MagicDNS requires HTTPS; desktop and mobile reject `http://*.ts.net`).
+   CGNAT addresses (`100.64.0.0/10`) may use HTTP on a trusted overlay, the same way LAN IPs do.
+   Install the official Tailscale app on iPhone — Rakazo cannot start a tunnel inside the iOS client.
+3. **EasyTier (optional sidecar).** Run `easytier-core` as a separate binary or Compose service on
+   the host (LGPL-3.0; do not statically link it into Rakazo). Join from Windows / macOS / Linux /
+   Android with the official EasyTier client. There is no iOS EasyTier; use Tailscale or a Tunnel
+   for iPhone. Clients may use the virtual IP over HTTP when it is RFC1918 or CGNAT.
+
+Do not bundle EasyTier or Tailscale into Electron or Expo. Detecting a system install and suggesting
+an origin is fine; creating a TUN device inside Rakazo is not.
+
 ## Choosing a computer provider
 
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.

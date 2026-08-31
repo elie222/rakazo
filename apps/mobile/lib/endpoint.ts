@@ -1,3 +1,5 @@
+import { allowsCleartextHttp } from "@rakazo/core";
+
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 
@@ -44,7 +46,7 @@ export function usesCustomApiBase(url: string, fallback = defaultApiBase()) {
 export function apiBaseWarning(url: string): string | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
+    if (parsed.protocol === "http:" && !allowsCleartextHttp(parsed.hostname)) {
       return "Public servers need https://. HTTP only works on your local network.";
     }
   } catch {
@@ -86,15 +88,4 @@ export async function probeApiBase(
 function originOnly(value: string) {
   const parsed = normalizeApiBase(value);
   return parsed.ok ? parsed.url : null;
-}
-
-function isLanOrLocalHost(hostname: string) {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
-  if (host.endsWith(".local")) return true;
-  if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  return false;
 }

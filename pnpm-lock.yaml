@@ -79,6 +79,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9

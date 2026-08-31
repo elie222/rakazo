@@ -42,6 +42,14 @@ describe("server address normalization", () => {
     expect(normalizeServerUrl("http://[fd00::1]:3100")).toBe("http://[fd00::1]:3100");
   });
 
+  it("permits overlay CGNAT HTTP and requires HTTPS for MagicDNS", () => {
+    expect(normalizeServerUrl("http://100.64.0.1:3100")).toBe("http://100.64.0.1:3100");
+    expect(normalizeServerUrl("100.64.1.8:5173")).toBe("http://100.64.1.8:5173");
+    expect(normalizeServerUrl("http://machine.ts.net")).toBeNull();
+    expect(normalizeServerUrl("machine.ts.net")).toBe("https://machine.ts.net");
+    expect(normalizeServerUrl("https://box.tail12345.ts.net")).toBe("https://box.tail12345.ts.net");
+  });
+
   it("rejects cleartext link-local addresses used by cloud metadata endpoints", () => {
     expect(normalizeServerUrl("http://169.254.169.254")).toBeNull();
     expect(normalizeServerUrl("http://169.254.1.1:80")).toBeNull();

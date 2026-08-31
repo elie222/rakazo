@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
 import type { DesktopSetup } from "@rakazo/contracts";
+import { allowsCleartextHttp, isLoopbackHost } from "@rakazo/core";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
@@ -28,7 +28,7 @@ export function normalizeServerUrl(input: string): string | null {
       url = new URL(trimmed);
     } else {
       const candidate = new URL(`http://${trimmed}`);
-      url = isLocalNetworkHost(candidate.hostname) ? candidate : new URL(`https://${trimmed}`);
+      url = allowsCleartextHttp(candidate.hostname) ? candidate : new URL(`https://${trimmed}`);
     }
   } catch {
     return null;
@@ -39,7 +39,7 @@ export function normalizeServerUrl(input: string): string | null {
   // Embedded credentials would be written to disk in cleartext.
   if (url.username !== "" || url.password !== "") return null;
   // Public login cookies and API traffic must never cross a cleartext connection.
-  if (url.protocol === "http:" && !isLocalNetworkHost(url.hostname)) return null;
+  if (url.protocol === "http:" && !allowsCleartextHttp(url.hostname)) return null;
 
   // Rakazo serves its renderer, RPC, and auth routes from one origin. Keeping a
   // user-supplied path would make the setup probe and the loaded app disagree.
@@ -151,55 +151,4 @@ export function isRakazoHealth(value: unknown): boolean {
     (json as { ok?: unknown }).ok === true &&
     typeof (json as { version?: unknown }).version === "string"
   );
-}
-
-function isLoopbackHost(hostname: string) {
-  const host = unbracketedHost(hostname);
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (isIP(host) === 4) return host.startsWith("127.");
-  return isIP(host) === 6 && host === "::1";
-}
-
-/**
- * Link-local addresses (IPv4 169.254/16, IPv6 fe80::/10) often host cloud
- * metadata endpoints. Cleartext HTTP to them is never a legitimate Rakazo
- * deploy target, so they stay out of the private-network HTTP allowlist.
- */
-function isLinkLocalHost(hostname: string) {
-  const host = unbracketedHost(hostname);
-  if (isIP(host) === 4) {
-    const [first, second] = host.split(".").map(Number);
-    return first === 169 && second === 254;
-  }
-  if (isIP(host) === 6) {
-    const first = host.split(":", 1)[0] ?? "";
-    return /^fe[89ab]/.test(first);
-  }
-  return false;
-}
-
-function isLocalNetworkHost(hostname: string) {
-  const host = unbracketedHost(hostname);
-  if (isLoopbackHost(host) || host.endsWith(".local")) return true;
-  if (isLinkLocalHost(host)) return false;
-
-  if (isIP(host) === 4) {
-    const [first, second] = host.split(".").map(Number);
-    return (
-      first === 10 ||
-      (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168)
-    );
-  }
-
-  if (isIP(host) === 6) {
-    const first = host.split(":", 1)[0] ?? "";
-    // Unique-local only (fc00::/7). Link-local is rejected above.
-    return /^f[cd]/.test(first);
-  }
-  return false;
-}
-
-function unbracketedHost(hostname: string) {
-  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
 }

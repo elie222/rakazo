@@ -2,6 +2,8 @@ package com.rakazo.notifications
 
 import java.net.URI
 
+/** Keep in sync with `allowsCleartextHttp` in packages/core/src/network-host.ts. */
+
 internal fun isAllowedNotificationEndpoint(endpoint: String): Boolean {
   val uri = runCatching { URI(endpoint) }.getOrNull() ?: return false
   val scheme = uri.scheme?.lowercase() ?: return false

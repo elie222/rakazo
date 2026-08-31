@@ -79,6 +79,8 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("http://100.119.57.55:3100")).toBeNull();
     expect(apiBaseWarning("http://100.127.255.255:3100")).toBeNull();
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
+    expect(apiBaseWarning("http://machine.ts.net")).toMatch(/https/i);
+    expect(apiBaseWarning("https://machine.ts.net")).toBeNull();
   });
 
   it("treats the compile-time default as not custom", () => {

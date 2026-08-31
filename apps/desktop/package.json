@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
