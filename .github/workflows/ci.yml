@@ -121,7 +121,13 @@ jobs:
           set -euo pipefail
           base="$BEFORE_SHA"
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
-            base="$(git rev-parse HEAD^)"
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "Could not resolve \`github.event.before\` for the full push range, so this job will not publish a partial-range update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           mapfile -t files < <(
@@ -225,7 +231,22 @@ jobs:
       - name: Publish production update
         if: steps.ota.outputs.publish == 'true'
         working-directory: apps/mobile
-        run: eas update --platform all --channel production --environment production --message "$GITHUB_SHA" --non-interactive
+        run: |
+          set -euo pipefail
+          head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ -z "$head" ]]; then
+            echo "Could not resolve the current main head before publishing." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_SHA" != "$head" ]]; then
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          eas update --platform all --channel production --environment production --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-
