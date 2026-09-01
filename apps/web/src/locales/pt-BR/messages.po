@@ -25,14 +25,6 @@ msgstr "o macOS não pedirá permissão extra se você permitir que os bots seja
 msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 msgstr "Seu sistema operacional não pedirá permissão extra se você permitir que os bots sejam executados no {hostLabel} — eles são executados como você."
 
-msgid "Could not load"
-msgstr "Não foi possível carregar"
-
-
-msgid "Knowledge"
-msgstr "Conhecimento"
-
-
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:371
 msgid "{0, plural, one {# model} other {# models}}"
@@ -550,8 +542,8 @@ msgstr "Não é possível acessar o servidor."
 #: src/components/AskCard.tsx:175
 #: src/components/ComputerMaintenanceActions.tsx:108
 #: src/components/teach/TeachComputerSection.tsx:122
-#: src/pages/KnowledgeSection.tsx:188
-#: src/pages/KnowledgeSection.tsx:372
+#: src/pages/KnowledgeSection.tsx:193
+#: src/pages/KnowledgeSection.tsx:404
 #: src/pages/PluginsOverlay.tsx:536
 #: src/pages/Shell.tsx:5895
 #: src/pages/Shell.tsx:5977
@@ -638,7 +630,7 @@ msgid "Clearing…"
 msgstr "Limpeza"
 
 #: src/pages/BotContextMenu.tsx:67
-#: src/pages/KnowledgeSection.tsx:372
+#: src/pages/KnowledgeSection.tsx:404
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
 #: src/pages/PeerMessagesOverlay.tsx:209
@@ -763,6 +755,7 @@ msgstr "Configurado por implantação"
 msgid "Configured servers"
 msgstr "Servidores configurados"
 
+#: src/pages/KnowledgeSection.tsx:415
 #: src/pages/McpServersOverlay.tsx:479
 msgid "Confirm delete"
 msgstr "Confirmar exclusão"
@@ -945,7 +938,7 @@ msgstr "Não foi possível excluir o servidor MCP"
 msgid "Could not delete routine"
 msgstr "Não foi possível excluir a rotina"
 
-#: src/pages/KnowledgeSection.tsx:298
+#: src/pages/KnowledgeSection.tsx:318
 msgid "Could not delete skill"
 msgstr "Não foi possível excluir a habilidade"
 
@@ -970,6 +963,11 @@ msgstr "Não foi possível baixar o {name}. Tente novamente."
 msgid "Could not install connector"
 msgstr "Não foi possível instalar o conector"
 
+#: src/pages/KnowledgeSection.tsx:109
+#: src/pages/KnowledgeSection.tsx:252
+msgid "Could not load"
+msgstr "Não foi possível carregar"
+
 #: src/components/ApprovalRulesSettings.tsx:46
 msgid "Could not load approval rules"
 msgstr "Não foi possível carregar as regras de aprovação"
@@ -986,7 +984,7 @@ msgstr "Não foi possível carregar os servidores MCP"
 msgid "Could not load model settings"
 msgstr "Não foi possível carregar as configurações do modelo"
 
-#: src/pages/KnowledgeSection.tsx:265
+#: src/pages/KnowledgeSection.tsx:273
 msgid "Could not load skill"
 msgstr "Não foi possível carregar a habilidade"
 
@@ -1043,7 +1041,7 @@ msgstr "Não foi possível revogar a conexão"
 msgid "Could not run routine"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:126
+#: src/pages/KnowledgeSection.tsx:131
 #: src/pages/Shell.tsx:5770
 msgid "Could not save"
 msgstr "Não foi possível salvar"
@@ -1068,7 +1066,7 @@ msgstr "Não foi possível salvar a rotina"
 msgid "Could not save rule"
 msgstr "Não foi possível salvar"
 
-#: src/pages/KnowledgeSection.tsx:283
+#: src/pages/KnowledgeSection.tsx:288
 msgid "Could not save skill"
 msgstr "Não foi possível salvar a habilidade"
 
@@ -1217,7 +1215,7 @@ msgid "Default scope"
 msgstr "Escopo padrão"
 
 #: src/pages/BotContextMenu.tsx:105
-#: src/pages/KnowledgeSection.tsx:381
+#: src/pages/KnowledgeSection.tsx:415
 #: src/pages/McpServersOverlay.tsx:481
 #: src/pages/RoutineEditor.tsx:280
 #: src/pages/Shell.tsx:2664
@@ -1339,7 +1337,7 @@ msgstr "Baixar {0}"
 msgid "Download {name}"
 msgstr "Baixar {name}"
 
-#: src/pages/KnowledgeSection.tsx:202
+#: src/pages/KnowledgeSection.tsx:207
 msgid "Download as markdown"
 msgstr "Baixar como markdown"
 
@@ -1664,6 +1662,10 @@ msgstr ""
 msgid "Keys stay on the server. The app only learns whether a provider is configured."
 msgstr "As chaves permanecem no servidor. O aplicativo só descobre se um provedor está configurado."
 
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "Conhecimento"
+
 #: src/pages/AccountSettingsOverlay.tsx:154
 #: src/pages/AccountSettingsOverlay.tsx:355
 #: src/pages/AccountSettingsOverlay.tsx:372
@@ -1777,7 +1779,7 @@ msgstr "Membros ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 msgstr "Membros (escolha {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 
-#: src/pages/KnowledgeSection.tsx:25
+#: src/pages/KnowledgeSection.tsx:28
 #: src/pages/MemorySettingsOverlay.tsx:135
 #: src/pages/Shell.tsx:2756
 msgid "Memory"
@@ -1817,7 +1819,7 @@ msgstr "Mensagem de {peer}"
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5056
 msgid "Message from {peer}"
-msgstr ""
+msgstr "Mensagem de {peer}"
 
 #: src/pages/Shell.tsx:4646
 msgid "Message…"
@@ -1830,7 +1832,7 @@ msgstr "Enviou mensagem para {peer}"
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5050
 msgid "Messaged {peer}"
-msgstr ""
+msgstr "Mensagem enviada para {peer}"
 
 #: src/pages/CallView.tsx:81
 msgid "Microphone failed"
@@ -1963,7 +1965,7 @@ msgstr "Nova rotina"
 msgid "New section"
 msgstr "Nova seção"
 
-#: src/pages/KnowledgeSection.tsx:399
+#: src/pages/KnowledgeSection.tsx:434
 msgid "New skill"
 msgstr "Nova habilidade"
 
@@ -2045,7 +2047,7 @@ msgstr "Nenhum resultado"
 msgid "No runs yet"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:310
+#: src/pages/KnowledgeSection.tsx:341
 msgid "No skills yet"
 msgstr "Ainda não há habilidades"
 
@@ -2078,8 +2080,8 @@ msgstr ""
 msgid "Not now"
 msgstr "Agora não"
 
-#: src/pages/KnowledgeSection.tsx:46
-#: src/pages/KnowledgeSection.tsx:66
+#: src/pages/KnowledgeSection.tsx:50
+#: src/pages/KnowledgeSection.tsx:70
 msgid "Nothing remembered yet"
 msgstr "Nada memorizado ainda"
 
@@ -2280,7 +2282,7 @@ msgstr "Rakazo verifica a fonte antes de salvá-la. As credenciais são criptogr
 msgid "Read replies aloud"
 msgstr "Leia as respostas em voz alta"
 
-#: src/pages/KnowledgeSection.tsx:327
+#: src/pages/KnowledgeSection.tsx:358
 msgid "read-only"
 msgstr "somente leitura"
 
@@ -2362,6 +2364,7 @@ msgstr ""
 msgid "Removed with chat, computer, and memory."
 msgstr "Removido com chat, computador e memória."
 
+#: src/pages/KnowledgeSection.tsx:329
 #: src/pages/ScratchpadSection.tsx:92
 msgid "Removed, but list refresh failed"
 msgstr "Removido, mas a atualização da lista falhou"
@@ -2429,7 +2432,7 @@ msgid "Return to Rakazo"
 msgstr "Retorno a Rakazo"
 
 #. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx:161
+#: src/pages/KnowledgeSection.tsx:166
 msgid "rev {0}"
 msgstr "rev {0}"
 
@@ -2483,8 +2486,8 @@ msgstr "Executando..."
 #: src/components/teach/SkillDraftCard.tsx:162
 #: src/components/teach/TeachComputerSection.tsx:183
 #: src/pages/GroupPanel.tsx:224
-#: src/pages/KnowledgeSection.tsx:181
-#: src/pages/KnowledgeSection.tsx:360
+#: src/pages/KnowledgeSection.tsx:186
+#: src/pages/KnowledgeSection.tsx:391
 #: src/pages/ModelSettingsOverlay.tsx:675
 #: src/pages/RoutineEditor.tsx:479
 #: src/pages/Shell.tsx:5775
@@ -2499,6 +2502,7 @@ msgstr "Salva"
 msgid "Saved skills"
 msgstr "Habilidades salvas"
 
+#: src/pages/KnowledgeSection.tsx:300
 #: src/pages/ScratchpadSection.tsx:51
 #: src/pages/ScratchpadSection.tsx:73
 msgid "Saved, but list refresh failed"
@@ -2622,7 +2626,7 @@ msgstr "Ajuda"
 msgid "Shared"
 msgstr "Compartilhado"
 
-#: src/pages/KnowledgeSection.tsx:61
+#: src/pages/KnowledgeSection.tsx:65
 msgid "Shared documents"
 msgstr "Documentos compartilhados"
 
@@ -2662,7 +2666,7 @@ msgstr "Cadastre-se"
 msgid "Skill {0}"
 msgstr "Habilidade {0}"
 
-#: src/pages/KnowledgeSection.tsx:26
+#: src/pages/KnowledgeSection.tsx:29
 msgid "Skills"
 msgstr "Habilidades"
 
