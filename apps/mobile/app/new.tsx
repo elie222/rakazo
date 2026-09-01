@@ -121,7 +121,7 @@ export default function NewBot() {
           }}
         />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        {error ? <Text style={{ color: "#E65707", marginTop: 16 }}>{error}</Text> : null}
+        {error ? <Text style={{ color: "#EF4444", marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void create()}
           disabled={!name.trim() || pending}

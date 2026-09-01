@@ -117,7 +117,7 @@ export function MarkdownArtifactPreview({
                 padding: 14,
               }}
             >
-              <Text style={{ color: "#F1A8A8", fontSize: 15 }}>{state.message}</Text>
+              <Text style={{ color: "#FCA5A5", fontSize: 15 }}>{state.message}</Text>
             </View>
           ) : (
             <ChatMarkdown>{state.markdown}</ChatMarkdown>

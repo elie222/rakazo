@@ -227,7 +227,7 @@ export default function SignIn() {
                       }}
                     />
                   ) : null}
-                  {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
+                  {error ? <Text style={{ color: "#B91C1C", marginTop: 12 }}>{error}</Text> : null}
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => void submit()}
@@ -443,7 +443,7 @@ function ServerSheet({
           {warning ? (
             <Text style={{ color: "#8C8C86", marginTop: 12, fontSize: 13 }}>{warning}</Text>
           ) : null}
-          {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: "#B91C1C", marginTop: 12 }}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <Pressable
               onPress={() => void restoreDefault()}

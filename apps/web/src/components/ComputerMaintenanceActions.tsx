@@ -83,7 +83,7 @@ export function ComputerMaintenanceActions({
           </Trans>
         </p>
       ) : null}
-      {error && !confirmReset ? <p className="text-[13px] text-[#E65707]">{error}</p> : null}
+      {error && !confirmReset ? <p className="text-[13px] text-[#EF4444]">{error}</p> : null}
       {confirmReset ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.72)] px-6"
@@ -102,7 +102,7 @@ export function ComputerMaintenanceActions({
             >
               <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
             </p>
-            {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+            {error ? <p className="mt-2 text-[13px] text-[#EF4444]">{error}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <BuiButton onClick={() => setConfirmReset(false)}>
                 <Trans>Cancel</Trans>

@@ -1328,7 +1328,7 @@ function Thread() {
       style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20 }}
     >
       {error ? <Text style={{ color: "#8E8E93", marginTop: 12 }}>{error}</Text> : null}
-      {runError ? <Text style={{ color: "#E65707", marginTop: 12 }}>{runError}</Text> : null}
+      {runError ? <Text style={{ color: "#EF4444", marginTop: 12 }}>{runError}</Text> : null}
       <View style={{ flex: 1, position: "relative" }}>
         {showPinnedPage ? (
           <ScrollView
@@ -2088,7 +2088,7 @@ const MessageBubble = memo(function MessageBubble({
           </Text>
           <Text
             style={{
-              color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+              color: failed ? "#EF4444" : running ? "#F5A03C" : "#4ECB71",
               fontSize: 13,
             }}
           >
@@ -2135,7 +2135,7 @@ const MessageBubble = memo(function MessageBubble({
           <Text style={{ color: "#ECECEE", fontSize: 15, fontWeight: "600" }}>
             {special.name || "Bot"}
           </Text>
-          <Text style={{ color: removed ? "#E65707" : "#4ECB71", fontSize: 13 }}>
+          <Text style={{ color: removed ? "#EF4444" : "#4ECB71", fontSize: 13 }}>
             {special.status === "archived"
               ? "archived"
               : special.status === "deleted"
@@ -2649,7 +2649,7 @@ function AskBlock({
       ) : (
         <Text style={{ color: "#85858A", fontSize: 13.5 }}>Waiting for this bot’s response.</Text>
       )}
-      {error ? <Text style={{ color: "#E65707", fontSize: 13 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: "#EF4444", fontSize: 13 }}>{error}</Text> : null}
     </View>
   );
 }

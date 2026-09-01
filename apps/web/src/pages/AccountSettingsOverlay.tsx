@@ -192,7 +192,7 @@ export function AccountSettingsOverlay({
             })}
           </div>
           {avatarError ? (
-            <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
+            <p role="alert" className="mt-3 text-[12.5px] text-[#EF4444]">
               {avatarError}
             </p>
           ) : null}
@@ -324,7 +324,7 @@ function ChangePasswordSection() {
         />
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
+        <p role="alert" className="mt-3 text-[12.5px] text-[#EF4444]">
           {error}
         </p>
       ) : null}

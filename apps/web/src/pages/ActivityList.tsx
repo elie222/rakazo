@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 function statusColor(status: RunActivityRow["status"]): string {
-  if (status === "failed") return "#FF5364";
+  if (status === "failed") return "#EF4444";
   if (status === "cancelled") return "#85858A";
   if (status === "completed") return "#4ECB71";
   if (status === "waiting_input" || status === "waiting_takeover") return "#F5A03C";

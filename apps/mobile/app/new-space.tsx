@@ -81,7 +81,7 @@ export default function NewSpace() {
               fontSize: 16,
             }}
           />
-          {error ? <Text style={{ color: "#FF5364", marginTop: 14 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: "#EF4444", marginTop: 14 }}>{error}</Text> : null}
           <Pressable
             onPress={() => void create()}
             disabled={!name.trim() || pending}

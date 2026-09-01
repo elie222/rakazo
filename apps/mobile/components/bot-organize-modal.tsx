@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   error: {
-    color: "#FF5364",
+    color: "#EF4444",
     fontSize: 13,
     paddingHorizontal: 10,
     paddingTop: 8,

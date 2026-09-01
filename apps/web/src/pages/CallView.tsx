@@ -245,7 +245,7 @@ export function CallView({
         <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-[#85858A]">
           {phase === "listening" ? heard || t`Say something. Silence sends it.` : caption}
         </p>
-        {error ? <p className="mt-2 text-[13px] text-[#C94244]">{error}</p> : null}
+        {error ? <p className="mt-2 text-[13px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-6 flex justify-center gap-3">
           <button
             type="button"
@@ -257,7 +257,7 @@ export function CallView({
           <button
             type="button"
             onClick={hangUp}
-            className="rounded-full bg-[#FF5364] px-4 py-2 text-[14px] font-medium text-white"
+            className="rounded-full bg-[#DC2626] px-4 py-2 text-[14px] font-medium text-white"
           >
             <Trans>Hang up</Trans>
           </button>

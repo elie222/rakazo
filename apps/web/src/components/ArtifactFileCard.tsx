@@ -238,7 +238,7 @@ function MarkdownPreview({
                 <Trans>Loading preview…</Trans>
               </div>
             ) : state.status === "error" ? (
-              <div className="rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-3 text-[#F1A8A8]">
+              <div className="rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-3 text-[#FCA5A5]">
                 {state.message}
               </div>
             ) : (
@@ -253,7 +253,7 @@ function MarkdownPreview({
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-[13px] text-[#F1A8A8]">
+    <div role="alert" className="mt-2 text-left text-[13px] text-[#EF4444]">
       {message}
     </div>
   );

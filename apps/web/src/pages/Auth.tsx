@@ -206,7 +206,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 ) : null}
               </div>
             ) : null}
-            {error ? <p className="mt-3 w-full text-sm text-[#C94244]">{error}</p> : null}
+            {error ? (
+              <p role="alert" className="mt-3 w-full text-sm text-[#B91C1C]">
+                {error}
+              </p>
+            ) : null}
             <button
               type="submit"
               disabled={pending}
@@ -320,7 +324,7 @@ export function PasswordResetPage() {
               className="mt-4"
             />
             {error ? (
-              <p role="alert" className="mt-3 w-full text-sm text-[#C94244]">
+              <p role="alert" className="mt-3 w-full text-sm text-[#B91C1C]">
                 {error}
               </p>
             ) : null}

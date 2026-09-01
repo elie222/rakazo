@@ -481,7 +481,7 @@ export function OnboardingPage() {
               </p>
             )}
             {notice ? <p className="mt-3 text-sm text-[#4ECB71]">{notice}</p> : null}
-            {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
+            {error ? <p className="mt-3 text-sm text-[#EF4444]">{error}</p> : null}
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
@@ -537,7 +537,7 @@ export function OnboardingPage() {
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
-            {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
+            {error ? <p className="mt-3 text-sm text-[#EF4444]">{error}</p> : null}
             <button
               type="button"
               disabled={!name.trim()}

@@ -151,7 +151,7 @@ export function MemorySettingsOverlay({
         </div>
 
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
+          {error ? <p className="mb-4 text-sm text-[#EF4444]">{error}</p> : null}
 
           {config === undefined ? (
             <p className="text-sm text-[#85858A]">
@@ -214,7 +214,7 @@ export function MemorySettingsOverlay({
               <registration.SettingsForm busy={busy} onConnect={connect} />
             </>
           ) : (
-            <p className="text-sm text-[#C94244]">
+            <p className="text-sm text-[#EF4444]">
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}

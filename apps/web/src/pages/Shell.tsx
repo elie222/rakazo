@@ -2684,7 +2684,7 @@ export function ShellPage() {
                         type="button"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-[#FF5364]"
+                        className="text-[12.5px] text-[#EF4444]"
                       >
                         <Trans>Delete</Trans>
                       </button>
@@ -2714,7 +2714,7 @@ export function ShellPage() {
                         type="button"
                         aria-label={t`Delete ${group.name}`}
                         onClick={() => setDeleteGroupTarget(group)}
-                        className="text-[12.5px] text-[#FF5364]"
+                        className="text-[12.5px] text-[#EF4444]"
                       >
                         <Trans>Delete</Trans>
                       </button>
@@ -2955,7 +2955,7 @@ export function ShellPage() {
           onSpeak={speakMessage}
         />
         {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+          <div className="px-6 pb-2 text-center text-[13px] text-[#EF4444]">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
@@ -3798,7 +3798,7 @@ export function ShellPage() {
           {sendError ? (
             <div
               role="alert"
-              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[#F1A8A8]"
+              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[#FCA5A5]"
             >
               {sendError}
             </div>
@@ -4425,7 +4425,7 @@ const Composer = memo(function Composer({
           ref={runErrorRef}
           role="alert"
           data-testid="composer-error"
-          className="mb-3 flex items-center gap-2 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]"
+          className="mb-3 flex items-center gap-2 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#FCA5A5]"
         >
           <span className="min-w-0 flex-1">{sendError ?? dictationError ?? runError}</span>
           <button
@@ -4436,7 +4436,7 @@ const Composer = memo(function Composer({
               onDismissError();
               window.requestAnimationFrame(() => textareaRef.current?.focus());
             }}
-            className="shrink-0 text-[#F1A8A8] hover:text-[#ECECEE]"
+            className="shrink-0 text-[#FCA5A5] hover:text-[#ECECEE]"
           >
             <X size={13} strokeWidth={2} />
           </button>
@@ -5170,11 +5170,11 @@ const MessageView = memo(function MessageView({
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
                     background: failed
-                      ? "rgba(230,87,7,.14)"
+                      ? "rgba(239,68,68,.14)"
                       : running
                         ? "rgba(245,160,60,.14)"
                         : "rgba(48,162,75,.14)",
-                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                    color: failed ? "#EF4444" : running ? "#F5A03C" : "#4ECB71",
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
@@ -5209,8 +5209,8 @@ const MessageView = memo(function MessageView({
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
-                    background: removed ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#E65707" : "#4ECB71",
+                    background: removed ? "rgba(239,68,68,.14)" : "rgba(48,162,75,.14)",
+                    color: removed ? "#EF4444" : "#4ECB71",
                   }}
                 >
                   {block.status === "archived" ? (
@@ -5467,7 +5467,7 @@ function CreateBotForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#EF4444]">
           {error}
         </p>
       ) : null}
@@ -5776,7 +5776,7 @@ function BotSettings({
           </label>
         ) : null}
       </details>
-      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-[#EF4444]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
@@ -5820,7 +5820,7 @@ function BotSettings({
         >
           <Trans>Export</Trans>
         </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+        <button type="button" onClick={onClear} className="text-[14px] text-[#EF4444]">
           <Trans>Clear conversation</Trans>
         </button>
         <ComputerMaintenanceActions
@@ -5928,7 +5928,7 @@ function NewSpaceDialog({
             className="mt-2 w-full rounded-[11px] border border-[#343438] bg-[#101012] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
         </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <BuiButton disabled={saving} onClick={onCancel}>
             <Trans>Cancel</Trans>
@@ -6005,7 +6005,7 @@ function NewBotSectionDialog({
             className="mt-2 w-full rounded-[11px] border border-[#343438] bg-[#101012] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
         </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
@@ -6077,7 +6077,7 @@ function ClearConversationDialog({
             available.
           </Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
@@ -6098,7 +6098,7 @@ function ClearConversationDialog({
                 setClearing(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[#DC2626] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
           </button>
@@ -6192,7 +6192,7 @@ function DeleteBotDialog({
             </span>
           </label>
         </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
@@ -6213,7 +6213,7 @@ function DeleteBotDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[#DC2626] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -6268,7 +6268,7 @@ function DeleteItemDialog({
         <p id="delete-item-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
           <Trans>This cannot be undone.</Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[#EF4444]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
@@ -6295,7 +6295,7 @@ function DeleteItemDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[#DC2626] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>

@@ -102,7 +102,7 @@ export function CreateGroupForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" className="mb-3 text-[13px] text-[#EF4444]">
           {error}
         </p>
       ) : null}
@@ -193,7 +193,7 @@ export function GroupSettings({
         </span>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" className="mb-3 text-[13px] text-[#EF4444]">
           {error}
         </p>
       ) : null}

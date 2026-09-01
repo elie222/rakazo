@@ -78,7 +78,7 @@ export function ComputerMaintenanceActions({
           </Text>
         </Pressable>
       ) : null}
-      {error ? <Text style={{ color: "#E65707", fontSize: 13 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: "#EF4444", fontSize: 13 }}>{error}</Text> : null}
     </View>
   );
 }

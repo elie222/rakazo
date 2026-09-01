@@ -78,7 +78,7 @@ export function SoftwareUpdatePanel({
       </div>
       {check ? <CheckSummary check={check} /> : null}
       {error ? (
-        <p role="alert" className="text-[12.5px] text-[#F1A8A8]">
+        <p role="alert" className="text-[12.5px] text-[#EF4444]">
           {error}
         </p>
       ) : null}
@@ -133,7 +133,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
         <h3 className="text-[15px] font-medium text-[#ECECEE]">
           <Trans>Software update</Trans>
         </h3>
-        <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
+        <p role="alert" className="mt-3 text-[12.5px] text-[#EF4444]">
           {error}
         </p>
       </section>
@@ -257,12 +257,12 @@ function CheckSummary({ check }: { check: ServerUpdateCheck }) {
   }
   if (check.status === "dirty") {
     return (
-      <p className="text-[12.5px] text-[#F1A8A8]">
+      <p className="text-[12.5px] text-[#EF4444]">
         <Trans>Checkout has local changes. Clean it before updating.</Trans>
       </p>
     );
   }
   return (
-    <p className="text-[12.5px] text-[#F1A8A8]">{check.reason ?? <Trans>Unavailable</Trans>}</p>
+    <p className="text-[12.5px] text-[#EF4444]">{check.reason ?? <Trans>Unavailable</Trans>}</p>
   );
 }

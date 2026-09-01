@@ -257,7 +257,7 @@ export function PluginsOverlay({
         </div>
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-          {catalogError ? <p className="mb-4 text-sm text-[#C94244]">{catalogError}</p> : null}
+          {catalogError ? <p className="mb-4 text-sm text-[#EF4444]">{catalogError}</p> : null}
           {loading ? (
             <p className="text-[#6C6C70]">
               <Trans>Loading integrations…</Trans>
@@ -441,7 +441,7 @@ export function PluginsOverlay({
                 </Button>
               </div>
 
-              {sourceError ? <p className="text-sm text-[#C94244]">{sourceError}</p> : null}
+              {sourceError ? <p className="text-sm text-[#EF4444]">{sourceError}</p> : null}
 
               {sourceKind ? (
                 <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">

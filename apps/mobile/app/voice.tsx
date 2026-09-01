@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#000" },
   content: { padding: 20, gap: 10 },
   lede: { color: "#85858A", fontSize: 14, lineHeight: 20, marginBottom: 8 },
-  error: { color: "#C94244", marginBottom: 8 },
+  error: { color: "#EF4444", marginBottom: 8 },
   notice: { color: "#4ECB71", marginBottom: 8 },
   card: {
     borderRadius: 14,
