@@ -23,7 +23,7 @@
       ];
       const disclosure = h(
         ToolActivityDisclosure,
-        { live, label: live ? "Working…" : "Actions" },
+        { live, label: live ? "Working…" : "Worked for 1m 43s" },
         h(ToolSteps, { steps, currentIndex: live ? steps.length - 1 : undefined }),
       );
       const response = live

@@ -22,6 +22,7 @@ import {
   type SlashActionId,
   selectedAskActionLabel,
   serializeComposerPrompt,
+  toolActivityLabel,
   truncateSlashDescription,
   userVisibleMessages,
 } from "@rakazo/core";
@@ -2505,7 +2506,7 @@ function ExpandableToolBlock({
             : []),
           ...(block.pendingToolNames ?? []),
         ].filter(Boolean);
-  const title = live ? "Working…" : "Actions";
+  const title = toolActivityLabel(block.kind === "steps" ? block.durationMs : undefined, live);
 
   return (
     <View

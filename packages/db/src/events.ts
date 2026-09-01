@@ -878,14 +878,33 @@ export async function finalizeRun(
   return { continuationRunId: committed.continuationRunId };
 }
 
+/** Stamps one turn-level wall-clock duration on the final tool block. */
+export function completedRunBlocks(
+  blocks: MessageBlock[],
+  startedAt: Date | null,
+  completedAt: Date,
+): MessageBlock[] {
+  if (!startedAt) return blocks;
+  const durationMs = completedAt.getTime() - startedAt.getTime();
+  if (!Number.isFinite(durationMs) || durationMs < 0) return blocks;
+  const index = blocks.findLastIndex((block) => block.kind === "steps");
+  if (index < 0) return blocks;
+  return blocks.map((block, blockIndex) =>
+    blockIndex === index && block.kind === "steps"
+      ? { ...block, durationMs: Math.round(durationMs) }
+      : block,
+  );
+}
+
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
 ): Promise<{ threadId: string; seq: number; continuationRunId: string | null } | null> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    let writableRun: { startedAt: Date | null } | undefined;
     try {
-      await assertRunCanWriteHistory(tx, input.runId);
+      writableRun = await assertRunCanWriteHistory(tx, input.runId);
     } catch (error) {
       if (error instanceof RunHistoryWriteError) return null;
       throw error;
@@ -938,23 +957,26 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed" && input.blocks.length > 0) {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        role: "bot",
-        blocks: input.blocks,
-        botId: input.botId,
-        runId: input.runId,
-        markUnread: input.markUnread,
-      });
-      await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-      });
+    if (input.outcome === "completed") {
+      const completedBlocks = completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now);
+      if (completedBlocks.length > 0) {
+        const message = await createThreadMessageInTransaction(tx, {
+          threadId: input.threadId,
+          role: "bot",
+          blocks: completedBlocks,
+          botId: input.botId,
+          runId: input.runId,
+          markUnread: input.markUnread,
+        });
+        await appendEventInTransaction(tx, {
+          spaceId: input.spaceId,
+          threadId: input.threadId,
+          botId: input.botId,
+          type: "thread.message.created",
+          runId: input.runId,
+          payload: { messageId: message.id, role: "bot", blocks: completedBlocks },
+        });
+      }
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,

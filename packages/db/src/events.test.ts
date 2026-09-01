@@ -6,6 +6,7 @@ import {
   appendEvent,
   claimSteering,
   clearThread,
+  completedRunBlocks,
   finalizeComputerControlRelease,
   finalizeRun,
   followThreadEvents,
@@ -58,6 +59,23 @@ function event(seq: number) {
 }
 
 describe("finalizeRun", () => {
+  it("stamps the final steps block with wall-clock run duration", () => {
+    const blocks = [
+      { kind: "steps" as const, steps: [{ label: "Read file", count: 1 }] },
+      { kind: "text" as const, text: "Then I checked it." },
+      { kind: "steps" as const, steps: [{ label: "Run tests", count: 1 }] },
+    ];
+
+    expect(
+      completedRunBlocks(
+        blocks,
+        new Date("2026-09-01T12:00:00.000Z"),
+        new Date("2026-09-01T12:01:43.000Z"),
+      ),
+    ).toEqual([blocks[0], blocks[1], { ...blocks[2], durationMs: 103_000 }]);
+    expect(completedRunBlocks(blocks, null, new Date())).toBe(blocks);
+  });
+
   it("retries a transaction conflict without duplicating the terminal event or notification", async () => {
     const conflict = Object.assign(new Error("serialization conflict"), { code: "P2034" });
     const createEvent = vi.fn(async () => ({ threadId: "thread-1", seq: 0 }));

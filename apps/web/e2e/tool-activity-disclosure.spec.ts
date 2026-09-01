@@ -7,7 +7,7 @@ const viewports = [
 ];
 const states = [
   { name: "active", live: true, label: "Working…" },
-  { name: "complete", live: false, label: "Actions" },
+  { name: "complete", live: false, label: "Worked for 1m 43s" },
 ];
 
 test("tool activity stays collapsed until disclosed", async ({ page }, testInfo) => {

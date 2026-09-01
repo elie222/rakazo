@@ -20,6 +20,19 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("accepts optional persisted duration only on valid steps blocks", () => {
+    expect(
+      MessageBlock.parse({
+        kind: "steps",
+        steps: [{ label: "Run tests", count: 1 }],
+        durationMs: 103_000,
+      }),
+    ).toMatchObject({ durationMs: 103_000 });
+    expect(MessageBlock.safeParse({ kind: "steps", steps: [], durationMs: -1 }).success).toBe(
+      false,
+    );
+  });
+
   it("limits reactions to persisted non-channel messages", () => {
     expect(
       canReactToThreadMessage({ id: "message-1", blocks: [{ kind: "text", text: "hi" }] }),
