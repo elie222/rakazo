@@ -25,6 +25,14 @@ msgstr " Auf diesem Mac fragt macOS nicht nach zusätzlichen Berechtigungen, wen
 msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 msgstr " Auf {hostLabel} fragt dein Betriebssystem nicht nach zusätzlichen Berechtigungen, wenn Bots dort ausgeführt werden – sie handeln mit deinen Rechten."
 
+msgid "Could not load"
+msgstr "Laden fehlgeschlagen"
+
+
+msgid "Knowledge"
+msgstr "Wissen"
+
+
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:371
 msgid "{0, plural, one {# model} other {# models}}"
@@ -2274,7 +2282,7 @@ msgstr "Antworten vorlesen"
 
 #: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
-msgstr ""
+msgstr "schreibgeschützt"
 
 #: src/pages/ActivityList.tsx:82
 msgid "Recent"

@@ -25,6 +25,14 @@ msgstr " यदि आप बॉट्स को इस Mac पर चलने 
 msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 msgstr " यदि आप बॉट्स को {hostLabel} पर चलने देते हैं तो आपका OS अतिरिक्त अनुमति नहीं मांगेगा — वे आपके रूप में ही चलते हैं।"
 
+msgid "Could not load"
+msgstr "लोड नहीं हो सका"
+
+
+msgid "Knowledge"
+msgstr "ज्ञान"
+
+
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:371
 msgid "{0, plural, one {# model} other {# models}}"
@@ -2274,7 +2282,7 @@ msgstr "उत्तर पढ़कर सुनाएं"
 
 #: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
-msgstr ""
+msgstr "केवल पढ़ने योग्य"
 
 #: src/pages/ActivityList.tsx:82
 msgid "Recent"

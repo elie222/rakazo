@@ -19,6 +19,9 @@ export function KnowledgeSection({ botId }: { botId: string }) {
   const [tab, setTab] = useState<"memory" | "skills">("memory");
   return (
     <div className="mt-6" data-testid="bot-knowledge">
+      <div className="mb-3 text-[14px] text-[#85858A]">
+        <Trans>Knowledge</Trans>
+      </div>
       <div className="mb-3 flex items-center gap-2 text-[14px]">
         {(
           [
@@ -102,11 +105,12 @@ function MemoryDocumentList({
       .catch(() => {
         if (current !== generation.current) return;
         setDocs([]);
+        setError(t`Could not load`);
       });
     return () => {
       generation.current += 1;
     };
-  }, []);
+  }, [t]);
 
   function openDoc(doc: MemoryDocument) {
     setOpenId(doc.id);
@@ -222,6 +226,7 @@ function AgentSkills() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const generation = useRef(0);
   const selection = useRef(0);
 
@@ -243,16 +248,18 @@ function AgentSkills() {
       .catch(() => {
         if (current !== generation.current) return;
         setSkills([]);
+        setError(t`Could not load`);
       });
     return () => {
       generation.current += 1;
     };
-  }, []);
+  }, [t]);
 
   async function openSkill(entry: AgentSkillCatalogEntry) {
     if (busy) return;
     const current = ++selection.current;
     setCreating(false);
+    setConfirmingDelete(false);
     setError(null);
     try {
       const skill = await rpc.agentSkills.get({ skillId: entry.id });
@@ -278,9 +285,10 @@ function AgentSkills() {
       }
       setOpen(null);
       setCreating(false);
+      setConfirmingDelete(false);
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save skill`);
+    } catch {
+      setError(t`Could not save skill`);
     } finally {
       setBusy(false);
     }
@@ -288,11 +296,18 @@ function AgentSkills() {
 
   async function remove(skill: AgentSkill) {
     if (busy) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    const skillId = skill.id;
     setBusy(true);
     setError(null);
     try {
-      await rpc.agentSkills.remove({ skillId: skill.id });
+      await rpc.agentSkills.remove({ skillId });
+      if (open?.id !== skillId) return;
       setOpen(null);
+      setConfirmingDelete(false);
       await refresh();
     } catch {
       setError(t`Could not delete skill`);
@@ -366,6 +381,7 @@ function AgentSkills() {
                 selection.current += 1;
                 setOpen(null);
                 setCreating(false);
+                setConfirmingDelete(false);
               }}
               className="rounded-lg px-3 py-1.5 text-[13px] text-[#85858A]"
             >
@@ -376,9 +392,11 @@ function AgentSkills() {
                 type="button"
                 disabled={busy}
                 onClick={() => void remove(open)}
-                className="ms-auto rounded-lg px-3 py-1.5 text-[13px] text-[#E65707]"
+                className={`ms-auto rounded-lg px-3 py-1.5 text-[13px] ${
+                  confirmingDelete ? "bg-[#3A1A20] text-[#F3A2AA]" : "text-[#E65707]"
+                }`}
               >
-                <Trans>Delete</Trans>
+                {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
               </button>
             ) : null}
           </div>
@@ -391,6 +409,7 @@ function AgentSkills() {
             selection.current += 1;
             setOpen(null);
             setCreating(true);
+            setConfirmingDelete(false);
             setDraft(NEW_SKILL_TEMPLATE);
             setError(null);
           }}

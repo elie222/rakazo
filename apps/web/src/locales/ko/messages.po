@@ -25,6 +25,14 @@ msgstr " 이 Mac에서 실행하면 Bot이 내 계정 권한으로 동작하며 
 msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
 msgstr " {hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
 
+msgid "Could not load"
+msgstr "불러올 수 없음"
+
+
+msgid "Knowledge"
+msgstr "지식"
+
+
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:371
 msgid "{0, plural, one {# model} other {# models}}"
@@ -2274,7 +2282,7 @@ msgstr "답변을 자동으로 읽기"
 
 #: src/pages/KnowledgeSection.tsx:327
 msgid "read-only"
-msgstr ""
+msgstr "읽기 전용"
 
 #: src/pages/ActivityList.tsx:82
 msgid "Recent"

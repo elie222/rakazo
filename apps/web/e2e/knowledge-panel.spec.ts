@@ -19,21 +19,27 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await settings.getByText("Advanced", { exact: true }).click();
   const knowledge = settings.getByTestId("bot-knowledge");
   await expect(knowledge).toBeVisible();
+  await expect(knowledge.getByText("Knowledge", { exact: true })).toBeVisible();
 
-  // Bot creation seeds a MEMORY.md; edit it in place and watch the revision bump.
-  const botMemoryRow = knowledge.getByRole("button", { name: /MEMORY\.md/ });
+  // Bot creation seeds MEMORY.md (`# Chief`); edit it and assert the revision bumps.
+  const botMemory = knowledge.getByTestId("bot-knowledge-memory");
+  const botMemoryRow = botMemory.getByRole("button", { name: /MEMORY\.md/ });
   await expect(botMemoryRow).toBeVisible();
   await botMemoryRow.click();
-  const botDocEditor = knowledge.locator("textarea");
-  await botDocEditor.fill("# Chief\n\nPrefers short updates.\n");
-  await captureScreenshot(page, testInfo, "80-knowledge-memory-editor");
-  await knowledge.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(knowledge.getByText("rev 2")).toBeVisible();
+  const botDocEditor = botMemory.locator("textarea");
+  await expect(botDocEditor).toHaveValue(/# Chief/);
+  const botMarker = `Bot memory e2e ${stamp}`;
+  await botDocEditor.fill(`# Chief\n\n${botMarker}\n`);
+  await captureScreenshot(page, testInfo, "80-knowledge-bot-memory");
+  await botMemory.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(botMemory.getByText("rev 2")).toBeVisible();
+  await botMemoryRow.click();
+  await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
+  await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
   // Skills: create one through the editor, reopen it, edit, then delete it.
+  // Builtin catalog is currently empty; user skills still cover create/edit/delete.
   await knowledge.getByRole("button", { name: "Skills", exact: true }).click();
-  // Builtin skills ship read-only; the panel labels them.
-  await expect(knowledge.getByText("read-only").first()).toBeVisible();
   await knowledge.getByRole("button", { name: "New skill", exact: true }).click();
   const editor = knowledge.locator("textarea");
   await editor.fill(
@@ -69,6 +75,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await skillRow.click();
   await expect(editor).toHaveValue(/warm greeting/);
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
+  await knowledge.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(skillRow).toBeHidden();
 
   // Space-wide documents live in the Memory settings overlay and are editable.
