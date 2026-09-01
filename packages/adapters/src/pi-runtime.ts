@@ -161,6 +161,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let agent: Agent;
         agent = new Agent({
+          sessionId: `${request.threadId}:${request.botId}`,
           steeringMode: "all",
           streamFn: (m, ctx, options) =>
             models.streamSimple(m, ctx, reliableStreamOptions(m, options)),

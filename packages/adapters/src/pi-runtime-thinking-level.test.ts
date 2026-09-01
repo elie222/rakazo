@@ -9,6 +9,7 @@ const fakeAgentState = vi.hoisted(() => ({
     contextWindow?: number;
     maxTokens?: number;
   }>,
+  sessionIds: [] as Array<string | undefined>,
   failPrompt: false,
 }));
 
@@ -23,6 +24,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly tools: FakeAgentTool[];
 
     constructor(options: {
+      sessionId?: string;
       initialState: {
         thinkingLevel: string;
         tools: FakeAgentTool[];
@@ -30,6 +32,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       };
     }) {
       this.tools = options.initialState.tools;
+      fakeAgentState.sessionIds.push(options.sessionId);
       fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
       fakeAgentState.models.push(options.initialState.model);
     }
@@ -122,6 +125,7 @@ describe("Pi agent thinking level", () => {
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
     fakeAgentState.models = [];
+    fakeAgentState.sessionIds = [];
     fakeAgentState.failPrompt = false;
     vi.unstubAllEnvs();
   });
@@ -132,6 +136,12 @@ describe("Pi agent thinking level", () => {
     const levels = await runWithModel("reasoning-model");
     expect(levels).toEqual(["medium", "medium"]);
     expect(levels.every((level) => level !== "off")).toBe(true);
+  });
+
+  it("uses a stable provider session for each bot thread", async () => {
+    await runWithModel("plain-model");
+
+    expect(fakeAgentState.sessionIds[0]).toBe("t:b");
   });
 
   it("honors a per-bot thinking level on reasoning models", async () => {
