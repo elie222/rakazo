@@ -134,15 +134,28 @@ function MemoryDocumentList({
     }
   }
 
-  function exportMarkdown() {
-    // Export exactly the documents this section displays.
-    const markdown = docs.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
-    const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = exportFilename;
-    link.click();
-    URL.revokeObjectURL(url);
+  async function exportMarkdown() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Re-fetch through the section's own loader so the file is current,
+      // then sync the list so the export matches what is displayed.
+      const fresh = await loadRef.current();
+      generation.current += 1;
+      setDocs(fresh);
+      const markdown = fresh.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
+      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exportFilename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError(t`Could not load`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -201,7 +214,7 @@ function MemoryDocumentList({
         <button
           type="button"
           disabled={busy}
-          onClick={exportMarkdown}
+          onClick={() => void exportMarkdown()}
           className="mt-2 px-2.5 text-[13px] text-[#7A7A80] hover:text-[#C9C9CE]"
         >
           <Trans>Download as markdown</Trans>
