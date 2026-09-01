@@ -923,7 +923,7 @@ msgstr "Não foi possível criar a seção"
 
 #: src/pages/Shell.tsx:5852
 msgid "Could not create space"
-msgstr ""
+msgstr "Não foi possível criar o espaço"
 
 #: src/pages/Onboarding.tsx:205
 msgid "Could not create your bot"
@@ -1114,7 +1114,7 @@ msgstr "Não foi possível atualizar o computador"
 
 #: src/pages/Shell.tsx:1841
 msgid "Could not update reaction"
-msgstr ""
+msgstr "Não foi possível atualizar a reação"
 
 #: src/pages/MemorySettingsOverlay.tsx:123
 msgid "Could not update the default memory scope"
@@ -1154,7 +1154,7 @@ msgstr "Criar grupo"
 #: src/components/AskCard.tsx:32
 #: src/pages/Shell.tsx:5898
 msgid "Create space"
-msgstr ""
+msgstr "Criar espaço"
 
 #: src/pages/Onboarding.tsx:510
 msgid "Create your first bot"
@@ -1166,7 +1166,7 @@ msgstr "Crie o seu Rakazo"
 
 #: src/components/AskCard.tsx:19
 msgid "Created"
-msgstr ""
+msgstr "Criado"
 
 #: src/pages/GroupPanel.tsx:134
 #: src/pages/Shell.tsx:5470
@@ -1193,7 +1193,7 @@ msgstr "Expressão cron"
 
 #: src/pages/Shell.tsx:5888
 msgid "Customer support"
-msgstr ""
+msgstr "Suporte ao cliente"
 
 #: src/pages/RoutineSchedule.tsx:68
 msgid "day"
@@ -1789,7 +1789,7 @@ msgstr "Escopo de memória"
 
 #: src/pages/Shell.tsx:4425
 msgid "Mentions"
-msgstr ""
+msgstr "Menções"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:83
@@ -1970,7 +1970,7 @@ msgstr "Nova habilidade"
 #: src/pages/Shell.tsx:2378
 #: src/pages/Shell.tsx:5875
 msgid "New space"
-msgstr ""
+msgstr "Novo espaço"
 
 #: src/pages/PhoneSettingsOverlay.tsx:167
 msgid "No agent connections yet."
@@ -2124,7 +2124,7 @@ msgstr "Abrir"
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2433
 msgid "Open {0}"
-msgstr ""
+msgstr "Abrir {0}"
 
 #: src/pages/Shell.tsx:3073
 msgid "Open computer"

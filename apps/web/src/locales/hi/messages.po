@@ -923,7 +923,7 @@ msgstr "सेक्शन नहीं बनाया जा सका"
 
 #: src/pages/Shell.tsx:5852
 msgid "Could not create space"
-msgstr ""
+msgstr "स्पेस नहीं बनाया जा सका"
 
 #: src/pages/Onboarding.tsx:205
 msgid "Could not create your bot"
@@ -1114,7 +1114,7 @@ msgstr "कंप्यूटर अपडेट नहीं हो सका"
 
 #: src/pages/Shell.tsx:1841
 msgid "Could not update reaction"
-msgstr ""
+msgstr "रिएक्शन अपडेट नहीं हो सका"
 
 #: src/pages/MemorySettingsOverlay.tsx:123
 msgid "Could not update the default memory scope"
@@ -1154,7 +1154,7 @@ msgstr "समूह बनाएं"
 #: src/components/AskCard.tsx:32
 #: src/pages/Shell.tsx:5898
 msgid "Create space"
-msgstr ""
+msgstr "स्पेस बनाएं"
 
 #: src/pages/Onboarding.tsx:510
 msgid "Create your first bot"
@@ -1166,7 +1166,7 @@ msgstr "अपना Rakazo बनाएं"
 
 #: src/components/AskCard.tsx:19
 msgid "Created"
-msgstr ""
+msgstr "बनाया गया"
 
 #: src/pages/GroupPanel.tsx:134
 #: src/pages/Shell.tsx:5470
@@ -1193,7 +1193,7 @@ msgstr "Cron एक्सप्रेशन"
 
 #: src/pages/Shell.tsx:5888
 msgid "Customer support"
-msgstr ""
+msgstr "ग्राहक सहायता"
 
 #: src/pages/RoutineSchedule.tsx:68
 msgid "day"
@@ -1789,7 +1789,7 @@ msgstr "मेमोरी स्कोप"
 
 #: src/pages/Shell.tsx:4425
 msgid "Mentions"
-msgstr ""
+msgstr "उल्लेख"
 
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:83
@@ -1970,7 +1970,7 @@ msgstr "नई स्किल"
 #: src/pages/Shell.tsx:2378
 #: src/pages/Shell.tsx:5875
 msgid "New space"
-msgstr ""
+msgstr "नया स्पेस"
 
 #: src/pages/PhoneSettingsOverlay.tsx:167
 msgid "No agent connections yet."
@@ -2124,7 +2124,7 @@ msgstr "खोलें"
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2433
 msgid "Open {0}"
-msgstr ""
+msgstr "{0} खोलें"
 
 #: src/pages/Shell.tsx:3073
 msgid "Open computer"
