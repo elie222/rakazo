@@ -1817,7 +1817,7 @@ msgstr "{peer} का संदेश"
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5056
 msgid "Message from {peer}"
-msgstr ""
+msgstr "{peer} का संदेश"
 
 #: src/pages/Shell.tsx:4646
 msgid "Message…"
@@ -1830,7 +1830,7 @@ msgstr "{peer} को संदेश भेजा"
 #. js-lingui-explicit-id
 #: src/pages/Shell.tsx:5050
 msgid "Messaged {peer}"
-msgstr ""
+msgstr "{peer} को संदेश भेजा"
 
 #: src/pages/CallView.tsx:81
 msgid "Microphone failed"

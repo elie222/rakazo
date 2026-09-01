@@ -44,6 +44,7 @@ export function KnowledgeSection({ botId }: { botId: string }) {
       </div>
       {tab === "memory" ? (
         <MemoryDocumentList
+          key={botId}
           load={() => rpc.memory.list({ botId, scope: "bot" })}
           exportFilename="memory.md"
           emptyLabel={<Trans>Nothing remembered yet</Trans>}
@@ -286,7 +287,11 @@ function AgentSkills() {
       setOpen(null);
       setCreating(false);
       setConfirmingDelete(false);
-      await refresh();
+      try {
+        await refresh();
+      } catch {
+        setError(t`Could not load`);
+      }
     } catch {
       setError(t`Could not save skill`);
     } finally {
@@ -305,10 +310,15 @@ function AgentSkills() {
     setError(null);
     try {
       await rpc.agentSkills.remove({ skillId });
-      if (open?.id !== skillId) return;
-      setOpen(null);
-      setConfirmingDelete(false);
-      await refresh();
+      if (open?.id === skillId) {
+        setOpen(null);
+        setConfirmingDelete(false);
+      }
+      try {
+        await refresh();
+      } catch {
+        setError(t`Could not load`);
+      }
     } catch {
       setError(t`Could not delete skill`);
     } finally {
