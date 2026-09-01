@@ -9,6 +9,27 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
+  // Space-wide documents live in the Memory settings overlay and are editable.
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Memory", exact: true }).click();
+  const spaceDocs = page.getByTestId("space-memory-documents");
+  await expect(spaceDocs.getByText("Shared documents")).toBeVisible();
+  const memoryRow = spaceDocs.getByRole("button", { name: /MEMORY\.md/ });
+  await expect(memoryRow).toBeVisible();
+  await memoryRow.click();
+  const docEditor = spaceDocs.locator("textarea");
+  const marker = `Edited in e2e ${stamp}`;
+  await docEditor.fill(`# Memory\n\n${marker}\n`);
+  await captureScreenshot(page, testInfo, "83-space-memory-editor");
+  await spaceDocs.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(spaceDocs.getByText("rev 2")).toBeVisible();
+
+  // The save persisted: reopen the document and find the marker.
+  await memoryRow.click();
+  await expect(docEditor).toHaveValue(new RegExp(marker));
+  await captureScreenshot(page, testInfo, "84-space-memory-saved");
+  await page.getByLabel("Close memory settings").click();
+
   // The bot's Knowledge section lives under Advanced in its settings panel.
   await page
     .locator("main")
@@ -77,24 +98,4 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
   await knowledge.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(skillRow).toBeHidden();
-
-  // Space-wide documents live in the Memory settings overlay and are editable.
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Memory", exact: true }).click();
-  const spaceDocs = page.getByTestId("space-memory-documents");
-  await expect(spaceDocs.getByText("Shared documents")).toBeVisible();
-  const memoryRow = spaceDocs.getByRole("button", { name: /MEMORY\.md/ });
-  await expect(memoryRow).toBeVisible();
-  await memoryRow.click();
-  const docEditor = spaceDocs.locator("textarea");
-  const marker = `Edited in e2e ${stamp}`;
-  await docEditor.fill(`# Memory\n\n${marker}\n`);
-  await captureScreenshot(page, testInfo, "83-space-memory-editor");
-  await spaceDocs.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(spaceDocs.getByText("rev 2")).toBeVisible();
-
-  // The save persisted: reopen the document and find the marker.
-  await memoryRow.click();
-  await expect(docEditor).toHaveValue(new RegExp(marker));
-  await captureScreenshot(page, testInfo, "84-space-memory-saved");
 });
