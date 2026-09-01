@@ -2745,13 +2745,16 @@ export function ShellPage() {
               </button>
               <button
                 type="button"
+                aria-label={t`Memory`}
                 onClick={() => {
                   setMenuOpen(false);
                   setMemorySettingsOpen(true);
                 }}
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
-                <span className="text-[#9A9AA0]">◇</span>
+                <span aria-hidden="true" className="text-[#9A9AA0]">
+                  ◇
+                </span>
                 <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
                   <Trans>Memory</Trans>
                 </span>

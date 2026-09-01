@@ -9,9 +9,11 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
-  // Space-wide documents live in the Memory settings overlay and are editable.
+  // Space-wide documents live in the Memory settings overlay. Open that before
+  // bot settings so the Knowledge Memory tab cannot steal this click.
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Memory", exact: true }).click();
+  await expect(page.getByLabel("Close memory settings")).toBeVisible();
   const spaceDocs = page.getByTestId("space-memory-documents");
   await expect(spaceDocs.getByText("Shared documents")).toBeVisible();
   const memoryRow = spaceDocs.getByRole("button", { name: /MEMORY\.md/ });
@@ -29,6 +31,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(docEditor).toHaveValue(new RegExp(marker));
   await captureScreenshot(page, testInfo, "84-space-memory-saved");
   await page.getByLabel("Close memory settings").click();
+  await expect(page.getByLabel("Close memory settings")).toHaveCount(0);
 
   // The bot's Knowledge section lives under Advanced in its settings panel.
   await page
