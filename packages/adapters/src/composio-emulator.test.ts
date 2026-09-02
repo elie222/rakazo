@@ -80,4 +80,48 @@ describe("ComposioEmulator", () => {
       },
     ]);
   });
+
+  it("exposes seeded GitHub release tools without live OAuth", async () => {
+    const emulator = new ComposioEmulator();
+    const connectedContext = {
+      ...context,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const tools = await emulator.discoverTools(connectedContext);
+    expect(tools.map((tool) => tool.name)).toEqual(["GITHUB_LIST_RELEASES", "GITHUB_GET_RELEASE"]);
+    expect(tools.map((tool) => tool.name)).not.toContain("GITHUB_EMULATED_ACTION");
+
+    const events = [];
+    for await (const event of emulator.execute(
+      {
+        tool: "GITHUB_LIST_RELEASES",
+        args: { owner: "elie222", repo: "rakazo" },
+        executionId: "github-list-releases",
+      },
+      connectedContext,
+    )) {
+      events.push(event);
+    }
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "result",
+        data: expect.objectContaining({
+          ok: true,
+          releases: expect.arrayContaining([
+            expect.objectContaining({ tag: "v0.4.2" }),
+            expect.objectContaining({ tag: "v0.4.1" }),
+          ]),
+        }),
+      }),
+    );
+    expect(emulator.listGithubReleases()[0]?.tag).toBe("v0.4.2");
+  });
 });

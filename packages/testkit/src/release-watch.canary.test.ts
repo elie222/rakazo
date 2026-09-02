@@ -1,0 +1,192 @@
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  ComposioEmulator,
+  diagnoseReleaseWatchRun,
+  RELEASE_WATCH_GITHUB_TOOL_NAMES,
+  resolveReleaseWatchEvalModelId,
+} from "@rakazo/adapters";
+import { afterAll, describe, expect, it } from "vitest";
+import { sessionCookieHeader } from "./index.js";
+
+function loadEnvFile() {
+  const file = path.resolve(".env");
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 1) continue;
+    const key = trimmed.slice(0, eq);
+    const value = trimmed.slice(eq + 1).replace(/^["']|["']$/g, "");
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadEnvFile();
+
+const live = Boolean(
+  process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY && process.env.DATABASE_URL,
+);
+const describeLive = live ? describe : describe.skip;
+
+describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
+  let stop: (() => Promise<void>) | undefined;
+  const composio = new ComposioEmulator();
+
+  afterAll(async () => {
+    await stop?.();
+  });
+
+  it("writes a concrete routine and reads seeded releases via GitHub tools, not the browser", async () => {
+    const { modelId, label } = resolveReleaseWatchEvalModelId(process.env);
+    process.env.PI_DEFAULT_MODEL = modelId;
+
+    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-release-watch-"));
+    const handles = await createApp({
+      databaseUrl: process.env.DATABASE_URL!,
+      dataDir,
+      sandboxProvider: "fake",
+      agentRuntime: "pi",
+      composio,
+    });
+    stop = handles.stop;
+
+    const stamp = Date.now();
+    const signup = await handles.app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
+      body: JSON.stringify({
+        email: `release-watch-${stamp}@rakazo.test`,
+        password: "password12",
+        name: "Release Watch",
+      }),
+    });
+    expect(signup.status).toBeLessThan(400);
+    const cookie = sessionCookieHeader(signup);
+
+    const started = await rpc<{ connectionId: string; authorizationUrl: null }>(
+      handles.app,
+      cookie,
+      "connections/begin",
+      { connectorId: "composio", provider: "GITHUB", displayName: "GitHub" },
+    );
+    expect(started.authorizationUrl).toBeNull();
+
+    const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
+      name: "Chief",
+      title: "Chief of staff",
+      description: "Release watch eval",
+      instructions:
+        "You are a chief of staff. When creating schedules, write concrete prompts that name connected plugin tools. Prefer GitHub plugin tools over the computer browser for repository and release data.",
+      notifyOnFinish: true,
+    });
+
+    await rpc(handles.app, cookie, "threads/send", {
+      botId: bot.id,
+      text: [
+        `Using ${label} (${modelId}).`,
+        "Create a daily routine that watches for new releases of github.com/elie222/rakazo",
+        "and keeps me current on the project's capabilities.",
+        "GitHub is already connected — the routine prompt must call GITHUB_LIST_RELEASES for owner elie222 repo rakazo.",
+        "Do not use the computer browser or Bing for this.",
+      ].join(" "),
+    });
+
+    await waitFor(handles.app, cookie, bot.id, 180_000);
+
+    const routines = await rpc<Array<{ id: string; name: string; prompt: string }>>(
+      handles.app,
+      cookie,
+      "routines/list",
+      { botId: bot.id },
+    );
+    expect(routines.length).toBeGreaterThan(0);
+    const routine =
+      routines.find((row) => /rakazo|release/i.test(`${row.name}\n${row.prompt}`)) ?? routines[0]!;
+
+    const dueAt = new Date(Date.now() - 1_000);
+    await handles.prisma.routine.update({
+      where: { id: routine.id },
+      data: { nextRunAt: dueAt, active: true },
+    });
+    composio.executions.length = 0;
+    await handles.jobs.enqueue({
+      name: "routine.wakeup",
+      payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
+    });
+
+    const snap = await waitFor(handles.app, cookie, bot.id, 180_000);
+    const toolEvents = await handles.prisma.event.findMany({
+      where: { botId: bot.id, type: "agent.tool.called" },
+      orderBy: { seq: "asc" },
+    });
+    const calledFromEvents = toolEvents.map((event) => {
+      const payload = event.payload as { name?: string };
+      return String(payload.name ?? "");
+    });
+    const calledToolNames = [...calledFromEvents, ...composio.executions.map((row) => row.tool)];
+    const diagnosis = diagnoseReleaseWatchRun({
+      availableToolNames: [
+        ...RELEASE_WATCH_GITHUB_TOOL_NAMES,
+        "computer_observe",
+        "computer_act",
+        "schedule_create",
+      ],
+      calledToolNames,
+      routinePrompt: routine.prompt,
+      resultText: JSON.stringify(snap),
+      seededReleaseTags: composio.listGithubReleases().map((release) => release.tag),
+    });
+
+    if (!diagnosis.pass) {
+      throw new Error(
+        [
+          "release-watch eval failed",
+          `model=${label} (${modelId})`,
+          `routinePrompt=${JSON.stringify(routine.prompt)}`,
+          `calledTools=${JSON.stringify(calledToolNames)}`,
+          diagnosis.summary,
+        ].join("\n"),
+      );
+    }
+
+    expect(
+      composio.executions.some((row) =>
+        (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool),
+      ),
+    ).toBe(true);
+  }, 420_000);
+});
+
+type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type Snap = {
+  messages: Array<{ role: string; blocks: unknown[] }>;
+  run: { status: string } | null;
+};
+
+async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}): Promise<T> {
+  const res = await app.request(`/rpc/${proc}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie, origin: "http://127.0.0.1:5173" },
+    body: JSON.stringify({ json: body }),
+  });
+  const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
+  if (res.status >= 400 || parsed.error) {
+    throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? "failed"}`);
+  }
+  return parsed.json as T;
+}
+
+async function waitFor(app: App, cookie: string, botId: string, ms: number): Promise<Snap> {
+  const start = Date.now();
+  let last: Snap | null = null;
+  while (Date.now() - start < ms) {
+    last = await rpc<Snap>(app, cookie, "threads/get", { botId });
+    if (!last.run || ["completed", "failed", "cancelled"].includes(last.run.status)) return last;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  throw new Error(`timeout waiting for live model turn: ${JSON.stringify(last)}`);
+}
