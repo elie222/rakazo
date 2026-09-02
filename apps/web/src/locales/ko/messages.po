@@ -2509,7 +2509,7 @@ msgstr "보내기"
 
 #: src/pages/MessagingSettingsOverlay.tsx:160
 msgid "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes. You'll get a confirmation reply once linked."
-msgstr "10분 안에 채팅 앱에서 받은 번호로 <0>{linkCode}</0>를 보내세요. 연결되면 확인 답장을 받습니다."
+msgstr "10분 안에 채팅 앱에서 연결할 회선으로 <0>{linkCode}</0>를 보내세요. 연결되면 확인 답장을 받습니다."
 
 #: src/components/AskCard.tsx:164
 msgid "Send answer"
