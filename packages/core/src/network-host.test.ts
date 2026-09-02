@@ -28,6 +28,7 @@ describe("network host policy", () => {
     expect(isLinkLocalHost("169.254.1.1")).toBe(true);
     expect(isLinkLocalHost("[fe80::1]")).toBe(true);
     expect(isLinkLocalHost("fe80::1")).toBe(true);
+    expect(isLinkLocalHost("fe80.example.com")).toBe(false);
     expect(isLinkLocalHost("10.0.0.1")).toBe(false);
   });
 
@@ -53,6 +54,8 @@ describe("network host policy", () => {
 
   it("rejects cleartext HTTP to public DNS, MagicDNS, and link-local", () => {
     expect(allowsCleartextHttp("app.example.com")).toBe(false);
+    expect(allowsCleartextHttp("fd.example.com")).toBe(false);
+    expect(allowsCleartextHttp("fc-host.example.com")).toBe(false);
     expect(allowsCleartextHttp("machine.ts.net")).toBe(false);
     expect(allowsCleartextHttp("169.254.169.254")).toBe(false);
     expect(allowsCleartextHttp("[fe80::1]")).toBe(false);

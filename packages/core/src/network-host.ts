@@ -32,6 +32,7 @@ export function isLinkLocalHost(hostname: string): boolean {
   const host = unbracketedHost(hostname);
   const ipv4 = ipv4Octets(host);
   if (ipv4) return ipv4[0] === 169 && ipv4[1] === 254;
+  if (!host.includes(":")) return false;
   const first = host.split(":", 1)[0] ?? "";
   return /^fe[89ab]/.test(first);
 }
@@ -65,6 +66,7 @@ export function allowsCleartextHttp(hostname: string): boolean {
     );
   }
 
+  if (!host.includes(":")) return false;
   const first = host.split(":", 1)[0] ?? "";
   return /^f[cd]/.test(first);
 }

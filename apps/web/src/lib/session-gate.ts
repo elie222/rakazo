@@ -45,6 +45,13 @@ export type SessionReconnectKind = "none" | "blocking" | "banner";
  * has mounted, keep it and show a reconnect bar — including when Better Auth
  * still holds the last user while a refresh fails.
  */
+/** Drop a mounted workspace after a real sign-out so reconnect cannot reuse it. */
+export function workspaceMounted(gate: SessionGate, mounted: boolean): boolean {
+  if (gate === "authenticated") return true;
+  if (gate === "anonymous") return false;
+  return mounted;
+}
+
 export function sessionReconnectKind(
   session: SessionGateInput,
   holding: boolean,

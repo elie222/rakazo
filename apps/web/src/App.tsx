@@ -10,6 +10,7 @@ import {
   sessionGate,
   sessionReconnectKind,
   sessionRetryDelayMs,
+  workspaceMounted,
 } from "./lib/session-gate";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
@@ -34,12 +35,12 @@ export function App() {
   const [sawWorkspace, setSawWorkspace] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
-  const reconnect = sessionReconnectKind(session, nextHolding, sawWorkspace);
+  const nextMounted = workspaceMounted(gate, sawWorkspace);
+  if (nextMounted !== sawWorkspace) setSawWorkspace(nextMounted);
+  const reconnect = sessionReconnectKind(session, nextHolding, nextMounted);
   const lastUser = useRef<unknown>(null);
-  if (session.data?.user) {
-    lastUser.current = session.data.user;
-    if (!sawWorkspace) setSawWorkspace(true);
-  }
+  if (session.data?.user) lastUser.current = session.data.user;
+  else if (!nextMounted) lastUser.current = null;
 
   useLayoutEffect(() => {
     if (session.isPending) return;
