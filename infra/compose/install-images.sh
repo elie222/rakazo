@@ -191,14 +191,12 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
+# `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
+# or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)
-if grep -q -- '--wait' <<<"$compose_up_help"; then
+if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
   echo "Waiting for healthy services."
-  if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
-  else
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait
-  fi
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
 else
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 fi
