@@ -187,7 +187,8 @@ warn_arm64_edge_tags() {
     app_tag="$(printf '%s\n' "$compose_env" | awk -F= '$1 == "RAKAZO_IMAGE_TAG" { print substr($0, index($0, "=") + 1); exit }')"
     computer_tag="$(printf '%s\n' "$compose_env" | awk -F= '$1 == "RAKAZO_COMPUTER_IMAGE_TAG" { print substr($0, index($0, "=") + 1); exit }')"
   else
-    # Older Compose without `config --environment`: best-effort raw .env parse.
+    # Older Compose without `config --environment`: shell env overrides .env
+    # (same precedence as `docker compose pull`).
     normalize_env_tag() {
       local v="$1"
       v="${v%%#*}"
@@ -199,10 +200,18 @@ warn_arm64_edge_tags() {
       v="${v%"${v##*[![:space:]]}"}"
       printf '%s' "$v"
     }
-    app_tag="$(awk -F= '/^[[:space:]]*RAKAZO_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
-    computer_tag="$(awk -F= '/^[[:space:]]*RAKAZO_COMPUTER_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
-    app_tag="$(normalize_env_tag "$app_tag")"
-    computer_tag="$(normalize_env_tag "$computer_tag")"
+    if [[ -n "${RAKAZO_IMAGE_TAG:-}" ]]; then
+      app_tag="$RAKAZO_IMAGE_TAG"
+    else
+      app_tag="$(awk -F= '/^[[:space:]]*RAKAZO_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
+      app_tag="$(normalize_env_tag "$app_tag")"
+    fi
+    if [[ -n "${RAKAZO_COMPUTER_IMAGE_TAG:-}" ]]; then
+      computer_tag="$RAKAZO_COMPUTER_IMAGE_TAG"
+    else
+      computer_tag="$(awk -F= '/^[[:space:]]*RAKAZO_COMPUTER_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
+      computer_tag="$(normalize_env_tag "$computer_tag")"
+    fi
   fi
   # Defaults match .env.images.example (edge = amd64-only main builds).
   app_tag="${app_tag:-edge}"
