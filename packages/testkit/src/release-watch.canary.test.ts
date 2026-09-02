@@ -132,14 +132,24 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       data: { nextRunAt: dueAt, active: true },
     });
     composio.executions.length = 0;
+    const priorToolEvent = await handles.prisma.event.findFirst({
+      where: { botId: bot.id, type: "agent.tool.called" },
+      orderBy: { seq: "desc" },
+      select: { seq: true },
+    });
+    const routineToolSeqFloor = priorToolEvent?.seq ?? -1;
     await handles.jobs.enqueue({
       name: "routine.wakeup",
       payload: { routineId: routine.id, scheduledFor: dueAt.toISOString() },
     });
 
-    const snap = await waitFor(handles.app, cookie, bot.id, 180_000);
+    const snap = await waitFor(handles.app, cookie, bot.id, 180_000, { requireSeenRun: true });
     const toolEvents = await handles.prisma.event.findMany({
-      where: { botId: bot.id, type: "agent.tool.called" },
+      where: {
+        botId: bot.id,
+        type: "agent.tool.called",
+        seq: { gt: routineToolSeqFloor },
+      },
       orderBy: { seq: "asc" },
     });
     const calledFromEvents = toolEvents.map((event) => {
@@ -202,12 +212,22 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   return parsed.json as T;
 }
 
-async function waitFor(app: App, cookie: string, botId: string, ms: number): Promise<Snap> {
+async function waitFor(
+  app: App,
+  cookie: string,
+  botId: string,
+  ms: number,
+  options?: { requireSeenRun?: boolean },
+): Promise<Snap> {
   const start = Date.now();
   let last: Snap | null = null;
+  let seenRun = false;
   while (Date.now() - start < ms) {
     last = await rpc<Snap>(app, cookie, "threads/get", { botId });
-    if (!last.run || ["completed", "failed", "cancelled"].includes(last.run.status)) return last;
+    if (last.run) seenRun = true;
+    const terminal = !!last.run && ["completed", "failed", "cancelled"].includes(last.run.status);
+    if (terminal) return last;
+    if (!last.run && (!options?.requireSeenRun || seenRun)) return last;
     await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error(`timeout waiting for live model turn: ${JSON.stringify(last)}`);

@@ -114,6 +114,18 @@ describe("release-watch diagnosis", () => {
       ),
     ).toBe(true);
 
+    const tagOnlyAfterFailedPayload = diagnoseReleaseWatchRun({
+      availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
+      calledToolNames: ["GITHUB_LIST_RELEASES"],
+      routinePrompt:
+        "Call GITHUB_LIST_RELEASES for elie222/rakazo and summarize new releases and capabilities.",
+      resultText: "Latest is v0.4.2 with routine tools + connector emulators.",
+      seededReleaseTags: ["v0.4.2"],
+      githubToolResults: [{ ok: false, tool: "GITHUB_LIST_RELEASES", error: "upstream failed" }],
+    });
+    expect(tagOnlyAfterFailedPayload.pass).toBe(false);
+    expect(tagOnlyAfterFailedPayload.diagnoses).toContain("no_release_info_retrieved");
+
     const passViaPayload = diagnoseReleaseWatchRun({
       availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
       calledToolNames: ["GITHUB_LIST_RELEASES"],

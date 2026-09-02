@@ -185,6 +185,7 @@ function githubReleaseTools(): ConnectorTool[] {
       name: "GITHUB_LIST_RELEASES",
       description:
         "List releases for a GitHub repository (owner + repo). Prefer this over browsing github.com or web search when GitHub is connected.",
+      readOnly: true,
       inputSchema: {
         type: "object",
         properties: {
@@ -198,6 +199,7 @@ function githubReleaseTools(): ConnectorTool[] {
       name: "GITHUB_GET_RELEASE",
       description:
         "Get one GitHub release by tag for owner/repo, or the latest release when tag is omitted. Prefer this over a computer browser.",
+      readOnly: true,
       inputSchema: {
         type: "object",
         properties: {

@@ -173,12 +173,16 @@ export function diagnoseReleaseWatchRun(input: {
   }
 
   // Calling a GitHub tool is not enough: empty or ok:false results must still fail.
+  // When githubToolResults is provided, only a successful non-empty seeded payload counts
+  // (avoids hallucinated tags after a failed/empty call). Otherwise seeded tags in resultText count.
   const blob = input.resultText.toLowerCase();
   const sawInText = input.seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
   const sawInPayload = (input.githubToolResults ?? []).some((result) =>
     githubToolResultHasSeededRelease(result, input.seededReleaseTags),
   );
-  if (!sawInText && !sawInPayload) diagnoses.push("no_release_info_retrieved");
+  const sawRelease =
+    input.githubToolResults !== undefined ? sawInPayload : sawInText || sawInPayload;
+  if (!sawRelease) diagnoses.push("no_release_info_retrieved");
 
   const unique = [...new Set(diagnoses)];
   if (unique.length === 0) {
