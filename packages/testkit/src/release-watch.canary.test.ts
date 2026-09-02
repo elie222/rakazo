@@ -144,11 +144,13 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     });
 
     const snap = await waitFor(handles.app, cookie, bot.id, 180_000, { requireSeenRun: true });
+    const routineRunId = snap.run?.id;
     const toolEvents = await handles.prisma.event.findMany({
       where: {
         botId: bot.id,
         type: "agent.tool.called",
         seq: { gt: routineToolSeqFloor },
+        ...(routineRunId ? { runId: routineRunId } : {}),
       },
       orderBy: { seq: "asc" },
     });
@@ -156,10 +158,13 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       const payload = event.payload as { name?: string };
       return String(payload.name ?? "");
     });
-    const calledToolNames = [...calledFromEvents, ...composio.executions.map((row) => row.tool)];
+    const routineExecutions = composio.executions.filter(
+      (row) => row.botId === bot.id && (routineRunId ? row.runId === routineRunId : true),
+    );
+    const calledToolNames = [...calledFromEvents, ...routineExecutions.map((row) => row.tool)];
     const seededReleaseTags = composio.listGithubReleases().map((release) => release.tag);
     const resultText = JSON.stringify(snap);
-    const githubToolResults = composio.executions
+    const githubToolResults = routineExecutions
       .filter((row) => (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool))
       .map((row) => row.result);
     const diagnosis = diagnoseReleaseWatchRun({
@@ -196,7 +201,13 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 type Snap = {
   messages: Array<{ role: string; blocks: unknown[] }>;
-  run: { status: string } | null;
+  run: {
+    id: string;
+    status: string;
+    botId?: string;
+    trigger?: string;
+    routineId?: string | null;
+  } | null;
 };
 
 async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}): Promise<T> {
@@ -222,12 +233,19 @@ async function waitFor(
   const start = Date.now();
   let last: Snap | null = null;
   let seenRun = false;
+  let lastSeenRun: Snap["run"] = null;
   while (Date.now() - start < ms) {
     last = await rpc<Snap>(app, cookie, "threads/get", { botId });
-    if (last.run) seenRun = true;
+    if (last.run) {
+      seenRun = true;
+      lastSeenRun = last.run;
+    }
     const terminal = !!last.run && ["completed", "failed", "cancelled"].includes(last.run.status);
-    if (terminal) return last;
-    if (!last.run && (!options?.requireSeenRun || seenRun)) return last;
+    // Keep lastSeenRun for tool attribution if the active run slot clears after completion.
+    if (terminal) return { ...last, run: last.run ?? lastSeenRun };
+    if (!last.run && (!options?.requireSeenRun || seenRun)) {
+      return { ...last, run: lastSeenRun };
+    }
     await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error(`timeout waiting for live model turn: ${JSON.stringify(last)}`);

@@ -75,6 +75,8 @@ describe("ComposioEmulator", () => {
     expect(emulator.executions).toEqual([
       {
         userId: context.userId,
+        botId: context.botId,
+        runId: context.runId,
         tool: "GMAIL_EMULATED_ACTION",
         args: { value: "ok" },
         result: { ok: true, tool: "GMAIL_EMULATED_ACTION", args: { value: "ok" } },

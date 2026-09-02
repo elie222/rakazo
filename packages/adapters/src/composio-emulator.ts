@@ -30,6 +30,8 @@ export class ComposioEmulator implements ComposioProvider {
   private githubReleases: EmulatedGithubRelease[] = [...DEFAULT_RAKAZO_EMULATED_RELEASES];
   readonly executions: Array<{
     userId: string;
+    botId?: string;
+    runId?: string;
     tool: string;
     args: Record<string, unknown>;
     result: Record<string, unknown>;
@@ -110,6 +112,8 @@ export class ComposioEmulator implements ComposioProvider {
         : { ok: true, tool: call.tool, args: call.args };
     this.executions.push({
       userId: context.userId,
+      botId: context.botId,
+      runId: context.runId,
       tool: call.tool,
       args: call.args,
       result,
