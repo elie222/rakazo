@@ -348,3 +348,29 @@ export interface WebFetchProvider {
 export interface WebProvider extends WebSearchProvider, WebFetchProvider {
   describe(): AdapterDescriptor<WebSearchCapabilities & WebFetchCapabilities>;
 }
+
+/**
+ * Optional access to the user's own machine (Mac/phone client), not the bot
+ * sandbox disk. Implementations may read local FS when the API shares that
+ * host, or bridge to a connected desktop/mobile client. Deny by default: the
+ * executor only exposes host tools when a provider reports availability.
+ */
+export interface HostDiskCapabilities {
+  list: boolean;
+  read: boolean;
+  write: boolean;
+}
+
+export interface HostDiskProvider {
+  describe(): AdapterDescriptor<HostDiskCapabilities>;
+  /** Opt-in + granted roots + a reachable client (when bridged). */
+  isAvailable(userId: string): Promise<boolean>;
+  listFiles(userId: string, path: string, context: AdapterContext): Promise<ComputerFileEntry[]>;
+  readFile(
+    userId: string,
+    path: string,
+    context: AdapterContext,
+    options?: { maxBytes?: number },
+  ): Promise<Uint8Array>;
+  writeFile(userId: string, file: PortableFile, context: AdapterContext): Promise<void>;
+}

@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "koffi": "^2.9.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

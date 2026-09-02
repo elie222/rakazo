@@ -142,6 +142,7 @@ import {
 } from "../lib/browser-notifications";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
+import { startHostDiskClient } from "../lib/host-disk-client";
 import { localTimezone } from "../lib/local-timezone";
 import { connectMcpOauth } from "../lib/mcp-connect";
 import { copyableMessageText } from "../lib/message-text";
@@ -463,6 +464,10 @@ export function ShellPage() {
     return () => {
       cancelled = true;
     };
+  }, [session.data?.user]);
+  useEffect(() => {
+    if (!session.data?.user) return;
+    return startHostDiskClient();
   }, [session.data?.user]);
   const [usage, setUsage] = useState<{
     inputTokens: number;

@@ -28,6 +28,8 @@ import {
   ExportManifestSchema,
   GroupDetailSchema,
   GroupSchema,
+  HostDiskOperationSchema,
+  HostDiskSettingsSchema,
   McpServerConfigInput,
   McpServerSchema,
   MemoryDocumentSchema,
@@ -639,6 +641,39 @@ export const appContract = {
       .input(z.object({ token: z.string().min(8).max(512) }))
       .output(z.object({ ok: z.literal(true) })),
     unregisterPush: oc.output(z.object({ ok: z.literal(true) })),
+  },
+  /**
+   * Optional Mac/phone host-disk access. Off by default; never invents Documents/Desktop
+   * roots. The desktop/mobile client heartbeats and fulfills claimed operations.
+   */
+  hostDisk: {
+    get: oc.output(HostDiskSettingsSchema),
+    setEnabled: oc.input(z.object({ enabled: z.boolean() })).output(HostDiskSettingsSchema),
+    setRoots: oc
+      .input(z.object({ roots: z.array(z.string().min(1)).max(32) }))
+      .output(HostDiskSettingsSchema),
+    heartbeat: oc.output(HostDiskSettingsSchema),
+    claim: oc.output(HostDiskOperationSchema.nullable()),
+    complete: oc
+      .input(
+        z.object({
+          id: z.string().min(1),
+          status: z.enum(["done", "error"]),
+          entries: z
+            .array(
+              z.object({
+                path: z.string(),
+                kind: z.enum(["file", "dir"]),
+                size: z.number(),
+                executable: z.boolean().optional(),
+              }),
+            )
+            .optional(),
+          contentBase64: z.string().optional(),
+          error: z.string().optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
   },
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),

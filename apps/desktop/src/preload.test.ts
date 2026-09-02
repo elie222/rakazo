@@ -24,14 +24,20 @@ function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: u
 }
 
 describe("desktop preload bridge", () => {
-  it("exposes only the platform, the four window operations, the updater, and the OAuth bridge", async () => {
+  it("exposes only the platform, window, updater, OAuth, and host-disk bridges", async () => {
     const { invoke, exposeInMainWorld } = runPreload("preload.cjs");
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
     expect(globalName).toBe("rakazoDesktop");
     expect(bridge.platform).toBe("linux");
-    expect(Object.keys(bridge).sort()).toEqual(["oauth", "platform", "update", "window"]);
+    expect(Object.keys(bridge).sort()).toEqual([
+      "hostDisk",
+      "oauth",
+      "platform",
+      "update",
+      "window",
+    ]);
     expect(Object.keys(bridge.window).sort()).toEqual([
       "close",
       "minimize",
@@ -39,6 +45,14 @@ describe("desktop preload bridge", () => {
       "toggleMaximize",
     ]);
     expect(Object.keys(bridge.update).sort()).toEqual(["check", "download", "install", "state"]);
+    expect(Object.keys(bridge.hostDisk).sort()).toEqual([
+      "list",
+      "listGrantedRoots",
+      "pickFolder",
+      "read",
+      "revokeRoot",
+      "write",
+    ]);
 
     await bridge.window.close();
     await bridge.window.minimize();
@@ -48,6 +62,12 @@ describe("desktop preload bridge", () => {
     await bridge.update.check();
     await bridge.update.download();
     await bridge.update.install();
+    await bridge.hostDisk.pickFolder();
+    await bridge.hostDisk.list("");
+    await bridge.hostDisk.read("/tmp/a", 1024);
+    await bridge.hostDisk.write("/tmp/a", "YQ==");
+    await bridge.hostDisk.revokeRoot("/tmp/a");
+    await bridge.hostDisk.listGrantedRoots();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.window.close",
       "desktop.window.minimize",
@@ -57,13 +77,25 @@ describe("desktop preload bridge", () => {
       "desktop.update.check",
       "desktop.update.download",
       "desktop.update.install",
+      "desktop.hostDisk.pickFolder",
+      "desktop.hostDisk.list",
+      "desktop.hostDisk.read",
+      "desktop.hostDisk.write",
+      "desktop.hostDisk.revokeRoot",
+      "desktop.hostDisk.listGrantedRoots",
     ]);
   });
 
   it("keeps setup off the app bridge so a connected server cannot re-point the app", () => {
     const { exposeInMainWorld } = runPreload("preload.cjs");
     const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>];
-    expect(Object.keys(bridge).sort()).toEqual(["oauth", "platform", "update", "window"]);
+    expect(Object.keys(bridge).sort()).toEqual([
+      "hostDisk",
+      "oauth",
+      "platform",
+      "update",
+      "window",
+    ]);
   });
 
   it("forwards captured codes without leaking the IPC event to the renderer", () => {

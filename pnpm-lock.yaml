@@ -82,6 +82,9 @@ importers:
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
+      koffi:
+        specifier: ^2.9.0
+        version: 2.16.3
     devDependencies:
       '@playwright/test':
         specifier: ^1.55.0

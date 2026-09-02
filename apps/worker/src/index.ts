@@ -7,6 +7,7 @@ import {
   ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHostDiskProvider,
   createJobReconciler,
   createMessagingContextLoader,
   createPostgresReconciliationLeadership,
@@ -135,6 +136,7 @@ async function main() {
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    hostDisk: createHostDiskProvider(dataDir),
   });
 
   const jobHandlers = createBackgroundJobHandlers({

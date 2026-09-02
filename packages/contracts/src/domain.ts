@@ -962,6 +962,24 @@ export const MeSchema = z.object({
 });
 export type Me = z.infer<typeof MeSchema>;
 
+/** Opt-in settings for Mac/phone host-disk tools. Roots stay empty until the user grants folders. */
+export const HostDiskSettingsSchema = z.object({
+  enabled: z.boolean(),
+  roots: z.array(z.string()),
+  clientSeenAt: z.string().nullable(),
+  available: z.boolean(),
+});
+export type HostDiskSettings = z.infer<typeof HostDiskSettingsSchema>;
+
+export const HostDiskOperationSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["list", "read", "write"]),
+  path: z.string(),
+  contentBase64: z.string().optional(),
+  maxBytes: z.number().int().positive().optional(),
+});
+export type HostDiskOperation = z.infer<typeof HostDiskOperationSchema>;
+
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
   bots: z.array(BotSchema),

@@ -17,6 +17,7 @@ import {
   type ConnectorRegistry,
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHostDiskProvider,
   createJobReconciler,
   createMessagingContextLoader,
   createRunExecutor,
@@ -281,6 +282,7 @@ export async function createApp(
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    hostDisk: createHostDiskProvider(env.dataDir),
   });
 
   const jobHandlers = createBackgroundJobHandlers({

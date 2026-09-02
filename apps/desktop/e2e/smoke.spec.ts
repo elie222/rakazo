@@ -30,6 +30,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
         bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
         windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
         updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
+        hostDiskKeys: desktop ? Object.keys(desktop.hostDisk).sort() : [],
         platform: desktop?.platform,
         state: await desktop?.window.state(),
         update: await desktop?.update.state(),
@@ -41,9 +42,17 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       };
     });
 
-    expect(renderer.bridgeKeys).toEqual(["oauth", "platform", "update", "window"]);
+    expect(renderer.bridgeKeys).toEqual(["hostDisk", "oauth", "platform", "update", "window"]);
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
+    expect(renderer.hostDiskKeys).toEqual([
+      "list",
+      "listGrantedRoots",
+      "pickFolder",
+      "read",
+      "revokeRoot",
+      "write",
+    ]);
     expect(renderer.platform).toBe(process.platform);
     expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
     // An unpackaged run has no update feed, and that is reported as a state rather than an error.

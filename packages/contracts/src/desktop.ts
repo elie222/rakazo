@@ -52,6 +52,19 @@ export interface RakazoDesktop {
      */
     onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => () => void;
   };
+  /**
+   * Optional host-disk helpers. Present so the web UI can grant folders and
+   * fulfill bridged host tools while this desktop app is the connected client.
+   * Folder grants live in the desktop main process; the renderer cannot supply roots.
+   */
+  hostDisk: {
+    pickFolder: () => Promise<string | null>;
+    revokeRoot: (root: string) => Promise<boolean>;
+    listGrantedRoots: () => Promise<string[]>;
+    list: (path: string) => Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
+    read: (path: string, maxBytes?: number) => Promise<string>;
+    write: (path: string, contentBase64: string) => Promise<boolean>;
+  };
 }
 
 /** How the desktop app was pointed at a Rakazo server during first-run setup. */

@@ -9,6 +9,7 @@ import type {
   ComputerRef,
   ConnectorCall,
   ConnectorProvider,
+  HostDiskProvider,
   JobPublisher,
   ManagedConnectorProvider,
   MemoryStore,
@@ -164,6 +165,7 @@ import {
   selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { HOST_DISK_TOOL_NAMES, selectHostDiskTools } from "./host-disk-tools.js";
 import {
   assertConnectorToolArgs,
   CATALOG_EXECUTE,
@@ -249,6 +251,8 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
   "list_files",
   "read_file",
+  "list_host_files",
+  "read_host_file",
   "request_takeover",
   "run_subagent",
   "recall_memory",
@@ -262,7 +266,10 @@ const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
   "An attachment in this message could not be loaded. Tell the user the attachment was unavailable and do not guess its contents.";
 const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
-const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
+const BUILTIN_AGENT_TOOL_NAMES = new Set([
+  ...builtinAgentTools.map((tool) => tool.name),
+  ...HOST_DISK_TOOL_NAMES,
+]);
 
 const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
 const STATIC_SHELL_EXPANSIONS: Readonly<Record<string, string>> = {
@@ -395,6 +402,11 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /**
+   * Optional user-machine disk (Mac/phone client), not the bot sandbox.
+   * Tools stay hidden until the provider reports availability for the run user.
+   */
+  hostDisk?: HostDiskProvider;
 }
 
 export async function deferFutureRoutine(
@@ -1104,6 +1116,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .join("\n\n")
           : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
+        const hostDiskAvailable = deps.hostDisk
+          ? await deps.hostDisk.isAvailable(run.userId)
+          : false;
         const builtins = [
           ...selectBuiltinToolsForRun({
             graphicalToolsAllowed,
@@ -1113,6 +1128,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity ? agentConnectionTools : []),
+          // User-machine disk tools only after opt-in + a connected Mac/phone client.
+          ...selectHostDiskTools(hostDiskAvailable),
         ];
         const exposedConnectorTools = discovered.filter(
           (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
@@ -1804,6 +1821,93 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true, path: filePath });
+          }
+          if (name === "list_host_files") {
+            if (!deps.hostDisk) return { error: "Host disk access is unavailable." };
+            const requestedPath = String(args.path ?? "");
+            const entries = await deps.hostDisk.listFiles(run.userId, requestedPath, context);
+            return { path: requestedPath, entries };
+          }
+          if (name === "read_host_file") {
+            if (!deps.hostDisk) return { error: "Host disk access is unavailable." };
+            const filePath = String(args.path ?? "");
+            let bytes: Uint8Array;
+            try {
+              bytes = await deps.hostDisk.readFile(run.userId, filePath, context, {
+                maxBytes: MAX_MODEL_FILE_BYTES,
+              });
+            } catch (error) {
+              if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
+                return { error: "file is too large for model context", path: filePath };
+              }
+              throw error;
+            }
+            if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
+              return {
+                error: "file is too large for model context",
+                path: filePath,
+                size: bytes.byteLength,
+              };
+            }
+            try {
+              return {
+                path: filePath,
+                content: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+              };
+            } catch {
+              return { error: "file is not UTF-8 text", path: filePath };
+            }
+          }
+          if (name === "write_host_file") {
+            if (!deps.hostDisk) return { error: "Host disk access is unavailable." };
+            const filePath = String(args.path ?? "");
+            const content = textContentArg(args.content, "");
+            await deps.hostDisk.writeFile(
+              run.userId,
+              { path: filePath, content: new TextEncoder().encode(content) },
+              context,
+            );
+            return finish({ ok: true, path: filePath });
+          }
+          if (name === "copy_to_host") {
+            if (!deps.hostDisk) return { error: "Host disk access is unavailable." };
+            const botPath = String(args.bot_path ?? "");
+            const hostPath = String(args.host_path ?? "");
+            const bytes = await deps.sandbox.readFile(
+              computer,
+              resolveBotWorkspacePath(computerMode, bot.id, botPath),
+              context,
+              { maxBytes: MAX_MODEL_FILE_BYTES },
+            );
+            await deps.hostDisk.writeFile(run.userId, { path: hostPath, content: bytes }, context);
+            return finish({
+              ok: true,
+              bot_path: botPath,
+              host_path: hostPath,
+              bytes: bytes.byteLength,
+            });
+          }
+          if (name === "copy_from_host") {
+            if (!deps.hostDisk) return { error: "Host disk access is unavailable." };
+            const hostPath = String(args.host_path ?? "");
+            const botPath = String(args.bot_path ?? "");
+            const bytes = await deps.hostDisk.readFile(run.userId, hostPath, context, {
+              maxBytes: MAX_MODEL_FILE_BYTES,
+            });
+            await deps.sandbox.writeFile(
+              computer,
+              {
+                path: resolveBotWorkspacePath(computerMode, bot.id, botPath),
+                content: bytes,
+              },
+              context,
+            );
+            return finish({
+              ok: true,
+              host_path: hostPath,
+              bot_path: botPath,
+              bytes: bytes.byteLength,
+            });
           }
           if (name === "render_plot") {
             if (args.charts !== undefined) {

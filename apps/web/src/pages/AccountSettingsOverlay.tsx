@@ -15,6 +15,7 @@ import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
+import { HostDiskSettingsSection } from "../components/HostDiskSettingsSection";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
@@ -152,6 +153,8 @@ export function AccountSettingsOverlay({
             </button>
           </section>
         ) : null}
+
+        <HostDiskSettingsSection />
 
         <section className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4">
           <h3 className="text-[15px] font-medium text-[#ECECEE]">
