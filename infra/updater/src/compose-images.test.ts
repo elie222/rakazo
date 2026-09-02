@@ -64,7 +64,10 @@ describe("the images compose file", () => {
     }
     expect(compose.services.computer?.image).toContain("ghcr.io/elie222/rakazo/computer");
     expect(compose.services.computer?.image).toContain("RAKAZO_COMPUTER_IMAGE_TAG");
-    expect(compose.services.postgres?.image).toMatch(/^postgres:16@sha256:[0-9a-f]{64}$/);
+    expect(compose.services.postgres?.image).toMatch(
+      /^\$\{POSTGRES_IMAGE:-postgres:16@sha256:[0-9a-f]{64}\}$/,
+    );
+    expect(compose.services["data-init"]?.image).toMatch(/^\$\{BUSYBOX_IMAGE:-busybox:1\}$/);
   });
 
   it("skips non-string Compose environment scalars when collecting image names", () => {
