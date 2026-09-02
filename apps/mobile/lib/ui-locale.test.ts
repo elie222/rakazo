@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  UI_LOCALE_LABELS,
-  UI_LOCALES,
   htmlLangForLocale,
   isUiLocale,
   normalizeUiLocale,
   resolveUiLocale,
+  UI_LOCALE_LABELS,
+  UI_LOCALES,
 } from "./ui-locale";
 
 describe("UI_LOCALES", () => {
