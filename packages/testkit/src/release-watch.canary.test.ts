@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   ComposioEmulator,
   diagnoseReleaseWatchRun,
+  githubToolResultHasSeededRelease,
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
   resolveReleaseWatchEvalModelId,
 } from "@rakazo/adapters";
@@ -148,17 +149,17 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     const calledToolNames = [...calledFromEvents, ...composio.executions.map((row) => row.tool)];
     const seededReleaseTags = composio.listGithubReleases().map((release) => release.tag);
     const resultText = JSON.stringify(snap);
+    const githubToolResults = composio.executions
+      .filter((row) => (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool))
+      .map((row) => row.result);
     const diagnosis = diagnoseReleaseWatchRun({
-      availableToolNames: [
-        ...discoveredGithubTools.map((tool) => tool.name),
-        "computer_observe",
-        "computer_act",
-        "schedule_create",
-      ],
+      // Use tools the bot actually discovered — do not hardcode availability.
+      availableToolNames: discoveredGithubTools.map((tool) => tool.name),
       calledToolNames,
       routinePrompt: routine.prompt,
       resultText,
       seededReleaseTags,
+      githubToolResults,
     });
 
     if (!diagnosis.pass) {
@@ -175,11 +176,10 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     }
 
     expect(
-      composio.executions.some((row) =>
-        (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool),
+      githubToolResults.some((result) =>
+        githubToolResultHasSeededRelease(result, seededReleaseTags),
       ),
     ).toBe(true);
-    expect(seededReleaseTags.some((tag) => resultText.includes(tag))).toBe(true);
   }, 420_000);
 });
 

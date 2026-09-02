@@ -77,6 +77,7 @@ describe("ComposioEmulator", () => {
         userId: context.userId,
         tool: "GMAIL_EMULATED_ACTION",
         args: { value: "ok" },
+        result: { ok: true, tool: "GMAIL_EMULATED_ACTION", args: { value: "ok" } },
       },
     ]);
   });

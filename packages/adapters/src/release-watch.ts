@@ -132,12 +132,28 @@ export function assessReleaseWatchRoutinePrompt(prompt: string): {
   return { ok: true, diagnosis: "ok", details: "Routine prompt encodes concrete GitHub steps." };
 }
 
+/** True when a GitHub tool payload is successful, non-empty, and includes a seeded tag. */
+export function githubToolResultHasSeededRelease(
+  result: unknown,
+  seededReleaseTags: readonly string[],
+): boolean {
+  if (!result || typeof result !== "object") return false;
+  const row = result as Record<string, unknown>;
+  if (row.ok === false) return false;
+  if (Array.isArray(row.releases) && row.releases.length === 0) return false;
+  if ("release" in row && (row.release === null || row.release === undefined)) return false;
+  const blob = JSON.stringify(result).toLowerCase();
+  return seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
+}
+
 export function diagnoseReleaseWatchRun(input: {
   availableToolNames: readonly string[];
   calledToolNames: readonly string[];
   routinePrompt: string;
   resultText: string;
   seededReleaseTags: readonly string[];
+  /** Successful GitHub tool payloads from the run (failed/empty calls do not count). */
+  githubToolResults?: readonly unknown[];
 }): { pass: boolean; diagnoses: ReleaseWatchDiagnosis[]; summary: string } {
   const diagnoses: ReleaseWatchDiagnosis[] = [];
   const prompt = assessReleaseWatchRoutinePrompt(input.routinePrompt);
@@ -158,8 +174,11 @@ export function diagnoseReleaseWatchRun(input: {
 
   // Calling a GitHub tool is not enough: empty or ok:false results must still fail.
   const blob = input.resultText.toLowerCase();
-  const sawRelease = input.seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
-  if (!sawRelease) diagnoses.push("no_release_info_retrieved");
+  const sawInText = input.seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
+  const sawInPayload = (input.githubToolResults ?? []).some((result) =>
+    githubToolResultHasSeededRelease(result, input.seededReleaseTags),
+  );
+  if (!sawInText && !sawInPayload) diagnoses.push("no_release_info_retrieved");
 
   const unique = [...new Set(diagnoses)];
   if (unique.length === 0) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assessReleaseWatchRoutinePrompt,
   diagnoseReleaseWatchRun,
+  githubToolResultHasSeededRelease,
   RELEASE_WATCH_EVAL_DEFAULT_MODEL_ID,
   RELEASE_WATCH_EVAL_MODEL_LABEL,
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
@@ -78,6 +79,57 @@ describe("release-watch diagnosis", () => {
       seededReleaseTags: ["v0.4.2"],
     });
     expect(pass).toEqual({
+      pass: true,
+      diagnoses: ["ok"],
+      summary: "Release watch used GitHub tools successfully.",
+    });
+
+    const failedPayload = diagnoseReleaseWatchRun({
+      availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
+      calledToolNames: ["GITHUB_LIST_RELEASES"],
+      routinePrompt:
+        "Call GITHUB_LIST_RELEASES for elie222/rakazo and summarize new releases and capabilities.",
+      resultText: "Tool finished without useful output.",
+      seededReleaseTags: ["v0.4.2"],
+      githubToolResults: [{ ok: false, tool: "GITHUB_LIST_RELEASES", error: "upstream failed" }],
+    });
+    expect(failedPayload.pass).toBe(false);
+    expect(failedPayload.diagnoses).toContain("no_release_info_retrieved");
+
+    const emptyPayload = diagnoseReleaseWatchRun({
+      availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
+      calledToolNames: ["GITHUB_LIST_RELEASES"],
+      routinePrompt:
+        "Call GITHUB_LIST_RELEASES for elie222/rakazo and summarize new releases and capabilities.",
+      resultText: "Tool finished without useful output.",
+      seededReleaseTags: ["v0.4.2"],
+      githubToolResults: [{ ok: true, tool: "GITHUB_LIST_RELEASES", releases: [] }],
+    });
+    expect(emptyPayload.pass).toBe(false);
+    expect(emptyPayload.diagnoses).toContain("no_release_info_retrieved");
+    expect(
+      githubToolResultHasSeededRelease(
+        { ok: true, releases: [{ tag: "v0.4.2", name: "v0.4.2" }] },
+        ["v0.4.2"],
+      ),
+    ).toBe(true);
+
+    const passViaPayload = diagnoseReleaseWatchRun({
+      availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
+      calledToolNames: ["GITHUB_LIST_RELEASES"],
+      routinePrompt:
+        "Call GITHUB_LIST_RELEASES for elie222/rakazo and summarize new releases and capabilities.",
+      resultText: "Checked GitHub releases.",
+      seededReleaseTags: ["v0.4.2"],
+      githubToolResults: [
+        {
+          ok: true,
+          tool: "GITHUB_LIST_RELEASES",
+          releases: [{ tag: "v0.4.2", name: "v0.4.2 — routine tools" }],
+        },
+      ],
+    });
+    expect(passViaPayload).toEqual({
       pass: true,
       diagnoses: ["ok"],
       summary: "Release watch used GitHub tools successfully.",

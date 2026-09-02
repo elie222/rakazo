@@ -32,6 +32,7 @@ export class ComposioEmulator implements ComposioProvider {
     userId: string;
     tool: string;
     args: Record<string, unknown>;
+    result: Record<string, unknown>;
   }> = [];
 
   constructor(
@@ -102,15 +103,18 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    this.executions.push({ userId: context.userId, tool: call.tool, args: call.args });
-    if (
+    const result =
       (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(call.tool) ||
       call.tool === "GITHUB_EMULATED_ACTION"
-    ) {
-      yield { type: "result", data: this.executeGithub(call.tool, call.args) };
-      return;
-    }
-    yield { type: "result", data: { ok: true, tool: call.tool, args: call.args } };
+        ? this.executeGithub(call.tool, call.args)
+        : { ok: true, tool: call.tool, args: call.args };
+    this.executions.push({
+      userId: context.userId,
+      tool: call.tool,
+      args: call.args,
+      result,
+    });
+    yield { type: "result", data: result };
   }
 
   async begin(
