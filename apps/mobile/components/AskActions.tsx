@@ -4,6 +4,12 @@ import { useI18n } from "../lib/i18n";
 
 type AskAction = { id: string; label: string };
 
+const KNOWN_ASK_ACTION_LABELS: Record<string, string> = {
+  allow: "Allow once",
+  always: "Always allow",
+  deny: "Deny",
+};
+
 export function AskActions({
   actions,
   disabled,
@@ -57,7 +63,9 @@ export function AskActions({
               fontWeight: action.id === "allow" || action.id === "always" ? "600" : "400",
             }}
           >
-            {pendingAction === action.id ? t("Sending…") : action.label}
+            {pendingAction === action.id
+              ? t("Sending…")
+              : t(KNOWN_ASK_ACTION_LABELS[action.id] ?? action.label)}
           </Text>
         </Pressable>
       ))}

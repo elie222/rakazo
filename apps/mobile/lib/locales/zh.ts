@@ -22,7 +22,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Agent messages": "智能体消息",
   "Alerts from routines": "来自例行任务的提醒",
   "Allowed once": "已允许一次",
+  "Allow once": "允许一次",
   "Already have an account?": "已有账户？",
+  "Always allow": "始终允许",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
   Answer: "回答",
@@ -161,6 +163,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Delete your account?": "要删除你的账户吗？",
   "Delete…": "删除…",
   Denied: "已拒绝",
+  Deny: "拒绝",
   "Deployment default": "部署默认",
   Description: "描述",
   "Describe what this bot does": "描述这个 Bot 的工作",
@@ -172,7 +175,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Enter your current password, then confirm permanent deletion of your account and all associated data.":
     "输入当前密码，然后确认永久删除账户及所有相关数据。",
   Failed: "失败",
+  "Failed to refresh": "刷新失败",
   "Failed to send message": "发送消息失败",
+  "Failed to stop work": "停止工作失败",
   File: "文件",
   "Forgot password?": "忘记密码？",
   "Find models": "查找模型",
@@ -378,6 +383,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Working…": "处理中…",
   Worked: "已完成",
   "Worked for {duration}": "已工作 {duration}",
+  "Work stopped, but the thread could not refresh: {detail}":
+    "工作已停止，但线程无法刷新：{detail}",
   "You have control": "你已接管控制",
   "Your account": "你的账户",
   "Your key or subscription token is stored securely and is never shown here.":
@@ -393,6 +400,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Bearer authentication": "Bearer 认证",
   "Booting {label}": "正在启动 {label}",
   bot: "Bot",
+  "{from} messaged {to}": "{from} 已向 {to} 发消息",
   "Bring your own key. ElevenLabs, OpenAI, and Cartesia all plug into the same speak buttons.":
     "自带密钥。ElevenLabs、OpenAI 和 Cartesia 都接入同一套朗读按钮。",
   "Configure a plugin catalog on the server to connect apps.":
@@ -412,6 +420,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Image: "图片",
   "Markdown file": "Markdown 文件",
   "Message from {peer}": "来自 {peer} 的消息",
+  subagent: "子智能体",
   "Messaged {peer}": "已给 {peer} 发消息",
   "No authentication": "无认证",
   "No connection record found for {name}.": "未找到 {name} 的连接记录。",
