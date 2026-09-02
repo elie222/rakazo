@@ -10,6 +10,13 @@ import {
 import { demoText, getDemoBots } from "../i18n/demo";
 import type { Locale } from "../i18n/locales";
 import { LandingBotAvatar } from "./LandingBotAvatar";
+import {
+  type DemoTrigger,
+  defaultTrigger,
+  describeTrigger,
+  parseWhen,
+  resolveRoutineWhen,
+} from "./product-demo-when";
 
 type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
@@ -76,7 +83,7 @@ type LiveBot = DemoBot & {
   onboarding: boolean;
   answers: string[];
 };
-type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
+type Trigger = DemoTrigger;
 type RoutineDraft = {
   index: number | null;
   name: string;
@@ -84,6 +91,8 @@ type RoutineDraft = {
   active: boolean;
   triggers: Trigger[];
   runs: DemoRoutineRun[];
+  /** Original English `when` from the bot; kept when triggers are unchanged. */
+  sourceWhen?: string;
 };
 
 function cloneBots(source: DemoBot[]): LiveBot[] {
@@ -100,75 +109,6 @@ function cloneBots(source: DemoBot[]): LiveBot[] {
   }));
 }
 
-function defaultTrigger(): Trigger {
-  return { freq: "Every day", n: 3, unit: "minutes", time: "9:00 AM", cron: "" };
-}
-
-function parseWhen(when: string): Trigger {
-  const trigger = defaultTrigger();
-  if (!when) {
-    return trigger;
-  }
-  const interval = /every\s+(\d+)\s*(min|h)/i.exec(when);
-  if (interval) {
-    trigger.freq = "Interval";
-    trigger.n = Number(interval[1]);
-    trigger.unit = /h/i.test(interval[2] ?? "") ? "hours" : "minutes";
-    return trigger;
-  }
-  if (/hourly/i.test(when)) {
-    trigger.freq = "Every hour";
-    return trigger;
-  }
-  if (/weekday/i.test(when)) {
-    trigger.freq = "Weekdays";
-  } else if (/monday|week/i.test(when)) {
-    trigger.freq = "Every week";
-  } else if (/month/i.test(when)) {
-    trigger.freq = "Every month";
-  }
-  const time = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(when);
-  if (time) {
-    trigger.time = `${time[1]}:${time[2] || "00"} ${time[3]?.toUpperCase()}`;
-  }
-  return trigger;
-}
-
-function describeTrigger(trigger: Trigger, text: DemoTranslator = (source) => source) {
-  if (trigger.freq === "Interval") {
-    return {
-      lead: text("Every"),
-      detail: text("{n} {unit}", { n: trigger.n, unit: text(trigger.unit) }),
-    };
-  }
-  if (trigger.freq === "Every hour") {
-    return { lead: text("Every hour"), detail: "" };
-  }
-  if (trigger.freq === "Advanced") {
-    return { lead: text("Cron"), detail: trigger.cron || "*/3 * * * *" };
-  }
-  if (trigger.freq === "Weekdays") {
-    return { lead: text("Weekdays"), detail: text("at {time}", { time: trigger.time }) };
-  }
-  if (trigger.freq === "Every week") {
-    return { lead: text("Every Monday"), detail: text("at {time}", { time: trigger.time }) };
-  }
-  if (trigger.freq === "Every month") {
-    return {
-      lead: text("Monthly"),
-      detail: text("on the 1st at {time}", { time: trigger.time }),
-    };
-  }
-  return { lead: text("Every day"), detail: text("at {time}", { time: trigger.time }) };
-}
-
-function whenLabel(triggers: Trigger[]) {
-  if (triggers.length === 0) {
-    return "Unscheduled";
-  }
-  const { lead, detail } = describeTrigger(triggers[0] ?? defaultTrigger());
-  return [lead, detail].filter(Boolean).join(" ");
-}
 
 function displayedWhen(when: string, text: DemoTranslator): string {
   // Translate the seeded English schedule string for display. Do not reparse
@@ -510,6 +450,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
       active: routine?.active ?? true,
       triggers: routine ? [parseWhen(routine.when)] : [],
       runs: routine?.runs?.map((run) => ({ ...run })) ?? [],
+      sourceWhen: routine?.when,
     });
   }
 
@@ -525,7 +466,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
     const index = draftState.index ?? active.routines.length;
     const next: DemoRoutine = {
       name: draftState.name.trim() || text("Untitled routine"),
-      when: whenLabel(draftState.triggers),
+      when: resolveRoutineWhen(draftState.triggers, draftState.sourceWhen),
       instruction: draftState.instruction,
       active: draftState.active,
       runs: draftState.runs,

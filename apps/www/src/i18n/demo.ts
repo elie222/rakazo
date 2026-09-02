@@ -306,6 +306,7 @@ export function getDemoBots(locale: Locale): DemoBot[] {
     routines: bot.routines.map((routine) => ({
       ...routine,
       name: text(routine.name),
+      instruction: routine.instruction ? text(routine.instruction) : routine.instruction,
       // Leave `when` in English so ProductDemo's parseWhen can edit schedules.
       runs: routine.runs?.map((run) => ({
         ...run,

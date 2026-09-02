@@ -55,6 +55,18 @@ describe("Chinese product demo", () => {
     expect(demoText("zh", "Last Friday")).not.toBe("每天 9:00 AM");
   });
 
+  it("translates routine instructions when present", () => {
+    const source = DEMO_BOTS.flatMap((bot) =>
+      bot.routines.map((routine) => routine.instruction).filter(Boolean),
+    );
+    const localized = getDemoBots("zh").flatMap((bot) =>
+      bot.routines.map((routine) => routine.instruction).filter(Boolean),
+    );
+    for (const [index, instruction] of source.entries()) {
+      expect(localized[index]).toBe(demoText("zh", instruction as string));
+    }
+  });
+
   it("formats localized interactive labels without losing values", () => {
     expect(demoText("zh", "Message {name}", { name: "Inbox Manager" })).toBe(
       "给 Inbox Manager 发消息",
