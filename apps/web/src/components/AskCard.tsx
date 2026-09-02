@@ -14,7 +14,7 @@ function formatAnsweredState(
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
 ): string {
-  if (secret) return t`Submitted`;
+  if (secret) return t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return t`Answered: ${selectedAskActionLabel(answer, actions)}`;
   if (outcome === "created") return t`Created`;
@@ -38,6 +38,12 @@ function approvalActionLabel(
   return fallback;
 }
 
+function secretFieldLabel(purpose: AskBlock["purpose"]): string {
+  if (purpose === "password") return t`Password`;
+  if (purpose === "api_key") return t`API key`;
+  return t`Code`;
+}
+
 export function AskCard({
   block,
   canAnswer,
@@ -56,6 +62,7 @@ export function AskCard({
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const secretInput = isSecretAskBlock(block);
+  const secretLabel = secretFieldLabel(block.purpose);
 
   async function submitAnswer(value: string) {
     if (submitting) return;
@@ -65,6 +72,7 @@ export function AskCard({
     setError(null);
     try {
       await onAnswer(submitValue);
+      if (secretInput) setAnswer("");
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not submit this answer`);
     } finally {
@@ -73,11 +81,14 @@ export function AskCard({
   }
 
   return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
+    <div
+      data-testid={secretInput ? "secret-ask-card" : undefined}
+      className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]"
+    >
       <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
-      {block.detail ? (
+      {block.detail && !secretInput ? (
         <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
           {block.detail}
         </pre>
@@ -129,20 +140,20 @@ export function AskCard({
           }}
         >
           <input
-            aria-label={t`Code`}
+            aria-label={secretLabel}
             type="password"
             autoComplete="off"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder={t`Code`}
+            placeholder={secretLabel}
             className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
           <button
             type="submit"
-            disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
+            disabled={answer.length === 0 || submitting}
             className="self-start rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
           >
-            {submitting ? <Trans>Sending…</Trans> : <Trans>Submit</Trans>}
+            {submitting ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </button>
         </form>
       ) : editing ? (

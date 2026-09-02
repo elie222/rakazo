@@ -7,6 +7,13 @@ export function runSecretKind(runId: string): string {
   return `run-secret:${runId}`;
 }
 
+export type SecretAskPurpose = "otp" | "password" | "api_key";
+
+export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
+  if (purpose === "password" || purpose === "api_key") return purpose;
+  return "otp";
+}
+
 export function secretPausedToolResult(): ApprovalPausedToolResult {
   return {
     kind: "agent_tool_result",

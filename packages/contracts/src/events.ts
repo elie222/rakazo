@@ -93,6 +93,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
+    /** Why the secret is needed; drives field label on the masked card. */
+    purpose: z.enum(["otp", "password", "api_key"]).optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z
