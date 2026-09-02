@@ -459,7 +459,15 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }
 
   function changeRoutine(patch: Partial<RoutineDraft>) {
-    setRoutineDraft((current) => (current ? { ...current, ...patch } : current));
+    setRoutineDraft((current) => {
+      if (!current) return current;
+      // Drop opaque sourceWhen once the user edits triggers so an explicit
+      // daily 9:00 AM choice is not overwritten by the seeded custom label.
+      if (patch.triggers !== undefined) {
+        return { ...current, ...patch, sourceWhen: undefined };
+      }
+      return { ...current, ...patch };
+    });
   }
 
   function persistRoutine(draftState: RoutineDraft) {

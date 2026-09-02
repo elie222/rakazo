@@ -20,4 +20,12 @@ describe("resolveRoutineWhen", () => {
     const edited = [{ ...defaultTrigger(), freq: "Every hour" }];
     expect(resolveRoutineWhen(edited, "Tue + Thu")).toBe("Every hour");
   });
+
+  it("does not restore a stale opaque when after sourceWhen is cleared", () => {
+    // ProductDemo clears sourceWhen on trigger edits; an explicit daily 9:00 AM
+    // choice must serialize normally, not snap back to "Tue + Thu".
+    const daily = [defaultTrigger()];
+    expect(resolveRoutineWhen(daily, undefined)).toBe(whenLabel(daily));
+    expect(resolveRoutineWhen(daily, undefined)).not.toBe("Tue + Thu");
+  });
 });

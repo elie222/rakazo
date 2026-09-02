@@ -80,7 +80,8 @@ export function whenLabel(triggers: DemoTrigger[]) {
 
 /**
  * Keep custom seeded schedules (e.g. "Tue + Thu") when the editor triggers still
- * match parseWhen(sourceWhen). Otherwise serialize the edited triggers.
+ * match parseWhen(sourceWhen). ProductDemo clears sourceWhen on any trigger edit
+ * so an explicit daily 9:00 AM choice is not overwritten by the stale seed.
  */
 export function resolveRoutineWhen(triggers: DemoTrigger[], sourceWhen?: string): string {
   if (
