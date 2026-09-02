@@ -7,6 +7,8 @@ const context = {
   traceId: "test",
   spaceId: "workspace",
   userId: "user-1",
+  botId: "bot-1",
+  runId: "run-1",
   signal: new AbortController().signal,
 };
 
