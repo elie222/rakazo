@@ -48,6 +48,7 @@ export default function Account() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const [password, setPassword] = useState("");
+  const [localeSaving, setLocaleSaving] = useState(false);
   const [pending, setPending] = useState(false);
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -312,15 +313,18 @@ export default function Account() {
                 <Pressable
                   key={code}
                   accessibilityRole="button"
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ selected, disabled: localeSaving }}
+                  disabled={localeSaving}
                   onPress={() => {
-                    if (code === locale) return;
-                    void setUiLocale(code as UiLocale);
+                    if (code === locale || localeSaving) return;
+                    setLocaleSaving(true);
+                    void setUiLocale(code as UiLocale).finally(() => setLocaleSaving(false));
                   }}
                   style={({ pressed }) => [
                     styles.localeOption,
                     selected && styles.avatarOptionSelected,
                     pressed && styles.pressed,
+                    localeSaving && { opacity: 0.6 },
                   ]}
                 >
                   <Text style={styles.avatarLabel}>{UI_LOCALE_LABELS[code]}</Text>

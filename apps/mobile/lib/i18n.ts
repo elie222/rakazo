@@ -105,15 +105,26 @@ export async function persistUiLocale(locale: UiLocale): Promise<void> {
   }
 }
 
+/** Serialize SecureStore writes so rapid picker taps apply in order (last wins). */
+let uiLocaleWriteChain: Promise<void> = Promise.resolve();
+
 export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
-  await persistUiLocale(locale);
-  activateUiLocale(locale);
-  await applyDirection(locale);
-  return locale;
+  const write = uiLocaleWriteChain.then(async () => {
+    await persistUiLocale(locale);
+    activateUiLocale(locale);
+    await applyDirection(locale);
+    return locale;
+  });
+  uiLocaleWriteChain = write.then(
+    () => undefined,
+    () => undefined,
+  );
+  return write;
 }
 
 /** Test-only: set the in-memory locale without I/O. */
 export function resetI18nForTests(locale: UiLocale = "en"): void {
   activeLocale = locale;
+  uiLocaleWriteChain = Promise.resolve();
   emit();
 }

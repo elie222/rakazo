@@ -111,4 +111,34 @@ describe("mobile i18n", () => {
     expect(setItemAsync).toHaveBeenCalledWith("rakazo.uiLocale", "en");
     expect(applyMobileUiDirection).toHaveBeenCalledWith("en");
   });
+
+  it("keeps the last locale when rapid setUiLocale calls finish out of order", async () => {
+    const { setItemAsync } = await import("expo-secure-store");
+    const { applyMobileUiDirection } = await import("./ui-direction");
+    const { getActiveUiLocale, resetI18nForTests, setUiLocale } = await import("./i18n");
+    resetI18nForTests("en");
+
+    const gates = new Map<string, { release: () => void; wait: Promise<void> }>();
+    for (const locale of ["en", "zh-CN"] as const) {
+      let release!: () => void;
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      gates.set(locale, { release, wait });
+    }
+    vi.mocked(setItemAsync).mockImplementation(async (_key, value) => {
+      await gates.get(String(value))?.wait;
+    });
+
+    const first = setUiLocale("en");
+    const second = setUiLocale("zh-CN");
+    // First write is slower to settle; second must still win after the queue drains.
+    queueMicrotask(() => gates.get("zh-CN")?.release());
+    queueMicrotask(() => gates.get("en")?.release());
+    await Promise.all([first, second]);
+
+    expect(getActiveUiLocale()).toBe("zh-CN");
+    expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-CN");
+    expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-CN");
+  });
 });
