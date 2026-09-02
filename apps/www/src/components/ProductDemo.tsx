@@ -14,6 +14,7 @@ import {
   type DemoTrigger,
   defaultTrigger,
   describeTrigger,
+  displayRoutineWhen,
   parseWhen,
   resolveRoutineWhen,
 } from "./product-demo-when";
@@ -111,9 +112,7 @@ function cloneBots(source: DemoBot[]): LiveBot[] {
 
 
 function displayedWhen(when: string, text: DemoTranslator): string {
-  // Translate the seeded English schedule string for display. Do not reparse
-  // unknown labels into a daily 9:00 AM fallback — that misrepresents custom schedules.
-  return text(when);
+  return displayRoutineWhen(when, text);
 }
 
 function previewForBot(bot: LiveBot, extra: ExtraMessages) {

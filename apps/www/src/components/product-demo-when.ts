@@ -8,6 +8,13 @@ export type DemoTrigger = {
 
 type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
+function interpolate(source: string, values?: Record<string, string | number>): string {
+  if (!values) return source;
+  return source.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
+    Object.hasOwn(values, key) ? String(values[key]) : match,
+  );
+}
+
 export function defaultTrigger(): DemoTrigger {
   return { freq: "Every day", n: 3, unit: "minutes", time: "9:00 AM", cron: "" };
 }
@@ -42,7 +49,7 @@ export function parseWhen(when: string): DemoTrigger {
   return trigger;
 }
 
-export function describeTrigger(trigger: DemoTrigger, text: DemoTranslator = (source) => source) {
+export function describeTrigger(trigger: DemoTrigger, text: DemoTranslator = interpolate) {
   if (trigger.freq === "Interval") {
     return {
       lead: text("Every"),
@@ -56,18 +63,18 @@ export function describeTrigger(trigger: DemoTrigger, text: DemoTranslator = (so
     return { lead: text("Cron"), detail: trigger.cron || "*/3 * * * *" };
   }
   if (trigger.freq === "Weekdays") {
-    return { lead: text("Weekdays"), detail: text("at {time}", { time: trigger.time }) };
+    return { lead: text("Weekdays"), detail: text("at {time}", { time: text(trigger.time) }) };
   }
   if (trigger.freq === "Every week") {
-    return { lead: text("Every Monday"), detail: text("at {time}", { time: trigger.time }) };
+    return { lead: text("Every Monday"), detail: text("at {time}", { time: text(trigger.time) }) };
   }
   if (trigger.freq === "Every month") {
     return {
       lead: text("Monthly"),
-      detail: text("on the 1st at {time}", { time: trigger.time }),
+      detail: text("on the 1st at {time}", { time: text(trigger.time) }),
     };
   }
-  return { lead: text("Every day"), detail: text("at {time}", { time: trigger.time }) };
+  return { lead: text("Every day"), detail: text("at {time}", { time: text(trigger.time) }) };
 }
 
 export function whenLabel(triggers: DemoTrigger[]) {
@@ -91,4 +98,15 @@ export function resolveRoutineWhen(triggers: DemoTrigger[], sourceWhen?: string)
     return sourceWhen;
   }
   return whenLabel(triggers);
+}
+
+/**
+ * List-label for a stored `when`: prefer a direct catalog hit (opaque seeds),
+ * otherwise reparse generated English whenLabel output and localize components.
+ */
+export function displayRoutineWhen(when: string, text: DemoTranslator): string {
+  const direct = text(when);
+  if (direct !== when) return direct;
+  const { lead, detail } = describeTrigger(parseWhen(when), text);
+  return [lead, detail].filter(Boolean).join(" ");
 }
