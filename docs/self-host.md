@@ -76,9 +76,22 @@ published.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
 deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
-that HTTPS URL. Open **Agent computer** on a bot, or send a message that uses the desktop, to see
-the local Docker computer. For automatic HTTPS via Caddy and remote E2B computers, use the
-production Compose path below.
+that HTTPS URL.
+
+Images Compose binds web to loopback (`127.0.0.1:5173`). Terminate TLS on the host and proxy
+there — Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:3100`. Set
+`BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin.
+
+```Caddyfile
+app.example.com {
+	reverse_proxy 127.0.0.1:5173
+}
+```
+
+Open **Agent computer** on a bot, or send a message that uses the desktop, to see
+the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
+[production Compose](#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
+instead of this host proxy.
 
 ## Docker Compose (single machine)
 
