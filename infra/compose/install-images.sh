@@ -191,9 +191,14 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
-if docker compose up --help 2>/dev/null | grep -q -- '--wait'; then
+compose_up_help=$(docker compose up --help 2>/dev/null || true)
+if grep -q -- '--wait' <<<"$compose_up_help"; then
   echo "Waiting for healthy services."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait
+  if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+  else
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait
+  fi
 else
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 fi
