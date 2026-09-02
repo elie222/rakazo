@@ -156,10 +156,9 @@ export function diagnoseReleaseWatchRun(input: {
     diagnoses.push("browser_used_instead_of_integrations");
   }
 
-  const blob = `${input.resultText}\n${input.calledToolNames.join("\n")}`;
-  const sawRelease =
-    calledGithub ||
-    input.seededReleaseTags.some((tag) => blob.toLowerCase().includes(tag.toLowerCase()));
+  // Calling a GitHub tool is not enough: empty or ok:false results must still fail.
+  const blob = input.resultText.toLowerCase();
+  const sawRelease = input.seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
   if (!sawRelease) diagnoses.push("no_release_info_retrieved");
 
   const unique = [...new Set(diagnoses)];

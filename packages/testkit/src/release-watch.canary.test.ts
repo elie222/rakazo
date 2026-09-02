@@ -67,6 +67,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     expect(signup.status).toBeLessThan(400);
     const cookie = sessionCookieHeader(signup);
 
+    const me = await rpc<{ spaceId: string; userId: string }>(handles.app, cookie, "me");
     const started = await rpc<{ connectionId: string; authorizationUrl: null }>(
       handles.app,
       cookie,
@@ -74,6 +75,25 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       { connectorId: "composio", provider: "GITHUB", displayName: "GitHub" },
     );
     expect(started.authorizationUrl).toBeNull();
+
+    const discoveredGithubTools = await composio.discoverTools({
+      operationId: "release-watch-canary",
+      traceId: "release-watch-canary",
+      spaceId: me.spaceId,
+      userId: me.userId,
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: started.connectionId,
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "GitHub",
+        },
+      ],
+    });
+    expect(discoveredGithubTools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([...RELEASE_WATCH_GITHUB_TOOL_NAMES]),
+    );
 
     const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
       name: "Chief",
@@ -126,17 +146,19 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       return String(payload.name ?? "");
     });
     const calledToolNames = [...calledFromEvents, ...composio.executions.map((row) => row.tool)];
+    const seededReleaseTags = composio.listGithubReleases().map((release) => release.tag);
+    const resultText = JSON.stringify(snap);
     const diagnosis = diagnoseReleaseWatchRun({
       availableToolNames: [
-        ...RELEASE_WATCH_GITHUB_TOOL_NAMES,
+        ...discoveredGithubTools.map((tool) => tool.name),
         "computer_observe",
         "computer_act",
         "schedule_create",
       ],
       calledToolNames,
       routinePrompt: routine.prompt,
-      resultText: JSON.stringify(snap),
-      seededReleaseTags: composio.listGithubReleases().map((release) => release.tag),
+      resultText,
+      seededReleaseTags,
     });
 
     if (!diagnosis.pass) {
@@ -146,6 +168,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
           `model=${label} (${modelId})`,
           `routinePrompt=${JSON.stringify(routine.prompt)}`,
           `calledTools=${JSON.stringify(calledToolNames)}`,
+          `discoveredGithubTools=${JSON.stringify(discoveredGithubTools.map((tool) => tool.name))}`,
           diagnosis.summary,
         ].join("\n"),
       );
@@ -156,6 +179,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
         (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool),
       ),
     ).toBe(true);
+    expect(seededReleaseTags.some((tag) => resultText.includes(tag))).toBe(true);
   }, 420_000);
 });
 

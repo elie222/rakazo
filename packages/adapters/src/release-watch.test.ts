@@ -58,6 +58,17 @@ describe("release-watch diagnosis", () => {
     expect(missingTools.summary).toMatch(/missing_github_tools/);
     expect(missingTools.summary).toMatch(/browser_used_instead_of_integrations/);
 
+    const emptyGithubCall = diagnoseReleaseWatchRun({
+      availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
+      calledToolNames: ["GITHUB_LIST_RELEASES"],
+      routinePrompt:
+        "Call GITHUB_LIST_RELEASES for elie222/rakazo and summarize new releases and capabilities.",
+      resultText: "GitHub returned no releases.",
+      seededReleaseTags: ["v0.4.2"],
+    });
+    expect(emptyGithubCall.pass).toBe(false);
+    expect(emptyGithubCall.diagnoses).toContain("no_release_info_retrieved");
+
     const pass = diagnoseReleaseWatchRun({
       availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
       calledToolNames: ["GITHUB_LIST_RELEASES"],
