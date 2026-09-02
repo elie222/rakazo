@@ -24,11 +24,18 @@ export function parseWhen(when: string): DemoTrigger {
   if (!when) {
     return trigger;
   }
-  const interval = /every\s+(\d+)\s*(min|h)/i.exec(when);
+  const interval = /every\s+(\d+)\s*(min(?:ute)?s?|h(?:our)?s?|days?)/i.exec(when);
   if (interval) {
     trigger.freq = "Interval";
     trigger.n = Number(interval[1]);
-    trigger.unit = /h/i.test(interval[2] ?? "") ? "hours" : "minutes";
+    const unit = interval[2] ?? "";
+    trigger.unit = /^h/i.test(unit) ? "hours" : /^d/i.test(unit) ? "days" : "minutes";
+    return trigger;
+  }
+  const cron = /^cron\s+(.+)$/i.exec(when.trim());
+  if (cron) {
+    trigger.freq = "Advanced";
+    trigger.cron = cron[1]?.trim() ?? "";
     return trigger;
   }
   if (/hourly/i.test(when)) {

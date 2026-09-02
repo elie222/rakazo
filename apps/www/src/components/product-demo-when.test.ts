@@ -72,3 +72,15 @@ describe("describeTrigger", () => {
     expect(detail).not.toContain("9:00 AM");
   });
 });
+
+describe("parseWhen round-trips", () => {
+  it("round-trips day intervals and cron labels from whenLabel", () => {
+    const everyTwoDays = whenLabel([{ ...defaultTrigger(), freq: "Interval", n: 2, unit: "days" }]);
+    expect(everyTwoDays).toBe("Every 2 days");
+    expect(whenLabel([parseWhen(everyTwoDays)])).toBe(everyTwoDays);
+
+    const cron = whenLabel([{ ...defaultTrigger(), freq: "Advanced", cron: "0 9 * * 5" }]);
+    expect(cron).toBe("Cron 0 9 * * 5");
+    expect(whenLabel([parseWhen(cron)])).toBe(cron);
+  });
+});
