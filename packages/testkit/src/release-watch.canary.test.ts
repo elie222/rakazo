@@ -79,19 +79,17 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       name: "Chief",
       title: "Chief of staff",
       description: "Release watch eval",
-      instructions:
-        "You are a chief of staff. When creating schedules, write concrete prompts that name connected plugin tools. Prefer GitHub plugin tools over the computer browser for repository and release data.",
+      instructions: "You are a chief of staff.",
       notifyOnFinish: true,
     });
 
+    // Mirror the Discord user ask: no tool names, no Bing/browser coaching.
+    // schedule_create + connected-plugin guidance should steer the model.
     await rpc(handles.app, cookie, "threads/send", {
       botId: bot.id,
       text: [
-        `Using ${label} (${modelId}).`,
-        "Create a daily routine that watches for new releases of github.com/elie222/rakazo",
-        "and keeps me current on the project's capabilities.",
-        "GitHub is already connected — the routine prompt must call GITHUB_LIST_RELEASES for owner elie222 repo rakazo.",
-        "Do not use the computer browser or Bing for this.",
+        "Create a daily task to watch for new releases of elie222/rakazo",
+        "and stay current on the project's capabilities.",
       ].join(" "),
     });
 
