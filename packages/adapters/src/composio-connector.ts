@@ -224,13 +224,40 @@ export class ComposioConnector implements ComposioProvider {
         this.executeSessions.delete(userId);
       }
     }
-    const session = await composio.create(userId, {
-      manageConnections: false,
-      sandbox: { enable: false },
-      toolkits: canonicalToolkits,
-    });
+    const session = await this.createSessionWithinToolCap(userId, canonicalToolkits);
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
+  }
+
+  /** Composio refuses a session whose toolkits preload more than 1000 tools, and a single
+   * large toolkit can exceed that on its own. The request is all-or-nothing, so without this
+   * one oversized toolkit costs every other connected app its tools. Drop trailing toolkits
+   * until Composio accepts the session and name what was left out. */
+  private async createSessionWithinToolCap(
+    userId: string,
+    toolkits: string[],
+  ): Promise<ComposioSession> {
+    const composio = this.sdk();
+    let attempt = toolkits;
+    for (;;) {
+      try {
+        const session = await composio.create(userId, {
+          manageConnections: false,
+          sandbox: { enable: false },
+          toolkits: attempt,
+        });
+        if (attempt.length !== toolkits.length) {
+          console.error(
+            "composio toolkits exceeded the tool preload cap; excluded",
+            toolkits.slice(attempt.length).join(", "),
+          );
+        }
+        return session;
+      } catch (error) {
+        if (attempt.length <= 1 || !isToolPreloadCapError(error)) throw error;
+        attempt = attempt.slice(0, -1);
+      }
+    }
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
@@ -480,6 +507,12 @@ function isManagedConnectorProvider(
     typeof candidate.listConnectedExternalIds === "function" &&
     typeof candidate.revoke === "function"
   );
+}
+
+/** Composio reports the per-session tool preload ceiling as a ToolRouterV2_BadRequest. */
+function isToolPreloadCapError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("ToolRouterV2_BadRequest") || message.includes("supports up to 1000");
 }
 
 function connectedComposioExternalIds(context: AdapterContext): string[] {

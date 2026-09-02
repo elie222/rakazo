@@ -22,6 +22,7 @@ import { DestinationEmulator } from "./destination-emulator.js";
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
+  toolkitsPerSessionCap: null as number | null,
   executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
   sessions: new Map<
     string,
@@ -83,6 +84,15 @@ vi.mock("@composio/core", () => ({
         };
         composioSdkState.sessions.set(session.sessionId, session);
         return session;
+      }
+
+      if (
+        composioSdkState.toolkitsPerSessionCap !== null &&
+        toolkits.length > composioSdkState.toolkitsPerSessionCap
+      ) {
+        throw new Error(
+          '400 {"error":{"message":"preload.tools=\\"all\\" supports up to 1000 tools. Narrow the toolkits/tools/tags scope and try again.","code":4300,"slug":"ToolRouterV2_BadRequest","status":400}}',
+        );
       }
 
       const scopedToCanonicalGithub = toolkits.includes("GITHUB");
@@ -446,5 +456,35 @@ describe("Composio during pnpm test", () => {
   it("does not construct a live Platform client under Vitest", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
+  });
+});
+
+describe("composio tool preload cap", () => {
+  it("drops trailing toolkits until Composio accepts the session", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.toolkitsPerSessionCap = 1;
+    try {
+      const connector = new ComposioConnector();
+      const session = await connector.sessionForExecute("user-1", ["github", "linear", "slack"]);
+      expect(session.sessionId).toBe("github-session");
+      const attempted = composioSdkState.created
+        .filter((entry) => Array.isArray(entry.config.toolkits))
+        .map((entry) => (entry.config.toolkits as string[]).length);
+      expect(attempted).toEqual([3, 2, 1]);
+    } finally {
+      composioSdkState.toolkitsPerSessionCap = null;
+    }
+  });
+
+  it("rethrows when a single toolkit still exceeds the cap", async () => {
+    composioSdkState.toolkitsPerSessionCap = 0;
+    try {
+      const connector = new ComposioConnector();
+      await expect(connector.sessionForExecute("user-1", ["github"])).rejects.toThrow(
+        /ToolRouterV2_BadRequest/,
+      );
+    } finally {
+      composioSdkState.toolkitsPerSessionCap = null;
+    }
   });
 });
