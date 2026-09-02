@@ -5,6 +5,7 @@ import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { type MobileBot, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function NewGroup() {
   const { t } = useI18n();
@@ -59,7 +60,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen options={{ title: t("New group") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.page }}
         contentContainerStyle={{ padding: 24 }}
       >
         <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>

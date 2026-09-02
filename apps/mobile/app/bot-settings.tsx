@@ -13,6 +13,7 @@ import { ComputerMaintenanceActions } from "../components/computer-maintenance-a
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
@@ -87,7 +88,7 @@ export default function BotSettingsScreen() {
     <>
       <Stack.Screen options={{ title: t("Chat settings") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.page }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

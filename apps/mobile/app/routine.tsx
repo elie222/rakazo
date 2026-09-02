@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function RoutineDetail() {
   const { t } = useI18n();
@@ -47,7 +48,7 @@ export default function RoutineDetail() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#050506" }}
+      style={{ flex: 1, backgroundColor: tokens.page }}
       contentContainerStyle={{ padding: 24, gap: 18 }}
     >
       <Stack.Screen options={{ title: routine?.name ?? t("Routine") }} />

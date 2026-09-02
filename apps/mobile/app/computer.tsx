@@ -23,6 +23,7 @@ import {
   SCREEN_URL_OPEN_ATTEMPTS,
 } from "../lib/computer";
 import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function Computer() {
   const { t } = useI18n();
@@ -319,7 +320,7 @@ export default function Computer() {
               </View>
             </SafeAreaView>
           ) : (
-            <View style={{ flex: 1, backgroundColor: "#050506" }}>
+            <View style={{ flex: 1, backgroundColor: tokens.page }}>
               <SafeAreaView
                 edges={["top", "left", "right"]}
                 style={{

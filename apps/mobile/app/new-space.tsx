@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { rpc, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function NewSpace() {
   const { t } = useI18n();
@@ -50,7 +51,7 @@ export default function NewSpace() {
         }}
       />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.page }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
       >
