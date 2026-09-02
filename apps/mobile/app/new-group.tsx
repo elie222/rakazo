@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { type MobileBot, rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 export default function NewGroup() {
+  const { t } = useI18n();
   const router = useRouter();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
@@ -47,7 +49,7 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create group");
+      setError(err instanceof Error ? err.message : t("Could not create group"));
     } finally {
       setPending(false);
     }
@@ -55,16 +57,16 @@ export default function NewGroup() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "New group" }} />
+      <Stack.Screen options={{ title: t("New group") }} />
       <ScrollView
         style={{ flex: 1, backgroundColor: "#050506" }}
         contentContainerStyle={{ padding: 24 }}
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
+        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="Name this group"
+          placeholder={t("Name this group")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -76,7 +78,7 @@ export default function NewGroup() {
           }}
         />
         <Text style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}>
-          Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+          {t("Members ({min}–{max})", { min: GROUP_MEMBER_MIN, max: GROUP_MEMBER_MAX })}
         </Text>
         {bots.map((bot) => {
           const checked = selected.includes(bot.id);
@@ -122,7 +124,7 @@ export default function NewGroup() {
           }}
         >
           <Text style={{ color: "#FFF", fontSize: 16, fontWeight: "600" }}>
-            {pending ? "Creating…" : "Create group"}
+            {pending ? t("Creating…") : t("Create group")}
           </Text>
         </Pressable>
       </ScrollView>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
+import { useI18n } from "../lib/i18n";
 
 type AskAction = { id: string; label: string };
 
@@ -12,6 +13,7 @@ export function AskActions({
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const submitting = pendingAction !== null;
 
@@ -22,8 +24,8 @@ export function AskActions({
       await onAnswer(answer);
     } catch (error) {
       Alert.alert(
-        "Could not submit answer",
-        error instanceof Error ? error.message : "Please try again.",
+        t("Could not submit answer"),
+        error instanceof Error ? error.message : t("Please try again."),
       );
     } finally {
       setPendingAction(null);
@@ -55,7 +57,7 @@ export function AskActions({
               fontWeight: action.id === "allow" || action.id === "always" ? "600" : "400",
             }}
           >
-            {pendingAction === action.id ? "Sending…" : action.label}
+            {pendingAction === action.id ? t("Sending…") : action.label}
           </Text>
         </Pressable>
       ))}

@@ -1,14 +1,17 @@
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEMO_BOTS,
   type DemoBot,
   type DemoMessage,
   type DemoRoutine,
   type DemoRoutineRun,
   type DemoScreen,
 } from "../demo";
+import { demoText, getDemoBots } from "../i18n/demo";
+import type { Locale } from "../i18n/locales";
 import { LandingBotAvatar } from "./LandingBotAvatar";
+
+type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -44,7 +47,7 @@ const ONBOARD = [
       "Research & writing",
       "A bit of everything",
     ],
-    ack: (answer: string) => `${answer.toLowerCase()} is a sweet spot for me.`,
+    ack: "{answer} is a sweet spot for me.",
   },
   {
     q: "How do you want me to write?",
@@ -55,13 +58,13 @@ const ONBOARD = [
       "Polished / formal",
       "Match whatever I draft",
     ],
-    ack: (answer: string) => `Got it — ${answer.toLowerCase()} it is.`,
+    ack: "Got it — {answer} it is.",
   },
   {
     q: "Where does most of that work live?",
     sub: "So I know where to pull from and drop drafts.",
     opts: ["Google Docs", "Notion", "Just chat / paste here", "A mix"],
-    ack: (answer: string) => `Noted. I’ll pull from ${answer} and leave drafts there too.`,
+    ack: "Noted. I’ll pull from {answer} and leave drafts there too.",
   },
 ];
 
@@ -83,8 +86,8 @@ type RoutineDraft = {
   runs: DemoRoutineRun[];
 };
 
-function cloneBots(): LiveBot[] {
-  return DEMO_BOTS.map((bot) => ({
+function cloneBots(source: DemoBot[]): LiveBot[] {
+  return source.map((bot) => ({
     ...bot,
     routines: bot.routines.map((routine) => ({
       ...routine,
@@ -131,26 +134,32 @@ function parseWhen(when: string): Trigger {
   return trigger;
 }
 
-function describeTrigger(trigger: Trigger) {
+function describeTrigger(trigger: Trigger, text: DemoTranslator = (source) => source) {
   if (trigger.freq === "Interval") {
-    return { lead: "Every", detail: `${trigger.n} ${trigger.unit}` };
+    return {
+      lead: text("Every"),
+      detail: text("{n} {unit}", { n: trigger.n, unit: text(trigger.unit) }),
+    };
   }
   if (trigger.freq === "Every hour") {
-    return { lead: "Every hour", detail: "" };
+    return { lead: text("Every hour"), detail: "" };
   }
   if (trigger.freq === "Advanced") {
-    return { lead: "Cron", detail: trigger.cron || "*/3 * * * *" };
+    return { lead: text("Cron"), detail: trigger.cron || "*/3 * * * *" };
   }
   if (trigger.freq === "Weekdays") {
-    return { lead: "Weekdays", detail: `at ${trigger.time}` };
+    return { lead: text("Weekdays"), detail: text("at {time}", { time: trigger.time }) };
   }
   if (trigger.freq === "Every week") {
-    return { lead: "Every Monday", detail: `at ${trigger.time}` };
+    return { lead: text("Every Monday"), detail: text("at {time}", { time: trigger.time }) };
   }
   if (trigger.freq === "Every month") {
-    return { lead: "Monthly", detail: `on the 1st at ${trigger.time}` };
+    return {
+      lead: text("Monthly"),
+      detail: text("on the 1st at {time}", { time: trigger.time }),
+    };
   }
-  return { lead: "Every day", detail: `at ${trigger.time}` };
+  return { lead: text("Every day"), detail: text("at {time}", { time: trigger.time }) };
 }
 
 function whenLabel(triggers: Trigger[]) {
@@ -158,6 +167,14 @@ function whenLabel(triggers: Trigger[]) {
     return "Unscheduled";
   }
   const { lead, detail } = describeTrigger(triggers[0] ?? defaultTrigger());
+  return [lead, detail].filter(Boolean).join(" ");
+}
+
+function displayedWhen(when: string, locale: Locale, text: DemoTranslator): string {
+  if (locale !== "zh") return when;
+  const direct = text(when);
+  if (direct !== when) return direct;
+  const { lead, detail } = describeTrigger(parseWhen(when), text);
   return [lead, detail].filter(Boolean).join(" ");
 }
 
@@ -200,7 +217,7 @@ function ComputerDesktop({ screen, large = false }: { screen: DemoScreen; large?
   );
 }
 
-function Thread({ messages }: { messages: DemoMessage[] }) {
+function Thread({ messages, text }: { messages: DemoMessage[]; text: DemoTranslator }) {
   return (
     <>
       {messages.map((message, index) => {
@@ -240,7 +257,9 @@ function Thread({ messages }: { messages: DemoMessage[] }) {
               key={`typing-${index}`}
               className="product-demo__message product-demo__message--bot"
             >
-              <div className="product-demo__bubble product-demo__bubble--typing">working…</div>
+              <div className="product-demo__bubble product-demo__bubble--typing">
+                {text("working…")}
+              </div>
             </div>
           );
         }
@@ -262,16 +281,18 @@ function Thread({ messages }: { messages: DemoMessage[] }) {
 function OnboardThread({
   answers,
   onAnswer,
+  text,
 }: {
   answers: string[];
   onAnswer: (value: string) => void;
+  text: DemoTranslator;
 }) {
   return (
     <>
-      <div className="product-demo__time">Today</div>
+      <div className="product-demo__time">{text("Today")}</div>
       <div className="product-demo__message product-demo__message--bot">
         <div className="product-demo__bubble product-demo__bubble--bot">
-          Hey Avery — good to meet you.
+          {text("Hey Avery — good to meet you.")}
         </div>
       </div>
       {ONBOARD.map((step, index) => {
@@ -281,16 +302,16 @@ function OnboardThread({
           return (
             <div key={step.q}>
               <div className="product-demo__choice product-demo__choice--done">
-                <div className="product-demo__choice-q">{step.q}</div>
+                <div className="product-demo__choice-q">{text(step.q)}</div>
                 <div className="product-demo__choice-picked">
                   <span className="product-demo__choice-letter">{letter}</span>
-                  <span>{answer}</span>
+                  <span>{text(answer)}</span>
                   <span className="product-demo__choice-check">✓</span>
                 </div>
               </div>
               <div className="product-demo__message product-demo__message--bot">
                 <div className="product-demo__bubble product-demo__bubble--bot">
-                  {step.ack(answer)}
+                  {text(step.ack, { answer: text(answer) })}
                 </div>
               </div>
             </div>
@@ -301,27 +322,28 @@ function OnboardThread({
         }
         return (
           <div key={step.q} className="product-demo__choice">
-            <div className="product-demo__choice-q">{step.q}</div>
-            <div className="product-demo__choice-sub">{step.sub}</div>
+            <div className="product-demo__choice-q">{text(step.q)}</div>
+            <div className="product-demo__choice-sub">{text(step.sub)}</div>
             <div className="product-demo__choice-opts">
               {step.opts.map((opt, optIndex) => (
                 <button key={opt} type="button" onClick={() => onAnswer(opt)}>
                   <span className="product-demo__choice-letter">
                     {String.fromCharCode(65 + optIndex)}
                   </span>
-                  <span>{opt}</span>
+                  <span>{text(opt)}</span>
                 </button>
               ))}
             </div>
-            <div className="product-demo__choice-own">Type your own answer</div>
+            <div className="product-demo__choice-own">{text("Type your own answer")}</div>
           </div>
         );
       })}
       {answers.length === ONBOARD.length ? (
         <div className="product-demo__message product-demo__message--bot">
           <div className="product-demo__bubble product-demo__bubble--bot">
-            That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before
-            anything leaves the building.
+            {text(
+              "That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before anything leaves the building.",
+            )}
           </div>
         </div>
       ) : null}
@@ -329,8 +351,9 @@ function OnboardThread({
   );
 }
 
-export function ProductDemo() {
-  const [bots, setBots] = useState<LiveBot[]>(cloneBots);
+export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
+  const text: DemoTranslator = (source, values) => demoText(locale, source, values);
+  const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(getDemoBots(locale)));
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -503,7 +526,7 @@ export function ProductDemo() {
   function persistRoutine(draftState: RoutineDraft) {
     const index = draftState.index ?? active.routines.length;
     const next: DemoRoutine = {
-      name: draftState.name.trim() || "Untitled routine",
+      name: draftState.name.trim() || text("Untitled routine"),
       when: whenLabel(draftState.triggers),
       instruction: draftState.instruction,
       active: draftState.active,
@@ -545,18 +568,18 @@ export function ProductDemo() {
     const color = BOT_COLORS[bots.length % BOT_COLORS.length] ?? "#3EC5A8";
     const bot: LiveBot = {
       id: `bot-${Date.now()}`,
-      name: "New bot",
+      name: text("New bot"),
       color,
-      time: "Now",
-      preview: "Say what you want this bot doing",
+      time: text("Now"),
+      preview: text("Say what you want this bot doing"),
       title: "",
       description: "",
       onboarding: true,
       answers: [],
       routines: [],
-      screen: { host: "desktop", title: "Computer is stopped", lines: [] },
+      screen: { host: "desktop", title: text("Computer is stopped"), lines: [] },
       thread: [],
-      reply: "on it. tell me the job and i’ll get started.",
+      reply: text("on it. tell me the job and i’ll get started."),
     };
     setBots((current) => [bot, ...current]);
     setActiveId(bot.id);
@@ -660,8 +683,8 @@ export function ProductDemo() {
     const completedRun: DemoRoutineRun = {
       mark: "●",
       color: "#4ECB71",
-      text: "Completed",
-      time: "Just now",
+      text: text("Completed"),
+      time: text("Just now"),
     };
     const index = persistRoutine({
       ...routineDraft,
@@ -676,7 +699,10 @@ export function ProductDemo() {
           }
         : current,
     );
-    appendMessage(active.id, { type: "meta", text: `Routine ran · ${routineDraft.name}` });
+    appendMessage(active.id, {
+      type: "meta",
+      text: text("Routine ran · {name}", { name: routineDraft.name }),
+    });
   }
 
   return (
@@ -694,12 +720,12 @@ export function ProductDemo() {
               <span />
               <span />
             </div>
-            <span className="product-demo__drawer-title">Bots</span>
+            <span className="product-demo__drawer-title">{text("Bots")}</span>
             <div className="product-demo__chrome-actions">
               <button
                 type="button"
                 className="product-demo__new"
-                aria-label="New bot"
+                aria-label={text("New bot")}
                 onClick={startNewBot}
               >
                 +
@@ -707,7 +733,7 @@ export function ProductDemo() {
               <button
                 type="button"
                 className="product-demo__sidebar-close"
-                aria-label="Hide bots"
+                aria-label={text("Hide bots")}
                 onClick={closeMenu}
               >
                 ✕
@@ -720,7 +746,7 @@ export function ProductDemo() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search"
+              placeholder={text("Search")}
             />
           </label>
           <div className="product-demo__bot-list">
@@ -755,7 +781,7 @@ export function ProductDemo() {
           <button
             type="button"
             className="product-demo__scrim"
-            aria-label="Hide bots"
+            aria-label={text("Hide bots")}
             onClick={closeMenu}
           />
         ) : null}
@@ -767,7 +793,7 @@ export function ProductDemo() {
                 type="button"
                 ref={menuButtonRef}
                 className="product-demo__menu-btn"
-                aria-label="Show bots"
+                aria-label={text("Show bots")}
                 aria-expanded={menuOpen}
                 aria-controls="product-demo-bots"
                 onClick={() => setMenuOpen(true)}
@@ -793,8 +819,8 @@ export function ProductDemo() {
               type="button"
               className="product-demo__panel-toggle"
               aria-pressed={panelOpen && panelMode === "computer"}
-              aria-label="Toggle computer panel"
-              title="Computer"
+              aria-label={text("Toggle computer panel")}
+              title={text("Computer")}
               onClick={toggleComputer}
             >
               <svg
@@ -813,14 +839,14 @@ export function ProductDemo() {
 
           <div className="product-demo__thread" ref={scrollRef}>
             {active.onboarding ? (
-              <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
+              <OnboardThread answers={active.answers} onAnswer={answerOnboard} text={text} />
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
               <div className="product-demo__empty-thread">
-                Message {active.name} to give it a first job.
+                {text("Message {name} to give it a first job.", { name: active.name })}
               </div>
             ) : (
-              <Thread messages={messages} />
+              <Thread messages={messages} text={text} />
             )}
           </div>
 
@@ -839,10 +865,23 @@ export function ProductDemo() {
                     send();
                   }
                 }}
-                placeholder={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
-                aria-label={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
+                placeholder={
+                  onboardingOpen
+                    ? text("Type your own answer")
+                    : text("Message {name}", { name: active.name })
+                }
+                aria-label={
+                  onboardingOpen
+                    ? text("Type your own answer")
+                    : text("Message {name}", { name: active.name })
+                }
               />
-              <button type="button" className="product-demo__send" onClick={send} aria-label="Send">
+              <button
+                type="button"
+                className="product-demo__send"
+                onClick={send}
+                aria-label={text("Send")}
+              >
                 ↑
               </button>
             </div>
@@ -853,9 +892,17 @@ export function ProductDemo() {
           <aside className="product-demo__panel">
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
-                <span>{panelMode === "settings" ? "settings" : `${active.name}’s computer`}</span>
+                <span>
+                  {panelMode === "settings"
+                    ? text("settings")
+                    : text("{name}’s computer", { name: active.name })}
+                </span>
                 <div className="product-demo__panel-actions">
-                  <button type="button" aria-label="Bot settings" onClick={openSettings}>
+                  <button
+                    type="button"
+                    aria-label={text("Bot settings")}
+                    onClick={openSettings}
+                  >
                     <svg
                       width="17"
                       height="17"
@@ -870,7 +917,7 @@ export function ProductDemo() {
                   </button>
                   <button
                     type="button"
-                    aria-label="Close panel"
+                    aria-label={text("Close panel")}
                     onClick={() => setPanelOpen(false)}
                   >
                     ✕
@@ -885,31 +932,37 @@ export function ProductDemo() {
                   type="button"
                   className="product-demo__screen"
                   onClick={takeControl}
-                  aria-label={hasControl ? "Open computer" : "Take control of computer"}
+                  aria-label={
+                    hasControl ? text("Open computer") : text("Take control of computer")
+                  }
                 >
                   <ComputerDesktop screen={active.screen} />
                 </button>
                 <div className="product-demo__screen-meta">
-                  <span>{hasControl ? "You have control" : `${active.name}’s screen`}</span>
+                  <span>
+                    {hasControl
+                      ? text("You have control")
+                      : text("{name}’s screen", { name: active.name })}
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => (hasControl ? releaseControl() : takeControl())}
                   >
-                    {hasControl ? "Release" : "Take control"}
+                    {hasControl ? text("Release") : text("Take control")}
                   </Button>
                 </div>
-                <div className="product-demo__panel-label">Routines</div>
+                <div className="product-demo__panel-label">{text("Routines")}</div>
                 {active.routines.length === 0 ? (
                   <div className="product-demo__empty-routines">
-                    <p>Routines are recurring tasks this agent runs on a schedule.</p>
+                    <p>{text("Routines are recurring tasks this agent runs on a schedule.")}</p>
                     <button
                       type="button"
                       className="product-demo__ghost-btn"
                       onClick={() => openRoutine(null, null)}
                     >
-                      Create routine
+                      {text("Create routine")}
                     </button>
                   </div>
                 ) : (
@@ -923,7 +976,9 @@ export function ProductDemo() {
                       >
                         <span className="product-demo__routine-icon">◷</span>
                         <span className="product-demo__routine-name">{routine.name}</span>
-                        <span className="product-demo__routine-when">{routine.when}</span>
+                        <span className="product-demo__routine-when">
+                          {displayedWhen(routine.when, locale, text)}
+                        </span>
                       </button>
                     ))}
                     <button
@@ -931,7 +986,7 @@ export function ProductDemo() {
                       className="product-demo__quiet"
                       onClick={() => openRoutine(null, null)}
                     >
-                      + New routine
+                      {text("+ New routine")}
                     </button>
                   </>
                 )}
@@ -944,27 +999,27 @@ export function ProductDemo() {
                   <LandingBotAvatar color={active.color} size={72} />
                 </div>
                 <label className="product-demo__field">
-                  Name
+                  {text("Name")}
                   <input
                     value={active.name}
-                    placeholder="Name this agent"
+                    placeholder={text("Name this agent")}
                     onChange={(event) => patchActive({ name: event.target.value })}
                   />
                 </label>
                 <label className="product-demo__field">
-                  Title
+                  {text("Title")}
                   <input
                     value={active.title}
-                    placeholder="Describe what this agent does"
+                    placeholder={text("Describe what this agent does")}
                     onChange={(event) => patchActive({ title: event.target.value })}
                   />
                 </label>
                 <label className="product-demo__field">
-                  Description
+                  {text("Description")}
                   <textarea
                     rows={4}
                     value={active.description}
-                    placeholder="What this agent is for"
+                    placeholder={text("What this agent is for")}
                     onChange={(event) => patchActive({ description: event.target.value })}
                   />
                 </label>
@@ -974,14 +1029,18 @@ export function ProductDemo() {
             {panelMode === "routine" && routineDraft ? (
               <div className="product-demo__routine-editor">
                 <div className="product-demo__routine-nav">
-                  <button type="button" onClick={saveRoutine} aria-label="Back to computer">
+                  <button
+                    type="button"
+                    onClick={saveRoutine}
+                    aria-label={text("Back to computer")}
+                  >
                     ‹
                   </button>
-                  <span>Routine</span>
+                  <span>{text("Routine")}</span>
                   <button
                     type="button"
                     onClick={() => setPanelOpen(false)}
-                    aria-label="Close panel"
+                    aria-label={text("Close panel")}
                   >
                     ✕
                   </button>
@@ -995,9 +1054,9 @@ export function ProductDemo() {
                   >
                     <span />
                   </button>
-                  <span>{routineDraft.active ? "Active" : "Paused"}</span>
+                  <span>{routineDraft.active ? text("Active") : text("Paused")}</span>
                   <button type="button" className="product-demo__ghost-btn" onClick={deleteRoutine}>
-                    Delete
+                    {text("Delete")}
                   </button>
                   <button
                     type="button"
@@ -1005,40 +1064,40 @@ export function ProductDemo() {
                     disabled={!routineDraft.name.trim()}
                     onClick={testRun}
                   >
-                    Test run
+                    {text("Test run")}
                   </button>
                 </div>
                 <label className="product-demo__field">
-                  Name
+                  {text("Name")}
                   <input
                     value={routineDraft.name}
-                    placeholder="Name this routine"
+                    placeholder={text("Name this routine")}
                     onChange={(event) => changeRoutine({ name: event.target.value })}
                   />
                 </label>
                 <label className="product-demo__field">
-                  Instruction
+                  {text("Instruction")}
                   <textarea
                     rows={4}
                     value={routineDraft.instruction}
-                    placeholder="What should this routine do each time it runs?"
+                    placeholder={text("What should this routine do each time it runs?")}
                     onChange={(event) => changeRoutine({ instruction: event.target.value })}
                   />
                 </label>
                 <div className="product-demo__field">
-                  When to run
+                  {text("When to run")}
                   {routineDraft.triggers.length === 0 ? (
                     <button
                       type="button"
                       className="product-demo__add-schedule"
                       onClick={() => changeRoutine({ triggers: [defaultTrigger()] })}
                     >
-                      + Add schedule
+                      {text("+ Add schedule")}
                     </button>
                   ) : (
                     <div className="product-demo__triggers">
                       {routineDraft.triggers.map((trigger, index) => {
-                        const { lead, detail } = describeTrigger(trigger);
+                        const { lead, detail } = describeTrigger(trigger, text);
                         const timed = [
                           "Every day",
                           "Weekdays",
@@ -1053,7 +1112,7 @@ export function ProductDemo() {
                               </span>
                               <button
                                 type="button"
-                                aria-label="Remove schedule"
+                                aria-label={text("Remove schedule")}
                                 onClick={() =>
                                   changeRoutine({
                                     triggers: routineDraft.triggers.filter(
@@ -1074,13 +1133,13 @@ export function ProductDemo() {
                               >
                                 {FREQS.map((freq) => (
                                   <option key={freq} value={freq}>
-                                    {freq}
+                                    {text(freq)}
                                   </option>
                                 ))}
                               </select>
                               {trigger.freq === "Interval" ? (
                                 <>
-                                  <span>every</span>
+                                  <span>{text("every")}</span>
                                   <select
                                     value={String(trigger.n)}
                                     onChange={(event) =>
@@ -1101,7 +1160,7 @@ export function ProductDemo() {
                                   >
                                     {UNITS.map((unit) => (
                                       <option key={unit} value={unit}>
-                                        {unit}
+                                        {text(unit)}
                                       </option>
                                     ))}
                                   </select>
@@ -1109,7 +1168,7 @@ export function ProductDemo() {
                               ) : null}
                               {timed ? (
                                 <>
-                                  <span>at</span>
+                                  <span>{text("at")}</span>
                                   <select
                                     value={trigger.time}
                                     onChange={(event) =>
@@ -1118,7 +1177,7 @@ export function ProductDemo() {
                                   >
                                     {TIMES.map((time) => (
                                       <option key={time} value={time}>
-                                        {time}
+                                        {text(time)}
                                       </option>
                                     ))}
                                   </select>
@@ -1144,15 +1203,15 @@ export function ProductDemo() {
                           changeRoutine({ triggers: [...routineDraft.triggers, defaultTrigger()] })
                         }
                       >
-                        + Add another
+                        {text("+ Add another")}
                       </button>
                     </div>
                   )}
                 </div>
                 <div className="product-demo__field">
-                  Run history
+                  {text("Run history")}
                   {routineDraft.runs.length === 0 ? (
-                    <p className="product-demo__muted">No runs yet</p>
+                    <p className="product-demo__muted">{text("No runs yet")}</p>
                   ) : (
                     <ul className="product-demo__runs">
                       {routineDraft.runs.map((run, index) => (
@@ -1174,29 +1233,35 @@ export function ProductDemo() {
           <div className="product-demo__stage">
             {booting ? (
               <div className="product-demo__boot">
-                <div className="product-demo__boot-title">Booting up {active.name}’s computer</div>
+                <div className="product-demo__boot-title">
+                  {text("Booting up {name}’s computer", { name: active.name })}
+                </div>
                 <div className="product-demo__boot-track">
                   <div style={{ width: `${bootPct}%` }} />
                 </div>
-                <div className="product-demo__boot-step">{BOOT_STEPS[bootPct] ?? ""}</div>
+                <div className="product-demo__boot-step">
+                  {text(BOOT_STEPS[bootPct] ?? "")}
+                </div>
               </div>
             ) : (
               <div className="product-demo__takeover">
                 <div className="product-demo__takeover-bar">
                   <div className="product-demo__takeover-who">
                     <LandingBotAvatar color={active.color} size={32} />
-                    <span>{active.name}’s computer</span>
-                    <span className="product-demo__takeover-pill">You have control</span>
+                    <span>{text("{name}’s computer", { name: active.name })}</span>
+                    <span className="product-demo__takeover-pill">
+                      {text("You have control")}
+                    </span>
                   </div>
                   <div className="product-demo__takeover-actions">
                     <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
-                      Release
+                      {text("Release")}
                     </Button>
                     <button
                       type="button"
                       className="product-demo__takeover-close"
                       onClick={closeOverlay}
-                      aria-label="Close computer"
+                      aria-label={text("Close computer")}
                     >
                       ✕
                     </button>
@@ -1211,7 +1276,7 @@ export function ProductDemo() {
         ) : null}
       </div>
       <p className="product-demo__caption">
-        Live demo — pick a bot, open its computer, add a routine, or start a new chat.
+        {text("Live demo — pick a bot, open its computer, add a routine, or start a new chat.")}
       </p>
     </div>
   );

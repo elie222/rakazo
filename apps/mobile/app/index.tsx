@@ -39,6 +39,7 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
+import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
 import { native } from "../lib/native";
@@ -57,13 +58,14 @@ type InboxItem =
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
-    Alert.alert("Could not switch spaces", "Try again.");
+    Alert.alert(t("Could not switch spaces"), t("Try again."));
     return;
   }
   open();
 }
 
 export default function Home() {
+  const { t, locale } = useI18n();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [groups, setGroups] = useState<MobileGroup[]>([]);
   const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
@@ -111,7 +113,7 @@ export default function Home() {
       ]);
       if (requestId !== inboxRequestId.current) return;
       if (!(await selectInitialSpace(nextMe.spaceId))) {
-        throw new Error("Could not save the default space");
+        throw new Error(t("Could not save the default space"));
       }
       if (requestId !== inboxRequestId.current) return;
       setBots(navigation.current.bots);
@@ -121,7 +123,7 @@ export default function Home() {
       setMe(nextMe);
     } catch (err) {
       if (requestId !== inboxRequestId.current) return;
-      setError(err instanceof Error ? err.message : "Could not load bots");
+      setError(err instanceof Error ? err.message : t("Could not load bots"));
     }
   }, []);
 
@@ -260,7 +262,7 @@ export default function Home() {
           ? [
               {
                 id: me.spaceId,
-                name: "Personal",
+                name: t("Personal"),
                 isDefault: true,
                 bots: visible,
                 groups: visibleGroups,
@@ -289,7 +291,7 @@ export default function Home() {
         ...group.bots,
       ]);
     });
-  }, [botSections, me, spaces, query, searching, searchHits, visible, visibleGroups]);
+  }, [botSections, locale, me, spaces, query, searching, searchHits, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
@@ -311,12 +313,12 @@ export default function Home() {
   return (
     <View style={[styles.screen, { paddingTop: Math.max(insets.top, 20) }]}>
       <View style={styles.header}>
-        <CircleButton accessibilityLabel="Account" onPress={() => router.push("/account")}>
+        <CircleButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
         <View style={styles.headerActions}>
           <CircleButton
-            accessibilityLabel="Activity"
+            accessibilityLabel={t("Activity")}
             active={activityMode}
             accent
             onPress={toggleActivityMode}
@@ -329,7 +331,7 @@ export default function Home() {
             />
           </CircleButton>
           <CircleButton
-            accessibilityLabel="Search"
+            accessibilityLabel={t("Search")}
             active={searching}
             onPress={() =>
               setSearching((open) => {
@@ -341,13 +343,13 @@ export default function Home() {
             <NativeSymbol ios="magnifyingglass" android="search" size={17} />
           </CircleButton>
           <CircleButton
-            accessibilityLabel="Create"
+            accessibilityLabel={t("Create")}
             onPress={() =>
-              Alert.alert("Create", undefined, [
-                { text: "New bot", onPress: () => router.push("/new") },
-                { text: "New group", onPress: () => router.push("/new-group") },
-                { text: "New space", onPress: () => router.push("/new-space") },
-                { text: "Cancel", style: "cancel" },
+              Alert.alert(t("Create"), undefined, [
+                { text: t("New bot"), onPress: () => router.push("/new") },
+                { text: t("New group"), onPress: () => router.push("/new-group") },
+                { text: t("New space"), onPress: () => router.push("/new-space") },
+                { text: t("Cancel"), style: "cancel" },
               ])
             }
           >
@@ -361,7 +363,7 @@ export default function Home() {
           autoFocus
           value={query}
           onChangeText={setQuery}
-          placeholder="Search"
+          placeholder={t("Search")}
           placeholderTextColor="#6C6C70"
           autoCorrect={false}
           autoCapitalize="none"
@@ -411,13 +413,13 @@ export default function Home() {
           <Text style={styles.empty}>
             {query.trim() && searching
               ? searchLoading
-                ? "Searching…"
-                : "No results"
+                ? t("Searching…")
+                : t("No results")
               : query.trim()
-                ? "No matching bots"
+                ? t("No matching bots")
                 : searching
-                  ? "Search conversations, files, and routines"
-                  : "Tap + to create a bot"}
+                  ? t("Search conversations, files, and routines")
+                  : t("Tap + to create a bot")}
           </Text>
         }
         renderItem={({ item }) =>
@@ -511,12 +513,13 @@ function ActivitySection({
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
 }) {
+  const { t } = useI18n();
   const router = useRouter();
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
       router.push({
         pathname: "/group-thread",
-        params: { groupId: run.groupId, name: run.groupName ?? "Group" },
+        params: { groupId: run.groupId, name: run.groupName ?? t("Group") },
       });
       return;
     }
@@ -527,7 +530,7 @@ function ActivitySection({
     <View style={styles.activitySection}>
       {activity.active.length > 0 ? (
         <>
-          <Text style={styles.sectionHeading}>Now</Text>
+          <Text style={styles.sectionHeading}>{t("Now")}</Text>
           {activity.active.map((run) => (
             <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
           ))}
@@ -536,7 +539,7 @@ function ActivitySection({
       {activity.recent.length > 0 ? (
         <>
           <Text style={[styles.sectionHeading, activity.active.length > 0 && styles.activityGap]}>
-            Recent
+            {t("Recent")}
           </Text>
           {activity.recent.map((run) => (
             <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
@@ -635,15 +638,16 @@ function BotRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const preview = previewSnippet(bot.preview, 40) || bot.title || "No messages yet";
+  const { t } = useI18n();
+  const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
     tag,
-    bot.notifyOnFinish ? null : "notifications silenced",
-    bot.unread ? "unread" : null,
+    bot.notifyOnFinish ? null : t("notifications silenced"),
+    bot.unread ? t("unread") : null,
     time,
     preview,
   ]
@@ -653,7 +657,7 @@ function BotRow({
     <Pressable
       accessibilityLabel={label}
       accessibilityHint={
-        onLongPress ? "Long press to pin, move, or silence notifications" : undefined
+        onLongPress ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={onPress}
       onLongPress={onLongPress}
@@ -705,17 +709,18 @@ function GroupRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
   const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
   return (
     <Pressable
-      accessibilityLabel={[group.name, group.unread ? "unread" : null, time, preview]
+      accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
         .filter(Boolean)
         .join(", ")}
       onPress={onPress}
       onLongPress={onLongPress}
-      accessibilityHint={onLongPress ? "Long press to pin or move to a section" : undefined}
+      accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
       <GroupAvatar members={group.members} size={54} />

@@ -22,6 +22,7 @@ import {
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
+import { t } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
   clearSessionToken,
@@ -139,7 +140,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   if (!previousToken.ok || !previousSpace.ok) {
     return {
       ok: false,
-      result: { ok: false, error: "Could not clear the previous server session" },
+      result: { ok: false, error: t("Could not clear the previous server session") },
     };
   }
   const rollbackReady = previousSpace.value
@@ -148,7 +149,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   if (!rollbackReady) {
     return {
       ok: false,
-      result: { ok: false, error: "Could not clear the previous server session" },
+      result: { ok: false, error: t("Could not clear the previous server session") },
     };
   }
   const sessionCleared = await clearSessionToken();
@@ -159,7 +160,10 @@ async function clearCredentialsForEndpointChange(): Promise<
   }
 
   await restoreCredentials(previousToken.value, previousSpace.value);
-  return { ok: false, result: { ok: false, error: "Could not clear the previous server session" } };
+  return {
+    ok: false,
+    result: { ok: false, error: t("Could not clear the previous server session") },
+  };
 }
 
 async function restoreCredentials(previousToken: string, previousSpace: string) {
@@ -235,7 +239,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    return { ok: false, error: "Could not save the server URL" };
+    return { ok: false, error: t("Could not save the server URL") };
   }
   cachedApiBase = parsed.url;
   await clearStoredValue(SPACE_ROLLBACK_KEY);
@@ -256,7 +260,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
   } catch {
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      return { ok: false, error: "Could not clear the custom server URL" };
+      return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
   cachedApiBase = url;
@@ -283,7 +287,7 @@ export async function captureApiRequestContext(): Promise<ApiRequestContext> {
   const apiBase = currentApiBase();
   const headers = await authHeaders(selectedSpaceId());
   if (apiBase !== currentApiBase()) {
-    throw new Error("The server changed while starting the request");
+    throw new Error(t("The server changed while starting the request"));
   }
   return { apiBase, headers };
 }
@@ -303,8 +307,14 @@ async function authenticateWithEmail(
   }
   const token = tokenFromAuthResponse(res, body);
   if (!token)
-    throw new Error(`${action === "sign-in" ? "Sign-in" : "Sign-up"} did not return a session`);
-  if (!(await clearSpace())) throw new Error("Could not clear the previous space");
+    throw new Error(
+      t(
+        action === "sign-in"
+          ? "Sign-in did not return a session"
+          : "Sign-up did not return a session",
+      ),
+    );
+  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
   await saveSessionToken(token);
 }
 
@@ -333,7 +343,7 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     body: JSON.stringify({ email, redirectTo }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(responseErrorMessage(body, "Could not send reset email"));
+  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not send reset email")));
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
@@ -343,7 +353,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
     body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(responseErrorMessage(body, "Could not change password"));
+  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not change password")));
 }
 
 export async function signOut() {
@@ -355,7 +365,7 @@ export async function signOut() {
   }).catch(() => undefined);
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error("Could not clear the local session");
+  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
 }
 
 export async function deleteAccount(password: string) {
@@ -367,7 +377,7 @@ export async function deleteAccount(password: string) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(responseErrorMessage(body, "Could not delete account"));
+    throw new Error(responseErrorMessage(body, t("Could not delete account")));
   }
   await clearSessionToken();
   await clearSpace();

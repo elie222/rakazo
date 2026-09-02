@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
@@ -24,6 +25,7 @@ export function BotOrganizeModal({
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
   onCreateSection: (name: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -37,7 +39,7 @@ export function BotOrganizeModal({
       await request();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update chat");
+      setError(err instanceof Error ? err.message : t("Could not update chat"));
       setSaving(false);
     }
   }
@@ -46,7 +48,7 @@ export function BotOrganizeModal({
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable
-          accessibilityLabel="Close chat organization"
+          accessibilityLabel={t("Close chat organization")}
           style={StyleSheet.absoluteFill}
           onPress={onClose}
         />
@@ -65,7 +67,7 @@ export function BotOrganizeModal({
               android={bot.pinned ? "pin-outline" : "pin"}
               size={18}
             />
-            <Text style={styles.actionLabel}>{bot.pinned ? "Unpin" : "Pin"}</Text>
+            <Text style={styles.actionLabel}>{bot.pinned ? t("Unpin") : t("Pin")}</Text>
           </Pressable>
           {typeof bot.notifyOnFinish === "boolean" ? (
             <Pressable
@@ -80,11 +82,11 @@ export function BotOrganizeModal({
                 size={18}
               />
               <Text style={styles.actionLabel}>
-                {bot.notifyOnFinish ? "Silence notifications" : "Resume notifications"}
+                {bot.notifyOnFinish ? t("Silence notifications") : t("Resume notifications")}
               </Text>
             </Pressable>
           ) : null}
-          <Text style={styles.sectionLabel}>Move to</Text>
+          <Text style={styles.sectionLabel}>{t("Move to")}</Text>
           <ScrollView style={styles.sectionOptions} keyboardShouldPersistTaps="handled">
             {sections.map((section) => (
               <SectionOption
@@ -96,7 +98,7 @@ export function BotOrganizeModal({
               />
             ))}
             <SectionOption
-              label="Unassigned"
+              label={t("Unassigned")}
               selected={bot.sectionId === null}
               disabled={saving || bot.sectionId === null}
               onPress={() => void save(() => onUpdate({ sectionId: null }))}
@@ -109,18 +111,18 @@ export function BotOrganizeModal({
                 value={name}
                 onChangeText={setName}
                 maxLength={60}
-                placeholder="Section name"
+                placeholder={t("Section name")}
                 placeholderTextColor={native.secondaryLabel}
                 style={styles.newSectionInput}
               />
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Create section"
+                accessibilityLabel={t("Create section")}
                 disabled={saving || !name.trim()}
                 onPress={() => void save(() => onCreateSection(name.trim()))}
                 style={styles.newSectionSubmit}
               >
-                <Text style={styles.newSectionSubmitLabel}>Create</Text>
+                <Text style={styles.newSectionSubmitLabel}>{t("Create")}</Text>
               </Pressable>
             </View>
           ) : (
@@ -130,12 +132,12 @@ export function BotOrganizeModal({
               style={({ pressed }) => [styles.action, pressed && styles.pressed]}
             >
               <NativeSymbol ios="folder.badge.plus" android="folder-outline" size={18} />
-              <Text style={styles.actionLabel}>New section</Text>
+              <Text style={styles.actionLabel}>{t("New section")}</Text>
             </Pressable>
           )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable onPress={onClose} style={styles.cancel}>
-            <Text style={styles.cancelLabel}>Cancel</Text>
+            <Text style={styles.cancelLabel}>{t("Cancel")}</Text>
           </Pressable>
         </View>
       </View>

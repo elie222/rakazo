@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
+import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 
 export function AppConnectCard({
@@ -13,6 +14,7 @@ export function AppConnectCard({
   botId: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
@@ -55,10 +57,10 @@ export function AppConnectCard({
         }
         await abortableDelay(2_000, controller.signal);
       }
-      if (!controller.signal.aborted) setError("Authorization timed out. Please try again.");
+      if (!controller.signal.aborted) setError(t("Authorization timed out. Please try again."));
     } catch (reason) {
       if (!controller.signal.aborted) {
-        setError(reason instanceof Error ? reason.message : "Could not authorize this app");
+        setError(reason instanceof Error ? reason.message : t("Could not authorize this app"));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -70,7 +72,7 @@ export function AppConnectCard({
 
   return (
     <View
-      accessibilityLabel={`${block.name} connection`}
+      accessibilityLabel={t("{name} connection", { name: block.name })}
       style={{
         width: "90%",
         borderRadius: 18,
@@ -106,7 +108,7 @@ export function AppConnectCard({
         {view.showAuthorize ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Authorize ${block.name}`}
+            accessibilityLabel={t("Authorize {name}", { name: block.name })}
             disabled={busy}
             onPress={() => void authorize()}
             style={{

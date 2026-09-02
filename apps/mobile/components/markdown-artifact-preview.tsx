@@ -6,6 +6,7 @@ import {
   openMobileArtifact,
   readMobileArtifactText,
 } from "../lib/artifact-open";
+import { useI18n } from "../lib/i18n";
 import { NativeSymbol } from "./native-symbol";
 
 export type MarkdownArtifactPreviewTarget = {
@@ -23,6 +24,7 @@ export function MarkdownArtifactPreview({
   target: MarkdownArtifactPreviewTarget;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "ready"; markdown: string }
@@ -43,7 +45,7 @@ export function MarkdownArtifactPreview({
         if (cancelled) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : "Could not load this file.",
+          message: error instanceof Error ? error.message : t("Could not load this file."),
         });
       });
     return () => {
@@ -71,7 +73,7 @@ export function MarkdownArtifactPreview({
             {target.name}
           </Text>
           <Pressable
-            accessibilityLabel={`Share ${target.name}`}
+            accessibilityLabel={t("Share {name}", { name: target.name })}
             hitSlop={8}
             onPress={() =>
               void openMobileArtifact(
@@ -81,8 +83,8 @@ export function MarkdownArtifactPreview({
                 target.mimeType,
               ).catch((error) =>
                 Alert.alert(
-                  "Could not share file",
-                  error instanceof Error ? error.message : "Try again.",
+                  t("Could not share file"),
+                  error instanceof Error ? error.message : t("Try again."),
                 ),
               )
             }
@@ -96,7 +98,7 @@ export function MarkdownArtifactPreview({
             />
           </Pressable>
           <Pressable
-            accessibilityLabel="Close preview"
+            accessibilityLabel={t("Close preview")}
             hitSlop={8}
             onPress={onClose}
             style={{ padding: 10 }}
@@ -106,7 +108,7 @@ export function MarkdownArtifactPreview({
         </View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 28 }}>
           {state.status === "loading" ? (
-            <Text style={{ color: "#85858A", fontSize: 15 }}>Loading preview…</Text>
+            <Text style={{ color: "#85858A", fontSize: 15 }}>{t("Loading preview…")}</Text>
           ) : state.status === "error" ? (
             <View
               style={{

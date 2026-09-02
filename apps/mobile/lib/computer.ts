@@ -1,4 +1,5 @@
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
+import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
 export const SCREEN_URL_OPEN_ATTEMPTS = 5;
@@ -63,22 +64,22 @@ export function previewPlaceholder(
   name: string,
   mode?: ComputerMode,
 ): string {
-  if (state === "booting" || booting) return "Booting live desktop…";
+  if (state === "booting" || booting) return t("Booting live desktop…");
   if (state === "running") return computerLabel(mode, name);
-  if (state === "suspended") return "Computer is asleep — take control to wake it";
-  if (state === "error") return "Computer failed to boot";
-  return "Computer is stopped";
+  if (state === "suspended") return t("Computer is asleep — take control to wake it");
+  if (state === "error") return t("Computer failed to boot");
+  return t("Computer is stopped");
 }
 
 export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  if (computer?.busyBotName) return `${computer.busyBotName} is using it`;
+  if (computer?.busyBotName) return t("{name} is using it", { name: computer.busyBotName });
   if (computer?.controlHolder === "user" && computer.controlBotId === botId) {
-    return "You have control";
+    return t("You have control");
   }
-  if (computer?.state === "suspended") return "Asleep";
+  if (computer?.state === "suspended") return t("Asleep");
   return computerLabel(computer?.mode, name);
 }
 
 export function computerLabel(mode: ComputerMode | undefined, name: string) {
-  return mode === "dedicated" ? `${name}’s computer` : "Team Computer";
+  return mode === "dedicated" ? t("{name}’s computer", { name }) : t("Team Computer");
 }

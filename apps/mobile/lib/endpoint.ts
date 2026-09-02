@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 
@@ -9,18 +11,18 @@ export function defaultApiBase() {
 
 export function normalizeApiBase(input: string): EndpointResult {
   const trimmed = input.trim();
-  if (!trimmed) return { ok: false, error: "Enter a server URL" };
+  if (!trimmed) return { ok: false, error: t("Enter a server URL") };
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   let parsed: URL;
   try {
     parsed = new URL(withScheme);
   } catch {
-    return { ok: false, error: "That doesn’t look like a URL" };
+    return { ok: false, error: t("That doesn’t look like a URL") };
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { ok: false, error: "Use an http or https URL" };
+    return { ok: false, error: t("Use an http or https URL") };
   }
-  if (!parsed.hostname) return { ok: false, error: "That URL is missing a host" };
+  if (!parsed.hostname) return { ok: false, error: t("That URL is missing a host") };
   if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
     return { ok: false, error: "Public servers need https://" };
   }
@@ -45,7 +47,7 @@ export function apiBaseWarning(url: string): string | null {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
-      return "Public servers need https://. HTTP only works on your local network.";
+      return t("Public servers need https://. HTTP only works on your local network.");
     }
   } catch {
     return null;
@@ -73,11 +75,11 @@ export async function probeApiBase(
       error?: { message?: string };
     };
     if (!res.ok || body.error || body.json?.ok !== true) {
-      return { ok: false, error: "That URL did not look like a Rakazo server" };
+      return { ok: false, error: t("That URL did not look like a Rakazo server") };
     }
     return parsed;
   } catch {
-    return { ok: false, error: "Could not reach that server" };
+    return { ok: false, error: t("Could not reach that server") };
   } finally {
     clearTimeout(timer);
   }

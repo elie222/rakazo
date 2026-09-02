@@ -122,12 +122,13 @@ setup again.
 
 Mobile build and release instructions live in [docs/mobile-release.md](./docs/mobile-release.md).
 
-## Web UI language
+## UI language
 
-The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
-Português (Brasil), and 简体中文. Change it under **Settings → Language**. The marketing
-homepage (`apps/www`) is available in en/de/ko via footer language links (`/`, `/de/`,
-`/ko/`); other marketing pages stay English.
+The web (and Electron-hosted) UI and the Expo mobile app support English, Deutsch, 한국어,
+Türkçe, हिन्दी, Português (Brasil), and 简体中文. Change it under **Settings → Language** on
+web, or **Account → Language** on mobile. The marketing homepage (`apps/www`) is available
+in en/de/ko/zh via footer language links (`/`, `/de/`, `/ko/`, `/zh/`); other marketing
+pages stay English.
 
 ## Development
 
