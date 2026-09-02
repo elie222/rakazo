@@ -761,7 +761,7 @@ describe("mobile thread subscription", () => {
     }
   });
 
-  it("does not treat SSE comments as activity for the idle timeout", async () => {
+  it("does not treat SSE keepalives as activity for the idle timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
@@ -769,7 +769,11 @@ describe("mobile thread subscription", () => {
         const signal = init?.signal as AbortSignal | undefined;
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+            controller.enqueue(encoder.encode("data: \n\n"));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.enqueue(encoder.encode("data: not-json\n\n"));
             const fail = () =>
               controller.error(
                 signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"),
