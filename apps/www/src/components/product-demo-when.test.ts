@@ -42,6 +42,13 @@ describe("displayRoutineWhen", () => {
     expect(displayRoutineWhen("Last Friday", zh)).toBe("每月最后一个周五");
   });
 
+  it("keeps opaque English schedules instead of collapsing them to daily 9:00 AM", () => {
+    const identity = (source: string) => source;
+    expect(displayRoutineWhen("Tue + Thu", identity)).toBe("Tue + Thu");
+    expect(displayRoutineWhen("Last Friday", identity)).toBe("Last Friday");
+    expect(displayRoutineWhen("Cron 0 9 * * 5", identity)).toBe("Cron 0 9 * * 5");
+  });
+
   it("localizes generated whenLabel schedules via describeTrigger components", () => {
     const stored = whenLabel([defaultTrigger()]);
     expect(stored).toBe("Every day at 9:00 AM");

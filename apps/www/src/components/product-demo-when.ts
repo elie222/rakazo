@@ -101,12 +101,17 @@ export function resolveRoutineWhen(triggers: DemoTrigger[], sourceWhen?: string)
 }
 
 /**
- * List-label for a stored `when`: prefer a direct catalog hit (opaque seeds),
- * otherwise reparse generated English whenLabel output and localize components.
+ * List-label for a stored `when`: prefer a direct catalog hit (opaque seeds).
+ * Only reparse through describeTrigger when the string round-trips via
+ * whenLabel(parseWhen(...)) — i.e. it was produced by whenLabel. Opaque
+ * customs and cron text stay as stored so English (and other locales without
+ * a direct hit) do not collapse them to daily 9:00 AM.
  */
 export function displayRoutineWhen(when: string, text: DemoTranslator): string {
   const direct = text(when);
   if (direct !== when) return direct;
-  const { lead, detail } = describeTrigger(parseWhen(when), text);
+  const parsed = parseWhen(when);
+  if (whenLabel([parsed]) !== when) return when;
+  const { lead, detail } = describeTrigger(parsed, text);
   return [lead, detail].filter(Boolean).join(" ");
 }
