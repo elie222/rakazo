@@ -31,6 +31,7 @@ import {
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
+import { SUBSCRIBE_IDLE_TIMEOUT_MS } from "./refresh";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -588,42 +589,74 @@ export async function subscribeThread(
   cursor: number,
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,
+  idleTimeoutMs: number = SUBSCRIBE_IDLE_TIMEOUT_MS,
 ) {
-  const res = await fetch(`${currentApiBase()}/rpc/threads/subscribe`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      origin: "rakazo://",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ json: { ...target, cursor } }),
-    signal,
-  });
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (!signal.aborted) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-    for (const chunk of chunks) {
-      const data = chunk
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("");
-      if (!data || data === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
-        if (parsed.json?.type) onEvent(parsed.json);
-      } catch {
-        // ignore keepalives and partial frames
+  const idle = new AbortController();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = undefined;
+  };
+  const bumpIdle = () => {
+    clearIdle();
+    if (idleTimeoutMs <= 0 || idle.signal.aborted) return;
+    idleTimer = setTimeout(() => idle.abort(), idleTimeoutMs);
+  };
+  const onParentAbort = () => {
+    clearIdle();
+    idle.abort();
+  };
+  if (signal.aborted) {
+    idle.abort();
+  } else {
+    signal.addEventListener("abort", onParentAbort, { once: true });
+    bumpIdle();
+  }
+  try {
+    const res = await fetch(`${currentApiBase()}/rpc/threads/subscribe`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ json: { ...target, cursor } }),
+      signal: idle.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (!idle.signal.aborted) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bumpIdle();
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+      for (const chunk of chunks) {
+        const data = chunk
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("");
+        if (!data || data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
+          if (parsed.json?.type) onEvent(parsed.json);
+        } catch {
+          // ignore keepalives and partial frames
+        }
       }
     }
+    if (idle.signal.aborted && !signal.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new DOMException("SSE idle timeout", "AbortError");
+    }
+  } finally {
+    clearIdle();
+    signal.removeEventListener("abort", onParentAbort);
   }
 }
 
