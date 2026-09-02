@@ -306,6 +306,7 @@ export function getDemoBots(locale: Locale): DemoBot[] {
     routines: bot.routines.map((routine) => ({
       ...routine,
       name: text(routine.name),
+      when: text(routine.when),
       runs: routine.runs?.map((run) => ({
         ...run,
         text: text(run.text),

@@ -42,6 +42,16 @@ describe("Chinese product demo", () => {
     }
   });
 
+  it("keeps seeded custom schedules instead of rewriting them to daily 9:00 AM", () => {
+    const localized = getDemoBots("zh");
+    const schedules = localized.flatMap((bot) => bot.routines.map((routine) => routine.when));
+    expect(schedules).toContain("周二和周四");
+    expect(schedules).toContain("每月最后一个周五");
+    expect(schedules).not.toContain("每天 9:00 AM");
+    expect(demoText("zh", "Tue + Thu")).toBe("周二和周四");
+    expect(demoText("zh", "Last Friday")).toBe("每月最后一个周五");
+  });
+
   it("formats localized interactive labels without losing values", () => {
     expect(demoText("zh", "Message {name}", { name: "Inbox Manager" })).toBe(
       "给 Inbox Manager 发消息",

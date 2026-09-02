@@ -170,12 +170,8 @@ function whenLabel(triggers: Trigger[]) {
   return [lead, detail].filter(Boolean).join(" ");
 }
 
-function displayedWhen(when: string, locale: Locale, text: DemoTranslator): string {
-  if (locale !== "zh") return when;
-  const direct = text(when);
-  if (direct !== when) return direct;
-  const { lead, detail } = describeTrigger(parseWhen(when), text);
-  return [lead, detail].filter(Boolean).join(" ");
+function displayedWhen(when: string, text: DemoTranslator): string {
+  return text(when);
 }
 
 function previewForBot(bot: LiveBot, extra: ExtraMessages) {
@@ -977,7 +973,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                         <span className="product-demo__routine-icon">◷</span>
                         <span className="product-demo__routine-name">{routine.name}</span>
                         <span className="product-demo__routine-when">
-                          {displayedWhen(routine.when, locale, text)}
+                          {displayedWhen(routine.when, text)}
                         </span>
                       </button>
                     ))}
