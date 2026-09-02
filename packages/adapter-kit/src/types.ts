@@ -528,6 +528,10 @@ export interface MessagingInboundMessage {
   participants: string[];
   content: string;
   mediaUrl: string | null;
+  /** True when the platform routed this as an @-mention of this bot. */
+  mentionedThisBot?: boolean;
+  /** True when this event is a reaction on a message, not a text message. */
+  isReaction?: boolean;
 }
 
 /** Provider-neutral outbound delivery status after platform webhook parsing. */

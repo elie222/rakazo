@@ -637,6 +637,8 @@ model Routine {
   active         Boolean   @default(false)
   notify         Boolean   @default(true)
   webhookEnabled Boolean   @default(false)
+  /// Provider-neutral event triggers (webhook / repo / chat). JSON array.
+  eventTriggers  Json      @default("[]")
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

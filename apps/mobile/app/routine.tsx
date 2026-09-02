@@ -67,8 +67,14 @@ export default function RoutineDetail() {
               {routine.name}
             </Text>
             <Text style={{ color: routine.active ? "#4ECB71" : "#85858A", fontSize: 14 }}>
-              {routine.active ? "Active" : "Paused"} · {routine.crons.join(", ")} ·{" "}
-              {routine.timezone}
+              {routine.active ? "Active" : "Paused"}
+              {routine.crons.length > 0 ? ` · ${routine.crons.join(", ")}` : ""}
+              {routine.eventTriggers?.length
+                ? ` · ${routine.eventTriggers.length} event trigger${routine.eventTriggers.length === 1 ? "" : "s"}`
+                : routine.webhookEnabled
+                  ? " · Webhook"
+                  : ""}
+              {` · ${routine.timezone}`}
             </Text>
           </View>
           <View style={{ gap: 8 }}>

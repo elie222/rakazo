@@ -11,6 +11,8 @@ function createDeps(
     invitedMember?: unknown;
     approvedMember?: unknown;
     sendResult?: { messageId: string; runId: string | null; seq: number };
+    routines?: Array<Record<string, unknown>>;
+    wakeRoutineFromEvent?: ReturnType<typeof vi.fn>;
   } = {},
 ) {
   const identity =
@@ -111,6 +113,9 @@ function createDeps(
     },
     messagingLinkCode,
     bot: { findUnique: vi.fn(async () => ({ name: "Chief" })) },
+    routine: {
+      findMany: vi.fn(async () => overrides.routines ?? []),
+    },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
       upsert: vi.fn(async () => channel),
@@ -230,6 +235,9 @@ function createDeps(
       }),
     ),
   };
+  const wakeRoutineFromEvent =
+    overrides.wakeRoutineFromEvent ??
+    vi.fn(async () => ({ runId: "routine-run-1", threadId: "thread-1" }));
   return {
     prisma,
     events: { sendUserMessage, notify },
@@ -238,6 +246,7 @@ function createDeps(
     openSignup: true,
     signupPolicy,
     typing,
+    wakeRoutineFromEvent,
     sendUserMessage,
     notify,
     enqueue,
@@ -251,6 +260,7 @@ function createDeps(
     enqueue: ReturnType<typeof vi.fn>;
     typing: ReturnType<typeof vi.fn>;
     provision: ReturnType<typeof vi.fn>;
+    wakeRoutineFromEvent: ReturnType<typeof vi.fn>;
     outboundRows: Array<Record<string, unknown>>;
     members: Array<Record<string, unknown>>;
     createdIdentities: Array<Record<string, unknown>>;
@@ -1122,5 +1132,115 @@ describe("createMessagingInboundHandler linking", () => {
     await handle(dmEvent);
     expect(deps.provision).toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+});
+
+describe("createMessagingInboundHandler routine chat triggers", () => {
+  it("wakes a matching chat routine and skips the messaging run", async () => {
+    const wakeRoutineFromEvent = vi.fn(async () => ({
+      runId: "routine-run-1",
+      threadId: "thread-1",
+    }));
+    const deps = createDeps({
+      wakeRoutineFromEvent,
+      routines: [
+        {
+          id: "routine-chat",
+          webhookEnabled: false,
+          eventTriggers: [
+            {
+              id: "c1",
+              kind: "chat",
+              scope: "dm",
+              target: "+15551111111",
+              match: "message",
+            },
+          ],
+        },
+      ],
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(dmEvent);
+    expect(wakeRoutineFromEvent).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not wake a paused routine and still runs messaging", async () => {
+    const wakeRoutineFromEvent = vi.fn(async () => ({
+      runId: "routine-run-1",
+      threadId: "thread-1",
+    }));
+    const deps = createDeps({
+      wakeRoutineFromEvent,
+      routines: [], // active filter returns none
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(dmEvent);
+    expect(wakeRoutineFromEvent).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+  });
+
+  it("wakes on reaction with empty text", async () => {
+    const wakeRoutineFromEvent = vi.fn(async () => ({
+      runId: "routine-run-1",
+      threadId: "thread-1",
+    }));
+    const deps = createDeps({
+      wakeRoutineFromEvent,
+      routines: [
+        {
+          id: "routine-react",
+          webhookEnabled: false,
+          eventTriggers: [
+            {
+              id: "c1",
+              kind: "chat",
+              scope: "dm",
+              target: "+15551111111",
+              match: "reaction",
+            },
+          ],
+        },
+      ],
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "", isReaction: true, handle: "reaction:1:thumbsup" });
+    expect(wakeRoutineFromEvent).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("requires this-bot mention for mention triggers", async () => {
+    const wakeRoutineFromEvent = vi.fn(async () => ({
+      runId: "routine-run-1",
+      threadId: "thread-1",
+    }));
+    const deps = createDeps({
+      wakeRoutineFromEvent,
+      routines: [
+        {
+          id: "routine-mention",
+          webhookEnabled: false,
+          eventTriggers: [
+            {
+              id: "c1",
+              kind: "chat",
+              scope: "dm",
+              target: "+15551111111",
+              match: "mention",
+            },
+          ],
+        },
+      ],
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "hey @someone" });
+    expect(wakeRoutineFromEvent).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+
+    deps.sendUserMessage.mockClear();
+    await handle({ ...dmEvent, content: "hey @Chief", handle: "handle-2", mentionedThisBot: true });
+    expect(wakeRoutineFromEvent).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 });

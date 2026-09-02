@@ -117,6 +117,8 @@ describe("ChatSdkMessagingSurface inbound", () => {
         participants: [],
         content: "hello",
         mediaUrl: null,
+        mentionedThisBot: false,
+        isReaction: false,
       },
     ]);
   });

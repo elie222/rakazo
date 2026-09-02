@@ -25,6 +25,7 @@ function createDeps(
 ): WebhookDeps & {
   sendUserMessage: ReturnType<typeof vi.fn>;
   enqueue: ReturnType<typeof vi.fn>;
+  wakeRoutineFromEvent: ReturnType<typeof vi.fn>;
 } {
   const bot =
     overrides.bot === undefined
@@ -52,6 +53,7 @@ function createDeps(
     seq: 3,
   }));
   const enqueue = vi.fn(async () => undefined);
+  const wakeRoutineFromEvent = vi.fn(async () => null);
 
   return {
     prisma: {
@@ -70,6 +72,7 @@ function createDeps(
     } as unknown as WebhookDeps["secrets"],
     events: { sendUserMessage },
     jobs: { enqueue } as unknown as WebhookDeps["jobs"],
+    wakeRoutineFromEvent,
     sendUserMessage,
     enqueue,
   };
@@ -186,6 +189,35 @@ describe("inbound webhook HTTP route", () => {
       }),
     );
     expect(deps.enqueue).toHaveBeenCalled();
+  });
+
+  it("wakes matching webhook routines via wakeRoutineFromEvent", async () => {
+    const deps = createDeps();
+    (deps.prisma.routine.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "routine-1",
+        webhookEnabled: true,
+        eventTriggers: [{ id: "w1", kind: "webhook" }],
+      },
+    ]);
+    deps.wakeRoutineFromEvent.mockResolvedValue({
+      runId: "run-routine-1",
+      threadId: "thread-1",
+    });
+    const app = mount(deps);
+    const res = await app.request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "ping" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runIds: string[] };
+    expect(body.runIds).toEqual(["run-routine-1"]);
+    expect(deps.wakeRoutineFromEvent).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("accepts a plain text payload", async () => {

@@ -1,7 +1,9 @@
 import type { JobPublisher, MessagingInboundMessage } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
+import { dispatchRoutineEvents } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
-import { parseMessagingCommand, sanitizeMessagingLabel } from "@rakazo/core";
+import type { NormalizedRoutineEvent } from "@rakazo/core";
+import { parseMessagingCommand, sanitizeMessagingLabel, textMentionsBot } from "@rakazo/core";
 import type {
   MessagingIdentityRequest,
   Prisma,
@@ -35,6 +37,12 @@ export interface MessagingInboundDeps {
    * Cosmetic only — callers must catch failures; groups never get it.
    */
   typing?: (threadId: string) => Promise<void>;
+  /** Optional chat-trigger wake for routines on this bot. */
+  wakeRoutineFromEvent?: (
+    routineId: string,
+    event: NormalizedRoutineEvent,
+    options?: { idempotencyKey?: string },
+  ) => Promise<{ runId: string; threadId: string } | null>;
 }
 
 type IdentityRow = {
@@ -81,7 +89,7 @@ async function handleDirectEvent(
       where: { id: existing.id },
       data: { outboundSinceInbound: 0, lastInboundAt: new Date(), dmThreadId: event.threadId },
     });
-    if (!text) return;
+    if (!text && !event.isReaction) return;
     // Owner commands are only parsed in the verified 1:1 conversation.
     const command = parseMessagingCommand(event.content);
     if (command && (await applyOwnerCommand(deps, existing, command))) return;
@@ -95,6 +103,7 @@ async function handleDirectEvent(
     if (await tryRedeemLinkCode(deps, event)) return;
     if (!deps.openSignup) return;
     // Never provision a full account for a reaction or empty payload.
+    if (!text && !event.isReaction) return;
     if (!text) return;
   }
 
@@ -122,6 +131,15 @@ async function handleDirectEvent(
       deps.signupPolicy,
     );
   }
+
+  const woken = await wakeChatRoutineTriggers(deps, {
+    botId: ids.botId,
+    spaceId: ids.spaceId,
+    event,
+    text: event.content,
+  });
+  if (woken > 0) return;
+  if (!text) return;
 
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
@@ -460,6 +478,15 @@ async function handleChannelEvent(
     if (!identity) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
+    const woken = await wakeChatRoutineTriggers(deps, {
+      botId: identity.botId,
+      spaceId: identity.spaceId,
+      event,
+      text: event.content,
+    });
+    if (woken > 0) continue;
+    if (event.isReaction && !event.content.trim()) continue;
+
     const sent = await deps.events.sendUserMessage({
       spaceId: identity.spaceId,
       threadId: thread.id,
@@ -527,4 +554,62 @@ async function ownerFirstName(
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
   const first = user?.name.trim().split(/\s+/)[0];
   return first ? sanitizeMessagingLabel(first) : fallback;
+}
+
+async function wakeChatRoutineTriggers(
+  deps: MessagingInboundDeps,
+  input: {
+    botId: string;
+    spaceId: string;
+    event: MessagingInboundMessage;
+    text: string;
+  },
+): Promise<number> {
+  if (!deps.wakeRoutineFromEvent) return 0;
+  const bot = await deps.prisma.bot.findUnique({
+    where: { id: input.botId },
+    select: { name: true },
+  });
+  const mentionTokens = [bot?.name ?? ""].filter(Boolean);
+  const mentioned =
+    input.event.mentionedThisBot === true || textMentionsBot(input.text, mentionTokens);
+  const chatEvent: NormalizedRoutineEvent = {
+    source: "chat",
+    provider: input.event.provider,
+    scope: input.event.isDirect ? "dm" : "channel",
+    targets: [
+      ...(input.event.isDirect
+        ? [input.event.from, input.event.fromLabel ?? ""]
+        : [input.event.channelName ?? "", input.event.threadId]),
+    ].filter(Boolean),
+    text: input.text,
+    mentioned,
+    reaction: input.event.isReaction === true,
+    payload: {
+      provider: input.event.provider,
+      from: input.event.from,
+      fromLabel: input.event.fromLabel,
+      channelName: input.event.channelName,
+      threadId: input.event.threadId,
+      handle: input.event.handle,
+      content: input.event.content,
+      isReaction: input.event.isReaction === true,
+    },
+  };
+  try {
+    const woken = await dispatchRoutineEvents({
+      deps: {
+        prisma: deps.prisma,
+        wakeRoutineFromEvent: deps.wakeRoutineFromEvent,
+      },
+      botId: input.botId,
+      spaceId: input.spaceId,
+      events: [chatEvent],
+      idempotencyKey: `messaging:${input.event.provider}:${input.event.handle}`,
+    });
+    return woken.length;
+  } catch (error) {
+    console.error("messaging chat trigger wake error", error);
+    return 0;
+  }
 }

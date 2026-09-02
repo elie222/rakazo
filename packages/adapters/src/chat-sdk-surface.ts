@@ -12,7 +12,7 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-import type { Adapter, Message, Thread } from "chat";
+import type { Adapter, Message, ReactionEvent, Thread } from "chat";
 import { Chat } from "chat";
 
 /** Per-webhook drain of Chat SDK waitUntil work + inbound sink failures. */
@@ -71,8 +71,12 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       // client nonce downstream handle replay.
       concurrency: "concurrent",
     });
-    const deliver = async (thread: Thread, message: Message) => {
-      const event = this.toInbound(thread, message);
+    const deliver = async (
+      thread: Thread,
+      message: Message,
+      flags: { mentionedThisBot?: boolean } = {},
+    ) => {
+      const event = this.toInbound(thread, message, flags);
       if (!event) return;
       try {
         await this.sink?.(event);
@@ -88,10 +92,23 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // unsubscribed threads, then the catch-all pattern for everything else.
     // Subscribed threads skip the catch-all and only fire onSubscribedMessage
     // (chat SDK docs / dispatchToHandlersWithSignal); register deliver there too.
-    this.chat.onDirectMessage(deliver);
-    this.chat.onNewMention(deliver);
-    this.chat.onSubscribedMessage(deliver);
-    this.chat.onNewMessage(/(?:)/, deliver);
+    this.chat.onDirectMessage((thread, message) => deliver(thread, message));
+    this.chat.onNewMention((thread, message) =>
+      deliver(thread, message, { mentionedThisBot: true }),
+    );
+    this.chat.onSubscribedMessage((thread, message) => deliver(thread, message));
+    this.chat.onNewMessage(/(?:)/, (thread, message) => deliver(thread, message));
+    this.chat.onReaction(async (reaction) => {
+      const event = this.toReactionInbound(reaction);
+      if (!event) return;
+      try {
+        await this.sink?.(event);
+      } catch (error) {
+        const drain = webhookDrain.getStore();
+        if (drain) drain.failed = true;
+        throw error;
+      }
+    });
   }
 
   describe(): AdapterDescriptor<{ providers: string[] }> {
@@ -200,7 +217,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return response;
   }
 
-  private toInbound(thread: Thread, message: Message): MessagingInboundMessage | null {
+  private toInbound(
+    thread: Thread,
+    message: Message,
+    flags: { mentionedThisBot?: boolean } = {},
+  ): MessagingInboundMessage | null {
     if (message.author.isMe || message.author.isSystem) return null;
     const provider = providerOfThreadId(thread.id);
     const platform = this.byProvider.get(provider);
@@ -220,6 +241,40 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
       content: message.text ?? "",
       mediaUrl: message.attachments.find((attachment) => attachment.url)?.url ?? null,
+      mentionedThisBot: flags.mentionedThisBot === true,
+      isReaction: false,
+    };
+  }
+
+  private toReactionInbound(reaction: ReactionEvent): MessagingInboundMessage | null {
+    if (!reaction.added) return null;
+    const thread = reaction.thread;
+    const provider = providerOfThreadId(thread.id);
+    const platform = this.byProvider.get(provider);
+    if (!platform) return null;
+    const isDirect = thread.isDM;
+    if (!isDirect && !platform.capabilities.groups) return null;
+    if (reaction.user.isMe || reaction.user.isSystem) return null;
+    const from = reaction.user.userId;
+    const fromLabel = reaction.user.fullName || reaction.user.userName || null;
+    const emojiKey =
+      typeof reaction.emoji === "object" && reaction.emoji && "name" in reaction.emoji
+        ? String((reaction.emoji as { name?: string }).name ?? reaction.rawEmoji)
+        : reaction.rawEmoji;
+    return {
+      type: "message",
+      provider,
+      handle: `reaction:${reaction.messageId}:${from}:${emojiKey}`,
+      threadId: thread.id,
+      isDirect,
+      from,
+      fromLabel: fromLabel === from ? null : fromLabel,
+      channelName: isDirect ? null : (platform.channelName?.(reaction.raw) ?? null),
+      participants: isDirect ? [] : (platform.participants?.(reaction.raw) ?? []),
+      content: "",
+      mediaUrl: null,
+      mentionedThisBot: false,
+      isReaction: true,
     };
   }
 }

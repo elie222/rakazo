@@ -39,6 +39,7 @@ import {
   createStreamingRedactor,
   endsSentence,
   expandSkillReferencesInPrompt,
+  formatRoutineEventPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
   humanizeToolName,
@@ -48,6 +49,7 @@ import {
   isTerminal,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
+  type NormalizedRoutineEvent,
   nextCronDateAcross,
   nextFence,
   planActionGate,
@@ -713,6 +715,164 @@ export function createRunExecutor(deps: ExecutorDeps) {
       } else if (nextRunAt) {
         await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
       }
+    },
+
+    /**
+     * Event-driven wake (webhook / repo / chat). Reuses the cron wake path's
+     * task+run+continue enqueue without claiming or advancing nextRunAt.
+     */
+    async wakeRoutineFromEvent(
+      routineId: string,
+      event: NormalizedRoutineEvent,
+      options?: {
+        idempotencyKey?: string;
+        alternateIdempotencyKeys?: string[];
+        /** Accepted for callers; webhook claims are always durable across terminal runs. */
+        idempotencyScope?: "strict" | "inflight";
+      },
+    ) {
+      const routine = await deps.prisma.routine.findUnique({ where: { id: routineId } });
+      if (!routine?.active) return null;
+      const idempotencyKeys = [
+        options?.idempotencyKey,
+        ...(options?.alternateIdempotencyKeys ?? []),
+      ].filter((key): key is string => Boolean(key));
+
+      const findExistingByNonce = async () => {
+        if (idempotencyKeys.length === 0) return null;
+        return deps.prisma.run.findFirst({
+          where: {
+            spaceId: routine.spaceId,
+            clientNonce: { in: idempotencyKeys },
+          },
+          select: { id: true, threadId: true, status: true },
+        });
+      };
+
+      const recoverExisting = async (existing: {
+        id: string;
+        threadId: string;
+        status: string;
+      }) => {
+        // Re-enqueue if the winner left a queued run after a failed publish.
+        if (existing.status === "queued") {
+          try {
+            await deps.jobs.enqueue(runContinueJob(existing.id));
+          } catch {
+            // Job reconciler will retry; the run row must remain for ACK safety.
+          }
+        }
+        return { runId: existing.id, threadId: existing.threadId };
+      };
+
+      // Durable claim: recover any prior run for these keys, including terminal.
+      const existingEarly = await findExistingByNonce();
+      if (existingEarly) return recoverExisting(existingEarly);
+
+      const bot = await deps.prisma.bot.findUnique({
+        where: { id: routine.botId },
+        include: { thread: true },
+      });
+      if (!bot?.thread) return null;
+      const targetThread = routine.threadId
+        ? await deps.prisma.thread.findFirst({
+            where: {
+              id: routine.threadId,
+              spaceId: routine.spaceId,
+              OR: [
+                { botId: bot.id },
+                {
+                  group: {
+                    archivedAt: null,
+                    members: { some: { botId: bot.id } },
+                  },
+                },
+              ],
+            },
+            select: { id: true },
+          })
+        : null;
+      const thread = targetThread ?? bot.thread;
+      const skillRecords = await listAgentSkillRecords(deps.prisma, {
+        spaceId: routine.spaceId,
+        userId: routine.userId,
+      });
+      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      const prompt = formatRoutineEventPrompt(routinePrompt, event);
+      const trigger = event.source === "chat" ? ("messaging" as const) : ("webhook" as const);
+      // Event wakes only bump lastRunAt; they never touch nextRunAt.
+      const claimedAt = new Date();
+
+      const claimRun = async () =>
+        deps.prisma.$transaction(async (tx) => {
+          const updated = await tx.routine.updateMany({
+            where: { id: routine.id, active: true },
+            data: { lastRunAt: claimedAt },
+          });
+          if (updated.count !== 1) return null;
+          const task = await tx.task.create({
+            data: {
+              spaceId: routine.spaceId,
+              botId: bot.id,
+              threadId: thread.id,
+              userId: routine.userId,
+              prompt,
+              status: "queued",
+            },
+          });
+          const run = await tx.run.create({
+            data: {
+              spaceId: routine.spaceId,
+              botId: bot.id,
+              threadId: thread.id,
+              taskId: task.id,
+              userId: routine.userId,
+              status: "queued",
+              trigger,
+              routineId: routine.id,
+              clientNonce: options?.idempotencyKey,
+            },
+          });
+          return { id: run.id, taskId: task.id, threadId: thread.id };
+        });
+
+      let claimed: { id: string; taskId: string; threadId: string } | null = null;
+      try {
+        claimed = await claimRun();
+      } catch (error) {
+        if (idempotencyKeys.length > 0 && isUniqueConstraintError(error)) {
+          // Durable claim: recover any prior run for this key (including terminal)
+          // so an id-less body-hash retry after completion does not start again.
+          const existing = await findExistingByNonce();
+          if (existing) return recoverExisting(existing);
+        }
+        throw error;
+      }
+      if (!claimed) return null;
+      // Keep the run queued even if enqueue throws so concurrent recoveries
+      // and provider retries can re-enqueue without ACK-ing a deleted run id.
+      await deps.jobs.enqueue(runContinueJob(claimed.id));
+      try {
+        await deps.events.append({
+          spaceId: routine.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          type: "routine.fired",
+          runId: claimed.id,
+          payload: {
+            routineId: routine.id,
+            eventSource: event.source,
+            ...(event.source === "repo"
+              ? { repo: event.repo, event: event.event }
+              : event.source === "chat"
+                ? { provider: event.provider, scope: event.scope }
+                : {}),
+          },
+        });
+      } catch {
+        // Best effort: the run is already queued.
+      }
+      return { runId: claimed.id, threadId: claimed.threadId };
     },
 
     async continueRun(runId: string, workerId: string) {
@@ -3872,4 +4032,8 @@ export async function loadCurrentTurnImages(
   }
 
   return images.length ? images : undefined;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }

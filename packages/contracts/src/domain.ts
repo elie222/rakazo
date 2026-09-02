@@ -250,6 +250,78 @@ export const UpdateBotInput = z
     }
   });
 
+/** Provider-neutral repo event kinds (GitHub-style packs map onto these). */
+export const RepoEventKindSchema = z.enum([
+  "pr_opened",
+  "pr_merged",
+  "push",
+  "review",
+  "comment",
+  "ci",
+]);
+export type RepoEventKind = z.infer<typeof RepoEventKindSchema>;
+
+export const REPO_EVENT_KIND_VALUES = RepoEventKindSchema.options;
+
+/** Provider-neutral chat match kinds (Slack-style packs map onto these). */
+export const ChatMatchKindSchema = z.enum(["mention", "keyword", "message", "reaction"]);
+export type ChatMatchKind = z.infer<typeof ChatMatchKindSchema>;
+
+export const ChatTriggerScopeSchema = z.enum(["channel", "dm"]);
+export type ChatTriggerScope = z.infer<typeof ChatTriggerScopeSchema>;
+
+const RepoFullName = z
+  .string()
+  .trim()
+  .min(3)
+  .max(200)
+  .regex(/^[^/\s*]+\/[^/\s*]+$/, "Use owner/repo with no wildcards");
+
+export const RoutineWebhookTriggerSchema = z.object({
+  id: z.string().min(1).max(80),
+  kind: z.literal("webhook"),
+});
+export type RoutineWebhookTrigger = z.infer<typeof RoutineWebhookTriggerSchema>;
+
+export const RoutineRepoTriggerSchema = z.object({
+  id: z.string().min(1).max(80),
+  kind: z.literal("repo"),
+  repo: RepoFullName,
+  events: z.array(RepoEventKindSchema).min(1).max(REPO_EVENT_KIND_VALUES.length),
+});
+export type RoutineRepoTrigger = z.infer<typeof RoutineRepoTriggerSchema>;
+
+export const RoutineChatTriggerSchema = z
+  .object({
+    id: z.string().min(1).max(80),
+    kind: z.literal("chat"),
+    scope: ChatTriggerScopeSchema,
+    /** Channel name/id or DM handle. Exact match, no wildcards. */
+    target: z.string().trim().min(1).max(200),
+    match: ChatMatchKindSchema,
+    keyword: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.match === "keyword" && !value.keyword) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a keyword",
+        path: ["keyword"],
+      });
+    }
+  });
+export type RoutineChatTrigger = z.infer<typeof RoutineChatTriggerSchema>;
+
+export const RoutineEventTriggerSchema = z.discriminatedUnion("kind", [
+  RoutineWebhookTriggerSchema,
+  RoutineRepoTriggerSchema,
+  RoutineChatTriggerSchema,
+]);
+export type RoutineEventTrigger = z.infer<typeof RoutineEventTriggerSchema>;
+
+export const RoutineEventTriggersSchema = z.array(RoutineEventTriggerSchema).max(20);
+export type RoutineEventTriggers = z.infer<typeof RoutineEventTriggersSchema>;
+
 export const RoutineSchema = z.object({
   id: Id,
   botId: Id,
@@ -260,11 +332,16 @@ export const RoutineSchema = z.object({
   active: z.boolean(),
   notify: z.boolean(),
   webhookEnabled: z.boolean(),
+  eventTriggers: RoutineEventTriggersSchema,
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
+
+function routineHasEventTrigger(triggers: RoutineEventTriggers | undefined): boolean {
+  return (triggers?.length ?? 0) > 0;
+}
 
 export const CreateRoutineInput = z
   .object({
@@ -276,12 +353,15 @@ export const CreateRoutineInput = z
     notify: z.boolean().default(true),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
+    eventTriggers: RoutineEventTriggersSchema.default([]),
   })
   .superRefine((value, ctx) => {
-    if (value.crons.length === 0 && !value.webhookEnabled) {
+    const hasWebhook =
+      value.webhookEnabled || value.eventTriggers.some((trigger) => trigger.kind === "webhook");
+    if (value.crons.length === 0 && !hasWebhook && !routineHasEventTrigger(value.eventTriggers)) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule or webhook trigger",
+        message: "Add a schedule or event trigger",
         path: ["crons"],
       });
     }

@@ -1,7 +1,12 @@
-import { createHash } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
+import {
+  dispatchRoutineEvents,
+  eventsFromWebhookPayload,
+  webhookDeliveryIdempotency,
+} from "@rakazo/adapters";
+import type { NormalizedRoutineEvent } from "@rakazo/core";
 import { hasValidBearerToken } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { Hono } from "hono";
@@ -27,6 +32,15 @@ export type WebhookDeps = {
   secrets: EncryptedSecretStore;
   events: WebhookEvents;
   jobs: JobPublisher;
+  wakeRoutineFromEvent(
+    routineId: string,
+    event: NormalizedRoutineEvent,
+    options?: {
+      idempotencyKey?: string;
+      alternateIdempotencyKeys?: string[];
+      idempotencyScope?: "strict" | "inflight";
+    },
+  ): Promise<{ runId: string; threadId: string } | null>;
 };
 
 export function formatWebhookPrompt(payload: Record<string, unknown>): string {
@@ -144,49 +158,50 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     }
 
     const payload = parseWebhookPayload(raw, c.req.header("content-type"));
-    const eventPrompt = formatWebhookPrompt(payload);
-
-    const webhookRoutines = await deps.prisma.routine.findMany({
-      where: {
-        botId: bot.id,
-        spaceId: bot.spaceId,
-        active: true,
-        webhookEnabled: true,
-      },
-      select: { id: true, name: true, prompt: true },
-      orderBy: { updatedAt: "desc" },
-      take: 5,
+    const events = eventsFromWebhookPayload(payload, {
+      eventName: c.req.header("x-github-event") ?? c.req.header("x-rakazo-event"),
     });
 
-    const promptText =
-      webhookRoutines.length > 0
-        ? [
-            ...webhookRoutines.map(
-              (routine) => `Run routine "${routine.name}":\n${routine.prompt.trim()}`,
-            ),
-            "",
-            "Inbound webhook payload:",
-            eventPrompt,
-          ].join("\n")
-        : eventPrompt;
+    const delivery = webhookDeliveryIdempotency({
+      botId: bot.id,
+      headers: c.req.raw.headers,
+      payload,
+      rawBody: raw,
+    });
+    const deliveryKey = delivery.keys[0]!;
+    const woken = await dispatchRoutineEvents({
+      deps: {
+        prisma: deps.prisma,
+        wakeRoutineFromEvent: deps.wakeRoutineFromEvent,
+      },
+      botId: bot.id,
+      spaceId: bot.spaceId,
+      events,
+      idempotencyKey: deliveryKey,
+      alternateIdempotencyKeys: delivery.keys.slice(1),
+      idempotencyScope: delivery.scope,
+    });
 
-    const idempotencyKey =
-      c.req.header("idempotency-key")?.trim() ||
-      c.req.header("x-idempotency-key")?.trim() ||
-      (typeof payload.id === "string" ? payload.id.trim() : "") ||
-      (typeof payload.event_id === "string" ? payload.event_id.trim() : "") ||
-      undefined;
-    const clientNonce = idempotencyKey
-      ? `webhook:${bot.id}:${createHash("sha256").update(idempotencyKey).digest("base64url")}`
-      : undefined;
+    if (woken.length > 0) {
+      return c.json({
+        ok: true,
+        runIds: woken.map((row) => row.runId),
+        routineIds: woken.map((row) => row.routineId),
+        runId: woken[0]?.runId ?? null,
+      });
+    }
+
+    // No matching routine trigger: keep the legacy bot-level webhook wake.
+    const eventPrompt = formatWebhookPrompt(payload);
+    const clientNonce = deliveryKey;
 
     const sent = await deps.events.sendUserMessage({
       spaceId: bot.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       userId: bot.userId,
-      blocks: [{ kind: "text", text: promptText }],
-      prompt: promptText,
+      blocks: [{ kind: "text", text: eventPrompt }],
+      prompt: eventPrompt,
       trigger: "webhook",
       clientNonce,
     });

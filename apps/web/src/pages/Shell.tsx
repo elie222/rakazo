@@ -3304,8 +3304,8 @@ export function ShellPage() {
                   const targetBotId = active.id;
                   const targetRoutine = editingRoutine;
                   if (targetRoutine && targetRoutine.botId !== targetBotId) return;
-                  if (!routineDraft.schedules.length && !routineDraft.webhookEnabled) {
-                    setRoutineError(t`Add a schedule or webhook trigger`);
+                  if (!routineDraft.schedules.length && !routineDraft.eventTriggers.length) {
+                    setRoutineError(t`Add a schedule or event trigger`);
                     return;
                   }
                   const saveRequest = ++routineSaveRequest.current;
@@ -3349,7 +3349,10 @@ export function ShellPage() {
                         prompt: routineDraft.prompt || t`Check in.`,
                         crons,
                         active: armOneShot ? true : routineDraft.active,
-                        webhookEnabled: routineDraft.webhookEnabled,
+                        webhookEnabled: routineDraft.eventTriggers.some(
+                          (trigger) => trigger.kind === "webhook",
+                        ),
+                        eventTriggers: routineDraft.eventTriggers,
                         ...(runAt ? { runAt } : {}),
                       });
                     } else {
@@ -3361,7 +3364,10 @@ export function ShellPage() {
                         timezone: localTimezone(),
                         active: routineDraft.active,
                         notify: true,
-                        webhookEnabled: routineDraft.webhookEnabled,
+                        webhookEnabled: routineDraft.eventTriggers.some(
+                          (trigger) => trigger.kind === "webhook",
+                        ),
+                        eventTriggers: routineDraft.eventTriggers,
                       });
                     }
                     if (
@@ -4309,7 +4315,7 @@ const Composer = memo(function Composer({
 
   useEffect(() => {
     setMentionHighlightIndex(0);
-  }, [mentionQuery, mentionOptions]);
+  }, [mentionQuery]);
 
   const activeMentionIndex = clampMentionHighlightIndex(
     mentionHighlightIndex,

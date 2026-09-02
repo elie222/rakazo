@@ -49,6 +49,8 @@ describe("emulated sendblue platform inbound", () => {
       participants: [],
       content: "hi there",
       mediaUrl: null,
+      mentionedThisBot: false,
+      isReaction: false,
     });
     // The DM thread id matches what outbound resolution would open.
     const dmThreadId = await surface.openDirectThread("sendblue", "+15551234567", context);
