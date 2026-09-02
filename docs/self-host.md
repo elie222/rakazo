@@ -80,7 +80,8 @@ that HTTPS URL.
 
 Images Compose binds web to loopback (`127.0.0.1:5173`). Terminate TLS on the host and proxy
 there — Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:3100`. Set
-`BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin.
+`BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin, and set
+`RAKAZO_HOST` to its hostname (for example, `app.example.com`).
 
 ```Caddyfile
 app.example.com {
