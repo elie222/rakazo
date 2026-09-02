@@ -35,7 +35,7 @@ export function App() {
   const [sawWorkspace, setSawWorkspace] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
-  const nextMounted = workspaceMounted(gate, sawWorkspace);
+  const nextMounted = workspaceMounted(gate, sawWorkspace, nextHolding);
   if (nextMounted !== sawWorkspace) setSawWorkspace(nextMounted);
   const reconnect = sessionReconnectKind(session, nextHolding, nextMounted);
   const lastUser = useRef<unknown>(null);

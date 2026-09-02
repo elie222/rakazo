@@ -39,19 +39,20 @@ export function showSessionUnavailable(gate: SessionGate, holding: boolean): boo
 
 export type SessionReconnectKind = "none" | "blocking" | "banner";
 
+/** Drop a mounted workspace after sign-out, including a pending logout refetch. */
+export function workspaceMounted(gate: SessionGate, mounted: boolean, holding = false): boolean {
+  if (gate === "authenticated") return true;
+  if (gate === "anonymous") return false;
+  if (gate === "loading" && !holding) return false;
+  return mounted;
+}
+
 /**
  * Cold loads that never reached the server still need a full-page wait so we
  * do not dump a signed-in cookie onto the sign-in screen. Once the workspace
  * has mounted, keep it and show a reconnect bar — including when Better Auth
  * still holds the last user while a refresh fails.
  */
-/** Drop a mounted workspace after a real sign-out so reconnect cannot reuse it. */
-export function workspaceMounted(gate: SessionGate, mounted: boolean): boolean {
-  if (gate === "authenticated") return true;
-  if (gate === "anonymous") return false;
-  return mounted;
-}
-
 export function sessionReconnectKind(
   session: SessionGateInput,
   holding: boolean,

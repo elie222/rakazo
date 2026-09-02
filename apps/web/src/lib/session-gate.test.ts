@@ -77,10 +77,14 @@ describe("session gate", () => {
   it("forgets a mounted workspace after sign-out", () => {
     expect(workspaceMounted("authenticated", false)).toBe(true);
     expect(workspaceMounted("anonymous", true)).toBe(false);
-    expect(workspaceMounted("unreachable", true)).toBe(true);
-    expect(workspaceMounted("loading", true)).toBe(true);
+    expect(workspaceMounted("loading", true, false)).toBe(false);
+    expect(workspaceMounted("loading", true, true)).toBe(true);
+    expect(workspaceMounted("unreachable", true, true)).toBe(true);
     const down = { data: null, isPending: false, error: { status: 503 } };
     expect(sessionReconnectKind(down, false, workspaceMounted("anonymous", true))).toBe("blocking");
+    expect(sessionReconnectKind(down, false, workspaceMounted("loading", true, false))).toBe(
+      "blocking",
+    );
   });
 
   it("backs off between retries and stops growing", () => {
