@@ -65,7 +65,9 @@ export function AskActions({
           >
             {pendingAction === action.id
               ? t("Sending…")
-              : t(KNOWN_ASK_ACTION_LABELS[action.id] ?? action.label)}
+              : KNOWN_ASK_ACTION_LABELS[action.id]
+                ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
+                : action.label}
           </Text>
         </Pressable>
       ))}
