@@ -191,6 +191,11 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+if docker compose up --help 2>/dev/null | grep -q -- '--wait'; then
+  echo "Waiting for healthy services."
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait
+else
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+fi
 
 echo "Rakazo is starting at http://127.0.0.1:5173"
