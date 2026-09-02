@@ -161,8 +161,8 @@ the clients at that origin. Prefer TLS whenever a hostname is involved.
    Install the official Tailscale app on iPhone — Rakazo cannot start a tunnel inside the iOS client.
 3. **EasyTier (optional sidecar).** Run `easytier-core` as a separate binary or Compose service on
    the host (LGPL-3.0; do not statically link it into Rakazo). Join from Windows / macOS / Linux /
-   Android with the official EasyTier client. There is no iOS EasyTier; use Tailscale or a Tunnel
-   for iPhone. Clients may use the virtual IP over HTTP when it is RFC1918 or CGNAT.
+   Android / iPhone / iPad with the official EasyTier client. Clients may use the virtual IP over
+   HTTP when it is RFC1918 or CGNAT. Tunnel or Tailscale still work if you prefer a public hostname.
 
 Do not bundle EasyTier or Tailscale into Electron or Expo. Detecting a system install and suggesting
 an origin is fine; creating a TUN device inside Rakazo is not.
