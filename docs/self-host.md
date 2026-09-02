@@ -60,6 +60,27 @@ curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
 bash install-images.sh
 ```
 
+Stage C (`docker compose pull`) uses `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`,
+`RAKAZO_COMPUTER_IMAGE`, and `RAKAZO_COMPUTER_IMAGE_TAG` (defaults
+`ghcr.io/elie222/rakazo/{app,computer}`). When GHCR is unreachable, override those
+four in `.env` to a registry you control — keep app and computer on the same
+mirror. Do not rely on vendor-specific CDN defaults:
+
+```env
+RAKAZO_IMAGE=registry.example.com/mirror/elie222/rakazo/app
+RAKAZO_IMAGE_TAG=edge
+RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/elie222/rakazo/computer
+RAKAZO_COMPUTER_IMAGE_TAG=edge
+```
+
+After `--prepare-only`, edit `.env` then rerun `bash install-images.sh` (or
+`docker compose --env-file .env -f docker-compose.images.yml pull`). Arm64 tag
+pairing is unchanged — set both tags to the same published multi-arch release
+(see [Published images and tags](#published-images-and-tags)).
+
+`postgres:16` and `busybox:1` still pull from Docker Hub. Stage C does not cover
+them; configure the Docker daemon `registry-mirrors` or vendor those images.
+
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
