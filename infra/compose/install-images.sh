@@ -174,6 +174,23 @@ YAML
   fi
 }
 
+warn_arm64_edge_tags() {
+  local arch app_tag computer_tag
+  arch="$(uname -m)"
+  case "$arch" in
+    arm64 | aarch64) ;;
+    *) return 0 ;;
+  esac
+  # Defaults match .env.images.example (edge = amd64-only main builds).
+  app_tag="$(awk -F= '/^[[:space:]]*RAKAZO_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
+  computer_tag="$(awk -F= '/^[[:space:]]*RAKAZO_COMPUTER_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
+  app_tag="${app_tag:-edge}"
+  computer_tag="${computer_tag:-edge}"
+  if [[ "$app_tag" == "edge" || "$computer_tag" == "edge" ]]; then
+    echo "warning: host is ${arch}; edge image tags are linux/amd64-only. Pin both RAKAZO_IMAGE_TAG and RAKAZO_COMPUTER_IMAGE_TAG to the same multi-arch release tag (see docs/self-host.md)." >&2
+  fi
+}
+
 download "$COMPOSE_FILE"
 download "$ENV_EXAMPLE"
 
@@ -184,6 +201,8 @@ else
 fi
 
 validate_required_secrets
+
+warn_arm64_edge_tags
 
 if [[ "$prepare_only" == true ]]; then
   echo "Rakazo files are ready. Edit .env, then run: bash install-images.sh"
