@@ -5,6 +5,7 @@ import hi from "../../scripts/translations-hi.json";
 import ko from "../../scripts/translations-ko.json";
 import ptBR from "../../scripts/translations-pt-BR.json";
 import tr from "../../scripts/translations-tr.json";
+import zhCN from "../../scripts/translations-zh-CN.json";
 
 describe("lingui catalogs", () => {
   beforeEach(() => {
@@ -101,9 +102,54 @@ describe("lingui catalogs", () => {
         values: { timeSelect: "09:00" },
       }),
     ).toBe("09:00 बजे");
+
+    i18n.load("zh-CN", {
+      "every {intervalAmountSelect} {intervalUnitSelect}":
+        "每 {intervalAmountSelect} {intervalUnitSelect}",
+      "at {timeSelect}": "{timeSelect}",
+      "{0, plural, one {# model} other {# models}}": "{0, plural, one {# 个模型} other {# 个模型}}",
+      "{botName} · {0, plural, one {# peer} other {# peers}}":
+        "{botName} · {0, plural, one {# 个同事 Bot} other {# 个同事 Bot}}",
+    });
+    i18n.activate("zh-CN");
+    expect(
+      i18n._({
+        id: "every {intervalAmountSelect} {intervalUnitSelect}",
+        message: "every {intervalAmountSelect} {intervalUnitSelect}",
+        values: { intervalAmountSelect: "5", intervalUnitSelect: "分钟" },
+      }),
+    ).toBe("每 5 分钟");
+    expect(
+      i18n._({
+        id: "at {timeSelect}",
+        message: "at {timeSelect}",
+        values: { timeSelect: "09:00" },
+      }),
+    ).toBe("09:00");
+    expect(
+      i18n._({
+        id: "{0, plural, one {# model} other {# models}}",
+        message: "{0, plural, one {# model} other {# models}}",
+        values: { 0: 1 },
+      }),
+    ).toBe("1 个模型");
+    expect(
+      i18n._({
+        id: "{0, plural, one {# model} other {# models}}",
+        message: "{0, plural, one {# model} other {# models}}",
+        values: { 0: 3 },
+      }),
+    ).toBe("3 个模型");
+    expect(
+      i18n._({
+        id: "{botName} · {0, plural, one {# peer} other {# peers}}",
+        message: "{botName} · {0, plural, one {# peer} other {# peers}}",
+        values: { botName: "Scout", 0: 2 },
+      }),
+    ).toBe("Scout · 2 个同事 Bot");
   });
 
-  it("uses seeded catalog strings for German, Korean, Turkish, Hindi, and Brazilian Portuguese chrome", () => {
+  it("uses seeded catalog strings for German, Korean, Turkish, Hindi, Brazilian Portuguese, and Simplified Chinese chrome", () => {
     i18n.load("de", de as Record<string, string>);
     i18n.activate("de");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Einstellungen");
@@ -128,5 +174,10 @@ describe("lingui catalogs", () => {
     i18n.activate("pt-BR");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Configurações");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("Cancelar");
+
+    i18n.load("zh-CN", zhCN as Record<string, string>);
+    i18n.activate("zh-CN");
+    expect(i18n._({ id: "Settings", message: "Settings" })).toBe("设置");
+    expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("取消");
   });
 });
