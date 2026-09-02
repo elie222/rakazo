@@ -631,7 +631,6 @@ export async function subscribeThread(
     while (!idle.signal.aborted) {
       const { done, value } = await reader.read();
       if (done) break;
-      bumpIdle();
       buffer += decoder.decode(value, { stream: true });
       const chunks = buffer.split("\n\n");
       buffer = chunks.pop() ?? "";
@@ -644,7 +643,10 @@ export async function subscribeThread(
         if (!data || data === "[DONE]") continue;
         try {
           const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
-          if (parsed.json?.type) onEvent(parsed.json);
+          if (parsed.json?.type) {
+            bumpIdle();
+            onEvent(parsed.json);
+          }
         } catch {
           // ignore keepalives and partial frames
         }

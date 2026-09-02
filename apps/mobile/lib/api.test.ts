@@ -761,6 +761,42 @@ describe("mobile thread subscription", () => {
     }
   });
 
+  it("does not treat SSE comments as activity for the idle timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url, init) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+            const fail = () =>
+              controller.error(
+                signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"),
+              );
+            if (signal?.aborted) fail();
+            else signal?.addEventListener("abort", fail, { once: true });
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }),
+    );
+    try {
+      const done = subscribeThread(
+        { botId: "bot-1" },
+        -1,
+        vi.fn(),
+        new AbortController().signal,
+        1_000,
+      );
+      const expectation = expect(done).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects responses that are unsuccessful or have no stream body", async () => {
     vi.stubGlobal(
       "fetch",
