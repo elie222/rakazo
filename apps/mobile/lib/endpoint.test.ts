@@ -30,6 +30,14 @@ describe("normalizeApiBase", () => {
       ok: false,
       error: "Public servers need https://",
     });
+    expect(normalizeApiBase("http://100.64.0.1:3100")).toEqual({
+      ok: true,
+      url: "http://100.64.0.1:3100",
+    });
+    expect(normalizeApiBase("http://machine.ts.net")).toEqual({
+      ok: false,
+      error: "Public servers need https://",
+    });
   });
 
   it("rejects empty, non-http, and malformed values", () => {

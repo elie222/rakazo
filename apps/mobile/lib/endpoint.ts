@@ -27,7 +27,7 @@ export function normalizeApiBase(input: string): EndpointResult {
     return { ok: false, error: "Use an http or https URL" };
   }
   if (!parsed.hostname) return { ok: false, error: "That URL is missing a host" };
-  if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
+  if (parsed.protocol === "http:" && !allowsCleartextHttp(parsed.hostname)) {
     return { ok: false, error: "Public servers need https://" };
   }
   const url = `${parsed.protocol}//${parsed.host}`;
