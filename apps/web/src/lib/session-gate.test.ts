@@ -5,7 +5,6 @@ import {
   sessionReconnectKind,
   sessionRetryDelayMs,
   showSessionUnavailable,
-  workspaceMounted,
 } from "./session-gate.js";
 
 const user = { user: { id: "u_1" } };
@@ -50,41 +49,22 @@ describe("session gate", () => {
     expect(showSessionUnavailable("loading", false)).toBe(false);
   });
 
-  it("blocks a cold unreachable load and banners once the workspace has mounted", () => {
+  it("blocks an unreachable load that has no session user", () => {
     const down = { data: null, isPending: false, error: { status: 503 } };
-    expect(sessionReconnectKind(down, false, false)).toBe("blocking");
-    expect(sessionReconnectKind(down, false, true)).toBe("banner");
-    expect(sessionReconnectKind({ data: null, isPending: true, error: null }, true, true)).toBe(
-      "banner",
-    );
-    expect(sessionReconnectKind({ data: null, isPending: true, error: null }, true, false)).toBe(
+    expect(sessionReconnectKind(down, false)).toBe("blocking");
+    expect(sessionReconnectKind({ data: null, isPending: true, error: null }, true)).toBe(
       "blocking",
     );
   });
 
   it("banners a live session whose refresh could not reach the server", () => {
     expect(
-      sessionReconnectKind({ data: user, isPending: false, error: { status: 500 } }, false, true),
+      sessionReconnectKind({ data: user, isPending: false, error: { status: 500 } }, false),
     ).toBe("banner");
-    expect(sessionReconnectKind({ data: user, isPending: false, error: null }, false, true)).toBe(
-      "none",
-    );
+    expect(sessionReconnectKind({ data: user, isPending: false, error: null }, false)).toBe("none");
     expect(
-      sessionReconnectKind({ data: null, isPending: false, error: { status: 401 } }, false, false),
+      sessionReconnectKind({ data: null, isPending: false, error: { status: 401 } }, false),
     ).toBe("none");
-  });
-
-  it("forgets a mounted workspace after sign-out", () => {
-    expect(workspaceMounted("authenticated", false)).toBe(true);
-    expect(workspaceMounted("anonymous", true)).toBe(false);
-    expect(workspaceMounted("loading", true, false)).toBe(false);
-    expect(workspaceMounted("loading", true, true)).toBe(true);
-    expect(workspaceMounted("unreachable", true, true)).toBe(true);
-    const down = { data: null, isPending: false, error: { status: 503 } };
-    expect(sessionReconnectKind(down, false, workspaceMounted("anonymous", true))).toBe("blocking");
-    expect(sessionReconnectKind(down, false, workspaceMounted("loading", true, false))).toBe(
-      "blocking",
-    );
   });
 
   it("backs off between retries and stops growing", () => {

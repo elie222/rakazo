@@ -10,7 +10,6 @@ import {
   sessionGate,
   sessionReconnectKind,
   sessionRetryDelayMs,
-  workspaceMounted,
 } from "./lib/session-gate";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
@@ -32,15 +31,9 @@ export function App() {
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
-  const [sawWorkspace, setSawWorkspace] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
-  const nextMounted = workspaceMounted(gate, sawWorkspace, nextHolding);
-  if (nextMounted !== sawWorkspace) setSawWorkspace(nextMounted);
-  const reconnect = sessionReconnectKind(session, nextHolding, nextMounted);
-  const lastUser = useRef<unknown>(null);
-  if (session.data?.user) lastUser.current = session.data.user;
-  else if (!nextMounted) lastUser.current = null;
+  const reconnect = sessionReconnectKind(session, nextHolding);
 
   useLayoutEffect(() => {
     if (session.isPending) return;
@@ -64,7 +57,7 @@ export function App() {
     );
   }
 
-  const user = session.data?.user ?? (reconnect === "banner" ? lastUser.current : null);
+  const user = session.data?.user;
   return (
     <div className="flex h-full flex-col" data-rakazo-app-state="ready">
       {reconnect === "banner" ? <SessionReconnectBar refetch={session.refetch} /> : null}
