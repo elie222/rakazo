@@ -752,7 +752,13 @@ describe("mobile thread subscription", () => {
       }),
     );
     try {
-      const done = subscribeThread({ botId: "bot-1" }, -1, vi.fn(), new AbortController().signal, 1_000);
+      const done = subscribeThread(
+        { botId: "bot-1" },
+        -1,
+        vi.fn(),
+        new AbortController().signal,
+        1_000,
+      );
       const expectation = expect(done).rejects.toMatchObject({ name: "AbortError" });
       await vi.advanceTimersByTimeAsync(1_000);
       await expectation;

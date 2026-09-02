@@ -23,6 +23,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
 import { resumeLiveNotifications } from "./live-notifications";
+import { SUBSCRIBE_IDLE_TIMEOUT_MS } from "./refresh";
 import {
   clearSessionToken,
   loadSessionToken,
@@ -31,7 +32,6 @@ import {
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
-import { SUBSCRIBE_IDLE_TIMEOUT_MS } from "./refresh";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
