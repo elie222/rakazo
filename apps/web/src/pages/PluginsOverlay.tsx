@@ -10,7 +10,7 @@ import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-type SourceKind = "treg" | "mcp" | "api";
+type SourceKind = "treg" | "mcp" | "api" | "graphql";
 
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
@@ -58,7 +58,11 @@ export function PluginsOverlay({
       rpc.capabilities.list(),
     ]);
     setCatalog(items);
-    setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setSources(
+      installs.filter(
+        (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",
+      ),
+    );
     return items;
   }
 
@@ -195,8 +199,14 @@ export function PluginsOverlay({
         ...(authType === "header" ? { name: authName.trim() } : {}),
       };
       await rpc.capabilities.install({
-        kind: sourceKind === "api" ? "api" : "mcp",
-        name: sourceName.trim() || (sourceKind === "treg" ? "Treg" : "Custom connector"),
+        kind: sourceKind === "api" ? "api" : sourceKind === "graphql" ? "graphql" : "mcp",
+        name:
+          sourceName.trim() ||
+          (sourceKind === "treg"
+            ? "Treg"
+            : sourceKind === "graphql"
+              ? "GraphQL"
+              : "Custom connector"),
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config:
@@ -204,7 +214,9 @@ export function PluginsOverlay({
             ? { preset: "treg", auth: { type: "bearer" } }
             : sourceKind === "api"
               ? { openApi: true, auth }
-              : { preset: "custom", auth },
+              : sourceKind === "graphql"
+                ? { auth }
+                : { preset: "custom", auth },
       });
       setCredential("");
       setSourceKind(null);
@@ -436,6 +448,14 @@ export function PluginsOverlay({
                 <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
                   <Trans>Add OpenAPI</Trans>
                 </Button>
+                <Button
+                  type="button"
+                  variant="pill"
+                  size="sm"
+                  onClick={() => beginSource("graphql")}
+                >
+                  <Trans>Add GraphQL</Trans>
+                </Button>
                 <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
                   <Trans>Add Treg</Trans>
                 </Button>
@@ -450,6 +470,8 @@ export function PluginsOverlay({
                       <Trans>Connect Treg</Trans>
                     ) : sourceKind === "mcp" ? (
                       <Trans>Add remote MCP server</Trans>
+                    ) : sourceKind === "graphql" ? (
+                      <Trans>Add GraphQL endpoint</Trans>
                     ) : (
                       <Trans>Import OpenAPI JSON</Trans>
                     )}
@@ -467,7 +489,9 @@ export function PluginsOverlay({
                       placeholder={
                         sourceKind === "mcp"
                           ? "https://example.com/mcp"
-                          : "https://example.com/openapi.json"
+                          : sourceKind === "graphql"
+                            ? "https://example.com/graphql"
+                            : "https://example.com/openapi.json"
                       }
                       className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
                     />
@@ -545,7 +569,7 @@ export function PluginsOverlay({
                 </div>
                 {sources.length === 0 && !sourceKind ? (
                   <p className="text-[#6C6C70]">
-                    <Trans>No MCP or API tool sources installed yet.</Trans>
+                    <Trans>No tool sources yet.</Trans>
                   </p>
                 ) : null}
                 {sources.map((source) => (
@@ -554,7 +578,7 @@ export function PluginsOverlay({
                     className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
                   >
                     <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
-                      {source.kind === "mcp" ? "M" : "A"}
+                      {source.kind === "mcp" ? "M" : source.kind === "graphql" ? "G" : "A"}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>

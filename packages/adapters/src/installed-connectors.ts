@@ -12,6 +12,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "./connector-safety.js";
+import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,
@@ -151,7 +152,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       where: {
         spaceId: context.spaceId,
         userId: context.userId,
-        kind: { in: ["mcp", "api"] },
+        kind: { in: ["mcp", "api", "graphql"] },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -206,6 +207,21 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           },
         }));
       }
+      if (install.kind === "graphql") {
+        const config = GraphqlConfigSchema.parse(install.config);
+        return config.operations.map((operation) => ({
+          name: operation.name ?? operation.id,
+          description: operation.description ?? `${operation.operationType} ${operation.fieldName}`,
+          inputSchema: operation.inputSchema,
+          readOnly: operation.readOnly,
+          route: {
+            connectorId: "installed",
+            resourceId: install.id,
+            toolName: operation.id,
+            catalogGroup,
+          },
+        }));
+      }
     } catch {
       // One unavailable user-installed source must not hide the other tools.
     }
@@ -235,7 +251,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         id: installId,
         spaceId: context.spaceId,
         userId: context.userId,
-        kind: { in: ["mcp", "api"] },
+        kind: { in: ["mcp", "api", "graphql"] },
       },
     });
     if (!install) {
@@ -257,6 +273,27 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           },
           call.route?.toolName ?? call.tool,
           call.args,
+        );
+        yield {
+          type: "result",
+          data: redactConnectorPayload(result, credential ? [credential] : []),
+        };
+        return;
+      }
+      if (install.kind === "graphql") {
+        const config = GraphqlConfigSchema.parse(install.config);
+        const operation = config.operations.find(
+          (candidate) => candidate.id === (call.route?.toolName ?? call.tool),
+        );
+        if (!operation) throw new Error("GraphQL operation is unavailable");
+        const result = await executeGraphqlOperation(
+          install.source,
+          config,
+          operation,
+          call.args,
+          credential,
+          context.signal,
+          this.remote,
         );
         yield {
           type: "result",

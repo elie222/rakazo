@@ -23,7 +23,7 @@ import { rpc } from "../lib/api";
 import { loadLastBotId } from "../lib/last-bot";
 import { native } from "../lib/native";
 
-type SourceKind = "treg" | "mcp" | "api";
+type SourceKind = "treg" | "mcp" | "api" | "graphql";
 
 export default function Integrations() {
   const { width } = useWindowDimensions();
@@ -60,7 +60,11 @@ export default function Integrations() {
     setCatalogReady(true);
     try {
       const installs = await rpc<CapabilityInstall[]>("capabilities/list");
-      setSources(installs.filter((item) => item.kind === "mcp" || item.kind === "api"));
+      setSources(
+        installs.filter(
+          (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
+        ),
+      );
     } catch {
       // Tool sources are optional; keep featured/catalog usable if this fails.
     }
@@ -177,8 +181,14 @@ export default function Integrations() {
     setSourceError(null);
     try {
       await rpc("capabilities/install", {
-        kind: sourceKind === "api" ? "api" : "mcp",
-        name: name.trim() || (sourceKind === "treg" ? "Treg" : "Custom connector"),
+        kind: sourceKind === "api" ? "api" : sourceKind === "graphql" ? "graphql" : "mcp",
+        name:
+          name.trim() ||
+          (sourceKind === "treg"
+            ? "Treg"
+            : sourceKind === "graphql"
+              ? "GraphQL"
+              : "Custom connector"),
         source: url.trim(),
         credential: credential.trim() || undefined,
         config:
@@ -186,7 +196,9 @@ export default function Integrations() {
             ? { preset: "treg", auth: { type: "bearer" } }
             : sourceKind === "api"
               ? { openApi: true, auth: { type: requiresAuth ? "bearer" : "none" } }
-              : { preset: "custom", auth: { type: requiresAuth ? "bearer" : "none" } },
+              : sourceKind === "graphql"
+                ? { auth: { type: requiresAuth ? "bearer" : "none" } }
+                : { preset: "custom", auth: { type: requiresAuth ? "bearer" : "none" } },
       });
       setCredential("");
       setSourceKind(null);
@@ -308,7 +320,7 @@ export default function Integrations() {
         {advancedOpen ? (
           <View style={styles.advancedBody}>
             <View style={styles.actions}>
-              {(["mcp", "api", "treg"] as const).map((kind) => (
+              {(["mcp", "api", "graphql", "treg"] as const).map((kind) => (
                 <Pressable
                   key={kind}
                   accessibilityRole="button"
@@ -320,7 +332,9 @@ export default function Integrations() {
                       ? "Add Treg"
                       : kind === "mcp"
                         ? "Add MCP server"
-                        : "Add OpenAPI"}
+                        : kind === "graphql"
+                          ? "Add GraphQL"
+                          : "Add OpenAPI"}
                   </Text>
                 </Pressable>
               ))}
@@ -335,7 +349,9 @@ export default function Integrations() {
                     ? "Connect Treg"
                     : sourceKind === "mcp"
                       ? "Remote MCP server"
-                      : "OpenAPI JSON"}
+                      : sourceKind === "graphql"
+                        ? "GraphQL endpoint"
+                        : "OpenAPI JSON"}
                 </Text>
                 <TextInput
                   value={name}
@@ -353,7 +369,9 @@ export default function Integrations() {
                     placeholder={
                       sourceKind === "mcp"
                         ? "https://example.com/mcp"
-                        : "https://example.com/openapi.json"
+                        : sourceKind === "graphql"
+                          ? "https://example.com/graphql"
+                          : "https://example.com/openapi.json"
                     }
                     placeholderTextColor={native.tertiaryLabel}
                     style={styles.input}
