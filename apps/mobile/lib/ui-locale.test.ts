@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { htmlLangForLocale, normalizeUiLocale, resolveUiLocale } from "./ui-locale";
+import {
+  UI_LOCALE_LABELS,
+  UI_LOCALES,
+  htmlLangForLocale,
+  isUiLocale,
+  normalizeUiLocale,
+  resolveUiLocale,
+} from "./ui-locale";
+
+describe("UI_LOCALES", () => {
+  it("only offers locales that have mobile catalogs today", () => {
+    expect([...UI_LOCALES]).toEqual(["en", "zh-CN"]);
+    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["en", "zh-CN"]);
+    expect(isUiLocale("de")).toBe(false);
+    expect(isUiLocale("ko")).toBe(false);
+    expect(isUiLocale("tr")).toBe(false);
+    expect(isUiLocale("hi")).toBe(false);
+    expect(isUiLocale("pt-BR")).toBe(false);
+  });
+});
 
 describe("normalizeUiLocale", () => {
   it("maps regional tags onto supported locales", () => {
@@ -16,10 +35,16 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("zh-Hant")).toBe("en");
   });
 
-  it("falls back to English for unknown locales", () => {
+  it("falls back to English for unknown locales and web-only languages", () => {
     expect(normalizeUiLocale("fr-FR")).toBe("en");
+    expect(normalizeUiLocale("de")).toBe("en");
     expect(normalizeUiLocale("de-DE")).toBe("en");
+    expect(normalizeUiLocale("ko")).toBe("en");
     expect(normalizeUiLocale("ko-KR")).toBe("en");
+    expect(normalizeUiLocale("tr")).toBe("en");
+    expect(normalizeUiLocale("hi")).toBe("en");
+    expect(normalizeUiLocale("pt")).toBe("en");
+    expect(normalizeUiLocale("pt-BR")).toBe("en");
     expect(normalizeUiLocale("")).toBe("en");
     expect(normalizeUiLocale(null)).toBe("en");
   });

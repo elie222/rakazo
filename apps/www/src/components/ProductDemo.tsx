@@ -171,6 +171,8 @@ function whenLabel(triggers: Trigger[]) {
 }
 
 function displayedWhen(when: string, text: DemoTranslator): string {
+  // Translate the seeded English schedule string for display. Do not reparse
+  // unknown labels into a daily 9:00 AM fallback — that misrepresents custom schedules.
   return text(when);
 }
 

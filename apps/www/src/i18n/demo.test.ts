@@ -42,14 +42,17 @@ describe("Chinese product demo", () => {
     }
   });
 
-  it("keeps seeded custom schedules instead of rewriting them to daily 9:00 AM", () => {
+  it("translates seeded custom schedules for display without rewriting them to daily 9:00 AM", () => {
     const localized = getDemoBots("zh");
     const schedules = localized.flatMap((bot) => bot.routines.map((routine) => routine.when));
-    expect(schedules).toContain("周二和周四");
-    expect(schedules).toContain("每月最后一个周五");
-    expect(schedules).not.toContain("每天 9:00 AM");
+    // English `when` stays on the bot so ProductDemo parseWhen still works when editing.
+    expect(schedules).toContain("Tue + Thu");
+    expect(schedules).toContain("Last Friday");
+    // displayedWhen uses demoText(locale, when) for the list label.
     expect(demoText("zh", "Tue + Thu")).toBe("周二和周四");
     expect(demoText("zh", "Last Friday")).toBe("每月最后一个周五");
+    expect(demoText("zh", "Tue + Thu")).not.toBe("每天 9:00 AM");
+    expect(demoText("zh", "Last Friday")).not.toBe("每天 9:00 AM");
   });
 
   it("formats localized interactive labels without losing values", () => {
