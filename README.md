@@ -59,6 +59,11 @@ with the matching API key.
 Default image tag is `edge` (main builds, `linux/amd64`). Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
+On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
+existing Compose files (`--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING`), or mirror the bootstrap
+script URL — see
+[Restricted networks / mirror downloads](./docs/self-host.md#restricted-networks--mirror-downloads).
+
 For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
 
 ## Local development (source checkout)

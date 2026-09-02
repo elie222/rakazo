@@ -2,18 +2,34 @@
 
 set -Eeuo pipefail
 
-readonly DOWNLOAD_BASE="https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose"
+DOWNLOAD_BASE="${RAKAZO_DOWNLOAD_BASE:-https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose}"
+DOWNLOAD_BASE="${DOWNLOAD_BASE%/}"
+readonly DOWNLOAD_BASE
+
 readonly COMPOSE_FILE="docker-compose.images.yml"
 readonly ENV_EXAMPLE=".env.images.example"
 readonly ENV_FILE=".env"
 
 prepare_only=false
-if [[ "${1:-}" == "--prepare-only" && $# -eq 1 ]]; then
-  prepare_only=true
-elif [[ $# -ne 0 ]]; then
-  echo "Usage: bash install-images.sh [--prepare-only]" >&2
-  exit 2
+skip_existing=false
+if [[ "${RAKAZO_DOWNLOAD_SKIP_EXISTING:-}" == "1" ]]; then
+  skip_existing=true
 fi
+
+for arg in "$@"; do
+  case "$arg" in
+    --prepare-only)
+      prepare_only=true
+      ;;
+    --local)
+      skip_existing=true
+      ;;
+    *)
+      echo "Usage: bash install-images.sh [--prepare-only] [--local]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 temporary_file=""
 cleanup() {
@@ -34,12 +50,43 @@ done
 
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
+curl_download() {
+  local url="$1"
+  local out="$2"
+  local attempt
+  local max_attempts=3
+
+  if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+    curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors "$url" -o "$out"
+    return $?
+  fi
+
+  attempt=1
+  while [[ "$attempt" -le "$max_attempts" ]]; do
+    if curl -fsSL "$url" -o "$out"; then
+      return 0
+    fi
+    if [[ "$attempt" -eq "$max_attempts" ]]; then
+      return 1
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 download() {
   local filename="$1"
+  local url="${DOWNLOAD_BASE}/${filename}"
+
+  if [[ "$skip_existing" == true && -e "$filename" ]]; then
+    echo "Using local ${filename}"
+    return 0
+  fi
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
-  if ! curl -fsSL "${DOWNLOAD_BASE}/${filename}" -o "$temporary_file"; then
-    fail "could not download ${filename}."
+  if ! curl_download "$url" "$temporary_file"; then
+    fail "could not download ${filename} from ${url}."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""

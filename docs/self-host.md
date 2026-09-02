@@ -21,6 +21,44 @@ The installer downloads `docker-compose.images.yml` and `.env.images.example`, c
 random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. To
 customize the public URL, image tag, or optional providers before startup, run
 `bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
+Flags may be combined in either order: `--prepare-only`, `--local`.
+
+### Restricted networks / mirror downloads
+
+Stage B of the installer (Compose YAML and `.env.images.example`) downloads from
+`DOWNLOAD_BASE`. Override it with a generic HTTPS mirror of `infra/compose` — do not rely on
+vendor-specific CDN defaults:
+
+```bash
+export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
+bash install-images.sh
+```
+
+Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed. Downloads use finite curl retries
+(`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
+
+To reuse files already present in the working directory (skip curl when the target exists), set
+`RAKAZO_DOWNLOAD_SKIP_EXISTING=1` and/or pass `--local`:
+
+```bash
+# after placing docker-compose.images.yml and .env.images.example locally
+bash install-images.sh --local --prepare-only
+# or
+RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
+```
+
+If skip mode is on and a required file is missing, the installer still downloads it (or fails with
+the URL in the error).
+
+Stage A (fetching `install-images.sh` itself) is separate. When raw GitHub is unreachable, point the
+bootstrap curl at your mirror of the installer script, for example:
+
+```bash
+export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
+mkdir -p rakazo && cd rakazo &&
+curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
+bash install-images.sh
+```
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
