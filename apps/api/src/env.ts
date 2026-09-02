@@ -53,6 +53,11 @@ export interface AppEnv {
   whatsappVerifyToken: string | undefined;
   telegramBotToken: string | undefined;
   telegramWebhookSecret: string | undefined;
+  larkAppId: string | undefined;
+  larkAppSecret: string | undefined;
+  larkVerificationToken: string | undefined;
+  larkEncryptKey: string | undefined;
+  larkDomain: string | undefined;
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   defaultProvider: string;
@@ -124,6 +129,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    larkAppId: optional(source.LARK_APP_ID),
+    larkAppSecret: optional(source.LARK_APP_SECRET),
+    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
+    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
+    larkDomain: optional(source.LARK_DOMAIN),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,

@@ -3,6 +3,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
+import { createLarkAdapter } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 
@@ -23,6 +24,11 @@ export interface MessagingEnvironmentValues {
   whatsappVerifyToken?: string | undefined;
   telegramBotToken?: string | undefined;
   telegramWebhookSecret?: string | undefined;
+  larkAppId?: string | undefined;
+  larkAppSecret?: string | undefined;
+  larkVerificationToken?: string | undefined;
+  larkEncryptKey?: string | undefined;
+  larkDomain?: string | undefined;
 }
 
 export function messagingEnvFromProcess(
@@ -44,6 +50,11 @@ export function messagingEnvFromProcess(
     whatsappVerifyToken: clean(env.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: clean(env.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    larkAppId: clean(env.LARK_APP_ID),
+    larkAppSecret: clean(env.LARK_APP_SECRET),
+    larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
+    larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
+    larkDomain: clean(env.LARK_DOMAIN),
   };
 }
 
@@ -132,7 +143,35 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
     });
   }
 
+  // App ID, secret, and verification token are all required: without the
+  // token the adapter accepts unsigned webhook posts. Encrypt key and
+  // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
+  if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    const domain = resolveLarkDomain(env.larkDomain);
+    platforms.push({
+      provider: "lark",
+      capabilities: { direct: true, groups: false, typing: false },
+      // Webhook-only: ws/long-connection incoming would consume events so
+      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+      adapter: createLarkAdapter({
+        appId: env.larkAppId,
+        appSecret: env.larkAppSecret,
+        verificationToken: env.larkVerificationToken,
+        incoming: { events: "webhook", callbacks: "webhook" },
+        ...(env.larkEncryptKey ? { encryptKey: env.larkEncryptKey } : {}),
+        ...(domain ? { domain } : {}),
+      }),
+    });
+  }
+
   return platforms;
+}
+
+/** Adapter accepts "feishu" (default) or "lark"; anything else is ignored. */
+function resolveLarkDomain(value: string | undefined): "feishu" | "lark" | undefined {
+  const domain = value?.toLowerCase();
+  if (domain === "feishu" || domain === "lark") return domain;
+  return undefined;
 }
 
 /** Never live under the test runner; tests build surfaces explicitly. */
