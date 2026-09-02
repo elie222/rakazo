@@ -9,7 +9,7 @@ export type SessionGate = "loading" | "unreachable" | "authenticated" | "anonymo
 /**
  * A failed session fetch is not a sign-out. Better Auth keeps the last known
  * session on a network error, but a cold load has nothing to keep, and its
- * refresh manager only polls once a session exists — so a request that fails
+ * refresh manager only polls once a session exists, so a request that fails
  * before the first success never retries. Routing that state to sign-in signs
  * out a user whose cookie is still valid, so it is reported separately.
  */
@@ -50,7 +50,7 @@ export function workspaceMounted(gate: SessionGate, mounted: boolean, holding = 
 /**
  * Cold loads that never reached the server still need a full-page wait so we
  * do not dump a signed-in cookie onto the sign-in screen. Once the workspace
- * has mounted, keep it and show a reconnect bar — including when Better Auth
+ * has mounted, keep it and show a reconnect bar, including when Better Auth
  * still holds the last user while a refresh fails.
  */
 export function sessionReconnectKind(

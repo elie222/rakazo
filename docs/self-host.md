@@ -158,7 +158,7 @@ the clients at that origin. Prefer TLS whenever a hostname is involved.
 2. **Tailscale or Headscale.** Join the Rakazo host and each device to the same tailnet. Use
    `https://<machine>.ts.net` (MagicDNS requires HTTPS; desktop and mobile reject `http://*.ts.net`).
    CGNAT addresses (`100.64.0.0/10`) may use HTTP on a trusted overlay, the same way LAN IPs do.
-   Install the official Tailscale app on iPhone — Rakazo cannot start a tunnel inside the iOS client.
+   Install the official Tailscale app on iPhone. Rakazo cannot start a tunnel inside the iOS client.
 3. **EasyTier (optional sidecar).** Run `easytier-core` as a separate binary or Compose service on
    the host (LGPL-3.0; do not statically link it into Rakazo). Join from Windows / macOS / Linux /
    Android / iPhone / iPad with the official EasyTier client. Clients may use the virtual IP over
