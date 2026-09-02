@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allowsCleartextHttp,
+  isCgnatHost,
   isLinkLocalHost,
   isLoopbackHost,
   isTailscaleMagicDnsHost,
@@ -40,24 +41,33 @@ describe("network host policy", () => {
     expect(isTailscaleMagicDnsHost("example.com")).toBe(false);
   });
 
-  it("allows cleartext HTTP on LAN, loopback, CGNAT, ULA, and .local", () => {
+  it("detects CGNAT 100.64/10 hosts", () => {
+    expect(isCgnatHost("100.64.0.1")).toBe(true);
+    expect(isCgnatHost("100.119.57.55")).toBe(true);
+    expect(isCgnatHost("100.127.255.255")).toBe(true);
+    expect(isCgnatHost("100.63.255.255")).toBe(false);
+    expect(isCgnatHost("100.128.0.1")).toBe(false);
+    expect(isCgnatHost("10.0.0.1")).toBe(false);
+  });
+
+  it("allows cleartext HTTP on LAN, loopback, ULA, and .local", () => {
     expect(allowsCleartextHttp("127.0.0.1")).toBe(true);
     expect(allowsCleartextHttp("10.0.0.8")).toBe(true);
     expect(allowsCleartextHttp("192.168.1.20")).toBe(true);
     expect(allowsCleartextHttp("172.16.0.2")).toBe(true);
-    expect(allowsCleartextHttp("100.64.0.1")).toBe(true);
-    expect(allowsCleartextHttp("100.119.57.55")).toBe(true);
     expect(allowsCleartextHttp("rakazo.local")).toBe(true);
     expect(allowsCleartextHttp("[fd00::1]")).toBe(true);
     expect(allowsCleartextHttp("fc00::2")).toBe(true);
   });
 
-  it("rejects cleartext HTTP to public DNS, MagicDNS, and link-local", () => {
+  it("rejects cleartext HTTP to public DNS, MagicDNS, CGNAT, and link-local", () => {
     expect(allowsCleartextHttp("app.example.com")).toBe(false);
     expect(allowsCleartextHttp("fd.example.com")).toBe(false);
     expect(allowsCleartextHttp("fc.evil.com")).toBe(false);
     expect(allowsCleartextHttp("fc-host.example.com")).toBe(false);
     expect(allowsCleartextHttp("machine.ts.net")).toBe(false);
+    expect(allowsCleartextHttp("100.64.0.1")).toBe(false);
+    expect(allowsCleartextHttp("100.119.57.55")).toBe(false);
     expect(allowsCleartextHttp("169.254.169.254")).toBe(false);
     expect(allowsCleartextHttp("[fe80::1]")).toBe(false);
     expect(allowsCleartextHttp("8.8.8.8")).toBe(false);

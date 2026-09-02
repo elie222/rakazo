@@ -60,7 +60,9 @@ describe("Android mobile platform contract", () => {
     expect(allowlist).toContain('scheme == "https"');
     expect(allowlist).toContain("isLanOrLocalHost");
     expect(allowlist).toContain("allowsCleartextHttp");
-    expect(allowlist).toContain("12[0-7]");
+    // CGNAT 100.64/10 is HTTPS-only (same as packages/core); do not allow cleartext.
+    expect(allowlist).toContain("CGNAT");
+    expect(allowlist).not.toContain("12[0-7]");
     expect(live).toContain("normalizeApiBase(endpoint)");
     expect(live).toMatch(
       /export async function resumeLiveNotifications[\s\S]*normalizeApiBase\(endpoint\)[\s\S]*nativeNotifications\.resume\(parsed\.url/,

@@ -20,6 +20,6 @@ private fun isLanOrLocalHost(host: String): Boolean {
   if (Regex("""^10(?:\.\d{1,3}){3}$""").matches(host)) return true
   if (Regex("""^192\.168(?:\.\d{1,3}){2}$""").matches(host)) return true
   if (Regex("""^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$""").matches(host)) return true
-  if (Regex("""^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$""").matches(host)) return true
+  // CGNAT 100.64/10 requires HTTPS — same policy as packages/core network-host.
   return false
 }

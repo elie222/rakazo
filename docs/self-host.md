@@ -157,12 +157,13 @@ the clients at that origin. Prefer TLS whenever a hostname is involved.
    Production Compose already documents Caddy and an optional Tunnel in place of ports 80/443.
 2. **Tailscale or Headscale.** Join the Rakazo host and each device to the same tailnet. Use
    `https://<machine>.ts.net` (MagicDNS requires HTTPS; desktop and mobile reject `http://*.ts.net`).
-   CGNAT addresses (`100.64.0.0/10`) may use HTTP on a trusted overlay, the same way LAN IPs do.
+   CGNAT addresses (`100.64.0.0/10`) also require HTTPS — that range is used by ordinary ISP CGNAT,
+   so the IP alone does not prove a trusted overlay. Prefer MagicDNS or terminate TLS on the node.
    Install the official Tailscale app on iPhone. Rakazo cannot start a tunnel inside the iOS client.
 3. **EasyTier (optional sidecar).** Run `easytier-core` as a separate binary or Compose service on
    the host (LGPL-3.0; do not statically link it into Rakazo). Join from Windows / macOS / Linux /
-   Android / iPhone / iPad with the official EasyTier client. Clients may use the virtual IP over
-   HTTP when it is RFC1918 or CGNAT. Tunnel or Tailscale still work if you prefer a public hostname.
+   Android / iPhone / iPad with the official EasyTier client. Clients may use an RFC1918 virtual IP
+   over HTTP; CGNAT virtual IPs need HTTPS. Tunnel or Tailscale still work if you prefer a public hostname.
 
 Do not bundle EasyTier or Tailscale into Electron or Expo. Detecting a system install and suggesting
 an origin is fine; creating a TUN device inside Rakazo is not.

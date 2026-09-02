@@ -31,8 +31,12 @@ describe("normalizeApiBase", () => {
       error: "Public servers need https://",
     });
     expect(normalizeApiBase("http://100.64.0.1:3100")).toEqual({
+      ok: false,
+      error: "Public servers need https://",
+    });
+    expect(normalizeApiBase("https://100.64.0.1:3100")).toEqual({
       ok: true,
-      url: "http://100.64.0.1:3100",
+      url: "https://100.64.0.1:3100",
     });
     expect(normalizeApiBase("http://machine.ts.net")).toEqual({
       ok: false,
@@ -84,9 +88,9 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("https://app.example.com")).toBeNull();
     expect(apiBaseWarning("http://127.0.0.1:3100")).toBeNull();
     expect(apiBaseWarning("http://192.168.1.20:3100")).toBeNull();
-    expect(apiBaseWarning("http://100.64.0.1:3100")).toMatch(/Tailscale or EasyTier/);
-    expect(apiBaseWarning("http://100.119.57.55:3100")).toMatch(/Tailscale or EasyTier/);
-    expect(apiBaseWarning("http://100.127.255.255:3100")).toMatch(/Tailscale or EasyTier/);
+    expect(apiBaseWarning("http://100.64.0.1:3100")).toMatch(/https/i);
+    expect(apiBaseWarning("http://100.119.57.55:3100")).toMatch(/https/i);
+    expect(apiBaseWarning("https://100.64.0.1:3100")).toMatch(/Tailscale or EasyTier/);
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
     expect(apiBaseWarning("http://machine.ts.net")).toMatch(/https/i);
     expect(apiBaseWarning("https://machine.ts.net")).toMatch(/Tailscale or EasyTier/);

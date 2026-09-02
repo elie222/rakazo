@@ -44,15 +44,26 @@ export function isTailscaleMagicDnsHost(hostname: string): boolean {
 }
 
 /**
+ * Carrier-grade NAT 100.64/10. Tailscale and similar overlays use this range, but
+ * so can ordinary ISP CGNAT — the address alone does not prove a trusted overlay.
+ */
+export function isCgnatHost(hostname: string): boolean {
+  const octets = ipv4Octets(unbracketedHost(hostname));
+  return octets !== undefined && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
+}
+
+/**
  * Whether a Rakazo client may use cleartext HTTP to this host.
  *
- * Allowed: loopback, RFC1918, CGNAT 100.64/10 (Tailscale and similar overlays),
- * IPv6 unique-local, and *.local. MagicDNS (*.ts.net) requires HTTPS. Link-local
- * is never allowed.
+ * Allowed: loopback, RFC1918, IPv6 unique-local, and *.local. CGNAT 100.64/10 and
+ * MagicDNS (*.ts.net) require HTTPS — the IP/DNS label alone cannot prove a
+ * trusted overlay path. Link-local is never allowed.
  */
 export function allowsCleartextHttp(hostname: string): boolean {
   const host = unbracketedHost(hostname);
-  if (isLinkLocalHost(host) || isTailscaleMagicDnsHost(host)) return false;
+  if (isLinkLocalHost(host) || isTailscaleMagicDnsHost(host) || isCgnatHost(host)) {
+    return false;
+  }
   if (isLoopbackHost(host) || host.endsWith(".local")) return true;
 
   const ipv4 = ipv4Octets(host);
@@ -61,8 +72,7 @@ export function allowsCleartextHttp(hostname: string): boolean {
     return (
       first === 10 ||
       (first === 172 && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168) ||
-      (first === 100 && second >= 64 && second <= 127)
+      (first === 192 && second === 168)
     );
   }
 

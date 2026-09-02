@@ -36,7 +36,8 @@ describe("connection kind", () => {
     expect(connectionHintForOrigin("https://machine.ts.net")).toBe(
       "Join the same Tailscale or EasyTier network as the server.",
     );
-    expect(connectionHintForOrigin("http://100.64.0.1:3100")).toBe(
+    expect(connectionHintForOrigin("http://100.64.0.1:3100")).toBe("Overlay IPs need https://.");
+    expect(connectionHintForOrigin("https://100.64.0.1:3100")).toBe(
       "Join the same Tailscale or EasyTier network as the server.",
     );
     expect(connectionHintForOrigin("https://app.example.com")).toBeNull();

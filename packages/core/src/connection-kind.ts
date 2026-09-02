@@ -1,29 +1,11 @@
 import {
   allowsCleartextHttp,
+  isCgnatHost,
   isLoopbackHost,
   isTailscaleMagicDnsHost,
-  unbracketedHost,
 } from "./network-host.js";
 
 export type ConnectionKind = "loopback" | "lan" | "overlay" | "public";
-
-function ipv4Octets(host: string): [number, number, number, number] | undefined {
-  const parts = host.split(".");
-  if (parts.length !== 4) return undefined;
-  const octets = parts.map((part) => {
-    if (!/^\d{1,3}$/.test(part)) return Number.NaN;
-    return Number(part);
-  });
-  if (octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
-    return undefined;
-  }
-  return octets as [number, number, number, number];
-}
-
-function isCgnatHost(hostname: string): boolean {
-  const octets = ipv4Octets(unbracketedHost(hostname));
-  return octets !== undefined && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
-}
 
 export function connectionKindForHost(hostname: string): ConnectionKind {
   if (isLoopbackHost(hostname)) return "loopback";
@@ -56,6 +38,9 @@ export function connectionHintForOrigin(url: string): string | null {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" && isTailscaleMagicDnsHost(parsed.hostname)) {
       return "MagicDNS needs https://.";
+    }
+    if (parsed.protocol === "http:" && isCgnatHost(parsed.hostname)) {
+      return "Overlay IPs need https://.";
     }
     if (parsed.protocol === "http:" && !allowsCleartextHttp(parsed.hostname)) {
       return "Public servers need https://.";

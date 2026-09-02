@@ -43,9 +43,10 @@ describe("server address normalization", () => {
     expect(normalizeServerUrl("http://[fd00::1]:3100")).toBe("http://[fd00::1]:3100");
   });
 
-  it("permits overlay CGNAT HTTP and requires HTTPS for MagicDNS", () => {
-    expect(normalizeServerUrl("http://100.64.0.1:3100")).toBe("http://100.64.0.1:3100");
-    expect(normalizeServerUrl("100.64.1.8:5173")).toBe("http://100.64.1.8:5173");
+  it("requires HTTPS for overlay CGNAT and MagicDNS", () => {
+    expect(normalizeServerUrl("http://100.64.0.1:3100")).toBeNull();
+    expect(normalizeServerUrl("100.64.1.8:5173")).toBe("https://100.64.1.8:5173");
+    expect(normalizeServerUrl("https://100.64.0.1:3100")).toBe("https://100.64.0.1:3100");
     expect(normalizeServerUrl("http://machine.ts.net")).toBeNull();
     expect(normalizeServerUrl("machine.ts.net")).toBe("https://machine.ts.net");
     expect(normalizeServerUrl("https://box.tail12345.ts.net")).toBe("https://box.tail12345.ts.net");
@@ -210,7 +211,8 @@ describe("probe failures", () => {
       "app.example.com · https · public",
     );
     expect(setupReachabilityDetail("http://machine.ts.net")).toMatch(/MagicDNS/);
-    expect(setupReachabilityDetail("http://100.64.0.1:3100")).toMatch(/private overlay/);
+    expect(setupReachabilityDetail("http://100.64.0.1:3100")).toMatch(/Overlay IPs need https/);
+    expect(setupReachabilityDetail("https://100.64.0.1:3100")).toMatch(/private overlay/);
     expect(setupReachabilityDetail("https://machine.ts.net", { includeHint: false })).toBe(
       "machine.ts.net · https · private overlay",
     );
