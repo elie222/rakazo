@@ -190,7 +190,24 @@ if [[ "$prepare_only" == true ]]; then
   exit 0
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
+# Stage C image pull: finite retries for flaky GHCR/Hub (no regional CDN defaults).
+pull_attempts=3
+pull_delay=2
+pull_ok=false
+for ((pull_i=1; pull_i<=pull_attempts; pull_i++)); do
+  if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+    pull_ok=true
+    break
+  fi
+  if (( pull_i < pull_attempts )); then
+    echo "docker compose pull failed (attempt ${pull_i}/${pull_attempts}); retrying in ${pull_delay}s…" >&2
+    sleep "$pull_delay"
+  fi
+done
+if [[ "$pull_ok" != true ]]; then
+  fail "docker compose pull failed after ${pull_attempts} attempts (check registry reachability / RAKAZO_IMAGE* overrides)."
+fi
+
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)
