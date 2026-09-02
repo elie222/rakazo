@@ -139,11 +139,19 @@ export function githubToolResultHasSeededRelease(
 ): boolean {
   if (!result || typeof result !== "object") return false;
   const row = result as Record<string, unknown>;
-  if (row.ok === false) return false;
-  if (Array.isArray(row.releases) && row.releases.length === 0) return false;
-  if ("release" in row && (row.release === null || row.release === undefined)) return false;
-  const blob = JSON.stringify(result).toLowerCase();
-  return seededReleaseTags.some((tag) => blob.includes(tag.toLowerCase()));
+  if (row.ok !== true) return false;
+  const releases = Array.isArray(row.releases)
+    ? row.releases
+    : "release" in row
+      ? [row.release]
+      : [];
+  if (releases.length === 0) return false;
+  const seeded = new Set(seededReleaseTags.map((tag) => tag.toLowerCase()));
+  return releases.some((release) => {
+    if (!release || typeof release !== "object") return false;
+    const tag = (release as Record<string, unknown>).tag;
+    return typeof tag === "string" && seeded.has(tag.toLowerCase());
+  });
 }
 
 export function diagnoseReleaseWatchRun(input: {

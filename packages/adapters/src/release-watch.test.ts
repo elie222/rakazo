@@ -113,6 +113,18 @@ describe("release-watch diagnosis", () => {
         ["v0.4.2"],
       ),
     ).toBe(true);
+    expect(githubToolResultHasSeededRelease({ releases: [{ tag: "v0.4.2" }] }, ["v0.4.2"])).toBe(
+      false,
+    );
+    expect(
+      githubToolResultHasSeededRelease({ ok: false, error: "v0.4.2 unavailable" }, ["v0.4.2"]),
+    ).toBe(false);
+    expect(
+      githubToolResultHasSeededRelease(
+        { ok: true, note: "mentions v0.4.2", releases: [{ tag: "v9.9.9" }] },
+        ["v0.4.2"],
+      ),
+    ).toBe(false);
 
     const tagOnlyAfterFailedPayload = diagnoseReleaseWatchRun({
       availableToolNames: [...RELEASE_WATCH_GITHUB_TOOL_NAMES],
