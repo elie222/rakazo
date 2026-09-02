@@ -3,7 +3,16 @@
 set -Eeuo pipefail
 
 DOWNLOAD_BASE="${RAKAZO_DOWNLOAD_BASE:-https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose}"
-DOWNLOAD_BASE="${DOWNLOAD_BASE%/}"
+while [[ "$DOWNLOAD_BASE" == */ ]]; do
+  DOWNLOAD_BASE="${DOWNLOAD_BASE%/}"
+done
+case "$DOWNLOAD_BASE" in
+  https://*) ;;
+  *)
+    echo "Rakazo setup failed: RAKAZO_DOWNLOAD_BASE must use https." >&2
+    exit 1
+    ;;
+esac
 readonly DOWNLOAD_BASE
 
 readonly COMPOSE_FILE="docker-compose.images.yml"
@@ -57,13 +66,13 @@ curl_download() {
   local max_attempts=3
 
   if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
-    curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors "$url" -o "$out"
+    curl -fsSL --proto-redir =https --retry 3 --retry-delay 2 --retry-all-errors "$url" -o "$out"
     return $?
   fi
 
   attempt=1
   while [[ "$attempt" -le "$max_attempts" ]]; do
-    if curl -fsSL "$url" -o "$out"; then
+    if curl -fsSL --proto-redir =https "$url" -o "$out"; then
       return 0
     fi
     if [[ "$attempt" -eq "$max_attempts" ]]; then

@@ -34,8 +34,8 @@ export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
 bash install-images.sh
 ```
 
-Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed. Downloads use finite curl retries
-(`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
+Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed; non-HTTPS bases are rejected. Downloads
+use finite curl retries (`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
 
 To reuse files already present in the working directory (skip curl when the target exists), set
 `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` and/or pass `--local`:
