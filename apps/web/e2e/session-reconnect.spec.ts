@@ -40,6 +40,9 @@ test("shows the reconnect banner after a live session lookup fails", async ({ pa
   await expect(banner).toBeVisible({ timeout: 15_000 });
   await expect(banner.getByRole("button", { name: "Retry now" })).toBeVisible();
   await expect(page.getByText("Can't reach the server.")).toBeVisible();
+  // Banner must keep the mounted workspace, not replace it with a full-page wait.
+  await expect(page.getByTestId("shell-root")).toBeVisible();
+  await expect(page.getByText("Chief").first()).toBeVisible();
   await captureScreenshot(page, testInfo, "session-reconnect-banner");
 });
 
