@@ -68,32 +68,6 @@ jobs:
           path: apps/desktop/e2e/screenshots
           if-no-files-found: ignore
 
-  desktop-macos-screenshot:
-    name: macOS setup screenshot
-    runs-on: macos-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @rakazo/desktop build
-      - name: Capture native macOS setup window
-        run: >-
-          pnpm --filter @rakazo/desktop exec playwright test
-          --config e2e/playwright.config.ts setup.spec.ts
-          --grep "first run asks whether to use a local or existing instance"
-      - name: Upload native macOS setup screenshot
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: desktop-e2e-macos-screenshot
-          path: apps/desktop/e2e/screenshots/08-setup-macos-native-controls.png
-          if-no-files-found: error
-
   test:
     name: Unit tests
     runs-on: ubuntu-latest
