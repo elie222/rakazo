@@ -1,10 +1,13 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
 
 const APP_MARKER = "Existing Rakazo instance ready";
+const execFileAsync = promisify(execFile);
 
 let server: Server;
 let serverUrl: string;
@@ -91,16 +94,27 @@ test("first run asks whether to use a local or existing instance", async () => {
     path: path.join(import.meta.dirname, "screenshots", "01-setup-new-instance.png"),
   });
 
-  // Linux CI cannot draw macOS traffic lights, so apply the same platform state to
-  // verify and capture the gutter that keeps the native controls clear of the title.
+  // Linux CI verifies the layout state; the macOS CI job also captures the native controls.
   await setup.evaluate(() => {
     document.documentElement.dataset.platform = "darwin";
   });
   await expect(setup.locator(".titlebar")).toHaveCSS("padding-left", "88px");
   expect((await setup.locator(".titlebar-name").boundingBox())?.x).toBeGreaterThanOrEqual(88);
-  await setup.screenshot({
-    path: path.join(import.meta.dirname, "screenshots", "08-setup-macos-titlebar-clearance.png"),
-  });
+  if (process.platform === "darwin") {
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window === undefined) throw new Error("Setup window is unavailable");
+      window.setBounds({ x: 40, y: 40, width: 720, height: 700 });
+      window.show();
+      window.focus();
+    });
+    await setup.waitForTimeout(500);
+    await execFileAsync("screencapture", [
+      "-x",
+      "-R40,40,720,700",
+      path.join(import.meta.dirname, "screenshots", "08-setup-macos-native-controls.png"),
+    ]);
+  }
 });
 
 test("connecting to an existing instance verifies, saves, and opens it", async () => {
