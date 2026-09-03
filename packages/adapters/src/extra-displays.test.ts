@@ -14,6 +14,20 @@ import {
 } from "./extra-displays.js";
 
 describe("extra display ports", () => {
+  it("releases the setup lock from every persistent extra-screen child", () => {
+    const command = ensureExtraDisplayCommand(
+      extraDisplayLayout(1, ":0"),
+      { homeDir: "/home/user", browserProfilesDir: "/home/user/.browser-profiles" },
+      "test-password",
+    );
+    const backgroundLaunches = command.split("\n").filter((line) => / &(?:\)| fi)?$/.test(line));
+    expect(backgroundLaunches).toHaveLength(6);
+    for (const launch of backgroundLaunches) {
+      expect(launch).toContain("8>&-");
+    }
+    expect(command).toContain("flock 8");
+  });
+
   it("targets noVNC proxy processes without matching E2B's enclosing bash runner", () => {
     const layout = extraDisplayLayout(1, ":0");
     const commands = [

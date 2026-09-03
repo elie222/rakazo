@@ -443,9 +443,9 @@ export class E2BSandboxProvider implements SandboxProvider {
       }
       return;
     }
-    await this.ensureExtraDisplay(desktop, layout, context);
     if (interactive) {
       if (!controlToken) throw new Error("interactive screen requires a control token");
+      await this.ensureExtraDisplay(desktop, layout, context);
       await this.startControlStream(desktop, controlToken, screenKey, layout);
     } else {
       await this.stopControlStream(desktop, controlToken, screenKey, layout);

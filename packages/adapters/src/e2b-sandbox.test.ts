@@ -20,6 +20,39 @@ const context = {
 };
 
 describe("E2B computer backend", () => {
+  it("revokes an extra display's control without starting or waiting for its view", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=1\n", stderr: "", exitCode: 0 };
+      }
+      if (value.includes("RAKAZO_SCREEN_PASSWORD=") || value.includes("flock 8")) {
+        throw new Error("extra view is unavailable");
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const provider = new E2BSandboxProvider("test-key", {
+      connect: vi.fn(async () => ({
+        sandboxId: "existing",
+        display: ":0",
+        commands: { run: command },
+      })),
+    } as unknown as E2BSandboxSdk);
+
+    await expect(
+      provider.setScreenControl(
+        { id: "existing", providerRef: "existing", kind: "e2b", botId: "bot" },
+        false,
+        { ...context, botId: "bot" },
+        "expired-control-token",
+      ),
+    ).resolves.toBeUndefined();
+    expect(command).toHaveBeenCalledTimes(2);
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("pkill -f '(^|/)x11vnc .* -rfbport 5903'"),
+    );
+    expect(command).toHaveBeenLastCalledWith(expect.stringContaining("expired-control-token"));
+  });
+
   it("reconnects concurrent primary viewers without using the SDK's global VNC lifecycle", async () => {
     const command = vi.fn(async (value: string) => ({
       stdout: value.includes("RAKAZO_SCREEN_INDEX=")
