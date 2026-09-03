@@ -7,17 +7,15 @@ const workflowText = readFileSync(
   path.resolve(import.meta.dirname, "../../../.github/workflows/publish-server-image.yml"),
   "utf8",
 );
+interface WorkflowJob {
+  if?: string;
+  needs?: string;
+  "runs-on"?: string;
+  strategy?: { matrix?: { arch?: string[]; include?: Array<Record<string, string>> } };
+}
+
 const workflow = parse(workflowText) as {
-  jobs: Record<
-    string,
-    {
-      if?: string;
-      needs?: string;
-      "runs-on"?: string;
-      strategy?: { matrix?: { arch?: string[]; include?: Array<Record<string, string>> } };
-      steps?: Array<Record<string, unknown>>;
-    }
-  >;
+  jobs: { validate: WorkflowJob; build: WorkflowJob; publish: WorkflowJob };
 };
 
 describe("server image publish workflow", () => {
