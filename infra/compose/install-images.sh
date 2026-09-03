@@ -60,7 +60,8 @@ done
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
 # Optional proxy knobs from an existing .env (operators often set them there for
-# containers). Do not override values already present in the shell.
+# containers). Do not override values already present in the shell. Treat each
+# HTTP/HTTPS/NO_PROXY pair as one family so either case in the shell wins.
 load_proxy_vars_from_env_file() {
   local file="$1"
   local line key value
@@ -77,9 +78,23 @@ load_proxy_vars_from_env_file() {
     elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
       value="${value:1:${#value}-2}"
     fi
-    if [[ -n "${!key+x}" ]]; then
-      continue
-    fi
+    case "$key" in
+      HTTP_PROXY|http_proxy)
+        if [[ -n "${HTTP_PROXY+x}" || -n "${http_proxy+x}" ]]; then
+          continue
+        fi
+        ;;
+      HTTPS_PROXY|https_proxy)
+        if [[ -n "${HTTPS_PROXY+x}" || -n "${https_proxy+x}" ]]; then
+          continue
+        fi
+        ;;
+      NO_PROXY|no_proxy)
+        if [[ -n "${NO_PROXY+x}" || -n "${no_proxy+x}" ]]; then
+          continue
+        fi
+        ;;
+    esac
     export "${key}=${value}"
   done <"$file"
 }

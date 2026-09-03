@@ -35,4 +35,22 @@ printf '%s\n' 'HTTP_PROXY=http://fromenv:1' >"$ENV_FILE"
 prepare_proxy_env
 [[ "$HTTP_PROXY" == "http://shell:9" ]] || fail "shell should win"
 [[ "$http_proxy" == "http://shell:9" ]] || fail "sync from shell"
+
+# Shell uppercase set, lowercase unset; .env has a different lowercase value.
+# Family check must skip importing .env so sync copies shell → lowercase.
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+HTTP_PROXY='http://shell-upper:9'
+printf '%s\n' 'http_proxy=http://fromenv-lower:1' >"$ENV_FILE"
+prepare_proxy_env
+[[ "$HTTP_PROXY" == "http://shell-upper:9" ]] || fail "shell HTTP_PROXY should win over .env http_proxy"
+[[ "$http_proxy" == "http://shell-upper:9" ]] || fail "http_proxy should sync from shell HTTP_PROXY"
+[[ "$http_proxy" != "http://fromenv-lower:1" ]] || fail "must not keep .env http_proxy"
+
+# Reverse: shell lowercase set; .env uppercase must not import either.
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+http_proxy='http://shell-lower:9'
+printf '%s\n' 'HTTP_PROXY=http://fromenv-upper:1' >"$ENV_FILE"
+prepare_proxy_env
+[[ "$http_proxy" == "http://shell-lower:9" ]] || fail "shell http_proxy should win over .env HTTP_PROXY"
+[[ -z "${HTTP_PROXY+x}" ]] || fail "must not import .env HTTP_PROXY when http_proxy is set"
 echo "ok"
