@@ -1,11 +1,13 @@
 import { Trans } from "@lingui/react/macro";
-import { Button } from "@rakazo/ui-web";
-import { useState } from "react";
+import { Button, Field, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
+import { useId, useState } from "react";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
 
 export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
+  const baseUrlId = useId();
+  const apiKeyId = useId();
   const [mode, setMode] = useState<"cloud" | "local">("cloud");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
@@ -26,48 +28,48 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
     <>
       <div className="flex gap-2">
         {(["cloud", "local"] as const).map((option) => (
-          <button
+          <Toggle
             key={option}
-            type="button"
-            aria-pressed={mode === option}
+            variant="outline"
+            pressed={mode === option}
             disabled={busy}
-            onClick={() => setMode(option)}
-            className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
-              mode === option
-                ? "border-foreground/40 bg-muted text-foreground"
-                : "border-border text-muted-foreground"
-            }`}
+            onPressedChange={() => setMode(option)}
+            className="flex-1 font-normal text-muted-foreground aria-pressed:text-foreground"
           >
             {option === "cloud" ? <Trans>Cloud</Trans> : <Trans>Local</Trans>}
-          </button>
+          </Toggle>
         ))}
       </div>
 
       {mode === "local" ? (
-        <label className="mt-4 block text-[13.5px] text-muted-foreground">
-          <Trans>Base URL</Trans>
-          <input
+        <Field className="mt-4">
+          <FieldLabel htmlFor={baseUrlId}>
+            <Trans>Base URL</Trans>
+          </FieldLabel>
+          <Input
+            id={baseUrlId}
             value={baseUrl}
             disabled={busy}
             onChange={(event) => setBaseUrl(event.target.value)}
             placeholder={DEFAULT_LOCAL_BASE_URL}
-            className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none disabled:opacity-40"
           />
-        </label>
+        </Field>
       ) : null}
 
-      <label className="mt-4 block text-[13.5px] text-muted-foreground">
-        {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
-        <input
+      <Field className="mt-4">
+        <FieldLabel htmlFor={apiKeyId}>
+          {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
+        </FieldLabel>
+        <Input
+          id={apiKeyId}
           value={apiKey}
           disabled={busy}
           onChange={(event) => setApiKey(event.target.value)}
           placeholder="sm_…"
           type="password"
           autoComplete="new-password"
-          className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none disabled:opacity-40"
         />
-      </label>
+      </Field>
 
       <Button
         type="button"

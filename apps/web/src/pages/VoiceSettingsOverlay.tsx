@@ -1,11 +1,26 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
-import { useEffect, useMemo, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Field,
+  FieldLabel,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
+import { XIcon } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
+  const apiKeyId = useId();
+  const voiceSelectId = useId();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<VoiceCredential[]>([]);
   const [status, setStatus] = useState<VoiceStatus | null>(null);
@@ -113,17 +128,23 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-4 sm:p-10">
-      <div
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
         data-testid="voice-settings"
-        className="flex h-[min(680px,100%)] w-[920px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl"
+        showCloseButton={false}
+        className="flex h-[min(680px,calc(100%-2rem))] w-[920px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[min(680px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-foreground">
+            <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Voice</Trans>
-            </div>
-            <p className="mt-1 text-[13.5px] text-muted-foreground/70">
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
               {loading ? (
                 <Trans>Loading voice providers…</Trans>
               ) : (
@@ -132,19 +153,17 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                   call buttons.
                 </Trans>
               )}
-            </p>
+            </DialogDescription>
           </div>
-          <button
-            type="button"
+          <DialogClose
             aria-label={t`Close voice settings`}
-            onClick={onClose}
-            className="text-muted-foreground"
+            render={<Button variant="ghost" size="icon-sm" />}
           >
-            ✕
-          </button>
+            <XIcon />
+          </DialogClose>
         </div>
 
-        <div className="mx-6 mt-5 rounded-[14px] border border-border bg-card px-4 py-3 sm:mx-8">
+        <div className="mx-6 mt-5 rounded-xl border border-border px-4 py-3 sm:mx-8">
           <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
             <Trans>Active voice</Trans>
           </div>
@@ -167,7 +186,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
             <div className="mb-3 text-[13.5px] text-muted-foreground">
               <Trans>Providers</Trans>
             </div>
-            <div className="rk-scroll overflow-y-auto rounded-[13px] border border-border">
+            <div className="rk-scroll overflow-y-auto rounded-xl border border-border">
               {catalog.map((entry) => {
                 const connected = credentials.some((cred) => cred.provider === entry.id);
                 return (
@@ -181,8 +200,8 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       setNotice(null);
                       void refresh(entry.id);
                     }}
-                    className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
-                      entry.id === provider ? "bg-muted" : "hover:bg-card"
+                    className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 ${
+                      entry.id === provider ? "bg-muted" : "hover:bg-accent"
                     }`}
                   >
                     <span className="min-w-0 flex-1">
@@ -216,7 +235,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                 <p className="text-[13.5px] leading-[1.5] text-muted-foreground">
                   {selected.description}
                 </p>
-                <div className="mt-5 rounded-[13px] border border-border px-4 py-3">
+                <div className="mt-5 rounded-xl border border-border px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                     <Trans>Personal credential</Trans>
                   </div>
@@ -234,17 +253,19 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
 
-                <label className="mt-5 block text-[13.5px] text-muted-foreground">
-                  <Trans>API key</Trans>
-                  <input
+                <Field className="mt-5">
+                  <FieldLabel htmlFor={apiKeyId}>
+                    <Trans>API key</Trans>
+                  </FieldLabel>
+                  <Input
+                    id={apiKeyId}
                     type="password"
                     autoComplete="new-password"
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
-                    className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none"
                   />
-                </label>
+                </Field>
                 <Button
                   type="button"
                   className="mt-3"
@@ -262,36 +283,40 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
 
                 {credential ? (
                   <>
-                    <label className="mt-6 block text-[13.5px] text-muted-foreground">
-                      <Trans>Voice</Trans>
-                      <select
+                    <Field className="mt-6">
+                      <FieldLabel htmlFor={voiceSelectId}>
+                        <Trans>Voice</Trans>
+                      </FieldLabel>
+                      <NativeSelect
+                        id={voiceSelectId}
+                        className="w-full"
                         value={voiceId}
                         onChange={(event) => void chooseVoice(event.target.value)}
-                        className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none"
                       >
                         {voiceOptions.map((voice) => (
-                          <option key={voice.id} value={voice.id}>
+                          <NativeSelectOption key={voice.id} value={voice.id}>
                             {voice.label}
                             {voice.description ? ` · ${voice.description}` : ""}
-                          </option>
+                          </NativeSelectOption>
                         ))}
-                      </select>
-                    </label>
-                    <button
+                      </NativeSelect>
+                    </Field>
+                    <Button
                       type="button"
+                      variant="secondary"
+                      className="mt-4 rounded-full"
                       disabled={busy || !status?.ready}
                       onClick={() => void testVoice()}
-                      className="mt-4 text-[14px] text-foreground/75 disabled:opacity-40"
                     >
                       {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
-                    </button>
+                    </Button>
                   </>
                 ) : null}
               </>
             ) : null}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
