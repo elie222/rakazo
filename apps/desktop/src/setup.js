@@ -121,10 +121,11 @@
     stackPolling = true;
     try {
       while (true) {
-        // The mode change handler already unlocked the form; a save it started must stay busy.
-        if (selectedMode() !== "new") return;
         const stack = await bridge.stack.state();
         if (stack === null) throw new Error("Setup is not active");
+        // Checked after the await: a mode change during it hands the form to the change
+        // handler, and a save it started must stay busy and must not be re-rendered over.
+        if (selectedMode() !== "new") return;
         renderStack(stack);
         if (TERMINAL_PHASES.has(stack.phase)) {
           if (stack.phase === "ready" && selectedMode() === "new") {
