@@ -1,7 +1,7 @@
 # Self-host offline / air-gap boundaries
 
 What you can **pre-stage or mirror** for a restricted network, versus what still
-needs **live egress** after the stack is up. New file only — does not edit
+needs **live egress** after the stack is up. New file only; does not edit
 `docs/self-host.md`.
 
 Project policy: escape hatches are **generic** HTTPS bases and registry
@@ -12,7 +12,7 @@ docs as recommended endpoints.
 ## Reality check
 
 Rakazo is not a fully air-gapped appliance. Published-images install can be
-made to **bootstrap and pull** with zero public GitHub/GHCR/Hub reachability
+made to **bootstrap and start** with zero public GitHub/GHCR/Hub reachability
 *if* you pre-place files and images. Day-2 product use (models, optional
 catalogs, remote sandboxes, email, ACME) usually still needs outbound HTTPS
 unless you deliberately disable those features.
@@ -23,17 +23,29 @@ Treat “offline install” and “offline operation” as separate goals.
 
 | Stage | Default touch | Offline / mirror option |
 | --- | --- | --- |
-| **A** — fetch `install-images.sh` | `raw.githubusercontent.com` | Pre-copy the script, or `curl` via `RAKAZO_INSTALLER_URL` (HTTPS mirror **you** host) |
-| **B** — Compose YAML + `.env.images.example` | Same GitHub raw tree under `infra/compose` | `RAKAZO_DOWNLOAD_BASE` → HTTPS mirror of that directory; or `--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` when files already sit in the working directory |
-| **C** — `docker compose pull` | `ghcr.io/elie222/rakazo/{app,computer}` plus Hub `postgres` / `busybox` | Pre-load images into the daemon, or override `RAKAZO_IMAGE*` / `RAKAZO_COMPUTER_IMAGE*` and `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to a registry **you** control (prefer **digest-less** tags on mirrors). Daemon `registry-mirrors` is an alternative for Hub only |
+| **A** - fetch `install-images.sh` | `raw.githubusercontent.com` | Pre-copy the script, or `curl` via `RAKAZO_INSTALLER_URL` (HTTPS mirror **you** host) |
+| **B** - Compose YAML + `.env.images.example` | Same GitHub raw tree under `infra/compose` | `RAKAZO_DOWNLOAD_BASE` → HTTPS mirror of that directory; or `--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` when files already sit in the working directory |
+| **C** - images on the host | `ghcr.io/elie222/rakazo/{app,computer}` plus Hub `postgres` / `busybox` | Pull from a registry **you** control (`RAKAZO_IMAGE*` / `RAKAZO_COMPUTER_IMAGE*` and `POSTGRES_IMAGE` / `BUSYBOX_IMAGE`; prefer **digest-less** tags on mirrors), **or** `docker load` pre-staged images and start with Compose (no pull). Daemon `registry-mirrors` is an alternative for Hub only |
 
 Installer flags that help air-gapped **bootstrap** (not day-2):
+
+`--local` only skips GitHub file downloads when Compose/env files are already
+on disk. It does **not** skip `docker compose pull`. A full installer run still
+needs registry access unless you bypass the installer after prepare.
 
 ```bash
 # Files already on disk next to the script:
 bash install-images.sh --local --prepare-only
-# edit .env (secrets, image overrides), then:
-bash install-images.sh --local
+# edit .env (secrets, image overrides)
+```
+
+With images already loaded (or pointed at an internal registry you can reach),
+start Compose yourself instead of re-running the installer:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml up -d
+# When your Compose plugin supports it:
+# docker compose --env-file .env -f docker-compose.images.yml up -d --wait --wait-timeout 300
 ```
 
 `RAKAZO_DOWNLOAD_BASE` must be `https://…` (non-HTTPS is rejected). Trailing
@@ -45,12 +57,12 @@ Safe to vend into the air-gap **before** cutover:
 
 1. `install-images.sh`, `docker-compose.images.yml`, `.env.images.example`
 2. OCI images for app, computer, Postgres, busybox (and prod: Caddy / updater
-   if you use that path) — `docker load` or a private registry
+   if you use that path): `docker load` or a private registry
 3. Operator-written `.env` with locally generated secrets (`openssl`)
 4. Optional: host TLS certs / Caddyfile if you terminate TLS yourself (skip
    public ACME)
 
-After images and Compose files are local, Stage A–C need no public GitHub.
+After images and Compose files are local, Stage A-C need no public GitHub.
 
 ## What still wants live network (day-2)
 
@@ -69,7 +81,7 @@ you turn them off or replace them:
 
 Local Docker computers (`SANDBOX_PROVIDER=docker`) still need the **computer
 image** present locally; they do not need E2B. Desktops inside those
-containers may themselves lack egress — that is a separate network policy.
+containers may themselves lack egress; that is a separate network policy.
 
 ## Minimal “pull offline, run local” checklist
 
@@ -77,8 +89,10 @@ containers may themselves lack egress — that is a separate network policy.
    (or build) the four image refs you will pin; `docker save` → tape/USB.
 2. On the air-gapped host: `docker load`; place Compose files; set
    `RAKAZO_*_IMAGE*` / Hub overrides to local tags or an internal registry;
-   `bash install-images.sh --local --prepare-only`; fill secrets; run without
-   needing GitHub.
+   `bash install-images.sh --local --prepare-only`; fill secrets; then
+   `docker compose --env-file .env -f docker-compose.images.yml up -d`
+   (add `--wait --wait-timeout 300` when Compose supports it). Do not re-run
+   the installer for bring-up; it always runs `docker compose pull`.
 3. Verify with `curl -fsS http://127.0.0.1:3100/health` (see health-checks doc
    when present). Expect `sandbox: "docker"` if that is your path.
 4. Do **not** expect model replies until a provider route exists inside the
@@ -90,8 +104,8 @@ containers may themselves lack egress — that is a separate network policy.
   installer or Compose defaults
 - Claiming “full air-gap including LLM” without an in-boundary model endpoint
 - Editing this guide into `docs/self-host.md` while that file is a hot merge
-  surface — link from ops notes instead
+  surface; link from ops notes instead
 
 Related operator docs (when merged on your tree): pull diagnostics, outbound
-HTTP proxy, health checks — each is a separate file so restricted-network
+HTTP proxy, health checks; each is a separate file so restricted-network
 topics can land without colliding.
