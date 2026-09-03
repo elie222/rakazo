@@ -107,10 +107,11 @@ in-app checks — prefer HTTP `/health` for install verification.
 | `curl :3100/health` connection refused | API container not up; check `docker compose ps` / logs for `api`. |
 | `ok: true` but `sandbox: "none"` | Provider left at `none`, or Docker/supervisor path not configured. |
 | Compose `--wait` hangs / times out | A dependency healthcheck stays red (often Postgres, supervisor token, or API crash loop). |
-| UI loads on `:5173` but `/health` 404 there | Expected on published images — Vite does not proxy `/health`; use `:3100`. |
+| UI loads on `:5173` but `/health` returns the UI HTML | Expected on published images — Vite does not proxy `/health` (SPA fallback can be HTTP 200 HTML); use `:3100` and verify the JSON payload. |
 | Public `/health` fails behind TLS | Caddy/`RAKAZO_HOST` misconfigured; confirm `handle /health` → `api:3100`. |
 
-Stop without deleting volumes:
+Stop without deleting volumes (from the published-images working directory
+where the installer placed `docker-compose.images.yml`, not from a monorepo root):
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml down
