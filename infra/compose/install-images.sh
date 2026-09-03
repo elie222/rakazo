@@ -59,6 +59,20 @@ done
 
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
+# curl uses lowercase http_proxy for http:// URLs; many Mainland hosts only export HTTP_PROXY.
+sync_curl_proxy_env() {
+  if [[ -n "${HTTP_PROXY:-}" && -z "${http_proxy:-}" ]]; then
+    export http_proxy="$HTTP_PROXY"
+  fi
+  if [[ -n "${HTTPS_PROXY:-}" && -z "${https_proxy:-}" ]]; then
+    export https_proxy="$HTTPS_PROXY"
+  fi
+  if [[ -n "${NO_PROXY:-}" && -z "${no_proxy:-}" ]]; then
+    export no_proxy="$NO_PROXY"
+  fi
+}
+sync_curl_proxy_env
+
 curl_download() {
   local url="$1"
   local out="$2"
@@ -95,7 +109,7 @@ download() {
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
   if ! curl_download "$url" "$temporary_file"; then
-    fail "could not download ${filename} from ${url}."
+    fail "could not download ${filename} from ${url}. If you use an egress proxy, export HTTP_PROXY/HTTPS_PROXY (this script mirrors them to http_proxy/https_proxy for curl) and NO_PROXY for localhost; or pre-place ${filename} and use --local."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""
@@ -190,7 +204,9 @@ if [[ "$prepare_only" == true ]]; then
   exit 0
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+  fail "could not pull images. docker compose pull uses the Docker daemon — shell HTTP_PROXY alone often does not apply. Configure daemon proxy and/or registry-mirrors, point RAKAZO_IMAGE*/POSTGRES_IMAGE/BUSYBOX_IMAGE at a registry you can reach, or pre-load images then: docker compose --env-file .env -f docker-compose.images.yml up -d --pull never"
+fi
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)
