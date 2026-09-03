@@ -1,10 +1,23 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@rakazo/ui-web";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { rpc } from "../lib/rpc";
-import { BuiCard } from "./ai/primitives";
 
 type Action = "recover" | "reset" | "update";
 
@@ -23,37 +36,10 @@ export function ComputerMaintenanceActions({
   variant?: "panel" | "menu";
 }) {
   const { t } = useLingui();
-  const menuId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pending, setPending] = useState<Action | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Keep Escape active while the reset dialog is open even after the menu closes,
-    // so Escape dismisses confirm instead of Shell closing the computer overlay.
-    if (!menuOpen && !confirmReset) return;
-    function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      // Stop bubbling so Shell's Escape handler does not also close the computer.
-      event.stopPropagation();
-      if (confirmReset) {
-        setConfirmReset(false);
-        return;
-      }
-      setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen, confirmReset]);
 
   if (!computer) return null;
 
@@ -85,117 +71,98 @@ export function ComputerMaintenanceActions({
     }
   }
 
-  const resetDialog = confirmReset ? (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-overlay px-6"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="reset-computer-title"
-      aria-describedby="reset-computer-description"
+  function openResetConfirm() {
+    setError(null);
+    setMenuOpen(false);
+    setConfirmReset(true);
+  }
+
+  // Escape closes the dialog inside the popup, so Shell's Escape handler does not also
+  // close the computer overlay.
+  const resetDialog = (
+    <AlertDialog
+      open={confirmReset}
+      onOpenChange={(open) => {
+        if (!open) setConfirmReset(false);
+      }}
     >
-      <BuiCard className="w-full max-w-[420px] border border-border p-5">
-        <div id="reset-computer-title" className="text-[16px] font-medium text-foreground">
-          <Trans>Reset computer?</Trans>
-        </div>
-        <p
-          id="reset-computer-description"
-          className="mt-2 text-[14px] leading-[1.5] text-muted-foreground"
-        >
-          <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
-        </p>
-        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            variant="secondary"
-            className="rounded-full"
-            onClick={() => setConfirmReset(false)}
-          >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            <Trans>Reset computer?</Trans>
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel>
             <Trans>Cancel</Trans>
-          </Button>
-          <Button
-            className="rounded-full"
-            disabled={pending !== null}
-            onClick={() => void run("reset")}
-          >
+          </AlertDialogCancel>
+          <AlertDialogAction disabled={pending !== null} onClick={() => void run("reset")}>
             {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
-          </Button>
-        </div>
-      </BuiCard>
-    </div>
-  ) : null;
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
   if (variant === "menu") {
     return (
-      <div ref={rootRef} className="relative">
-        <button
-          type="button"
-          id={menuId}
-          data-testid="computer-more-button"
-          aria-label={t`More computer actions`}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          disabled={busy && pending === null}
-          onClick={() => {
-            setError(null);
-            setMenuOpen((open) => !open);
+      <>
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            if (open) setError(null);
+            setMenuOpen(open);
           }}
-          className="grid h-8 w-8 place-items-center rounded-[10px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
         >
-          <MoreHorizontal size={16} strokeWidth={1.8} />
-        </button>
-        {menuOpen ? (
-          <div
-            role="menu"
-            aria-labelledby={menuId}
+          <DropdownMenuTrigger
+            data-testid="computer-more-button"
+            aria-label={t`More computer actions`}
+            disabled={busy && pending === null}
+            render={<Button variant="ghost" size="icon" className="text-muted-foreground" />}
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
             data-testid="computer-more-menu"
-            className="absolute end-0 top-full z-20 mt-1.5 min-w-[180px] rounded-[12px] border border-border bg-card py-1.5 shadow-lg"
+            className="w-auto min-w-44"
           >
             {showRecover ? (
-              <button
-                type="button"
-                role="menuitem"
+              <DropdownMenuItem
+                closeOnClick={false}
                 disabled={busy || pending !== null}
                 onClick={() => void run("recover")}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {pending === "recover" ? (
                   <Trans>Recovering…</Trans>
                 ) : (
                   <Trans>Recover computer</Trans>
                 )}
-              </button>
+              </DropdownMenuItem>
             ) : null}
             {showReset ? (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={busy || pending !== null}
-                onClick={() => {
-                  setError(null);
-                  setMenuOpen(false);
-                  setConfirmReset(true);
-                }}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
-              >
+              <DropdownMenuItem disabled={busy || pending !== null} onClick={openResetConfirm}>
                 {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
-              </button>
+              </DropdownMenuItem>
             ) : null}
             {showUpdate ? (
-              <button
-                type="button"
-                role="menuitem"
+              <DropdownMenuItem
+                closeOnClick={false}
                 disabled={busy || pending !== null}
                 onClick={() => void run("update")}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {pending === "update" ? <Trans>Updating…</Trans> : <Trans>Update computer</Trans>}
-              </button>
+              </DropdownMenuItem>
             ) : null}
-            {error ? <p className="px-3.5 py-2 text-[12.5px] text-destructive">{error}</p> : null}
-          </div>
-        ) : null}
+            {error ? <p className="px-1.5 py-1 text-[12.5px] text-destructive">{error}</p> : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {resetDialog}
-      </div>
+      </>
     );
   }
 
@@ -217,10 +184,7 @@ export function ComputerMaintenanceActions({
             variant="secondary"
             className="rounded-full"
             disabled={busy || pending !== null}
-            onClick={() => {
-              setError(null);
-              setConfirmReset(true);
-            }}
+            onClick={openResetConfirm}
           >
             {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
           </Button>

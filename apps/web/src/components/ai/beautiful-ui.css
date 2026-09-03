@@ -1,27 +1,7 @@
 /* Beautiful UI primitives — hand-ported from beautifului.dev
    (github.com/TurboKach/ai-native-react-components, MIT © 2026 Turbo).
-   Tokens are remapped onto Rakazo's shared palette; keyframes are ported
+   Colours come from the shared semantic tokens; keyframes are ported
    verbatim with a bui- prefix to avoid collisions. */
-
-:root,
-[data-theme="dark"],
-[data-theme="light"] {
-  --bui-ink: var(--foreground);
-  --bui-ink-2: color-mix(in srgb, var(--foreground) 75%, transparent);
-  --bui-ink-3: var(--muted-foreground);
-  --bui-surface: var(--card);
-  --bui-hover: var(--accent);
-  --bui-line: var(--border);
-  --bui-line-strong: var(--border);
-  --bui-green: var(--success);
-  --bui-green-tint: color-mix(in srgb, var(--success) 14%, transparent);
-  --bui-accent: var(--primary);
-  --bui-shadow-btn:
-    0 0 0 1px var(--bui-line-strong), 0 1px 2px color-mix(in srgb, #000 12%, transparent);
-  --bui-shadow-card:
-    0 0 0 1px var(--bui-line), 0 1px 2px color-mix(in srgb, #000 8%, transparent),
-    0 2px 6px color-mix(in srgb, #000 8%, transparent);
-}
 
 @keyframes bui-shimmer-text {
   0% {

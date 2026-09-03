@@ -16,17 +16,15 @@ export function ToolSteps({
         return (
           <div key={index} className="flex min-w-0 items-center gap-2">
             <span
-              className="text-[13px]"
-              style={{
-                color: isCurrent ? "#F5A03C" : "#4ECB71",
-                animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-              }}
+              className={`text-[13px] ${isCurrent ? "text-warning" : "text-success"}`}
+              style={{ animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
             >
               {isCurrent ? "◷" : "✓"}
             </span>
             <span
-              className="min-w-0 flex-1 truncate text-[14px]"
-              style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
+              className={`min-w-0 flex-1 truncate text-[14px] ${
+                isCurrent ? "text-foreground" : "text-muted-foreground"
+              }`}
             >
               {step.label}
               {step.count > 1 ? ` ×${step.count}` : ""}

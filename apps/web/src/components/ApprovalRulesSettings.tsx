@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import { Button, Label, Switch } from "@rakazo/ui-web";
+import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 function describeRule(rule: ActionApprovalRule): string {
@@ -25,6 +26,7 @@ function describeRule(rule: ActionApprovalRule): string {
 
 export function ApprovalRulesSettings() {
   const { t } = useLingui();
+  const autoReviewId = useId();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [autoReview, setAutoReview] = useState<ActionAutoReviewSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,43 +118,41 @@ export function ApprovalRulesSettings() {
         </Trans>
       </p>
       <div className="mt-4 flex flex-col items-start gap-2">
-        <button
-          type="button"
+        <Button
+          variant="outline"
           disabled={loading || savingPreset !== null}
           onClick={() => void setPreset("email")}
-          className="rounded-[11px] border border-border px-[17px] py-2 text-[14px] text-foreground/75 disabled:opacity-50"
         >
           <Trans>Ask before sending external email</Trans>
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="outline"
           disabled={loading || savingPreset !== null}
           onClick={() => void setPreset("purchase")}
-          className="rounded-[11px] border border-border px-[17px] py-2 text-[14px] text-foreground/75 disabled:opacity-50"
         >
           <Trans>Ask before purchases</Trans>
-        </button>
+        </Button>
       </div>
-      <label className="mt-5 flex cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
+      <div className="mt-5 flex items-start gap-3">
+        <Switch
+          id={autoReviewId}
           data-testid="auto-review-toggle"
-          className="mt-1"
+          className="mt-0.5"
           checked={autoReview?.enabled ?? false}
           disabled={loading || savingAutoReview || !autoReview}
-          onChange={(event) => void toggleAutoReview(event.target.checked)}
+          onCheckedChange={(checked) => void toggleAutoReview(checked)}
         />
-        <span>
-          <span className="block text-[14px] text-foreground/75">
+        <div>
+          <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground/75">
             <Trans>Flag unexpected actions</Trans>
-          </span>
+          </Label>
           {autoReview?.enabled && !autoReview.checkerAvailable ? (
-            <span className="mt-1 block text-[13px] text-muted-foreground">
+            <p className="mt-1 text-[13px] text-muted-foreground">
               <Trans>Add a model in Settings to use this.</Trans>
-            </span>
+            </p>
           ) : null}
-        </span>
-      </label>
+        </div>
+      </div>
       {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
       {loading ? (
         <p className="mt-4 text-[13px] text-muted-foreground">
@@ -167,16 +167,17 @@ export function ApprovalRulesSettings() {
           {rules.map((rule) => (
             <li
               key={rule.id}
-              className="flex items-center justify-between gap-3 rounded-[11px] border border-border px-3.5 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2"
             >
               <span className="text-[13.5px] text-foreground/75">{describeRule(rule)}</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
                 onClick={() => void removeRule(rule.id)}
-                className="text-[13px] text-muted-foreground"
               >
                 <Trans>Remove</Trans>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
