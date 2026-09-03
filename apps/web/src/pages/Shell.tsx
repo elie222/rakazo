@@ -134,6 +134,7 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
+import { loadComputerScreen } from "../lib/computer-screen";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
@@ -464,7 +465,7 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
-  const [, setComputerError] = useState<string | null>(null);
+  const [computerError, setComputerError] = useState<string | null>(null);
   useEffect(() => {
     if (!session.data?.user) return;
     let cancelled = false;
@@ -808,17 +809,17 @@ export function ShellPage() {
   async function refreshComputerScreen(id: string) {
     if (!computerVisible.current) return null;
     const request = ++screenRequest.current;
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
-    if (
-      request !== screenRequest.current ||
-      activeBotId.current !== id ||
-      !computerVisible.current
-    ) {
-      return null;
-    }
-    setScreenUrl(screen.url);
-    cacheComputerFor(id, { screenUrl: screen.url });
-    return screen.url;
+    return loadComputerScreen({
+      load: () => rpc.computer.screenUrl({ botId: id }),
+      isCurrent: () =>
+        request === screenRequest.current && activeBotId.current === id && computerVisible.current,
+      commit: (screen) => {
+        setScreenUrl(screen.url);
+        setComputerError(screen.error);
+        cacheComputerFor(id, { screenUrl: screen.url });
+      },
+      fallbackError: t`Could not connect to the computer screen`,
+    });
   }
 
   async function loadOlderMessages() {
@@ -1044,6 +1045,7 @@ export function ShellPage() {
       pinnedAroundRef.current = null;
     }
     screenRequest.current += 1;
+    setComputerError(null);
     const cached = computerCacheRef.current.get(active.id);
     if (cached) {
       // Paint the last-known computer instantly; refreshThread/refreshComputerScreen
@@ -2196,11 +2198,11 @@ export function ShellPage() {
     if (!active) return;
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
+    setComputerError(null);
     try {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
-      setComputerError(null);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
       throw error;
@@ -2335,6 +2337,18 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
+  const computerScreenError = computerError ? (
+    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+      <p className="text-destructive">{computerError}</p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => active && void refreshComputerScreen(active.id)}
+      >
+        <Trans>Retry screen</Trans>
+      </Button>
+    </div>
+  ) : null;
 
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
@@ -3136,29 +3150,32 @@ export function ShellPage() {
                     />
                   ) : (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
-                      {computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
-                        <ComputersUnavailableHint />
-                      ) : (
-                        computerPlaceholder(
-                          computer?.state,
-                          booting,
-                          computerLabel(computer?.mode, active.name),
-                        )
-                      )}
+                      {computerScreenError ??
+                        (computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
+                          <ComputersUnavailableHint />
+                        ) : (
+                          computerPlaceholder(
+                            computer?.state,
+                            booting,
+                            computerLabel(computer?.mode, active.name),
+                          )
+                        ))}
                     </div>
                   )}
-                  <button
-                    type="button"
-                    data-testid="computer-preview-open"
-                    className="absolute inset-0 flex cursor-pointer items-center justify-center bg-overlay/40 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                    aria-label={t`Open`}
-                    onClick={() => void openComputer()}
-                  >
-                    <span className="inline-flex items-center gap-2 rounded-full bg-overlay px-3.5 py-2 text-[14px] text-foreground shadow-md">
-                      <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
-                      <Trans>Open</Trans>
-                    </span>
-                  </button>
+                  {!computerError ? (
+                    <button
+                      type="button"
+                      data-testid="computer-preview-open"
+                      className="absolute inset-0 flex cursor-pointer items-center justify-center bg-overlay/40 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      aria-label={t`Open`}
+                      onClick={() => void openComputer()}
+                    >
+                      <span className="inline-flex items-center gap-2 rounded-full bg-overlay px-3.5 py-2 text-[14px] text-foreground shadow-md">
+                        <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
+                        <Trans>Open</Trans>
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
                 <p className="mt-2 truncate text-[13.5px] text-muted-foreground" dir="auto">
                   {t`${active.name}'s screen`}
@@ -3837,9 +3854,10 @@ export function ShellPage() {
               </>
             ) : (
               <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-                {computer?.state === "suspended"
-                  ? t`Computer is asleep`
-                  : computerLabel(computer?.mode, active.name)}
+                {computerScreenError ??
+                  (computer?.state === "suspended"
+                    ? t`Computer is asleep`
+                    : computerLabel(computer?.mode, active.name))}
               </div>
             )}
           </div>
