@@ -456,6 +456,19 @@ describe("LocalStackController", () => {
     expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
   });
 
+  it("reports a stop when docker has gone missing since the start", async () => {
+    let installed = true;
+    const stack = controller({ exists: (file) => installed && file === "/usr/bin/docker" });
+    await stack.start();
+    installed = false;
+    const state = await stack.stop();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: expect.stringContaining("Could not stop"),
+    });
+    expect(calls.at(-1)?.args.slice(5)).not.toEqual(["stop"]);
+  });
+
   it("reports a stop that docker refused instead of pretending the stack is down", async () => {
     const stack = controller({}, (args) =>
       args[5] === "stop" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),

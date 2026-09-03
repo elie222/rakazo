@@ -248,10 +248,9 @@ export class LocalStackController {
     this.abort();
     if (this.running !== null) await this.running.catch(() => undefined);
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
-    if (binary === null) return this.current;
-    const stopped = await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
+    const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
     this.current =
-      stopped.code === 0
+      stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
         : { ...this.current, phase: "failed", message: STOP_FAILED };
     return this.current;
