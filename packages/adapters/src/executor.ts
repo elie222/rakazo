@@ -1138,17 +1138,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         screenRelease = { computer, context };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
-        const currentTurnFiles = deps.artifacts
-          ? await materializeCurrentTurnFiles(
-              { prisma: deps.prisma, artifacts: deps.artifacts, sandbox: deps.sandbox },
-              turnBlocks,
-              { context, computer, computerMode },
-            )
-          : [];
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
           checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context),
         );
-        workspaceCheckpoint.markFiles(currentTurnFiles);
+        let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>>;
+        try {
+          currentTurnFiles = deps.artifacts
+            ? await materializeCurrentTurnFiles(
+                { prisma: deps.prisma, artifacts: deps.artifacts, sandbox: deps.sandbox },
+                turnBlocks,
+                {
+                  context,
+                  computer,
+                  computerMode,
+                  markWorkspaceDirty: workspaceCheckpoint.markDirty,
+                },
+              )
+            : [];
+        } catch (error) {
+          await workspaceCheckpoint.flush().catch(() => undefined);
+          throw error;
+        }
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
@@ -2923,7 +2933,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                                     sandbox: deps.sandbox,
                                   },
                                   item.blocks,
-                                  { context, computer, computerMode },
+                                  {
+                                    context,
+                                    computer,
+                                    computerMode,
+                                    markWorkspaceDirty: workspaceCheckpoint.markDirty,
+                                  },
                                 )
                               : Promise.resolve([]),
                             item.blocks,
