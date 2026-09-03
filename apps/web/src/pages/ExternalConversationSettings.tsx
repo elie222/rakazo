@@ -6,9 +6,10 @@ import type {
   ExternalConversation,
   ExternalConversationPolicy,
 } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { BuiButton, SuccessPop } from "../components/beautiful-ui/primitives";
+import { SuccessPop } from "../components/ai/primitives";
 
 type ListenMode = "inherit" | "listen" | "mentions";
 
@@ -233,8 +234,8 @@ export function ExternalConversationSettings({
       ) : null}
       {error ? <p className="mt-3 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
       <div className="mt-6 flex min-h-10 items-center gap-3">
-        <BuiButton
-          tone="accent"
+        <Button
+          type="button"
           disabled={saving}
           onClick={() => {
             setSaving(true);
@@ -253,7 +254,7 @@ export function ExternalConversationSettings({
           }}
         >
           {saving ? <Trans>Saving...</Trans> : <Trans>Save</Trans>}
-        </BuiButton>
+        </Button>
         {saved ? <SuccessPop label={t`Saved`} /> : null}
       </div>
     </div>

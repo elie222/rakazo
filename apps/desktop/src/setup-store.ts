@@ -21,17 +21,23 @@ export async function readSetup(userDataDir: string): Promise<DesktopSetup | nul
 
 export async function writeSetup(userDataDir: string, setup: DesktopSetup): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
-  const destination = setupFilePath(userDataDir);
+  await writePrivateFile(setupFilePath(userDataDir), serializeSetup(setup));
+}
+
+/**
+ * Writes a file only its owner can read, atomically. Replacing the complete file
+ * avoids following a malicious final symlink and leaves either the old or new
+ * contents after an interrupted write.
+ */
+export async function writePrivateFile(destination: string, contents: string): Promise<void> {
   const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
   let file: Awaited<ReturnType<typeof open>> | undefined;
   try {
     file = await open(temporary, "wx", 0o600);
-    await file.writeFile(serializeSetup(setup), "utf8");
+    await file.writeFile(contents, "utf8");
     await file.sync();
     await file.close();
     file = undefined;
-    // Replacing the complete file avoids following a malicious final symlink and
-    // leaves either the old or new valid JSON after an interrupted write.
     await rename(temporary, destination);
   } finally {
     await file?.close().catch(() => undefined);

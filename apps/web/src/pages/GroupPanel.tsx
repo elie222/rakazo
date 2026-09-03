@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakazo/contracts";
-import { BotAvatar, Button } from "@rakazo/ui-web";
-import { useMemo, useState } from "react";
+import { BotAvatar, Button, Input } from "@rakazo/ui-web";
+import { Check, X } from "lucide-react";
+import { useId, useMemo, useState } from "react";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (
@@ -46,16 +47,17 @@ function MemberPicker({
           <button
             key={bot.id}
             type="button"
+            aria-pressed={checked}
             onClick={() => toggle(bot.id)}
             className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start ${
-              checked ? "bg-[var(--rk-surface-2)]" : "hover:bg-[var(--rk-surface)]"
+              checked ? "bg-muted" : "hover:bg-accent"
             }`}
           >
             <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
-            <span className="flex-1 text-[15px] text-[var(--rk-ink)]" dir="auto">
+            <span className="flex-1 text-[15px] text-foreground" dir="auto">
               {bot.name}
             </span>
-            <span className="text-[13px] text-[var(--rk-muted-2)]">{checked ? "✓" : ""}</span>
+            {checked ? <Check size={14} className="text-muted-foreground" aria-hidden /> : null}
           </button>
         );
       })}
@@ -73,6 +75,7 @@ export function CreateGroupForm({
   onCreate: (input: { name: string; botIds: string[] }) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const nameId = useId();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -94,28 +97,35 @@ export function CreateGroupForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[var(--rk-muted)]">
+        <span className="text-[13.5px] text-muted-foreground">
           <Trans>New group</Trans>
         </span>
-        <button type="button" aria-label={t`Cancel new group`} onClick={onCancel}>
-          ✕
-        </button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t`Cancel new group`}
+          onClick={onCancel}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
+        <p role="alert" className="mb-3 text-[13px] text-destructive">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[var(--rk-muted)]">
+      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
         <Trans>Name</Trans>
-        <input
+        <Input
+          id={nameId}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+          className="mt-2"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-5 text-sm text-muted-foreground">
         <Trans>
           Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>
@@ -149,6 +159,7 @@ export function GroupSettings({
   onRemove: () => Promise<void>;
 }) {
   const { t } = useLingui();
+  const nameId = useId();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
   const [pending, setPending] = useState<"save" | "remove" | null>(null);
@@ -188,24 +199,25 @@ export function GroupSettings({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[var(--rk-muted)]">
+        <span className="text-[13.5px] text-muted-foreground">
           <Trans>Group settings</Trans>
         </span>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
+        <p role="alert" className="mb-3 text-[13px] text-destructive">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[var(--rk-muted)]">
+      <label htmlFor={nameId} className="block text-sm text-muted-foreground">
         <Trans>Name</Trans>
-        <input
+        <Input
+          id={nameId}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+          className="mt-2"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-5 text-sm text-muted-foreground">
         <Trans>
           Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>
@@ -223,14 +235,14 @@ export function GroupSettings({
       >
         {pending === "save" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
       </Button>
-      <button
-        type="button"
+      <Button
+        variant="destructive"
+        className="mt-4 w-full"
         disabled={pending !== null}
         onClick={() => void mutate("remove", onRemove)}
-        className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B] disabled:opacity-40"
       >
         {pending === "remove" ? <Trans>Deleting…</Trans> : <Trans>Delete group</Trans>}
-      </button>
+      </Button>
     </div>
   );
 }

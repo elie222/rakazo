@@ -1,0 +1,51 @@
+name: desktop-macos-screenshot
+on:
+  push:
+    branches: [main]
+    paths: &desktop-setup-paths
+      - ".github/workflows/desktop-macos-screenshot.yml"
+      - "apps/desktop/e2e/setup.spec.ts"
+      - "apps/desktop/package.json"
+      - "apps/desktop/scripts/copy-static.mjs"
+      - "apps/desktop/src/setup*"
+      - "apps/desktop/src/window-options.ts"
+      - "packages/contracts/src/desktop.ts"
+  pull_request:
+    paths: *desktop-setup-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-macos-screenshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  screenshot:
+    name: macOS setup screenshot
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @rakazo/desktop build
+      - name: Capture native macOS setup window
+        run: >-
+          pnpm --filter @rakazo/desktop exec playwright test
+          --config e2e/playwright.config.ts setup.spec.ts
+          --grep "first run asks whether to use a local or existing instance"
+      - name: Upload native macOS setup screenshot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-e2e-macos-screenshot
+          path: apps/desktop/e2e/screenshots/08-setup-macos-native-controls.png
+          if-no-files-found: error
+          retention-days: 1

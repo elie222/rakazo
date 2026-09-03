@@ -49,7 +49,7 @@ Setup:
 4. Preserve existing values. Keep `SANDBOX_PROVIDER=docker` unless I chose a remote computer
    provider, and add only the provider or model keys I selected.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
-6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64). Do not pin `latest` unless that tag exists in GHCR.
+6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
 
 Verification:
 

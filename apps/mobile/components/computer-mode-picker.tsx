@@ -1,5 +1,6 @@
 import type { ComputerMode } from "@rakazo/contracts";
 import { Pressable, Text, View } from "react-native";
+import { useI18n } from "../lib/i18n";
 
 export function ComputerModePicker({
   value,
@@ -10,9 +11,10 @@ export function ComputerModePicker({
   onChange: (mode: ComputerMode) => void;
   disabled?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: "#85858A", marginBottom: 8, fontSize: 14 }}>Computer</Text>
+      <Text style={{ color: "#85858A", marginBottom: 8, fontSize: 14 }}>{t("Computer")}</Text>
       <View style={{ flexDirection: "row", gap: 8 }}>
         {(["team", "dedicated"] as const).map((mode) => (
           <Pressable
@@ -33,7 +35,7 @@ export function ComputerModePicker({
             }}
           >
             <Text style={{ color: value === mode ? "#ECECEE" : "#85858A" }}>
-              {mode === "team" ? "Team" : "Private"}
+              {mode === "team" ? t("Team") : t("Private")}
             </Text>
           </Pressable>
         ))}

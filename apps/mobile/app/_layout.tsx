@@ -1,3 +1,4 @@
+import { lightTokens } from "@rakazo/ui-tokens";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
@@ -7,14 +8,13 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { currentApiBase, loadApiBase, loadSessionToken, selectedSpaceId } from "../lib/api";
 import { loadAppearancePreference } from "../lib/appearance";
+import { bootstrapI18n, useI18n } from "../lib/i18n";
 import {
   configureForegroundNotifications,
   resumeLiveNotifications,
 } from "../lib/live-notifications";
 import { native, useResolvedAppearance } from "../lib/native";
-import { applyMobileUiDirection } from "../lib/ui-direction";
 
-applyMobileUiDirection();
 configureForegroundNotifications();
 
 const lightTheme = {
@@ -22,16 +22,17 @@ const lightTheme = {
   dark: false,
   colors: {
     ...DarkTheme.colors,
-    primary: "#1A1A1A",
-    background: "#F4F4F2",
-    card: "#F4F4F2",
-    text: "#1A1A1A",
-    border: "#D0D0CC",
-    notification: "#2A9E86",
+    primary: lightTokens.primary,
+    background: lightTokens.background,
+    card: lightTokens.background,
+    text: lightTokens.foreground,
+    border: lightTokens.border,
+    notification: lightTokens.foreground,
   },
 };
 
 export default function Layout() {
+  const { t } = useI18n();
   const [ready, setReady] = useState(false);
   const resolved = useResolvedAppearance();
   const navigationTheme = useMemo(() => {
@@ -50,16 +51,18 @@ export default function Layout() {
   }, [resolved]);
 
   useEffect(() => {
-    void Promise.all([loadApiBase(), loadAppearancePreference()])
-      .then(async () =>
-        resumeLiveNotifications(
-          currentApiBase(),
-          await loadSessionToken(),
-          selectedSpaceId() ?? "",
-        ),
-      )
-      .catch(() => undefined)
-      .finally(() => setReady(true));
+    void Promise.all([
+      Promise.all([loadApiBase(), loadAppearancePreference()])
+        .then(async () =>
+          resumeLiveNotifications(
+            currentApiBase(),
+            await loadSessionToken(),
+            selectedSpaceId() ?? "",
+          ),
+        )
+        .catch(() => undefined),
+      bootstrapI18n(),
+    ]).finally(() => setReady(true));
   }, []);
 
   return (
@@ -80,14 +83,14 @@ export default function Layout() {
               >
                 <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-                <Stack.Screen name="account" options={{ title: "Account" }} />
-                <Stack.Screen name="models" options={{ title: "Models" }} />
-                <Stack.Screen name="voice" options={{ title: "Voice" }} />
-                <Stack.Screen name="integrations" options={{ title: "Integrations" }} />
+                <Stack.Screen name="account" options={{ title: t("Account") }} />
+                <Stack.Screen name="models" options={{ title: t("Models") }} />
+                <Stack.Screen name="voice" options={{ title: t("Voice") }} />
+                <Stack.Screen name="integrations" options={{ title: t("Integrations") }} />
                 <Stack.Screen
                   name="new"
                   options={{
-                    title: "New bot",
+                    title: t("New bot"),
                     presentation: "modal",
                     gestureEnabled: true,
                     headerBackVisible: false,
@@ -96,7 +99,7 @@ export default function Layout() {
                 <Stack.Screen
                   name="new-group"
                   options={{
-                    title: "New group",
+                    title: t("New group"),
                     presentation: "modal",
                     gestureEnabled: true,
                   }}
@@ -104,18 +107,18 @@ export default function Layout() {
                 <Stack.Screen
                   name="new-space"
                   options={{
-                    title: "New space",
+                    title: t("New space"),
                     presentation: "modal",
                     gestureEnabled: true,
                     headerBackVisible: false,
                   }}
                 />
-                <Stack.Screen name="group-thread" options={{ title: "Group" }} />
-                <Stack.Screen name="group-settings" options={{ title: "Group settings" }} />
-                <Stack.Screen name="bot-settings" options={{ title: "Chat settings" }} />
-                <Stack.Screen name="thread" options={{ title: "Thread" }} />
-                <Stack.Screen name="routine" options={{ title: "Routine" }} />
-                <Stack.Screen name="computer" options={{ title: "Computer" }} />
+                <Stack.Screen name="group-thread" options={{ title: t("Group") }} />
+                <Stack.Screen name="group-settings" options={{ title: t("Group settings") }} />
+                <Stack.Screen name="bot-settings" options={{ title: t("Chat settings") }} />
+                <Stack.Screen name="thread" options={{ title: t("Thread") }} />
+                <Stack.Screen name="routine" options={{ title: t("Routine") }} />
+                <Stack.Screen name="computer" options={{ title: t("Computer") }} />
               </Stack>
             </ThemeProvider>
           </AvatarStyleProvider>

@@ -12,12 +12,15 @@ import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
 };
 
 export default function BotSettingsScreen() {
+  const { t } = useI18n();
   const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const [bot, setBot] = useState<BotSettingsRecord | null>(null);
@@ -43,7 +46,7 @@ export default function BotSettingsScreen() {
         setComputerMode(next.computerMode);
         setComputer(status);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load bot"));
+      .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
   }, [botId]);
 
   async function save() {
@@ -75,7 +78,7 @@ export default function BotSettingsScreen() {
       }
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save bot");
+      setError(err instanceof Error ? err.message : t("Could not save bot"));
     } finally {
       setPending(false);
     }
@@ -83,19 +86,19 @@ export default function BotSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Chat settings" }} />
+      <Stack.Screen options={{ title: t("Chat settings") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
+        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChangeText={setName}
-          placeholder="Name this bot"
+          placeholder={t("Name this bot")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -105,12 +108,12 @@ export default function BotSettingsScreen() {
             color: "#ECECEE",
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>Title</Text>
+        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Title")}</Text>
         <TextInput
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChangeText={setTitle}
-          placeholder="Describe what this bot does"
+          placeholder={t("Describe what this bot does")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -120,12 +123,12 @@ export default function BotSettingsScreen() {
             color: "#ECECEE",
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>Description</Text>
+        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Description")}</Text>
         <TextInput
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChangeText={setDescription}
-          placeholder="What this bot is for"
+          placeholder={t("What this bot is for")}
           placeholderTextColor="#6C6C70"
           multiline
           style={{
@@ -160,7 +163,9 @@ export default function BotSettingsScreen() {
             opacity: !name.trim() || pending || !bot ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: "#17171A", fontSize: 16 }}>{pending ? "Saving…" : "Save"}</Text>
+          <Text style={{ color: "#17171A", fontSize: 16 }}>
+            {pending ? t("Saving…") : t("Save")}
+          </Text>
         </Pressable>
       </ScrollView>
     </>

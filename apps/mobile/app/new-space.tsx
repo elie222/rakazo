@@ -3,8 +3,11 @@ import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { rpc, selectSpace } from "../lib/api";
+import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function NewSpace() {
+  const { t } = useI18n();
   const router = useRouter();
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
@@ -18,7 +21,7 @@ export default function NewSpace() {
     try {
       const space = await rpc<Space>("spaces/create", { name: trimmed });
       if (!(await selectSpace(space.id))) {
-        Alert.alert("Space created", "It could not be opened. Try again from the sidebar.");
+        Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));
         router.dismissAll();
         router.replace("/");
         return;
@@ -26,7 +29,7 @@ export default function NewSpace() {
       router.dismissAll();
       router.replace("/");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not create space");
+      setError(reason instanceof Error ? reason.message : t("Could not create space"));
       setPending(false);
     }
   }
@@ -40,15 +43,15 @@ export default function NewSpace() {
               onPress={() => router.back()}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Cancel"
+              accessibilityLabel={t("Cancel")}
             >
-              <Text style={{ color: "#0A84FF", fontSize: 17 }}>Cancel</Text>
+              <Text style={{ color: "#0A84FF", fontSize: 17 }}>{t("Cancel")}</Text>
             </Pressable>
           ),
         }}
       />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -61,15 +64,15 @@ export default function NewSpace() {
             padding: 18,
           }}
         >
-          <Text style={{ color: "#F1F1F2", fontSize: 18, fontWeight: "600" }}>Space</Text>
-          <Text style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}>Name</Text>
+          <Text style={{ color: "#F1F1F2", fontSize: 18, fontWeight: "600" }}>{t("Space")}</Text>
+          <Text style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}>{t("Name")}</Text>
           <TextInput
             autoFocus
             value={name}
             maxLength={60}
             onChangeText={setName}
             onSubmitEditing={() => void create()}
-            placeholder="Customer support"
+            placeholder={t("Customer support")}
             placeholderTextColor="#6C6C70"
             returnKeyType="done"
             style={{
@@ -95,7 +98,7 @@ export default function NewSpace() {
             }}
           >
             <Text style={{ color: "#090A12", fontSize: 16, fontWeight: "600" }}>
-              {pending ? "Creating…" : "Create space"}
+              {pending ? t("Creating…") : t("Create space")}
             </Text>
           </Pressable>
         </View>

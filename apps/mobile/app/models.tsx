@@ -3,7 +3,6 @@ import {
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -19,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
@@ -33,6 +33,7 @@ type ModelSelection = {
 
 export default function Models() {
   const styles = useThemedStyles(createModelsStyles);
+  const { t } = useI18n();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -113,7 +114,7 @@ export default function Models() {
     useCallback(() => {
       void load()
         .catch((err: unknown) =>
-          setError(err instanceof Error ? err.message : "Could not load model settings"),
+          setError(err instanceof Error ? err.message : t("Could not load model settings")),
         )
         .finally(() => setLoading(false));
       return () => {
@@ -212,10 +213,16 @@ export default function Models() {
       setProbeModels(result.models);
       setProbedBaseUrl(trimmedBaseUrl);
       setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+      setNotice(
+        result.models.length === 0
+          ? t("Server found. Enter a model name.")
+          : result.models.length === 1
+            ? t("Found {count} model.", { count: 1 })
+            : t("Found {count} models.", { count: result.models.length }),
+      );
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : "Could not reach this model server");
+      setError(err instanceof Error ? err.message : t("Could not reach this model server"));
     } finally {
       if (requestId === probeRequestIdRef.current) setProbing(false);
     }
@@ -231,9 +238,13 @@ export default function Models() {
     try {
       await rpc("models/setDefault", { provider: selected.provider, modelId: activeModelId });
       await load({ provider, modelId: activeModelId });
-      setNotice(isOpenAiCompatible ? "Model updated." : `Now using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? t("Model updated.")
+          : t("Now using {label}.", { label: selected.label }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the default model");
+      setError(err instanceof Error ? err.message : t("Could not change the default model"));
     } finally {
       setPending(null);
     }
@@ -269,9 +280,13 @@ export default function Models() {
       );
       setApiKey("");
       await load({ provider, modelId });
-      setNotice(isOpenAiCompatible ? "Saved." : `Connected and using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? t("Saved.")
+          : t("Connected and using {label}.", { label: selected.label }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect this provider");
+      setError(err instanceof Error ? err.message : t("Could not connect this provider"));
     } finally {
       setPending(null);
     }
@@ -286,7 +301,7 @@ export default function Models() {
     setOauth(null);
     await load({ provider, modelId });
     if (controller.signal.aborted) return;
-    setNotice(`Connected and using ${selected?.label ?? "this model"}.`);
+    setNotice(t("Connected and using {label}.", { label: selected?.label ?? t("this model") }));
   }
 
   async function startSubscriptionSignIn() {
@@ -319,7 +334,7 @@ export default function Models() {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
+      setError(err instanceof Error ? err.message : t("Could not start sign-in"));
       setOauth(null);
     } finally {
       if (!waitingForCode) {
@@ -358,7 +373,7 @@ export default function Models() {
         retryable = true;
         setPasteCode(code);
       }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+      setError(err instanceof Error ? err.message : t("Could not finish sign-in"));
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
@@ -379,19 +394,19 @@ export default function Models() {
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.activeCard}>
-          <Text style={styles.eyebrow}>Active model</Text>
+          <Text style={styles.eyebrow}>{t("Active model")}</Text>
           <Text style={styles.activeModel}>
-            {currentEntry?.label ?? me?.defaultModel ?? "Deployment default"}
+            {currentEntry?.label ?? me?.defaultModel ?? t("Deployment default")}
           </Text>
           <Text style={styles.secondary}>
-            {currentEntry?.providerName ?? me?.defaultProvider ?? "Configured by deployment"}
+            {currentEntry?.providerName ?? me?.defaultProvider ?? t("Configured by deployment")}
           </Text>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-        <Text style={styles.sectionTitle}>Providers</Text>
+        <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
           {groups.map((group) => {
             const connected = credentials.some((entry) => entry.provider === group.id);
@@ -409,10 +424,12 @@ export default function Models() {
                 <View style={styles.providerCopy}>
                   <Text style={styles.providerName}>{group.name}</Text>
                   <Text style={styles.secondary}>
-                    {group.entries.length} model{group.entries.length === 1 ? "" : "s"}
+                    {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
+                      count: group.entries.length,
+                    })}
                   </Text>
                 </View>
-                {connected ? <Text style={styles.connected}>Connected</Text> : null}
+                {connected ? <Text style={styles.connected}>{t("Connected")}</Text> : null}
               </Pressable>
             );
           })}
@@ -420,17 +437,17 @@ export default function Models() {
 
         {selected ? (
           <>
-            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>Model</Text> : null}
+            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>{t("Model")}</Text> : null}
             {isOpenAiCompatible ? (
               <>
-                <Text style={styles.sectionTitle}>Server URL</Text>
+                <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
                 <TextInput
-                  accessibilityLabel="OpenAI-compatible server URL"
+                  accessibilityLabel={t("OpenAI-compatible server URL")}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!busy}
                   onChangeText={updateBaseUrl}
-                  placeholder="http://127.0.0.1:8000/v1"
+                  placeholder={t("http://127.0.0.1:8000/v1")}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.keyInput}
                   value={baseUrl}
@@ -440,10 +457,10 @@ export default function Models() {
                   accessibilityState={{ expanded: showEndpointHelp }}
                   onPress={() => setShowEndpointHelp((visible) => !visible)}
                 >
-                  <Text style={styles.helpLabel}>Setup help</Text>
+                  <Text style={styles.helpLabel}>{t("Setup help")}</Text>
                 </Pressable>
                 {showEndpointHelp ? (
-                  <Text style={styles.hint}>{OPENAI_COMPATIBLE_BASE_URL_HINT}</Text>
+                  <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
                 ) : null}
                 <Pressable
                   accessibilityRole="button"
@@ -455,9 +472,11 @@ export default function Models() {
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={styles.outlineLabel}>{probing ? "Finding…" : "Find models"}</Text>
+                  <Text style={styles.outlineLabel}>
+                    {probing ? t("Finding…") : t("Find models")}
+                  </Text>
                 </Pressable>
-                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Model</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
                 {probeModels.length && probeModels.includes(modelId) ? (
                   <View style={styles.card}>
                     {probeModels.map((entry) => (
@@ -492,18 +511,18 @@ export default function Models() {
                       ]}
                     >
                       <View style={styles.radio} />
-                      <Text style={styles.modelLabel}>Other model…</Text>
+                      <Text style={styles.modelLabel}>{t("Other model…")}</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <>
                     <TextInput
-                      accessibilityLabel="Model id"
+                      accessibilityLabel={t("Model id")}
                       autoCapitalize="none"
                       autoCorrect={false}
                       editable={!busy && !probing}
                       onChangeText={setModelId}
-                      placeholder="exact-model-id"
+                      placeholder={t("exact-model-id")}
                       placeholderTextColor={native.tertiaryLabel}
                       style={styles.keyInput}
                       value={modelId}
@@ -513,7 +532,7 @@ export default function Models() {
                         accessibilityRole="button"
                         onPress={() => setModelId(probeModels[0] ?? "")}
                       >
-                        <Text style={styles.helpLabel}>Use a found model</Text>
+                        <Text style={styles.helpLabel}>{t("Use a found model")}</Text>
                       </Pressable>
                     ) : null}
                   </>
@@ -552,14 +571,18 @@ export default function Models() {
 
             {!isOpenAiCompatible ? (
               <View style={styles.credentialCard}>
-                <Text style={styles.eyebrow}>Personal credential</Text>
+                <Text style={styles.eyebrow}>{t("Personal credential")}</Text>
                 <Text style={styles.credentialTitle}>
-                  {credential ? `Connected · ${credential.label}` : "Not connected"}
+                  {credential
+                    ? t("Connected · {label}", { label: credential.label })
+                    : t("Not connected")}
                 </Text>
                 <Text style={styles.secondary}>
                   {credential
-                    ? "Your key or subscription token is stored securely and is never shown here."
-                    : "Connect this provider to use it as your personal model."}
+                    ? t(
+                        "Your key or subscription token is stored securely and is never shown here.",
+                      )
+                    : t("Connect this provider to use it as your personal model.")}
                 </Text>
               </View>
             ) : null}
@@ -569,20 +592,22 @@ export default function Models() {
                 <View style={styles.oauthCard}>
                   {oauth.mode === "auth-url" ? (
                     <>
-                      <Text style={styles.secondary}>Finish signing in in your browser:</Text>
+                      <Text style={styles.secondary}>
+                        {t("Finish signing in in your browser:")}
+                      </Text>
                       <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                         <Text style={styles.link}>{oauth.verificationUri}</Text>
                       </Pressable>
                       <Text style={styles.secondary}>
-                        The final page may not load. Paste its URL or code here.
+                        {t("The final page may not load. Paste its URL or code here.")}
                       </Text>
                       <TextInput
-                        accessibilityLabel="Authorization code"
+                        accessibilityLabel={t("Authorization code")}
                         value={pasteCode}
                         onChangeText={setPasteCode}
                         autoCapitalize="none"
                         autoCorrect={false}
-                        placeholder="http://localhost:53692/callback?code=…"
+                        placeholder={t("http://localhost:53692/callback?code=…")}
                         placeholderTextColor={native.secondaryLabel}
                         style={styles.keyInput}
                       />
@@ -596,18 +621,18 @@ export default function Models() {
                           !pasteCode.trim() && styles.disabled,
                         ]}
                       >
-                        <Text style={styles.outlineLabel}>Submit</Text>
+                        <Text style={styles.outlineLabel}>{t("Submit")}</Text>
                       </Pressable>
-                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
                     </>
                   ) : (
                     <>
-                      <Text style={styles.secondary}>Enter this code in your browser:</Text>
+                      <Text style={styles.secondary}>{t("Enter this code in your browser:")}</Text>
                       <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                         <Text style={styles.link}>{oauth.verificationUri}</Text>
                       </Pressable>
                       <Text style={styles.code}>{oauth.userCode}</Text>
-                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
                     </>
                   )}
                 </View>
@@ -623,7 +648,7 @@ export default function Models() {
                   ]}
                 >
                   <Text style={styles.outlineLabel}>
-                    {oauthPending ? "Starting…" : (selected.oauthLabel ?? "Sign in")}
+                    {oauthPending ? t("Starting…") : (selected.oauthLabel ?? t("Sign in"))}
                   </Text>
                 </Pressable>
               )
@@ -638,18 +663,18 @@ export default function Models() {
                       accessibilityState={{ expanded: showApiKey }}
                       onPress={() => setShowApiKey((visible) => !visible)}
                     >
-                      <Text style={styles.helpLabel}>API key</Text>
+                      <Text style={styles.helpLabel}>{t("API key")}</Text>
                     </Pressable>
                     {showApiKey ? (
                       <TextInput
-                        accessibilityLabel="API key"
+                        accessibilityLabel={t("API key")}
                         autoCapitalize="none"
                         autoCorrect={false}
                         autoComplete="off"
                         editable={!busy}
                         importantForAutofill="no"
                         onChangeText={updateApiKey}
-                        placeholder="Optional"
+                        placeholder={t("Optional")}
                         placeholderTextColor={native.tertiaryLabel}
                         secureTextEntry
                         style={styles.keyInput}
@@ -662,20 +687,20 @@ export default function Models() {
                   <>
                     <Text style={styles.sectionTitle}>
                       {credential
-                        ? "Replace API key"
+                        ? t("Replace API key")
                         : subscriptionSignIn
-                          ? "Or connect an API key"
-                          : "API key"}
+                          ? t("Or connect an API key")
+                          : t("API key")}
                     </Text>
                     <TextInput
-                      accessibilityLabel="API key"
+                      accessibilityLabel={t("API key")}
                       autoCapitalize="none"
                       autoCorrect={false}
                       autoComplete="off"
                       editable={!busy}
                       importantForAutofill="no"
                       onChangeText={updateApiKey}
-                      placeholder="sk-…"
+                      placeholder={t("sk-…")}
                       placeholderTextColor={native.tertiaryLabel}
                       secureTextEntry
                       style={styles.keyInput}
@@ -700,12 +725,12 @@ export default function Models() {
                 >
                   <Text style={styles.primaryLabel}>
                     {pending === "connect"
-                      ? "Saving…"
+                      ? t("Saving…")
                       : isOpenAiCompatible
-                        ? "Save"
+                        ? t("Save")
                         : credential
-                          ? "Replace API key"
-                          : "Connect API key"}
+                          ? t("Replace API key")
+                          : t("Connect API key")}
                   </Text>
                 </Pressable>
               </View>
@@ -713,8 +738,9 @@ export default function Models() {
 
             {selected.auth === "oauth" && !subscriptionSignIn ? (
               <Text style={styles.secondary}>
-                This subscription sign-in is not available in Rakazo yet. Use a deployment
-                credential or choose another provider.
+                {t(
+                  "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
+                )}
               </Text>
             ) : null}
 
@@ -730,7 +756,7 @@ export default function Models() {
                 ]}
               >
                 <Text style={styles.primaryLabel}>
-                  {pending === "default" ? "Switching…" : "Use this model"}
+                  {pending === "default" ? t("Switching…") : t("Use this model")}
                 </Text>
               </Pressable>
             ) : null}

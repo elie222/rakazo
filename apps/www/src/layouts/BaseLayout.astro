@@ -3,6 +3,7 @@ import "../styles/global.css";
 import { getMarkdownAlternate } from "../agent-content";
 import {
   DEFAULT_LOCALE,
+  LOCALES,
   LOCALE_HTML_LANG,
   LOCALE_OG,
   isLocale,
@@ -42,11 +43,9 @@ const structuredDataJson = structuredData
 const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
 const htmlLang = LOCALE_HTML_LANG[locale];
 const ogLocale = LOCALE_OG[locale];
-const homeUrls = {
-  en: new URL(localeHomePath("en"), SITE_URL).toString(),
-  de: new URL(localeHomePath("de"), SITE_URL).toString(),
-  ko: new URL(localeHomePath("ko"), SITE_URL).toString(),
-};
+const homeUrls = Object.fromEntries(
+  LOCALES.map((l) => [l, new URL(localeHomePath(l), SITE_URL).toString()]),
+) as Record<Locale, string>;
 ---
 
 <!doctype html>
@@ -63,9 +62,9 @@ const homeUrls = {
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:locale" content={ogLocale} />
-    {locale !== "en" && <meta property="og:locale:alternate" content={LOCALE_OG.en} />}
-    {locale !== "de" && <meta property="og:locale:alternate" content={LOCALE_OG.de} />}
-    {locale !== "ko" && <meta property="og:locale:alternate" content={LOCALE_OG.ko} />}
+    {LOCALES.filter((l) => l !== locale).map((l) => (
+      <meta property="og:locale:alternate" content={LOCALE_OG[l]} />
+    ))}
     <meta property="og:image" content={socialImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -80,9 +79,9 @@ const homeUrls = {
     {
       homeAlternates && (
         <>
-          <link rel="alternate" hreflang="en" href={homeUrls.en} />
-          <link rel="alternate" hreflang="de" href={homeUrls.de} />
-          <link rel="alternate" hreflang="ko" href={homeUrls.ko} />
+          {LOCALES.map((l) => (
+            <link rel="alternate" hreflang={LOCALE_HTML_LANG[l]} href={homeUrls[l]} />
+          ))}
           <link rel="alternate" hreflang="x-default" href={homeUrls.en} />
         </>
       )

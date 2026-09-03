@@ -3,8 +3,11 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function RoutineDetail() {
+  const { t } = useI18n();
   const { botId, botName, routineId } = useLocalSearchParams<{
     botId?: string;
     botName?: string;
@@ -17,7 +20,7 @@ export default function RoutineDetail() {
 
   useEffect(() => {
     if (!botId || !routineId) {
-      setError("Routine link is incomplete");
+      setError(t("Routine link is incomplete"));
       setLoading(false);
       return;
     }
@@ -28,11 +31,11 @@ export default function RoutineDetail() {
         if (cancelled) return;
         const match = routines.find((item) => item.id === routineId);
         if (match) setRoutine(match);
-        else setError("This routine no longer exists");
+        else setError(t("This routine no longer exists"));
       })
       .catch((loadError) => {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load routine");
+          setError(loadError instanceof Error ? loadError.message : t("Could not load routine"));
         }
       })
       .finally(() => {
@@ -45,10 +48,10 @@ export default function RoutineDetail() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#050506" }}
+      style={{ flex: 1, backgroundColor: tokens.background }}
       contentContainerStyle={{ padding: 24, gap: 18 }}
     >
-      <Stack.Screen options={{ title: routine?.name ?? "Routine" }} />
+      <Stack.Screen options={{ title: routine?.name ?? t("Routine") }} />
       {loading ? <ActivityIndicator color="#85858A" /> : null}
       {error ? <Text style={{ color: "#EF4444", fontSize: 15 }}>{error}</Text> : null}
       {routine ? (
@@ -67,13 +70,13 @@ export default function RoutineDetail() {
               {routine.name}
             </Text>
             <Text style={{ color: routine.active ? "#4ECB71" : "#85858A", fontSize: 14 }}>
-              {routine.active ? "Active" : "Paused"} · {routine.crons.join(", ")} ·{" "}
+              {routine.active ? t("Active") : t("Paused")} · {routine.crons.join(", ")} ·{" "}
               {routine.timezone}
             </Text>
           </View>
           <View style={{ gap: 8 }}>
             <Text style={{ color: "#85858A", fontSize: 13, textTransform: "uppercase" }}>
-              Prompt
+              {t("Prompt")}
             </Text>
             <Text
               selectable
@@ -94,7 +97,7 @@ export default function RoutineDetail() {
             onPress={() =>
               router.push({
                 pathname: "/thread",
-                params: { botId: botId ?? "", name: botName ?? "Bot" },
+                params: { botId: botId ?? "", name: botName ?? t("Bot") },
               })
             }
             style={{
@@ -105,7 +108,7 @@ export default function RoutineDetail() {
             }}
           >
             <Text style={{ color: "#17171A", fontSize: 15, fontWeight: "600" }}>
-              Open conversation
+              {t("Open conversation")}
             </Text>
           </Pressable>
         </>

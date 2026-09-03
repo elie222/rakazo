@@ -31,8 +31,10 @@ import {
   signUp,
   usesCustomApiBase,
 } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 export default function SignIn() {
+  const { t } = useI18n();
   const router = useRouter();
   const [mode, setMode] = useState<"in" | "up" | "forgot">("in");
   const [name, setName] = useState("");
@@ -70,7 +72,7 @@ export default function SignIn() {
   if (!ready) {
     return (
       <View style={{ flex: 1, backgroundColor: "#F7F7F4", justifyContent: "center", padding: 24 }}>
-        <Text style={{ color: "#6E6E68", textAlign: "center" }}>Loading…</Text>
+        <Text style={{ color: "#6E6E68", textAlign: "center" }}>{t("Loading…")}</Text>
       </View>
     );
   }
@@ -83,7 +85,7 @@ export default function SignIn() {
     try {
       if (mode === "forgot") {
         if (!reset?.passwordReset || !reset.resetUrl) {
-          throw new Error("Password recovery is not configured for this server");
+          throw new Error(t("Password recovery is not configured for this server"));
         }
         await requestPasswordReset(email.trim(), reset.resetUrl);
         setResetSent(true);
@@ -97,7 +99,7 @@ export default function SignIn() {
       }
       router.replace("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not continue");
+      setError(err instanceof Error ? err.message : t("Could not continue"));
     } finally {
       setPending(false);
     }
@@ -133,18 +135,18 @@ export default function SignIn() {
                 }}
               >
                 {mode === "in"
-                  ? "Sign in to Rakazo"
+                  ? t("Sign in to Rakazo")
                   : mode === "up"
-                    ? "Sign up for Rakazo"
-                    : "Reset your password"}
+                    ? t("Sign up for Rakazo")
+                    : t("Reset your password")}
               </Text>
               {resetSent ? (
                 <View style={{ alignItems: "center", marginTop: 28 }}>
-                  <Text style={{ color: "#1B1B1E", fontSize: 17 }}>Check your email</Text>
+                  <Text style={{ color: "#1B1B1E", fontSize: 17 }}>{t("Check your email")}</Text>
                   <Text
                     style={{ color: "#6E6E68", fontSize: 15, marginTop: 10, textAlign: "center" }}
                   >
-                    If an account exists for that address, we sent a password reset link.
+                    {t("If an account exists for that address, we sent a password reset link.")}
                   </Text>
                   <Pressable
                     accessibilityRole="button"
@@ -155,7 +157,7 @@ export default function SignIn() {
                     style={{ marginTop: 22 }}
                   >
                     <Text style={{ color: "#1B1B1E", fontSize: 15, fontWeight: "600" }}>
-                      Back to sign in
+                      {t("Back to sign in")}
                     </Text>
                   </Pressable>
                 </View>
@@ -164,7 +166,7 @@ export default function SignIn() {
                   {mode === "up" ? (
                     <TextInput
                       autoComplete="name"
-                      placeholder="Name"
+                      placeholder={t("Name")}
                       placeholderTextColor="#8C8C86"
                       value={name}
                       onChangeText={setName}
@@ -181,7 +183,7 @@ export default function SignIn() {
                     autoCapitalize="none"
                     autoComplete="email"
                     keyboardType="email-address"
-                    placeholder="Email"
+                    placeholder={t("Email")}
                     placeholderTextColor="#8C8C86"
                     value={email}
                     onChangeText={setEmail}
@@ -204,14 +206,14 @@ export default function SignIn() {
                       style={{ alignSelf: "flex-end", marginTop: 10 }}
                     >
                       <Text style={{ color: "#1B1B1E", fontSize: 14, fontWeight: "600" }}>
-                        Forgot password?
+                        {t("Forgot password?")}
                       </Text>
                     </Pressable>
                   ) : null}
                   {mode !== "forgot" ? (
                     <TextInput
                       autoComplete={mode === "in" ? "current-password" : "new-password"}
-                      placeholder="Password"
+                      placeholder={t("Password")}
                       placeholderTextColor="#8C8C86"
                       returnKeyType="go"
                       secureTextEntry
@@ -242,12 +244,12 @@ export default function SignIn() {
                   >
                     <Text style={{ color: "#FBFBF9", fontSize: 17 }}>
                       {pending
-                        ? "Working…"
+                        ? t("Working…")
                         : mode === "in"
-                          ? "Sign in"
+                          ? t("Sign in")
                           : mode === "up"
-                            ? "Sign up"
-                            : "Send reset link"}
+                            ? t("Sign up")
+                            : t("Send reset link")}
                     </Text>
                   </Pressable>
                   <View
@@ -260,9 +262,9 @@ export default function SignIn() {
                   >
                     <Text style={{ color: "#8C8C86", fontSize: 15 }}>
                       {mode === "in"
-                        ? "Don’t have an account?"
+                        ? t("Don’t have an account?")
                         : mode === "up"
-                          ? "Already have an account?"
+                          ? t("Already have an account?")
                           : ""}
                     </Text>
                     <Pressable
@@ -275,7 +277,11 @@ export default function SignIn() {
                       style={{ marginLeft: 5 }}
                     >
                       <Text style={{ color: "#1B1B1E", fontSize: 15, fontWeight: "600" }}>
-                        {mode === "in" ? "Sign up" : mode === "up" ? "Sign in" : "Back to sign in"}
+                        {mode === "in"
+                          ? t("Sign up")
+                          : mode === "up"
+                            ? t("Sign in")
+                            : t("Back to sign in")}
                       </Text>
                     </Pressable>
                   </View>
@@ -285,7 +291,9 @@ export default function SignIn() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={
-                custom ? `Custom server ${displayApiHost(apiBase)}` : "Use a custom server"
+                custom
+                  ? t("Custom server {host}", { host: displayApiHost(apiBase) })
+                  : t("Use a custom server")
               }
               hitSlop={12}
               onPress={() => setServerOpen(true)}
@@ -298,13 +306,13 @@ export default function SignIn() {
             >
               {custom ? (
                 <>
-                  <Text style={{ color: "#A8A8A2", fontSize: 12 }}>Custom server</Text>
+                  <Text style={{ color: "#A8A8A2", fontSize: 12 }}>{t("Custom server")}</Text>
                   <Text style={{ color: "#6E6E68", fontSize: 13, marginTop: 2 }}>
                     {displayApiHost(apiBase)}
                   </Text>
                 </>
               ) : (
-                <Text style={{ color: "#A8A8A2", fontSize: 13 }}>Use a custom server</Text>
+                <Text style={{ color: "#A8A8A2", fontSize: 13 }}>{t("Use a custom server")}</Text>
               )}
             </Pressable>
           </View>
@@ -334,6 +342,7 @@ function ServerSheet({
   onClose: () => void;
   onSaved: (url: string) => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(current);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -403,18 +412,19 @@ function ServerSheet({
             }}
           >
             <Pressable onPress={onClose} hitSlop={8}>
-              <Text style={{ color: "#6E6E68", fontSize: 17 }}>Cancel</Text>
+              <Text style={{ color: "#6E6E68", fontSize: 17 }}>{t("Cancel")}</Text>
             </Pressable>
-            <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>Server</Text>
+            <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>{t("Server")}</Text>
             <Pressable onPress={() => void save()} disabled={pending} hitSlop={8}>
               <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>
-                {pending ? "Checking…" : "Save"}
+                {pending ? t("Checking…") : t("Save")}
               </Text>
             </Pressable>
           </View>
           <Text style={{ color: "#6E6E68", marginTop: 28, fontSize: 15, lineHeight: 22 }}>
-            Point this app at your self-hosted Rakazo origin — the same HTTPS URL you open in a
-            browser.
+            {t(
+              "Point this app at your self-hosted Rakazo origin — the same HTTPS URL you open in a browser.",
+            )}
           </Text>
           <TextInput
             autoCapitalize="none"
@@ -450,7 +460,7 @@ function ServerSheet({
               disabled={pending}
               style={{ marginTop: 28, alignItems: "center" }}
             >
-              <Text style={{ color: "#6E6E68", fontSize: 15 }}>Use default server</Text>
+              <Text style={{ color: "#6E6E68", fontSize: 15 }}>{t("Use default server")}</Text>
             </Pressable>
           ) : null}
         </SafeAreaView>

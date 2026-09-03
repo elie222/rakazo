@@ -19,22 +19,22 @@ function systemColor(iosName: string, lightFallback: string, darkFallback: strin
 /** Theme-aware native colors backed by shared tokens (+ iOS platform colors in System). */
 export const native = {
   get page() {
-    return mobileTokens().page;
+    return mobileTokens().background;
   },
   get fill() {
-    return systemColor("tertiarySystemFill", mobileTokens().surface2, "#1C1C1E");
+    return systemColor("tertiarySystemFill", mobileTokens().muted, "#1C1C1E");
   },
   get fillPressed() {
-    return systemColor("secondarySystemFill", mobileTokens().elevated, "#2C2C2E");
+    return systemColor("secondarySystemFill", mobileTokens().accent, "#2C2C2E");
   },
   get label() {
-    return systemColor("label", mobileTokens().ink, "#FFFFFF");
+    return systemColor("label", mobileTokens().foreground, "#FFFFFF");
   },
   get secondaryLabel() {
-    return systemColor("secondaryLabel", mobileTokens().muted, "#8E8E93");
+    return systemColor("secondaryLabel", mobileTokens().mutedForeground, "#8E8E93");
   },
   get tertiaryLabel() {
-    return systemColor("tertiaryLabel", mobileTokens().muted2, "#6C6C70");
+    return systemColor("tertiaryLabel", mobileTokens().mutedForeground, "#6C6C70");
   },
 } as const;
 

@@ -14,27 +14,20 @@ import type {
   Group,
   Me,
   MessageBlock,
-  ModelCatalogEntry,
-  ModelCredential,
   ProductEvent,
   Routine,
   SearchHit,
   Space,
   SpaceMemoryConfig,
   TaughtSkill,
-  ThinkingLevel,
   ThreadMessage,
   ThreadSnapshot,
-  VoiceInfo,
   VoiceStatus,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_NAME_MAX_LENGTH,
-  BOT_TITLE_MAX_LENGTH,
   canReactToThreadMessage,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
@@ -70,6 +63,13 @@ import {
   Button,
   GroupAvatar,
   type GroupAvatarMember,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -119,11 +119,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
-import {
-  ActiveBotGlyph,
-  CollaborationMarker,
-} from "../components/beautiful-ui/CollaborationMarker";
-import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
+import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import {
   ComputersUnavailableHint,
@@ -136,7 +132,7 @@ import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
-import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
+import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
@@ -144,10 +140,8 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
-import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
-import { connectMcpOauth } from "../lib/mcp-connect";
 import { copyableMessageText } from "../lib/message-text";
 import { providerLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
@@ -177,7 +171,6 @@ import {
 import { speaker } from "../lib/tts";
 import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
-import { ExternalConversationSettings } from "./ExternalConversationSettings";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import {
@@ -190,12 +183,25 @@ import {
   routineNeedsOneShotArm,
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
+import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import {
+  ClearConversationDialog,
+  DeleteBotDialog,
+  DeleteItemDialog,
+  NewBotSectionDialog,
+  NewSpaceDialog,
+} from "./shell/dialogs";
+import {
+  AppConnectCard,
+  ArtifactImage,
+  ChartBlockView,
+  ChoiceCard,
+  McpApprovalCard,
+} from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
 
 const BotContextMenu = lazy(() =>
-  import("./BotContextMenu").then((module) => ({
-    default: module.BotContextMenu,
-  })),
+  import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
 );
 const AccountSettingsOverlay = lazy(() =>
   import("./AccountSettingsOverlay").then((module) => ({
@@ -213,24 +219,16 @@ const AgentSecretsOverlay = lazy(() =>
   })),
 );
 const ModelSettingsOverlay = lazy(() =>
-  import("./ModelSettingsOverlay").then((module) => ({
-    default: module.ModelSettingsOverlay,
-  })),
+  import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
 );
 const PeerMessagesOverlay = lazy(() =>
-  import("./PeerMessagesOverlay").then((module) => ({
-    default: module.PeerMessagesOverlay,
-  })),
+  import("./PeerMessagesOverlay").then((module) => ({ default: module.PeerMessagesOverlay })),
 );
 const PluginsOverlay = lazy(() =>
-  import("./PluginsOverlay").then((module) => ({
-    default: module.PluginsOverlay,
-  })),
+  import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
 );
 const McpServersOverlay = lazy(() =>
-  import("./McpServersOverlay").then((module) => ({
-    default: module.McpServersOverlay,
-  })),
+  import("./McpServersOverlay").then((module) => ({ default: module.McpServersOverlay })),
 );
 const MemorySettingsOverlay = lazy(() =>
   import("./MemorySettingsOverlay").then((module) => ({
@@ -238,14 +236,12 @@ const MemorySettingsOverlay = lazy(() =>
   })),
 );
 const VoiceSettingsOverlay = lazy(() =>
-  import("./VoiceSettingsOverlay").then((module) => ({
-    default: module.VoiceSettingsOverlay,
-  })),
+  import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
-const ScratchpadSection = lazy(() =>
-  import("./ScratchpadSection").then((module) => ({
-    default: module.ScratchpadSection,
+const ExternalConversationSettings = lazy(() =>
+  import("./ExternalConversationSettings").then((module) => ({
+    default: module.ExternalConversationSettings,
   })),
 );
 
@@ -274,6 +270,8 @@ type PendingBrowserNotification = {
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+/** Identity colour for bots the roster no longer knows about. */
+const FALLBACK_BOT_COLOR = "#85858A";
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
@@ -382,10 +380,7 @@ export function ShellPage() {
 
   function cacheComputerFor(
     botId: string,
-    patch: Partial<{
-      computer: ComputerStatus | null;
-      screenUrl: string | null;
-    }>,
+    patch: Partial<{ computer: ComputerStatus | null; screenUrl: string | null }>,
   ) {
     const cache = computerCacheRef.current;
     const prev = cache.get(botId) ?? { computer: null, screenUrl: null };
@@ -459,6 +454,13 @@ export function ShellPage() {
     id: string;
     position: ContextMenuPosition;
   } | null>(null);
+  // The context menu anchors to the pointer, so return focus to the row that opened it.
+  const botMenuAnchor = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (botMenu || !botMenuAnchor.current) return;
+    botMenuAnchor.current.focus();
+    botMenuAnchor.current = null;
+  }, [botMenu]);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [clearTarget, setClearTarget] = useState<
@@ -1010,9 +1012,7 @@ export function ShellPage() {
         }
         if (groupId) {
           if (!groupList.some((group) => group.id === groupId)) {
-            navigate(firstThreadRoute(bootstrap.bots, groupList), {
-              replace: true,
-            });
+            navigate(firstThreadRoute(bootstrap.bots, groupList), { replace: true });
           }
           return;
         }
@@ -1143,7 +1143,7 @@ export function ShellPage() {
       window.removeEventListener("focus", markVisibleBotRead);
       document.removeEventListener("visibilitychange", markVisibleBotRead);
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, inExternalConversation, markBotReadIfVisible]);
 
   useEffect(() => {
     if (!active || inExternalConversation) return;
@@ -1744,10 +1744,7 @@ export function ShellPage() {
     const jumpId = jumpGeneration.current;
     const [snap, page] = await Promise.all([
       rpc.threads.get(threadTarget),
-      rpc.threads.messages({
-        ...threadTarget,
-        around: { messageId: target.messageId },
-      }),
+      rpc.threads.messages({ ...threadTarget, around: { messageId: target.messageId } }),
     ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
     // the fetched page would pin deleted messages that every later refresh keeps restoring.
@@ -1755,9 +1752,9 @@ export function ShellPage() {
     if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    const targetInPage = userVisibleMessages(page.messages, {
-      includePeerReceipts: true,
-    }).some((message) => message.id === target.messageId);
+    const targetInPage = userVisibleMessages(page.messages, { includePeerReceipts: true }).some(
+      (message) => message.id === target.messageId,
+    );
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = targetInPage
       ? {
@@ -1819,6 +1816,7 @@ export function ShellPage() {
       });
       return;
     }
+    if (inExternalConversation) return;
     if (!active) return;
     if (routineId && routinesBotId === active.id) {
       const routine = routines.find((item) => item.id === routineId);
@@ -1882,15 +1880,17 @@ export function ShellPage() {
     rememberSeenRunErrorId(runId);
   }, []);
   const transcriptMessages = useMemo(
-    () =>
-      userVisibleMessages(activeSnapshot?.messages ?? [], {
-        includePeerReceipts: true,
-      }),
+    () => userVisibleMessages(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
     [activeSnapshot?.messages],
   );
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
-    () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
-    [active?.id, groupId, inGroup],
+    () =>
+      inExternalConversation
+        ? { botId: active?.id ?? "" }
+        : inGroup
+          ? { groupId: groupId ?? "" }
+          : { botId: active?.id ?? "" },
+    [active?.id, groupId, inExternalConversation, inGroup],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
   const resolveTranscriptBot = useCallback(
@@ -1905,7 +1905,7 @@ export function ShellPage() {
     const bot = resolveTranscriptBot(run.botId);
     return {
       botId: run.botId,
-      color: bot?.color ?? "#85858A",
+      color: bot?.color ?? FALLBACK_BOT_COLOR,
       name: bot?.name,
       status: run.status,
     };
@@ -1925,11 +1925,7 @@ export function ShellPage() {
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
-        bots: bots.map((bot) => ({
-          id: bot.id,
-          name: bot.name,
-          color: bot.color,
-        })),
+        bots: bots.map((bot) => ({ id: bot.id, name: bot.name, color: bot.color })),
         groups: groups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({
           id: routine.id,
@@ -2037,7 +2033,10 @@ export function ShellPage() {
       markOnce("rk:renderer:bots-committed");
       markAfterPaint("rk:renderer:bots-painted");
     }
-    if (active && snapshot?.botId === active.id) {
+    if (
+      (active && snapshot?.botId === active.id) ||
+      (externalConversationId && snapshot?.externalConversationId === externalConversationId)
+    ) {
       markOnce("rk:renderer:thread-committed");
       markAfterPaint("rk:renderer:thread-painted");
     }
@@ -2045,7 +2044,14 @@ export function ShellPage() {
       markOnce("rk:renderer:shell-ready");
       markAfterPaint("rk:renderer:shell-painted");
     }
-  }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
+  }, [
+    active,
+    externalConversationId,
+    initialBotsLoaded,
+    shellReady,
+    snapshot?.botId,
+    snapshot?.externalConversationId,
+  ]);
 
   useLayoutEffect(() => {
     const pin = pinnedAroundRef.current;
@@ -2246,18 +2252,8 @@ export function ShellPage() {
           const contentBase64 = await readFileAsBase64(pending.file);
           const artifact = await rpc.artifacts.create(
             groupTarget
-              ? {
-                  groupId: groupTarget,
-                  name: pending.file.name,
-                  mimeType,
-                  contentBase64,
-                }
-              : {
-                  botId: botTarget!,
-                  name: pending.file.name,
-                  mimeType,
-                  contentBase64,
-                },
+              ? { groupId: groupTarget, name: pending.file.name, mimeType, contentBase64 }
+              : { botId: botTarget!, name: pending.file.name, mimeType, contentBase64 },
           );
           artifactIds.push(artifact.id);
         }
@@ -2394,14 +2390,14 @@ export function ShellPage() {
   // Transcript and MessageView are memoized; these must stay referentially stable or every
   // Shell state change re-renders the whole transcript.
   const refreshActiveThread = useCallback(async () => {
-    const externalConversationId = activeExternalConversationId.current;
-    if (externalConversationId) {
-      await refreshExternalConversationThreadRef.current(externalConversationId);
-      return;
-    }
     const groupId = activeGroupId.current;
     if (groupId) {
       await refreshGroupThreadRef.current(groupId);
+      return;
+    }
+    const externalConversationId = activeExternalConversationId.current;
+    if (externalConversationId) {
+      await refreshExternalConversationThreadRef.current(externalConversationId);
       return;
     }
     const id = activeBotId.current;
@@ -2553,7 +2549,7 @@ export function ShellPage() {
   }, [active?.id]);
 
   useEffect(() => {
-    const threadKey = inExternalConversation ? undefined : inGroup ? groupId : active?.id;
+    const threadKey = inGroup ? groupId : active?.id;
     setPendingAttachments((current) => {
       const stale = current.filter((attachment) => attachment.threadKey !== threadKey);
       revokePendingAttachmentPreviews(stale);
@@ -2562,7 +2558,7 @@ export function ShellPage() {
     setReplyTarget(null);
     setAttachmentNotice(null);
     setSendError(null);
-  }, [active?.id, groupId, inExternalConversation, inGroup]);
+  }, [active?.id, groupId, inGroup]);
 
   useEffect(() => {
     if (!computerOpen) return;
@@ -2631,7 +2627,7 @@ export function ShellPage() {
     <div
       data-testid="shell-root"
       data-ready={shellReady}
-      className="relative flex h-full min-w-0 overflow-hidden bg-[var(--rk-page)] text-[var(--rk-body)]"
+      className="relative flex h-full min-w-0 overflow-hidden bg-background text-foreground/90"
     >
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
@@ -2641,11 +2637,11 @@ export function ShellPage() {
           type="button"
           aria-label={t`Close navigation`}
           onClick={() => setMobileSidebarOpen(false)}
-          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
+          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay md:hidden"
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[var(--rk-hairline)] bg-[var(--rk-sidebar)] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         }`}
       >
@@ -2661,8 +2657,8 @@ export function ShellPage() {
               onClick={toggleActivityMode}
               className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
                 activityMode
-                  ? "bg-[#4C8DFF] text-white"
-                  : "text-[var(--rk-faint)] hover:text-[var(--rk-soft)]"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground/70 hover:text-foreground/75"
               }`}
             >
               <Bell
@@ -2672,64 +2668,66 @@ export function ShellPage() {
                 aria-hidden="true"
               />
             </button>
-            <button
-              type="button"
-              onClick={() => setCreateMenuOpen((open) => !open)}
-              className="app-no-drag text-[21px] text-[var(--rk-faint)] hover:text-[var(--rk-soft)]"
-              title={t`Create`}
-            >
-              +
-            </button>
-            {createMenuOpen ? (
-              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[var(--rk-border)] bg-[var(--rk-surface)] py-1 shadow-lg">
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setPanel("create");
-                  }}
+            <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
+              <PopoverTrigger
+                className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
+                title={t`Create`}
+              >
+                +
+              </PopoverTrigger>
+              {/* Unmount with the state change so the panel it opens never coexists with the menu. */}
+              {createMenuOpen ? (
+                <PopoverContent
+                  align="end"
+                  className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
                 >
-                  <Trans>New bot</Trans>
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setPanel("create-group");
-                  }}
-                >
-                  <Trans>New group</Trans>
-                </button>
-                <div className="my-1 border-t border-[var(--rk-border)]" />
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setNewSpaceOpen(true);
-                  }}
-                >
-                  <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-                  <Trans>New space</Trans>
-                </button>
-              </div>
-            ) : null}
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setPanel("create");
+                    }}
+                  >
+                    <Trans>New bot</Trans>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setPanel("create-group");
+                    }}
+                  >
+                    <Trans>New group</Trans>
+                  </Button>
+                  <Separator className="my-1" />
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setNewSpaceOpen(true);
+                    }}
+                  >
+                    <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
+                    <Trans>New space</Trans>
+                  </Button>
+                </PopoverContent>
+              ) : null}
+            </Popover>
           </div>
         </div>
-        <div
-          data-testid="sidebar-search"
-          className="mx-2.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-2 text-[14px] text-[var(--rk-body)]"
-        >
-          <span aria-hidden="true">⌕</span>
-          <input
+        <InputGroup data-testid="sidebar-search" className="mx-2.5 mb-3 w-auto rounded-xl bg-card">
+          <InputGroupAddon>
+            <span aria-hidden="true">⌕</span>
+          </InputGroupAddon>
+          <InputGroupInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
-            className="w-full bg-transparent text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-body)]"
           />
-        </div>
+        </InputGroup>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showSpaceSearch ? (
             <SpaceSearchResults
@@ -2759,7 +2757,7 @@ export function ShellPage() {
                       <div className="pt-2">
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-[var(--rk-muted-2)] hover:bg-[var(--rk-surface-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#8B5CF6]"
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                           onClick={() => {
                             if (group.emptySpaceId) {
                               openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -2855,13 +2853,11 @@ export function ShellPage() {
                             onContextMenu={(event) => {
                               if (item.chat.spaceId !== bootstrapMe?.spaceId) return;
                               event.preventDefault();
+                              botMenuAnchor.current = event.currentTarget;
                               setBotMenu({
                                 kind: item.kind,
                                 id: item.chat.id,
-                                position: {
-                                  x: event.clientX,
-                                  y: event.clientY,
-                                },
+                                position: { x: event.clientX, y: event.clientY },
                               });
                             }}
                             className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
@@ -2874,8 +2870,8 @@ export function ShellPage() {
                                   active?.id === item.chat.id
                               ) ||
                               (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                                ? "bg-[var(--rk-surface)]"
-                                : "hover:bg-[var(--rk-page)]"
+                                ? "bg-card"
+                                : "hover:bg-background"
                             }`}
                             style={{
                               opacity:
@@ -2904,7 +2900,7 @@ export function ShellPage() {
                                 <span
                                   dir="auto"
                                   data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                  className={`truncate text-[15px] text-[var(--rk-ink)] ${
+                                  className={`truncate text-[15px] text-foreground ${
                                     item.chat.unread ? "font-semibold" : "font-medium"
                                   }`}
                                 >
@@ -2915,14 +2911,14 @@ export function ShellPage() {
                                     </span>
                                   ) : null}
                                 </span>
-                                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[var(--rk-muted-2)]">
+                                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
                                   {item.kind === "bot" && item.chat.status !== "idle"
                                     ? item.chat.status
                                     : ""}
                                   {item.chat.unread ? (
                                     <span
                                       aria-hidden="true"
-                                      className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                      className="inline-block h-2 w-2 rounded-full bg-foreground"
                                     />
                                   ) : null}
                                 </span>
@@ -2933,8 +2929,8 @@ export function ShellPage() {
                                     dir="auto"
                                     className={`mt-0.5 truncate text-[13.5px] ${
                                       item.chat.unread
-                                        ? "font-medium text-[var(--rk-soft)]"
-                                        : "text-[var(--rk-muted)]"
+                                        ? "font-medium text-foreground/75"
+                                        : "text-muted-foreground"
                                     }`}
                                   >
                                     {item.chat.title}
@@ -2942,7 +2938,7 @@ export function ShellPage() {
                                   {item.chat.preview ? (
                                     <div
                                       dir="auto"
-                                      className="truncate text-[12.5px] text-[var(--rk-muted-2)]"
+                                      className="truncate text-[12.5px] text-muted-foreground/80"
                                     >
                                       {item.chat.preview}
                                     </div>
@@ -2953,8 +2949,8 @@ export function ShellPage() {
                                   dir="auto"
                                   className={`mt-0.5 truncate text-[13.5px] ${
                                     item.chat.unread
-                                      ? "font-medium text-[var(--rk-soft)]"
-                                      : "text-[var(--rk-muted)]"
+                                      ? "font-medium text-foreground/75"
+                                      : "text-muted-foreground"
                                   }`}
                                 >
                                   {item.kind === "bot"
@@ -2975,16 +2971,16 @@ export function ShellPage() {
                               }
                               className={`ms-10 flex w-[calc(100%_-_2.5rem)] items-center gap-2 rounded-lg px-2.5 py-2 text-start ${
                                 externalConversationId === conversation.id
-                                  ? "bg-[var(--rk-surface)]"
-                                  : "hover:bg-[var(--rk-page)]"
+                                  ? "bg-card"
+                                  : "hover:bg-background"
                               }`}
                             >
-                              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--rk-elevated)] text-[var(--rk-muted)]">
+                              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
                                 <MessageSquare size={14} strokeWidth={1.8} aria-hidden="true" />
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span
-                                  className="block truncate text-[13.5px] font-medium text-[var(--rk-soft)]"
+                                  className="block truncate text-[13.5px] font-medium text-foreground/80"
                                   dir="auto"
                                 >
                                   {conversation.displayName?.trim() ||
@@ -2993,14 +2989,14 @@ export function ShellPage() {
                                 </span>
                                 {conversation.participantNames.length > 0 ? (
                                   <span
-                                    className="block truncate text-[12px] text-[var(--rk-muted-2)]"
+                                    className="block truncate text-[12px] text-muted-foreground/80"
                                     dir="auto"
                                   >
                                     {conversation.participantNames.join(", ")}
                                   </span>
                                 ) : conversation.preview ? (
                                   <span
-                                    className="block truncate text-[12px] text-[var(--rk-muted-2)]"
+                                    className="block truncate text-[12px] text-muted-foreground/80"
                                     dir="auto"
                                   >
                                     {conversation.preview}
@@ -3017,12 +3013,12 @@ export function ShellPage() {
             </>
           )}
           {archivedBots.length + archivedGroups.length > 0 && !showSpaceSearch ? (
-            <div className="mt-2 border-t border-[var(--rk-hairline-strong)] pt-2">
+            <div className="mt-2 border-t border-border pt-2">
               <button
                 type="button"
                 aria-expanded={archivedOpen}
                 onClick={() => setArchivedOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[var(--rk-muted)] hover:bg-[var(--rk-page)]"
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-muted-foreground hover:bg-background"
               >
                 <span>
                   <Trans>Archived</Trans>
@@ -3040,58 +3036,60 @@ export function ShellPage() {
                         status={bot.status}
                       />
                       <span
-                        className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-soft)]"
+                        className="min-w-0 flex-1 truncate text-[14px] text-foreground/75"
                         dir="auto"
                       >
                         {bot.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() =>
                           void rpc.bots.restore({ botId: bot.id }).then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-[var(--rk-soft)] hover:text-[var(--rk-ink)]"
                       >
                         <Trans>Restore</Trans>
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="text-destructive hover:text-destructive"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-[var(--rk-danger)]"
                       >
                         <Trans>Delete</Trans>
-                      </button>
+                      </Button>
                     </div>
                   ))}
                   {archivedGroups.map((group) => (
                     <div key={group.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
                       <GroupAvatar members={group.members} size={28} />
                       <span
-                        className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-soft)]"
+                        className="min-w-0 flex-1 truncate text-[14px] text-foreground/75"
                         dir="auto"
                       >
                         {group.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() =>
                           void rpc.groups
                             .restore({ groupId: group.id })
                             .then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-[var(--rk-soft)] hover:text-[var(--rk-ink)]"
                       >
                         <Trans>Restore</Trans>
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="text-destructive hover:text-destructive"
                         aria-label={t`Delete ${group.name}`}
                         onClick={() => setDeleteGroupTarget(group)}
-                        className="text-[12.5px] text-[var(--rk-danger)]"
                       >
                         <Trans>Delete</Trans>
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </>
@@ -3102,147 +3100,135 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[var(--rk-page)]"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-background"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-hairline)] text-[var(--rk-soft)]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-muted text-foreground/75">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[var(--rk-body)]">
+          <span className="text-[14.5px] text-foreground/90">
             <Trans>Integrations</Trans>
           </span>
         </button>
-        <div className="relative">
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger
+            data-testid="user-menu-trigger"
+            className="flex items-center gap-[11px] px-[18px] py-3.5"
+          >
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[12px] text-foreground/75">
+              {initials}
+            </span>
+            <span className="text-[14.5px] text-foreground/90">{userName}</span>
+          </PopoverTrigger>
           {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
-              <button
-                type="button"
+            <PopoverContent
+              side="top"
+              align="start"
+              className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
+            >
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 aria-label={t`Settings`}
                 onClick={() => {
                   setMenuOpen(false);
                   setAccountSettingsFocusUsage(false);
                   setAccountSettingsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <span className="text-[var(--rk-muted)]">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Settings</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
+                <span className="text-muted-foreground">⚙</span>
+                <Trans>Settings</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={() => {
                   setMenuOpen(false);
                   setModelsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <Cpu size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
-                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Models</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
+                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Models</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={() => {
                   setMenuOpen(false);
                   setAgentSecretsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
               >
-                <KeyRound size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Secrets</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
+                <KeyRound size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Secrets</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={() => {
                   setMenuOpen(false);
                   setMemorySettingsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <span className="text-[var(--rk-muted)]">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Memory</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
+                <span className="text-muted-foreground">◇</span>
+                <Trans>Memory</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={() => {
                   setMenuOpen(false);
                   setVoiceOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <Volume2 size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
-                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Voice</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
+                <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Voice</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={async () => {
                   setUsage(await rpc.usage.summary());
                 }}
               >
-                <Gauge size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
-                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Usage</Trans>
-                </span>
-              </button>
+                <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Usage</Trans>
+              </Button>
               {usage ? (
-                <p className="px-3 pb-2 text-[12.5px] text-[var(--rk-muted)]">
+                <p className="px-2.5 pb-2 text-[12.5px] text-muted-foreground">
                   <Trans>
                     {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
                   </Trans>
                 </p>
               ) : null}
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 onClick={() =>
                   void authClient.signOut().then(() => {
                     clearSpaceSelection();
                     navigate("/");
                   })
                 }
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <LogOut size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
-                <span className="text-[14.5px] text-[var(--rk-ink)]">
-                  <Trans>Log out</Trans>
-                </span>
-              </button>
-            </div>
+                <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Log out</Trans>
+              </Button>
+            </PopoverContent>
           ) : null}
-          <button
-            type="button"
-            data-testid="user-menu-trigger"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex items-center gap-[11px] px-[18px] py-3.5"
-          >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--rk-hairline-strong)] text-[12px] text-[var(--rk-soft)]">
-              {initials}
-            </span>
-            <span className="text-[14.5px] text-[var(--rk-body)]">{userName}</span>
-          </button>
-        </div>
+        </Popover>
       </aside>
 
       <main
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
-        className="flex min-w-0 flex-1 flex-col bg-[var(--rk-main)]"
+        className="flex min-w-0 flex-1 flex-col bg-background"
       >
-        <div className="app-drag flex items-center justify-between border-b border-[var(--rk-surface)] px-3 py-[17px] md:px-[22px]">
+        <div className="app-drag flex items-center justify-between border-b border-sidebar-border px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
-              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--rk-soft)] hover:bg-[var(--rk-elevated)] md:hidden"
+              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-foreground/75 hover:bg-accent md:hidden"
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
@@ -3255,26 +3241,26 @@ export function ShellPage() {
                 onClick={() => setPanel(panel === "external-settings" ? null : "external-settings")}
                 className="app-no-drag flex min-w-0 items-center gap-3"
               >
-                <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-[var(--rk-elevated)] text-[var(--rk-soft)]">
+                <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
                   <MessageSquare size={14} strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
                   <span
-                    className="block truncate text-[16px] font-medium text-[var(--rk-ink)]"
+                    className="block truncate text-[16px] font-medium text-foreground"
                     dir="auto"
                   >
                     {activeExternalConversation?.displayName?.trim() ||
                       activeExternalParticipantNames ||
                       t`Slack conversation`}
                   </span>
-                  <span className="block truncate text-[12px] text-[var(--rk-muted-2)]">
+                  <span className="block truncate text-[12px] text-muted-foreground/80">
                     {activeExternalParticipantNames || `Slack · ${active?.name ?? ""}`}
                   </span>
                 </span>
                 <Settings
                   size={15}
                   strokeWidth={1.7}
-                  className="shrink-0 text-[var(--rk-muted-2)]"
+                  className="shrink-0 text-muted-foreground"
                   aria-hidden="true"
                 />
               </button>
@@ -3300,7 +3286,7 @@ export function ShellPage() {
                 ) : null}
                 <span className="min-w-0">
                   <span
-                    className="block truncate text-[16px] font-medium text-[var(--rk-ink)]"
+                    className="block truncate text-[16px] font-medium text-foreground"
                     dir="auto"
                   >
                     {inGroup
@@ -3324,12 +3310,10 @@ export function ShellPage() {
                   }
                   setCallOpen(true);
                 }}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-elevated)]"
-                style={{
-                  background: callOpen ? "var(--rk-elevated)" : "transparent",
-                }}
+                data-active={callOpen ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
-                <Phone size={16} strokeWidth={1.6} className="text-[var(--rk-soft)]" />
+                <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
               </button>
             ) : null}
             {!inGroup && !inExternalConversation ? (
@@ -3344,12 +3328,10 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-elevated)]"
-                style={{
-                  background: panel ? "var(--rk-elevated)" : "transparent",
-                }}
+                data-active={panel ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
-                <Monitor size={18} strokeWidth={1.6} className="text-[var(--rk-soft)]" />
+                <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
               </button>
             ) : null}
           </div>
@@ -3384,7 +3366,7 @@ export function ShellPage() {
           readOnly={inExternalConversation}
         />
         {recordingSkill && !inExternalConversation ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[var(--rk-danger)]">
+          <div className="px-6 pb-2 text-center text-[13px] text-destructive">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
@@ -3450,9 +3432,9 @@ export function ShellPage() {
       <aside
         data-testid="side-panel"
         data-panel={panel ?? "closed"}
-        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[var(--rk-panel)] transition-[width] duration-150 ease-out md:relative ${
+        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-background transition-[width] duration-150 ease-out md:relative ${
           panel && (active || activeGroup)
-            ? "w-full max-w-[384px] border-s border-[var(--rk-surface)] md:w-[384px] md:max-w-none"
+            ? "w-full max-w-[384px] border-s border-sidebar-border md:w-[384px] md:max-w-none"
             : "pointer-events-none w-0"
         }`}
       >
@@ -3463,7 +3445,7 @@ export function ShellPage() {
             panel !== "create-group" &&
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-[13.5px] text-[var(--rk-muted)]">
+                <span className="text-[13.5px] text-muted-foreground">
                   {panel === "settings" ? (
                     <Trans>Settings</Trans>
                   ) : panel === "external-settings" ? (
@@ -3474,24 +3456,26 @@ export function ShellPage() {
                     <Trans>Group</Trans>
                   )}
                 </span>
-                <div className="flex gap-3.5">
+                <div className="flex gap-1">
                   {active && panel !== "external-settings" ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
-                      className={
-                        panel === "settings"
-                          ? "text-[var(--rk-ink)]"
-                          : "text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
-                      }
+                      className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
                     >
                       <Settings size={16} strokeWidth={1.7} />
-                    </button>
+                    </Button>
                   ) : null}
-                  <button type="button" aria-label={t`Close panel`} onClick={() => setPanel(null)}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t`Close panel`}
+                    onClick={() => setPanel(null)}
+                  >
                     <X size={16} strokeWidth={1.8} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}
@@ -3499,14 +3483,14 @@ export function ShellPage() {
               <div>
                 <div
                   data-testid="computer-preview"
-                  className="group relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[var(--rk-panel)]"
+                  className="group relative aspect-[16/10] overflow-hidden rounded-[14px] bg-background"
                 >
                   {computerOpen ? (
-                    <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
+                    <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
                       <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[var(--rk-muted-2)]">
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
                       <Trans>
                         This bot runs on this computer, not a Linux desktop. Shell and files use
                         your home folder.
@@ -3522,7 +3506,7 @@ export function ShellPage() {
                       style={{ pointerEvents: "none" }}
                     />
                   ) : (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[var(--rk-muted-2)]">
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
                       {computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
                         <ComputersUnavailableHint />
                       ) : (
@@ -3537,17 +3521,17 @@ export function ShellPage() {
                   <button
                     type="button"
                     data-testid="computer-preview-open"
-                    className="absolute inset-0 flex cursor-pointer items-center justify-center bg-[rgba(4,4,5,.28)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    className="absolute inset-0 flex cursor-pointer items-center justify-center bg-overlay/40 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                     aria-label={t`Open`}
                     onClick={() => void openComputer()}
                   >
-                    <span className="inline-flex items-center gap-2 rounded-full bg-[rgba(12,12,14,.82)] px-3.5 py-2 text-[14px] text-[var(--rk-ink-strong)] shadow-[0_8px_24px_rgba(0,0,0,.45)]">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-overlay px-3.5 py-2 text-[14px] text-foreground shadow-md">
                       <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
                       <Trans>Open</Trans>
                     </span>
                   </button>
                 </div>
-                <p className="mt-2 truncate text-[13.5px] text-[var(--rk-muted)]" dir="auto">
+                <p className="mt-2 truncate text-[13.5px] text-muted-foreground" dir="auto">
                   {t`${active.name}'s screen`}
                 </p>
                 <RoutineListHeader
@@ -3593,10 +3577,7 @@ export function ShellPage() {
                 group={activeGroup}
                 bots={bots}
                 onSave={async (input) => {
-                  const updated = await rpc.groups.update({
-                    groupId: activeGroup.id,
-                    ...input,
-                  });
+                  const updated = await rpc.groups.update({ groupId: activeGroup.id, ...input });
                   setGroups((current) =>
                     current.map((group) => (group.id === updated.id ? updated : group)),
                   );
@@ -3610,9 +3591,7 @@ export function ShellPage() {
                   const remainingGroups = groups.filter((group) => group.id !== activeGroup.id);
                   setGroups(remainingGroups);
                   setPanel(null);
-                  navigate(firstThreadRoute(bots, remainingGroups), {
-                    replace: true,
-                  });
+                  navigate(firstThreadRoute(bots, remainingGroups), { replace: true });
                   await refreshBots().catch(() => undefined);
                 }}
               />
@@ -3697,9 +3676,7 @@ export function ShellPage() {
                 onBack={() => setPanel("computer")}
                 onClose={() => setPanel(null)}
                 onEnsureWebhook={async () => {
-                  const result = await rpc.bots.rotateWebhookSecret({
-                    botId: active.id,
-                  });
+                  const result = await rpc.bots.rotateWebhookSecret({ botId: active.id });
                   setRoutineWebhookSecret(result.secret);
                   setBots((current) =>
                     current.map((bot) =>
@@ -3726,9 +3703,7 @@ export function ShellPage() {
                       !active.webhookConfigured &&
                       !routineWebhookSecret
                     ) {
-                      const rotated = await rpc.bots.rotateWebhookSecret({
-                        botId: targetBotId,
-                      });
+                      const rotated = await rpc.bots.rotateWebhookSecret({ botId: targetBotId });
                       setRoutineWebhookSecret(rotated.secret);
                       setBots((current) =>
                         current.map((bot) =>
@@ -3849,10 +3824,7 @@ export function ShellPage() {
             onTogglePinned={() => {
               setBotMenu(null);
               const request = contextBot
-                ? rpc.bots.update({
-                    botId: contextBot.id,
-                    pinned: !contextBot.pinned,
-                  })
+                ? rpc.bots.update({ botId: contextBot.id, pinned: !contextBot.pinned })
                 : rpc.groups.update({
                     groupId: contextGroup!.id,
                     pinned: !contextGroup!.pinned,
@@ -4088,7 +4060,9 @@ export function ShellPage() {
             botColor={active.color}
             peerBotId={peerConversation.peerBotId}
             peerBotName={peerConversation.peerBotName}
-            peerBotColor={resolveTranscriptBot(peerConversation.peerBotId)?.color ?? "#85858A"}
+            peerBotColor={
+              resolveTranscriptBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR
+            }
             onClose={() => setPeerConversation(null)}
           />
         ) : null}
@@ -4131,19 +4105,19 @@ export function ShellPage() {
       </Suspense>
 
       {booting ? (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
-          <div className="text-[19px] font-medium text-[var(--rk-ink-strong)]">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-background/95">
+          <div className="text-[19px] font-medium text-foreground">
             <Trans>Booting up {active?.name}’s computer</Trans>
           </div>
-          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[var(--rk-hairline-strong)]">
-            <div className="h-full w-2/3 rounded-full bg-[var(--rk-cream)]" />
+          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-accent">
+            <div className="h-full w-2/3 rounded-full bg-primary" />
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[var(--rk-page)]">
+        <div className="absolute inset-0 z-30 flex flex-col bg-background">
           <div
             data-testid="computer-chrome"
-            className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5"
+            className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar
@@ -4160,15 +4134,12 @@ export function ShellPage() {
                   variant="overlay"
                 />
               ) : (
-                <span
-                  className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
-                  dir="auto"
-                >
+                <span className="truncate text-[15.5px] font-medium text-foreground" dir="auto">
                   {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[var(--rk-success-soft)]">
+                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
                   <Trans>You have control</Trans>
                 </span>
               ) : null}
@@ -4214,27 +4185,28 @@ export function ShellPage() {
                   }}
                 />
               ) : null}
-              <button
-                type="button"
-                className="text-[16px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
                 aria-label={t`Close computer`}
                 onClick={() => setComputerOpen(false)}
               >
                 <X size={16} strokeWidth={1.8} />
-              </button>
+              </Button>
             </div>
           </div>
           {sendError ? (
             <div
               role="alert"
-              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[var(--rk-danger-soft)]"
+              className="border-b border-destructive/40 bg-destructive/10 px-[18px] py-2 text-[13px] text-destructive"
             >
               {sendError}
             </div>
           ) : null}
-          <div className="relative min-h-0 flex-1 bg-[var(--rk-panel)]">
+          <div className="relative min-h-0 flex-1 bg-background">
             {computer?.kind === "desktop" ? (
-              <div className="grid h-full place-items-center px-8 text-center text-sm text-[var(--rk-muted-2)]">
+              <div className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80">
                 <Trans>
                   This bot runs on this computer. There is no separate Linux desktop. Ask it to use
                   the shell; working directories under your home folder are allowed.
@@ -4263,7 +4235,7 @@ export function ShellPage() {
                 ) : null}
               </>
             ) : (
-              <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
+              <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
                   : computerLabel(computer?.mode, active.name)}
@@ -4304,7 +4276,7 @@ const Transcript = memo(function Transcript({
   voiceReady,
   speakingMessageId,
   onSpeak,
-  readOnly = false,
+  readOnly,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   artifactTarget: ArtifactTarget;
@@ -4329,7 +4301,7 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
-  readOnly?: boolean;
+  readOnly: boolean;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -4459,7 +4431,7 @@ const Transcript = memo(function Transcript({
             type="button"
             disabled={loadingOlder}
             onClick={() => void loadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-soft)] disabled:opacity-50"
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground/75 disabled:opacity-50"
           >
             {loadingOlder ? t`Loading…` : t`Load earlier messages`}
           </button>
@@ -4522,12 +4494,12 @@ const Transcript = memo(function Transcript({
                   onSpeak={() => onSpeak(message)}
                 />
               )}
-              {!readOnly && !peerReceipt && message.thumbsUp ? (
+              {!peerReceipt && message.thumbsUp ? (
                 <button
                   type="button"
                   aria-label={t`Remove thumbs-up`}
                   onClick={() => void onReact(message)}
-                  className={`mt-1 rounded-full border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)] px-2 py-0.5 text-xs ${
+                  className={`mt-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs ${
                     message.role === "user" ? "ml-auto block" : ""
                   }`}
                 >
@@ -4554,7 +4526,7 @@ const Transcript = memo(function Transcript({
         aria-hidden={atEnd}
         tabIndex={atEnd ? -1 : 0}
         onClick={jumpToLatest}
-        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)]/95 text-[var(--rk-soft)] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[var(--rk-border)] motion-reduce:transition-none ${
+        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-border bg-muted/95 text-foreground/75 shadow-md backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-border motion-reduce:transition-none ${
           atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
@@ -4867,7 +4839,7 @@ const Composer = memo(function Composer({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-6 md:pb-6 ${
-        draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-[#8B5CF6]" : ""
+        draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
       {sendError || dictationError || runError ? (
@@ -4875,7 +4847,7 @@ const Composer = memo(function Composer({
           ref={runErrorRef}
           role="alert"
           data-testid="composer-error"
-          className="mb-3 flex items-center gap-2 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[var(--rk-danger-soft)]"
+          className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
           <span className="min-w-0 flex-1">{sendError ?? dictationError ?? runError}</span>
           <button
@@ -4886,7 +4858,7 @@ const Composer = memo(function Composer({
               onDismissError();
               window.requestAnimationFrame(() => textareaRef.current?.focus());
             }}
-            className="shrink-0 text-[var(--rk-danger-soft)] hover:text-[var(--rk-ink)]"
+            className="shrink-0 text-destructive hover:text-foreground"
           >
             <X size={13} strokeWidth={2} />
           </button>
@@ -4895,21 +4867,21 @@ const Composer = memo(function Composer({
       {replyTarget ? (
         <div
           data-testid="reply-chip"
-          className="mb-2 flex items-center gap-2 rounded-full border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-3 py-1.5 text-[13px] text-[var(--rk-soft)]"
+          className="mb-2 flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[13px] text-foreground/75"
         >
-          <span className="min-w-0 flex-1 truncate text-[var(--rk-muted)]">{t`Replying to ${replyName}`}</span>
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">{t`Replying to ${replyName}`}</span>
           <button
             type="button"
             aria-label={t`Cancel reply`}
             onClick={onClearReply}
-            className="shrink-0 text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
           >
             <X size={13} strokeWidth={2} />
           </button>
         </div>
       ) : null}
       {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+        <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
           {attachmentNotice}
         </div>
       ) : null}
@@ -4918,7 +4890,7 @@ const Composer = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-3 py-1.5 text-[13px] text-[var(--rk-soft)]"
+              className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[13px] text-foreground/75"
             >
               {attachment.previewUrl ? (
                 <img
@@ -4936,7 +4908,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove ${attachment.file.name}`}
                 onClick={() => onRemoveAttachment(attachment)}
-                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X size={13} strokeWidth={2} />
               </button>
@@ -4950,7 +4922,7 @@ const Composer = memo(function Composer({
           role="listbox"
           aria-label={t`Mentions`}
           data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-hairline)]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
         >
           {mentionOptions.map((mention, index) => {
             const optionId = `${mentionListboxId}-option-${index}`;
@@ -4966,20 +4938,17 @@ const Composer = memo(function Composer({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertMention(mention)}
                 onMouseEnter={() => setMentionHighlightIndex(index)}
-                className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)] ${
-                  highlighted ? "bg-[var(--rk-elevated)]" : ""
+                className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+                  highlighted ? "bg-accent" : ""
                 }`}
               >
                 <MentionOptionIcon mention={mention} />
                 <span className="min-w-0">
-                  <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
+                  <span dir="auto" className="block text-[14px] text-foreground">
                     @{mention.name}
                   </span>
                   {mention.subtitle ? (
-                    <span
-                      dir="auto"
-                      className="block truncate text-[12.5px] text-[var(--rk-muted)]"
-                    >
+                    <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
                       {mention.subtitle}
                     </span>
                   ) : null}
@@ -4992,7 +4961,7 @@ const Composer = memo(function Composer({
       {showSlashPicker ? (
         <div
           data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-hairline)]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-border bg-muted"
         >
           {slashSkillOptions.map((skill) => (
             <button
@@ -5000,14 +4969,14 @@ const Composer = memo(function Composer({
               type="button"
               aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)]"
+              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent"
             >
-              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
+              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
+                <span dir="auto" className="block text-[14px] text-foreground">
                   {skill.name}
                 </span>
-                <span dir="auto" className="block truncate text-[12.5px] text-[var(--rk-muted)]">
+                <span dir="auto" className="block truncate text-[12.5px] text-muted-foreground">
                   {truncateSlashDescription(skill.description)}
                 </span>
               </span>
@@ -5021,10 +4990,10 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={label}
                 onClick={() => runSlashAction(action.id)}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)]"
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
               >
-                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />
-                <span className="text-[14px] text-[var(--rk-ink)]">{label}</span>
+                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
+                <span className="text-[14px] text-foreground">{label}</span>
               </button>
             );
           })}
@@ -5032,7 +5001,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-page)] py-[9px] pe-2.5 ps-3"
+        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3"
       >
         <input
           ref={fileInputRef}
@@ -5042,17 +5011,19 @@ const Composer = memo(function Composer({
           className="hidden"
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[var(--rk-border)] text-[var(--rk-soft)] disabled:opacity-40"
+          className="rounded-full text-foreground/75"
         >
           <Plus size={17} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
           aria-label={dictating ? t`Stop dictation` : t`Dictate`}
           onMouseDown={(event) => {
             event.preventDefault();
@@ -5067,22 +5038,22 @@ const Composer = memo(function Composer({
             onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
           }}
           onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
+          className={`rounded-full ${
             dictating
-              ? "border-[var(--rk-success-soft)] bg-[rgba(48,162,75,.16)] text-[var(--rk-success-soft)]"
-              : "border-[var(--rk-border)] text-[var(--rk-soft)]"
+              ? "border-success bg-success/15 text-success hover:bg-success/15 hover:text-success"
+              : "text-foreground/75"
           }`}
           title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
         >
           <Mic size={16} strokeWidth={1.8} />
-        </button>
+        </Button>
         <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-elevated)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
             >
-              <Box size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />
+              <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
               <span dir="auto" className="truncate">
                 {selectedSkill.name}
               </span>
@@ -5090,7 +5061,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove skill ${selectedSkill.name}`}
                 onClick={() => setSelectedSkill(null)}
-                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -5101,7 +5072,7 @@ const Composer = memo(function Composer({
               key={mentionChipKey(mention)}
               data-testid="mention-chip"
               data-mention-kind={mention.kind}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-elevated)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
             >
               <MentionChipIcon mention={mention} />
               <span dir="auto" className="truncate">
@@ -5117,7 +5088,7 @@ const Composer = memo(function Composer({
                     ),
                   )
                 }
-                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -5186,40 +5157,41 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-body)] disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-foreground/90 disabled:opacity-40"
           />
         </div>
         {running ? (
           <>
-            <button
-              type="button"
+            <Button
+              size="icon"
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="grid h-10 w-10 place-items-center rounded-full bg-[var(--rk-cream)] text-[var(--rk-cream-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD] disabled:opacity-50"
+              className="size-10 rounded-full"
             >
               <ArrowUp size={18} strokeWidth={2} />
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               aria-label={t`Stop`}
               disabled={sending}
               onClick={() => void onStop()}
-              className="grid h-10 w-10 place-items-center rounded-full border border-[var(--rk-scroll)] text-[var(--rk-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD] disabled:opacity-50"
+              className="size-10 rounded-full text-foreground/75"
             >
               <Square size={12} strokeWidth={0} fill="currentColor" />
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="icon"
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[var(--rk-cream)] text-[var(--rk-cream-ink)] disabled:opacity-50"
+            className="size-9 rounded-full"
           >
             <ArrowUp size={18} strokeWidth={2} />
-          </button>
+          </Button>
         )}
       </div>
     </fieldset>
@@ -5239,45 +5211,43 @@ function slashActionLabel(id: SlashActionId) {
 
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />;
+    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />;
   }
   if (mention.kind === "connector") {
-    return (
-      <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
-    );
+    return <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />;
   }
   if (mention.kind === "group") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
         G
       </span>
     );
   }
   if (mention.kind === "everyone") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
         @
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
 }
 
 function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />;
   }
   if (mention.kind === "group" || mention.kind === "everyone") {
     return (
-      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
+      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
         {mention.kind === "group" ? "G" : "@"}
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
 }
 
 function previewMessageText(message: ThreadMessage): string {
@@ -5318,14 +5288,14 @@ function MessageHoverActions({
     <MessageHoverMetadata createdAt={message.createdAt}>
       <div
         data-testid="message-hover-actions"
-        className="flex items-center gap-0.5 rounded-full bg-[var(--rk-elevated)] p-0.5 shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
+        className="flex items-center gap-0.5 rounded-full bg-accent p-0.5 shadow-sm"
       >
         {!readOnly ? (
           <button
             type="button"
             aria-label={t`Reply`}
             onClick={() => onReply(message)}
-            className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)]"
+            className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
           >
             <Reply size={14} strokeWidth={1.8} />
           </button>
@@ -5336,8 +5306,8 @@ function MessageHoverActions({
             aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
             aria-pressed={Boolean(message.thumbsUp)}
             onClick={() => void onReact(message)}
-            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)] ${
-              message.thumbsUp ? "text-[#E9C46A]" : "text-[var(--rk-soft)]"
+            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-accent hover:text-foreground ${
+              message.thumbsUp ? "text-warning" : "text-foreground/75"
             }`}
           >
             <ThumbsUp size={14} strokeWidth={1.8} />
@@ -5347,7 +5317,7 @@ function MessageHoverActions({
           type="button"
           aria-label={t`Copy`}
           onClick={copyMessage}
-          className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)]"
+          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
         >
           <Copy size={14} strokeWidth={1.8} />
         </button>
@@ -5417,14 +5387,15 @@ function ExternalSpeakerMessage({ message }: { message: ThreadMessage }) {
     <div
       data-testid="external-speaker-message"
       data-speaker-name={message.speakerName}
-      className="max-w-[90%] whitespace-pre-wrap break-words px-1 pr-10 text-[15px] leading-6 text-[var(--rk-body)]"
+      className="max-w-[90%] whitespace-pre-wrap break-words px-1 pr-10 text-[15px] leading-6 text-foreground/85"
       dir="auto"
     >
-      <span className="font-medium text-[var(--rk-soft)]">@{message.speakerName}: </span>
+      <span className="font-medium text-foreground/75">@{message.speakerName}: </span>
       {text}
     </div>
   );
 }
+
 const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
@@ -5476,7 +5447,7 @@ const MessageView = memo(function MessageView({
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-[var(--rk-muted)]" dir="auto">
+        <div className="mb-1 text-[12.5px] font-medium text-muted-foreground" dir="auto">
           {speakerName}
         </div>
       ) : null}
@@ -5486,7 +5457,7 @@ const MessageView = memo(function MessageView({
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
           onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-page)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[var(--rk-elevated)] hover:text-[var(--rk-soft)]"
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-border bg-background px-3 py-2 text-start text-[12.5px] text-muted-foreground hover:border-border hover:text-foreground/75"
           dir="auto"
         >
           {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
@@ -5500,7 +5471,7 @@ const MessageView = memo(function MessageView({
         {messageContext}
         <div className="flex justify-start">
           <div
-            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
+            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
             dir="auto"
           >
             {message.blocks.map((block, i) => {
@@ -5533,7 +5504,7 @@ const MessageView = memo(function MessageView({
                 type="button"
                 aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                 onClick={onSpeak}
-                className="text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                className="text-[12px] text-muted-foreground hover:text-foreground"
               >
                 {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
               </button>
@@ -5553,7 +5524,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
               <span>
                 ↪ {to} ← {from}
@@ -5571,7 +5542,7 @@ const MessageView = memo(function MessageView({
             <CollaborationMarker
               key={i}
               ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
@@ -5582,7 +5553,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
               <span>
                 {providerLabel(block.provider)} · {block.fromLabel}: {block.text}
@@ -5594,9 +5565,9 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
-              <span className="text-[#E65707]">◷</span>
+              <span className="text-warning">◷</span>
               <span>{block.text}</span>
             </div>
           );
@@ -5605,7 +5576,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
+                className="max-w-[74%] rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
@@ -5617,7 +5588,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3"
+                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-muted px-[18px] py-3"
                 dir="ltr"
               >
                 <ToolActivityDisclosure
@@ -5639,30 +5610,30 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4"
+              className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
+                <span className="text-[15px] font-medium text-foreground" dir="auto">
                   {block.name}
                 </span>
                 <span
-                  className="rounded-full px-[11px] py-1 text-[13px]"
-                  style={{
-                    background: failed
-                      ? "rgba(239,68,68,.14)"
+                  className={`rounded-full px-[11px] py-1 text-[13px] ${
+                    failed
+                      ? "bg-destructive/15 text-destructive"
                       : running
-                        ? "rgba(245,160,60,.14)"
-                        : "rgba(48,162,75,.14)",
-                    color: failed ? "#EF4444" : running ? "#F5A03C" : "#4ECB71",
+                        ? "bg-warning/15 text-warning"
+                        : "bg-success/15 text-success"
+                  }`}
+                  style={{
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
                   {running ? <Trans>subagent</Trans> : block.status}
                 </span>
               </div>
-              <div className="mt-2 text-[13.5px] text-[var(--rk-muted)]">{block.task}</div>
+              <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
               {block.progress || block.result ? (
-                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]">
+                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
                   <ChatMarkdown streaming={running}>
                     {block.result || block.progress || ""}
                   </ChatMarkdown>
@@ -5679,18 +5650,16 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4 text-start disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
+                <span className="text-[15px] font-medium text-foreground" dir="auto">
                   {block.name}
                 </span>
                 <span
-                  className="rounded-full px-[11px] py-1 text-[13px]"
-                  style={{
-                    background: removed ? "rgba(239,68,68,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#EF4444" : "#4ECB71",
-                  }}
+                  className={`rounded-full px-[11px] py-1 text-[13px] ${
+                    removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
+                  }`}
                 >
                   {block.status === "archived" ? (
                     <Trans>archived</Trans>
@@ -5701,7 +5670,7 @@ const MessageView = memo(function MessageView({
                   )}
                 </span>
               </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]" dir="auto">
+              <div className="mt-2 text-[14.5px] leading-[1.5] text-foreground/75" dir="auto">
                 {removed
                   ? block.status === "archived"
                     ? t`Archived. Chat, memory, and files kept.`
@@ -5780,7 +5749,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-end">
               <div
-                className="max-w-[70%] whitespace-pre-wrap rounded-[20px] bg-[var(--rk-cream)] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[var(--rk-cream-ink)]"
+                className="max-w-[70%] whitespace-pre-wrap rounded-[20px] bg-primary px-[18px] py-3 text-[15.5px] leading-[1.45] text-primary-foreground"
                 dir="auto"
               >
                 {block.text}
@@ -5792,7 +5761,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
+                className="max-w-[74%] rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
@@ -5801,7 +5770,7 @@ const MessageView = memo(function MessageView({
                     type="button"
                     aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                     onClick={onSpeak}
-                    className="mt-2 text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                    className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
                   >
                     {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
                   </button>
@@ -5813,12 +5782,12 @@ const MessageView = memo(function MessageView({
         if (block.kind === "card") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="flex flex-col gap-2 rounded-[20px] bg-[var(--rk-surface-2)] px-5 py-4">
+              <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
                 {block.lines.map((line) => (
                   <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-[var(--rk-success)]">✓</span>
+                    <span className="text-success">✓</span>
                     <span className="font-semibold text-white">{line.k}</span>
-                    <span className="text-[var(--rk-muted)]">→</span>
+                    <span className="text-muted-foreground">→</span>
                     <span>{line.v}</span>
                   </div>
                 ))}
@@ -5847,17 +5816,17 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4"
+              className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[var(--rk-ink)]">
+                <span className="text-[15px] font-medium text-foreground">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[var(--rk-success-soft)]">
+                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
                   {block.state}
                 </span>
               </div>
-              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]">
+              <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
               </div>
             </div>
@@ -5868,971 +5837,6 @@ const MessageView = memo(function MessageView({
     </>
   );
 });
-
-function ComputerModePicker({
-  value,
-  onChange,
-}: {
-  value: ComputerMode;
-  onChange: (value: ComputerMode) => void;
-}) {
-  return (
-    <div className="mt-4">
-      <div className="text-[14px] text-[var(--rk-muted)]">
-        <Trans>Computer</Trans>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {(["team", "dedicated"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={value === mode}
-            onClick={() => onChange(mode)}
-            className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize ${
-              value === mode
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                : "border-[var(--rk-border)] text-[var(--rk-muted)]"
-            }`}
-          >
-            {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CreateBotForm({
-  onCreate,
-  onCancel,
-}: {
-  onCreate: (input: {
-    name: string;
-    title: string;
-    description: string;
-    computerMode: ComputerMode;
-  }) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [computerMode, setComputerMode] = useState<ComputerMode>("team");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit() {
-    if (!name.trim() || submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await onCreate({ name, title, description, computerMode });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not create bot`);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[var(--rk-muted)]">
-          <Trans>New bot</Trans>
-        </span>
-        <button type="button" aria-label={t`Cancel new bot`} onClick={onCancel}>
-          <X size={16} strokeWidth={1.8} />
-        </button>
-      </div>
-      {error ? (
-        <p
-          role="alert"
-          data-testid="create-bot-error"
-          className="mb-3 text-[13px] text-[var(--rk-danger)]"
-        >
-          {error}
-        </p>
-      ) : null}
-      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Name</Trans>
-        <input
-          value={name}
-          maxLength={BOT_NAME_MAX_LENGTH}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t`Name this bot`}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Title</Trans>
-        <input
-          value={title}
-          maxLength={BOT_TITLE_MAX_LENGTH}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={t`Describe what this bot does`}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Description</Trans>
-        <textarea
-          value={description}
-          maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t`What this bot is for`}
-          rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-      <button
-        type="button"
-        disabled={!name.trim() || submitting}
-        onClick={() => void handleSubmit()}
-        className="mt-5 rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[var(--rk-cream-ink)] disabled:opacity-40"
-      >
-        {submitting ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
-      </button>
-    </div>
-  );
-}
-
-function BotSettings({
-  bot,
-  computer,
-  memoryProviderConfigured,
-  onSave,
-  onExport,
-  onClear,
-  onComputerChanged,
-}: {
-  bot: Bot;
-  computer: ComputerStatus | null;
-  memoryProviderConfigured: boolean;
-  onSave: (patch: {
-    name?: string;
-    title?: string;
-    description?: string;
-    instructions?: string;
-    computerMode: ComputerMode;
-    memoryScope?: "isolated" | "shared" | null;
-    autoSpeak?: boolean;
-    voiceId?: string | null;
-    modelProvider?: string | null;
-    modelId?: string | null;
-    thinkingLevel?: ThinkingLevel | null;
-    teamChatAmbientEnabled?: boolean;
-    teamChatRules?: string;
-  }) => Promise<void>;
-  onExport: () => Promise<void>;
-  onClear: () => void;
-  onComputerChanged: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState(bot.name);
-  const [title, setTitle] = useState(bot.title);
-  const [description, setDescription] = useState(bot.description);
-  const [computerMode, setComputerMode] = useState(bot.computerMode);
-  const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
-  const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
-  const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [modelKey, setModelKey] = useState(
-    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
-  );
-  const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
-  const [teamChatAmbientEnabled, setTeamChatAmbientEnabled] = useState(bot.teamChatAmbientEnabled);
-  const [teamChatRules, setTeamChatRules] = useState(bot.teamChatRules);
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [me, setMe] = useState<Me | null>(null);
-  const [modelMetaReady, setModelMetaReady] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void rpc.voice
-      .voices({})
-      .then(setVoices)
-      .catch(() => setVoices([]));
-    void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
-      .then(([nextCredentials, nextCatalog, nextMe]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-        setMe(nextMe);
-        // Only mark ready on success — a failed catalog load must not clear
-        // an existing thinkingLevel override on save.
-        setModelMetaReady(true);
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const connectedOptions: Array<{
-    key: string;
-    provider: string;
-    modelId: string;
-    label: string;
-  }> = [];
-  const seenOptions = new Set<string>();
-  for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) => entry.provider === credential.provider && !entry.placeholder,
-    );
-    const credentialInCatalog = Boolean(
-      credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
-    );
-    // Catalog providers expand to every model for that connection. Free-form
-    // credentials (model id not in the catalog) stay a single connected pair.
-    const options =
-      credential.modelId && !credentialInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, credential.modelId),
-              provider: credential.provider,
-              modelId: credential.modelId,
-              label: `${credential.label} · ${credential.modelId}`,
-            },
-          ]
-        : providerModels.map((entry) => ({
-            key: modelOptionKey(entry.provider, entry.id),
-            provider: entry.provider,
-            modelId: entry.id,
-            label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-          }));
-    for (const option of options) {
-      if (seenOptions.has(option.key)) continue;
-      seenOptions.add(option.key);
-      connectedOptions.push(option);
-    }
-  }
-
-  const effectiveProvider = modelKey
-    ? parseModelOptionKey(modelKey)?.provider
-    : (me?.defaultProvider ?? null);
-  const effectiveModelId = modelKey
-    ? parseModelOptionKey(modelKey)?.modelId
-    : (me?.defaultModel ?? null);
-  const effectiveEntry =
-    effectiveProvider && effectiveModelId
-      ? catalog.find(
-          (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
-        )
-      : undefined;
-  const thinkingOptions = (effectiveEntry?.thinkingLevels ?? []).filter((level) => level !== "off");
-
-  return (
-    <div data-testid="bot-settings">
-      <div className="flex justify-center">
-        <BotAvatar color={bot.color} identity={bot.id} size={64} status={bot.status} />
-      </div>
-      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Name</Trans>
-        <input
-          value={name}
-          maxLength={BOT_NAME_MAX_LENGTH}
-          onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Title</Trans>
-        <input
-          value={title}
-          maxLength={BOT_TITLE_MAX_LENGTH}
-          onChange={(e) => setTitle(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-        <Trans>Description</Trans>
-        <textarea
-          value={description}
-          maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-        />
-      </label>
-      <details data-testid="bot-settings-advanced" className="group mt-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
-          <span className="text-[var(--rk-muted)]">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
-        <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        <Suspense fallback={null}>
-          <ScratchpadSection botId={bot.id} />
-        </Suspense>
-        <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-          <Trans>Model</Trans>
-          <select
-            value={modelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
-              setThinkingLevel("");
-            }}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-          >
-            <option value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </option>
-            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
-              <option value={modelKey}>{parseModelOptionKey(modelKey)?.modelId ?? modelKey}</option>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {thinkingOptions.length ? (
-          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-            <Trans>Thinking</Trans>
-            <select
-              value={thinkingLevel}
-              onChange={(event) => setThinkingLevel(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-            >
-              <option value="">{t`Default (medium)`}</option>
-              {thinkingOptions.map((level) => (
-                <option key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {memoryProviderConfigured ? (
-          <div className="mt-4 text-[14px] text-[var(--rk-muted)]">
-            <Trans>Memory scope</Trans>
-            <div className="mt-2 flex gap-2">
-              {(
-                [
-                  { value: null, label: t`Inherit default` },
-                  { value: "isolated" as const, label: t`Isolated` },
-                  { value: "shared" as const, label: t`Shared` },
-                ] satisfies Array<{
-                  value: "isolated" | "shared" | null;
-                  label: string;
-                }>
-              ).map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  aria-pressed={memoryScope === option.value}
-                  onClick={() => setMemoryScope(option.value)}
-                  className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
-                    memoryScope === option.value
-                      ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                      : "border-[var(--rk-border)] text-[var(--rk-muted)]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[var(--rk-soft)]">
-          <input
-            type="checkbox"
-            checked={autoSpeak}
-            onChange={(event) => setAutoSpeak(event.target.checked)}
-          />
-          <Trans>Read replies aloud</Trans>
-        </label>
-        {voices.length ? (
-          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-            <Trans>Voice</Trans>
-            <select
-              value={voiceId}
-              onChange={(event) => setVoiceId(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
-            >
-              <option value="">{t`Account default`}</option>
-              {voices.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        <div className="mt-5 border-t border-[var(--rk-border)] pt-5">
-          <label className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--rk-soft)]">
-            <input
-              type="checkbox"
-              checked={teamChatAmbientEnabled}
-              onChange={(event) => setTeamChatAmbientEnabled(event.target.checked)}
-            />
-            <Trans>Default Slack listening</Trans>
-          </label>
-          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
-            <Trans>Default channel guidance</Trans>
-            <textarea
-              value={teamChatRules}
-              maxLength={4000}
-              onChange={(event) => setTeamChatRules(event.target.value)}
-              placeholder={t`Engage when… Ignore…`}
-              rows={5}
-              disabled={!teamChatAmbientEnabled}
-              className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)] disabled:opacity-40"
-            />
-          </label>
-        </div>
-      </details>
-      {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
-      <div className="mt-5 flex flex-col items-start gap-3">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => {
-            setSaving(true);
-            setError(null);
-            const selected = modelKey ? parseModelOptionKey(modelKey) : null;
-            void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
-              computerMode,
-              memoryScope,
-              autoSpeak,
-              voiceId: voiceId || null,
-              modelProvider: selected?.provider ?? null,
-              modelId: selected?.modelId ?? null,
-              teamChatAmbientEnabled,
-              teamChatRules,
-              // Only clear thinking when catalog metadata is available; otherwise
-              // preserve the stored override if models.list failed or is still loading.
-              ...(modelMetaReady
-                ? {
-                    thinkingLevel: thinkingOptions.length
-                      ? ((thinkingLevel || null) as ThinkingLevel | null)
-                      : null,
-                  }
-                : {}),
-            })
-              .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
-              .finally(() => setSaving(false));
-          }}
-          className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[var(--rk-cream-ink)] disabled:opacity-40"
-        >
-          <Trans>Save</Trans>
-        </button>
-        <button
-          type="button"
-          onClick={() => void onExport()}
-          className="text-[14px] text-[var(--rk-muted)]"
-        >
-          <Trans>Export</Trans>
-        </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-[var(--rk-danger)]">
-          <Trans>Clear conversation</Trans>
-        </button>
-        <ComputerMaintenanceActions
-          botId={bot.id}
-          computer={computer}
-          onChanged={onComputerChanged}
-        />
-      </div>
-    </div>
-  );
-}
-
-function modelOptionKey(provider: string, modelId: string) {
-  return `${provider}::${modelId}`;
-}
-
-function thinkingLevelLabel(level: ThinkingLevel) {
-  if (level === "xhigh") return t`Extra high`;
-  if (level === "low") return t`Low`;
-  if (level === "medium") return t`Medium`;
-  if (level === "high") return t`High`;
-  if (level === "minimal") return t`Minimal`;
-  if (level === "max") return t`Max`;
-  return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
-}
-
-function parseModelOptionKey(key: string) {
-  const separator = key.indexOf("::");
-  if (separator <= 0) return null;
-  return {
-    provider: key.slice(0, separator),
-    modelId: key.slice(separator + 2),
-  };
-}
-
-function catalogLabel(
-  catalog: ModelCatalogEntry[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
-}
-
-function NewSpaceDialog({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !saving) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
-
-  const create = () => {
-    const trimmed = name.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    void onConfirm(trimmed).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : t`Could not create space`);
-      setSaving(false);
-    });
-  };
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
-      onPointerDown={() => {
-        if (!saving) onCancel();
-      }}
-    >
-      <BuiCard
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-space-title"
-        className="w-full max-w-[420px] border border-[var(--rk-elevated)] p-5"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2.5">
-          <Lock size={17} strokeWidth={1.8} className="text-[#A78BFA]" aria-hidden="true" />
-          <h2 id="new-space-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
-            <Trans>New space</Trans>
-          </h2>
-        </div>
-        <label className="mt-4 block text-[13.5px] text-[var(--rk-soft)]">
-          <Trans>Name</Trans>
-          <input
-            maxLength={60}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") create();
-              if (event.key === "Escape" && !saving) onCancel();
-            }}
-            placeholder={t`Customer support`}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-elevated)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
-          />
-        </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <BuiButton disabled={saving} onClick={onCancel}>
-            <Trans>Cancel</Trans>
-          </BuiButton>
-          <BuiButton tone="accent" disabled={saving || !name.trim()} onClick={create}>
-            {saving ? <Trans>Creating…</Trans> : <Trans>Create space</Trans>}
-          </BuiButton>
-        </div>
-      </BuiCard>
-    </div>
-  );
-}
-
-function NewBotSectionDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Pick<Bot, "name">;
-  onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !saving) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
-      onPointerDown={() => {
-        if (!saving) onCancel();
-      }}
-    >
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-bot-section-title"
-        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
-        onPointerDown={(event) => event.stopPropagation()}
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = name.trim();
-          if (!trimmed || saving) return;
-          setSaving(true);
-          setError(null);
-          void onConfirm(trimmed).catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : t`Could not create section`);
-            setSaving(false);
-          });
-        }}
-      >
-        <h2
-          id="new-bot-section-title"
-          className="text-[17px] font-medium text-[var(--rk-ink-strong)]"
-        >
-          <Trans>New section</Trans>
-        </h2>
-        <p className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]">
-          <Trans>Create a section and move {bot.name} into it.</Trans>
-        </p>
-        <label className="mt-4 block text-[13.5px] text-[var(--rk-soft)]">
-          <Trans>Name</Trans>
-          <input
-            maxLength={60}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-elevated)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
-          />
-        </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="submit"
-            disabled={saving || !name.trim()}
-            className="rounded-[10px] bg-[var(--rk-cream)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-40"
-          >
-            {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function ClearConversationDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Pick<Bot, "name">;
-  onCancel: () => void;
-  onConfirm: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [clearing, setClearing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !clearing) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearing, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
-      onPointerDown={() => {
-        if (!clearing) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="clear-conversation-title"
-        aria-describedby="clear-conversation-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2
-          id="clear-conversation-title"
-          className="text-[17px] font-medium text-[var(--rk-ink-strong)]"
-        >
-          <Trans>Clear {bot.name}’s conversation?</Trans>
-        </h2>
-        <p
-          id="clear-conversation-description"
-          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
-        >
-          <Trans>
-            This permanently removes every message and stops current work. The chat remains
-            available.
-          </Trans>
-        </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={() => {
-              setClearing(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not clear conversation`);
-                setClearing(false);
-              });
-            }}
-            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteBotDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Bot;
-  onCancel: () => void;
-  onConfirm: (deleteMemories: boolean) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [deleting, setDeleting] = useState(false);
-  const [deleteMemories, setDeleteMemories] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleting, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
-      onPointerDown={() => {
-        if (!deleting) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-bot-title"
-        aria-describedby="delete-bot-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
-          <Trans>Delete {bot.name}?</Trans>
-        </h2>
-        <p
-          id="delete-bot-description"
-          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
-        >
-          <Trans>
-            Its conversation, files, and routines will be permanently deleted. Bots it created stay
-            in your list.
-          </Trans>
-        </p>
-        <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-[var(--rk-soft)]">
-            <Trans>What about its memories?</Trans>
-          </legend>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-elevated)] p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={!deleteMemories}
-              onChange={() => setDeleteMemories(false)}
-            />
-            <span>
-              <span className="block text-[14px] text-[var(--rk-ink)]">
-                <Trans>Keep memories</Trans>
-              </span>
-              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
-                <Trans>Move them to your shared memory.</Trans>
-              </span>
-            </span>
-          </label>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-elevated)] p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={deleteMemories}
-              onChange={() => setDeleteMemories(true)}
-            />
-            <span>
-              <span className="block text-[14px] text-[var(--rk-ink)]">
-                <Trans>Delete memories too</Trans>
-              </span>
-              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
-                <Trans>This cannot be undone.</Trans>
-              </span>
-            </span>
-          </label>
-        </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete bot`);
-                setDeleting(false);
-              });
-            }}
-            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteItemDialog({
-  item,
-  noun,
-  onCancel,
-  onConfirm,
-}: {
-  item: { name: string };
-  noun: "group" | "routine";
-  onCancel: () => void;
-  onConfirm: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleting, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
-      onPointerDown={() => {
-        if (!deleting) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-item-title"
-        aria-describedby="delete-item-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2 id="delete-item-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
-          <Trans>Delete {item.name}?</Trans>
-        </h2>
-        <p
-          id="delete-item-description"
-          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
-        >
-          <Trans>This cannot be undone.</Trans>
-        </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(
-                  err instanceof Error
-                    ? err.message
-                    : noun === "group"
-                      ? t`Could not delete group`
-                      : t`Could not delete routine`,
-                );
-                setDeleting(false);
-              });
-            }}
-            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function embeddableScreenUrl(url: string | null): string | null {
   if (!url) return null;
@@ -6875,521 +5879,6 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? t`${botName}’s computer` : t`Team Computer`;
-}
-
-function ChoiceCard({
-  botId,
-  block,
-  onBotChanged,
-}: {
-  botId: string;
-  block: Extract<MessageBlock, { kind: "choice" }>;
-  onBotChanged: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function choose(optionId: string) {
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.onboarding.choose({ botId, optionId });
-      await onBotChanged().catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save this choice`);
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="flex justify-start">
-      <div className="w-[min(420px,80%)] rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-surface)] px-[18px] py-[14px]">
-        <div className="text-[15.5px] text-[var(--rk-body)]">{block.question}</div>
-        {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-[var(--rk-soft)]">{block.subtitle}</div>
-        ) : null}
-        <div className="mt-3 space-y-1.5">
-          {block.options
-            .filter((option) => !block.answerId || option.id === block.answerId)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={Boolean(block.answerId) || pending}
-                onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-border)] px-3.5 py-3 text-start text-[var(--rk-ink)] disabled:opacity-60 ${block.answerId ? "bg-[var(--rk-elevated)]" : "bg-[var(--rk-surface-2)] hover:bg-[var(--rk-elevated)]"}`}
-              >
-                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[var(--rk-elevated)] text-[12.5px] font-medium text-[var(--rk-soft)]">
-                  {option.letter}
-                </span>
-                <span
-                  className={`flex-1 text-[15px] ${block.answerId ? "text-[var(--rk-soft)]" : "text-[var(--rk-ink)]"}`}
-                >
-                  {option.label}
-                </span>
-                {block.answerId === option.id ? (
-                  <span className="text-[var(--rk-soft)]">✓</span>
-                ) : null}
-              </button>
-            ))}
-        </div>
-        {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function AppConnectCard({
-  botId,
-  block,
-}: {
-  botId: string;
-  block: Extract<MessageBlock, { kind: "app_connect" }>;
-}) {
-  const { t } = useLingui();
-  const [busy, setBusy] = useState(false);
-  const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
-  const [error, setError] = useState<string | null>(null);
-  const connectionAttempt = useRef<AbortController | null>(null);
-  const status = block.status === "connected" ? "connected" : localStatus;
-  useEffect(() => () => connectionAttempt.current?.abort(), []);
-
-  async function authorize() {
-    connectionAttempt.current?.abort();
-    const controller = new AbortController();
-    connectionAttempt.current = controller;
-    setBusy(true);
-    setError(null);
-    try {
-      const started = await rpc.connections.begin({
-        provider: block.provider,
-        displayName: block.name,
-      });
-      if (started.authorizationUrl) {
-        window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
-      }
-      for (let i = 0; i < 60; i += 1) {
-        if (controller.signal.aborted) return;
-        const row = await rpc.connections
-          .complete({ connectionId: started.connectionId })
-          .catch(() => undefined);
-        if (row?.status === "connected") {
-          if (controller.signal.aborted) return;
-          setLocalStatus("connected");
-          await rpc.onboarding
-            .appConnected({ botId, provider: block.provider })
-            .catch(() => undefined);
-          return;
-        }
-        await abortableDelay(2_000, controller.signal);
-      }
-      if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : t`Could not authorize this app`);
-      }
-    } finally {
-      if (connectionAttempt.current === controller) {
-        connectionAttempt.current = null;
-        setBusy(false);
-      }
-    }
-  }
-  return (
-    <BuiCard
-      role="group"
-      aria-label={t`${block.name} connection`}
-      className="w-[min(420px,80%)] px-4 py-3.5"
-    >
-      <div className="flex items-center gap-3.5">
-        {block.logo ? (
-          <img
-            src={block.logo}
-            alt=""
-            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
-          />
-        ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
-            {block.name.slice(0, 1).toUpperCase()}
-          </span>
-        )}
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium" style={{ color: "var(--bui-ink)" }}>
-            {block.name}
-          </span>
-          <span className="block truncate text-[13px]" style={{ color: "var(--bui-ink-3)" }}>
-            {block.description}
-          </span>
-        </span>
-        {status === "connected" ? (
-          <SuccessPop label={t`Connected`} />
-        ) : (
-          <BuiButton disabled={busy} onClick={() => void authorize()}>
-            {busy ? t`Waiting…` : t`Authorize`}
-          </BuiButton>
-        )}
-      </div>
-      {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-    </BuiCard>
-  );
-}
-
-function ChartCanvas({
-  spec,
-  data,
-  width,
-  height,
-}: {
-  spec: Record<string, unknown>;
-  data: unknown[];
-  width: number;
-  height?: number;
-}) {
-  const { t } = useLingui();
-  const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{
-    title?: string;
-    swatches: { label: string; color: string }[];
-  }>({ swatches: [] });
-  useEffect(() => {
-    let cancelled = false;
-    // Plot loads lazily so threads without charts never pay for the library.
-    void (async () => {
-      try {
-        const { buildPlotParts } = await import("@rakazo/core/plot");
-        if (cancelled || !ref.current) return;
-        // Hover inspection by default: give the first mark a tooltip unless
-        // the spec already asks for one somewhere.
-        const marks = Array.isArray((spec as { marks?: unknown[] }).marks)
-          ? ((spec as { marks: { options?: Record<string, unknown> }[] }).marks ?? [])
-          : [];
-        const hasTip = marks.some((mark) => mark.options && "tip" in mark.options);
-        const liveSpec = hasTip
-          ? spec
-          : {
-              ...spec,
-              marks: marks.map((mark, index) =>
-                index === 0 ? { ...mark, options: { ...(mark.options ?? {}), tip: true } } : mark,
-              ),
-            };
-        const parts = buildPlotParts(liveSpec as never, data, document, {
-          width,
-          height,
-        });
-        setMeta({ title: parts.title, swatches: parts.swatches });
-        setError(null);
-        ref.current.replaceChildren(parts.plotted);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : t`Could not render chart`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [spec, data, width, height, t]);
-  if (error)
-    return (
-      <div className="text-[13px] text-[#F3A2AA]">
-        <Trans>Chart failed to render: {error}</Trans>
-      </div>
-    );
-  return (
-    <div className="text-[var(--rk-soft)]">
-      {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-[var(--rk-ink)]">{meta.title}</div>
-      ) : null}
-      {meta.swatches.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
-          {meta.swatches.map((swatch) => (
-            <span
-              key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
-            >
-              <span
-                className="h-[10px] w-[10px] rounded-[3px]"
-                style={{ background: swatch.color }}
-              />
-              {swatch.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div ref={ref} className="[&_svg]:max-w-full" />
-    </div>
-  );
-}
-
-type McpApprovalState = "pending" | "connecting" | "connected" | "dismissed";
-
-/** Approval card for an agent-created MCP server: the user completes browser
- * OAuth (or confirms no authorization is needed) without leaving the chat. */
-function McpApprovalCard({
-  botId,
-  name,
-  serverId,
-  transport,
-  endpoint,
-  needsOAuth,
-}: {
-  botId: string | undefined;
-  name: string;
-  serverId: string;
-  transport: string;
-  endpoint: string | null;
-  needsOAuth: boolean;
-}) {
-  const { t } = useLingui();
-  const [state, setState] = useState<McpApprovalState>("pending");
-  const [error, setError] = useState<string | null>(null);
-
-  async function authorize() {
-    if (!botId) {
-      setError(t`This server cannot be assigned without a bot.`);
-      return;
-    }
-    setState("connecting");
-    setError(null);
-    try {
-      if (needsOAuth) {
-        const result = await connectMcpOauth(serverId);
-        if (result === "cancelled") {
-          setState("pending");
-          return;
-        }
-      }
-      await rpc.mcp.assignments.approve({ botId, serverId });
-      setState("connected");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not approve this server`);
-      setState("pending");
-    }
-  }
-
-  const summary = endpoint ?? `stdio · ${transport}`;
-  return (
-    <BuiCard className="max-w-[74%] p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#30356A] text-xs text-[#E2E4FF]">
-          M
-        </span>
-        <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
-          <Trans>Connect MCP server “{name}”</Trans>
-        </span>
-      </div>
-      <p className="mt-1.5 truncate text-[12px]" style={{ color: "var(--bui-ink-3)" }}>
-        {summary}
-      </p>
-      {state === "pending" || state === "connecting" ? (
-        <>
-          <p className="mt-2 text-[13px] leading-[1.5]" style={{ color: "var(--bui-ink-2)" }}>
-            {needsOAuth
-              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
-              : t`Approve this server to let your agent use its tools.`}
-          </p>
-          {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-          <div className="mt-3 flex gap-2">
-            <BuiButton
-              tone="accent"
-              disabled={state === "connecting"}
-              onClick={() => void authorize()}
-            >
-              {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
-            </BuiButton>
-            <BuiButton onClick={() => setState("dismissed")}>
-              <Trans>Not now</Trans>
-            </BuiButton>
-          </div>
-        </>
-      ) : null}
-      {state === "connected" ? (
-        <div className="mt-3">
-          <SuccessPop label={t`Connected — its tools are available from your next message.`} />
-        </div>
-      ) : null}
-      {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-[var(--rk-muted)]">
-          <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
-        </p>
-      ) : null}
-    </BuiCard>
-  );
-}
-
-function ChartBlockView({
-  name,
-  spec,
-  data,
-}: {
-  name: string;
-  spec: Record<string, unknown>;
-  data: unknown[];
-}) {
-  const { t } = useLingui();
-  const [expanded, setExpanded] = useState(false);
-  const [viewport, setViewport] = useState(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
-  useEffect(() => {
-    if (!expanded) return;
-    setViewport({ width: window.innerWidth, height: window.innerHeight });
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [expanded]);
-  const expandedViewport = chartViewport(viewport.width, viewport.height);
-  return (
-    <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-[var(--rk-hairline)] p-4">
-        <ChartCanvas spec={spec} data={data} width={520} />
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="absolute end-3 top-3 rounded-lg border border-[var(--rk-elevated)] bg-[var(--rk-elevated)] px-2.5 py-1 text-[11px] text-[var(--rk-soft)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
-        >
-          <Trans>Expand</Trans>
-        </button>
-      </div>
-      {expanded ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,4,5,.78)] p-8"
-          role="dialog"
-          aria-modal="true"
-          aria-label={name}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setExpanded(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setExpanded(false);
-          }}
-        >
-          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[var(--rk-border)] bg-[var(--rk-surface)] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-[13px] text-[var(--rk-muted)]">{name}</span>
-              <button
-                type="button"
-                aria-label={t`Close chart`}
-                onClick={() => setExpanded(false)}
-                className="text-lg text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
-              >
-                ✕
-              </button>
-            </div>
-            <ChartCanvas
-              spec={spec}
-              data={data}
-              width={expandedViewport.width}
-              height={expandedViewport.height}
-            />
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function ArtifactImage({
-  target,
-  artifactId,
-  name,
-}: {
-  target: ArtifactTarget;
-  artifactId: string;
-  name: string;
-}) {
-  const { t } = useLingui();
-  const [src, setSrc] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  const targetBotId = "botId" in target ? target.botId : undefined;
-  const targetGroupId = "groupId" in target ? target.groupId : undefined;
-
-  useEffect(() => {
-    const element = container.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "320px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!visible) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setSrc(null);
-    void rpc.artifacts
-      .get(
-        targetBotId
-          ? { botId: targetBotId, artifactId }
-          : { groupId: targetGroupId ?? "", artifactId },
-      )
-      .then((artifact) => {
-        const bytes = decodeArtifactBase64(artifact.contentBase64);
-        objectUrl = URL.createObjectURL(
-          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
-        );
-        if (cancelled) URL.revokeObjectURL(objectUrl);
-        else setSrc(objectUrl);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [artifactId, targetBotId, targetGroupId, visible]);
-
-  return (
-    <div ref={container}>
-      {src ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-[20px]"
-        >
-          <img src={src} alt={name} className="max-h-48 w-full object-cover" />
-        </button>
-      ) : (
-        <div className="rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-4 py-3 text-[14px] text-[var(--rk-muted)]">
-          {name}
-        </div>
-      )}
-      {open && src ? (
-        <button
-          type="button"
-          aria-label={t`Close image preview`}
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
-          onClick={() => setOpen(false)}
-        >
-          <img
-            src={src}
-            alt={name}
-            className="max-h-[85vh] max-w-[90vw] rounded-[12px] object-contain"
-          />
-        </button>
-      ) : null}
-    </div>
-  );
 }
 
 function newClientNonce(): string {

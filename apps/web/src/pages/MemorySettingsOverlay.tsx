@@ -1,7 +1,20 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Field,
+  FieldLabel,
+  NativeSelect,
+  NativeSelectOption,
+  Toggle,
+} from "@rakazo/ui-web";
+import { XIcon } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
 import {
   defaultMemoryProviderSettings,
@@ -20,24 +33,20 @@ function ScopePicker({
   onChange: (scope: "isolated" | "shared") => void;
 }) {
   return (
-    <div className="text-[13.5px] text-[var(--rk-muted)]">
+    <div className="text-[13.5px] text-muted-foreground">
       <Trans>Default scope</Trans>
       <div className="mt-2 flex gap-2">
         {(["isolated", "shared"] as const).map((option) => (
-          <button
+          <Toggle
             key={option}
-            type="button"
-            aria-pressed={value === option}
+            variant="outline"
+            pressed={value === option}
             disabled={disabled}
-            onClick={() => onChange(option)}
-            className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
-              value === option
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                : "border-[var(--rk-border)] text-[var(--rk-muted)]"
-            }`}
+            onPressedChange={() => onChange(option)}
+            className="flex-1 font-normal text-muted-foreground aria-pressed:text-foreground"
           >
             {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
-          </button>
+          </Toggle>
         ))}
       </div>
     </div>
@@ -54,6 +63,7 @@ export function MemorySettingsOverlay({
   onConfigChange: (config: SpaceMemoryConfig | null) => void;
 }) {
   const { t } = useLingui();
+  const providerSelectId = useId();
   const defaultRegistration = defaultMemoryProviderSettings();
   const [selectedProvider, setSelectedProvider] = useState(
     config?.provider ?? defaultRegistration.id,
@@ -126,43 +136,54 @@ export function MemorySettingsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <Dialog
+      open
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (busy) {
+          details.cancel();
+          return;
+        }
+        onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[min(760px,calc(100%-2rem))] w-[560px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[min(760px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
+      >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[var(--rk-ink-strong)]">
+            <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Memory</Trans>
-            </div>
-            <p className="mt-1 text-[13.5px] text-[var(--rk-faint)]">
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
               {registration?.description ?? (
                 <Trans>Manage the Space semantic memory provider.</Trans>
               )}
-            </p>
+            </DialogDescription>
           </div>
-          <button
-            type="button"
+          <DialogClose
             aria-label={t`Close memory settings`}
             disabled={busy}
-            onClick={onClose}
-            className="text-[var(--rk-muted)] disabled:opacity-40"
+            render={<Button variant="ghost" size="icon-sm" />}
           >
-            ✕
-          </button>
+            <XIcon />
+          </DialogClose>
         </div>
 
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
+          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
 
           {config === undefined ? (
-            <p className="text-sm text-[var(--rk-muted)]">
+            <p className="text-sm text-muted-foreground">
               <Trans>Loading memory settings…</Trans>
             </p>
           ) : config ? (
-            <div className="rounded-[13px] border border-[var(--rk-border)] px-4 py-3">
-              <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+            <div className="rounded-xl border border-border px-4 py-3">
+              <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                 <Trans>Connected</Trans>
               </div>
-              <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
+              <div className="mt-1 text-[15px] text-foreground">
                 {registration?.connectedLabel(config) ?? config.provider}
               </div>
               <div className="mt-3">
@@ -190,21 +211,24 @@ export function MemorySettingsOverlay({
           ) : registration ? (
             <>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
-                <label className="mb-4 block text-[13.5px] text-[var(--rk-muted)]">
-                  <Trans>Provider</Trans>
-                  <select
+                <Field className="mb-4">
+                  <FieldLabel htmlFor={providerSelectId}>
+                    <Trans>Provider</Trans>
+                  </FieldLabel>
+                  <NativeSelect
+                    id={providerSelectId}
+                    className="w-full"
                     value={selectedProvider}
                     disabled={busy}
                     onChange={(event) => setSelectedProvider(event.target.value)}
-                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-3 text-[var(--rk-ink)] outline-none disabled:opacity-40"
                   >
                     {MEMORY_PROVIDER_SETTINGS.map((entry) => (
-                      <option key={entry.id} value={entry.id}>
+                      <NativeSelectOption key={entry.id} value={entry.id}>
                         {entry.name}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Field>
               ) : null}
 
               <div className="mb-4">
@@ -214,12 +238,12 @@ export function MemorySettingsOverlay({
               <registration.SettingsForm busy={busy} onConnect={connect} />
             </>
           ) : (
-            <p className="text-sm text-[var(--rk-danger)]">
+            <p className="text-sm text-destructive">
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

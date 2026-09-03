@@ -1,4 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { Button, Input, Label } from "@rakazo/ui-web";
+import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
@@ -6,6 +8,9 @@ import { clearSpaceSelection } from "../lib/rpc";
 
 type AuthMode = "in" | "up" | "forgot";
 type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
+
+const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
+const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -88,169 +93,132 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--rk-page)] px-6 py-16 text-[var(--rk-ink)]">
-      <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-surface)]">
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
+    <AuthFrame onSubmit={submit} title={title}>
+      {sent ? (
+        <div role="status" className="w-full text-center">
+          <p className="text-lg text-foreground">
+            <Trans>Check your email</Trans>
+          </p>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+            <Trans>If an account exists for that address, we sent a password reset link.</Trans>
+          </p>
+          <Link to="/sign-in" className="mt-6 inline-block font-medium text-foreground">
+            <Trans>Back to sign in</Trans>
+          </Link>
         </div>
-        <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
-        {sent ? (
-          <div role="status" className="w-full text-center">
-            <p className="text-[17px] text-[var(--rk-ink)]">
-              <Trans>Check your email</Trans>
-            </p>
-            <p className="mt-3 text-[15px] leading-relaxed text-[#6E6E68]">
-              <Trans>If an account exists for that address, we sent a password reset link.</Trans>
-            </p>
-            <Link to="/sign-in" className="mt-6 inline-block font-medium text-[var(--rk-ink)]">
-              <Trans>Back to sign in</Trans>
-            </Link>
-          </div>
-        ) : (
-          <>
-            {mode === "up" ? (
-              <label className="mb-4 w-full text-[16px] text-[#6E6E68]">
+      ) : (
+        <>
+          {mode === "up" ? (
+            <div className="mb-4 w-full">
+              <Label htmlFor="name" className="text-muted-foreground">
                 <Trans>Name</Trans>
-                <input
-                  id="name"
-                  name="name"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={t`Your name`}
-                  className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1A1A1A] outline-none"
-                />
-              </label>
-            ) : null}
-            <label className="w-full text-[16px] text-[#6E6E68]">
-              <Trans>Email</Trans>
-              <input
-                id="email"
-                name="email"
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t`Your email address`}
-                type="email"
-                required
-                className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1A1A1A] outline-none"
+              </Label>
+              <Input
+                id="name"
+                name="name"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t`Your name`}
+                className={fieldClass}
               />
-            </label>
-            {mode !== "forgot" ? (
-              <div className="mt-4 w-full text-[16px] text-[#6E6E68]">
-                <label htmlFor={passwordFieldId}>
-                  <Trans>Password</Trans>
-                </label>
-                <div className="relative mt-2">
-                  <input
-                    id={passwordFieldId}
-                    name="password"
-                    autoComplete={mode === "in" ? "current-password" : "new-password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={t`Password`}
-                    type={showPassword ? "text" : "password"}
-                    required
-                    minLength={8}
-                    className="w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] py-[17px] pl-[18px] pr-[52px] text-[17px] text-[#1A1A1A] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((shown) => !shown)}
-                    aria-label={showPassword ? t`Hide password` : t`Show password`}
-                    aria-pressed={showPassword}
-                    className="absolute inset-y-0 right-0 flex items-center px-[18px] text-[#8C8C86] hover:text-[var(--rk-ink)]"
-                  >
-                    {showPassword ? (
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                        <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                        <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                        <line x1="2" y1="2" x2="22" y2="22" />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                {mode === "in" && reset?.passwordReset ? (
-                  <div className="mt-2 text-right text-[14px]">
-                    <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)]">
-                      <Trans>Forgot password?</Trans>
-                    </Link>
-                  </div>
-                ) : null}
+            </div>
+          ) : null}
+          <div className="w-full">
+            <Label htmlFor="email" className="text-muted-foreground">
+              <Trans>Email</Trans>
+            </Label>
+            <Input
+              id="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t`Your email address`}
+              type="email"
+              required
+              className={fieldClass}
+            />
+          </div>
+          {mode !== "forgot" ? (
+            <div className="mt-4 w-full">
+              <Label htmlFor={passwordFieldId} className="text-muted-foreground">
+                <Trans>Password</Trans>
+              </Label>
+              <div className="relative">
+                <Input
+                  id={passwordFieldId}
+                  name="password"
+                  autoComplete={mode === "in" ? "current-password" : "new-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t`Password`}
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  className={`${fieldClass} pr-12`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowPassword((shown) => !shown)}
+                  aria-label={showPassword ? t`Hide password` : t`Show password`}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-2 my-auto text-muted-foreground"
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </Button>
               </div>
-            ) : null}
-            {error ? (
-              <p role="alert" className="mt-3 w-full text-sm text-[#B91C1C]">
-                {error}
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={pending}
-              className="mt-3 w-full rounded-[13px] bg-[var(--rk-elevated)] py-[18px] text-center text-[17px] font-medium text-[var(--rk-cream)] hover:bg-[var(--rk-scroll)]"
-            >
-              {pending ? (
-                <Trans>Working…</Trans>
-              ) : mode === "in" ? (
-                <Trans>Continue with email</Trans>
-              ) : mode === "forgot" ? (
-                <Trans>Send reset link</Trans>
-              ) : (
-                <Trans>Create account</Trans>
-              )}
-            </button>
-            <p className="mt-[30px] text-[16px] text-[#8C8C86]">
-              {mode === "in" ? (
-                <>
-                  <Trans>Don’t have an account?</Trans>{" "}
-                  <Link to="/sign-up" className="font-medium text-[var(--rk-ink)]">
-                    <Trans>Sign up</Trans>
+              {mode === "in" && reset?.passwordReset ? (
+                <div className="mt-2 text-right text-sm">
+                  <Link to="/forgot-password" className="font-medium text-foreground">
+                    <Trans>Forgot password?</Trans>
                   </Link>
-                </>
-              ) : mode === "up" ? (
-                <>
-                  <Trans>Already have an account?</Trans>{" "}
-                  <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
-                    <Trans>Sign in</Trans>
-                  </Link>
-                </>
-              ) : (
-                <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
-                  <Trans>Back to sign in</Trans>
-                </Link>
-              )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {error ? (
+            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+              {error}
             </p>
-          </>
-        )}
-      </form>
-    </div>
+          ) : null}
+          <Button type="submit" size="lg" disabled={pending} className={submitClass}>
+            {pending ? (
+              <Trans>Working…</Trans>
+            ) : mode === "in" ? (
+              <Trans>Continue with email</Trans>
+            ) : mode === "forgot" ? (
+              <Trans>Send reset link</Trans>
+            ) : (
+              <Trans>Create account</Trans>
+            )}
+          </Button>
+          <p className="mt-8 text-muted-foreground">
+            {mode === "in" ? (
+              <>
+                <Trans>Don’t have an account?</Trans>{" "}
+                <Link to="/sign-up" className="font-medium text-foreground">
+                  <Trans>Sign up</Trans>
+                </Link>
+              </>
+            ) : mode === "up" ? (
+              <>
+                <Trans>Already have an account?</Trans>{" "}
+                <Link to="/sign-in" className="font-medium text-foreground">
+                  <Trans>Sign in</Trans>
+                </Link>
+              </>
+            ) : (
+              <Link to="/sign-in" className="font-medium text-foreground">
+                <Trans>Back to sign in</Trans>
+              </Link>
+            )}
+          </p>
+        </>
+      )}
+    </AuthFrame>
   );
 }
 
@@ -290,56 +258,71 @@ export function PasswordResetPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--rk-page)] px-6 py-16 text-[var(--rk-ink)]">
-      <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-surface)]">
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
+    <AuthFrame onSubmit={submit} title={<Trans>Choose a new password</Trans>}>
+      {complete ? (
+        <div role="status" className="w-full text-center">
+          <p className="text-lg">
+            <Trans>Password updated</Trans>
+          </p>
+          <Link to="/sign-in" className="mt-6 inline-block font-medium">
+            <Trans>Sign in</Trans>
+          </Link>
         </div>
-        <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">
-          <Trans>Choose a new password</Trans>
-        </h1>
-        {complete ? (
-          <div role="status" className="w-full text-center">
-            <p className="text-[17px]">
-              <Trans>Password updated</Trans>
+      ) : (
+        <>
+          <PasswordField
+            id="new-password"
+            label={t`New password`}
+            value={password}
+            onChange={setPassword}
+          />
+          <PasswordField
+            id="confirm-password"
+            label={t`Confirm password`}
+            value={confirmation}
+            onChange={setConfirmation}
+            className="mt-4"
+          />
+          {error ? (
+            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+              {error}
             </p>
-            <Link to="/sign-in" className="mt-6 inline-block font-medium">
-              <Trans>Sign in</Trans>
-            </Link>
-          </div>
-        ) : (
-          <>
-            <PasswordField
-              id="new-password"
-              label={t`New password`}
-              value={password}
-              onChange={setPassword}
-            />
-            <PasswordField
-              id="confirm-password"
-              label={t`Confirm password`}
-              value={confirmation}
-              onChange={setConfirmation}
-              className="mt-4"
-            />
-            {error ? (
-              <p role="alert" className="mt-3 w-full text-sm text-[#B91C1C]">
-                {error}
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={pending || !params.get("token")}
-              className="mt-4 w-full rounded-[13px] bg-[var(--rk-elevated)] py-[18px] text-[17px] font-medium text-[var(--rk-cream)] disabled:opacity-60"
-            >
-              {pending ? <Trans>Working…</Trans> : <Trans>Reset password</Trans>}
-            </button>
-            <Link to="/sign-in" className="mt-6 font-medium">
-              <Trans>Back to sign in</Trans>
-            </Link>
-          </>
-        )}
+          ) : null}
+          <Button
+            type="submit"
+            size="lg"
+            disabled={pending || !params.get("token")}
+            className={submitClass}
+          >
+            {pending ? <Trans>Working…</Trans> : <Trans>Reset password</Trans>}
+          </Button>
+          <Link to="/sign-in" className="mt-6 font-medium">
+            <Trans>Back to sign in</Trans>
+          </Link>
+        </>
+      )}
+    </AuthFrame>
+  );
+}
+
+function AuthFrame({
+  title,
+  onSubmit,
+  children,
+}: {
+  title: React.ReactNode;
+  onSubmit: (event: React.FormEvent) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
+      <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
+        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
+        </div>
+        <h1 className="mb-9 mt-7 text-4xl font-medium tracking-tight">{title}</h1>
+        {children}
       </form>
     </div>
   );
@@ -359,9 +342,11 @@ function PasswordField({
   className?: string;
 }) {
   return (
-    <label htmlFor={id} className={`w-full text-[16px] text-[#6E6E68] ${className}`}>
-      {label}
-      <input
+    <div className={`w-full ${className}`}>
+      <Label htmlFor={id} className="text-muted-foreground">
+        {label}
+      </Label>
+      <Input
         id={id}
         name={id}
         autoComplete="new-password"
@@ -370,8 +355,8 @@ function PasswordField({
         minLength={8}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-[13px] border border-[#E4E4DE] bg-[#F1F1ED] px-[18px] py-[17px] text-[17px] text-[#1A1A1A] outline-none"
+        className={fieldClass}
       />
-    </label>
+    </div>
   );
 }

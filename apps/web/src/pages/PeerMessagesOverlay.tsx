@@ -1,13 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { BotAvatar } from "@rakazo/ui-web";
+import { BotAvatar, Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { peerConversations } from "../lib/peer-messages";
 import { rpc } from "../lib/rpc";
-
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Full-screen view-only transcript of a bot-to-bot exchange.
@@ -39,9 +36,6 @@ export function PeerMessagesOverlay({
     return peerConversations(messages).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [historyReady, messages, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
-  const panelRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const loadRef = useRef({ botId });
 
   useEffect(() => {
@@ -71,144 +65,86 @@ export function PeerMessagesOverlay({
     };
   }, []);
 
-  useEffect(() => {
-    const previousFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const shell = document.querySelector<HTMLElement>('[data-testid="shell-root"]');
-    const inerted: HTMLElement[] = [];
-    if (shell) {
-      for (const child of Array.from(shell.children)) {
-        if (!(child instanceof HTMLElement)) continue;
-        if (!panelRef.current || child.contains(panelRef.current)) continue;
-        if (child.inert) continue;
-        child.inert = true;
-        inerted.push(child);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
-      );
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) {
-        event.preventDefault();
-        panelRef.current?.focus();
-        return;
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    panelRef.current?.focus();
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      for (const element of inerted) element.inert = false;
-      previousFocus?.focus();
-    };
-  }, []);
-
   const title = `${botName} · ${peerBotName}`;
 
   return (
-    <div
-      ref={panelRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="peer-conversation-title"
-      data-testid="peer-conversation-view"
-      tabIndex={-1}
-      className="absolute inset-0 z-50 flex flex-col bg-[var(--rk-page)] outline-none"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex items-center -space-x-2">
-            <BotAvatar color={botColor} identity={botId} size={28} />
-            <BotAvatar color={peerBotColor} identity={peerBotId} size={28} />
+      <DialogContent
+        data-testid="peer-conversation-view"
+        showCloseButton={false}
+        className="inset-0 top-0 left-0 flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex items-center -space-x-2">
+              <BotAvatar color={botColor} identity={botId} size={28} />
+              <BotAvatar color={peerBotColor} identity={peerBotId} size={28} />
+            </div>
+            <DialogTitle className="truncate text-[15.5px] font-medium text-foreground" dir="auto">
+              {title}
+            </DialogTitle>
           </div>
-          <h1
-            id="peer-conversation-title"
-            className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
-            dir="auto"
-          >
-            {title}
-          </h1>
+          <DialogClose aria-label={t`Close`} render={<Button variant="ghost" size="sm" />}>
+            <Trans>Close</Trans>
+          </DialogClose>
         </div>
-        <button
-          type="button"
-          aria-label={t`Close`}
-          onClick={onClose}
-          className="rounded-[9px] px-3 py-1.5 text-[13.5px] text-[var(--rk-soft)] hover:bg-[var(--rk-elevated)] hover:text-[var(--rk-ink)]"
-        >
-          <Trans>Close</Trans>
-        </button>
-      </div>
 
-      {!historyReady ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
-          <Trans>Loading…</Trans>
-        </div>
-      ) : historyFailed ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
-          <Trans>Could not load this chat.</Trans>
-        </div>
-      ) : !conversation || conversation.messages.length === 0 ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
-          <Trans>No messages with {peerBotName} yet.</Trans>
-        </div>
-      ) : (
-        <div
-          data-testid="peer-conversation-transcript"
-          className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
-        >
-          {conversation.messages.map((peerMessage, index) => {
-            const sent = peerMessage.direction === "sent";
-            return (
-              <div
-                key={`${peerMessage.messageId}-${index}`}
-                className={`flex ${sent ? "justify-end" : "justify-start"}`}
-              >
+        {!historyReady ? (
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+            <Trans>Loading…</Trans>
+          </div>
+        ) : historyFailed ? (
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+            <Trans>Could not load this chat.</Trans>
+          </div>
+        ) : !conversation || conversation.messages.length === 0 ? (
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+            <Trans>No messages with {peerBotName} yet.</Trans>
+          </div>
+        ) : (
+          <div
+            data-testid="peer-conversation-transcript"
+            className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+          >
+            {conversation.messages.map((peerMessage, index) => {
+              const sent = peerMessage.direction === "sent";
+              return (
                 <div
-                  className={`max-w-[80%] rounded-[16px] px-4 py-2.5 ${
-                    sent ? "bg-[var(--rk-elevated)]" : "bg-[var(--rk-hairline)]"
-                  }`}
+                  key={`${peerMessage.messageId}-${index}`}
+                  className={`flex ${sent ? "justify-end" : "justify-start"}`}
                 >
-                  <div className="mb-1 text-[12px] text-[var(--rk-faint)]" dir="auto">
-                    {sent ? botName : peerBotName}
-                  </div>
-                  <div className="text-[14.5px] leading-[1.5] text-[var(--rk-body)]" dir="auto">
-                    <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                      sent ? "bg-accent" : "bg-muted"
+                    }`}
+                  >
+                    <div className="mb-1 text-[12px] text-muted-foreground/70" dir="auto">
+                      {sent ? botName : peerBotName}
+                    </div>
+                    <div className="text-[14.5px] leading-[1.5] text-foreground/90" dir="auto">
+                      <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
 
-      <div className="flex items-center justify-between gap-4 border-t border-[var(--rk-hairline)] px-[18px] py-3.5">
-        <p className="text-[13.5px] text-[var(--rk-muted-2)]">
-          <Trans>This chat is view-only</Trans>
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-[9px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] px-3.5 py-1.5 text-[13.5px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)]"
-        >
-          <Trans>Close</Trans>
-        </button>
-      </div>
-    </div>
+        <div className="flex items-center justify-between gap-4 border-t border-sidebar-border px-[18px] py-3.5">
+          <p className="text-[13.5px] text-muted-foreground/80">
+            <Trans>This chat is view-only</Trans>
+          </p>
+          <DialogClose render={<Button variant="outline" size="sm" />}>
+            <Trans>Close</Trans>
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

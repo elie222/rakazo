@@ -10,8 +10,11 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function NewBot() {
+  const { t } = useI18n();
   const router = useRouter();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
@@ -44,7 +47,7 @@ export default function NewBot() {
       });
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create bot");
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
     } finally {
       setPending(false);
     }
@@ -59,25 +62,25 @@ export default function NewBot() {
               onPress={close}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Cancel"
+              accessibilityLabel={t("Cancel")}
             >
-              <Text style={{ color: "#0A84FF", fontSize: 17 }}>Cancel</Text>
+              <Text style={{ color: "#0A84FF", fontSize: 17 }}>{t("Cancel")}</Text>
             </Pressable>
           ),
         }}
       />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
+        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChangeText={setName}
-          placeholder="Name this bot"
+          placeholder={t("Name this bot")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -87,12 +90,12 @@ export default function NewBot() {
             color: "#ECECEE",
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>Title</Text>
+        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Title")}</Text>
         <TextInput
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChangeText={setTitle}
-          placeholder="Describe what this bot does"
+          placeholder={t("Describe what this bot does")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -102,12 +105,12 @@ export default function NewBot() {
             color: "#ECECEE",
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>Description</Text>
+        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Description")}</Text>
         <TextInput
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChangeText={setDescription}
-          placeholder="What this bot is for"
+          placeholder={t("What this bot is for")}
           placeholderTextColor="#6C6C70"
           multiline
           style={{
@@ -134,7 +137,9 @@ export default function NewBot() {
             opacity: !name.trim() || pending ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: "#17171A", fontSize: 16 }}>{pending ? "Creating…" : "Create"}</Text>
+          <Text style={{ color: "#17171A", fontSize: 16 }}>
+            {pending ? t("Creating…") : t("Create")}
+          </Text>
         </Pressable>
       </ScrollView>
     </>

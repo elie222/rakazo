@@ -40,4 +40,33 @@ test.describe("marketing homepage", () => {
     );
     await captureScreenshot(page, testInfo, "02-marketing-get-started");
   });
+
+  test("zh homepage matches the simplified self-host CTAs", async ({ page }, testInfo) => {
+    await page.goto("/zh/");
+
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("真正属于你的 AI 队友");
+    const selfHost = page.locator("#selfhost");
+    await expect(selfHost).toBeVisible();
+    await expect(selfHost.getByRole("heading", { level: 2 })).toHaveText("电脑归你所有");
+    await expect(selfHost.getByRole("button", { name: "开始使用" })).toBeVisible();
+    await expect(selfHost.getByRole("link", { name: "在 GitHub 上查看" })).toBeVisible();
+    await expect(selfHost.getByRole("link", { name: "阅读文档" })).toBeVisible();
+
+    await expect(selfHost.locator("pre")).toHaveCount(0);
+    await expect(selfHost).not.toContainText(
+      /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
+    );
+
+    await selfHost.scrollIntoViewIfNeeded();
+    await captureScreenshot(page, testInfo, "03-marketing-homepage-zh-selfhost");
+
+    await selfHost.getByRole("button", { name: "开始使用" }).click();
+    const dialog = page.locator("[data-get-started-dialog]");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading")).toHaveText("你想如何开始？");
+    await expect(dialog).not.toContainText(
+      /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
+    );
+    await captureScreenshot(page, testInfo, "04-marketing-zh-get-started");
+  });
 });

@@ -22,7 +22,7 @@ export function CollaborationMarker({
         data-testid="peer-receipt-chip"
         aria-label={ariaLabel}
         onClick={onClick}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] text-[var(--rk-muted)] transition-colors hover:bg-[var(--rk-inset)] hover:text-[#B8B8BD]"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground/75"
       >
         <BotAvatar color={color} identity={identity} size={16} />
         <span dir="auto" className="truncate">

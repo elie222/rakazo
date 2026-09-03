@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentSecret } from "@rakazo/contracts";
 import { AGENT_SECRET_NAME_PATTERN } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { Eye, EyeOff, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
+import { BuiCard, SuccessPop } from "../components/ai/primitives";
 import { rpc } from "../lib/rpc";
 
 export function AgentSecretsOverlay({ onClose }: { onClose: () => void }) {
@@ -155,9 +156,9 @@ export function AgentSecretsOverlay({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="mt-4 flex min-h-9 items-center gap-3">
-              <BuiButton onClick={() => void save()} disabled={busy} tone="accent">
+              <Button type="button" onClick={() => void save()} disabled={busy}>
                 {saving ? <Trans>Saving…</Trans> : <Trans>Save secret</Trans>}
-              </BuiButton>
+              </Button>
               {saved ? <SuccessPop label={t`Saved`} /> : null}
             </div>
             {error ? (

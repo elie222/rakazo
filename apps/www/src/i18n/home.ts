@@ -10,6 +10,7 @@ export type HomeCopy = {
   skipToContent: string;
   starFallback: string;
   nav: {
+    home: string;
     primary: string;
     menu: string;
     product: string;
@@ -93,6 +94,13 @@ export type HomeCopy = {
   footer: {
     navLabel: string;
     languagesLabel: string;
+    links: {
+      docs: string;
+      changelog: string;
+      about: string;
+      support: string;
+      privacy: string;
+    };
   };
 };
 
@@ -200,6 +208,57 @@ const KO_ROSTER: RosterBot[] = [
   },
 ];
 
+const ZH_ROSTER: RosterBot[] = [
+  {
+    name: "Sales Outbound",
+    color: "#F5A03C",
+    slug: "rakazo/sales-outbound",
+    desc: "夜间调研客户、评估意向，用你的语气起草跟进，并留下待审清单。",
+  },
+  {
+    name: "Inbox Manager",
+    color: "#6A6BF5",
+    slug: "rakazo/inbox-manager",
+    desc: "归档杂音、回复例行邮件，把需要你过目的草稿先搁置起来。",
+  },
+  {
+    name: "Talent Scout",
+    color: "#3B82F6",
+    slug: "rakazo/talent-scout",
+    desc: "通读每份简历，按你的标准筛出候选名单，并写好介绍邮件。",
+  },
+  {
+    name: "Expense Manager",
+    color: "#F2622A",
+    slug: "rakazo/expense-manager",
+    desc: "核对票据与账目、提交报销，拿不准时先问而不是猜。",
+  },
+  {
+    name: "Bug Triage",
+    color: "#D9508A",
+    slug: "rakazo/bug-triage",
+    desc: "在真实浏览器里复现报告，并把复现步骤附到工单上。",
+  },
+  {
+    name: "Account Manager",
+    color: "#9B5CF6",
+    slug: "rakazo/account-manager",
+    desc: "掌握续约背景，回答常见问题，其余的自动升级给你。",
+  },
+  {
+    name: "Paid Media",
+    color: "#3EC5A8",
+    slug: "rakazo/paid-media",
+    desc: "每天盯投放，暂停没有转化的广告，并汇报发生了什么变化。",
+  },
+  {
+    name: "Chief of Staff",
+    color: "#8B93A8",
+    slug: "rakazo/chief-of-staff",
+    desc: "统筹整周：准备简报、安排日程，并协调其他 Bot 之间的交接。",
+  },
+];
+
 const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
@@ -210,6 +269,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     skipToContent: "Skip to content",
     starFallback: "Star",
     nav: {
+      home: "Rakazo home",
       primary: "Primary",
       menu: "Menu",
       product: "Product",
@@ -322,6 +382,13 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "Footer",
       languagesLabel: "Language",
+      links: {
+        docs: "Docs",
+        changelog: "Changelog",
+        about: "About",
+        support: "Support",
+        privacy: "Privacy",
+      },
     },
   },
   de: {
@@ -334,6 +401,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     skipToContent: "Zum Inhalt springen",
     starFallback: "Star",
     nav: {
+      home: "Rakazo-Startseite",
       primary: "Hauptnavigation",
       menu: "Menü",
       product: "Produkt",
@@ -446,6 +514,13 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "Fußzeile",
       languagesLabel: "Sprache",
+      links: {
+        docs: "Dokumentation",
+        changelog: "Änderungsprotokoll",
+        about: "Über uns",
+        support: "Support",
+        privacy: "Datenschutz",
+      },
     },
   },
   ko: {
@@ -457,6 +532,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     skipToContent: "본문으로 건너뛰기",
     starFallback: "Star",
     nav: {
+      home: "Rakazo 홈",
       primary: "주 메뉴",
       menu: "메뉴",
       product: "제품",
@@ -569,6 +645,144 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "푸터",
       languagesLabel: "언어",
+      links: {
+        docs: "문서",
+        changelog: "변경 내역",
+        about: "소개",
+        support: "지원",
+        privacy: "개인정보 처리방침",
+      },
+    },
+  },
+  zh: {
+    title: "Rakazo | 开源 Grok Bot 替代品",
+    description:
+      "Rakazo 是一个开源 Grok Bot 替代品，用于运行真正干活的持久化 AI 队友。密钥、模型、机器，都归你所有。",
+    ogImageAlt: "Rakazo：真正属于你的 AI 队友。密钥、模型、机器，都归你所有。",
+    availableLanguage: "Chinese",
+    skipToContent: "跳到主要内容",
+    starFallback: "加星",
+    nav: {
+      home: "Rakazo 首页",
+      primary: "主导航",
+      menu: "菜单",
+      product: "产品",
+      bots: "Bot",
+      selfHost: "自托管",
+      openSource: "开源",
+      docs: "文档",
+      viewOnGithub: "在 GitHub 上查看",
+    },
+    hero: {
+      badge: "Apache-2.0",
+      pill: "自托管",
+      heading: "真正属于你的 AI 队友",
+      lead: "Rakazo 是一个开源 Grok Bot 替代品。把真正的工作交给 Bot：它会登录你的工具，像你一样使用它们，并在需要你时回来询问。",
+      getStarted: "开始使用",
+      viewOnGithub: "在 GitHub 上查看",
+      setupWithAgent: "用你的智能体安装",
+      copiedForAgent: "已为你的智能体复制",
+      copyFailed: "复制失败。请重试。",
+    },
+    selfHost: {
+      eyebrow: "自托管",
+      heading: "电脑归你所有",
+      copy: "在你自己的机器上运行 Rakazo。密钥、模型、数据，都归你所有。",
+      features: [
+        {
+          title: "任意模型，密钥归你",
+          body: "让 Bot 使用 Claude、GPT、Grok 或本地模型。可按 Bot 切换：用便宜的模型做分流，用聪明的模型写作。",
+        },
+        {
+          title: "可读的例行任务",
+          body: "给 Bot 演示一次工作流程，它就会把例行任务保存为纯 Markdown，你可以阅读、编辑并提交到版本库。",
+        },
+        {
+          title: "可靠的审批",
+          body: "设定 Bot 可以独立做什么、什么必须先请示。每个操作都会写入归你所有的审计日志。",
+        },
+      ],
+    },
+    roster: {
+      eyebrow: "Bot 模板",
+      heading: "给每个 Bot 分配一份工作",
+      copy: "新建一个 Bot，它会先面试你：几个关于工作内容、写作风格和运行位置的问题。然后它就开始干活。",
+      bots: ZH_ROSTER,
+    },
+    openSource: {
+      eyebrow: "开源",
+      heading: "没有定价页，只有代码仓库。",
+      copy: "Rakazo 采用 Apache-2.0 许可证，在你自己的机器上用你自己的模型密钥运行。没有功能墙，也不会偷偷外联。",
+      selfHostTitle: "自托管",
+      selfHostMeta: "现已可用",
+      selfHostItems: [
+        "Docker 运行器和沙箱浏览器",
+        "自带模型密钥",
+        "例行任务、记忆和审计日志",
+        "Bot 数量不限，无席位、无额度限制",
+        "GitHub 社区支持",
+      ],
+      starOnGithub: "在 GitHub 上点星",
+      readTheDocs: "阅读文档",
+      cloudTitle: "云端",
+      cloudBadge: "即将推出",
+      cloudMeta: "密钥归你，电脑由我们运行",
+      cloudItems: [
+        "托管沙箱，始终在线",
+        "密钥归你，模型费用归你",
+        "同样的 Bot 和例行任务，无需迁移",
+      ],
+      getStarted: "开始使用",
+    },
+    cta: {
+      heading: "认识你的第一个 Bot",
+      copy: "把一件你一直拖延的事交给 Rakazo，让它负责跟进到底。",
+      getStarted: "开始使用",
+      viewOnGithub: "在 GitHub 上查看",
+      openSourceValue: "开源",
+      selfHostValue: "自托管",
+      stats: [
+        { value: "stars", label: "GitHub 星标" },
+        { value: "license", label: "许可证" },
+        { value: "openSource", label: "无席位、无门槛" },
+        { value: "selfHost", label: "你的机器" },
+      ],
+    },
+    getStartedDialog: {
+      closeLabel: "关闭开始使用对话框",
+      eyebrow: "开始使用",
+      title: "你想如何开始？",
+      copy: "在你的机器上自托管，或加入云端候补名单。",
+      selfHostNow: "立即自托管",
+      selfHostHint: "安装步骤见文档。",
+      cloudWaitlist: "云端候补名单",
+      cloudHint: "托管版 Rakazo 即将推出。留下你的邮箱。",
+      back: "返回",
+      successTitle: "登记成功。",
+      successCopy:
+        "托管版 Rakazo 就绪时我们会邮件通知你。想今天就上手？跳到本页的自托管部分。",
+      done: "完成",
+      viewOnGithub: "在 GitHub 上查看",
+    },
+    waitlist: {
+      emailLabel: "邮箱地址",
+      placeholder: "you@company.com",
+      submit: "继续",
+      joining: "正在登记…",
+      success: "登记成功。",
+      added: "已添加",
+      error: "未能添加你，请重试。",
+    },
+    footer: {
+      navLabel: "页脚",
+      languagesLabel: "语言",
+      links: {
+        docs: "文档",
+        changelog: "更新日志",
+        about: "关于",
+        support: "支持",
+        privacy: "隐私",
+      },
     },
   },
 };

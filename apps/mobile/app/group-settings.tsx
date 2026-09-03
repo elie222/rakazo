@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { type MobileBot, type MobileGroup, rpc } from "../lib/api";
+import { useI18n } from "../lib/i18n";
+import { tokens } from "../lib/theme";
 
 export default function GroupSettingsScreen() {
+  const { t } = useI18n();
   const router = useRouter();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const [group, setGroup] = useState<MobileGroup | null>(null);
@@ -24,13 +27,13 @@ export default function GroupSettingsScreen() {
       rpc<MobileBot[]>("bots/list"),
     ])
       .then(([nextGroup, nextBots]) => {
-        if (!nextGroup) throw new Error("Group not found");
+        if (!nextGroup) throw new Error(t("Group not found"));
         setGroup(nextGroup);
         setName(nextGroup.name);
         setSelected(nextGroup.members.map((member) => member.botId));
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load group"));
+      .catch((err) => setError(err instanceof Error ? err.message : t("Could not load group")));
   }, [groupId]);
 
   function toggle(botId: string) {
@@ -53,7 +56,7 @@ export default function GroupSettingsScreen() {
       if (input.name || input.botIds) await rpc("groups/update", input);
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save group");
+      setError(err instanceof Error ? err.message : t("Could not save group"));
     } finally {
       setPending(false);
     }
@@ -61,18 +64,18 @@ export default function GroupSettingsScreen() {
 
   function remove() {
     if (!groupId || !group) return;
-    Alert.alert(group.name, "Delete this group? Bots and their solo threads are kept.", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(group.name, t("Delete this group? Bots and their solo threads are kept."), [
+      { text: t("Cancel"), style: "cancel" },
       {
-        text: "Delete",
+        text: t("Delete"),
         style: "destructive",
         onPress: () =>
           void rpc("groups/remove", { groupId })
             .then(() => router.replace("/"))
             .catch((err) =>
               Alert.alert(
-                "Could not delete group",
-                err instanceof Error ? err.message : "Try again.",
+                t("Could not delete group"),
+                err instanceof Error ? err.message : t("Try again."),
               ),
             ),
       },
@@ -81,16 +84,16 @@ export default function GroupSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Group settings" }} />
+      <Stack.Screen options={{ title: t("Group settings") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#050506" }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
+        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="Group name"
+          placeholder={t("Group name")}
           placeholderTextColor="#6C6C70"
           style={{
             marginTop: 8,
@@ -102,7 +105,7 @@ export default function GroupSettingsScreen() {
           }}
         />
         <Text style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}>
-          Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
+          {t("Members ({min}–{max})", { min: GROUP_MEMBER_MIN, max: GROUP_MEMBER_MAX })}
         </Text>
         {bots.map((bot) => {
           const checked = selected.includes(bot.id);
@@ -143,7 +146,7 @@ export default function GroupSettingsScreen() {
           }}
         >
           <Text style={{ color: "#FFF", fontSize: 16, fontWeight: "600" }}>
-            {pending ? "Saving…" : "Save"}
+            {pending ? t("Saving…") : t("Save")}
           </Text>
         </Pressable>
         <Pressable
@@ -157,7 +160,7 @@ export default function GroupSettingsScreen() {
             alignItems: "center",
           }}
         >
-          <Text style={{ color: "#FF6B6B", fontSize: 16 }}>Delete group</Text>
+          <Text style={{ color: "#FF6B6B", fontSize: 16 }}>{t("Delete group")}</Text>
         </Pressable>
       </ScrollView>
     </>
