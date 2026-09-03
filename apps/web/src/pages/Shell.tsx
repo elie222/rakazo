@@ -12,28 +12,20 @@ import type {
   ConnectionCatalogItem,
   Group,
   Me,
-  MessageBlock,
-  ModelCatalogEntry,
-  ModelCredential,
   ProductEvent,
   Routine,
   SearchHit,
   Space,
   SpaceMemoryConfig,
   TaughtSkill,
-  ThinkingLevel,
   ThreadMessage,
   ThreadSnapshot,
-  VoiceInfo,
   VoiceStatus,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_NAME_MAX_LENGTH,
-  BOT_TITLE_MAX_LENGTH,
   canReactToThreadMessage,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
@@ -69,6 +61,13 @@ import {
   Button,
   GroupAvatar,
   type GroupAvatarMember,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -116,7 +115,6 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
-import { BuiCard, SuccessPop } from "../components/ai/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import {
   ComputersUnavailableHint,
@@ -129,7 +127,7 @@ import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
-import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
+import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
@@ -137,10 +135,8 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
-import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
-import { connectMcpOauth } from "../lib/mcp-connect";
 import { copyableMessageText } from "../lib/message-text";
 import { providerLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
@@ -182,6 +178,21 @@ import {
   routineNeedsOneShotArm,
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
+import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import {
+  ClearConversationDialog,
+  DeleteBotDialog,
+  DeleteItemDialog,
+  NewBotSectionDialog,
+  NewSpaceDialog,
+} from "./shell/dialogs";
+import {
+  AppConnectCard,
+  ArtifactImage,
+  ChartBlockView,
+  ChoiceCard,
+  McpApprovalCard,
+} from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
 
 const BotContextMenu = lazy(() =>
@@ -218,9 +229,6 @@ const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
-const ScratchpadSection = lazy(() =>
-  import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
-);
 
 type Panel =
   | "computer"
@@ -246,6 +254,8 @@ type PendingBrowserNotification = {
 };
 
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+/** Identity colour for bots the roster no longer knows about. */
+const FALLBACK_BOT_COLOR = "#85858A";
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
@@ -1648,7 +1658,7 @@ export function ShellPage() {
     const bot = resolveTranscriptBot(run.botId);
     return {
       botId: run.botId,
-      color: bot?.color ?? "#85858A",
+      color: bot?.color ?? FALLBACK_BOT_COLOR,
       name: bot?.name,
       status: run.status,
     };
@@ -2341,7 +2351,7 @@ export function ShellPage() {
           type="button"
           aria-label={t`Close navigation`}
           onClick={() => setMobileSidebarOpen(false)}
-          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-black/60 md:hidden"
+          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay md:hidden"
         />
       ) : null}
       <aside
@@ -2361,7 +2371,7 @@ export function ShellPage() {
               onClick={toggleActivityMode}
               className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
                 activityMode
-                  ? "bg-[#4C8DFF] text-white"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground/70 hover:text-foreground/75"
               }`}
             >
@@ -2372,40 +2382,41 @@ export function ShellPage() {
                 aria-hidden="true"
               />
             </button>
-            <button
-              type="button"
-              onClick={() => setCreateMenuOpen((open) => !open)}
-              className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
-              title={t`Create`}
-            >
-              +
-            </button>
-            {createMenuOpen ? (
-              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-border bg-card py-1 shadow-lg">
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-foreground hover:bg-muted"
+            <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
+              <PopoverTrigger
+                className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
+                title={t`Create`}
+              >
+                +
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
+              >
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create");
                   }}
                 >
                   <Trans>New bot</Trans>
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-foreground hover:bg-muted"
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create-group");
                   }}
                 >
                   <Trans>New group</Trans>
-                </button>
-                <div className="my-1 border-t border-border" />
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3.5 py-2 text-start text-[14px] text-foreground hover:bg-muted"
+                </Button>
+                <Separator className="my-1" />
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setNewSpaceOpen(true);
@@ -2413,23 +2424,21 @@ export function ShellPage() {
                 >
                   <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
                   <Trans>New space</Trans>
-                </button>
-              </div>
-            ) : null}
+                </Button>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
-        <div
-          data-testid="sidebar-search"
-          className="mx-2.5 mb-3 flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 text-[14px] text-foreground/90"
-        >
-          <span aria-hidden="true">⌕</span>
-          <input
+        <InputGroup data-testid="sidebar-search" className="mx-2.5 mb-3 w-auto rounded-xl bg-card">
+          <InputGroupAddon>
+            <span aria-hidden="true">⌕</span>
+          </InputGroupAddon>
+          <InputGroupInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
-            className="w-full bg-transparent text-foreground outline-none placeholder:text-foreground/90"
           />
-        </div>
+        </InputGroup>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showSpaceSearch ? (
             <SpaceSearchResults
@@ -2613,7 +2622,7 @@ export function ShellPage() {
                                 {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
-                                    className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                    className="inline-block h-2 w-2 rounded-full bg-foreground"
                                   />
                                 ) : null}
                               </span>
@@ -2691,23 +2700,24 @@ export function ShellPage() {
                       >
                         {bot.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() =>
                           void rpc.bots.restore({ botId: bot.id }).then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-foreground/75 hover:text-foreground"
                       >
                         <Trans>Restore</Trans>
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="text-destructive hover:text-destructive"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-destructive"
                       >
                         <Trans>Delete</Trans>
-                      </button>
+                      </Button>
                     </div>
                   ))}
                   {archivedGroups.map((group) => (
@@ -2719,25 +2729,26 @@ export function ShellPage() {
                       >
                         {group.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() =>
                           void rpc.groups
                             .restore({ groupId: group.id })
                             .then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-foreground/75 hover:text-foreground"
                       >
                         <Trans>Restore</Trans>
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="text-destructive hover:text-destructive"
                         aria-label={t`Delete ${group.name}`}
                         onClick={() => setDeleteGroupTarget(group)}
-                        className="text-[12.5px] text-destructive"
                       >
                         <Trans>Delete</Trans>
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </>
@@ -2757,111 +2768,99 @@ export function ShellPage() {
             <Trans>Integrations</Trans>
           </span>
         </button>
-        <div className="relative">
-          {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-border bg-muted p-2 shadow-xl">
-              <button
-                type="button"
-                aria-label={t`Settings`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setAccountSettingsFocusUsage(false);
-                  setAccountSettingsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-              >
-                <span className="text-muted-foreground">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-foreground">
-                  <Trans>Settings</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setModelsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-              >
-                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <span className="flex-1 text-start text-[14.5px] text-foreground">
-                  <Trans>Models</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMemorySettingsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-              >
-                <span className="text-muted-foreground">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-foreground">
-                  <Trans>Memory</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setVoiceOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-              >
-                <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <span className="flex-1 text-start text-[14.5px] text-foreground">
-                  <Trans>Voice</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-                onClick={async () => {
-                  setUsage(await rpc.usage.summary());
-                }}
-              >
-                <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <span className="flex-1 text-start text-[14.5px] text-foreground">
-                  <Trans>Usage</Trans>
-                </span>
-              </button>
-              {usage ? (
-                <p className="px-3 pb-2 text-[12.5px] text-muted-foreground">
-                  <Trans>
-                    {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
-                  </Trans>
-                </p>
-              ) : null}
-              <button
-                type="button"
-                onClick={() =>
-                  void authClient.signOut().then(() => {
-                    clearSpaceSelection();
-                    navigate("/");
-                  })
-                }
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-accent"
-              >
-                <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <span className="text-[14.5px] text-foreground">
-                  <Trans>Log out</Trans>
-                </span>
-              </button>
-            </div>
-          ) : null}
-          <button
-            type="button"
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger
             data-testid="user-menu-trigger"
-            onClick={() => setMenuOpen((v) => !v)}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
             <span className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[12px] text-foreground/75">
               {initials}
             </span>
             <span className="text-[14.5px] text-foreground/90">{userName}</span>
-          </button>
-        </div>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="start"
+            className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
+          >
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              aria-label={t`Settings`}
+              onClick={() => {
+                setMenuOpen(false);
+                setAccountSettingsFocusUsage(false);
+                setAccountSettingsOpen(true);
+              }}
+            >
+              <span className="text-muted-foreground">⚙</span>
+              <Trans>Settings</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              onClick={() => {
+                setMenuOpen(false);
+                setModelsOpen(true);
+              }}
+            >
+              <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
+              <Trans>Models</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              onClick={() => {
+                setMenuOpen(false);
+                setMemorySettingsOpen(true);
+              }}
+            >
+              <span className="text-muted-foreground">◇</span>
+              <Trans>Memory</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              onClick={() => {
+                setMenuOpen(false);
+                setVoiceOpen(true);
+              }}
+            >
+              <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
+              <Trans>Voice</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              onClick={async () => {
+                setUsage(await rpc.usage.summary());
+              }}
+            >
+              <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
+              <Trans>Usage</Trans>
+            </Button>
+            {usage ? (
+              <p className="px-2.5 pb-2 text-[12.5px] text-muted-foreground">
+                <Trans>
+                  {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+                </Trans>
+              </p>
+            ) : null}
+            <Button
+              variant="ghost"
+              className="w-full justify-start font-normal"
+              onClick={() =>
+                void authClient.signOut().then(() => {
+                  clearSpaceSelection();
+                  navigate("/");
+                })
+              }
+            >
+              <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
+              <Trans>Log out</Trans>
+            </Button>
+          </PopoverContent>
+        </Popover>
       </aside>
 
       <main
@@ -2920,8 +2919,8 @@ export function ShellPage() {
                   }
                   setCallOpen(true);
                 }}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent"
-                style={{ background: callOpen ? "var(--rk-elevated)" : "transparent" }}
+                data-active={callOpen ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
                 <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
               </button>
@@ -2938,8 +2937,8 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent"
-                style={{ background: panel ? "var(--rk-elevated)" : "transparent" }}
+                data-active={panel ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
                 <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
               </button>
@@ -3061,24 +3060,26 @@ export function ShellPage() {
                     <Trans>Group</Trans>
                   )}
                 </span>
-                <div className="flex gap-3.5">
+                <div className="flex gap-1">
                   {active ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
-                      className={
-                        panel === "settings"
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
-                      }
+                      className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
                     >
                       <Settings size={16} strokeWidth={1.7} />
-                    </button>
+                    </Button>
                   ) : null}
-                  <button type="button" aria-label={t`Close panel`} onClick={() => setPanel(null)}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t`Close panel`}
+                    onClick={() => setPanel(null)}
+                  >
                     <X size={16} strokeWidth={1.8} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}
@@ -3640,7 +3641,9 @@ export function ShellPage() {
             botColor={active.color}
             peerBotId={peerConversation.peerBotId}
             peerBotName={peerConversation.peerBotName}
-            peerBotColor={resolveTranscriptBot(peerConversation.peerBotId)?.color ?? "#85858A"}
+            peerBotColor={
+              resolveTranscriptBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR
+            }
             onClose={() => setPeerConversation(null)}
           />
         ) : null}
@@ -3763,14 +3766,15 @@ export function ShellPage() {
                   }}
                 />
               ) : null}
-              <button
-                type="button"
-                className="text-[16px] text-muted-foreground hover:text-foreground"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
                 aria-label={t`Close computer`}
                 onClick={() => setComputerOpen(false)}
               >
                 <X size={16} strokeWidth={1.8} />
-              </button>
+              </Button>
             </div>
           </div>
           {sendError ? (
@@ -4567,17 +4571,19 @@ const Composer = memo(function Composer({
           className="hidden"
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-border text-foreground/75 disabled:opacity-40"
+          className="rounded-full text-foreground/75"
         >
           <Plus size={17} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
           aria-label={dictating ? t`Stop dictation` : t`Dictate`}
           onMouseDown={(event) => {
             event.preventDefault();
@@ -4592,22 +4598,22 @@ const Composer = memo(function Composer({
             onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
           }}
           onTouchEnd={onDictateStop}
-          className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
+          className={`rounded-full ${
             dictating
-              ? "border-success bg-success/15 text-success"
-              : "border-border text-foreground/75"
+              ? "border-success bg-success/15 text-success hover:bg-success/15 hover:text-success"
+              : "text-foreground/75"
           }`}
           title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
         >
           <Mic size={16} strokeWidth={1.8} />
-        </button>
+        </Button>
         <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
               className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
             >
-              <Box size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />
+              <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
               <span dir="auto" className="truncate">
                 {selectedSkill.name}
               </span>
@@ -4716,35 +4722,36 @@ const Composer = memo(function Composer({
         </div>
         {running ? (
           <>
-            <button
-              type="button"
+            <Button
+              size="icon"
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+              className="size-10 rounded-full"
             >
               <ArrowUp size={18} strokeWidth={2} />
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               aria-label={t`Stop`}
               disabled={sending}
               onClick={() => void onStop()}
-              className="grid h-10 w-10 place-items-center rounded-full border border-border text-foreground/75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+              className="size-10 rounded-full text-foreground/75"
             >
               <Square size={12} strokeWidth={0} fill="currentColor" />
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="icon"
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground disabled:opacity-50"
+            className="size-9 rounded-full"
           >
             <ArrowUp size={18} strokeWidth={2} />
-          </button>
+          </Button>
         )}
       </div>
     </fieldset>
@@ -4783,15 +4790,15 @@ function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
 }
 
 function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />;
   }
   if (mention.kind === "group" || mention.kind === "everyone") {
     return (
@@ -4800,7 +4807,7 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
 }
 
 function previewMessageText(message: ThreadMessage): string {
@@ -4856,7 +4863,7 @@ function MessageHoverActions({
             aria-pressed={Boolean(message.thumbsUp)}
             onClick={() => void onReact(message)}
             className={`grid h-7 w-7 place-items-center rounded-full hover:bg-accent hover:text-foreground ${
-              message.thumbsUp ? "text-[#E9C46A]" : "text-foreground/75"
+              message.thumbsUp ? "text-warning" : "text-foreground/75"
             }`}
           >
             <ThumbsUp size={14} strokeWidth={1.8} />
@@ -5073,7 +5080,7 @@ const MessageView = memo(function MessageView({
             <CollaborationMarker
               key={i}
               ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
@@ -5098,7 +5105,7 @@ const MessageView = memo(function MessageView({
               key={i}
               className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
-              <span className="text-[#E65707]">◷</span>
+              <span className="text-warning">◷</span>
               <span>{block.text}</span>
             </div>
           );
@@ -5148,14 +5155,14 @@ const MessageView = memo(function MessageView({
                   {block.name}
                 </span>
                 <span
-                  className="rounded-full px-[11px] py-1 text-[13px]"
-                  style={{
-                    background: failed
-                      ? "rgba(239,68,68,.14)"
+                  className={`rounded-full px-[11px] py-1 text-[13px] ${
+                    failed
+                      ? "bg-destructive/15 text-destructive"
                       : running
-                        ? "rgba(245,160,60,.14)"
-                        : "rgba(48,162,75,.14)",
-                    color: failed ? "#EF4444" : running ? "#F5A03C" : "#4ECB71",
+                        ? "bg-warning/15 text-warning"
+                        : "bg-success/15 text-success"
+                  }`}
+                  style={{
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
@@ -5188,11 +5195,9 @@ const MessageView = memo(function MessageView({
                   {block.name}
                 </span>
                 <span
-                  className="rounded-full px-[11px] py-1 text-[13px]"
-                  style={{
-                    background: removed ? "rgba(239,68,68,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#EF4444" : "#4ECB71",
-                  }}
+                  className={`rounded-full px-[11px] py-1 text-[13px] ${
+                    removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
+                  }`}
                 >
                   {block.status === "archived" ? (
                     <Trans>archived</Trans>
@@ -5371,928 +5376,6 @@ const MessageView = memo(function MessageView({
   );
 });
 
-function ComputerModePicker({
-  value,
-  onChange,
-}: {
-  value: ComputerMode;
-  onChange: (value: ComputerMode) => void;
-}) {
-  return (
-    <div className="mt-4">
-      <div className="text-[14px] text-muted-foreground">
-        <Trans>Computer</Trans>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {(["team", "dedicated"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={value === mode}
-            onClick={() => onChange(mode)}
-            className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize ${
-              value === mode
-                ? "border-foreground/40 bg-muted text-foreground"
-                : "border-border text-muted-foreground"
-            }`}
-          >
-            {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CreateBotForm({
-  onCreate,
-  onCancel,
-}: {
-  onCreate: (input: {
-    name: string;
-    title: string;
-    description: string;
-    computerMode: ComputerMode;
-  }) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [computerMode, setComputerMode] = useState<ComputerMode>("team");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit() {
-    if (!name.trim() || submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await onCreate({ name, title, description, computerMode });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not create bot`);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-muted-foreground">
-          <Trans>New bot</Trans>
-        </span>
-        <button type="button" aria-label={t`Cancel new bot`} onClick={onCancel}>
-          <X size={16} strokeWidth={1.8} />
-        </button>
-      </div>
-      {error ? (
-        <p
-          role="alert"
-          data-testid="create-bot-error"
-          className="mb-3 text-[13px] text-destructive"
-        >
-          {error}
-        </p>
-      ) : null}
-      <label className="mt-6 block text-[14px] text-muted-foreground">
-        <Trans>Name</Trans>
-        <input
-          value={name}
-          maxLength={BOT_NAME_MAX_LENGTH}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t`Name this bot`}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-muted-foreground">
-        <Trans>Title</Trans>
-        <input
-          value={title}
-          maxLength={BOT_TITLE_MAX_LENGTH}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={t`Describe what this bot does`}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-muted-foreground">
-        <Trans>Description</Trans>
-        <textarea
-          value={description}
-          maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t`What this bot is for`}
-          rows={4}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-      <button
-        type="button"
-        disabled={!name.trim() || submitting}
-        onClick={() => void handleSubmit()}
-        className="mt-5 rounded-[11px] bg-primary px-4 py-2 text-primary-foreground disabled:opacity-40"
-      >
-        {submitting ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
-      </button>
-    </div>
-  );
-}
-
-function BotSettings({
-  bot,
-  computer,
-  memoryProviderConfigured,
-  onSave,
-  onExport,
-  onClear,
-  onComputerChanged,
-}: {
-  bot: Bot;
-  computer: ComputerStatus | null;
-  memoryProviderConfigured: boolean;
-  onSave: (patch: {
-    name?: string;
-    title?: string;
-    description?: string;
-    instructions?: string;
-    computerMode: ComputerMode;
-    memoryScope?: "isolated" | "shared" | null;
-    autoSpeak?: boolean;
-    voiceId?: string | null;
-    modelProvider?: string | null;
-    modelId?: string | null;
-    thinkingLevel?: ThinkingLevel | null;
-  }) => Promise<void>;
-  onExport: () => Promise<void>;
-  onClear: () => void;
-  onComputerChanged: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState(bot.name);
-  const [title, setTitle] = useState(bot.title);
-  const [description, setDescription] = useState(bot.description);
-  const [computerMode, setComputerMode] = useState(bot.computerMode);
-  const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
-  const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
-  const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [modelKey, setModelKey] = useState(
-    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
-  );
-  const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [me, setMe] = useState<Me | null>(null);
-  const [modelMetaReady, setModelMetaReady] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void rpc.voice
-      .voices({})
-      .then(setVoices)
-      .catch(() => setVoices([]));
-    void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
-      .then(([nextCredentials, nextCatalog, nextMe]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-        setMe(nextMe);
-        // Only mark ready on success — a failed catalog load must not clear
-        // an existing thinkingLevel override on save.
-        setModelMetaReady(true);
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const connectedOptions: Array<{
-    key: string;
-    provider: string;
-    modelId: string;
-    label: string;
-  }> = [];
-  const seenOptions = new Set<string>();
-  for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) => entry.provider === credential.provider && !entry.placeholder,
-    );
-    const credentialInCatalog = Boolean(
-      credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
-    );
-    // Catalog providers expand to every model for that connection. Free-form
-    // credentials (model id not in the catalog) stay a single connected pair.
-    const options =
-      credential.modelId && !credentialInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, credential.modelId),
-              provider: credential.provider,
-              modelId: credential.modelId,
-              label: `${credential.label} · ${credential.modelId}`,
-            },
-          ]
-        : providerModels.map((entry) => ({
-            key: modelOptionKey(entry.provider, entry.id),
-            provider: entry.provider,
-            modelId: entry.id,
-            label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-          }));
-    for (const option of options) {
-      if (seenOptions.has(option.key)) continue;
-      seenOptions.add(option.key);
-      connectedOptions.push(option);
-    }
-  }
-
-  const effectiveProvider = modelKey
-    ? parseModelOptionKey(modelKey)?.provider
-    : (me?.defaultProvider ?? null);
-  const effectiveModelId = modelKey
-    ? parseModelOptionKey(modelKey)?.modelId
-    : (me?.defaultModel ?? null);
-  const effectiveEntry =
-    effectiveProvider && effectiveModelId
-      ? catalog.find(
-          (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
-        )
-      : undefined;
-  const thinkingOptions = (effectiveEntry?.thinkingLevels ?? []).filter((level) => level !== "off");
-
-  return (
-    <div data-testid="bot-settings">
-      <div className="flex justify-center">
-        <BotAvatar color={bot.color} identity={bot.id} size={64} status={bot.status} />
-      </div>
-      <label className="mt-6 block text-[14px] text-muted-foreground">
-        <Trans>Name</Trans>
-        <input
-          value={name}
-          maxLength={BOT_NAME_MAX_LENGTH}
-          onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-muted-foreground">
-        <Trans>Title</Trans>
-        <input
-          value={title}
-          maxLength={BOT_TITLE_MAX_LENGTH}
-          onChange={(e) => setTitle(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <label className="mt-4 block text-[14px] text-muted-foreground">
-        <Trans>Description</Trans>
-        <textarea
-          value={description}
-          maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-        />
-      </label>
-      <details data-testid="bot-settings-advanced" className="group mt-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
-          <span className="text-muted-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
-        <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        <Suspense fallback={null}>
-          <ScratchpadSection botId={bot.id} />
-        </Suspense>
-        <label className="mt-4 block text-[14px] text-muted-foreground">
-          <Trans>Model</Trans>
-          <select
-            value={modelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
-              setThinkingLevel("");
-            }}
-            className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-          >
-            <option value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </option>
-            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
-              <option value={modelKey}>{parseModelOptionKey(modelKey)?.modelId ?? modelKey}</option>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {thinkingOptions.length ? (
-          <label className="mt-4 block text-[14px] text-muted-foreground">
-            <Trans>Thinking</Trans>
-            <select
-              value={thinkingLevel}
-              onChange={(event) => setThinkingLevel(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-            >
-              <option value="">{t`Default (medium)`}</option>
-              {thinkingOptions.map((level) => (
-                <option key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {memoryProviderConfigured ? (
-          <div className="mt-4 text-[14px] text-muted-foreground">
-            <Trans>Memory scope</Trans>
-            <div className="mt-2 flex gap-2">
-              {(
-                [
-                  { value: null, label: t`Inherit default` },
-                  { value: "isolated" as const, label: t`Isolated` },
-                  { value: "shared" as const, label: t`Shared` },
-                ] satisfies Array<{ value: "isolated" | "shared" | null; label: string }>
-              ).map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  aria-pressed={memoryScope === option.value}
-                  onClick={() => setMemoryScope(option.value)}
-                  className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
-                    memoryScope === option.value
-                      ? "border-foreground/40 bg-muted text-foreground"
-                      : "border-border text-muted-foreground"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-foreground/75">
-          <input
-            type="checkbox"
-            checked={autoSpeak}
-            onChange={(event) => setAutoSpeak(event.target.checked)}
-          />
-          <Trans>Read replies aloud</Trans>
-        </label>
-        {voices.length ? (
-          <label className="mt-4 block text-[14px] text-muted-foreground">
-            <Trans>Voice</Trans>
-            <select
-              value={voiceId}
-              onChange={(event) => setVoiceId(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
-            >
-              <option value="">{t`Account default`}</option>
-              {voices.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </details>
-      {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-      <div className="mt-5 flex flex-col items-start gap-3">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => {
-            setSaving(true);
-            setError(null);
-            const selected = modelKey ? parseModelOptionKey(modelKey) : null;
-            void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
-              computerMode,
-              memoryScope,
-              autoSpeak,
-              voiceId: voiceId || null,
-              modelProvider: selected?.provider ?? null,
-              modelId: selected?.modelId ?? null,
-              // Only clear thinking when catalog metadata is available; otherwise
-              // preserve the stored override if models.list failed or is still loading.
-              ...(modelMetaReady
-                ? {
-                    thinkingLevel: thinkingOptions.length
-                      ? ((thinkingLevel || null) as ThinkingLevel | null)
-                      : null,
-                  }
-                : {}),
-            })
-              .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
-              .finally(() => setSaving(false));
-          }}
-          className="rounded-[11px] bg-primary px-4 py-2 text-primary-foreground disabled:opacity-40"
-        >
-          <Trans>Save</Trans>
-        </button>
-        <button
-          type="button"
-          onClick={() => void onExport()}
-          className="text-[14px] text-muted-foreground"
-        >
-          <Trans>Export</Trans>
-        </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-destructive">
-          <Trans>Clear conversation</Trans>
-        </button>
-        <ComputerMaintenanceActions
-          botId={bot.id}
-          computer={computer}
-          onChanged={onComputerChanged}
-        />
-      </div>
-    </div>
-  );
-}
-
-function modelOptionKey(provider: string, modelId: string) {
-  return `${provider}::${modelId}`;
-}
-
-function thinkingLevelLabel(level: ThinkingLevel) {
-  if (level === "xhigh") return t`Extra high`;
-  if (level === "low") return t`Low`;
-  if (level === "medium") return t`Medium`;
-  if (level === "high") return t`High`;
-  if (level === "minimal") return t`Minimal`;
-  if (level === "max") return t`Max`;
-  return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
-}
-
-function parseModelOptionKey(key: string) {
-  const separator = key.indexOf("::");
-  if (separator <= 0) return null;
-  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
-}
-
-function catalogLabel(
-  catalog: ModelCatalogEntry[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
-}
-
-function NewSpaceDialog({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !saving) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
-
-  const create = () => {
-    const trimmed = name.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    void onConfirm(trimmed).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : t`Could not create space`);
-      setSaving(false);
-    });
-  };
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-overlay px-5"
-      onPointerDown={() => {
-        if (!saving) onCancel();
-      }}
-    >
-      <BuiCard
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-space-title"
-        className="w-full max-w-[420px] border border-border p-5"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2.5">
-          <Lock size={17} strokeWidth={1.8} className="text-[#A78BFA]" aria-hidden="true" />
-          <h2 id="new-space-title" className="text-[17px] font-medium text-foreground">
-            <Trans>New space</Trans>
-          </h2>
-        </div>
-        <label className="mt-4 block text-[13.5px] text-foreground/75">
-          <Trans>Name</Trans>
-          <input
-            maxLength={60}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") create();
-              if (event.key === "Escape" && !saving) onCancel();
-            }}
-            placeholder={t`Customer support`}
-            className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14.5px] text-foreground outline-none focus:border-[#66666D]"
-          />
-        </label>
-        {error ? <p className="mt-3 text-[13.5px] text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <Button variant="secondary" className="rounded-full" disabled={saving} onClick={onCancel}>
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button className="rounded-full" disabled={saving || !name.trim()} onClick={create}>
-            {saving ? <Trans>Creating…</Trans> : <Trans>Create space</Trans>}
-          </Button>
-        </div>
-      </BuiCard>
-    </div>
-  );
-}
-
-function NewBotSectionDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Pick<Bot, "name">;
-  onCancel: () => void;
-  onConfirm: (name: string) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !saving) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-overlay px-5"
-      onPointerDown={() => {
-        if (!saving) onCancel();
-      }}
-    >
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-bot-section-title"
-        className="w-full max-w-[420px] rounded-[18px] border border-border bg-muted p-5 shadow-xl"
-        onPointerDown={(event) => event.stopPropagation()}
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = name.trim();
-          if (!trimmed || saving) return;
-          setSaving(true);
-          setError(null);
-          void onConfirm(trimmed).catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : t`Could not create section`);
-            setSaving(false);
-          });
-        }}
-      >
-        <h2 id="new-bot-section-title" className="text-[17px] font-medium text-foreground">
-          <Trans>New section</Trans>
-        </h2>
-        <p className="mt-2 text-[14px] leading-6 text-muted-foreground">
-          <Trans>Create a section and move {bot.name} into it.</Trans>
-        </p>
-        <label className="mt-4 block text-[13.5px] text-foreground/75">
-          <Trans>Name</Trans>
-          <input
-            maxLength={60}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14.5px] text-foreground outline-none focus:border-[#66666D]"
-          />
-        </label>
-        {error ? <p className="mt-3 text-[13.5px] text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-foreground/75 hover:bg-accent disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="submit"
-            disabled={saving || !name.trim()}
-            className="rounded-[10px] bg-primary px-3.5 py-2 text-[14px] font-medium text-primary-foreground disabled:opacity-40"
-          >
-            {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function ClearConversationDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Pick<Bot, "name">;
-  onCancel: () => void;
-  onConfirm: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [clearing, setClearing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !clearing) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearing, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-overlay px-5"
-      onPointerDown={() => {
-        if (!clearing) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="clear-conversation-title"
-        aria-describedby="clear-conversation-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-border bg-muted p-5 shadow-xl"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-foreground">
-          <Trans>Clear {bot.name}’s conversation?</Trans>
-        </h2>
-        <p
-          id="clear-conversation-description"
-          className="mt-2 text-[14px] leading-6 text-muted-foreground"
-        >
-          <Trans>
-            This permanently removes every message and stops current work. The chat remains
-            available.
-          </Trans>
-        </p>
-        {error ? <p className="mt-3 text-[13.5px] text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-foreground/75 hover:bg-accent disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={() => {
-              setClearing(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not clear conversation`);
-                setClearing(false);
-              });
-            }}
-            className="rounded-[10px] bg-destructive px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteBotDialog({
-  bot,
-  onCancel,
-  onConfirm,
-}: {
-  bot: Bot;
-  onCancel: () => void;
-  onConfirm: (deleteMemories: boolean) => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [deleting, setDeleting] = useState(false);
-  const [deleteMemories, setDeleteMemories] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleting, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-overlay px-5"
-      onPointerDown={() => {
-        if (!deleting) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-bot-title"
-        aria-describedby="delete-bot-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-border bg-muted p-5 shadow-xl"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2 id="delete-bot-title" className="text-[17px] font-medium text-foreground">
-          <Trans>Delete {bot.name}?</Trans>
-        </h2>
-        <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-muted-foreground">
-          <Trans>
-            Its conversation, files, and routines will be permanently deleted. Bots it created stay
-            in your list.
-          </Trans>
-        </p>
-        <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-foreground/75">
-            <Trans>What about its memories?</Trans>
-          </legend>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-border p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={!deleteMemories}
-              onChange={() => setDeleteMemories(false)}
-            />
-            <span>
-              <span className="block text-[14px] text-foreground">
-                <Trans>Keep memories</Trans>
-              </span>
-              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                <Trans>Move them to your shared memory.</Trans>
-              </span>
-            </span>
-          </label>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-border p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={deleteMemories}
-              onChange={() => setDeleteMemories(true)}
-            />
-            <span>
-              <span className="block text-[14px] text-foreground">
-                <Trans>Delete memories too</Trans>
-              </span>
-              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                <Trans>This cannot be undone.</Trans>
-              </span>
-            </span>
-          </label>
-        </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-foreground/75 hover:bg-accent disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete bot`);
-                setDeleting(false);
-              });
-            }}
-            className="rounded-[10px] bg-destructive px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteItemDialog({
-  item,
-  noun,
-  onCancel,
-  onConfirm,
-}: {
-  item: { name: string };
-  noun: "group" | "routine";
-  onCancel: () => void;
-  onConfirm: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleting, onCancel]);
-
-  return (
-    <div
-      role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-overlay px-5"
-      onPointerDown={() => {
-        if (!deleting) onCancel();
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-item-title"
-        aria-describedby="delete-item-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-border bg-muted p-5 shadow-xl"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <h2 id="delete-item-title" className="text-[17px] font-medium text-foreground">
-          <Trans>Delete {item.name}?</Trans>
-        </h2>
-        <p
-          id="delete-item-description"
-          className="mt-2 text-[14px] leading-6 text-muted-foreground"
-        >
-          <Trans>This cannot be undone.</Trans>
-        </p>
-        {error ? <p className="mt-3 text-[13.5px] text-destructive">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2.5">
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-foreground/75 hover:bg-accent disabled:opacity-40"
-          >
-            <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={deleting}
-            onClick={() => {
-              setDeleting(true);
-              setError(null);
-              void onConfirm().catch((err: unknown) => {
-                setError(
-                  err instanceof Error
-                    ? err.message
-                    : noun === "group"
-                      ? t`Could not delete group`
-                      : t`Could not delete routine`,
-                );
-                setDeleting(false);
-              });
-            }}
-            className="rounded-[10px] bg-destructive px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
-          >
-            {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function embeddableScreenUrl(url: string | null): string | null {
   if (!url) return null;
   try {
@@ -6334,527 +5417,6 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? t`${botName}’s computer` : t`Team Computer`;
-}
-
-function ChoiceCard({
-  botId,
-  block,
-  onBotChanged,
-}: {
-  botId: string;
-  block: Extract<MessageBlock, { kind: "choice" }>;
-  onBotChanged: () => Promise<void>;
-}) {
-  const { t } = useLingui();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function choose(optionId: string) {
-    setPending(true);
-    setError(null);
-    try {
-      await rpc.onboarding.choose({ botId, optionId });
-      await onBotChanged().catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save this choice`);
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="flex justify-start">
-      <div className="w-[min(420px,80%)] rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
-        <div className="text-[15.5px] text-foreground/90">{block.question}</div>
-        {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
-        ) : null}
-        <div className="mt-3 space-y-1.5">
-          {block.options
-            .filter((option) => !block.answerId || option.id === block.answerId)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={Boolean(block.answerId) || pending}
-                onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-border px-3.5 py-3 text-start text-foreground disabled:opacity-60 ${block.answerId ? "bg-accent" : "bg-muted hover:bg-accent"}`}
-              >
-                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-accent text-[12.5px] font-medium text-foreground/75">
-                  {option.letter}
-                </span>
-                <span
-                  className={`flex-1 text-[15px] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
-                >
-                  {option.label}
-                </span>
-                {block.answerId === option.id ? (
-                  <span className="text-foreground/75">✓</span>
-                ) : null}
-              </button>
-            ))}
-        </div>
-        {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function AppConnectCard({
-  botId,
-  block,
-}: {
-  botId: string;
-  block: Extract<MessageBlock, { kind: "app_connect" }>;
-}) {
-  const { t } = useLingui();
-  const [busy, setBusy] = useState(false);
-  const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
-  const [error, setError] = useState<string | null>(null);
-  const connectionAttempt = useRef<AbortController | null>(null);
-  const status = block.status === "connected" ? "connected" : localStatus;
-  useEffect(() => () => connectionAttempt.current?.abort(), []);
-
-  async function authorize() {
-    connectionAttempt.current?.abort();
-    const controller = new AbortController();
-    connectionAttempt.current = controller;
-    setBusy(true);
-    setError(null);
-    try {
-      const started = await rpc.connections.begin({
-        provider: block.provider,
-        displayName: block.name,
-      });
-      if (started.authorizationUrl) {
-        window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
-      }
-      for (let i = 0; i < 60; i += 1) {
-        if (controller.signal.aborted) return;
-        const row = await rpc.connections
-          .complete({ connectionId: started.connectionId })
-          .catch(() => undefined);
-        if (row?.status === "connected") {
-          if (controller.signal.aborted) return;
-          setLocalStatus("connected");
-          await rpc.onboarding
-            .appConnected({ botId, provider: block.provider })
-            .catch(() => undefined);
-          return;
-        }
-        await abortableDelay(2_000, controller.signal);
-      }
-      if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : t`Could not authorize this app`);
-      }
-    } finally {
-      if (connectionAttempt.current === controller) {
-        connectionAttempt.current = null;
-        setBusy(false);
-      }
-    }
-  }
-  return (
-    <BuiCard
-      role="group"
-      aria-label={t`${block.name} connection`}
-      className="w-[min(420px,80%)] px-4 py-3.5"
-    >
-      <div className="flex items-center gap-3.5">
-        {block.logo ? (
-          <img
-            src={block.logo}
-            alt=""
-            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
-          />
-        ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
-            {block.name.slice(0, 1).toUpperCase()}
-          </span>
-        )}
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-medium" style={{ color: "var(--bui-ink)" }}>
-            {block.name}
-          </span>
-          <span className="block truncate text-[13px]" style={{ color: "var(--bui-ink-3)" }}>
-            {block.description}
-          </span>
-        </span>
-        {status === "connected" ? (
-          <SuccessPop label={t`Connected`} />
-        ) : (
-          <Button
-            variant="secondary"
-            className="rounded-full"
-            disabled={busy}
-            onClick={() => void authorize()}
-          >
-            {busy ? t`Waiting…` : t`Authorize`}
-          </Button>
-        )}
-      </div>
-      {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-    </BuiCard>
-  );
-}
-
-function ChartCanvas({
-  spec,
-  data,
-  width,
-  height,
-}: {
-  spec: Record<string, unknown>;
-  data: unknown[];
-  width: number;
-  height?: number;
-}) {
-  const { t } = useLingui();
-  const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{
-    title?: string;
-    swatches: { label: string; color: string }[];
-  }>({ swatches: [] });
-  useEffect(() => {
-    let cancelled = false;
-    // Plot loads lazily so threads without charts never pay for the library.
-    void (async () => {
-      try {
-        const { buildPlotParts } = await import("@rakazo/core/plot");
-        if (cancelled || !ref.current) return;
-        // Hover inspection by default: give the first mark a tooltip unless
-        // the spec already asks for one somewhere.
-        const marks = Array.isArray((spec as { marks?: unknown[] }).marks)
-          ? ((spec as { marks: { options?: Record<string, unknown> }[] }).marks ?? [])
-          : [];
-        const hasTip = marks.some((mark) => mark.options && "tip" in mark.options);
-        const liveSpec = hasTip
-          ? spec
-          : {
-              ...spec,
-              marks: marks.map((mark, index) =>
-                index === 0 ? { ...mark, options: { ...(mark.options ?? {}), tip: true } } : mark,
-              ),
-            };
-        const parts = buildPlotParts(liveSpec as never, data, document, { width, height });
-        setMeta({ title: parts.title, swatches: parts.swatches });
-        setError(null);
-        ref.current.replaceChildren(parts.plotted);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : t`Could not render chart`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [spec, data, width, height, t]);
-  if (error)
-    return (
-      <div className="text-[13px] text-[#F3A2AA]">
-        <Trans>Chart failed to render: {error}</Trans>
-      </div>
-    );
-  return (
-    <div className="text-foreground/75">
-      {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-foreground">{meta.title}</div>
-      ) : null}
-      {meta.swatches.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
-          {meta.swatches.map((swatch) => (
-            <span
-              key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
-            >
-              <span
-                className="h-[10px] w-[10px] rounded-[3px]"
-                style={{ background: swatch.color }}
-              />
-              {swatch.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div ref={ref} className="[&_svg]:max-w-full" />
-    </div>
-  );
-}
-
-type McpApprovalState = "pending" | "connecting" | "connected" | "dismissed";
-
-/** Approval card for an agent-created MCP server: the user completes browser
- * OAuth (or confirms no authorization is needed) without leaving the chat. */
-function McpApprovalCard({
-  botId,
-  name,
-  serverId,
-  transport,
-  endpoint,
-  needsOAuth,
-}: {
-  botId: string | undefined;
-  name: string;
-  serverId: string;
-  transport: string;
-  endpoint: string | null;
-  needsOAuth: boolean;
-}) {
-  const { t } = useLingui();
-  const [state, setState] = useState<McpApprovalState>("pending");
-  const [error, setError] = useState<string | null>(null);
-
-  async function authorize() {
-    if (!botId) {
-      setError(t`This server cannot be assigned without a bot.`);
-      return;
-    }
-    setState("connecting");
-    setError(null);
-    try {
-      if (needsOAuth) {
-        const result = await connectMcpOauth(serverId);
-        if (result === "cancelled") {
-          setState("pending");
-          return;
-        }
-      }
-      await rpc.mcp.assignments.approve({ botId, serverId });
-      setState("connected");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not approve this server`);
-      setState("pending");
-    }
-  }
-
-  const summary = endpoint ?? `stdio · ${transport}`;
-  return (
-    <BuiCard className="max-w-[74%] p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#30356A] text-xs text-[#E2E4FF]">
-          M
-        </span>
-        <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
-          <Trans>Connect MCP server “{name}”</Trans>
-        </span>
-      </div>
-      <p className="mt-1.5 truncate text-[12px]" style={{ color: "var(--bui-ink-3)" }}>
-        {summary}
-      </p>
-      {state === "pending" || state === "connecting" ? (
-        <>
-          <p className="mt-2 text-[13px] leading-[1.5]" style={{ color: "var(--bui-ink-2)" }}>
-            {needsOAuth
-              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
-              : t`Approve this server to let your agent use its tools.`}
-          </p>
-          {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
-          <div className="mt-3 flex gap-2">
-            <Button
-              className="rounded-full"
-              disabled={state === "connecting"}
-              onClick={() => void authorize()}
-            >
-              {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
-            </Button>
-            <Button
-              variant="secondary"
-              className="rounded-full"
-              onClick={() => setState("dismissed")}
-            >
-              <Trans>Not now</Trans>
-            </Button>
-          </div>
-        </>
-      ) : null}
-      {state === "connected" ? (
-        <div className="mt-3">
-          <SuccessPop label={t`Connected — its tools are available from your next message.`} />
-        </div>
-      ) : null}
-      {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-muted-foreground">
-          <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
-        </p>
-      ) : null}
-    </BuiCard>
-  );
-}
-
-function ChartBlockView({
-  name,
-  spec,
-  data,
-}: {
-  name: string;
-  spec: Record<string, unknown>;
-  data: unknown[];
-}) {
-  const { t } = useLingui();
-  const [expanded, setExpanded] = useState(false);
-  const [viewport, setViewport] = useState(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
-  useEffect(() => {
-    if (!expanded) return;
-    setViewport({ width: window.innerWidth, height: window.innerHeight });
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [expanded]);
-  const expandedViewport = chartViewport(viewport.width, viewport.height);
-  return (
-    <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-muted p-4">
-        <ChartCanvas spec={spec} data={data} width={520} />
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="absolute end-3 top-3 rounded-lg border border-border bg-accent px-2.5 py-1 text-[11px] text-foreground/75 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <Trans>Expand</Trans>
-        </button>
-      </div>
-      {expanded ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-8"
-          role="dialog"
-          aria-modal="true"
-          aria-label={name}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setExpanded(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setExpanded(false);
-          }}
-        >
-          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-border bg-card p-8 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-[13px] text-muted-foreground">{name}</span>
-              <button
-                type="button"
-                aria-label={t`Close chart`}
-                onClick={() => setExpanded(false)}
-                className="text-lg text-muted-foreground hover:text-foreground/90"
-              >
-                ✕
-              </button>
-            </div>
-            <ChartCanvas
-              spec={spec}
-              data={data}
-              width={expandedViewport.width}
-              height={expandedViewport.height}
-            />
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function ArtifactImage({
-  target,
-  artifactId,
-  name,
-}: {
-  target: ArtifactTarget;
-  artifactId: string;
-  name: string;
-}) {
-  const { t } = useLingui();
-  const [src, setSrc] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  const targetBotId = "botId" in target ? target.botId : undefined;
-  const targetGroupId = "groupId" in target ? target.groupId : undefined;
-
-  useEffect(() => {
-    const element = container.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "320px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!visible) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setSrc(null);
-    void rpc.artifacts
-      .get(
-        targetBotId
-          ? { botId: targetBotId, artifactId }
-          : { groupId: targetGroupId ?? "", artifactId },
-      )
-      .then((artifact) => {
-        const bytes = decodeArtifactBase64(artifact.contentBase64);
-        objectUrl = URL.createObjectURL(
-          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
-        );
-        if (cancelled) URL.revokeObjectURL(objectUrl);
-        else setSrc(objectUrl);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [artifactId, targetBotId, targetGroupId, visible]);
-
-  return (
-    <div ref={container}>
-      {src ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-[20px]"
-        >
-          <img src={src} alt={name} className="max-h-48 w-full object-cover" />
-        </button>
-      ) : (
-        <div className="rounded-[20px] border border-border bg-muted px-4 py-3 text-[14px] text-muted-foreground">
-          {name}
-        </div>
-      )}
-      {open && src ? (
-        <button
-          type="button"
-          aria-label={t`Close image preview`}
-          className="fixed inset-0 z-50 grid place-items-center bg-overlay p-6"
-          onClick={() => setOpen(false)}
-        >
-          <img
-            src={src}
-            alt={name}
-            className="max-h-[85vh] max-w-[90vw] rounded-[12px] object-contain"
-          />
-        </button>
-      ) : null}
-    </div>
-  );
 }
 
 function newClientNonce(): string {
