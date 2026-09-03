@@ -16,7 +16,7 @@
     "@chat-adapter/state-memory": "4.39.0",
     "@chat-adapter/telegram": "4.39.0",
     "@chat-adapter/whatsapp": "4.39.0",
-    "@composio/core": "0.18.0",
+    "@composio/core": "0.16.0",
     "@daytona/sdk": "^0.204.1",
     "@e2b/desktop": "^2.3.1",
     "@earendil-works/pi-agent-core": "^0.84.3",

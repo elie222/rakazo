@@ -37,10 +37,7 @@ export function userVisibleMessages<T extends PresentableMessage>(
   return messages.filter((message) => {
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
-    // A run started by another bot's message_bot call can still pause for a human
-    // answer (approval, secret, or multiple-choice ask) partway through. That ask
-    // card has nowhere else to render, so it must survive this filter even though
-    // the rest of that peer run's activity stays hidden from the transcript.
+    // Keep peer-run ask cards so a waiting human answer stays visible.
     return message.blocks.some((block) => block.kind === "ask");
   });
 }

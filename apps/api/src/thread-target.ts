@@ -322,34 +322,36 @@ export async function threadSnapshot(
       }),
       deps.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-        const [messagePage, last, run] = await Promise.all([
+        const [messagePage, last, waitingRun, busyOrFailed] = await Promise.all([
           loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
           tx.event.findFirst({
             where: { threadId: target.threadId },
             orderBy: { seq: "desc" },
             select: { seq: true },
           }),
+          // Waiting asks win over a concurrent busy run (including peer bot_message).
           tx.run.findFirst({
             where: {
               botId: target.botId,
               threadId: target.threadId,
+              status: { in: ["waiting_input", "waiting_takeover"] },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          }),
+          tx.run.findFirst({
+            where: {
+              botId: target.botId,
+              threadId: target.threadId,
+              // Hide peer bot_message busy/failed noise; waiting is handled above.
+              trigger: { not: "bot_message" },
               status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
-              // A run started by another bot's message_bot call is normally kept out of
-              // this thread's spinner/failure surface (see below) so background peer
-              // chatter doesn't bury what the human is looking at. But when that run is
-              // paused waiting on a human (waiting_input/waiting_takeover) it MUST still
-              // surface here — otherwise the ask card it created has nowhere to render
-              // and the bot sits stuck forever with no visible way to unblock it.
-              OR: [
-                { trigger: { not: "bot_message" } },
-                { status: { in: ["waiting_input", "waiting_takeover"] } },
-              ],
             },
             // The id tiebreak keeps ordering deterministic under equal
             // timestamps, matching the supersession probe below.
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           }),
         ]);
+        const run = waitingRun ?? busyOrFailed;
         // A failed run is only the thread's word while it is still the newest
         // terminal run; otherwise a stale failure would resurface in the
         // composer error strip on every load, forever. Instead of comparing
@@ -362,7 +364,7 @@ export async function threadSnapshot(
                 where: {
                   botId: target.botId,
                   threadId: target.threadId,
-                  // Match the selection query — peer bot_message runs must not bury a user-visible failure.
+                  // Peer bot_message failures must not bury a user-visible failure.
                   trigger: { not: "bot_message" },
                   status: { in: ["failed", "completed", "cancelled"] },
                 },
@@ -409,9 +411,7 @@ export async function threadSnapshot(
         where: {
           threadId: target.threadId,
           status: { in: [...ACTIVE_RUN_STATUSES] },
-          // See the matching comment in the bot-thread branch above: a bot_message-triggered
-          // run must still surface here once it's waiting on a human, or its ask card is
-          // invisible and the member is stuck with no way to unblock it.
+          // Include waiting peer runs so their ask cards stay answerable.
           OR: [
             { trigger: { not: "bot_message" } },
             { status: { in: ["waiting_input", "waiting_takeover"] } },
@@ -590,7 +590,7 @@ export async function sendThreadMessage(
           replyToMessageId: input.replyToMessageId,
           clientNonce: input.clientNonce,
         });
-        const active = await tx.run.findFirst({
+        const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
             botId: target.botId,
@@ -598,12 +598,12 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true },
         });
-        if (active && !STEERABLE_RUN_STATUSES.has(active.status)) {
+        if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
           throw new ORPCError("CONFLICT", {
-            message:
-              "This bot has a pending approval waiting on you — resolve its ask card before sending a new message.",
+            message: "Answer the pending ask first.",
           });
         }
+        const active = activeRuns[0];
         if (active) {
           await tx.steeringMessage.create({
             data: {
@@ -711,16 +711,18 @@ export async function sendThreadMessage(
         },
         select: { id: true, taskId: true, botId: true, status: true },
       });
-      const activeByBotId = new Map(activeRuns.map((run) => [run.botId, run]));
+      const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      for (const run of activeRuns) {
+        if (!STEERABLE_RUN_STATUSES.has(run.status)) {
+          throw new ORPCError("CONFLICT", {
+            message: "Answer the pending ask first.",
+          });
+        }
+        if (!activeByBotId.has(run.botId)) activeByBotId.set(run.botId, run);
+      }
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
         const active = activeByBotId.get(botId);
-        if (active && !STEERABLE_RUN_STATUSES.has(active.status)) {
-          throw new ORPCError("CONFLICT", {
-            message:
-              "This bot has a pending approval waiting on you — resolve its ask card before sending a new message.",
-          });
-        }
         if (active) {
           await tx.steeringMessage.create({
             data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },

@@ -501,8 +501,8 @@ importers:
         specifier: 4.39.0
         version: 4.39.0(zod@4.4.3)
       '@composio/core':
-        specifier: 0.18.0
-        version: 0.18.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)
+        specifier: 0.16.0
+        version: 0.16.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)
       '@daytona/sdk':
         specifier: ^0.204.1
         version: 0.204.1
@@ -1737,15 +1737,13 @@ packages:
   '@composio/client@0.1.0-alpha.76':
     resolution: {integrity: sha512-MXC5JGRVdiQ4EgLricy9o/mqBa1+1T7wHFZ6Q4ZJkrjzZqOMvxTgy21Zlb5J/1oGkB2bg9UDzpH8PkXCp/D4zA==}
 
-  '@composio/core@0.18.0':
-    resolution: {integrity: sha512-u8dfSDJV+BYiQYJBxbk6xRI8o8f7O6nb8xE0rJmvC+8zKNJdY/M119R8a30grLh07a6fcLeVFYCJlTRpCjwKyg==}
-    engines: {node: '>=22.22.3'}
+  '@composio/core@0.16.0':
+    resolution: {integrity: sha512-m4LEjOaH4LdhP3rz3NyNXZwh3AI915morLV1vrjscW2ACGqL+fTHACiuem0sz45tPoW5DkPYP8k/Z5D4Zk3KLA==}
     peerDependencies:
       zod: '>=3.25.76 <5'
 
-  '@composio/json-schema-to-zod@0.3.1':
-    resolution: {integrity: sha512-ZmDksfKZrkJZj6XCgR+AmjsxqvFnfc4XDEQPfJJZMYxIqhE3MBZ2KimLuPT+YGahO4h9uzT2EYi9asMF4qR4+g==}
-    engines: {node: '>=22.22.3'}
+  '@composio/json-schema-to-zod@0.3.0':
+    resolution: {integrity: sha512-Lgz5QlclPsd9mo8FGn/12h3cwTpN6A9aYvucO1umjnuvyetb6nC//nHEu9TDU+BN5Sa0n+qmUUv4Tzd4wI4xeA==}
     peerDependencies:
       zod: '>=3.25.76 <5'
 
@@ -11026,17 +11024,16 @@ snapshots:
 
   '@composio/client@0.1.0-alpha.76': {}
 
-  '@composio/core@0.18.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)':
+  '@composio/core@0.16.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)':
     dependencies:
       '@composio/client': 0.1.0-alpha.76
-      '@composio/json-schema-to-zod': 0.3.1(zod@4.4.3)
+      '@composio/json-schema-to-zod': 0.3.0(zod@4.4.3)
       '@types/json-schema': 7.0.15
       is-fs-case-sensitive: 2.0.0
       openai: 7.4.0(@aws-sdk/credential-provider-node@3.972.80)(@smithy/signature-v4@5.7.0)(ws@8.21.3)(zod@4.4.3)
       picocolors: 1.1.1
       pusher-js: 8.6.0
       semver: 7.8.5
-      undici: 7.29.0
       zod: 4.4.3
       zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
@@ -11045,7 +11042,7 @@ snapshots:
       - '@smithy/signature-v4'
       - ws
 
-  '@composio/json-schema-to-zod@0.3.1(zod@4.4.3)':
+  '@composio/json-schema-to-zod@0.3.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 

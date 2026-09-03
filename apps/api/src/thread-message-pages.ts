@@ -106,11 +106,7 @@ async function withoutPeerRunMessages<T extends { runId: string | null; blocks: 
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
   return rows.filter((row) => {
     if (!row.runId || !peerRunIds.has(row.runId)) return true;
-    // Keep compact sent/received receipts; clients render them as chips. Also keep any
-    // ask card a peer-triggered run created — it needs the user's own answer (approval,
-    // secret, or choice) and has nowhere else to render. Hiding it here left bots that
-    // were delegated a task by another bot (the normal way work gets assigned) stuck in
-    // waiting_input forever with no visible way to unblock them.
+    // Keep peer receipts (chips) and ask cards that need a human answer.
     const blocks = row.blocks as MessageBlock[];
     return blocks.some(
       (block) =>

@@ -53,4 +53,24 @@ describe("user-visible messages", () => {
       userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
     ).toEqual(["answer"]);
   });
+
+  it("keeps a peer-run ask card visible while hiding other peer activity", () => {
+    const messages = [
+      message("ask", "run-peer", [
+        {
+          kind: "ask",
+          text: "Pick one",
+          status: "pending",
+          actions: [{ id: "a", label: "A" }],
+        },
+      ]),
+      message("activity", "run-peer", [{ kind: "steps", steps: [{ label: "Work", count: 1 }] }]),
+      message("reply", "run-peer", [{ kind: "text", text: "Peer body" }]),
+      message("answer", "run-user", [{ kind: "text", text: "Visible answer" }]),
+    ];
+
+    expect(
+      userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
+    ).toEqual(["ask", "answer"]);
+  });
 });
