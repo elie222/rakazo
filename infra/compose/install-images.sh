@@ -60,14 +60,15 @@ done
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
 # curl uses lowercase http_proxy for http:// URLs; many Mainland hosts only export HTTP_PROXY.
+# Copy only when lowercase is unset; an explicit empty http_proxy='' is preserved.
 sync_curl_proxy_env() {
-  if [[ -n "${HTTP_PROXY:-}" && -z "${http_proxy:-}" ]]; then
+  if [[ -n "${HTTP_PROXY:-}" && -z "${http_proxy+x}" ]]; then
     export http_proxy="$HTTP_PROXY"
   fi
-  if [[ -n "${HTTPS_PROXY:-}" && -z "${https_proxy:-}" ]]; then
+  if [[ -n "${HTTPS_PROXY:-}" && -z "${https_proxy+x}" ]]; then
     export https_proxy="$HTTPS_PROXY"
   fi
-  if [[ -n "${NO_PROXY:-}" && -z "${no_proxy:-}" ]]; then
+  if [[ -n "${NO_PROXY:-}" && -z "${no_proxy+x}" ]]; then
     export no_proxy="$NO_PROXY"
   fi
 }
