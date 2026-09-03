@@ -49,7 +49,7 @@ export const darkTokens = {
   foreground: "#ECECEE",
   card: "#141416",
   cardForeground: "#ECECEE",
-  popover: "#1A1A1D",
+  popover: "#141416",
   popoverForeground: "#ECECEE",
   primary: "#F1F1EF",
   primaryForeground: "#1A1A1A",

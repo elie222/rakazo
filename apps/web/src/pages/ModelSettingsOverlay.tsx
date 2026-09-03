@@ -5,8 +5,19 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
-import { ChevronDown } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
+import { ChevronDown, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -296,32 +307,37 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-4 sm:p-10">
-      <div className="flex h-[min(760px,100%)] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl">
-        <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) handleClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
+      >
+        <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-foreground">
+            <DialogTitle className="text-2xl text-foreground">
               <Trans>Models</Trans>
-            </div>
-            <p className="mt-1 text-[13.5px] text-muted-foreground/70">
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
               {loading ? (
                 <Trans>Loading model catalog…</Trans>
               ) : (
                 <Trans>Choose which connected model Rakazo uses.</Trans>
               )}
-            </p>
+            </DialogDescription>
           </div>
-          <button
-            type="button"
-            aria-label={t`Close model settings`}
-            onClick={handleClose}
-            className="text-muted-foreground"
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
           >
-            ✕
-          </button>
-        </div>
+            <X />
+          </DialogClose>
+        </DialogHeader>
 
-        <div className="mx-6 mt-5 rounded-[14px] border border-border bg-card px-4 py-3 sm:mx-8">
+        <div className="mx-6 mt-5 rounded-xl border border-border px-4 py-3 sm:mx-8">
           <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
             <Trans>Active model</Trans>
           </div>
@@ -343,14 +359,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             <label className="sr-only" htmlFor="model-provider-search">
               <Trans>Search providers</Trans>
             </label>
-            <input
+            <Input
               id="model-provider-search"
               value={providerQuery}
               onChange={(event) => setProviderQuery(event.target.value)}
               placeholder={t`Search providers`}
-              className="w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none placeholder:text-muted-foreground/80 focus:border-foreground/40"
+              className="h-10 rounded-xl px-3.5"
             />
-            <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-[13px] border border-border md:min-h-0 md:max-h-none md:flex-1">
+            <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-xl border border-border md:min-h-0 md:max-h-none md:flex-1">
               {filteredGroups.length ? (
                 filteredGroups.map((group) => {
                   const connected = credentials.some((entry) => entry.provider === group.id);
@@ -360,7 +376,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       onClick={() => chooseProvider(group.id)}
                       className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
-                        group.id === provider ? "bg-muted" : "hover:bg-card"
+                        group.id === provider ? "bg-muted" : "hover:bg-accent"
                       }`}
                     >
                       <span className="min-w-0 flex-1">
@@ -397,15 +413,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 <div className="block text-[13.5px] text-muted-foreground">
                   {isOpenAiCompatible ? (
                     <>
-                      <label className="block">
+                      <label className="block" htmlFor="model-base-url">
                         <Trans>Server URL</Trans>
-                        <input
+                        <Input
+                          id="model-base-url"
                           value={baseUrl}
                           onChange={(event) => updateBaseUrl(event.target.value)}
                           aria-label={t`OpenAI-compatible server URL`}
                           placeholder="http://127.0.0.1:8000/v1"
                           autoComplete="off"
-                          className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </label>
                       <details className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
@@ -432,37 +449,29 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           <Trans>Model</Trans>
                         </span>
                         {probeModels.length && probeModels.includes(modelId) ? (
-                          <div className="relative mt-2">
-                            <select
-                              value={modelId}
-                              onChange={(event) => {
-                                cancelOAuthAttempt();
-                                selectionRevisionRef.current += 1;
-                                setModelId(event.target.value);
-                                setError(null);
-                                setNotice(null);
-                              }}
-                              aria-label={t`Models from server`}
-                              className="w-full appearance-none rounded-[11px] border border-border bg-card py-3 pl-3.5 pr-11 text-sm text-foreground"
-                            >
-                              {probeModels.map((id) => (
-                                <option key={id} value={id}>
-                                  {id}
-                                </option>
-                              ))}
-                              <option value="">
-                                <Trans>Other model…</Trans>
-                              </option>
-                            </select>
-                            <span
-                              aria-hidden="true"
-                              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground"
-                            >
-                              <ChevronDown size={16} strokeWidth={1.8} />
-                            </span>
-                          </div>
+                          <NativeSelect
+                            className="mt-2 w-full text-foreground"
+                            value={modelId}
+                            onChange={(event) => {
+                              cancelOAuthAttempt();
+                              selectionRevisionRef.current += 1;
+                              setModelId(event.target.value);
+                              setError(null);
+                              setNotice(null);
+                            }}
+                            aria-label={t`Models from server`}
+                          >
+                            {probeModels.map((id) => (
+                              <NativeSelectOption key={id} value={id}>
+                                {id}
+                              </NativeSelectOption>
+                            ))}
+                            <NativeSelectOption value="">
+                              <Trans>Other model…</Trans>
+                            </NativeSelectOption>
+                          </NativeSelect>
                         ) : (
-                          <input
+                          <Input
                             value={modelId}
                             onChange={(event) => {
                               cancelOAuthAttempt();
@@ -473,17 +482,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                             }}
                             aria-label={t`Model id`}
                             placeholder="exact-model-id"
-                            className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none"
+                            className="mt-2 h-10 text-foreground"
                           />
                         )}
                         {probeModels.length && !probeModels.includes(modelId) ? (
-                          <button
+                          <Button
                             type="button"
-                            className="mt-2 text-[13px] text-muted-foreground underline"
+                            variant="link"
+                            className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
                             onClick={() => setModelId(probeModels[0] ?? "")}
                           >
                             <Trans>Use a found model</Trans>
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     </>
@@ -513,7 +523,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 ) : null}
 
                 {!isOpenAiCompatible ? (
-                  <div className="mt-5 rounded-[13px] border border-border px-4 py-3">
+                  <div className="mt-5 rounded-xl border border-border px-4 py-3">
                     <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                       <Trans>Personal credential</Trans>
                     </div>
@@ -539,7 +549,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 {subscriptionSignIn ? (
                   <div className="mt-5">
                     {oauth ? (
-                      <div className="rounded-[13px] border border-border px-4 py-3">
+                      <div className="rounded-xl border border-border px-4 py-3">
                         {oauth.mode === "auth-url" ? (
                           <>
                             <p className="text-sm leading-[1.5] text-muted-foreground">
@@ -557,14 +567,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               </Trans>
                             </p>
                             <div className="mt-3 flex items-center gap-2">
-                              <input
+                              <Input
                                 value={pasteCode}
                                 onChange={(e) => setPasteCode(e.target.value)}
                                 aria-label={t`Authorization code or callback URL`}
                                 autoComplete="off"
                                 spellCheck={false}
                                 placeholder="http://localhost:53692/callback?code=…"
-                                className="w-full rounded-[11px] border border-border bg-transparent px-3.5 py-2.5 text-[13px] text-foreground"
+                                className="text-foreground md:text-[13px]"
                               />
                               <Button
                                 type="button"
@@ -629,18 +639,21 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         <summary className="w-fit cursor-pointer select-none">
                           <Trans>API key</Trans>
                         </summary>
-                        <input
+                        <Input
                           aria-label={t`API key`}
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
                           placeholder={t`Optional`}
                           type="password"
                           autoComplete="new-password"
-                          className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </details>
                     ) : (
-                      <label className="block text-[13.5px] text-muted-foreground">
+                      <label
+                        className="block text-[13.5px] text-muted-foreground"
+                        htmlFor="model-api-key"
+                      >
                         {credential ? (
                           <Trans>Replace API key</Trans>
                         ) : subscriptionSignIn ? (
@@ -648,13 +661,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ) : (
                           <Trans>API key</Trans>
                         )}
-                        <input
+                        <Input
+                          id="model-api-key"
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
                           placeholder="sk-…"
                           type="password"
                           autoComplete="new-password"
-                          className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </label>
                     )}
@@ -721,8 +735,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -860,6 +874,7 @@ function ModelPicker({
       choose(activeOptionIndex());
     } else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
@@ -868,6 +883,7 @@ function ModelPicker({
   function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       return;
     }
@@ -901,6 +917,7 @@ function ModelPicker({
       choose(index);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
@@ -916,7 +933,7 @@ function ModelPicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-border bg-card px-3.5 py-3 text-start text-foreground outline-none focus-visible:border-foreground/40"
+        className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-start text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >
@@ -926,7 +943,7 @@ function ModelPicker({
         </span>
       </button>
       {open ? (
-        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-[11px] border border-border bg-card shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
           <input
             ref={searchRef}
             type="text"
@@ -1016,8 +1033,8 @@ function ModelOption({
       role="option"
       aria-selected={option.id === value}
       tabIndex={highlighted ? 0 : -1}
-      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-foreground outline-none hover:bg-muted focus-visible:bg-muted ${
-        highlighted || option.id === value ? "bg-muted" : ""
+      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-foreground outline-none hover:bg-accent focus-visible:bg-accent ${
+        highlighted || option.id === value ? "bg-accent" : ""
       }`}
       onClick={() => choose(index)}
       onKeyDown={(event) => onOptionKeyDown(event, index)}

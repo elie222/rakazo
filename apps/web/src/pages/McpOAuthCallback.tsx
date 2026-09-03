@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
@@ -55,17 +56,13 @@ export function McpOAuthCallbackPage() {
             <Trans>Finishing MCP connection…</Trans>
           )}
         </div>
-        {error ? <p className="mt-2 max-w-md text-sm text-[#85858B]">{error}</p> : null}
+        {error ? <p className="mt-2 max-w-md text-sm text-muted-foreground">{error}</p> : null}
         {showReturn ? (
-          <button
-            type="button"
-            onClick={() => navigate("/app")}
-            className="mt-5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
-          >
+          <Button type="button" className="mt-5" onClick={() => navigate("/app")}>
             <Trans>Return to Rakazo</Trans>
-          </button>
+          </Button>
         ) : (
-          <p className="mt-2 text-sm text-[#85858B]">
+          <p className="mt-2 text-sm text-muted-foreground">
             {error || done ? (
               <Trans>You can close this window.</Trans>
             ) : (

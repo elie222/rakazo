@@ -6,7 +6,22 @@ import {
   EMPTY_PLUGIN_CATALOG_MESSAGE,
   matchFeaturedConnectorId,
 } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
@@ -230,29 +245,34 @@ export function PluginsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-10">
-      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl">
-        <div className="flex items-start justify-between px-8 pt-7">
-          <div className="text-2xl font-medium text-foreground">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
+      >
+        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
+          <DialogTitle className="text-2xl text-foreground">
             <Trans>Integrations</Trans>
-          </div>
-          <button
-            type="button"
-            aria-label={t`Close integrations`}
-            onClick={onClose}
-            className="text-muted-foreground"
+          </DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
           >
-            ✕
-          </button>
-        </div>
+            <X />
+          </DialogClose>
+        </DialogHeader>
 
         <div className="px-8 pt-4">
-          <input
+          <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="w-full rounded-[13px] border border-border bg-card px-4 py-3 text-[15px] text-foreground outline-none"
+            className="h-11 rounded-xl px-4 md:text-[15px]"
           />
         </div>
 
@@ -280,7 +300,7 @@ export function PluginsOverlay({
                     return (
                       <div
                         key={key}
-                        className={`flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${
+                        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${
                           disabled ? "opacity-70" : ""
                         }`}
                       >
@@ -300,7 +320,7 @@ export function PluginsOverlay({
                             {tile.label}
                           </div>
                           {disabled ? (
-                            <div className="truncate text-[12.5px] text-[#707077]">
+                            <div className="truncate text-[12.5px] text-muted-foreground">
                               <Trans>Not in the plugin catalog</Trans>
                             </div>
                           ) : null}
@@ -350,10 +370,7 @@ export function PluginsOverlay({
               {visible.map((item) => {
                 const key = itemKey(item);
                 return (
-                  <div
-                    key={key}
-                    className="flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2"
-                  >
+                  <div key={key} className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
                     {item.logo ? (
                       <img
                         src={item.logo}
@@ -422,13 +439,15 @@ export function PluginsOverlay({
 
             <div className="mt-4 space-y-4">
               {onOpenMcp ? (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  size="sm"
                   onClick={onOpenMcp}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground/75 hover:bg-accent"
                 >
                   <Trans>MCP servers</Trans>
-                </button>
+                </Button>
               ) : null}
 
               <div className="flex flex-wrap gap-2">
@@ -464,101 +483,101 @@ export function PluginsOverlay({
               {sourceError ? <p className="text-sm text-destructive">{sourceError}</p> : null}
 
               {sourceKind ? (
-                <div className="space-y-3 rounded-[16px] border border-border bg-card p-5">
-                  <div className="text-base font-medium text-foreground">
-                    {sourceKind === "treg" ? (
-                      <Trans>Connect Treg</Trans>
-                    ) : sourceKind === "mcp" ? (
-                      <Trans>Add remote MCP server</Trans>
-                    ) : (
-                      <Trans>Import OpenAPI JSON</Trans>
-                    )}
-                  </div>
-                  <input
-                    value={sourceName}
-                    onChange={(event) => setSourceName(event.target.value)}
-                    placeholder={t`Display name`}
-                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
-                  />
-                  {sourceKind !== "treg" ? (
-                    <input
-                      value={sourceUrl}
-                      onChange={(event) => setSourceUrl(event.target.value)}
-                      placeholder={
-                        sourceKind === "mcp"
-                          ? "https://example.com/mcp"
-                          : "https://example.com/openapi.json"
-                      }
-                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
-                    />
-                  ) : null}
-                  {sourceKind !== "treg" ? (
-                    <select
-                      value={authType}
-                      onChange={(event) => setAuthType(event.target.value as typeof authType)}
-                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
-                    >
-                      <option value="none">
-                        <Trans>No authentication</Trans>
-                      </option>
-                      <option value="bearer">
-                        <Trans>Bearer token</Trans>
-                      </option>
-                      <option value="header">
-                        <Trans>API key header</Trans>
-                      </option>
-                    </select>
-                  ) : null}
-                  {authType === "header" && sourceKind !== "treg" ? (
-                    <input
-                      value={authName}
-                      onChange={(event) => setAuthName(event.target.value)}
-                      placeholder={t`Header name`}
-                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
-                    />
-                  ) : null}
-                  {sourceKind === "treg" || authType !== "none" ? (
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={credential}
-                      onChange={(event) => setCredential(event.target.value)}
-                      placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
-                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
-                    />
-                  ) : null}
-                  <p className="text-xs leading-5 text-[#707077]">
-                    <Trans>
-                      Rakazo verifies the source before saving it. Credentials are encrypted and are
-                      never returned to clients or exposed to the model.
-                    </Trans>
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="rounded-full"
-                      size="sm"
-                      disabled={pending === "install-source"}
-                      onClick={() => void installSource()}
-                    >
-                      {pending === "install-source" ? (
-                        <Trans>Verifying…</Trans>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      {sourceKind === "treg" ? (
+                        <Trans>Connect Treg</Trans>
+                      ) : sourceKind === "mcp" ? (
+                        <Trans>Add remote MCP server</Trans>
                       ) : (
-                        <Trans>Verify and add</Trans>
+                        <Trans>Import OpenAPI JSON</Trans>
                       )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="rounded-full"
-                      size="sm"
-                      onClick={() => setSourceKind(null)}
-                    >
-                      <Trans>Cancel</Trans>
-                    </Button>
-                  </div>
-                </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Input
+                      value={sourceName}
+                      onChange={(event) => setSourceName(event.target.value)}
+                      placeholder={t`Display name`}
+                    />
+                    {sourceKind !== "treg" ? (
+                      <Input
+                        value={sourceUrl}
+                        onChange={(event) => setSourceUrl(event.target.value)}
+                        placeholder={
+                          sourceKind === "mcp"
+                            ? "https://example.com/mcp"
+                            : "https://example.com/openapi.json"
+                        }
+                      />
+                    ) : null}
+                    {sourceKind !== "treg" ? (
+                      <NativeSelect
+                        className="w-full"
+                        value={authType}
+                        onChange={(event) => setAuthType(event.target.value as typeof authType)}
+                      >
+                        <NativeSelectOption value="none">
+                          <Trans>No authentication</Trans>
+                        </NativeSelectOption>
+                        <NativeSelectOption value="bearer">
+                          <Trans>Bearer token</Trans>
+                        </NativeSelectOption>
+                        <NativeSelectOption value="header">
+                          <Trans>API key header</Trans>
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    ) : null}
+                    {authType === "header" && sourceKind !== "treg" ? (
+                      <Input
+                        value={authName}
+                        onChange={(event) => setAuthName(event.target.value)}
+                        placeholder={t`Header name`}
+                      />
+                    ) : null}
+                    {sourceKind === "treg" || authType !== "none" ? (
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={credential}
+                        onChange={(event) => setCredential(event.target.value)}
+                        placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
+                      />
+                    ) : null}
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      <Trans>
+                        Rakazo verifies the source before saving it. Credentials are encrypted and
+                        are never returned to clients or exposed to the model.
+                      </Trans>
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        disabled={pending === "install-source"}
+                        onClick={() => void installSource()}
+                      >
+                        {pending === "install-source" ? (
+                          <Trans>Verifying…</Trans>
+                        ) : (
+                          <Trans>Verify and add</Trans>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        onClick={() => setSourceKind(null)}
+                      >
+                        <Trans>Cancel</Trans>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               ) : null}
 
               <div>
@@ -571,10 +590,7 @@ export function PluginsOverlay({
                   </p>
                 ) : null}
                 {sources.map((source) => (
-                  <div
-                    key={source.id}
-                    className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
-                  >
+                  <div key={source.id} className="flex items-center gap-4 rounded-xl px-3 py-2.5">
                     <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-accent font-semibold uppercase text-foreground">
                       {source.kind === "mcp" ? "M" : "A"}
                     </div>
@@ -605,7 +621,7 @@ export function PluginsOverlay({
             </div>
           </details>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
