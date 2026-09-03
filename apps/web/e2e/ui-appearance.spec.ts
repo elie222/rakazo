@@ -70,6 +70,17 @@ test("account settings appearance control switches to light mode", async ({ page
   await captureScreenshot(page, testInfo, "ui-appearance-light-shell");
   await captureSidebarSearchSelected(page, testInfo, "sidebar-search-selected-light");
 
+  const composer = page.getByRole("combobox", { name: /^Message/ });
+  await composer.fill("Please review `shared/PROJECT_CHECKPOINT_WRAPUP.md`.");
+  await composer.press("Enter");
+  const inlinePath = page
+    .getByTestId("transcript")
+    .locator("code")
+    .filter({ hasText: "shared/PROJECT_CHECKPOINT_WRAPUP.md" });
+  await expect(inlinePath).toBeVisible({ timeout: 30_000 });
+  await expect(inlinePath).toHaveCSS("color", "rgb(243, 243, 244)");
+  await captureScreenshot(page, testInfo, "inline-code-light");
+
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(settings).toBeVisible();
