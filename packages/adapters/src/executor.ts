@@ -2676,7 +2676,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
         const pluginLine =
           connectedPlugins.length > 0
-            ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Use those plugin tools when the user asks about those apps.`
+            ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
             : "No plugins are connected yet.";
         const taughtSkillIndex = savedSkills.slice(0, 20);
         const taughtSkillsLine =

@@ -412,7 +412,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         name: { type: "string", description: "Short label shown in Routines." },
         prompt: {
           type: "string",
-          description: "What the bot should do when the schedule fires.",
+          description:
+            "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
         },
         cron: { type: "string", description: "5-field cron for repeating schedules." },
         every: { type: "number", description: "Repeat interval amount for repeating schedules." },
