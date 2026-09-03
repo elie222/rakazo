@@ -106,6 +106,11 @@ export function registerLocalProvider(models: MutableModels): MutableModels {
   return models;
 }
 
+/**
+ * Provider id for a self-hosted MLX OpenAI-compatible server (mlx-openai-server /
+ * Rapid MLX). Separate from `local` so an MLX endpoint and an Ollama endpoint can
+ * coexist. The endpoint is keyless: `resolve` returns a placeholder header.
+ */
 export const LOCAL_MLX_PROVIDER_ID = "local-mlx";
 
 const LOCAL_MLX_DEFAULT_BASE_URL = "http://127.0.0.1:8081/v1";
@@ -113,13 +118,8 @@ const LOCAL_MLX_CONTEXT_WINDOW = 128_000;
 const LOCAL_MLX_MAX_TOKENS = 8_192;
 
 /**
- * Self-hosted MLX OpenAI-compatible server (e.g. mlx-openai-server / Rapid MLX).
- *
- * Kept as its own provider id so an MLX endpoint can coexist with the generic
- * `local` provider rather than being folded into it. Configured through
- * `LOCAL_MLX_BASE_URL` / `LOCAL_MLX_MODEL_ID`, exactly as before the local-provider
- * refactor. The endpoint is keyless: `resolve` returns a placeholder because the
- * server ignores the header.
+ * The MLX server base URL from `LOCAL_MLX_BASE_URL`, validated to be an absolute
+ * HTTP(S) URL. Defaults to a local mlx-openai-server port.
  */
 function localMlxBaseUrl(): string {
   const value = (process.env.LOCAL_MLX_BASE_URL ?? LOCAL_MLX_DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -140,6 +140,7 @@ function localMlxModelId(): string {
   return (process.env.LOCAL_MLX_MODEL_ID ?? "").trim();
 }
 
+/** A reasoning-capable openai-completions model with Qwen chat-template thinking. */
 function localMlxModel(id: string, baseUrl: string): Model<"openai-completions"> {
   return {
     id,

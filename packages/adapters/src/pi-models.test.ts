@@ -63,6 +63,20 @@ describe("Pi model catalog", () => {
     });
   });
 
+  it("lists a configured local-mlx model in the client catalog", async () => {
+    vi.stubEnv("LOCAL_MLX_MODEL_ID", "/models/qwen3.8-27b-4bit");
+    vi.stubEnv("LOCAL_MLX_BASE_URL", "http://127.0.0.1:8090/v1");
+    vi.resetModules();
+
+    const { listPiCatalog: listConfiguredCatalog } = await import("./pi-models.js");
+    const entries = listConfiguredCatalog().filter((entry) => entry.provider === "local-mlx");
+    expect(entries.map((entry) => entry.id)).toEqual(["/models/qwen3.8-27b-4bit"]);
+    expect(entries[0]).toMatchObject({
+      reasoning: true,
+      billing: expect.stringContaining("MLX server"),
+    });
+  });
+
   it("normalizes a PI_DEFAULT_MODEL id that ends in -latest", async () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
     vi.stubEnv("PI_DEFAULT_MODEL", "foo-latest");
