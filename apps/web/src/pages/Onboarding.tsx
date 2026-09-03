@@ -4,18 +4,25 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@rakazo/ui-web";
-import { Check } from "lucide-react";
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
-import {
-  featuredModelProviders,
-  selectedProviderOutsideSearchResults,
-} from "../lib/onboarding-providers";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
+
+function providerLabel(entry: ModelCatalogEntry): string {
+  if (entry.provider === "openai-codex") return "ChatGPT";
+  return entry.providerName ?? entry.provider;
+}
 
 export function OnboardingPage() {
   const { t } = useLingui();
@@ -23,8 +30,6 @@ export function OnboardingPage() {
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [query, setQuery] = useState("");
-  const [showAllProviders, setShowAllProviders] = useState(false);
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
@@ -32,9 +37,7 @@ export function OnboardingPage() {
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(() => t`Assistant`);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [needsModel, setNeedsModel] = useState(false);
@@ -87,41 +90,36 @@ export function OnboardingPage() {
     return [...seen.values()];
   }, [catalog]);
 
-  const filteredProviders = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return providers;
-    const matching = new Set(
-      catalog
-        .filter((entry) =>
-          `${entry.provider} ${entry.providerName ?? ""} ${entry.label} ${entry.id} ${entry.billing} ${entry.oauthLabel ?? ""}`
-            .toLowerCase()
-            .includes(q),
-        )
-        .map((entry) => entry.provider),
-    );
-    return providers.filter((entry) => matching.has(entry.provider));
-  }, [catalog, providers, query]);
-
-  const displayedProviders = useMemo(
-    () => (showAllProviders ? filteredProviders : featuredModelProviders(providers, provider)),
-    [filteredProviders, provider, providers, showAllProviders],
-  );
-
-  const selectedProviderOutsideResults = useMemo(
+  const providerItems = useMemo(
     () =>
-      showAllProviders
-        ? selectedProviderOutsideSearchResults(filteredProviders, providers, provider)
-        : undefined,
-    [filteredProviders, provider, providers, showAllProviders],
+      providers.map((entry) => ({
+        value: entry.provider,
+        label: providerLabel(entry),
+      })),
+    [providers],
   );
-
-  const providerRows = selectedProviderOutsideResults
-    ? [selectedProviderOutsideResults, ...displayedProviders]
-    : displayedProviders;
 
   const modelsForProvider = useMemo(
     () => catalog.filter((entry) => entry.provider === provider),
     [catalog, provider],
+  );
+
+  const modelItems = useMemo(
+    () =>
+      modelsForProvider.map((entry) => ({
+        value: entry.id,
+        label: entry.label,
+      })),
+    [modelsForProvider],
+  );
+
+  const otherProbeModelValue = "__other__";
+  const probeModelItems = useMemo(
+    () => [
+      ...probeModels.map((id) => ({ value: id, label: id })),
+      { value: otherProbeModelValue, label: t`Other model…` },
+    ],
+    [probeModels, t],
   );
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
@@ -134,6 +132,22 @@ export function OnboardingPage() {
     modelId,
     probedBaseUrl,
   });
+
+  function selectProvider(nextProvider: string | null) {
+    if (!nextProvider || nextProvider === provider) return;
+    cancelOAuthAttempt();
+    setProvider(nextProvider);
+    setApiKey("");
+    setModelId(
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? ""
+        : (catalog.find((item) => item.provider === nextProvider)?.id ?? ""),
+    );
+    setBaseUrl("");
+    resetOpenAiCompatibleProbe();
+    setError(null);
+    setNotice(null);
+  }
 
   function resetOpenAiCompatibleProbe() {
     probeRequestIdRef.current += 1;
@@ -218,9 +232,9 @@ export function OnboardingPage() {
     try {
       const bot = await rpc.bots.create({
         name: name.trim(),
-        title,
-        description,
-        instructions: description,
+        title: "",
+        description: "",
+        instructions: "",
         notifyOnFinish: true,
       });
       // Onboarding continues conversationally in the thread: greeting, focus
@@ -245,102 +259,31 @@ export function OnboardingPage() {
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Connect a model</Trans>
             </h1>
-            <div className="mt-8 flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-foreground">
+            <p className="mt-2 text-muted-foreground">
+              <Trans>Choose a model to get started.</Trans>
+            </p>
+            <div className="mt-8 block text-sm text-foreground">
+              <span className="font-medium">
                 <Trans>Provider</Trans>
-              </p>
-              <Button
-                variant="link"
-                size="xs"
-                className="px-0 text-muted-foreground"
-                onClick={() => {
-                  setShowAllProviders((current) => !current);
-                  setQuery("");
-                }}
+              </span>
+              <Select
+                items={providerItems}
+                value={provider}
+                onValueChange={(value) => selectProvider(value)}
               >
-                {showAllProviders ? (
-                  <Trans>Show popular providers</Trans>
-                ) : (
-                  <Trans>Show all providers</Trans>
-                )}
-              </Button>
+                <SelectTrigger aria-label={t`Provider`} className="mt-2 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {providerItems.map((entry) => (
+                    <SelectItem key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            {showAllProviders ? (
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label={t`Search providers and models`}
-                placeholder={t`Search providers and models`}
-                className="mt-3"
-              />
-            ) : null}
-            <fieldset
-              aria-label={t`Model providers`}
-              className={`mt-3 overflow-y-auto rounded-xl border border-border ${
-                showAllProviders ? "max-h-64" : ""
-              }`}
-            >
-              {providerRows.map((entry) => {
-                const isSelected = entry.provider === provider;
-                const isOutsideSearchResults =
-                  entry.provider === selectedProviderOutsideResults?.provider;
-                return (
-                  <button
-                    key={entry.provider}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => {
-                      if (isSelected) return;
-                      cancelOAuthAttempt();
-                      setProvider(entry.provider);
-                      setModelId(
-                        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-                          ? ""
-                          : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
-                      );
-                      setBaseUrl("");
-                      resetOpenAiCompatibleProbe();
-                      setError(null);
-                      setNotice(null);
-                    }}
-                    className={`flex min-h-11 w-full items-center gap-3 border-b border-border px-3.5 py-2.5 text-left last:border-0 ${
-                      isSelected ? "bg-muted" : "hover:bg-accent"
-                    }`}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <span
-                        className={`truncate text-[15px] text-foreground ${isSelected ? "font-medium" : ""}`}
-                      >
-                        {entry.provider === "openai-codex"
-                          ? "ChatGPT"
-                          : (entry.providerName ?? entry.provider)}
-                      </span>
-                      {isOutsideSearchResults ? (
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          <Trans>Selected</Trans>
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="text-[12px] text-muted-foreground">
-                      {localizedProviderHint(entry)}
-                    </span>
-                    <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
-                      {isSelected ? (
-                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                          <Check className="size-3" strokeWidth={2.5} />
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })}
-              {displayedProviders.length === 0 ? (
-                <p className="px-3.5 py-6 text-center text-sm text-muted-foreground">
-                  <Trans>No providers found</Trans>
-                </p>
-              ) : null}
-            </fieldset>
-            <div className="mt-6 block text-sm text-foreground">
+            <div className="mt-4 block text-sm text-foreground">
               {isOpenAiCompatible ? (
                 <>
                   <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
@@ -377,21 +320,28 @@ export function OnboardingPage() {
                       <Trans>Model</Trans>
                     </span>
                     {probeModels.length && probeModels.includes(modelId) ? (
-                      <NativeSelect
+                      <Select
+                        items={probeModelItems}
                         value={modelId}
-                        onChange={(e) => setModelId(e.target.value)}
-                        aria-label={t`Models from server`}
-                        className="mt-2 w-full"
+                        onValueChange={(value) => {
+                          if (!value || value === otherProbeModelValue) {
+                            setModelId("");
+                            return;
+                          }
+                          setModelId(value);
+                        }}
                       >
-                        {probeModels.map((id) => (
-                          <NativeSelectOption key={id} value={id}>
-                            {id}
-                          </NativeSelectOption>
-                        ))}
-                        <NativeSelectOption value="">
-                          <Trans>Other model…</Trans>
-                        </NativeSelectOption>
-                      </NativeSelect>
+                        <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent alignItemWithTrigger={false}>
+                          {probeModelItems.map((entry) => (
+                            <SelectItem key={entry.value} value={entry.value}>
+                              {entry.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Input
                         value={modelId}
@@ -418,21 +368,26 @@ export function OnboardingPage() {
                   <span className="font-medium">
                     <Trans>Model</Trans>
                   </span>
-                  <NativeSelect
+                  <Select
+                    items={modelItems}
                     value={selected?.id ?? modelId}
-                    onChange={(e) => {
+                    onValueChange={(value) => {
+                      if (!value) return;
                       cancelOAuthAttempt();
-                      setModelId(e.target.value);
+                      setModelId(value);
                     }}
-                    aria-label={t`Model`}
-                    className="mt-2 w-full"
                   >
-                    {modelsForProvider.map((entry) => (
-                      <NativeSelectOption key={`${entry.provider}:${entry.id}`} value={entry.id}>
-                        {entry.label}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    <SelectTrigger aria-label={t`Model`} className="mt-2 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {modelItems.map((entry) => (
+                        <SelectItem key={entry.value} value={entry.value}>
+                          {entry.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </>
               )}
             </div>
@@ -584,33 +539,6 @@ export function OnboardingPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t`Name this bot`}
-                className="mt-2"
-              />
-            </label>
-            <label
-              htmlFor={`${fieldId}-title`}
-              className="mt-4 block text-sm text-muted-foreground"
-            >
-              <Trans>Title</Trans>
-              <Input
-                id={`${fieldId}-title`}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={t`Describe what this bot does`}
-                className="mt-2"
-              />
-            </label>
-            <label
-              htmlFor={`${fieldId}-description`}
-              className="mt-4 block text-sm text-muted-foreground"
-            >
-              <Trans>Description</Trans>
-              <Textarea
-                id={`${fieldId}-description`}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={t`What this bot is for`}
-                rows={4}
                 className="mt-2"
               />
             </label>

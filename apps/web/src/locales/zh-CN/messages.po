@@ -142,7 +142,7 @@ msgid "Action confirmations"
 msgstr "操作确认"
 
 #. placeholder {0}: bot.name
-#: src/pages/BotContextMenu.tsx:85
+#: src/pages/BotContextMenu.tsx:82
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
 
@@ -333,9 +333,9 @@ msgstr "API 已恢复，但更新未完成。请查看宿主日志。"
 #: src/pages/ModelSettingsOverlay.tsx:640
 #: src/pages/ModelSettingsOverlay.tsx:643
 #: src/pages/ModelSettingsOverlay.tsx:662
-#: src/pages/Onboarding.tsx:514
-#: src/pages/Onboarding.tsx:517
-#: src/pages/Onboarding.tsx:531
+#: src/pages/Onboarding.tsx:469
+#: src/pages/Onboarding.tsx:472
+#: src/pages/Onboarding.tsx:486
 #: src/pages/VoiceSettingsOverlay.tsx:258
 msgid "API key"
 msgstr "API 密钥"
@@ -363,7 +363,7 @@ msgstr "批准"
 msgid "Approve this server to let your agent use its tools."
 msgstr "批准此服务器后，Agent 才能使用它的工具。"
 
-#: src/pages/BotContextMenu.tsx:146
+#: src/pages/BotContextMenu.tsx:136
 msgid "Archive"
 msgstr "归档"
 
@@ -414,6 +414,10 @@ msgstr "购买前询问"
 msgid "Ask before sending external email"
 msgstr "发送外部邮件前询问"
 
+#: src/pages/Onboarding.tsx:40
+msgid "Assistant"
+msgstr "助手"
+
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx:91
 #: src/pages/RoutineSchedule.tsx:94
@@ -434,7 +438,7 @@ msgid "Attachment"
 msgstr "附件"
 
 #: src/pages/ModelSettingsOverlay.tsx:573
-#: src/pages/Onboarding.tsx:463
+#: src/pages/Onboarding.tsx:418
 msgid "Authorization code or callback URL"
 msgstr "授权码或回调 URL"
 
@@ -455,7 +459,6 @@ msgstr "保存例行任务后可用"
 msgid "Avatars"
 msgstr "头像"
 
-#: src/pages/BotContextMenu.tsx:94
 #: src/pages/RoutineEditor.tsx:231
 msgid "Back"
 msgstr "返回"
@@ -619,6 +622,10 @@ msgstr "工作副本有本地更改。请先清理再更新。"
 msgid "Choose a bot…"
 msgstr "选择 Bot…"
 
+#: src/pages/Onboarding.tsx:263
+msgid "Choose a model to get started."
+msgstr "选择一个模型开始。"
+
 #: src/pages/Auth.tsx:257
 msgid "Choose a new password"
 msgstr "设置新密码"
@@ -636,7 +643,7 @@ msgstr "清空"
 msgid "Clear {0}’s conversation?"
 msgstr "清空与 {0} 的对话？"
 
-#: src/pages/BotContextMenu.tsx:142
+#: src/pages/BotContextMenu.tsx:132
 #: src/pages/shell/bot-panel.tsx:479
 msgid "Clear conversation"
 msgstr "清空对话"
@@ -782,7 +789,7 @@ msgstr "确认密码"
 msgid "Connect"
 msgstr "连接"
 
-#: src/pages/Onboarding.tsx:246
+#: src/pages/Onboarding.tsx:260
 msgid "Connect a model"
 msgstr "连接模型"
 
@@ -853,8 +860,8 @@ msgstr "正在连接…"
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 
-#: src/pages/Onboarding.tsx:558
-#: src/pages/Onboarding.tsx:619
+#: src/pages/Onboarding.tsx:513
+#: src/pages/Onboarding.tsx:547
 msgid "Continue"
 msgstr "继续"
 
@@ -943,7 +950,7 @@ msgstr "无法创建分组"
 msgid "Could not create space"
 msgstr "无法创建工作区"
 
-#: src/pages/Onboarding.tsx:231
+#: src/pages/Onboarding.tsx:245
 msgid "Could not create your bot"
 msgstr "无法创建你的 Bot"
 
@@ -1027,7 +1034,7 @@ msgid "Could not reach the server"
 msgstr "无法连接服务器"
 
 #: src/pages/ModelSettingsOverlay.tsx:232
-#: src/pages/Onboarding.tsx:177
+#: src/pages/Onboarding.tsx:191
 msgid "Could not reach this model server"
 msgstr "无法访问此模型服务器"
 
@@ -1075,7 +1082,7 @@ msgstr "无法保存自动审核"
 msgid "Could not save group"
 msgstr "无法保存群组"
 
-#: src/pages/Onboarding.tsx:204
+#: src/pages/Onboarding.tsx:218
 msgid "Could not save model"
 msgstr "无法保存模型"
 
@@ -1184,7 +1191,7 @@ msgstr ""
 msgid "Create space"
 msgstr "创建工作区"
 
-#: src/pages/Onboarding.tsx:578
+#: src/pages/Onboarding.tsx:533
 msgid "Create your first bot"
 msgstr "创建你的第一个 Bot"
 
@@ -1253,7 +1260,7 @@ msgstr "默认（中）"
 msgid "Default scope"
 msgstr "默认范围"
 
-#: src/pages/BotContextMenu.tsx:150
+#: src/pages/BotContextMenu.tsx:140
 #: src/pages/McpServersOverlay.tsx:508
 #: src/pages/RoutineEditor.tsx:272
 #: src/pages/Shell.tsx:2744
@@ -1307,12 +1314,10 @@ msgstr "拒绝"
 msgid "Deployment default"
 msgstr "部署默认"
 
-#: src/pages/Onboarding.tsx:599
 #: src/pages/shell/bot-panel.tsx:139
 msgid "Describe what this bot does"
 msgstr "描述这个 Bot 做什么"
 
-#: src/pages/Onboarding.tsx:607
 #: src/pages/shell/bot-panel.tsx:144
 #: src/pages/shell/bot-panel.tsx:308
 msgid "Description"
@@ -1385,7 +1390,7 @@ msgstr "下载 {name}"
 msgid "Draft skill"
 msgstr "技能草稿"
 
-#: src/pages/BotContextMenu.tsx:137
+#: src/pages/BotContextMenu.tsx:127
 msgid "Duplicate"
 msgstr "复制"
 
@@ -1397,7 +1402,7 @@ msgstr "更早的消息"
 msgid "Edit first"
 msgstr "先编辑"
 
-#: src/pages/BotContextMenu.tsx:133
+#: src/pages/BotContextMenu.tsx:123
 msgid "Edit Profile"
 msgstr "编辑资料"
 
@@ -1407,7 +1412,7 @@ msgstr "邮箱"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx:596
-#: src/pages/Onboarding.tsx:482
+#: src/pages/Onboarding.tsx:437
 msgid "Enter this code at <0>{0}</0>"
 msgstr "在 <0>{0}</0> 输入此代码"
 
@@ -1491,18 +1496,18 @@ msgid "Failure handling"
 msgstr "失败处理"
 
 #: src/pages/ModelSettingsOverlay.tsx:444
-#: src/pages/Onboarding.tsx:372
+#: src/pages/Onboarding.tsx:315
 msgid "Find models"
 msgstr "查找模型"
 
 #: src/pages/ModelSettingsOverlay.tsx:444
-#: src/pages/Onboarding.tsx:372
+#: src/pages/Onboarding.tsx:315
 msgid "Finding…"
 msgstr "正在查找…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/ModelSettingsOverlay.tsx:556
-#: src/pages/Onboarding.tsx:446
+#: src/pages/Onboarding.tsx:401
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "在 <0>{0}</0> 完成登录。最后一页可能无法加载；把 URL 或代码粘贴到这里。"
 
@@ -1754,7 +1759,7 @@ msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
 #: src/App.tsx:54
-#: src/pages/Onboarding.tsx:240
+#: src/pages/Onboarding.tsx:254
 #: src/pages/PeerMessagesOverlay.tsx:99
 #: src/pages/Shell.tsx:4053
 msgid "Loading…"
@@ -1780,11 +1785,11 @@ msgstr "管理消息设置"
 msgid "Manage the Space semantic memory provider."
 msgstr "管理工作区语义记忆提供方。"
 
-#: src/pages/BotContextMenu.tsx:128
+#: src/pages/BotContextMenu.tsx:118
 msgid "Mark as Read"
 msgstr "标为已读"
 
-#: src/pages/BotContextMenu.tsx:128
+#: src/pages/BotContextMenu.tsx:118
 msgid "Mark as Unread"
 msgstr "标为未读"
 
@@ -1881,25 +1886,21 @@ msgstr "分钟"
 #: src/pages/ModelSettingsOverlay.tsx:449
 #: src/pages/ModelSettingsOverlay.tsx:503
 #: src/pages/ModelSettingsOverlay.tsx:932
-#: src/pages/Onboarding.tsx:377
-#: src/pages/Onboarding.tsx:419
-#: src/pages/Onboarding.tsx:427
+#: src/pages/Onboarding.tsx:320
+#: src/pages/Onboarding.tsx:369
+#: src/pages/Onboarding.tsx:380
 #: src/pages/shell/bot-panel.tsx:332
 msgid "Model"
 msgstr "模型"
 
 #: src/pages/ModelSettingsOverlay.tsx:483
-#: src/pages/Onboarding.tsx:399
+#: src/pages/Onboarding.tsx:349
 msgid "Model id"
 msgstr "模型 ID"
 
 #: src/pages/ModelSettingsOverlay.tsx:968
 msgid "Model options"
 msgstr "模型选项"
-
-#: src/pages/Onboarding.tsx:278
-msgid "Model providers"
-msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:216
 msgid "Model spend uses your provider keys."
@@ -1915,7 +1916,7 @@ msgid "Models"
 msgstr "模型"
 
 #: src/pages/ModelSettingsOverlay.tsx:462
-#: src/pages/Onboarding.tsx:383
+#: src/pages/Onboarding.tsx:334
 msgid "Models from server"
 msgstr "来自服务器的模型"
 
@@ -1927,16 +1928,11 @@ msgstr "每月"
 msgid "More computer actions"
 msgstr ""
 
-#. placeholder {0}: bot.name
-#: src/pages/BotContextMenu.tsx:85
-msgid "Move {0} to section"
-msgstr "将 {0} 移到分组"
-
 #: src/pages/shell/dialogs.tsx:260
 msgid "Move them to your shared memory."
 msgstr "把它们移到共享记忆。"
 
-#: src/pages/BotContextMenu.tsx:123
+#: src/pages/BotContextMenu.tsx:94
 msgid "Move to"
 msgstr "移动到"
 
@@ -1944,7 +1940,7 @@ msgstr "移动到"
 #: src/pages/Auth.tsx:110
 #: src/pages/GroupPanel.tsx:119
 #: src/pages/GroupPanel.tsx:212
-#: src/pages/Onboarding.tsx:581
+#: src/pages/Onboarding.tsx:536
 #: src/pages/RoutineEditor.tsx:281
 #: src/pages/shell/bot-panel.tsx:122
 #: src/pages/shell/bot-panel.tsx:288
@@ -1953,7 +1949,7 @@ msgstr "移动到"
 msgid "Name"
 msgstr "名称"
 
-#: src/pages/Onboarding.tsx:586
+#: src/pages/Onboarding.tsx:541
 #: src/pages/shell/bot-panel.tsx:128
 msgid "Name this bot"
 msgstr "给这个 Bot 命名"
@@ -2064,10 +2060,6 @@ msgstr "还没有与 {peerBotName} 的消息。"
 msgid "No model catalog is available."
 msgstr "没有可用的模型目录。"
 
-#: src/pages/Onboarding.tsx:339
-msgid "No providers found"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx:402
 msgid "No providers found."
 msgstr "未找到提供方。"
@@ -2163,7 +2155,7 @@ msgid "Open work"
 msgstr "待办"
 
 #: src/pages/ModelSettingsOverlay.tsx:422
-#: src/pages/Onboarding.tsx:352
+#: src/pages/Onboarding.tsx:295
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 兼容服务器 URL"
 
@@ -2176,7 +2168,7 @@ msgid "Opening your Space…"
 msgstr "正在打开工作区…"
 
 #: src/pages/ModelSettingsOverlay.tsx:646
-#: src/pages/Onboarding.tsx:520
+#: src/pages/Onboarding.tsx:475
 msgid "Optional"
 msgstr "可选"
 
@@ -2192,7 +2184,7 @@ msgstr "可选请求头值"
 msgid "Or connect an API key"
 msgstr "或连接 API 密钥"
 
-#: src/pages/Onboarding.tsx:531
+#: src/pages/Onboarding.tsx:486
 msgid "Or paste an API key"
 msgstr "或粘贴 API 密钥"
 
@@ -2205,7 +2197,7 @@ msgid "Organization API key"
 msgstr "组织 API 密钥"
 
 #: src/pages/ModelSettingsOverlay.tsx:470
-#: src/pages/Onboarding.tsx:392
+#: src/pages/Onboarding.tsx:120
 msgid "Other model…"
 msgstr "其他模型…"
 
@@ -2243,7 +2235,7 @@ msgid "Paste a replacement key"
 msgstr "粘贴替换密钥"
 
 #: src/pages/ModelSettingsOverlay.tsx:433
-#: src/pages/Onboarding.tsx:363
+#: src/pages/Onboarding.tsx:306
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 Rakazo 会补上 /v1。"
 
@@ -2264,7 +2256,7 @@ msgstr "个人凭据"
 msgid "Pick a voice"
 msgstr "选择语音"
 
-#: src/pages/BotContextMenu.tsx:119
+#: src/pages/BotContextMenu.tsx:89
 msgid "Pin"
 msgstr "置顶"
 
@@ -2286,7 +2278,8 @@ msgid "Private"
 msgstr "私有"
 
 #: src/pages/MemorySettingsOverlay.tsx:216
-#: src/pages/Onboarding.tsx:250
+#: src/pages/Onboarding.tsx:267
+#: src/pages/Onboarding.tsx:274
 msgid "Provider"
 msgstr "提供方"
 
@@ -2580,11 +2573,6 @@ msgstr "搜索模型"
 msgid "Search providers"
 msgstr "搜索提供方"
 
-#: src/pages/Onboarding.tsx:272
-#: src/pages/Onboarding.tsx:273
-msgid "Search providers and models"
-msgstr "搜索提供方和模型"
-
 #: src/pages/SpaceSearch.tsx:16
 msgid "Searching…"
 msgstr "正在搜索…"
@@ -2592,10 +2580,6 @@ msgstr "正在搜索…"
 #: src/pages/Shell.tsx:2931
 msgid "Select a bot"
 msgstr "选择 Bot"
-
-#: src/pages/Onboarding.tsx:320
-msgid "Selected"
-msgstr ""
 
 #: src/pages/Shell.tsx:4765
 #: src/pages/Shell.tsx:4786
@@ -2635,7 +2619,7 @@ msgstr "服务器名称"
 
 #: src/pages/McpServersOverlay.tsx:329
 #: src/pages/ModelSettingsOverlay.tsx:417
-#: src/pages/Onboarding.tsx:347
+#: src/pages/Onboarding.tsx:290
 msgid "Server URL"
 msgstr "服务器 URL"
 
@@ -2659,7 +2643,7 @@ msgid "Settings: Usage"
 msgstr "设置：用量"
 
 #: src/pages/ModelSettingsOverlay.tsx:430
-#: src/pages/Onboarding.tsx:360
+#: src/pages/Onboarding.tsx:303
 msgid "Setup help"
 msgstr "设置帮助"
 
@@ -2667,10 +2651,6 @@ msgstr "设置帮助"
 #: src/pages/shell/bot-panel.tsx:386
 msgid "Shared"
 msgstr "共享"
-
-#: src/pages/Onboarding.tsx:264
-msgid "Show all providers"
-msgstr ""
 
 #: src/pages/Shell.tsx:3107
 msgid "Show computer"
@@ -2684,10 +2664,6 @@ msgstr "显示更多"
 msgid "Show password"
 msgstr "显示密码"
 
-#: src/pages/Onboarding.tsx:262
-msgid "Show popular providers"
-msgstr ""
-
 #: src/pages/Shell.tsx:3107
 msgid "Show settings"
 msgstr "显示设置"
@@ -2696,7 +2672,7 @@ msgstr "显示设置"
 #: src/pages/Auth.tsx:206
 #: src/pages/Auth.tsx:264
 #: src/pages/ModelSettingsOverlay.tsx:628
-#: src/pages/Onboarding.tsx:131
+#: src/pages/Onboarding.tsx:129
 msgid "Sign in"
 msgstr "登录"
 
@@ -2718,7 +2694,7 @@ msgstr "技能 {0}"
 msgid "Skip"
 msgstr "跳过"
 
-#: src/pages/Onboarding.tsx:569
+#: src/pages/Onboarding.tsx:524
 msgid "Skip for now"
 msgstr "暂时跳过"
 
@@ -2780,7 +2756,7 @@ msgstr "正在开始"
 
 #: src/components/teach/TeachComputerOverlay.tsx:248
 #: src/pages/ModelSettingsOverlay.tsx:626
-#: src/pages/Onboarding.tsx:505
+#: src/pages/Onboarding.tsx:460
 msgid "Starting…"
 msgstr "正在开始…"
 
@@ -2825,7 +2801,7 @@ msgstr "子 Agent"
 
 #: src/components/AskCard.tsx:140
 #: src/pages/ModelSettingsOverlay.tsx:586
-#: src/pages/Onboarding.tsx:472
+#: src/pages/Onboarding.tsx:427
 msgid "Submit"
 msgstr "提交"
 
@@ -2923,7 +2899,7 @@ msgstr "这台 Mac 会用你的账户运行 shell，包括主目录中的文件�
 msgid "This permanently removes every message and stops current work. The chat remains available."
 msgstr "将永久删除全部消息并停止当前工作。聊天仍可使用。"
 
-#: src/pages/Onboarding.tsx:545
+#: src/pages/Onboarding.tsx:500
 msgid "This provider cannot paste a key here. Skip if this deployment already has credentials."
 msgstr "此提供方不能在这里粘贴密钥。若部署已有凭据，请跳过。"
 
@@ -2955,7 +2931,6 @@ msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选�
 msgid "Time of day"
 msgstr "时间"
 
-#: src/pages/Onboarding.tsx:594
 #: src/pages/shell/bot-panel.tsx:133
 #: src/pages/shell/bot-panel.tsx:298
 msgid "Title"
@@ -2985,7 +2960,7 @@ msgstr "不可用"
 msgid "Unlink"
 msgstr "取消关联"
 
-#: src/pages/BotContextMenu.tsx:119
+#: src/pages/BotContextMenu.tsx:89
 msgid "Unpin"
 msgstr "取消置顶"
 
@@ -3039,7 +3014,7 @@ msgid "Use {hostLabel}"
 msgstr "使用 {hostLabel}"
 
 #: src/pages/ModelSettingsOverlay.tsx:495
-#: src/pages/Onboarding.tsx:411
+#: src/pages/Onboarding.tsx:361
 msgid "Use a found model"
 msgstr "使用找到的模型"
 
@@ -3064,8 +3039,8 @@ msgstr "语音"
 
 #: src/pages/ModelSettingsOverlay.tsx:590
 #: src/pages/ModelSettingsOverlay.tsx:612
-#: src/pages/Onboarding.tsx:476
-#: src/pages/Onboarding.tsx:498
+#: src/pages/Onboarding.tsx:431
+#: src/pages/Onboarding.tsx:453
 msgid "Waiting for sign-in…"
 msgstr "等待登录…"
 
@@ -3099,7 +3074,6 @@ msgstr "你要示范什么结果？"
 msgid "What should this routine do each time it runs?"
 msgstr "每次运行时，这个例行任务应做什么？"
 
-#: src/pages/Onboarding.tsx:612
 #: src/pages/shell/bot-panel.tsx:150
 msgid "What this bot is for"
 msgstr "这个 Bot 是做什么的"
