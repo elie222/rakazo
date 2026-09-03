@@ -90,6 +90,17 @@ test("first run asks whether to use a local or existing instance", async () => {
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "01-setup-new-instance.png"),
   });
+
+  // Linux CI cannot draw macOS traffic lights, so apply the same platform state to
+  // verify and capture the gutter that keeps the native controls clear of the title.
+  await setup.evaluate(() => {
+    document.documentElement.dataset.platform = "darwin";
+  });
+  await expect(setup.locator(".titlebar")).toHaveCSS("padding-left", "88px");
+  expect((await setup.locator(".titlebar-name").boundingBox())?.x).toBeGreaterThanOrEqual(88);
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "08-setup-macos-titlebar-clearance.png"),
+  });
 });
 
 test("connecting to an existing instance verifies, saves, and opens it", async () => {

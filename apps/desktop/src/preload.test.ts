@@ -94,8 +94,10 @@ describe("setup preload bridge", () => {
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoSetup];
     expect(globalName).toBe("rakazoSetup");
+    expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
       "openLink",
+      "platform",
       "quit",
       "save",
       "stack",

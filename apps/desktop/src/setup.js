@@ -1,5 +1,6 @@
 (() => {
   const bridge = window.rakazoSetup;
+  document.documentElement.dataset.platform = bridge?.platform ?? "browser";
 
   const form = document.getElementById("setup");
   const serverUrl = document.getElementById("server-url");

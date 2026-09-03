@@ -55,6 +55,10 @@ body {
   flex: none;
 }
 
+html[data-platform="darwin"] .titlebar {
+  padding-left: 88px;
+}
+
 .titlebar-name {
   font-size: 12px;
   letter-spacing: 0.08em;
