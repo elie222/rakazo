@@ -43,15 +43,17 @@ bash install-images.sh --local --prepare-only
 # prepare-only still validates an existing .env.
 ```
 
-With images already loaded (or pointed at an internal registry you can reach),
-start Compose yourself instead of re-running the installer. Compose defaults
-Postgres to a digest pin; if you loaded a digest-less tag (for example
-`postgres:16`), set `POSTGRES_IMAGE=postgres:16` (and `BUSYBOX_IMAGE` as
-needed). App/computer refs are split: set repository and tag separately
-(`RAKAZO_IMAGE` + `RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE` +
-`RAKAZO_COMPUTER_IMAGE_TAG`). Do not put `repo:tag` into the repository
-variable; Compose appends `:${RAKAZO_IMAGE_TAG}` and a combined value becomes
-`repo:tag:tag`.
+With images already on the daemon (`docker load`), or after you have pulled
+them from an internal registry you can reach, start Compose yourself instead
+of re-running the installer. If refs point at an internal registry and the
+images are not local yet, pull those four images first; `--pull never` will
+not fetch missing ones. Compose defaults Postgres to a digest pin; if you
+loaded a digest-less tag (for example `postgres:16`), set
+`POSTGRES_IMAGE=postgres:16` (and `BUSYBOX_IMAGE` as needed). App/computer
+refs are split: set repository and tag separately (`RAKAZO_IMAGE` +
+`RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE` + `RAKAZO_COMPUTER_IMAGE_TAG`).
+Do not put `repo:tag` into the repository variable; Compose appends
+`:${RAKAZO_IMAGE_TAG}` and a combined value becomes `repo:tag:tag`.
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml up -d --pull never
