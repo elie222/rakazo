@@ -110,8 +110,9 @@ async function launch(mode: FakeDockerMode | "missing") {
 async function savedSetup() {
   try {
     return JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 }
 

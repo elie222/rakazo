@@ -386,7 +386,18 @@ describe("LocalStackController", () => {
     expect(calls.map((call) => call.args[5] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
   });
 
-  it("collects service logs when up fails", async () => {
+it("reports interruption instead of a pull failure when docker returns 130", async () => {
+    const stack = controller({}, (args) =>
+      args[5] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
+    );
+    const state = await stack.start();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "The start was interrupted. Retry to continue.",
+    });
+  });
+
+    it("collects service logs when up fails", async () => {
     const stack = controller({}, (args) => {
       if (args[5] === "up") {
         return { code: 1, stderr: "port is already allocated", lines: ["web Error"] };

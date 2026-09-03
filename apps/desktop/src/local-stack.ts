@@ -163,6 +163,7 @@ export function reduceStackState(
 const DOCKER_GROUP_HINT =
   "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.";
 const STOP_FAILED = "Could not stop the local stack. Check that Docker is running, then try again.";
+const START_INTERRUPTED = "The start was interrupted. Retry to continue.";
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -192,6 +193,10 @@ export function stackFailureMessage(
 
 function failureKind(result: RunDockerResult): DockerFailureKind {
   return classifyDockerFailure(`${result.stdout}\n${result.stderr}`);
+}
+
+function wasInterrupted(signal: AbortSignal, code: number): boolean {
+  return signal.aborted || code === 130;
 }
 
 export interface LocalStackDeps {
@@ -290,6 +295,10 @@ export class LocalStackController {
       signal,
     );
     if (version.code !== 0) {
+      if (wasInterrupted(signal, version.code)) {
+        this.push({ type: "failed", message: START_INTERRUPTED });
+        return;
+      }
       this.push({
         type: "docker-missing",
         message:
@@ -304,6 +313,10 @@ export class LocalStackController {
       signal,
     );
     if (info.code !== 0) {
+      if (wasInterrupted(signal, info.code)) {
+        this.push({ type: "failed", message: START_INTERRUPTED });
+        return;
+      }
       this.push({
         type: "docker-not-running",
         message:
@@ -325,6 +338,10 @@ export class LocalStackController {
     this.push({ type: "pull-start" });
     const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
     if (pulled.code !== 0) {
+      if (wasInterrupted(signal, pulled.code)) {
+        this.push({ type: "failed", message: START_INTERRUPTED });
+        return;
+      }
       this.push({
         type: "failed",
         message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
@@ -338,6 +355,10 @@ export class LocalStackController {
       : ["up", "-d"];
     const up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     if (up.code !== 0) {
+      if (wasInterrupted(signal, up.code)) {
+        this.push({ type: "failed", message: START_INTERRUPTED });
+        return;
+      }
       // Best effort: recent service logs usually name the failing service.
       await this.compose(binary, ["logs", "--tail", "30", "--no-color"], LOGS_TIMEOUT_MS, signal);
       this.push({
@@ -361,7 +382,7 @@ export class LocalStackController {
     this.push({
       type: "failed",
       message: signal.aborted
-        ? "The start was interrupted. Retry to continue."
+        ? START_INTERRUPTED
         : "The stack started but the web app did not answer. Retry, and check the output below.",
     });
   }
