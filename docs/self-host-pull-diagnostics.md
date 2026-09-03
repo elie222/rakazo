@@ -3,7 +3,7 @@
 Use this page when `bash install-images.sh` or
 `docker compose --env-file .env -f docker-compose.images.yml pull` fails on a
 network that cannot reach Docker Hub / GHCR reliably. Escape hatches live in
-env only — see [Restricted networks / mirror downloads](./self-host.md#restricted-networks--mirror-downloads)
+env only; see [Restricted networks / mirror downloads](./self-host.md#restricted-networks--mirror-downloads)
 in `docs/self-host.md`. Do not bake vendor-specific CDN hostnames into
 compose or scripts.
 
@@ -41,13 +41,13 @@ alternative when you prefer not to change `.env`.
 
 ### 2. Digest-pinned Hub override misses on a mirror
 
-Copying the compose default literally —
+Copying the compose default literally:
 
 ```env
 POSTGRES_IMAGE=postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
 ```
 
-— often fails on mirrors that only publish moving tags. Prefer a **tag without
+often fails on mirrors that only publish moving tags. Prefer a **tag without
 digest** when pointing at a mirror:
 
 ```env
@@ -101,7 +101,7 @@ registry you control via the env overrides above. Installer curl downloads
 
 ## Related
 
-- [Self-hosting](./self-host.md) — Restricted networks, published images, TLS
-- `infra/compose/.env.images.example` — installer-generated `.env` template
-- `infra/compose/docker-compose.images.yml` — `${POSTGRES_IMAGE:-…}`,
+- [Self-hosting](./self-host.md): Restricted networks, published images, TLS
+- `infra/compose/.env.images.example`: installer-generated `.env` template
+- `infra/compose/docker-compose.images.yml`: `${POSTGRES_IMAGE:-…}`,
   `${BUSYBOX_IMAGE:-…}`, `${RAKAZO_IMAGE:-…}` / `${RAKAZO_COMPUTER_IMAGE:-…}`

@@ -78,8 +78,19 @@ After `--prepare-only`, edit `.env` then rerun `bash install-images.sh` (or
 pairing is unchanged — set both tags to the same published multi-arch release
 (see [Published images and tags](#published-images-and-tags)).
 
-`postgres:16` and `busybox:1` still pull from Docker Hub. Stage C does not cover
-them; configure the Docker daemon `registry-mirrors` or vendor those images.
+Stage C also pulls Postgres and busybox (compose defaults: digest-pinned
+`postgres:16@sha256:…` and `busybox:1` from Docker Hub). Override them in
+`.env` when Hub is unreachable; prefer **digest-less** tags on a registry you
+control (mirrors often miss content-addressed digests):
+
+```env
+POSTGRES_IMAGE=registry.example.com/library/postgres:16
+BUSYBOX_IMAGE=registry.example.com/library/busybox:1
+```
+
+Daemon `registry-mirrors` remains a valid alternative if you prefer not to
+change `.env`. For Hub/GHCR failure modes and a checklist, see
+[Self-host pull diagnostics](./self-host-pull-diagnostics.md).
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
