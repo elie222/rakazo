@@ -50,6 +50,11 @@
     continueButton.disabled = busy;
   }
 
+  /** A save in flight cannot be cancelled, so the choice it commits must not change under it. */
+  function lockMode(locked) {
+    for (const input of form.querySelectorAll('input[name="mode"]')) input.disabled = locked;
+  }
+
   function syncPanels() {
     const mode = selectedMode();
     panelNew.hidden = mode !== "new";
@@ -94,6 +99,7 @@
 
   async function save(mode, url) {
     setBusy(true);
+    lockMode(true);
     setStatus("Connecting…");
     try {
       const saved = await bridge.save({ mode, serverUrl: url });
@@ -101,6 +107,7 @@
     } catch {
       setStatus("Could not save that address. Try again.", "error");
     } finally {
+      lockMode(false);
       setBusy(false);
     }
   }
