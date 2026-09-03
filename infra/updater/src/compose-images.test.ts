@@ -104,6 +104,18 @@ describe("the images compose file", () => {
     }
   });
 
+  it("passes optional HTTP(S)_PROXY / NO_PROXY into api and worker", () => {
+    for (const name of ["api", "worker"] as const) {
+      const env = compose.services[name]?.environment ?? {};
+      expect(env.HTTP_PROXY).toBe("${HTTP_PROXY:-}");
+      expect(env.HTTPS_PROXY).toBe("${HTTPS_PROXY:-}");
+      expect(env.NO_PROXY).toBe("${NO_PROXY:-}");
+      expect(env.http_proxy).toBe("${HTTP_PROXY:-}");
+      expect(env.https_proxy).toBe("${HTTPS_PROXY:-}");
+      expect(env.no_proxy).toBe("${NO_PROXY:-}");
+    }
+  });
+
   it("never builds from a checkout", () => {
     for (const service of Object.values(compose.services)) {
       expect(service.build).toBeUndefined();

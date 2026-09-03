@@ -57,6 +57,13 @@ services:
       SANDBOX_PROVIDER: e2b
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
       RAKAZO_UPDATER_URL: http://updater:7092
     expose:
       - "3100"
@@ -106,6 +113,13 @@ services:
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
     volumes:
       - appdata:/data
     networks:
