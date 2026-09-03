@@ -103,9 +103,9 @@ describe("team chat bridge", () => {
           records.push(record);
           return record;
         }),
-        findMany: vi.fn(async ({ where }: { where: { status: string } }) =>
+        findMany: vi.fn(async ({ where }: { where: { status: string | { in: string[] } } }) =>
           records
-            .filter((record) => record.status === where.status)
+            .filter((record) => matchesStatus(record.status, where.status))
             .map((record) => ({
               ...record,
               externalConversation: conversation,
@@ -120,7 +120,29 @@ describe("team chat bridge", () => {
             return record;
           },
         ),
-        updateMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { id?: string | { in?: string[] }; status?: string | { in: string[] } };
+            data: Record<string, unknown>;
+          }) => {
+            const ids =
+              typeof where.id === "string" ? [where.id] : (where.id as { in?: string[] })?.in;
+            let count = 0;
+            for (const record of records) {
+              if (
+                (!ids || ids.includes(String(record.id))) &&
+                matchesStatus(record.status, where.status)
+              ) {
+                Object.assign(record, data);
+                count += 1;
+              }
+            }
+            return { count };
+          },
+        ),
       },
       run: { findMany: vi.fn(async () => []) },
       message: {
@@ -198,6 +220,7 @@ describe("team chat bridge", () => {
         conversationId: "C-1",
         replyThreadId: "100.1",
         content: "The launch plan is ready.",
+        idempotencyKey: "external-message:external-1",
       },
     ]);
     expect(records[0]).toMatchObject({
@@ -355,6 +378,7 @@ describe("team chat bridge", () => {
         conversationId: "C-1",
         replyThreadId: "100.1",
         content: "Research found that the launch should move.",
+        idempotencyKey: "team-chat-run:run-arthur-result",
       },
     ]);
     expect(prisma.run.updateMany).toHaveBeenCalledWith({
@@ -476,6 +500,118 @@ describe("team chat bridge", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not discard an elected ambient trigger before promoting it", async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const sendUserMessage = vi.fn(async (input: { createRun?: boolean }) =>
+      input.createRun === false
+        ? { messageId: "message-visible", taskId: null, runId: null }
+        : { messageId: "message-prompt", taskId: "task-ambient", runId: "run-ambient" },
+    );
+    const judge = {
+      decide: vi.fn(async () => ({
+        act: true,
+        reason: "A committed launch date changed.",
+        askedByEventId: "Ev-ambient",
+      })),
+    };
+    const conversation = {
+      id: "conversation-ambient",
+      provider: "slack",
+      workspaceId: "T-1",
+      externalKey: "channel:C-1",
+      conversationId: "C-1",
+      displayName: "launch",
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "owner-1",
+      thread: { id: "thread-ambient" },
+    };
+    const prisma = ambientPrisma(records, conversation, true) as unknown as PrismaClient;
+    const bridge = new TeamChatBridge({
+      prisma,
+      events: { sendUserMessage },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+      provider: new FakeTeamChatProvider(),
+      judge,
+      botId: "bot-1",
+      ambientDebounceMs: 0,
+      reconcileIntervalMs: 60_000,
+    });
+
+    await bridge.start();
+    await bridge.receive(ambientMessage());
+    await bridge.stop();
+
+    expect(prisma.externalMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "external-1", status: "observed" },
+        data: expect.objectContaining({ status: "received" }),
+      }),
+    );
+    expect(prisma.externalMessage.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ["external-1"] }, status: "observed" },
+        data: expect.objectContaining({ status: "ignored" }),
+      }),
+    );
+  });
+
+  it("does not resend a completed run when delivery was already reserved", async () => {
+    const provider = new FakeTeamChatProvider();
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => ({
+          id: "bot-1",
+          spaceId: "space-1",
+          userId: "owner-1",
+          name: "Arthur",
+        })),
+      },
+      externalMessage: {
+        findMany: vi.fn(async ({ where }: { where: { status?: { in: string[] } | string } }) =>
+          where.status && matchesStatus("delivering", where.status)
+            ? [
+                {
+                  id: "external-1",
+                  status: "delivering",
+                  attempts: 0,
+                  kind: "mention",
+                  runId: "run-1",
+                  replyThreadId: "100.1",
+                  run: { id: "run-1", status: "completed" },
+                  externalConversation: {
+                    provider: "slack",
+                    botId: "bot-1",
+                    conversationId: "C-1",
+                  },
+                },
+              ]
+            : [],
+        ),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
+      run: { findMany: vi.fn(async () => []) },
+      message: {
+        findFirst: vi.fn(async () => ({
+          blocks: [{ kind: "text", text: "Already being sent." }],
+        })),
+      },
+    } as unknown as PrismaClient;
+    const bridge = new TeamChatBridge({
+      prisma,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+      provider,
+      botId: "bot-1",
+      reconcileIntervalMs: 60_000,
+    });
+
+    await bridge.start();
+    await bridge.stop();
+
+    expect(provider.sent).toEqual([]);
   });
 
   it("uses room listening and guidance instead of Arthur's defaults", async () => {
@@ -746,9 +882,9 @@ function ambientPrisma(
         records.push(record);
         return record;
       }),
-      findMany: vi.fn(async ({ where }: { where: { status: string } }) =>
+      findMany: vi.fn(async ({ where }: { where: { status: string | { in: string[] } } }) =>
         records
-          .filter((record) => record.status === where.status)
+          .filter((record) => matchesStatus(record.status, where.status))
           .map((record) => ({
             ...record,
             externalConversation: conversation,
@@ -764,15 +900,17 @@ function ambientPrisma(
           data: Record<string, unknown>;
         }) => {
           const ids = (where.id as { in?: string[] } | undefined)?.in;
+          let count = 0;
           for (const record of records) {
             if (
               (!ids || ids.includes(String(record.id))) &&
-              record.status === (where.status ?? record.status)
+              matchesStatus(record.status, where.status ?? String(record.status))
             ) {
               Object.assign(record, data);
+              count += 1;
             }
           }
-          return { count: records.length };
+          return { count };
         },
       ),
       update: vi.fn(
@@ -787,6 +925,12 @@ function ambientPrisma(
     run: { findMany: vi.fn(async () => []) },
     message: { findFirst: vi.fn(async () => null) },
   };
+}
+
+function matchesStatus(value: unknown, status: string | { in: string[] } | undefined): boolean {
+  if (!status) return true;
+  const current = String(value);
+  return typeof status === "string" ? current === status : status.in.includes(current);
 }
 
 class FakeTeamChatProvider implements TeamChatProvider {

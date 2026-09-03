@@ -106,6 +106,31 @@ describe("Slack team chat adapter", () => {
     });
   });
 
+  it("rejects messages from an unconfigured Slack workspace", () => {
+    const parsed = parseSlackSocketEnvelope(
+      {
+        envelope_id: "env-cross-workspace",
+        type: "events_api",
+        payload: {
+          event_id: "Ev-cross-workspace",
+          team_id: "T-OTHER",
+          event: {
+            type: "app_mention",
+            user: "U-1",
+            channel: "C-1",
+            text: "<@U-ARTHUR> please summarize this",
+            ts: "100.001",
+          },
+        },
+      },
+      "U-ARTHUR",
+      undefined,
+      "T-AUTHORIZED",
+    );
+
+    expect(parsed).toEqual({ envelopeId: "env-cross-workspace" });
+  });
+
   it("keeps third-party bot posts for room policy evaluation", () => {
     const parsed = parseSlackSocketEnvelope(
       {
@@ -240,8 +265,9 @@ describe("Slack team chat adapter", () => {
       slackTeamChatConfigFromEnv({
         SLACK_APP_TOKEN: " xapp-test ",
         SLACK_BOT_TOKEN: " xoxb-test ",
+        SLACK_WORKSPACE_ID: " T-1 ",
       }),
-    ).toEqual({ appToken: "xapp-test", botToken: "xoxb-test" });
+    ).toEqual({ appToken: "xapp-test", botToken: "xoxb-test", workspaceId: "T-1" });
   });
 
   it("extracts every participant from a multi-person direct message", () => {
@@ -296,6 +322,7 @@ describe("Slack team chat adapter", () => {
         conversationId: "C-1",
         replyThreadId: "100.1",
         content: "abcdefghij",
+        idempotencyKey: "reply-key",
       }),
     ).resolves.toEqual({ handle: "reply-ij" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -303,6 +330,7 @@ describe("Slack team chat adapter", () => {
       Object.fromEntries(new URLSearchParams(String(fetchMock.mock.calls[0]?.[1]?.body))),
     ).toEqual({
       channel: "C-1",
+      client_msg_id: "reply-key:0",
       text: "abcd",
       thread_ts: "100.1",
     });
