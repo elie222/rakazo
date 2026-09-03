@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("screen connection failures stay visible and can be retried", async ({ page }, testInfo) => {
   await signup(page, `screen-error-${Date.now()}@rakazo.test`, "password12", "Screen Error");
   await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc(page, "computer/boot", { botId });
+  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
+    state: "running",
+  });
 
   let failScreen = true;
   const screenUrl = "https://screen.example/vnc.html";
