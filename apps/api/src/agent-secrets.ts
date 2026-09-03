@@ -99,17 +99,23 @@ export async function deleteAgentSecret(
   id: string,
 ): Promise<{ ok: true }> {
   await requireSpaceOwner(deps.prisma, actor);
-  const existing = await deps.prisma.agentSecret.findFirst({
-    where: { id, spaceId: actor.spaceId },
-    select: { id: true, secretId: true },
-  });
-  if (!existing) throw new ORPCError("NOT_FOUND");
-
-  await deps.prisma.$transaction(async (tx) => {
-    await tx.agentSecret.delete({ where: { id: existing.id } });
-    await tx.secret.deleteMany({
-      where: { id: existing.secretId, spaceId: actor.spaceId },
-    });
-  });
+  const deleted = await withTransactionRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.agentSecret.findFirst({
+          where: { id, spaceId: actor.spaceId },
+          select: { id: true, secretId: true },
+        });
+        if (!existing) return false;
+        await tx.agentSecret.delete({ where: { id: existing.id } });
+        await tx.secret.deleteMany({
+          where: { id: existing.secretId, spaceId: actor.spaceId },
+        });
+        return true;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  if (!deleted) throw new ORPCError("NOT_FOUND");
   return { ok: true };
 }

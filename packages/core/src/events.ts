@@ -312,7 +312,8 @@ export function subagentBlockFromPayload(
 }
 
 export function redactSecrets(value: string, secrets: string[]): string {
-  return secrets.reduce((acc, secret) => {
+  const orderedSecrets = [...secrets].sort((left, right) => right.length - left.length);
+  return orderedSecrets.reduce((acc, secret) => {
     if (!secret) return acc;
     return acc.split(secret).join("[redacted]");
   }, value);

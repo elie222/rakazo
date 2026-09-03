@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Files
-Exec=pcmanfm /home/rakazo
+Exec=pcmanfm
 Icon=system-file-manager
 Terminal=false
 Categories=System;FileTools;FileManager;

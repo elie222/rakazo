@@ -305,6 +305,7 @@ describe("Slack team chat adapter", () => {
 
   it("splits long replies and posts every chunk in the same thread", async () => {
     expect(splitSlackMessage("abcdefghij", 4)).toEqual(["abcd", "efgh", "ij"]);
+    expect(() => splitSlackMessage("abcdefghij", 0)).toThrow("positive safe integer");
     const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
       const body = new URLSearchParams(String(init?.body));
       const text = body.get("text") ?? "";
@@ -333,6 +334,80 @@ describe("Slack team chat adapter", () => {
       client_msg_id: "reply-key:0",
       text: "abcd",
       thread_ts: "100.1",
+    });
+  });
+
+  it("acknowledges Socket Mode messages only after inbound handling succeeds", async () => {
+    const sent: string[] = [];
+    const listeners = new Map<string, ((event?: { data: string }) => void)[]>();
+    const socket = {
+      readyState: 1,
+      addEventListener: vi.fn((type: string, listener: (event?: { data: string }) => void) => {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      }),
+      send: vi.fn((payload: string) => sent.push(payload)),
+      close: vi.fn(),
+    };
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url);
+      if (href.endsWith("/auth.test")) {
+        return new Response(JSON.stringify({ ok: true, user_id: "U-ARTHUR", team_id: "T-1" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (href.endsWith("/apps.connections.open")) {
+        return new Response(JSON.stringify({ ok: true, url: "wss://socket.test" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected Slack API call: ${href}`);
+    });
+    const provider = new SlackTeamChatProvider(
+      { appToken: "xapp-test", botToken: "xoxb-test" },
+      {
+        fetch: fetchMock as typeof fetch,
+        createSocket: vi.fn(() => {
+          setTimeout(() => listeners.get("open")?.[0]?.(), 0);
+          return socket as never;
+        }),
+      },
+    );
+    let finishHandling: (() => void) | undefined;
+    await provider.start(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHandling = resolve;
+        }),
+    );
+
+    listeners.get("message")?.[0]?.({
+      data: JSON.stringify({
+        envelope_id: "env-ack",
+        type: "events_api",
+        payload: {
+          event_id: "Ev-ack",
+          team_id: "T-1",
+          event: {
+            type: "message",
+            subtype: "bot_message",
+            bot_id: "B-OTHER",
+            bot_profile: { name: "Other bot" },
+            channel_type: "im",
+            channel: "D-1",
+            text: "hello",
+            ts: "101.001",
+          },
+        },
+      }),
+    });
+    await vi.waitFor(() => {
+      expect(finishHandling).toBeTypeOf("function");
+    });
+    expect(sent).toEqual([]);
+
+    finishHandling?.();
+    await vi.waitFor(() => {
+      expect(sent).toEqual([JSON.stringify({ envelope_id: "env-ack" })]);
     });
   });
 });

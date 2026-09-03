@@ -1468,6 +1468,37 @@ export function ShellPage() {
         cursor = head?.cursor ?? -1;
       }
       if (!subscribedThreadId || abort.signal.aborted) return;
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!snapshotReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            await refreshExternalConversationThread(
+              externalConversationId,
+              threadSnapshotSignal(abort.signal),
+            ).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
       let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
@@ -1479,8 +1510,10 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            if (snapshotRef.current?.threadId === event.threadId) {
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
               applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
             }
             if (event.type === "run.started" || isRunTerminalEvent(event)) {
               void refreshBots().catch(() => undefined);

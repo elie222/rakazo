@@ -61,14 +61,15 @@ register_browser_handler() {
 register_browser_handler x-scheme-handler/http
 register_browser_handler x-scheme-handler/https
 register_browser_handler text/html
-if [[ -z "${BROWSER:-}" ]] \
-  && ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1; then
-  echo "failed to set default web browser to rakazo-browser" >&2
-  exit 1
-fi
-if [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
-  echo "failed to set default web browser to rakazo-browser" >&2
-  exit 1
+if [[ -z "${BROWSER:-}" ]]; then
+  if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1; then
+    echo "failed to set default web browser to rakazo-browser" >&2
+    exit 1
+  fi
+  if [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+    echo "failed to set default web browser to rakazo-browser" >&2
+    exit 1
+  fi
 fi
 
 rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \

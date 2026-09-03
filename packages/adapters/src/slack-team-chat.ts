@@ -39,6 +39,9 @@ export function slackTeamChatConfigFromEnv(
 }
 
 export function splitSlackMessage(content: string, maxChars = DEFAULT_MAX_MESSAGE_CHARS): string[] {
+  if (!Number.isSafeInteger(maxChars) || maxChars < 1) {
+    throw new Error("Slack max message chars must be a positive safe integer");
+  }
   const text = content.trim() || "Done.";
   const chunks: string[] = [];
   for (let offset = 0; offset < text.length; offset += maxChars) {
@@ -219,7 +222,9 @@ export class SlackTeamChatProvider implements TeamChatProvider {
         this.reconnectAttempt = 0;
         resolve();
       });
-      socket.addEventListener("message", (event) => this.receive(event.data));
+      socket.addEventListener("message", (event) => {
+        void this.receive(event.data);
+      });
       socket.addEventListener("error", () => {
         if (!opened) reject(new Error("Slack Socket Mode connection failed"));
       });
@@ -231,7 +236,7 @@ export class SlackTeamChatProvider implements TeamChatProvider {
     });
   }
 
-  private receive(data: unknown): void {
+  private async receive(data: unknown): Promise<void> {
     let value: unknown;
     try {
       value = JSON.parse(
@@ -246,13 +251,22 @@ export class SlackTeamChatProvider implements TeamChatProvider {
       this.botId,
       this.authorizedWorkspaceId,
     );
-    if (parsed.envelopeId && this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify({ envelope_id: parsed.envelopeId }));
+    if (!parsed.message || !this.handle) {
+      this.acknowledge(parsed.envelopeId);
+      return;
     }
-    if (!parsed.message || !this.handle) return;
-    void this.dispatch(parsed.message).catch((error) => {
+    try {
+      await this.dispatch(parsed.message);
+      this.acknowledge(parsed.envelopeId);
+    } catch (error) {
       console.error("Slack inbound message error", safeError(error));
-    });
+    }
+  }
+
+  private acknowledge(envelopeId: string | undefined): void {
+    if (envelopeId && this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ envelope_id: envelopeId }));
+    }
   }
 
   private async dispatch(message: TeamChatInboundMessage): Promise<void> {

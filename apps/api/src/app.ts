@@ -464,15 +464,8 @@ export async function createApp(
       : undefined;
   let teamChatStarted = false;
   if (teamChatBridge) {
-    try {
-      await teamChatBridge.start();
-      teamChatStarted = true;
-    } catch (error) {
-      console.error(
-        "team chat bridge failed to start",
-        error instanceof Error ? error.message : error,
-      );
-    }
+    await teamChatBridge.start();
+    teamChatStarted = true;
   }
 
   app.get("/health", (c) =>
