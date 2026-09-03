@@ -113,13 +113,13 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
-      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
-      HTTP_PROXY: ${HTTP_PROXY:-}
-      HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-}
-      http_proxy: ${HTTP_PROXY:-}
-      https_proxy: ${HTTPS_PROXY:-}
-      no_proxy: ${NO_PROXY:-}
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -167,13 +167,13 @@ services:
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
-      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
-      HTTP_PROXY: ${HTTP_PROXY:-}
-      HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-}
-      http_proxy: ${HTTP_PROXY:-}
-      https_proxy: ${HTTPS_PROXY:-}
-      no_proxy: ${NO_PROXY:-}
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     volumes:
       - appdata:/data
     networks:

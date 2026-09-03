@@ -107,12 +107,12 @@ describe("the images compose file", () => {
   it("passes optional HTTP(S)_PROXY / NO_PROXY into api and worker", () => {
     for (const name of ["api", "worker"] as const) {
       const env = compose.services[name]?.environment ?? {};
-      expect(env.HTTP_PROXY).toBe("${HTTP_PROXY:-}");
-      expect(env.HTTPS_PROXY).toBe("${HTTPS_PROXY:-}");
-      expect(env.NO_PROXY).toBe("${NO_PROXY:-}");
-      expect(env.http_proxy).toBe("${HTTP_PROXY:-}");
-      expect(env.https_proxy).toBe("${HTTPS_PROXY:-}");
-      expect(env.no_proxy).toBe("${NO_PROXY:-}");
+      expect(env.HTTP_PROXY).toBe("${HTTP_PROXY:-${http_proxy:-}}");
+      expect(env.HTTPS_PROXY).toBe("${HTTPS_PROXY:-${https_proxy:-}}");
+      expect(env.NO_PROXY).toBe("${NO_PROXY:-${no_proxy:-}}");
+      expect(env.http_proxy).toBe("${http_proxy:-${HTTP_PROXY:-}}");
+      expect(env.https_proxy).toBe("${https_proxy:-${HTTPS_PROXY:-}}");
+      expect(env.no_proxy).toBe("${no_proxy:-${NO_PROXY:-}}");
     }
   });
 
