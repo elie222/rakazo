@@ -66,6 +66,21 @@ script URL — see
 
 For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
 
+## Run on a server
+
+Bots stay on when the backend runs on a server. Use the same installer on a VPS, then connect from
+the desktop app, the mobile app, or a browser.
+
+```bash
+bash install-images.sh --prepare-only
+# edit .env: SANDBOX_PROVIDER=box (or e2b / daytona) with its API key, RAKAZO_HOST=your.domain
+bash install-images.sh
+```
+
+Put HTTPS in front of port 5173; [docs/self-host.md](./docs/self-host.md#public-single-vm-deployment)
+covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
+the `https://` address.
+
 ## Local development (source checkout)
 
 You need Node.js 22+, pnpm 9, and Docker.
