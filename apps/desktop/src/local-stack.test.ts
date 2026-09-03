@@ -553,6 +553,29 @@ describe("LocalStackController", () => {
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("up"));
   });
 
+  it("honours a second stop over a start queued behind a slow first stop", async () => {
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let stops = 0;
+    const stack = controller({}, (args) => {
+      if (args[5] !== "stop") return ok(args);
+      stops += 1;
+      return stops === 1 ? { wait: stopGate } : {};
+    });
+    await stack.start();
+    const firstStop = stack.stop();
+    const queuedStart = stack.start();
+    const secondStop = stack.stop();
+    expect(secondStop).not.toBe(firstStop);
+    releaseStop();
+    await Promise.all([firstStop, queuedStart, secondStop]);
+    expect(stack.state()).toEqual(initialStackState("v1.2.3"));
+    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    expect(order.lastIndexOf("up")).toBeLessThan(order.indexOf("stop"));
+  });
+
   it("does not wait out a slow health probe when stopped", async () => {
     const stack = controller({
       probe: (signal) =>

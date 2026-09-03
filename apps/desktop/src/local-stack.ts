@@ -237,6 +237,9 @@ export class LocalStackController {
   private running: Promise<DesktopLocalStackState> | null = null;
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
+  private ticket = 0;
+  /** Starts ticketed at or below this were superseded by a later stop and must not run. */
+  private voidBefore = 0;
 
   constructor(private readonly deps: LocalStackDeps) {
     this.current = initialStackState(deps.imageTag);
@@ -252,8 +255,9 @@ export class LocalStackController {
    */
   start(): Promise<DesktopLocalStackState> {
     if (this.running !== null) return this.running;
+    const ticket = ++this.ticket;
     const attempt = (this.stopping ?? Promise.resolve())
-      .then(() => this.run())
+      .then(() => (ticket <= this.voidBefore ? this.current : this.run()))
       .finally(() => {
         if (this.running === attempt) this.running = null;
       });
@@ -268,21 +272,25 @@ export class LocalStackController {
 
   /** Stops the containers (`compose stop`); volumes and images stay for the next start. */
   stop(): Promise<DesktopLocalStackState> {
-    if (this.stopping !== null) return this.stopping;
-    const stopping = this.runStop().finally(() => {
-      if (this.stopping === stopping) this.stopping = null;
-    });
+    this.voidBefore = this.ticket;
+    // Join a stop already running unless a start was queued behind it; the latest
+    // intent is "stopped", so that start is voided and a fresh stop follows it.
+    if (this.stopping !== null && this.running === null) return this.stopping;
+    this.abort();
+    // Release the attempt now so a start requested during this stop queues a fresh
+    // attempt behind it instead of joining the one being torn down.
+    const settled = [this.stopping, this.running].map((pending) => pending?.catch(() => undefined));
+    this.running = null;
+    const stopping = Promise.all(settled)
+      .then(() => this.runStop())
+      .finally(() => {
+        if (this.stopping === stopping) this.stopping = null;
+      });
     this.stopping = stopping;
     return stopping;
   }
 
   private async runStop(): Promise<DesktopLocalStackState> {
-    this.abort();
-    // Release the aborted attempt now so a start requested during this stop queues a
-    // fresh attempt behind it instead of joining the one being torn down.
-    const aborted = this.running;
-    this.running = null;
-    if (aborted !== null) await aborted.catch(() => undefined);
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
     this.current =
