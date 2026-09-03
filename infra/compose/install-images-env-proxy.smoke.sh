@@ -75,4 +75,11 @@ prepare_proxy_env
 [[ "$HTTP_PROXY" == "http://crlf.example:8080" ]] || fail "CRLF double-quoted HTTP_PROXY must unquote"
 [[ "$HTTPS_PROXY" == "http://crlf.example:8443" ]] || fail "CRLF single-quoted HTTPS_PROXY must unquote"
 [[ "$http_proxy" == "http://crlf.example:8080" ]] || fail "CRLF http_proxy sync"
+
+# Escaped \" inside double quotes must not end the value before a literal #.
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+printf '%s\n' 'HTTP_PROXY="http://u:p\"x/#frag" # trail' >"$ENV_FILE"
+prepare_proxy_env
+[[ "$HTTP_PROXY" == 'http://u:p"x/#frag' ]] || fail "escaped quote must keep # inside double-quoted value"
+[[ "$http_proxy" == 'http://u:p"x/#frag' ]] || fail "escaped-quote http_proxy sync"
 echo "ok"

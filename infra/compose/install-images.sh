@@ -82,6 +82,13 @@ load_proxy_vars_from_env_file() {
     for ((i = 0; i < ${#line}; i++)); do
       c="${line:i:1}"
       if [[ -n "$quote" ]]; then
+        # Inside double quotes, treat \" and \\ as escaped so \# stays in-value.
+        if [[ "$quote" == '"' && "$c" == '\' ]] && ((i + 1 < ${#line})); then
+          out+="$c"
+          i=$((i + 1))
+          out+="${line:i:1}"
+          continue
+        fi
         out+="$c"
         [[ "$c" == "$quote" ]] && quote=""
       elif [[ "$c" == "'" || "$c" == '"' ]]; then
@@ -101,6 +108,8 @@ load_proxy_vars_from_env_file() {
     value="${value%"${value##*[![:space:]]}"}"
     if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
       value="${value:1:${#value}-2}"
+      value="${value//\\\"/\"}"
+      value="${value//\\\\/\\}"
     elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
       value="${value:1:${#value}-2}"
     fi
