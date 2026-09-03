@@ -202,36 +202,77 @@ warn_arm64_edge_tags() {
       v="${v%"${v##*[![:space:]]}"}"
       printf '%s' "$v"
     }
-    resolve_env_default() {
-      local v name op def cur env_raw
-      v="$(normalize_env_tag "$1")"
-      if [[ "$v" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-)([^}]*)\}$ ]]; then
-        name="${BASH_REMATCH[1]}"
-        op="${BASH_REMATCH[2]}"
-        def="${BASH_REMATCH[3]}"
-        if [[ -n "${!name+x}" ]]; then
-          cur="${!name}"
-        elif env_raw="$(awk -F= -v k="$name" '
-          $0 ~ "^[[:space:]]*" k "=" {
-            sub(/^[^=]*=/, "")
-            print
-            found=1
-            exit
-          }
-          END { if (!found) exit 2 }
-        ' "$ENV_FILE" 2>/dev/null)"; then
-          cur="$(normalize_env_tag "$env_raw")"
-        else
-          printf '%s' "$def"
-          return 0
-        fi
-        if [[ "$op" == ":-" && -z "$cur" ]]; then
-          printf '%s' "$def"
-        else
-          printf '%s' "$cur"
-        fi
+    # Shell overrides .env; return 0 when set in either, 1 when unset in both.
+    lookup_env_value() {
+      local name="$1" env_raw
+      if [[ -n "${!name+x}" ]]; then
+        printf '%s' "${!name}"
         return 0
       fi
+      if env_raw="$(awk -F= -v k="$name" '
+        $0 ~ "^[[:space:]]*" k "=" {
+          sub(/^[^=]*=/, "")
+          print
+          found=1
+          exit
+        }
+        END { if (!found) exit 2 }
+      ' "$ENV_FILE" 2>/dev/null)"; then
+        printf '%s' "$(normalize_env_tag "$env_raw")"
+        return 0
+      fi
+      return 1
+    }
+    # Expand Compose-style ${NAME}, ${NAME:-def}, ${NAME-def}, including
+    # concatenated forms like ${PREFIX}edge (Greptile: literal left the warn).
+    resolve_env_default() {
+      local v prefix rest expr suffix name op def cur resolved i
+      v="$(normalize_env_tag "$1")"
+      i=0
+      while [[ "$v" == *'${'*'}'* ]]; do
+        i=$((i + 1))
+        if [[ "$i" -gt 20 ]]; then
+          break
+        fi
+        prefix="${v%%\$\{*}"
+        rest="${v#*\$\{}"
+        case "$rest" in
+          *\}*) ;;
+          *) break ;;
+        esac
+        expr="${rest%%\}*}"
+        suffix="${rest#*\}}"
+        op=""
+        def=""
+        if [[ "$expr" =~ ^([A-Za-z_][A-Za-z0-9_]*)(:-)(.*)$ ]]; then
+          name="${BASH_REMATCH[1]}"
+          op=":-"
+          def="${BASH_REMATCH[3]}"
+        elif [[ "$expr" =~ ^([A-Za-z_][A-Za-z0-9_]*)-(.*)$ ]]; then
+          name="${BASH_REMATCH[1]}"
+          op="-"
+          def="${BASH_REMATCH[2]}"
+        elif [[ "$expr" =~ ^([A-Za-z_][A-Za-z0-9_]*)$ ]]; then
+          name="${BASH_REMATCH[1]}"
+        else
+          break
+        fi
+        if cur="$(lookup_env_value "$name")"; then
+          if [[ "$op" == ":-" && -z "$cur" ]]; then
+            resolved="$def"
+          else
+            resolved="$cur"
+          fi
+        else
+          if [[ "$op" == ":-" || "$op" == "-" ]]; then
+            resolved="$def"
+          else
+            # bare ${NAME} unset → empty, matching Compose interpolation
+            resolved=""
+          fi
+        fi
+        v="${prefix}${resolved}${suffix}"
+      done
       printf '%s' "$v"
     }
     if [[ -n "${RAKAZO_IMAGE_TAG+x}" ]]; then

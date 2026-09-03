@@ -16,6 +16,7 @@ extract_fn() {
 }
 
 eval "$(extract_fn normalize_env_tag)"
+eval "$(extract_fn lookup_env_value)"
 eval "$(extract_fn resolve_env_default)"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -53,6 +54,21 @@ printf '%s\n' 'OTHER=x' >"$ENV_FILE"
 expect "$(resolve_env_default '${BASE_TAG:-def}')" "def" "unset both + :-"
 expect "$(resolve_env_default '${BASE_TAG-def}')" "def" "unset both + -"
 
+# Concatenated interpolation (Greptile P1): ${PREFIX}edge must resolve to edge
+# when PREFIX is unset, matching Compose, so the arm64 warn can fire.
+unset PREFIX || true
+printf '%s\n' 'OTHER=x' >"$ENV_FILE"
+expect "$(resolve_env_default '${PREFIX}edge')" "edge" "unset PREFIX + concat edge"
+PREFIX=""
+expect "$(resolve_env_default '${PREFIX}edge')" "edge" "empty PREFIX + concat edge"
+PREFIX="pre"
+expect "$(resolve_env_default '${PREFIX}edge')" "preedge" "set PREFIX + concat"
+unset PREFIX SUFFIX || true
+expect "$(resolve_env_default '${PREFIX}${SUFFIX}')" "" "two bare unset → empty"
+unset BASE_TAG || true
+printf '%s\n' 'BASE_TAG=fromenv' >"$ENV_FILE"
+expect "$(resolve_env_default 'x${BASE_TAG:-def}y')" "xfromenvy" "embedded :- with .env"
+
 lookup_shell_or_dotenv() {
   local name="$1"
   if [[ -n "${!name+x}" ]]; then
@@ -78,7 +94,9 @@ expect "$(lookup_shell_or_dotenv RAKAZO_IMAGE_TAG)" "shell" "outer set shell win
 
 grep -Fq 'if [[ -n "${RAKAZO_IMAGE_TAG+x}" ]]' "$src" || fail "RAKAZO_IMAGE_TAG lookup must use +x"
 grep -Fq 'if [[ -n "${RAKAZO_COMPUTER_IMAGE_TAG+x}" ]]' "$src" || fail "RAKAZO_COMPUTER_IMAGE_TAG lookup must use +x"
-grep -Fq 'if [[ -n "${!name+x}" ]]' "$src" || fail "resolve_env_default must use +x for set-vs-unset"
+grep -Fq 'if [[ -n "${!name+x}" ]]' "$src" || fail "lookup_env_value must use +x for set-vs-unset"
+grep -Fq 'lookup_env_value()' "$src" || fail "missing lookup_env_value helper"
+grep -Fq 'concatenated forms like' "$src" || fail "resolve_env_default must document concat expansion"
 if grep -Fq 'if [[ -n "${!name:-}" ]]' "$src"; then
   fail "resolve_env_default still treats empty as unset"
 fi
