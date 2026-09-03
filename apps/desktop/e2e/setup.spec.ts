@@ -79,8 +79,10 @@ test("first run asks whether to use a local or existing instance", async () => {
   const setup = await app.firstWindow();
 
   await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(setup.getByText("Choose which server this app should use.")).toBeVisible();
   await expect(setup.getByText("This computer")).toBeVisible();
   await expect(setup.getByText("Existing instance")).toBeVisible();
+  await expect(setup.locator(".card")).toHaveCount(0);
 
   // A new instance is the default: the app runs the stack itself at the local address.
   await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
