@@ -7,21 +7,18 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
-  Checkbox,
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   Field,
   FieldGroup,
   FieldLabel,
+  FieldTitle,
   Input,
-  Label,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -31,10 +28,9 @@ import { useEffect, useState } from "react";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 
-function oauthStatusText(server: McpServer): string {
+function oauthStatusText(server: McpServer): string | null {
   if (server.oauthStatus === "connected") return t`OAuth connected`;
-  if (server.oauthStatus === "reconnect") return t`Authorization expired — reconnect required`;
-  return server.hasSecret ? t`Encrypted static credential saved` : t`No credential saved`;
+  return server.hasSecret ? t`credential saved` : null;
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
@@ -251,19 +247,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
+        className="flex max-h-[calc(100%-2rem)] w-[960px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[960px]"
       >
-        <DialogHeader className="flex-row items-start justify-between border-b border-border px-8 py-6">
-          <div>
-            <DialogTitle className="text-2xl text-foreground">
-              <Trans>MCP servers</Trans>
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-[13.5px]">
-              <Trans>
-                Connect remote or local tool servers and choose which agents can use them.
-              </Trans>
-            </DialogDescription>
-          </div>
+        <DialogHeader className="flex-row items-center justify-between border-b border-border px-6 py-5">
+          <DialogTitle className="text-xl text-foreground">
+            <Trans>MCP servers</Trans>
+          </DialogTitle>
           <DialogClose
             render={<Button variant="ghost" size="icon-sm" aria-label={t`Close MCP servers`} />}
           >
@@ -273,23 +262,17 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
         {error ? (
           <p
             role="alert"
-            className="mx-8 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+            className="mx-6 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
           >
             {error}
           </p>
         ) : null}
-        <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
+        <div className="rk-scroll grid min-h-0 grid-cols-1 gap-5 overflow-y-auto p-6 lg:grid-cols-2">
           <Card className="self-start">
             <CardHeader>
               <CardTitle>
-                <Trans>Add a server</Trans>
+                <Trans>Add server</Trans>
               </CardTitle>
-              <CardDescription className="text-xs">
-                <Trans>
-                  OAuth will be available for providers that support browser authorization. Static
-                  headers work today.
-                </Trans>
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup className="gap-4">
@@ -352,33 +335,74 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                     />
                   </Field>
                 )}
-                <Field>
-                  <FieldLabel htmlFor="mcp-secret">
-                    <Trans>Access token (optional)</Trans>
-                  </FieldLabel>
-                  <Input
-                    id="mcp-secret"
-                    type="password"
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                    placeholder={t`Stored encrypted`}
-                  />
-                </Field>
-                {transport !== "stdio" ? (
-                  <div className="grid grid-cols-[.7fr_1fr] gap-2">
-                    <Input
-                      aria-label={t`Header name`}
-                      value={headerName}
-                      onChange={(e) => setHeaderName(e.target.value)}
-                    />
-                    <Input
-                      aria-label={t`Header value`}
-                      type="password"
-                      value={headerValue}
-                      onChange={(e) => setHeaderValue(e.target.value)}
-                      placeholder={t`Optional header value`}
-                    />
+                <details className="group rounded-xl border border-border">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm text-foreground">
+                    <span>
+                      <Trans>Advanced</Trans>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-muted-foreground transition-transform group-open:rotate-90"
+                    >
+                      ›
+                    </span>
+                  </summary>
+                  <div className="space-y-4 border-t border-border p-3">
+                    <Field>
+                      <FieldLabel htmlFor="mcp-secret">
+                        <Trans>Access token (optional)</Trans>
+                      </FieldLabel>
+                      <Input
+                        id="mcp-secret"
+                        type="password"
+                        value={secret}
+                        onChange={(e) => setSecret(e.target.value)}
+                        placeholder={t`Stored encrypted`}
+                      />
+                    </Field>
+                    {transport !== "stdio" ? (
+                      <div className="grid grid-cols-[.7fr_1fr] gap-2">
+                        <Input
+                          aria-label={t`Header name`}
+                          value={headerName}
+                          onChange={(e) => setHeaderName(e.target.value)}
+                        />
+                        <Input
+                          aria-label={t`Header value`}
+                          type="password"
+                          value={headerValue}
+                          onChange={(e) => setHeaderValue(e.target.value)}
+                          placeholder={t`Optional header value`}
+                        />
+                      </div>
+                    ) : null}
                   </div>
+                </details>
+                {bots.length > 0 ? (
+                  <Field>
+                    <FieldTitle>
+                      <Trans>Agents:</Trans>
+                    </FieldTitle>
+                    <div className="flex flex-wrap gap-1.5">
+                      {bots.map((bot) => {
+                        const selected = selectedBotIds.includes(bot.id);
+                        return (
+                          <Button
+                            key={bot.id}
+                            type="button"
+                            variant={selected ? "default" : "outline"}
+                            size="xs"
+                            className="rounded-full"
+                            aria-pressed={selected}
+                            onClick={() => toggleBot(bot.id)}
+                          >
+                            {selected ? <Check aria-hidden="true" /> : null}
+                            {bot.name}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </Field>
                 ) : null}
               </FieldGroup>
               <Button
@@ -391,133 +415,99 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </Button>
             </CardContent>
           </Card>
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-[15px] font-medium text-foreground">
-                <Trans>Agent access for new servers</Trans>
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                <Trans>
-                  Applies when you click Add server. Use the agent chips on each server card to
-                  change access at any time — the agent picks it up on its next message.
-                </Trans>
-              </p>
-              <div className="mt-3 space-y-2">
-                {bots.map((bot) => (
-                  <Label
-                    key={bot.id}
-                    className="cursor-pointer gap-3 rounded-xl border border-border px-3 py-3 font-normal"
-                  >
-                    <Checkbox
-                      aria-label={bot.name}
-                      checked={selectedBotIds.includes(bot.id)}
-                      onCheckedChange={() => toggleBot(bot.id)}
-                    />
-                    <span className="grid h-8 w-8 place-items-center rounded-lg bg-muted text-xs text-foreground">
-                      {bot.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span>
-                      <span className="block text-sm text-foreground">{bot.name}</span>
-                      <span className="block text-xs text-muted-foreground">{bot.title}</span>
-                    </span>
-                  </Label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h2 className="text-[15px] font-medium text-foreground">
-                <Trans>Configured servers</Trans>
-              </h2>
-              <div className="mt-3 space-y-2">
-                {servers.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                    <Trans>No MCP servers yet.</Trans>
-                  </p>
-                ) : (
-                  servers.map((server) => (
-                    <Card key={server.id} size="sm">
-                      <CardContent>
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">{server.name}</span>
-                          <Badge variant="secondary" className="uppercase">
-                            {server.transport.replace("_", " ")}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {server.endpoint ?? server.command ?? server.slug}
-                        </p>
-                        <p
-                          className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
-                        >
+          <div>
+            <h2 className="text-[15px] font-medium text-foreground">
+              <Trans>Configured servers</Trans>
+            </h2>
+            <div className="mt-3 space-y-2">
+              {servers.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">
+                  <Trans>No MCP servers yet.</Trans>
+                </p>
+              ) : (
+                servers.map((server) => (
+                  <Card key={server.id} size="sm">
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-foreground">{server.name}</span>
+                        <Badge variant="secondary" className="uppercase">
+                          {server.transport.replace("_", " ")}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {server.endpoint ?? server.command ?? server.slug}
+                      </p>
+                      {oauthStatusText(server) ? (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
                           {oauthStatusText(server)}
                         </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-muted-foreground">
-                            <Trans>Agents:</Trans>
-                          </span>
-                          {bots.map((bot) => {
-                            const assigned = (botAssignments[bot.id] ?? []).some(
-                              (entry) => entry.serverId === server.id,
-                            );
-                            return (
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-muted-foreground">
+                          <Trans>Agents:</Trans>
+                        </span>
+                        {bots.map((bot) => {
+                          const assigned = (botAssignments[bot.id] ?? []).some(
+                            (entry) => entry.serverId === server.id,
+                          );
+                          return (
+                            <Button
+                              key={bot.id}
+                              type="button"
+                              variant={assigned ? "default" : "outline"}
+                              size="xs"
+                              className="rounded-full"
+                              aria-pressed={assigned}
+                              onClick={() => void toggleAssignment(server, bot.id)}
+                            >
+                              {assigned ? <Check aria-hidden="true" /> : null}
+                              {bot.name}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {server.transport !== "stdio" ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={oauthPending === server.id}
+                              onClick={() => void connectOAuth(server)}
+                            >
+                              {oauthActionLabel(server, oauthPending === server.id)}
+                            </Button>
+                            {server.oauthStatus !== "none" ? (
                               <Button
-                                key={bot.id}
                                 type="button"
-                                variant={assigned ? "default" : "outline"}
-                                size="xs"
-                                className="rounded-full"
-                                aria-pressed={assigned}
-                                onClick={() => void toggleAssignment(server, bot.id)}
-                              >
-                                {assigned ? <Check aria-hidden="true" /> : null}
-                                {bot.name}
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {server.transport !== "stdio" ? (
-                            <>
-                              <Button
-                                type="button"
+                                variant="outline"
                                 size="sm"
                                 disabled={oauthPending === server.id}
-                                onClick={() => void connectOAuth(server)}
+                                onClick={() => void disconnectOAuth(server)}
                               >
-                                {oauthActionLabel(server, oauthPending === server.id)}
+                                <Trans>Disconnect</Trans>
                               </Button>
-                              {server.oauthStatus !== "none" ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={oauthPending === server.id}
-                                  onClick={() => void disconnectOAuth(server)}
-                                >
-                                  <Trans>Disconnect</Trans>
-                                </Button>
-                              ) : null}
-                            </>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant={confirmingDelete === server.id ? "destructive" : "outline"}
-                            size="sm"
-                            className="ml-auto"
-                            onClick={() => void deleteServer(server)}
-                          >
-                            {confirmingDelete === server.id ? (
-                              <Trans>Confirm delete</Trans>
-                            ) : (
-                              <Trans>Delete</Trans>
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant={confirmingDelete === server.id ? "destructive" : "outline"}
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => void deleteServer(server)}
+                        >
+                          {confirmingDelete === server.id ? (
+                            <Trans>Confirm delete</Trans>
+                          ) : (
+                            <Trans>Delete</Trans>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         </div>
