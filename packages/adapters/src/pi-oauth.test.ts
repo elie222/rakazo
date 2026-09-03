@@ -26,7 +26,7 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
-type TestActor = { userId: string; workspaceId: string };
+type TestActor = { userId: string; spaceId: string };
 
 function deviceCodeResult(started: PiOAuthBegin) {
   if (started.mode !== "device-code") throw new Error("Expected a device-code login");
@@ -122,7 +122,7 @@ describe("PiOAuthLogins", () => {
   it("rejects providers without a subscription sign-in flow", async () => {
     const logins = new PiOAuthLogins();
     await expect(
-      logins.begin({ userId: "u", workspaceId: "w", provider: "openrouter" }),
+      logins.begin({ userId: "u", spaceId: "w", provider: "openrouter" }),
     ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
   });
 
@@ -142,7 +142,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: "anthropic",
     });
     expect(started.mode).toBe("auth-url");
@@ -150,21 +150,21 @@ describe("PiOAuthLogins", () => {
     expect("userCode" in started).toBe(false);
 
     expect(() =>
-      logins.submit(started.loginId, { userId: "other", workspaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "other", spaceId: "w" }, "pasted-code#state"),
     ).toThrow(/not found/);
-    expect(() => logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "   ")).toThrow(
+    expect(() => logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "   ")).toThrow(
       /Paste an authorization code/,
     );
 
     expect(
-      logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
     ).toEqual({ ok: true });
     expect(
-      logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "pasted-code#state"),
+      logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "pasted-code#state"),
     ).toEqual({ ok: true });
 
     await flushMicrotasks();
-    const done = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
+    const done = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(done.status).toBe("connected");
     if (done.status === "connected") expect(done.credential.access).toBe("claude-access");
   });
@@ -186,13 +186,13 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
-    expect(() => logins.submit(started.loginId, { userId: "u", workspaceId: "w" }, "x")).toThrow(
+    expect(() => logins.submit(started.loginId, { userId: "u", spaceId: "w" }, "x")).toThrow(
       /not waiting for a pasted code/,
     );
-    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+    await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
   });
 
   it("releases a pending manual-code prompt when the login is cancelled", async () => {
@@ -212,11 +212,11 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: "anthropic",
     });
 
-    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+    await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
     await flushMicrotasks();
 
     expect(promptSettled).toBe(true);
@@ -243,7 +243,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: "anthropic",
     });
 
@@ -251,7 +251,7 @@ describe("PiOAuthLogins", () => {
     await flushMicrotasks();
 
     expect(promptSettled).toBe(true);
-    await logins.cancel(started.loginId, { userId: "u", workspaceId: "w" });
+    await logins.cancel(started.loginId, { userId: "u", spaceId: "w" });
   });
 
   it("rejects non-HTTPS authorization URLs", async () => {
@@ -261,7 +261,7 @@ describe("PiOAuthLogins", () => {
     });
 
     await expect(
-      logins.begin({ userId: "u", workspaceId: "w", provider: "anthropic" }),
+      logins.begin({ userId: "u", spaceId: "w", provider: "anthropic" }),
     ).rejects.toThrow(/must use HTTPS/);
   });
 
@@ -277,7 +277,7 @@ describe("PiOAuthLogins", () => {
     await expect(
       logins.begin({
         userId: "u",
-        workspaceId: "w",
+        spaceId: "w",
         provider: CHATGPT_OAUTH_PROVIDER,
         signal: controller.signal,
       }),
@@ -309,12 +309,12 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     expect(deviceCodeResult(started).userCode).toBe("ABCD-1234");
     expect(started.verificationUri).toContain("auth.openai.com");
-    const pending = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
+    const pending = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(pending.status).toBe("pending");
     logins.abortAll();
   });
@@ -339,13 +339,13 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: CHATGPT_OAUTH_PROVIDER,
       modelId: "gpt-5.4",
     });
     finish(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
-    const done = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
+    const done = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(done).toMatchObject({
       status: "connected",
       provider: CHATGPT_OAUTH_PROVIDER,
@@ -354,11 +354,11 @@ describe("PiOAuthLogins", () => {
     if (done.status === "connected") expect(done.credential.access).toBe("live-access");
     const persisted = await logins.finish(
       started.loginId,
-      { userId: "u", workspaceId: "w" },
+      { userId: "u", spaceId: "w" },
       async (result) => result.credential.access,
     );
     expect(persisted).toEqual({ status: "connected", value: "live-access" });
-    const gone = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
+    const gone = await logins.complete(started.loginId, { userId: "u", spaceId: "w" });
     expect(gone.status).toBe("error");
   });
 
@@ -379,21 +379,19 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "owner",
-      workspaceId: "workspace",
+      spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
 
-    await logins.cancel(started.loginId, { userId: "other", workspaceId: "workspace" });
+    await logins.cancel(started.loginId, { userId: "other", spaceId: "workspace" });
     expect(
-      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
-        .status,
+      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("pending");
 
-    await logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
+    await logins.cancel(started.loginId, { userId: "owner", spaceId: "workspace" });
     expect(aborted).toBe(true);
     expect(
-      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
-        .status,
+      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("error");
   });
 
@@ -411,7 +409,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "owner",
-      workspaceId: "workspace",
+      spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     finishLogin(oauthCred());
@@ -428,7 +426,7 @@ describe("PiOAuthLogins", () => {
     });
     const finishing = logins.finish(
       started.loginId,
-      { userId: "owner", workspaceId: "workspace" },
+      { userId: "owner", spaceId: "workspace" },
       async (result) => {
         persistenceSignal = result.signal;
         persistenceStarted();
@@ -440,14 +438,14 @@ describe("PiOAuthLogins", () => {
     expect(persistenceSignal.aborted).toBe(false);
 
     await expect(
-      logins.finish(started.loginId, { userId: "owner", workspaceId: "workspace" }, async () => {
+      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
         throw new Error("duplicate persistence");
       }),
     ).resolves.toEqual({ status: "pending" });
 
     let cancellationFinished = false;
     const cancelling = logins
-      .cancel(started.loginId, { userId: "owner", workspaceId: "workspace" })
+      .cancel(started.loginId, { userId: "owner", spaceId: "workspace" })
       .then(() => {
         cancellationFinished = true;
       });
@@ -476,16 +474,16 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "owner",
-      workspaceId: "workspace",
+      spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     finishLogin(oauthCred());
     await flushMicrotasks();
 
-    await logins.cancel(started.loginId, { userId: "owner", workspaceId: "workspace" });
+    await logins.cancel(started.loginId, { userId: "owner", spaceId: "workspace" });
     let persisted = false;
     await expect(
-      logins.finish(started.loginId, { userId: "owner", workspaceId: "workspace" }, async () => {
+      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
         persisted = true;
         return "saved";
       }),
@@ -507,7 +505,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "owner",
-      workspaceId: "workspace",
+      spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     finishLogin(oauthCred());
@@ -515,25 +513,23 @@ describe("PiOAuthLogins", () => {
 
     const failure = new Error("persistence failed");
     await expect(
-      logins.finish(started.loginId, { userId: "owner", workspaceId: "workspace" }, async () => {
+      logins.finish(started.loginId, { userId: "owner", spaceId: "workspace" }, async () => {
         throw failure;
       }),
     ).rejects.toBe(failure);
     expect(
-      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
-        .status,
+      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("connected");
 
     await expect(
       logins.finish(
         started.loginId,
-        { userId: "owner", workspaceId: "workspace" },
+        { userId: "owner", spaceId: "workspace" },
         async (result) => result.credential.access,
       ),
     ).resolves.toEqual({ status: "connected", value: "access-token" });
     expect(
-      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
-        .status,
+      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("error");
   });
 
@@ -551,7 +547,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "owner",
-      workspaceId: "workspace",
+      spaceId: "workspace",
       provider: CHATGPT_OAUTH_PROVIDER,
     });
     finishLogin(oauthCred());
@@ -559,31 +555,26 @@ describe("PiOAuthLogins", () => {
 
     let persisted = false;
     await expect(
-      logins.finish(started.loginId, { userId: "other", workspaceId: "workspace" }, async () => {
+      logins.finish(started.loginId, { userId: "other", spaceId: "workspace" }, async () => {
         persisted = true;
         return "saved";
       }),
     ).resolves.toMatchObject({ status: "error" });
     expect(persisted).toBe(false);
     await expect(
-      logins.finish(
-        started.loginId,
-        { userId: "owner", workspaceId: "other-workspace" },
-        async () => {
-          persisted = true;
-          return "saved";
-        },
-      ),
+      logins.finish(started.loginId, { userId: "owner", spaceId: "other-workspace" }, async () => {
+        persisted = true;
+        return "saved";
+      }),
     ).resolves.toMatchObject({ status: "error" });
     expect(persisted).toBe(false);
     expect(
-      (await logins.complete(started.loginId, { userId: "owner", workspaceId: "workspace" }))
-        .status,
+      (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("connected");
   });
 
   it("waits for successful finalization before starting a replacement", async () => {
-    const actor = { userId: "owner", workspaceId: "workspace" };
+    const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
     const original = await beginControlledOAuth(control, actor);
 
@@ -615,7 +606,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("starts a replacement after failed finalization returns to ready", async () => {
-    const actor = { userId: "owner", workspaceId: "workspace" };
+    const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
     const original = await beginControlledOAuth(control, actor);
 
@@ -648,7 +639,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("serializes concurrent replacements for one workspace scope", async () => {
-    const actor = { userId: "owner", workspaceId: "workspace" };
+    const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
     const original = await beginControlledOAuth(control, actor);
 
@@ -690,7 +681,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("does not start an aborted replacement after finalization wait", async () => {
-    const actor = { userId: "owner", workspaceId: "workspace" };
+    const actor = { userId: "owner", spaceId: "workspace" };
     const control = createControlledOAuthLogins();
     const original = await beginControlledOAuth(control, actor);
 
@@ -726,8 +717,8 @@ describe("PiOAuthLogins", () => {
   });
 
   it("keeps replacement scopes isolated by workspace", async () => {
-    const ownerWorkspace = { userId: "owner", workspaceId: "workspace-a" };
-    const otherWorkspace = { userId: "owner", workspaceId: "workspace-b" };
+    const ownerWorkspace = { userId: "owner", spaceId: "workspace-a" };
+    const otherWorkspace = { userId: "owner", spaceId: "workspace-b" };
     const control = createControlledOAuthLogins();
     const original = await beginControlledOAuth(control, ownerWorkspace);
 
@@ -786,7 +777,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: COPILOT_OAUTH_PROVIDER,
     });
     expect(deviceCodeResult(started).userCode).toBe("GH-CODE");
@@ -810,7 +801,7 @@ describe("PiOAuthLogins", () => {
     });
     const started = await logins.begin({
       userId: "u",
-      workspaceId: "w",
+      spaceId: "w",
       provider: XAI_OAUTH_PROVIDER,
     });
     expect(deviceCodeResult(started).userCode).toBe("XAI-CODE");

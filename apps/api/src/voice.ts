@@ -13,11 +13,14 @@ import {
 import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
 import {
+  deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
   findVoiceCredential,
   IsolationError,
+  newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
+  selectSpaceVoicePreference,
 } from "@rakazo/db";
 import type { Context, Hono } from "hono";
 import { withSerializableRetry } from "./serializable-retry.js";
@@ -35,7 +38,7 @@ export function voiceContext(actor: Actor, signal?: AbortSignal): AdapterContext
   return {
     operationId: "voice",
     traceId: "voice",
-    workspaceId: actor.workspaceId,
+    spaceId: actor.spaceId,
     userId: actor.userId,
     signal: signal ?? new AbortController().signal,
   };
@@ -82,10 +85,10 @@ export async function loadVoiceCredential(deps: VoiceDeps, actor: Actor, provide
     : await findDefaultVoiceCredential(deps.prisma, actor);
   if (!cred) return null;
   const secret = await deps.prisma.secret.findFirst({
-    where: { id: cred.secretId, userId: actor.userId, workspaceId: actor.workspaceId },
+    where: { id: cred.secretId, userId: actor.userId, spaceId: null },
   });
   if (!secret) return null;
-  return { cred, apiKey: deps.secrets.load(secret.ciphertext) };
+  return { cred, apiKey: deps.secrets.load(secret.ciphertext, secret.id) };
 }
 
 export async function resolveVoiceTarget(
@@ -96,7 +99,7 @@ export async function resolveVoiceTarget(
   let botVoiceId: string | null = null;
   if (input.botId) {
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, workspaceId: actor.workspaceId, userId: actor.userId },
+      where: { id: input.botId, spaceId: actor.spaceId, userId: actor.userId },
       select: { voiceId: true },
     });
     if (!bot) throw new IsolationError();
@@ -136,55 +139,52 @@ export async function persistVoiceCredential(
   const cred = await withSerializableRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
-        const existing = await tx.userVoiceCredential.findUnique({
-          where: {
-            userId_workspaceId_provider: {
-              userId: actor.userId,
-              workspaceId: actor.workspaceId,
-              provider: input.provider,
-            },
-          },
+        const existing = await tx.userVoiceCredential.findFirst({
+          where: { userId: actor.userId, provider: input.provider },
+          orderBy: newestVoiceCredentialOrder,
         });
         const secret = await tx.secret.create({
           data: {
             id: stored.id,
             userId: actor.userId,
-            workspaceId: actor.workspaceId,
+            spaceId: null,
             kind: "voice",
             ciphertext: stored.ciphertext,
           },
         });
-        await tx.userVoiceCredential.updateMany({
-          where: { userId: actor.userId, workspaceId: actor.workspaceId },
-          data: { isDefault: false },
-        });
-        if (!existing) {
-          return tx.userVoiceCredential.create({
-            data: {
-              userId: actor.userId,
-              workspaceId: actor.workspaceId,
-              provider: input.provider,
-              secretId: secret.id,
-              isDefault: true,
-              voiceId,
-            },
+        const credential = !existing
+          ? await tx.userVoiceCredential.create({
+              data: {
+                userId: actor.userId,
+                provider: input.provider,
+                secretId: secret.id,
+              },
+            })
+          : await tx.userVoiceCredential.update({
+              where: { id: existing.id },
+              data: { secretId: secret.id },
+            });
+        const previousPreference = existing
+          ? await tx.spaceVoicePreference.findUnique({
+              where: {
+                spaceId_userId_credentialId: {
+                  spaceId: actor.spaceId,
+                  userId: actor.userId,
+                  credentialId: existing.id,
+                },
+              },
+            })
+          : null;
+        const selectedVoiceId = voiceId || previousPreference?.voiceId || "";
+        await selectSpaceVoicePreference(tx, actor, credential.id, selectedVoiceId);
+        if (existing) {
+          await deleteUnreferencedCredentialSecret(tx, {
+            credentialKind: "voice",
+            credentialId: existing.id,
+            secretId: existing.secretId,
           });
         }
-        const updated = await tx.userVoiceCredential.update({
-          where: { id: existing.id },
-          data: {
-            secretId: secret.id,
-            isDefault: true,
-            voiceId: voiceId || existing.voiceId,
-          },
-        });
-        const sharedSecret = await tx.userVoiceCredential.count({
-          where: { id: { not: existing.id }, secretId: existing.secretId },
-        });
-        if (sharedSecret === 0) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-        }
-        return updated;
+        return { ...credential, isDefault: true, voiceId: selectedVoiceId };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

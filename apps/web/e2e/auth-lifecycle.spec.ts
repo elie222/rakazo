@@ -12,7 +12,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.goto("/sign-up");
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
-  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "new-password");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "new-password",
+  );
 
   await signup(page, email, password, userName);
   await completeOnboarding(page);
@@ -38,7 +41,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
-  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "current-password");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "current-password",
+  );
   await captureScreenshot(page, testInfo, "38-protected-deep-link-sign-in");
 
   await page.getByPlaceholder("Your email address").fill(email);
@@ -57,7 +63,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.waitForURL((url) => url.pathname === protectedBotPath, {
     timeout: 20_000,
   });
-  const composer = page.getByRole("textbox", { name: "Message Chief" });
+  const composer = page.getByRole("combobox", { name: "Message Chief" });
   await expect(composer).toHaveAttribute("name", "chat-message");
   await expect(composer).toHaveAttribute("autocomplete", "off");
   await expect(composer).toHaveAttribute("aria-label", "Message Chief");
@@ -71,10 +77,81 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   const heightWithNewline = await composer.evaluate((el) => el.getBoundingClientRect().height);
   expect(heightWithNewline).toBeGreaterThan(heightBeforeNewline);
 
+  await composer.press("Enter");
+  const multilineMessage = page
+    .getByTestId("transcript")
+    .getByText("line one\nline two", { exact: true });
+  await expect(multilineMessage).toBeVisible();
+  await expect(multilineMessage).toHaveCSS("white-space", "pre-wrap");
+
   const message = "Fake composer regression check.";
   await composer.fill(message);
   await captureScreenshot(page, testInfo, "40-restored-auth-session");
   await composer.press("Enter");
   await expect(composer).toHaveValue("");
-  await expect(page.getByText(message, { exact: true })).toBeVisible();
+  // Scope to the transcript: the sidebar activity row can echo the same text.
+  await expect(page.getByTestId("transcript").getByText(message, { exact: true })).toBeVisible();
+});
+
+test("changes and recovers an email password", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  const email = `password-recovery-${stamp}@rakazo.test`;
+  const originalPassword = "password12";
+  const changedPassword = "changed-password12";
+  const resetPassword = "reset-password12";
+  const userName = "Password Recovery";
+
+  await signup(page, email, originalPassword, userName);
+  await completeOnboarding(page);
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await settings.getByLabel("Current password").fill(originalPassword);
+  await settings.getByLabel("New password").fill(changedPassword);
+  await settings.getByLabel("Confirm password").fill(changedPassword);
+  await settings.getByRole("button", { name: "Change password" }).click();
+  await expect(settings.getByText("Password updated")).toBeVisible();
+  await captureScreenshot(page, testInfo, "41-password-changed");
+  await settings.getByRole("button", { name: "Close user settings" }).click();
+
+  await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page.getByRole("link", { name: "Forgot password?" })).toBeVisible();
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+  await page.getByLabel("Email").fill(email);
+  await expect(page.getByLabel("Email")).toHaveValue(email);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+  await expect(page.getByText("Check your email")).toBeVisible();
+  await captureScreenshot(page, testInfo, "42-password-reset-requested");
+
+  const emailApi = process.env.API_URL ?? "http://127.0.0.1:3110";
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`${emailApi}/__e2e/emails`);
+      return ((await response.json()) as unknown[]).length;
+    })
+    .toBeGreaterThan(0);
+  const messagesResponse = await page.request.get(`${emailApi}/__e2e/emails`);
+  expect(messagesResponse.headers()["cache-control"]).toBe("no-store");
+  const messages = (await messagesResponse.json()) as Array<{
+    text: string;
+  }>;
+  const resetUrl = messages.at(-1)?.text.match(/https?:\/\/\S+/)?.[0];
+  expect(resetUrl).toBeTruthy();
+
+  await page.goto(resetUrl!);
+  await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+  await page.getByLabel("New password").fill(resetPassword);
+  await page.getByLabel("Confirm password").fill(resetPassword);
+  await page.getByRole("button", { name: "Reset password" }).click();
+  await expect(page.getByText("Password updated")).toBeVisible();
+  await page.getByRole("link", { name: "Sign in" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(resetPassword);
+  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.waitForURL(/\/app(?:\/|$)/);
 });

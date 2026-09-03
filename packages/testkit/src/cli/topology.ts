@@ -38,10 +38,12 @@ async function main() {
       "computer-image",
       "supervisor",
       "api",
+      "web",
       "worker",
     ]);
     await waitForHealth(baseUrl, 120_000);
     await waitForWorker(compose, 60_000);
+    await waitForComposeHealth(compose, "web", 60_000);
 
     compose(["stop", "worker"]);
     cookie = await signup(baseUrl);
@@ -82,6 +84,7 @@ async function main() {
     if (computer.state !== "running") {
       throw new Error(`Docker computer did not remain running: ${JSON.stringify(computer)}`);
     }
+    assertComputerNetworkIsolation(compose, project);
     await rpc(baseUrl, cookie, "bots/remove", { botId: bot.id });
     botId = undefined;
 
@@ -89,7 +92,14 @@ async function main() {
       JSON.stringify(
         {
           ok: true,
-          topology: ["postgres", "api", "graphile-worker", "supervisor", "docker-computer"],
+          topology: [
+            "postgres",
+            "api",
+            "web-proxy",
+            "graphile-worker",
+            "supervisor",
+            "docker-computer",
+          ],
           recovery: "queued while worker stopped, completed after worker restart",
           runId: sent.runId,
         },
@@ -114,7 +124,7 @@ async function main() {
       if (cookie && botId) {
         await rpc(baseUrl, cookie, "bots/remove", { botId }).catch(() => undefined);
       }
-      removeManagedComputers(project);
+      removeManagedComputers(compose, project);
       try {
         compose(["down", "--volumes", "--remove-orphans"]);
       } catch (error) {
@@ -216,24 +226,108 @@ async function waitForWorker(
   throw new Error("Graphile worker did not become ready");
 }
 
+async function waitForComposeHealth(
+  compose: (args: string[], capture?: boolean) => string,
+  service: string,
+  timeoutMs: number,
+) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const containerId = compose(["ps", "--quiet", service], true).trim();
+    if (containerId) {
+      const status = docker([
+        "inspect",
+        containerId,
+        "--format",
+        "{{.State.Health.Status}}",
+      ]).trim();
+      if (status === "healthy") return;
+      if (status === "unhealthy") throw new Error(`${service} became unhealthy`);
+    }
+    await delay(500);
+  }
+  throw new Error(`${service} did not become healthy`);
+}
+
 function docker(args: string[]) {
   return command("docker", args, process.env, true);
 }
 
-function removeManagedComputers(projectName: string) {
+function assertComputerNetworkIsolation(
+  compose: (args: string[], capture?: boolean) => string,
+  projectName: string,
+) {
+  const supervisorId = compose(["ps", "--quiet", "supervisor"], true).trim();
+  const webId = compose(["ps", "--quiet", "web"], true).trim();
+  const networkNames = isolatedSupervisorNetworks(supervisorId, projectName);
+  if (networkNames.length !== 1) {
+    throw new Error(`expected one isolated computer network: ${JSON.stringify(networkNames)}`);
+  }
+  const peers = JSON.parse(
+    docker(["network", "inspect", networkNames[0]!, "--format", "{{json .Containers}}"]),
+  ) as Record<string, { Name?: string }>;
+  const computerIds = Object.keys(peers).filter(
+    (containerId) => containerId !== supervisorId && containerId !== webId,
+  );
+  if (computerIds.length !== 1) {
+    throw new Error(`expected one computer peer: ${JSON.stringify(Object.values(peers))}`);
+  }
+  const computerId = computerIds[0]!;
+  const managed = docker([
+    "inspect",
+    computerId,
+    "--format",
+    '{{index .Config.Labels "rakazo.managed"}}',
+  ]).trim();
+  if (managed !== "true") throw new Error("isolated peer is not a managed computer");
+  const [spec] = JSON.parse(docker(["inspect", computerId])) as Array<{
+    Config?: { User?: string };
+    HostConfig?: { CapDrop?: string[]; SecurityOpt?: string[]; PidsLimit?: number };
+  }>;
+  if (
+    spec?.Config?.User !== "1000:1000" ||
+    !spec.HostConfig?.CapDrop?.includes("ALL") ||
+    !spec.HostConfig.SecurityOpt?.some((option) => option.startsWith("no-new-privileges")) ||
+    spec.HostConfig.PidsLimit !== 2048
+  ) {
+    throw new Error(`computer hardening is incomplete: ${JSON.stringify(spec)}`);
+  }
+  const expected = new Set([computerId, supervisorId, webId]);
+  const actual = Object.keys(peers);
+  if (actual.length !== expected.size || actual.some((containerId) => !expected.has(containerId))) {
+    const peerNames = Object.values(peers).flatMap((peer) => (peer.Name ? [peer.Name] : []));
+    throw new Error(`unexpected isolated screen peers: ${JSON.stringify(peerNames)}`);
+  }
+}
+
+function isolatedSupervisorNetworks(supervisorId: string, projectName: string): string[] {
+  if (!supervisorId) return [];
+  const networks = JSON.parse(
+    docker(["inspect", supervisorId, "--format", "{{json .NetworkSettings.Networks}}"]),
+  ) as Record<string, unknown>;
+  return Object.keys(networks).filter((name) => name !== `${projectName}_default`);
+}
+
+function removeManagedComputers(
+  compose: (args: string[], capture?: boolean) => string,
+  projectName: string,
+) {
   try {
-    const ids = docker([
-      "ps",
-      "--all",
-      "--quiet",
-      "--filter",
-      `network=${projectName}_default`,
-      "--filter",
-      "label=rakazo.managed=true",
-    ])
-      .split("\n")
-      .map((id) => id.trim())
-      .filter(Boolean);
+    const supervisorId = compose(["ps", "--quiet", "supervisor"], true).trim();
+    const ids = isolatedSupervisorNetworks(supervisorId, projectName).flatMap((networkName) =>
+      docker([
+        "ps",
+        "--all",
+        "--quiet",
+        "--filter",
+        `network=${networkName}`,
+        "--filter",
+        "label=rakazo.managed=true",
+      ])
+        .split("\n")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
     if (ids.length) docker(["rm", "--force", ...ids]);
   } catch (error) {
     console.error(

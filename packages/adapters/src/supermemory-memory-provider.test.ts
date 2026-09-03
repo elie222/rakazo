@@ -5,7 +5,7 @@ import { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 const context: AdapterContext = {
   operationId: "op-1",
   traceId: "trace-1",
-  workspaceId: "workspace-1",
+  spaceId: "workspace-1",
   userId: "user-1",
   botId: "bot-1",
   signal: new AbortController().signal,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupBotsForSidebar } from "./bot-sections.js";
+import { groupBotsForSidebar, reorderBotTo } from "./bot-sections.js";
 
 const sections = [
   { id: "work", name: "Work" },
@@ -43,5 +43,19 @@ describe("groupBotsForSidebar", () => {
   it("does not add a heading before sections or pins exist", () => {
     const groups = groupBotsForSidebar([{ id: "first", pinned: false, sectionId: null }], []);
     expect(groups[0]?.title).toBeNull();
+  });
+});
+
+describe("reorderBotTo", () => {
+  const bots = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("moves a bot to the target bot's position in either direction", () => {
+    expect(reorderBotTo(bots, "a", "c").map((bot) => bot.id)).toEqual(["b", "c", "a"]);
+    expect(reorderBotTo(bots, "c", "a").map((bot) => bot.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("leaves the list alone when either bot is missing or unchanged", () => {
+    expect(reorderBotTo(bots, "a", "missing")).toBe(bots);
+    expect(reorderBotTo(bots, "a", "a")).toBe(bots);
   });
 });

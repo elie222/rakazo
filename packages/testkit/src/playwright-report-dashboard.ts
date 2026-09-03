@@ -1,4 +1,6 @@
 const MAX_HISTORY_LENGTH = 100;
+export const MAX_PLAYWRIGHT_SCREENSHOT_COUNT = 250;
+export const MAX_PLAYWRIGHT_SCREENSHOT_BYTES = 250 * 1024 * 1024;
 const SHARED_PAGE_STYLES = `
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09090b; color: #fafafa; }
     * { box-sizing: border-box; }
@@ -46,6 +48,27 @@ export type PlaywrightScreenshotManifest = {
 };
 
 export type PlaywrightScreenshotMetadata = Omit<PlaywrightScreenshot, "comparison" | "fileName">;
+
+export function validatePlaywrightScreenshotBudget(count: number, totalBytes: number): void {
+  if (count > MAX_PLAYWRIGHT_SCREENSHOT_COUNT) {
+    throw new Error(
+      `Playwright artifact contains ${count} screenshots; maximum is ${MAX_PLAYWRIGHT_SCREENSHOT_COUNT}`,
+    );
+  }
+  if (totalBytes > MAX_PLAYWRIGHT_SCREENSHOT_BYTES) {
+    throw new Error(
+      `Playwright screenshots exceed maximum total size of ${MAX_PLAYWRIGHT_SCREENSHOT_BYTES} bytes`,
+    );
+  }
+}
+
+export function classifyPlaywrightScreenshot(
+  fileName: string,
+): PlaywrightScreenshot["captureType"] | undefined {
+  const baseName = fileName.split(/[\\/]/).at(-1) ?? fileName;
+  if (/^test-finished(?:-\d+)?\.png$/i.test(baseName)) return undefined;
+  return /^test-failed(?:-\d+)?\.png$/i.test(baseName) ? "failure" : "checkpoint";
+}
 
 export function createScreenshotManifest(
   screenshots: PlaywrightScreenshot[],
@@ -363,6 +386,7 @@ export function renderScreenshotGallery(input: {
       screenshot.comparison === "changed" ||
       screenshot.comparison === "new",
   ).length;
+  const defaultFilter = !input.baselineAvailable ? "all" : counts.new > 0 ? "new" : "review";
   const screenshots = input.screenshots
     .map((screenshot, index) => {
       const imageUrl = new URL(screenshot.fileName, galleryBaseUrl).toString();
@@ -495,9 +519,9 @@ export function renderScreenshotGallery(input: {
     ${
       screenshots
         ? `<nav class="filters" aria-label="Screenshot filters">
-      <button class="filter" type="button" data-filter="all" aria-pressed="${String(!input.baselineAvailable)}">All (${input.screenshots.length})</button>
-      <button class="filter" type="button" data-filter="review" aria-pressed="${String(input.baselineAvailable)}">Review changes (${reviewCount})</button>
-      <button class="filter" type="button" data-filter="new" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>New (${counts.new})</button>
+      <button class="filter" type="button" data-filter="all" aria-pressed="${String(defaultFilter === "all")}">All (${input.screenshots.length})</button>
+      <button class="filter" type="button" data-filter="review" aria-pressed="${String(defaultFilter === "review")}">Review changes (${reviewCount})</button>
+      <button class="filter" type="button" data-filter="new" aria-pressed="${String(defaultFilter === "new")}" ${input.baselineAvailable ? "" : "disabled"}>New (${counts.new})</button>
       <button class="filter" type="button" data-filter="changed" aria-pressed="false" ${input.baselineAvailable ? "" : "disabled"}>Changed (${counts.changed})</button>
       <button class="filter" type="button" data-filter="failed" aria-pressed="false">Failed (${counts.failed})</button>
     </nav>`
@@ -555,7 +579,7 @@ export function renderScreenshotGallery(input: {
       if (filterEmpty) filterEmpty.hidden = visible !== 0;
     }
 
-    setFilter(${JSON.stringify(input.baselineAvailable ? "review" : "all")});
+    setFilter(${JSON.stringify(defaultFilter)});
     for (const filter of filters) {
       filter.addEventListener("click", () => setFilter(filter.dataset.filter));
     }

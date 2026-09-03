@@ -100,49 +100,49 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <div className="mb-3 text-[14px] text-[#85858A]">
+      <div className="mb-3 text-[14px] text-[var(--rk-muted)]">
         <Trans>Open work</Trans>
       </div>
       {items.length === 0 ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">
+        <div className="px-2.5 py-1 text-[13.5px] text-[var(--rk-muted-2)]">
           <Trans>None yet</Trans>
         </div>
       ) : (
         items.map((item) => (
           <div
             key={item.id}
-            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-inset)]"
           >
             <button
               type="button"
               aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
               disabled={busy}
               onClick={() => void setStatus(item, item.status === "done" ? "open" : "done")}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[#3A3A40] text-[10px] leading-none text-[#E65707]"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[var(--rk-border)] text-[10px] leading-none text-[#E65707]"
             >
               {item.status === "done" ? "✓" : ""}
             </button>
             <div className="min-w-0 flex-1">
               <div
-                className={`text-start text-[14.5px] ${item.status === "done" ? "text-[#6C6C70] line-through" : "text-[#ECECEE]"}`}
+                className={`text-start text-[14.5px] ${item.status === "done" ? "text-[var(--rk-muted-2)] line-through" : "text-[var(--rk-ink)]"}`}
                 dir="auto"
               >
                 {item.title}
               </div>
               {item.notes ? (
-                <div className="mt-0.5 text-[12.5px] text-[#6C6C70]" dir="auto">
+                <div className="mt-0.5 text-[12.5px] text-[var(--rk-muted-2)]" dir="auto">
                   {item.notes}
                 </div>
               ) : null}
             </div>
-            <span className="shrink-0 text-[12px] text-[#6C6C70]">{item.status}</span>
+            <span className="shrink-0 text-[12px] text-[var(--rk-muted-2)]">{item.status}</span>
             {item.status === "open" ? (
               <button
                 type="button"
                 aria-label={t`Park`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "parked")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-[12px] text-[var(--rk-faint)]"
               >
                 <Trans>Park</Trans>
               </button>
@@ -152,7 +152,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
                 aria-label={t`Reopen`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "open")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-[12px] text-[var(--rk-faint)]"
               >
                 <Trans>Open</Trans>
               </button>
@@ -162,7 +162,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               aria-label={t`Remove`}
               disabled={busy}
               onClick={() => void removeItem(item)}
-              className="shrink-0 text-[12px] text-[#7A7A80]"
+              className="shrink-0 text-[12px] text-[var(--rk-faint)]"
             >
               ✕
             </button>
@@ -182,7 +182,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           placeholder={t`Add item`}
           aria-label={t`New open-work item`}
           maxLength={200}
-          className="min-w-0 flex-1 rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2 text-[14px] text-[#ECECEE] placeholder:text-[#55555A]"
+          className="min-w-0 flex-1 rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3 py-2 text-[14px] text-[var(--rk-ink)] placeholder:text-[#55555A]"
         />
         <BuiButton disabled={busy || !draft.trim()} onClick={() => void addItem()}>
           <Trans>Add</Trans>

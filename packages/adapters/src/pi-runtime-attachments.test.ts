@@ -69,7 +69,7 @@ describe("Pi runtime attachments", () => {
       {
         operationId: "attachment-test",
         traceId: "attachment-test",
-        workspaceId: "workspace",
+        spaceId: "workspace",
         userId: "user",
         signal: new AbortController().signal,
       },

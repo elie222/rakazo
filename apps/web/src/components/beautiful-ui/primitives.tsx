@@ -51,17 +51,10 @@ function useElapsed(startedAtMs?: number): string {
 }
 
 /** Pixel-grid loader with shimmering label and live elapsed timer. */
-export function LoadingState({
-  label = "working",
-  startedAt,
-}: {
-  label?: string;
-  /** Epoch ms when the run started. Falls back to mount time when omitted. */
-  startedAt?: number;
-}) {
+function DefaultLoadingState({ label, startedAt }: { label: string; startedAt?: number }) {
   const elapsed = useElapsed(startedAt);
   return (
-    <span className="flex w-fit items-center gap-2.5">
+    <>
       <span aria-hidden className="grid grid-cols-[repeat(3,4px)] gap-[1.5px]">
         {CHEVRON_DELAYS.map((delay, i) => (
           <span
@@ -81,6 +74,31 @@ export function LoadingState({
       <span className="font-mono text-[12px] tabular-nums" style={{ color: "var(--bui-ink-3)" }}>
         {elapsed}
       </span>
+    </>
+  );
+}
+
+export function LoadingState({
+  indicator,
+  label = "working",
+  startedAt,
+}: {
+  indicator?: React.ReactNode;
+  label?: string;
+  /** Epoch ms when the run started. Falls back to mount time when omitted. */
+  startedAt?: number;
+}) {
+  if (indicator) {
+    return (
+      <span role="status" className="flex w-fit items-center gap-2.5">
+        <span className="sr-only">{label}</span>
+        {indicator}
+      </span>
+    );
+  }
+  return (
+    <span className="flex w-fit items-center gap-2.5">
+      <DefaultLoadingState label={label} startedAt={startedAt} />
     </span>
   );
 }
@@ -158,10 +176,14 @@ export function BuiButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60"
+      className={
+        tone === "accent"
+          ? "rounded-full bg-[var(--rk-cream)] px-4 py-2 text-[13.5px] font-medium text-[var(--rk-cream-ink)] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-100"
+          : "rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60"
+      }
       style={
         tone === "accent"
-          ? { background: "var(--bui-accent)", color: "#090a12" }
+          ? undefined
           : {
               background: "var(--bui-hover)",
               color: "var(--bui-ink)",

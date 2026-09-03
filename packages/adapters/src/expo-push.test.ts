@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deletePushToken,
   ExpoPushProvider,
   expoPushErrorMessage,
   loadPushToken,
@@ -19,7 +20,7 @@ afterEach(async () => {
 const notifyContext = {
   operationId: "n",
   traceId: "n",
-  workspaceId: "w",
+  spaceId: "w",
   userId: "user-1",
   signal: new AbortController().signal,
 };
@@ -52,6 +53,14 @@ describe("expo push tickets", () => {
 });
 
 describe("expo push", () => {
+  it("removes a registered token", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    await deletePushToken(dataDir, "user-1");
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
+  });
+
   it("does not call Expo when the user has no token", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
@@ -63,7 +72,7 @@ describe("expo push", () => {
       {
         operationId: "n",
         traceId: "n",
-        workspaceId: "w",
+        spaceId: "w",
         userId: "missing",
         signal: new AbortController().signal,
       },
@@ -90,10 +99,14 @@ describe("expo push", () => {
     const body = JSON.parse(String(init.body)) as {
       to: string;
       title: string;
+      collapseId: string;
+      tag: string;
       data: { kind: string };
     };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
+    expect(body.collapseId).toBe("th-1");
+    expect(body.tag).toBe("th-1");
     expect(body.data.kind).toBe("takeover");
   });
 

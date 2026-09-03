@@ -7,7 +7,7 @@ describe("emulators", () => {
     const ctx = {
       operationId: "1",
       traceId: "1",
-      workspaceId: "w",
+      spaceId: "w",
       userId: "u",
       signal: new AbortController().signal,
     };

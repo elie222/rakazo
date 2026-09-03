@@ -1,3 +1,5 @@
+import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
+
 export type DictationMode = "hold" | "endpoint";
 
 export type DictationSnapshot = {
@@ -118,6 +120,7 @@ export class Dictation {
   }): Promise<void> {
     this.stop("replace");
     const mine = this.token;
+    const spaceId = selectedSpaceId();
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
     if (webSpeechAvailable()) {
@@ -125,7 +128,7 @@ export class Dictation {
       return;
     }
     if (opts.transcribe) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850);
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850, spaceId);
       return;
     }
     this.set({
@@ -187,7 +190,12 @@ export class Dictation {
     rec.start();
   }
 
-  private async listenRecorder(mine: number, mode: DictationMode, endpointMs: number) {
+  private async listenRecorder(
+    mine: number,
+    mode: DictationMode,
+    endpointMs: number,
+    spaceId: string | null,
+  ) {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -219,7 +227,7 @@ export class Dictation {
       for (const track of stream.getTracks()) track.stop();
       if (this.token !== mine) return;
       this.stopVad();
-      void this.transcribeChunks(mine);
+      void this.transcribeChunks(mine, spaceId);
     };
     media.start(mode === "endpoint" ? 250 : undefined);
   }
@@ -278,7 +286,7 @@ export class Dictation {
     if (ctx) void ctx.close().catch(() => undefined);
   }
 
-  private async transcribeChunks(mine: number) {
+  private async transcribeChunks(mine: number, spaceId: string | null) {
     if (this.token !== mine) return;
     const blob = new Blob(this.chunks, { type: this.chunks[0]?.type || "audio/webm" });
     this.chunks = [];
@@ -294,7 +302,7 @@ export class Dictation {
       if (this.token !== mine) return;
       const res = await fetch("/api/voice/transcribe", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: withSpaceHeaders({ "content-type": "application/json" }, spaceId),
         credentials: "include",
         body: JSON.stringify({ audioBase64, mimeType: blob.type }),
         signal: abort.signal,

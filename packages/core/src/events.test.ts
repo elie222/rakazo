@@ -8,6 +8,9 @@ import {
   humanizeToolName,
   isRunTerminalEvent,
   projectMessages,
+  runFailureError,
+  sanitizeJsonValue,
+  sanitizeUtf16ForJson,
   trackToolCallStreak,
   trackToolNameStreak,
 } from "./events.js";
@@ -18,6 +21,29 @@ describe("isRunTerminalEvent", () => {
     expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
+
+describe("runFailureError", () => {
+  it("returns the error only for run.failed with a real message", () => {
+    expect(runFailureError({ type: "run.failed", payload: { error: "provider missing" } })).toBe(
+      "provider missing",
+    );
+    expect(runFailureError({ type: "run.failed", payload: {} })).toBeNull();
+    expect(runFailureError({ type: "run.failed", payload: { error: "   " } })).toBeNull();
+    expect(runFailureError({ type: "run.failed", payload: { error: 42 } })).toBeNull();
+    expect(runFailureError({ type: "run.failed" })).toBeNull();
+    expect(runFailureError({ type: "run.completed", payload: { error: "nope" } })).toBeNull();
+    expect(runFailureError({ type: "run.cancelled", payload: { error: "nope" } })).toBeNull();
+  });
+
+  it("trims surrounding space and clamps a runaway message", () => {
+    expect(runFailureError({ type: "run.failed", payload: { error: "  spaced  " } })).toBe(
+      "spaced",
+    );
+    const long = runFailureError({ type: "run.failed", payload: { error: "x".repeat(400) } });
+    expect(long).toHaveLength(301);
+    expect(long?.endsWith("…")).toBe(true);
   });
 });
 
@@ -255,6 +281,33 @@ describe("projectMessages", () => {
     expect(messages[0]?.blocks).toEqual([
       { kind: "text", text: "Let me check Slack for a broad search." },
       { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+    ]);
+  });
+
+  it("places a tool before response text when no narration preceded it", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "shell" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "The check passed.", streaming: true },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    expect(messages[0]?.blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "The check passed." },
     ]);
   });
 
@@ -588,5 +641,58 @@ describe("createStreamingRedactor", () => {
     const redactor = createStreamingRedactor([]);
     expect(redactor.push("hello")).toBe("hello");
     expect(redactor.finish()).toBe("");
+  });
+
+  it("buffers a trailing UTF-16 high surrogate until the next chunk completes the emoji", () => {
+    const redactor = createStreamingRedactor([]);
+    const high = "\uD83D";
+    const low = "\uDE00";
+    expect(redactor.push(`hello ${high}`)).toBe("hello ");
+    expect(redactor.push(`${low} world`)).toBe("😀 world");
+    expect(redactor.finish()).toBe("");
+  });
+
+  it("does not emit a high surrogate when the secret hold window would split an emoji pair", () => {
+    const redactor = createStreamingRedactor(["abcdefghij"]); // length 10
+    const high = "\uD83D";
+    const low = "\uDE00";
+    // safeStartLimit lands between high and low; the pair must stay buffered together.
+    expect(redactor.push(`x${high}${low}abcdefgh`)).toBe("x");
+    expect(redactor.push("ij done")).toBe("😀[redacted]");
+    expect(redactor.finish()).toBe(" done");
+  });
+
+  it("replaces an orphaned high surrogate at end of stream", () => {
+    const redactor = createStreamingRedactor([]);
+    expect(redactor.push("end\uD83D")).toBe("end");
+    expect(redactor.finish()).toBe("\uFFFD");
+  });
+});
+
+describe("sanitizeUtf16ForJson", () => {
+  it("keeps complete surrogate pairs and replaces unpaired surrogates", () => {
+    expect(sanitizeUtf16ForJson("😀")).toBe("😀");
+    expect(sanitizeUtf16ForJson("a\uD83D")).toBe("a\uFFFD");
+    expect(sanitizeUtf16ForJson("\uDE00b")).toBe("\uFFFDb");
+    expect(sanitizeJsonValue({ delta: "x\uD83D", nested: ["\uDE00"] })).toEqual({
+      delta: "x\uFFFD",
+      nested: ["\uFFFD"],
+    });
+  });
+
+  it("sanitizes nested object keys and disambiguates collisions after replacement", () => {
+    expect(
+      sanitizeJsonValue({
+        outer: {
+          ["meta\uD83D"]: "ok",
+          ["meta\uDE00"]: "also",
+        },
+      }),
+    ).toEqual({
+      outer: {
+        "meta\uFFFD": "ok",
+        "meta\uFFFD#2": "also",
+      },
+    });
   });
 });

@@ -42,7 +42,7 @@ import { IsolationError, type PrismaClient, type ThreadEvents } from "@rakazo/db
 
 type TaughtSkillRow = {
   id: string;
-  workspaceId: string;
+  spaceId: string;
   botId: string;
   userId: string;
   name: string;
@@ -70,7 +70,7 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
   return {
     operationId,
     traceId: operationId,
-    workspaceId: actor.workspaceId,
+    spaceId: actor.spaceId,
     userId: actor.userId,
     botId,
     signal: new AbortController().signal,
@@ -78,7 +78,7 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
 }
 
 function ownedSkillWhere(actor: Actor, skillId: string) {
-  return { id: skillId, workspaceId: actor.workspaceId, userId: actor.userId };
+  return { id: skillId, spaceId: actor.spaceId, userId: actor.userId };
 }
 
 async function getOwnedSkill(
@@ -93,10 +93,10 @@ async function getOwnedSkill(
 
 export async function assertTeachingSendAllowed(
   prisma: PrismaClient,
-  workspaceId: string,
+  spaceId: string,
   botId: string,
 ): Promise<void> {
-  const active = await getActiveTeachingSession(prisma, workspaceId, botId);
+  const active = await getActiveTeachingSession(prisma, spaceId, botId);
   if (active) {
     throw new ORPCError("CONFLICT", { message: "Stop teaching first" });
   }
@@ -202,7 +202,7 @@ async function grantTakeover(
   await scheduleComputerControlExpiry(deps.jobs, bot.computer.id, leaseId, expiresAt);
   if (bot.thread) {
     await deps.events.append({
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "computer.takeover.granted",
@@ -258,7 +258,7 @@ async function updateSkillDraftMessage(
       data: { blocks: nextBlocks as never },
     });
     await deps.events.append({
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "thread.message.updated",
@@ -310,7 +310,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
   return {
     async list(actor: Actor, botId: string): Promise<TaughtSkill[]> {
       const rows = await deps.prisma.taughtSkill.findMany({
-        where: { workspaceId: actor.workspaceId, botId, userId: actor.userId },
+        where: { spaceId: actor.spaceId, botId, userId: actor.userId },
         orderBy: { updatedAt: "desc" },
       });
       return rows.map(mapTaughtSkill);
@@ -325,7 +325,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
 
     async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
       let bot = await deps.prisma.bot.findFirst({
-        where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
+        where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
         include: { thread: true, computer: true },
       });
       if (!bot) throw new IsolationError();
@@ -353,7 +353,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           }
           return tx.taughtSkill.create({
             data: {
-              workspaceId: actor.workspaceId,
+              spaceId: actor.spaceId,
               botId,
               userId: actor.userId,
               goal,
@@ -380,7 +380,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       const withSnapshot = await captureTeachingSnapshot(deps, actor, bot, row);
       if (bot.thread) {
         await deps.events.append({
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           threadId: bot.thread.id,
           botId: bot.id,
           type: "skill.teaching.started",
@@ -474,7 +474,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       });
       if (bot?.thread) {
         await deps.events.append({
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           threadId: bot.thread.id,
           botId: bot.id,
           type: "skill.saved",
@@ -499,7 +499,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         prompt ?? formatSkillRunPrompt(skill.name || skill.goal.slice(0, 80), playbook, true);
       const task = await deps.prisma.task.create({
         data: {
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           botId: bot.id,
           threadId: bot.thread.id,
           userId: actor.userId,
@@ -509,7 +509,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       });
       const run = await deps.prisma.run.create({
         data: {
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           botId: bot.id,
           threadId: bot.thread.id,
           taskId: task.id,

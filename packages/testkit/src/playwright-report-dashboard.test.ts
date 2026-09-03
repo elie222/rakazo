@@ -1,14 +1,50 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
+  MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
+  MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
   type PlaywrightRun,
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
+  validatePlaywrightScreenshotBudget,
 } from "./playwright-report-dashboard.js";
+
+describe("validatePlaywrightScreenshotBudget", () => {
+  it("accepts the exact screenshot count and aggregate byte limits", () => {
+    expect(() =>
+      validatePlaywrightScreenshotBudget(
+        MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
+        MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects the first screenshot and byte beyond their limits", () => {
+    expect(() =>
+      validatePlaywrightScreenshotBudget(MAX_PLAYWRIGHT_SCREENSHOT_COUNT + 1, 0),
+    ).toThrow(/251 screenshots; maximum is 250/);
+    expect(() =>
+      validatePlaywrightScreenshotBudget(1, MAX_PLAYWRIGHT_SCREENSHOT_BYTES + 1),
+    ).toThrow(/maximum total size of 262144000 bytes/);
+  });
+});
+
+describe("classifyPlaywrightScreenshot", () => {
+  it("excludes automatic successful-test captures from visual review", () => {
+    expect(classifyPlaywrightScreenshot("test-finished-1.png")).toBeUndefined();
+    expect(classifyPlaywrightScreenshot("nested/test-finished-12.PNG")).toBeUndefined();
+  });
+
+  it("keeps intentional checkpoints and automatic failure captures", () => {
+    expect(classifyPlaywrightScreenshot("01-onboarding-complete.png")).toBe("checkpoint");
+    expect(classifyPlaywrightScreenshot("nested/test-failed-1.png")).toBe("failure");
+  });
+});
 
 describe("compareScreenshotsWithBaseline", () => {
   it("marks matching, changed, and new screenshots using source and SHA-256", () => {
@@ -258,7 +294,8 @@ describe("renderScreenshotGallery", () => {
     expect(html).toContain("initialColumns = localStorage.getItem(storageKey) || initialColumns");
     expect(html).toContain('<span class="badge checkpoint">CHECKPOINT</span>');
     expect(html).toContain('<span class="badge new">NEW</span>');
-    expect(html).toContain('data-filter="review" aria-pressed="true"');
+    expect(html).toContain('data-filter="new" aria-pressed="true"');
+    expect(html).toContain('data-filter="review" aria-pressed="false"');
     expect(html).toContain("Compared with latest successful main run");
     expect(html).toContain(`@media (max-width: 900px) {
       header { align-items: start; flex-direction: column; }

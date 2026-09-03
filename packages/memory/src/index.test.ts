@@ -5,7 +5,7 @@ import { MarkdownMemoryStore } from "./index.js";
 const context: AdapterContext = {
   operationId: "read-memory",
   traceId: "read-memory",
-  workspaceId: "workspace-1",
+  spaceId: "workspace-1",
   userId: "user-1",
   signal: new AbortController().signal,
 };
@@ -38,7 +38,7 @@ describe("memory store contract shape", () => {
     });
     expect(findMany).toHaveBeenCalledWith({
       where: {
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         userId: "user-1",
         scope: "bot",
         botId: "bot-1",

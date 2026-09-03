@@ -27,7 +27,7 @@ import { toComputerRef } from "./computer-support.js";
 
 export type TaughtSkillRow = {
   id: string;
-  workspaceId: string;
+  spaceId: string;
   botId: string;
   userId: string;
   name: string;
@@ -110,7 +110,7 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
   return {
     operationId,
     traceId: operationId,
-    workspaceId: actor.workspaceId,
+    spaceId: actor.spaceId,
     userId: actor.userId,
     botId,
     signal: new AbortController().signal,
@@ -119,13 +119,13 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
 
 export async function getActiveTeachingSession(
   prisma: PrismaClient,
-  workspaceId: string,
+  spaceId: string,
   botId: string,
   userId?: string,
 ) {
   return prisma.taughtSkill.findFirst({
     where: {
-      workspaceId,
+      spaceId,
       botId,
       status: "recording",
       ...(userId ? { userId } : {}),
@@ -232,7 +232,7 @@ async function finalizeTeachingRecording(
     let stopped: { threadId: string; seq: number } | null = null;
     if (bot?.thread) {
       const event = await appendEventInTransaction(tx, {
-        workspaceId: actor.workspaceId,
+        spaceId: actor.spaceId,
         threadId: bot.thread.id,
         botId: skill.botId,
         type: "skill.teaching.stopped",
@@ -315,7 +315,7 @@ async function releaseTeachingComputerControl(
   }
   await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId));
   await deps.events.finalizeComputerControlRelease({
-    workspaceId: actor.workspaceId,
+    spaceId: actor.spaceId,
     computerId: computer.id,
     botId: bot.id,
     runId: computer.controlRunId,
@@ -405,14 +405,14 @@ async function emitSkillDraftMessages(
     }
     if (await hasSkillDraftCreatedEvent(tx, threadId, skill.id)) return null;
     await appendEventInTransaction(tx, {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       threadId,
       botId: bot.id,
       type: "thread.message.created",
       payload: { messageId: created.id, role: "bot", blocks: created.blocks },
     });
     const draftEvent = await appendEventInTransaction(tx, {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       threadId,
       botId: bot.id,
       type: "skill.draft.created",
@@ -461,7 +461,7 @@ export async function expireTaughtSkillTeaching(
 ): Promise<TaughtSkillRow | null> {
   const skill = await deps.prisma.taughtSkill.findUnique({ where: { id: skillId } });
   if (!skill) return null;
-  const actor = { workspaceId: skill.workspaceId, userId: skill.userId } as Actor;
+  const actor = { spaceId: skill.spaceId, userId: skill.userId } as Actor;
   if (skill.status !== "recording") {
     const leaseId = parseRecording(skill.recording).controlLeaseId;
     if (leaseId) await releaseTeachingComputerControlForBot(deps, actor, skill.botId, leaseId);
@@ -531,7 +531,7 @@ export async function recordTeachingInputEvent(
   botId: string,
   mapped: TeachComputerInput,
 ): Promise<"recorded" | "idle" | "stale"> {
-  const skill = await getActiveTeachingSession(deps.prisma, actor.workspaceId, botId, actor.userId);
+  const skill = await getActiveTeachingSession(deps.prisma, actor.spaceId, botId, actor.userId);
   if (!skill) return "idle";
   if (skill.expiresAt && skill.expiresAt.getTime() <= Date.now()) {
     await expireTaughtSkillTeaching(deps, skill.id);

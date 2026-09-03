@@ -1,7 +1,7 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { rpc } from "../lib/api";
 
-export async function fetchWorkspaceActivity(): Promise<{
+export async function fetchSpaceActivity(): Promise<{
   active: RunActivityRow[];
   recent: RunActivityRow[];
 }> {

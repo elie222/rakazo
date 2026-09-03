@@ -91,6 +91,6 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
 }
 
 export async function openNewBot(page: Page) {
-  await page.getByTitle("Create").click();
+  await page.getByTitle("Create", { exact: true }).click();
   await page.getByRole("button", { name: "New bot" }).click();
 }

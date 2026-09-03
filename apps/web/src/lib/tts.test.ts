@@ -1,5 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Speaker } from "./tts.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+function stubSelectedSpace(id: string) {
+  const store = new Map<string, string>([["rakazo:space-id", id]]);
+  const localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+  };
+  vi.stubGlobal("window", { localStorage });
+  vi.stubGlobal("localStorage", localStorage);
+  return (next: string) => store.set("rakazo:space-id", next);
+}
 
 describe("Speaker", () => {
   it("interrupting before audio arrives leaves the speaker idle", async () => {
@@ -22,5 +43,58 @@ describe("Speaker", () => {
     ).mockRejectedValue(new Error("ElevenLabs rejected that key."));
     await expect(speaker.speak("Hi there.")).resolves.toBeUndefined();
     expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
+  });
+
+  it("keeps speak requests in the space where playback started", async () => {
+    const changeSelectedSpace = stubSelectedSpace("space-support");
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      blob: async () => new Blob(["audio"]),
+      json: async () => ({}),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "Audio",
+      class {
+        src = "";
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        play() {
+          queueMicrotask(() => this.onended?.());
+          return Promise.resolve();
+        }
+        pause() {}
+      },
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:voice");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    const speaker = new Speaker();
+    const prepare = vi
+      .spyOn(
+        speaker as unknown as {
+          prepare: (
+            text: string,
+            opts: unknown,
+            signal: AbortSignal,
+            spaceId: string | null,
+          ) => Promise<string[]>;
+        },
+        "prepare",
+      )
+      .mockImplementation(async () => {
+        changeSelectedSpace("space-other");
+        return ["Hello."];
+      });
+    await speaker.speak("Hello.", { messageId: "m1" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/voice/speak",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-rakazo-space-id")).toBe("space-support");
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(prepare.mock.calls[0]?.[3]).toBe("space-support");
   });
 });

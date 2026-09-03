@@ -55,6 +55,7 @@ describeRunsList("runs.list activity tracker", () => {
       instructions: "",
       notifyOnFinish: true,
     });
+    await rpc(app, cookie, "bots/update", { botId: beta.id, notifyOnFinish: false });
 
     await seedRun(prisma, alpha.id, "running", "alpha in flight");
     await seedRun(prisma, beta.id, "queued", "beta in flight");
@@ -64,6 +65,7 @@ describeRunsList("runs.list activity tracker", () => {
       filter: "active",
     });
     expect(active.runs.map((run) => run.botName).sort()).toEqual(["Alpha", "Beta"]);
+    expect(active.runs.find((run) => run.botName === "Beta")?.notificationsEnabled).toBe(false);
     expect(active.runs.some((run) => run.status === "completed")).toBe(false);
 
     const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
@@ -153,7 +155,7 @@ describeRunsList("runs.list activity tracker", () => {
     const groupThread = await prisma.thread.findUniqueOrThrow({ where: { groupId: group.id } });
     const task = await prisma.task.create({
       data: {
-        workspaceId: groupThread.workspaceId,
+        spaceId: groupThread.spaceId,
         userId: groupThread.userId,
         botId: botA.id,
         threadId: groupThread.id,
@@ -163,7 +165,7 @@ describeRunsList("runs.list activity tracker", () => {
     });
     await prisma.run.create({
       data: {
-        workspaceId: groupThread.workspaceId,
+        spaceId: groupThread.spaceId,
         userId: groupThread.userId,
         botId: botA.id,
         threadId: groupThread.id,
@@ -193,7 +195,7 @@ async function seedRun(
   const thread = await prisma.thread.findUniqueOrThrow({ where: { botId } });
   const task = await prisma.task.create({
     data: {
-      workspaceId: thread.workspaceId,
+      spaceId: thread.spaceId,
       userId: thread.userId,
       botId,
       threadId: thread.id,
@@ -203,7 +205,7 @@ async function seedRun(
   });
   return prisma.run.create({
     data: {
-      workspaceId: thread.workspaceId,
+      spaceId: thread.spaceId,
       userId: thread.userId,
       botId,
       threadId: thread.id,

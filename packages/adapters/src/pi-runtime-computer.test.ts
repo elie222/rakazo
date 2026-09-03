@@ -100,7 +100,7 @@ describe("Pi computer tool dispatch", () => {
       {
         operationId: "computer-test",
         traceId: "computer-test",
-        workspaceId: "workspace",
+        spaceId: "workspace",
         userId: "user",
         signal: new AbortController().signal,
       },
@@ -135,7 +135,7 @@ describe("Pi computer tool dispatch", () => {
       {
         operationId: "computer-test",
         traceId: "computer-test",
-        workspaceId: "workspace",
+        spaceId: "workspace",
         userId: "user",
         signal: new AbortController().signal,
       },

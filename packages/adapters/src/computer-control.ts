@@ -134,7 +134,7 @@ export async function expireComputerControl(
     const context: AdapterContext = {
       operationId: "computer.control-expire",
       traceId: "computer.control-expire",
-      workspaceId: computer.workspaceId,
+      spaceId: computer.spaceId,
       userId: computer.userId,
       botId,
       signal: new AbortController().signal,
@@ -143,7 +143,7 @@ export async function expireComputerControl(
   }
 
   const released = await deps.events.finalizeComputerControlRelease({
-    workspaceId: computer.workspaceId,
+    spaceId: computer.spaceId,
     computerId: computer.id,
     botId,
     runId: computer.controlRunId,

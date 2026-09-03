@@ -20,3 +20,13 @@ export function signupsOpen(enabled: string | undefined): boolean {
   if (enabled === undefined) return true;
   return enabled !== "false" && enabled !== "0";
 }
+
+export function signupPolicyFromEnv(input: {
+  signupsEnabled: string | undefined;
+  signupAllowlist: string | undefined;
+}): { enabled: boolean; allowlist: string[] } {
+  return {
+    enabled: signupsOpen(input.signupsEnabled),
+    allowlist: parseAllowlist(input.signupAllowlist),
+  };
+}

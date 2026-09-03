@@ -28,6 +28,7 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
+import { shouldOpenInAppPopup } from "./window-open.js";
 import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
@@ -195,24 +196,13 @@ function createWindow(url: string, partition: string | null) {
   });
   mainWindow = win;
   const targetOrigin = safeOrigin(url);
-  // OAuth flows open the provider's authorize page via window.open; give that
-  // popup a normal framed window. Non-http(s) targets stay closed; other http(s)
-  // origins open in the system browser so a connected server cannot navigate us away.
+  // Intentional OAuth flows open the provider's authorize page via a named
+  // window; give those and same-origin popups a normal frame. Everything else
+  // opens in the system browser so a connected server cannot navigate us away.
   // Hoisted for loopback OAuth capture so MCP/in-app localhost callbacks are skipped.
   const appOrigin = targetOrigin ?? safeOrigin(url);
-  win.webContents.setWindowOpenHandler(({ url: childUrl }) => {
-    let target: URL;
-    try {
-      target = new URL(childUrl);
-    } catch {
-      return { action: "deny" };
-    }
-    const sameOrigin = appOrigin !== null && target.origin === appOrigin;
-    // Same-origin http(s) and third-party https (OAuth) get a framed popup.
-    if (
-      (sameOrigin && (target.protocol === "http:" || target.protocol === "https:")) ||
-      (!sameOrigin && target.protocol === "https:")
-    ) {
+  win.webContents.setWindowOpenHandler(({ url: childUrl, frameName }) => {
+    if (shouldOpenInAppPopup(appOrigin, childUrl, frameName)) {
       return {
         action: "allow",
         overrideBrowserWindowOptions: oauthPopupWindowOptions(),
@@ -225,6 +215,8 @@ function createWindow(url: string, partition: string | null) {
   win.webContents.on("will-navigate", (event, navigationUrl) => {
     if (targetOrigin !== null && safeOrigin(navigationUrl) === targetOrigin) return;
     event.preventDefault();
+    const external = safeExternalUrl(navigationUrl);
+    if (external !== null) void shell.openExternal(external);
   });
   // The popup has no address bar, so a loopback redirect would otherwise strand
   // the user on a blank window holding the authorization code in a URL they
@@ -432,7 +424,7 @@ async function waitForMountedAppDocument(contents: Electron.WebContents) {
       // Desktop e2e fixtures mount a plain page without Rakazo app-state markers.
       if (appState === null) {
         const bodyText = (document.body?.innerText || "").trim();
-        if (bodyText.includes("Opening your workspace")) return false;
+        if (bodyText.includes("Opening your Space")) return false;
         if (bodyText === "Loading…" || bodyText === "Loading...") return false;
         const mainText = (document.querySelector("main")?.textContent || "").trim();
         const rootChildren = document.getElementById("root")?.childElementCount ?? 0;

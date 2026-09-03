@@ -8,7 +8,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.2",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/vite": "^4.1.12",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",

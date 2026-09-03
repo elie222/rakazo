@@ -1,22 +1,38 @@
 import { File, Paths } from "expo-file-system";
-import { currentApiBase } from "./api";
-import { loadSessionToken } from "./session";
+import {
+  type ApiRequestContext,
+  authHeaders,
+  captureApiRequestContext,
+  currentApiBase,
+  rpc,
+} from "./api";
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await loadSessionToken();
-  return token ? { authorization: `Bearer ${token}` } : {};
+type SpeechOptions = { voiceId?: string; botId?: string };
+
+export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  const requestContext = await captureApiRequestContext();
+  const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
+    "voice/prepare",
+    { text, voiceId: opts.voiceId, botId: opts.botId },
+    { requestContext },
+  );
+  if (!prepared.ready) return false;
+  for (const utterance of prepared.utterances) {
+    await playMpeg(await speakUtterance(utterance, { ...opts, requestContext }));
+  }
+  return true;
 }
 
 export async function speakUtterance(
   text: string,
-  opts: { voiceId?: string; botId?: string } = {},
+  opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
-  const res = await fetch(`${currentApiBase()}/api/voice/speak`, {
+  const res = await fetch(`${opts.requestContext?.apiBase ?? currentApiBase()}/api/voice/speak`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       origin: "rakazo://",
-      ...(await authHeaders()),
+      ...(opts.requestContext?.headers ?? (await authHeaders())),
     },
     body: JSON.stringify({ text, voiceId: opts.voiceId, botId: opts.botId }),
   });

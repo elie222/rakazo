@@ -239,7 +239,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
 
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
-      .update(`${context.workspaceId}:${context.userId}`)
+      .update(`${context.spaceId}:${context.userId}`)
       .digest("hex")}`;
   }
 

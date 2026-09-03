@@ -181,7 +181,7 @@ describe("MCP OAuth", () => {
 
     const started = await broker.begin({
       serverId: "server-1",
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
       redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
     });
@@ -197,7 +197,7 @@ describe("MCP OAuth", () => {
 
     const second = await broker.begin({
       serverId: "server-1",
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
       redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
     });
@@ -209,7 +209,7 @@ describe("MCP OAuth", () => {
       sessionId: started.sessionId,
       code: "authorization-code",
       state: started.sessionId,
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
     });
 
@@ -262,7 +262,7 @@ describe("MCP OAuth", () => {
     await expect(
       broker.begin({
         serverId: "server-1",
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
       }),
@@ -347,12 +347,12 @@ describe("MCP OAuth", () => {
       sessionId,
       code: "authorization-code",
       state: sessionId,
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
     });
 
     expect(sessions.deleteMany).toHaveBeenCalledWith({
-      where: { id: sessionId, workspaceId: "workspace-1", userId: "user-1" },
+      where: { id: sessionId, spaceId: "workspace-1", userId: "user-1" },
     });
     expect(new URLSearchParams(tokenRequestBody).get("code_verifier")).toBe("persisted-verifier");
     expect(prisma.mcpServer.update).toHaveBeenCalledWith({
@@ -409,7 +409,7 @@ describe("MCP OAuth", () => {
 
     await broker.disconnect({
       serverId: "server-1",
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
     });
 
@@ -464,7 +464,7 @@ describe("MCP OAuth", () => {
         endpoint: "https://mcp.example.test/mcp",
         secretId: "secret-before-edit",
       },
-      { workspaceId: "workspace-1", userId: "user-1" },
+      { spaceId: "workspace-1", userId: "user-1" },
       {
         material: {
           secret: "stale-static-token",
@@ -541,7 +541,7 @@ describe("MCP OAuth", () => {
     await expect(
       broker.begin({
         serverId: "server-1",
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
       }),
@@ -616,7 +616,7 @@ describe("MCP OAuth", () => {
     await expect(
       broker.begin({
         serverId: "server-1",
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
       }),

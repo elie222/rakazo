@@ -50,7 +50,7 @@ export default function RoutineDetail() {
     >
       <Stack.Screen options={{ title: routine?.name ?? "Routine" }} />
       {loading ? <ActivityIndicator color="#85858A" /> : null}
-      {error ? <Text style={{ color: "#E65707", fontSize: 15 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: "#EF4444", fontSize: 15 }}>{error}</Text> : null}
       {routine ? (
         <>
           <View

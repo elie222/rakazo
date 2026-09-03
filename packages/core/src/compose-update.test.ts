@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COMPOSE_MANUAL_UPGRADE_COMMANDS,
   chooseUpdateStrategy,
   commitImageTag,
   compareReleaseTags,
@@ -19,6 +20,7 @@ import {
   isValidComposeProjectName,
   isValidImageName,
   isValidImageTag,
+  manualUpgradeCommands,
   OFFICIAL_SERVER_IMAGE,
   parseGitNameOnly,
   parseLsRemoteReleases,
@@ -27,8 +29,10 @@ import {
   RECREATED_SERVICES,
   resolveComposeProjectName,
   resolveExecutionMode,
+  resolveInstallKind,
   resolveTrackedDirtyPaths,
   rollbackTarget,
+  SOURCE_MANUAL_UPGRADE_COMMANDS,
   selectLatestRelease,
   selectLatestReleaseTag,
   upsertEnvAssignments,
@@ -163,6 +167,43 @@ describe("strategy and mode selection", () => {
     const off = resolveExecutionMode({ hasUpdater: true, disabled: true });
     expect(off.mode).toBe("unavailable");
     expect(off.reason).toMatch(/switched off/);
+  });
+
+  it("detects sidecar, compose-without-sidecar, and source install kinds", () => {
+    expect(
+      resolveInstallKind({ updaterUrlConfigured: true, updaterReachable: true, hasCheckout: true }),
+    ).toEqual({ kind: "sidecar", mode: "sidecar", reason: null });
+    const compose = resolveInstallKind({
+      updaterUrlConfigured: true,
+      updaterReachable: false,
+      hasCheckout: true,
+    });
+    expect(compose.kind).toBe("compose");
+    expect(compose.mode).toBe("unavailable");
+    expect(compose.reason).toMatch(/sidecar/);
+    const source = resolveInstallKind({
+      updaterUrlConfigured: false,
+      updaterReachable: false,
+      hasCheckout: true,
+    });
+    expect(source.kind).toBe("source");
+    expect(source.mode).toBe("checkout");
+    expect(manualUpgradeCommands("compose")).toEqual([
+      "# Published release tag",
+      ...COMPOSE_MANUAL_UPGRADE_COMMANDS,
+      "# Local tag (rebuild from checkout)",
+      "git pull",
+      "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+    ]);
+    expect(manualUpgradeCommands("compose", { imageTag: "local" })).toEqual([
+      "git pull",
+      "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
+    ]);
+    expect(manualUpgradeCommands("compose", { imageTag: "sha-abc" })).toEqual([
+      ...COMPOSE_MANUAL_UPGRADE_COMMANDS,
+    ]);
+    expect(manualUpgradeCommands("source")).toEqual([...SOURCE_MANUAL_UPGRADE_COMMANDS]);
+    expect(manualUpgradeCommands("sidecar")).toEqual([]);
   });
 });
 

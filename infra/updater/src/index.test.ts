@@ -245,6 +245,13 @@ describe("updater orchestration", () => {
     expect(await readFile(path.join(fixture.deployDir, ".env"), "utf8")).toContain(
       "RAKAZO_IMAGE_TAG=v1.0.0",
     );
+
+    const state = await subject.request("/state", { method: "GET", headers: authorized });
+    expect(state.status).toBe(200);
+    await expect(state.json()).resolves.toMatchObject({
+      running: false,
+      lastRun: { ok: false, fromTag: "v1.0.0", toTag: `sha-${targetCommit}` },
+    });
   });
 
   it("resets a fork checkout when recreate fails after the fast-forward", async () => {

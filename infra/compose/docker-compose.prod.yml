@@ -51,6 +51,7 @@ services:
       - ../../.env
     environment:
       NODE_ENV: production
+      API_HOST: "0.0.0.0"
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_PROVIDER: e2b
@@ -97,10 +98,12 @@ services:
     env_file:
       - ../../.env
     environment:
+      BETTER_AUTH_SECRET: ""
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_PROVIDER: e2b
+      SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
     volumes:
@@ -130,11 +133,11 @@ services:
       - ALL
     pids_limit: 128
     mem_limit: 512m
-    env_file:
-      - ../../.env
     environment:
       NODE_ENV: production
       API_PROXY_TARGET: http://api:3100
+      RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
     expose:
       - "5173"
     networks:

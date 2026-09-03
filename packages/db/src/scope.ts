@@ -8,30 +8,38 @@ export class IsolationError extends Error {
   }
 }
 
-export async function requireMembership(prisma: PrismaClient, userId: string): Promise<Actor> {
-  const member = await prisma.member.findFirst({
-    where: { userId },
-    include: { user: true, organization: true },
+export async function requireMembership(
+  prisma: PrismaClient,
+  userId: string,
+  requestedSpaceId?: string | null,
+): Promise<Actor> {
+  const membership = await prisma.spaceMember.findFirst({
+    where: {
+      userId,
+      ...(requestedSpaceId ? { spaceId: requestedSpaceId } : {}),
+    },
+    orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
+    include: { member: { include: { user: true } } },
   });
-  if (!member) {
-    throw new IsolationError("No personal workspace");
+  if (!membership) {
+    throw new IsolationError("No personal space");
   }
   const settings = await prisma.deploymentSettings.findUnique({
     where: { id: "default" },
   });
   return {
-    userId: member.userId,
-    workspaceId: member.organizationId,
-    email: member.user.email,
-    isDeploymentOwner: settings?.ownerUserId === member.userId,
+    userId: membership.userId,
+    spaceId: membership.spaceId,
+    email: membership.member.user.email,
+    isDeploymentOwner: settings?.ownerUserId === membership.userId,
   };
 }
 
-export function scoped<T extends { workspaceId: string; userId?: string }>(
+export function scoped<T extends { spaceId: string; userId?: string }>(
   actor: Actor,
   record: T | null,
 ): T {
-  if (!record || record.workspaceId !== actor.workspaceId) {
+  if (!record || record.spaceId !== actor.spaceId) {
     throw new IsolationError();
   }
   if (record.userId && record.userId !== actor.userId) {

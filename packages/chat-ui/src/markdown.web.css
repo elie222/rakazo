@@ -172,6 +172,9 @@
   border: 1px solid #34343a;
   padding: 0.4em 0.6em;
   text-align: left;
+  /* Not the container's `anywhere`: its break opportunities count toward
+     min-content, so columns collapse to 1ch and the table never overflows. */
+  overflow-wrap: break-word;
 }
 
 .rk-chat-markdown th {

@@ -721,6 +721,66 @@ button {
   margin-top: 26px;
 }
 
+.get-started-dialog__choices {
+  display: grid;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.get-started-dialog__choice {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.get-started-dialog__choice:hover,
+.get-started-dialog__choice:focus-visible {
+  border-color: var(--blue-line);
+  outline: none;
+}
+
+.get-started-dialog__choice-title {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.get-started-dialog__choice-hint {
+  color: var(--muted-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.get-started-dialog__back {
+  margin: 0 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.get-started-dialog__back:hover,
+.get-started-dialog__back:focus-visible {
+  color: var(--ink);
+}
+
+.selfhost-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+
 .get-started-dialog__success-mark {
   display: flex;
   width: 44px;

@@ -2,6 +2,9 @@ import react from "@astrojs/react";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
+import { resolveWwwPort } from "./www-port.mjs";
+
+const wwwPort = resolveWwwPort();
 
 export default defineConfig({
   site: "https://rakazo.com",
@@ -31,11 +34,11 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 4321,
+    port: wwwPort,
     strictPort: true,
   },
   preview: {
     host: "0.0.0.0",
-    port: 4321,
+    port: wwwPort,
   },
 });

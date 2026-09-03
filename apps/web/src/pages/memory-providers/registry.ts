@@ -1,4 +1,4 @@
-import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
+import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
 
@@ -17,7 +17,7 @@ export interface MemoryProviderSettingsRegistration {
   name: string;
   description: string;
   SettingsForm: ComponentType<MemoryProviderSettingsFormProps>;
-  connectedLabel: (config: WorkspaceMemoryConfig) => string;
+  connectedLabel: (config: SpaceMemoryConfig) => string;
 }
 
 export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistration[] = [

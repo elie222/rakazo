@@ -45,7 +45,7 @@ export function coerceScratchpadStatus(value: unknown): ScratchpadStatus {
 export async function listScratchpadItems(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     status?: ScratchpadStatus;
     includeDone?: boolean;
@@ -58,7 +58,7 @@ export async function listScratchpadItems(
       : { status: { in: OPEN_SCRATCHPAD_STATUSES } };
   const rows = await deps.prisma.scratchpadItem.findMany({
     where: {
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       ...statusFilter,
     },
@@ -70,7 +70,7 @@ export async function listScratchpadItems(
 export async function addScratchpadItemFromTool(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     title: string;
@@ -94,7 +94,7 @@ export async function addScratchpadItemFromTool(
 
   const row = await deps.prisma.scratchpadItem.create({
     data: {
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
       title,
@@ -108,7 +108,7 @@ export async function addScratchpadItemFromTool(
 export async function updateScratchpadItemFromTool(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     itemId: string;
@@ -123,7 +123,7 @@ export async function updateScratchpadItemFromTool(
   const existing = await deps.prisma.scratchpadItem.findFirst({
     where: {
       id: itemId,
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
     },
@@ -164,7 +164,7 @@ export async function updateScratchpadItemFromTool(
 export async function completeScratchpadItemFromTool(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     itemId: string;
@@ -179,7 +179,7 @@ export async function completeScratchpadItemFromTool(
 export async function removeScratchpadItemFromTool(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     itemId: string;
@@ -191,7 +191,7 @@ export async function removeScratchpadItemFromTool(
   const existing = await deps.prisma.scratchpadItem.findFirst({
     where: {
       id: itemId,
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
     },
@@ -205,13 +205,13 @@ export async function removeScratchpadItemFromTool(
 export async function listScratchpadItemsFromTool(
   deps: ScratchpadToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     includeDone?: boolean;
   },
 ) {
   const items = await listScratchpadItems(deps, {
-    workspaceId: input.workspaceId,
+    spaceId: input.spaceId,
     botId: input.botId,
     includeDone: input.includeDone,
   });

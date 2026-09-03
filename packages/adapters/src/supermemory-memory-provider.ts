@@ -80,21 +80,19 @@ export function decodeLegacySupermemoryCredentials(
   return plaintext.trim() ? { apiKey: plaintext } : null;
 }
 
-function durableContainerTags(
-  scope: DurableMemoryScope,
-  botId: string,
-  workspaceId: string,
-): string[] {
+function durableContainerTags(scope: DurableMemoryScope, botId: string, spaceId: string): string[] {
   const isolated = `rakazo:${botId}`;
-  return scope === "shared" ? [`rakazo:workspace:${workspaceId}`, isolated] : [isolated];
+  // This external namespace predates the Space rename. Keep it stable so
+  // existing durable memories remain recallable; the identifier is a Space ID.
+  return scope === "shared" ? [`rakazo:workspace:${spaceId}`, isolated] : [isolated];
 }
 
 function historyContainerTag(botId: string, generation: number): string {
   return `rakazo:${botId}:history:${generation}`;
 }
 
-function recallContainerTags(request: SemanticMemoryRecallRequest, workspaceId: string): string[] {
-  const tags = durableContainerTags(request.scope, request.botId, workspaceId);
+function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: string): string[] {
+  const tags = durableContainerTags(request.scope, request.botId, spaceId);
   return request.historyGeneration === undefined
     ? tags
     : [...tags, historyContainerTag(request.botId, request.historyGeneration)];
@@ -123,7 +121,7 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>> {
     const result = await searchSupermemoryContainers(
       request.query,
-      recallContainerTags(request, context.workspaceId),
+      recallContainerTags(request, context.spaceId),
       this.connection,
       request.limit,
       context.signal,
@@ -147,7 +145,7 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     const tags =
       request.source.kind === "history"
         ? [historyContainerTag(request.botId, request.source.generation)]
-        : durableContainerTags(request.scope, request.botId, context.workspaceId);
+        : durableContainerTags(request.scope, request.botId, context.spaceId);
     const result = await saveSupermemoryMemoryToContainers(
       request.content,
       tags,

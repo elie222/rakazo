@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   type ActionApprovalRule,
+  applyJudgeDecision,
   connectorKindFromToolName,
   connectorToolRequiresApproval,
   isApprovalAskBlock,
+  isSecretAskBlock,
+  planActionGate,
   resolveActionApproval,
+  resolveActionApprovalDetail,
   toolRequiresApproval,
+  toolRequiresExplicitApproval,
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
@@ -14,6 +19,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
     expect(toolRequiresApproval("delete_bot", false)).toBe(true);
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
+    expect(toolRequiresApproval("create_space", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("create_space")).toBe(true);
+    expect(toolRequiresExplicitApproval("archive_bot")).toBe(false);
   });
 
   it("does not gate read-only or local work", () => {
@@ -78,6 +86,20 @@ describe("isApprovalAskBlock", () => {
   });
 });
 
+describe("isSecretAskBlock", () => {
+  it("detects masked secret asks", () => {
+    expect(isSecretAskBlock({ kind: "ask", input: "secret" })).toBe(true);
+    expect(isSecretAskBlock({ kind: "ask", input: "text" })).toBe(false);
+    expect(
+      isSecretAskBlock({
+        kind: "ask",
+        input: "secret",
+        approvalEffectId: "effect-1",
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("connectorKindFromToolName", () => {
   it("uses the first underscore segment", () => {
     expect(connectorKindFromToolName("gmail_send_email")).toBe("gmail");
@@ -128,13 +150,13 @@ describe("resolveActionApproval", () => {
     ).toBe("allow");
   });
 
-  it("does not let standing rules gate approval-exempt local tools", () => {
+  it("lets an explicit rule gate a tool that is exempt by default", () => {
     expect(
       resolveActionApproval({
-        toolName: "read_file",
-        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "read_file" }],
+        toolName: "shell",
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "shell" }],
       }),
-    ).toBe("allow");
+    ).toBe("ask");
   });
 
   it("lets require_approval beat always-allow at the same specificity", () => {
@@ -171,5 +193,107 @@ describe("resolveActionApproval", () => {
         ],
       }),
     ).toBe("allow");
+  });
+
+  it("labels always-allow vs default allow", () => {
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "destination.write",
+        rules: alwaysAllowDestination,
+      }),
+    ).toMatchObject({ decision: "allow", source: "always_allow" });
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "destination.write",
+        rules: [],
+      }),
+    ).toMatchObject({ decision: "allow", source: "default" });
+  });
+});
+
+describe("planActionGate", () => {
+  const consequential = true;
+
+  it("lets require_approval win without judging", () => {
+    expect(
+      planActionGate({
+        resolved: {
+          decision: "ask",
+          source: "require_approval",
+          matchingRules: [],
+        },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+      }),
+    ).toBe("ask");
+  });
+
+  it("lets always_allow skip the judge", () => {
+    expect(
+      planActionGate({
+        resolved: {
+          decision: "allow",
+          source: "always_allow",
+          matchingRules: [],
+        },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+      }),
+    ).toBe("allow");
+  });
+
+  it("judges consequential default actions when auto review is ready", () => {
+    expect(
+      planActionGate({
+        resolved: { decision: "allow", source: "default", matchingRules: [] },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+      }),
+    ).toBe("judge");
+  });
+
+  it("stays YOLO when auto review is off or checker missing", () => {
+    expect(
+      planActionGate({
+        resolved: { decision: "allow", source: "default", matchingRules: [] },
+        consequential,
+        autoReviewEnabled: false,
+        checkerConfigured: true,
+      }),
+    ).toBe("allow");
+    expect(
+      planActionGate({
+        resolved: { decision: "allow", source: "default", matchingRules: [] },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: false,
+      }),
+    ).toBe("allow");
+  });
+
+  it("does not judge non-consequential tools", () => {
+    expect(
+      planActionGate({
+        resolved: { decision: "allow", source: "default", matchingRules: [] },
+        consequential: false,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+      }),
+    ).toBe("allow");
+  });
+});
+
+describe("applyJudgeDecision", () => {
+  it("maps pass and ask", () => {
+    expect(applyJudgeDecision({ decision: "pass", consequential: true })).toBe("allow");
+    expect(applyJudgeDecision({ decision: "ask", consequential: true })).toBe("ask");
+  });
+
+  it("fails closed on consequential checker errors and open on exempt", () => {
+    expect(applyJudgeDecision({ decision: "error", consequential: true })).toBe("ask");
+    expect(applyJudgeDecision({ decision: "error", consequential: false })).toBe("allow");
   });
 });

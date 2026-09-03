@@ -11,8 +11,8 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #050506;
-  color: #dfdfe2;
+  background: var(--rk-page);
+  color: var(--rk-body);
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -20,22 +20,23 @@ body,
   width: 6px;
 }
 .rk-scroll {
-  scrollbar-color: #2a2a2e transparent;
+  scrollbar-color: var(--rk-scroll) transparent;
   scrollbar-width: thin;
 }
 .rk-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .rk-scroll::-webkit-scrollbar-thumb {
-  background: #2a2a2e;
+  background: var(--rk-scroll);
   border-radius: 3px;
 }
 .rk-scroll::-webkit-scrollbar-thumb:hover {
-  background: #414147;
+  background: var(--rk-scroll-hover);
 }
 
 .app-drag {
   -webkit-app-region: drag;
+  user-select: none;
 }
 
 .app-no-drag {
@@ -44,7 +45,7 @@ body,
 
 .rk-schedule-select {
   appearance: none;
-  background-color: #24242a;
+  background-color: var(--rk-scroll);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239A9AA0' stroke-width='2'%3E%3Cpath d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
@@ -52,7 +53,7 @@ body,
   border-radius: 8px;
   padding-block: 7px;
   padding-inline: 11px 26px;
-  color: #ececee;
+  color: var(--rk-ink);
   font: inherit;
   font-size: 14px;
   cursor: pointer;

@@ -20,11 +20,11 @@ describe("scratchpad tools store", () => {
 
     const items = await listScratchpadItems(
       { prisma: prisma as never },
-      { workspaceId: "ws", botId: "bot" },
+      { spaceId: "ws", botId: "bot" },
     );
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { workspaceId: "ws", botId: "bot", status: { in: ["open", "parked"] } },
+      where: { spaceId: "ws", botId: "bot", status: { in: ["open", "parked"] } },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
     expect(items).toEqual([
@@ -47,7 +47,7 @@ describe("scratchpad tools store", () => {
     const result = await addScratchpadItemFromTool(
       { prisma: prisma as never },
       {
-        workspaceId: "ws",
+        spaceId: "ws",
         botId: "bot",
         userId: "user",
         title: "  Ship PR  ",
@@ -57,7 +57,7 @@ describe("scratchpad tools store", () => {
 
     expect(create).toHaveBeenCalledWith({
       data: {
-        workspaceId: "ws",
+        spaceId: "ws",
         botId: "bot",
         userId: "user",
         title: "Ship PR",
@@ -74,7 +74,7 @@ describe("scratchpad tools store", () => {
     const result = await addScratchpadItemFromTool(
       { prisma: { scratchpadItem: { create: vi.fn() } } as never },
       {
-        workspaceId: "ws",
+        spaceId: "ws",
         botId: "bot",
         userId: "user",
         title: "Nope",
@@ -98,7 +98,7 @@ describe("scratchpad tools store", () => {
     const updated = await updateScratchpadItemFromTool(
       { prisma: prisma as never },
       {
-        workspaceId: "ws",
+        spaceId: "ws",
         botId: "bot",
         userId: "user",
         itemId: "item-1",
@@ -112,7 +112,7 @@ describe("scratchpad tools store", () => {
 
     const completed = await completeScratchpadItemFromTool(
       { prisma: prisma as never },
-      { workspaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
+      { spaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
     );
     expect(completed).toEqual({
       item: expect.objectContaining({ status: "done" }),
@@ -120,13 +120,13 @@ describe("scratchpad tools store", () => {
 
     const removed = await removeScratchpadItemFromTool(
       { prisma: prisma as never },
-      { workspaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
+      { spaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
     );
     expect(removed).toEqual({ ok: true, itemId: "item-1", title: "Draft" });
     expect(findFirst).toHaveBeenCalledWith({
       where: {
         id: "item-1",
-        workspaceId: "ws",
+        spaceId: "ws",
         botId: "bot",
         userId: "user",
       },
@@ -141,7 +141,7 @@ describe("scratchpad tools store", () => {
       updateScratchpadItemFromTool(
         { prisma: prisma as never },
         {
-          workspaceId: "ws",
+          spaceId: "ws",
           botId: "bot",
           userId: "user",
           itemId: "missing",
@@ -155,7 +155,7 @@ describe("scratchpad tools store", () => {
     const findMany = vi.fn(async () => [row({ id: "1", title: "Open", status: "open" })]);
     const result = await listScratchpadItemsFromTool(
       { prisma: { scratchpadItem: { findMany } } as never },
-      { workspaceId: "ws", botId: "bot" },
+      { spaceId: "ws", botId: "bot" },
     );
     expect(result.items).toHaveLength(1);
   });

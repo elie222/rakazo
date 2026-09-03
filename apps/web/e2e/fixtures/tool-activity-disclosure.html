@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tool activity disclosure</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import { createElement as h } from "react";
+      import { createRoot } from "react-dom/client";
+      import { ToolActivityDisclosure, ToolSteps } from "../../src/components/ToolActivityDisclosure.tsx";
+      import "../../src/styles.css";
+
+      const live = new URLSearchParams(location.search).get("live") === "1";
+      const steps = [
+        { label: "Launch app", count: 1 },
+        { label: "Computer observe", count: 1 },
+        { label: "Computer act", count: 1 },
+        { label: "Shell", count: 1 },
+        { label: "Shell", count: 2 },
+      ];
+      const disclosure = h(
+        ToolActivityDisclosure,
+        { live, label: live ? "Working…" : "Worked for 1m 43s" },
+        h(ToolSteps, { steps, currentIndex: live ? steps.length - 1 : undefined }),
+      );
+      const response = live
+        ? null
+        : h("div", { "data-testid": "final-response" }, "Terminal is open and ready.");
+      const bubble = h(
+        "div",
+        {
+          className:
+            "max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]",
+        },
+        disclosure,
+        response,
+      );
+      createRoot(document.getElementById("root")).render(
+        h(
+          "main",
+          {
+            className:
+              "flex min-h-screen items-end bg-[#101012] px-4 py-6 md:px-8 md:py-8",
+          },
+          h("div", { className: "flex w-full justify-start" }, bubble),
+        ),
+      );
+    </script>
+  </body>
+</html>

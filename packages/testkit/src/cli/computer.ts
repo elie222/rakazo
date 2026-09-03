@@ -25,10 +25,13 @@ async function main() {
     AGENT_RUNTIME: "pi",
     BETTER_AUTH_SECRET: "computer-e2e-auth-secret-32chars",
     ENCRYPTION_KEY: "computer-e2e-encryption-key-32chars",
+    SANDBOX_SUPERVISOR_TOKEN: "computer-e2e-supervisor-token-32chars",
+    SCREEN_PROXY_SECRET: "computer-e2e-screen-proxy-secret-32chars",
     BETTER_AUTH_URL: "http://127.0.0.1:5173",
     WEB_ORIGIN: "http://127.0.0.1:5173",
     DATA_DIR: dataDir,
     SIGNUPS_ENABLED: "true",
+    SIGNUP_ALLOWLIST: "",
   };
   try {
     execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {

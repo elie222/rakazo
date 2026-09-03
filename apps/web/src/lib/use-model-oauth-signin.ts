@@ -145,7 +145,7 @@ export function useModelOAuthSignIn(options: {
           oauthStateOf(started.verificationUri),
         );
       }
-      window.open(started.verificationUri, "_blank", "noopener,noreferrer");
+      window.open(started.verificationUri, "rakazo-model-oauth", "noopener,noreferrer");
       waitingForCode = started.mode === "auth-url";
       if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {

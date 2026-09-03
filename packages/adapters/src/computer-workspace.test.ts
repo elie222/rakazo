@@ -13,7 +13,7 @@ import { LocalAgentHomeStore } from "./home.js";
 const context = {
   operationId: "workspace-test",
   traceId: "workspace-test",
-  workspaceId: "workspace",
+  spaceId: "workspace",
   userId: "user",
   signal: new AbortController().signal,
 };

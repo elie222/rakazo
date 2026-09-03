@@ -1,6 +1,13 @@
-import { type JobPublisher, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
-import type { Pool, PrismaClient } from "@rakazo/db";
+import {
+  type JobPublisher,
+  messagingDeliverJob,
+  routineWakeupJob,
+  runContinueJob,
+} from "@rakazo/adapter-kit";
+import type { MessageBlock } from "@rakazo/contracts";
+import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { PoolClient } from "pg";
+import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -93,6 +100,7 @@ export function createJobReconciler(
   deps: {
     prisma: PrismaClient;
     jobs: JobPublisher;
+    events?: ThreadEvents;
     leadership?: ReconciliationLeadership;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
@@ -143,7 +151,7 @@ export function createJobReconciler(
             }
           : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
         : undefined;
-      const [runs, routines, controls] = await Promise.all([
+      const [runs, routines, controls, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
         deps.prisma.run.findMany({
           where: {
             AND: [
@@ -203,7 +211,77 @@ export function createJobReconciler(
             controlLeaseExpiresAt: true,
           },
         }),
+        deps.prisma.messagingOutbound.findFirst({
+          where: {
+            status: "pending",
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
+          select: { id: true },
+        }),
+        deps.prisma.run.findMany({
+          where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: { id: true },
+        }),
       ]);
+
+      const events = deps.events;
+      if (events) {
+        const outcomes = await deps.prisma.run.findMany({
+          where: {
+            trigger: "bot_message",
+            status: { in: ["completed", "failed"] },
+            botOutcomeReturnedAt: null,
+          },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: {
+            id: true,
+            spaceId: true,
+            threadId: true,
+            botId: true,
+            userId: true,
+            sourceMessageId: true,
+            status: true,
+            error: true,
+            bot: { select: { name: true } },
+          },
+        });
+        await Promise.all(
+          outcomes.map(async (run) => {
+            const message =
+              run.status === "completed"
+                ? await deps.prisma.message.findFirst({
+                    where: { runId: run.id, role: "bot" },
+                    orderBy: { seq: "desc" },
+                    select: { blocks: true },
+                  })
+                : null;
+            const text =
+              run.status === "failed"
+                ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
+                : messageText(message?.blocks) ||
+                  "The delegated bot completed its turn without a written summary.";
+            const returned = await returnBotMessageOutcome(
+              { prisma: deps.prisma, jobs: deps.jobs, events },
+              run,
+              { id: run.botId, name: run.bot.name },
+              text,
+              run.status === "failed" ? "status" : "result",
+            ).catch((error) => {
+              console.error("bot message outcome reconciliation", error);
+              return false;
+            });
+            if (!returned) {
+              await deps.prisma.run.updateMany({
+                where: { id: run.id, botOutcomeReturnedAt: null },
+                data: { updatedAt: new Date() },
+              });
+            }
+          }),
+        );
+      }
 
       await Promise.all([
         ...runs.map((run) => deps.jobs.enqueue(runContinueJob(run.id))),
@@ -224,6 +302,8 @@ export function createJobReconciler(
               ]
             : [],
         ),
+        ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
+        ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
       ]);
 
       const lastRun = runs.at(-1);
@@ -266,4 +346,12 @@ export function createJobReconciler(
       await deps.leadership?.release();
     },
   };
+}
+
+function messageText(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return "";
+  return (blocks as MessageBlock[])
+    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
+    .map((block) => block.text)
+    .join("");
 }

@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
   type PlaywrightScreenshot,
@@ -10,12 +11,12 @@ import {
   renderScreenshotGallery,
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
+  validatePlaywrightScreenshotBudget,
 } from "../playwright-report-dashboard.js";
 import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
 
 const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
   process.argv.slice(2);
-const MAX_SCREENSHOT_COUNT = 100;
 const MAX_ARTIFACT_ENTRIES = 2_000;
 const MAX_ARTIFACT_DEPTH = 12;
 
@@ -94,6 +95,10 @@ await writeFile(
     sha,
   }),
 );
+await writeFile(
+  path.join(galleryPath, "review.json"),
+  `${JSON.stringify({ screenshots, screenshotsUrl }, null, 2)}\n`,
+);
 
 console.log(
   `Playwright dashboard generated with ${history.length} runs and ${screenshots.length} screenshots.`,
@@ -103,35 +108,37 @@ async function collectScreenshots(
   resultsPath: string,
   outputPath: string,
 ): Promise<Array<Omit<PlaywrightScreenshot, "comparison">>> {
-  const files = (await findPngFiles(resultsPath)).sort((left, right) =>
-    path.basename(left).localeCompare(path.basename(right)),
-  );
-  if (files.length > MAX_SCREENSHOT_COUNT) {
-    throw new Error(
-      `Playwright artifact contains ${files.length} screenshots; maximum is ${MAX_SCREENSHOT_COUNT}`,
-    );
-  }
+  const files = (await findPngFiles(resultsPath))
+    .filter((file) => classifyPlaywrightScreenshot(file) !== undefined)
+    .sort((left, right) => path.basename(left).localeCompare(path.basename(right)));
+  validatePlaywrightScreenshotBudget(files.length, 0);
   const imagePath = path.join(outputPath, "images");
   await mkdir(imagePath, { recursive: true });
 
   const screenshots: Array<Omit<PlaywrightScreenshot, "comparison">> = [];
+  let totalScreenshotBytes = 0;
   for (const [index, file] of files.entries()) {
     const info = await stat(file);
     if (!info.isFile() || info.size <= 0 || info.size > MAX_PNG_SCREENSHOT_BYTES) {
       throw new Error(`Invalid screenshot size for ${file}`);
     }
+    totalScreenshotBytes += info.size;
+    validatePlaywrightScreenshotBudget(files.length, totalScreenshotBytes);
     const screenshot = await readFile(file);
     validatePngScreenshot(screenshot, file);
+    const captureType = classifyPlaywrightScreenshot(file);
+    if (captureType === undefined) continue;
     const source = path.relative(resultsPath, file);
-    const fileName = `${String(index + 1).padStart(3, "0")}-${sanitizeFileName(path.basename(file))}`;
+    const baseName = sanitizeFileName(path.basename(file));
+    const fileName = `${String(index + 1).padStart(3, "0")}-${baseName}`;
     await copyFile(file, path.join(imagePath, fileName));
     screenshots.push({
-      captureType: isFailureCapture(file) ? "failure" : "checkpoint",
+      captureType,
       fileName: `images/${fileName}`,
       hash: createHash("sha256").update(screenshot).digest("hex"),
       source,
       testId: testIdFromSource(source),
-      title: titleFromFileName(path.basename(file)),
+      title: titleFromFileName(baseName),
     });
   }
   return screenshots;
@@ -177,10 +184,6 @@ function titleFromFileName(fileName: string): string {
     .replace(/\.png$/i, "")
     .replace(/^\d+-/, "")
     .replaceAll(/[-_]+/g, " ");
-}
-
-function isFailureCapture(fileName: string): boolean {
-  return /^test-failed(?:-\d+)?\.png$/i.test(path.basename(fileName));
 }
 
 function testIdFromSource(source: string): string {

@@ -220,12 +220,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-6">
       <section
-        className="flex max-h-full w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#2A2A31] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+        className="flex max-h-full w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-border)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
         aria-label={t`MCP servers`}
       >
-        <header className="flex items-start justify-between border-b border-[#27272C] px-8 py-6">
+        <header className="flex items-start justify-between border-b border-[var(--rk-hairline-strong)] px-8 py-6">
           <div>
-            <h1 className="text-2xl font-medium text-[#F1F1F2]">
+            <h1 className="text-2xl font-medium text-[var(--rk-ink-strong)]">
               <Trans>MCP servers</Trans>
             </h1>
             <p className="mt-1 text-[13.5px] text-[#85858B]">
@@ -238,7 +238,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             type="button"
             aria-label={t`Close MCP servers`}
             onClick={onClose}
-            className="text-xl text-[#85858A]"
+            className="text-xl text-[var(--rk-muted)]"
           >
             ✕
           </button>
@@ -249,8 +249,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
           </p>
         ) : null}
         <div className="rk-scroll grid min-h-0 grid-cols-1 gap-6 overflow-y-auto p-8 lg:grid-cols-[1fr_1.08fr]">
-          <div className="rounded-2xl border border-[#292930] bg-[#101012] p-5">
-            <h2 className="text-[15px] font-medium text-[#ECECEE]">
+          <div className="rounded-2xl border border-[var(--rk-border)] bg-[var(--rk-inset)] p-5">
+            <h2 className="text-[15px] font-medium text-[var(--rk-ink)]">
               <Trans>Add a server</Trans>
             </h2>
             <p className="mb-5 mt-1 text-xs text-[#77777F]">
@@ -259,7 +259,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 headers work today.
               </Trans>
             </p>
-            <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-name">
+            <label className="mb-1.5 block text-xs text-[var(--rk-soft)]" htmlFor="mcp-name">
               <Trans>Server name</Trans>
             </label>
             <input
@@ -267,9 +267,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Mobbin"
-              className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
+              className="mb-4 w-full rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
             />
-            <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-[#303038] bg-[#0B0B0D] p-1">
+            <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] p-1">
               {(
                 [
                   ["streamable_http", "HTTP"],
@@ -290,7 +290,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             </div>
             {transport === "stdio" ? (
               <>
-                <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-command">
+                <label className="mb-1.5 block text-xs text-[var(--rk-soft)]" htmlFor="mcp-command">
                   <Trans>Command</Trans>
                 </label>
                 <input
@@ -298,9 +298,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                   placeholder="/opt/mcp-server"
-                  className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
+                  className="mb-4 w-full rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                 />
-                <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-args">
+                <label className="mb-1.5 block text-xs text-[var(--rk-soft)]" htmlFor="mcp-args">
                   <Trans>Arguments</Trans>
                 </label>
                 <input
@@ -308,12 +308,15 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
                   placeholder="--stdio"
-                  className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
+                  className="mb-4 w-full rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                 />
               </>
             ) : (
               <>
-                <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-endpoint">
+                <label
+                  className="mb-1.5 block text-xs text-[var(--rk-soft)]"
+                  htmlFor="mcp-endpoint"
+                >
                   <Trans>Server URL</Trans>
                 </label>
                 <input
@@ -321,11 +324,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                   placeholder="https://api.mobbin.com/mcp"
-                  className="mb-4 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
+                  className="mb-4 w-full rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                 />
               </>
             )}
-            <label className="mb-1.5 block text-xs text-[#B9B9C0]" htmlFor="mcp-secret">
+            <label className="mb-1.5 block text-xs text-[var(--rk-soft)]" htmlFor="mcp-secret">
               <Trans>Access token (optional)</Trans>
             </label>
             <input
@@ -334,7 +337,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               placeholder={t`Stored encrypted`}
-              className="mb-3 w-full rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-sm text-white outline-none"
+              className="mb-3 w-full rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
             />
             {transport !== "stdio" ? (
               <div className="grid grid-cols-[.7fr_1fr] gap-2">
@@ -342,7 +345,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   aria-label={t`Header name`}
                   value={headerName}
                   onChange={(e) => setHeaderName(e.target.value)}
-                  className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
+                  className="rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-xs text-[var(--rk-ink)] outline-none"
                 />
                 <input
                   aria-label={t`Header value`}
@@ -350,7 +353,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   value={headerValue}
                   onChange={(e) => setHeaderValue(e.target.value)}
                   placeholder={t`Optional header value`}
-                  className="rounded-xl border border-[#303038] bg-[#0B0B0D] px-3 py-2.5 text-xs text-white outline-none"
+                  className="rounded-xl border border-[var(--rk-border)] bg-[var(--rk-sidebar)] px-3 py-2.5 text-xs text-[var(--rk-ink)] outline-none"
                 />
               </div>
             ) : null}
@@ -365,7 +368,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
           </div>
           <div className="space-y-5">
             <div>
-              <h2 className="text-[15px] font-medium text-[#ECECEE]">
+              <h2 className="text-[15px] font-medium text-[var(--rk-ink)]">
                 <Trans>Agent access for new servers</Trans>
               </h2>
               <p className="mt-1 text-xs text-[#77777F]">
@@ -378,7 +381,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 {bots.map((bot) => (
                   <label
                     key={bot.id}
-                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#292930] bg-[#101012] px-3 py-3"
+                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3 py-3"
                   >
                     <input
                       type="checkbox"
@@ -398,22 +401,22 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               </div>
             </div>
             <div>
-              <h2 className="text-[15px] font-medium text-[#ECECEE]">
+              <h2 className="text-[15px] font-medium text-[var(--rk-ink)]">
                 <Trans>Configured servers</Trans>
               </h2>
               <div className="mt-3 space-y-2">
                 {servers.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-[#34343B] p-5 text-sm text-[#77777F]">
+                  <p className="rounded-xl border border-dashed border-[var(--rk-elevated)] p-5 text-sm text-[#77777F]">
                     <Trans>No MCP servers yet.</Trans>
                   </p>
                 ) : (
                   servers.map((server) => (
                     <div
                       key={server.id}
-                      className="rounded-xl border border-[#292930] bg-[#101012] p-4"
+                      className="rounded-xl border border-[var(--rk-border)] bg-[var(--rk-inset)] p-4"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-[#ECECEE]">{server.name}</span>
+                        <span className="font-medium text-[var(--rk-ink)]">{server.name}</span>
                         <span className="rounded-full bg-[#202536] px-2 py-1 text-[10px] uppercase text-[#AEB7FF]">
                           {server.transport.replace("_", " ")}
                         </span>
@@ -439,7 +442,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                               key={bot.id}
                               type="button"
                               onClick={() => void toggleAssignment(server, bot.id)}
-                              className={`rounded-full border px-2.5 py-1 text-[11px] ${assigned ? "border-[#7785FF] bg-[#30356A] text-[#E2E4FF]" : "border-[#34343B] text-[#85858B]"}`}
+                              className={`rounded-full border px-2.5 py-1 text-[11px] ${assigned ? "border-[#7785FF] bg-[#30356A] text-[#E2E4FF]" : "border-[var(--rk-elevated)] text-[#85858B]"}`}
                             >
                               {assigned ? "✓ " : ""}
                               {bot.name}
@@ -463,7 +466,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 type="button"
                                 disabled={oauthPending === server.id}
                                 onClick={() => void disconnectOAuth(server)}
-                                className="rounded-lg border border-[#34343B] px-3 py-2 text-xs text-[#B9B9C0]"
+                                className="rounded-lg border border-[var(--rk-elevated)] px-3 py-2 text-xs text-[var(--rk-soft)]"
                               >
                                 <Trans>Disconnect</Trans>
                               </button>
@@ -473,7 +476,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         <button
                           type="button"
                           onClick={() => void deleteServer(server)}
-                          className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[#34343B] text-[#B9B9C0]"}`}
+                          className={`ml-auto rounded-lg border px-3 py-2 text-xs ${confirmingDelete === server.id ? "border-[#B4434F] bg-[#3A1A20] text-[#F3A2AA]" : "border-[var(--rk-elevated)] text-[var(--rk-soft)]"}`}
                         >
                           {confirmingDelete === server.id ? (
                             <Trans>Confirm delete</Trans>

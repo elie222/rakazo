@@ -23,7 +23,7 @@ export class LocalArtifactStore implements ArtifactStore {
 
   async put(artifact: ArtifactPut, context: AdapterContext) {
     const id = randomUUID();
-    const dir = path.join(this.root, "artifacts", context.workspaceId);
+    const dir = path.join(this.root, "artifacts", context.spaceId);
     await mkdir(dir, { recursive: true });
     const file = path.join(dir, id);
     await writeFile(file, artifact.bytes);
@@ -32,14 +32,12 @@ export class LocalArtifactStore implements ArtifactStore {
 
   async get(id: string, context: AdapterContext) {
     const { readFile } = await import("node:fs/promises");
-    return new Uint8Array(
-      await readFile(path.join(this.root, "artifacts", context.workspaceId, id)),
-    );
+    return new Uint8Array(await readFile(path.join(this.root, "artifacts", context.spaceId, id)));
   }
 
   async remove(id: string, context: AdapterContext) {
     const { rm } = await import("node:fs/promises");
-    await rm(path.join(this.root, "artifacts", context.workspaceId, id), { force: true });
+    await rm(path.join(this.root, "artifacts", context.spaceId, id), { force: true });
   }
 }
 

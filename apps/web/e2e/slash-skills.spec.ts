@@ -16,7 +16,7 @@ test("composer / picker lists skills above actions", async ({ page }, testInfo) 
   });
 
   // aria-label stays available when skill/mention chips hide the placeholder.
-  const composer = page.getByRole("textbox", { name: /^Message/ });
+  const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
   await composer.fill("/");
 

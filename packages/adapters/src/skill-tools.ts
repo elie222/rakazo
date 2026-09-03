@@ -22,7 +22,7 @@ const MAX_SKILL_NAME_CHARS = 80;
 const MAX_SKILL_DESCRIPTION_CHARS = 2000;
 
 type SkillOwner = {
-  workspaceId: string;
+  spaceId: string;
   userId: string;
   allowedSkillIds?: ReadonlySet<string>;
 };
@@ -87,7 +87,7 @@ export async function listAgentSkillRecords(
   owner: SkillOwner,
 ): Promise<Array<SkillRecord & { id: string }>> {
   const rows = await prisma.agentSkill.findMany({
-    where: { workspaceId: owner.workspaceId, userId: owner.userId },
+    where: { spaceId: owner.spaceId, userId: owner.userId },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
   return [...builtinRecords(), ...rows.map(toRecord)];
@@ -162,7 +162,7 @@ export async function skillCreateFromTool(
   try {
     const row = await prisma.agentSkill.create({
       data: {
-        workspaceId: owner.workspaceId,
+        spaceId: owner.spaceId,
         userId: owner.userId,
         name,
         description,
@@ -248,7 +248,7 @@ export async function skillUpdateFromTool(
     const updated = await prisma.agentSkill.updateMany({
       where: {
         id: existing.id,
-        workspaceId: owner.workspaceId,
+        spaceId: owner.spaceId,
         userId: owner.userId,
         source: "user",
       },
@@ -278,7 +278,7 @@ export async function skillDeleteFromTool(
   const deleted = await prisma.agentSkill.deleteMany({
     where: {
       id: existing.id,
-      workspaceId: owner.workspaceId,
+      spaceId: owner.spaceId,
       userId: owner.userId,
       source: "user",
     },

@@ -38,6 +38,46 @@ describe("remote MCP URL policy", () => {
     ).rejects.toThrow("private address");
   });
 
+  it("allows Tailscale MagicDNS hosts that resolve to CGNAT addresses", async () => {
+    const magicDns = "https://box.tail12345.ts.net/openapi.json";
+    await expect(
+      assertSafeRemoteUrl(magicDns, async () => [{ address: "100.64.1.2", family: 4 as const }]),
+    ).resolves.toEqual(new URL(magicDns));
+
+    const safeLookup = createSafeLookup(async () => [{ address: "100.119.57.55", family: 4 }]);
+    const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+      safeLookup("box.tail12345.ts.net", { family: 0, all: false }, (error, address, family) => {
+        if (error) reject(error);
+        else resolve({ address: String(address), family });
+      });
+    });
+    expect(result).toEqual({ address: "100.119.57.55", family: 4 });
+  });
+
+  it("still rejects raw Tailscale CGNAT IP literals", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://100.64.1.2/openapi.json", publicResolver),
+    ).rejects.toThrow(/private host/i);
+  });
+
+  it("rejects MagicDNS hosts that resolve outside Tailscale CGNAT", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://box.tail12345.ts.net/openapi.json", async () => [
+        { address: "127.0.0.1", family: 4 as const },
+      ]),
+    ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl("https://box.tail12345.ts.net/openapi.json", async () => [
+        { address: "10.1.2.3", family: 4 as const },
+      ]),
+    ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl("https://box.tail12345.ts.net/openapi.json", async () => [
+        { address: "169.254.169.254", family: 4 as const },
+      ]),
+    ).rejects.toThrow("private address");
+  });
+
   it("rejects private addresses in the lookup used by the network connection", async () => {
     const safeLookup = createSafeLookup(async () => [{ address: "10.1.2.3", family: 4 }]);
     const error = await new Promise<Error | null>((resolve) => {

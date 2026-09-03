@@ -5,7 +5,7 @@ import { loadAgentMemoryContext } from "./memory-context.js";
 const context: AdapterContext = {
   operationId: "run-1",
   traceId: "run-1",
-  workspaceId: "workspace-1",
+  spaceId: "workspace-1",
   userId: "user-1",
   botId: "bot-1",
   runId: "run-1",

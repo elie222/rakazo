@@ -39,7 +39,7 @@ class StubConnector implements ConnectorProvider {
 const context: AdapterContext = {
   operationId: "test",
   traceId: "test",
-  workspaceId: "workspace",
+  spaceId: "workspace",
   userId: "user",
   signal: new AbortController().signal,
 };

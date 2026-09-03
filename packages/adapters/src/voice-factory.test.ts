@@ -18,7 +18,7 @@ import {
 const ctx = {
   operationId: "voice",
   traceId: "voice",
-  workspaceId: "w",
+  spaceId: "w",
   userId: "u",
   signal: new AbortController().signal,
 };

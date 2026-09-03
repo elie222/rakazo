@@ -25,6 +25,10 @@ describe("normalizeApiBase", () => {
       ok: true,
       url: "http://192.168.1.20:3100",
     });
+    expect(normalizeApiBase("http://app.example.com")).toEqual({
+      ok: false,
+      error: "Public servers need https://",
+    });
   });
 
   it("rejects empty, non-http, and malformed values", () => {
@@ -44,6 +48,24 @@ describe("normalizeApiBase", () => {
 });
 
 describe("display and warnings", () => {
+  it("falls back to loopback when the compile-time endpoint is invalid", async () => {
+    vi.stubEnv("EXPO_PUBLIC_API_URL", "ftp://files.example.com");
+    vi.resetModules();
+    const endpoint = await import("./endpoint.js");
+
+    expect(endpoint.defaultApiBase()).toBe("http://127.0.0.1:3100");
+    vi.unstubAllEnvs();
+  });
+
+  it("falls back to loopback when the compile-time endpoint is public HTTP", async () => {
+    vi.stubEnv("EXPO_PUBLIC_API_URL", "http://app.example.com");
+    vi.resetModules();
+    const endpoint = await import("./endpoint.js");
+
+    expect(endpoint.defaultApiBase()).toBe("http://127.0.0.1:3100");
+    vi.unstubAllEnvs();
+  });
+
   it("shows host and non-default port", () => {
     expect(displayApiHost("https://rakazo.example.com")).toBe("rakazo.example.com");
     expect(displayApiHost("http://10.0.0.8:3100")).toBe("10.0.0.8:3100");
@@ -53,6 +75,9 @@ describe("display and warnings", () => {
     expect(apiBaseWarning("https://app.example.com")).toBeNull();
     expect(apiBaseWarning("http://127.0.0.1:3100")).toBeNull();
     expect(apiBaseWarning("http://192.168.1.20:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.64.0.1:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.119.57.55:3100")).toBeNull();
+    expect(apiBaseWarning("http://100.127.255.255:3100")).toBeNull();
     expect(apiBaseWarning("http://app.example.com")).toMatch(/https/i);
   });
 

@@ -1,7 +1,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { SearchHit } from "@rakazo/contracts";
 
-export function WorkspaceSearchResults({
+export function SpaceSearchResults({
   hits,
   loading,
   onSelect,
@@ -12,14 +12,14 @@ export function WorkspaceSearchResults({
 }) {
   if (loading) {
     return (
-      <div className="px-3 py-4 text-[14px] text-[#85858A]">
+      <div className="px-3 py-4 text-[14px] text-[var(--rk-muted)]">
         <Trans>Searching…</Trans>
       </div>
     );
   }
   if (!hits.length) {
     return (
-      <div className="px-3 py-4 text-[14px] text-[#85858A]">
+      <div className="px-3 py-4 text-[14px] text-[var(--rk-muted)]">
         <Trans>No results</Trans>
       </div>
     );
@@ -31,17 +31,17 @@ export function WorkspaceSearchResults({
           key={`${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`}
           type="button"
           onClick={() => onSelect(hit)}
-          className="rounded-xl px-2.5 py-[11px] text-start hover:bg-[#131315]"
+          className="rounded-xl px-2.5 py-[11px] text-start hover:bg-[var(--rk-page)]"
         >
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[15px] font-medium text-[#ECECEE]" dir="auto">
+            <span className="truncate text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
               {hit.title}
             </span>
-            <span className="shrink-0 text-[12px] uppercase tracking-wide text-[#6C6C70]">
+            <span className="shrink-0 text-[12px] uppercase tracking-wide text-[var(--rk-muted-2)]">
               {hit.kind}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[13px] text-[#85858A]" dir="auto">
+          <div className="mt-0.5 truncate text-[13px] text-[var(--rk-muted)]" dir="auto">
             {hit.groupName ?? hit.botName} · {hit.snippet}
           </div>
         </button>

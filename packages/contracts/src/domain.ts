@@ -9,6 +9,9 @@ export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
+export const AvatarStyleSchema = z.enum(["robot", "organic"]);
+export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
+
 export const ThinkingLevelSchema = z.enum([
   "off",
   "minimal",
@@ -22,7 +25,7 @@ export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
 export const BotSchema = z.object({
   id: Id,
-  workspaceId: Id,
+  spaceId: Id,
   name: z.string(),
   title: z.string(),
   description: z.string(),
@@ -47,8 +50,17 @@ export const BotSchema = z.object({
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
   agentSkillIds: z.array(Id).nullable().optional(),
+  webhookConfigured: z.boolean(),
 });
 export type Bot = z.infer<typeof BotSchema>;
+
+export const ReorderBotsInput = z.object({
+  botIds: z
+    .array(Id)
+    .min(1)
+    .refine((ids) => new Set(ids).size === ids.length, { error: "botIds must be distinct" }),
+});
+export type ReorderBotsInput = z.infer<typeof ReorderBotsInput>;
 
 export const GroupMemberSchema = z.object({
   botId: Id,
@@ -63,8 +75,11 @@ export const GROUP_MEMBER_MAX = 6;
 
 export const GroupSchema = z.object({
   id: Id,
-  workspaceId: Id,
+  spaceId: Id,
   name: z.string(),
+  pinned: z.boolean(),
+  sectionId: Id.nullable(),
+  archivedAt: z.string().nullable(),
   members: z.array(GroupMemberSchema),
   threadId: Id,
   preview: z.string(),
@@ -90,6 +105,8 @@ export const UpdateGroupInput = z.object({
   groupId: Id,
   name: z.string().trim().min(1).max(80).optional(),
   botIds: GroupBotIds.optional(),
+  pinned: z.boolean().optional(),
+  sectionId: Id.nullable().optional(),
 });
 export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
 
@@ -106,6 +123,62 @@ export const BotSectionSchema = z.object({
   updatedAt: z.string(),
 });
 export type BotSection = z.infer<typeof BotSectionSchema>;
+
+/**
+ * A space is a real privacy boundary, not just sidebar organization.
+ * Bots are included so clients can keep every space visible without granting
+ * those bots access to the currently active space.
+ */
+export const SpaceBotSchema = BotSchema.pick({
+  id: true,
+  spaceId: true,
+  name: true,
+  title: true,
+  color: true,
+  notifyOnFinish: true,
+  pinned: true,
+  sectionId: true,
+  unread: true,
+  preview: true,
+  status: true,
+  updatedAt: true,
+});
+export type SpaceBot = z.infer<typeof SpaceBotSchema>;
+
+export const SpaceGroupSchema = GroupSchema.pick({
+  id: true,
+  spaceId: true,
+  name: true,
+  pinned: true,
+  sectionId: true,
+  members: true,
+  preview: true,
+  unread: true,
+  updatedAt: true,
+});
+export type SpaceGroup = z.infer<typeof SpaceGroupSchema>;
+
+export const SpaceSchema = z.object({
+  id: Id,
+  name: z.string(),
+  isDefault: z.boolean(),
+  bots: z.array(SpaceBotSchema),
+  groups: z.array(SpaceGroupSchema),
+  botSections: z.array(BotSectionSchema),
+});
+export type Space = z.infer<typeof SpaceSchema>;
+
+export const SpaceNavigationSchema = z.object({
+  current: z.object({
+    id: Id,
+    name: z.string(),
+    bots: z.array(BotSchema),
+    groups: z.array(GroupSchema),
+    botSections: z.array(BotSectionSchema),
+  }),
+  spaces: z.array(SpaceSchema),
+});
+export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
 export const BOT_NAME_MAX_LENGTH = 80;
 export const BOT_TITLE_MAX_LENGTH = 500;
@@ -186,25 +259,37 @@ export const RoutineSchema = z.object({
   botId: Id,
   name: z.string(),
   prompt: z.string(),
-  crons: z.array(z.string()).min(1),
+  crons: z.array(z.string()),
   timezone: z.string(),
   active: z.boolean(),
   notify: z.boolean(),
+  webhookEnabled: z.boolean(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 
-export const CreateRoutineInput = z.object({
-  botId: Id,
-  name: z.string().min(1).max(80),
-  prompt: z.string().min(1),
-  crons: z.array(z.string().min(1)).min(1),
-  timezone: z.string().default("UTC"),
-  notify: z.boolean().default(true),
-  active: z.boolean().default(false),
-});
+export const CreateRoutineInput = z
+  .object({
+    botId: Id,
+    name: z.string().min(1).max(80),
+    prompt: z.string().min(1),
+    crons: z.array(z.string().min(1)).default([]),
+    timezone: z.string().default("UTC"),
+    notify: z.boolean().default(true),
+    active: z.boolean().default(false),
+    webhookEnabled: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.crons.length === 0 && !value.webhookEnabled) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Add a schedule or webhook trigger",
+        path: ["crons"],
+      });
+    }
+  });
 
 export const ScratchpadItemStatusSchema = z.enum(["open", "parked", "done"]);
 export type ScratchpadItemStatus = z.infer<typeof ScratchpadItemStatusSchema>;
@@ -390,6 +475,12 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+export const ActionAutoReviewSettingsSchema = z.object({
+  enabled: z.boolean(),
+  checkerAvailable: z.boolean(),
+});
+export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSchema>;
+
 export const CapabilityInstallSchema = z.object({
   id: Id,
   kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
@@ -446,7 +537,7 @@ export type McpServerConfigInput = z.infer<typeof McpServerConfigInput>;
 
 export const McpServerSchema = z.object({
   id: Id,
-  workspaceId: Id,
+  spaceId: Id,
   slug: z.string(),
   name: z.string(),
   description: z.string(),
@@ -523,13 +614,67 @@ export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 
+export const MessagingLinkedIdentitySchema = z.object({
+  id: Id,
+  provider: z.string(),
+  address: z.string(),
+  botId: Id,
+  botName: z.string(),
+});
+export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
+
+export const MessagingStatusSchema = z.object({
+  enabled: z.boolean(),
+  /** Messaging platforms mounted on this deployment (sendblue, slack, …). */
+  providers: z.array(z.string()),
+  /** True when unknown senders auto-provision their own accounts. */
+  openSignup: z.boolean(),
+  /** The caller's linked chat apps, one entry per (provider, address). */
+  identities: z.array(MessagingLinkedIdentitySchema),
+});
+export type MessagingStatus = z.infer<typeof MessagingStatusSchema>;
+
+export const MessagingChannelMembershipSchema = z.object({
+  /** One row per linked identity: the same group can hold two of the caller's. */
+  id: Id,
+  channelId: Id,
+  /** Which of the caller's linked chat apps this membership belongs to. */
+  identityId: Id,
+  provider: z.string(),
+  name: z.string().nullable(),
+  status: z.enum(["invited", "approved", "declined", "left"]),
+  memberCount: z.number().int().nonnegative(),
+});
+export type MessagingChannelMembership = z.infer<typeof MessagingChannelMembershipSchema>;
+
+export const MessagingAgentConnectionSchema = z.object({
+  id: Id,
+  peerBotName: z.string(),
+  peerOwnerLabel: z.string(),
+  status: z.enum(["pending", "approved", "declined", "revoked"]),
+  /** true when the caller's bot is the target (only the target can respond). */
+  incoming: z.boolean(),
+});
+export type MessagingAgentConnection = z.infer<typeof MessagingAgentConnectionSchema>;
+
 export const RunSchema = z.object({
   id: Id,
   botId: Id,
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
+  trigger: z.enum([
+    "user",
+    "routine",
+    "resume",
+    "follow_up",
+    "reaction",
+    "spawn",
+    "skill",
+    "bot_message",
+    "webhook",
+    "messaging",
+  ]),
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -633,13 +778,13 @@ export const ModelOAuthBeginSchema = z.discriminatedUnion("mode", [
 ]);
 export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 
-export const WorkspaceMemoryConfigSchema = z.object({
+export const SpaceMemoryConfigSchema = z.object({
   provider: z.string(),
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,
   updatedAt: z.string(),
 });
-export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
+export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
   provider: z.string(),
@@ -702,6 +847,7 @@ export const DeploymentSettingsSchema = z.object({
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
 });
 
 export const ServerUpdateSourceSchema = z.object({
@@ -726,6 +872,15 @@ export type ServerUpdateStrategy = z.infer<typeof ServerUpdateStrategySchema>;
 /** `sidecar` is the Compose deployment; `checkout` is a supervised source install. */
 export const ServerUpdateModeSchema = z.enum(["sidecar", "checkout", "unavailable"]);
 export type ServerUpdateMode = z.infer<typeof ServerUpdateModeSchema>;
+
+/**
+ * What Settings should render for a deployment owner.
+ * `sidecar`: Check / Update / Rollback through the updater sidecar.
+ * `compose`: Compose install without a reachable sidecar; show host pull/up commands.
+ * `source`: git checkout / `pnpm dev`; show terminal commands, never a fake Apply.
+ */
+export const ServerUpdateInstallKindSchema = z.enum(["sidecar", "compose", "source"]);
+export type ServerUpdateInstallKind = z.infer<typeof ServerUpdateInstallKindSchema>;
 
 export const ServerUpdateRunSchema = z.object({
   startedAt: z.iso.datetime(),
@@ -752,6 +907,9 @@ export type ServerUpdateRun = z.infer<typeof ServerUpdateRunSchema>;
 export const ServerUpdateStatusSchema = z.object({
   supported: z.boolean(),
   unsupportedReason: z.string().nullable(),
+  installKind: ServerUpdateInstallKindSchema,
+  /** Host commands to run when `installKind` is not `sidecar`. Empty when the sidecar applies. */
+  manualCommands: z.array(z.string()),
   mode: ServerUpdateModeSchema,
   strategy: ServerUpdateStrategySchema.nullable(),
   strategyNote: z.string().nullable(),
@@ -781,31 +939,43 @@ export const ServerUpdateCheckSchema = z.object({
   changed: z.array(z.string()),
   commit: z.string().nullable(),
   targetCommit: z.string().nullable(),
+  targetTag: z.string().nullable(),
   behindBy: z.number().int().nonnegative(),
 });
 export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
+
+export const ServerUpdateRequestSchema = z.object({
+  repoUrl: z.string().max(400).optional(),
+  branch: z.string().max(200).optional(),
+});
+export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
   userId: Id,
   email: z.string().email(),
   name: z.string(),
-  workspaceId: Id,
+  spaceId: Id,
   isDeploymentOwner: z.boolean(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
+  sandboxProvider: z.string(),
+  avatarStyle: AvatarStyleSchema,
 });
 export type Me = z.infer<typeof MeSchema>;
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
   bots: z.array(BotSchema),
+  groups: z.array(GroupSchema),
   botSections: z.array(BotSectionSchema),
   archivedBots: z.array(BotSchema),
+  archivedGroups: z.array(GroupSchema),
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),
+  spaces: z.array(SpaceSchema),
 });
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 

@@ -5,12 +5,12 @@ export type ResolveHostname = (hostname: string) => Promise<ResolvedAddress[]>;
 
 export function createAddressCheckedLookup(
   resolve: ResolveHostname,
-  validate: (addresses: ResolvedAddress[]) => void,
+  validate: (addresses: ResolvedAddress[], hostname: string) => void,
 ): LookupFunction {
   return (hostname, options, callback) => {
     void resolve(hostname)
       .then((addresses) => {
-        validate(addresses);
+        validate(addresses, hostname);
         if (options.all) {
           callback(null, addresses);
           return;
@@ -38,10 +38,22 @@ export function isPrivateAddress(address: string): boolean {
     if (ipv6 === 0n || ipv6 === 1n) return true;
     if (ipv6 >> 120n === 0xffn) return true;
     const topTenBits = ipv6 >> 118n;
+    // fe80::/10 link-local (and the adjacent fea0::/10 bit pattern 0x3fb)
     if (topTenBits === 0x3fan || topTenBits === 0x3fbn) return true;
+    // fc00::/7 unique local (ULA), including fd00::/8
     if (((ipv6 >> 120n) & 0xfen) === 0xfcn) return true;
+    // ::ffff:0:0/96 IPv4-mapped
     if (ipv6 >> 32n === 0xffffn) return isPrivateIpv4Number(Number(ipv6 & 0xffffffffn));
+    // ::/96 IPv4-compatible (deprecated) and other low :: embeddings
     if (ipv6 >> 32n === 0n) return true;
+    // 64:ff9b::/96 NAT64 well-known prefix — treat as private when the embedded v4 is
+    if (ipv6 >> 32n === 0x64ff9bn << 64n) {
+      return isPrivateIpv4Number(Number(ipv6 & 0xffffffffn));
+    }
+    // 2002::/16 6to4 — IPv4 lives in the next 32 bits after the 2002 prefix
+    if (ipv6 >> 112n === 0x2002n) {
+      return isPrivateIpv4Number(Number((ipv6 >> 80n) & 0xffffffffn));
+    }
     return false;
   }
   const octets = ipv4.split(".").map(Number);

@@ -1,3 +1,4 @@
+import console from "node:console";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -100,8 +101,18 @@ export async function collectPages<T>(
   return items;
 }
 
+function composioSlugKey(slug: string): string {
+  return slug.trim().toLowerCase();
+}
+
 export function executeSessionKey(toolkits: string[]): string {
-  return [...new Set(toolkits.map((slug) => slug.trim()).filter(Boolean))].sort().join(",");
+  const unique = new Map<string, string>();
+  for (const slug of toolkits) {
+    const trimmed = slug.trim();
+    const key = composioSlugKey(trimmed);
+    if (key && !unique.has(key)) unique.set(key, trimmed);
+  }
+  return [...unique.values()].sort().join(",");
 }
 
 export type PluginConnectionRow = {
@@ -119,16 +130,21 @@ export function mergeConnectedPlugins(
   rows: { provider: string; displayName: string; status?: string }[],
   liveSlugs: string[],
 ): { provider: string; displayName: string }[] {
-  const live = new Set(liveSlugs.filter(Boolean));
+  const live = new Set(liveSlugs.map((slug) => composioSlugKey(slug)).filter(Boolean));
   const byProvider = new Map<string, { provider: string; displayName: string }>();
   for (const row of rows) {
     if (!row.provider) continue;
     const include =
-      row.status === "connected" || row.status === undefined || live.has(row.provider);
+      row.status === "connected" ||
+      row.status === undefined ||
+      live.has(composioSlugKey(row.provider));
     if (!include) continue;
-    const current = byProvider.get(row.provider);
-    if (!current || current.displayName === row.provider) {
-      byProvider.set(row.provider, { provider: row.provider, displayName: row.displayName });
+    const current = byProvider.get(composioSlugKey(row.provider));
+    if (!current || composioSlugKey(current.displayName) === composioSlugKey(current.provider)) {
+      byProvider.set(composioSlugKey(row.provider), {
+        provider: row.provider,
+        displayName: row.displayName,
+      });
     }
   }
   return [...byProvider.values()];
@@ -138,14 +154,14 @@ export function planLiveConnectionSync(
   rows: PluginConnectionRow[],
   liveSlugs: string[],
 ): { connectIds: string[]; revokeIds: string[] } {
-  const live = new Set(liveSlugs.filter(Boolean));
+  const live = new Set(liveSlugs.map(composioSlugKey).filter(Boolean));
   const connectIds: string[] = [];
   const connectedProviders = new Set(
-    rows.filter((row) => row.status === "connected").map((row) => row.provider),
+    rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
   );
   for (const slug of live) {
     if (connectedProviders.has(slug)) continue;
-    const matches = rows.filter((row) => row.provider === slug);
+    const matches = rows.filter((row) => composioSlugKey(row.provider) === slug);
     const reusable =
       matches.find((row) => row.status === "pending" || row.status === "error") ??
       matches.find((row) => row.status === "revoked") ??
@@ -196,7 +212,8 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
-    const key = executeSessionKey(toolkits);
+    const canonicalToolkits = await this.canonicalizeToolkits(toolkits);
+    const key = executeSessionKey(canonicalToolkits);
     if (!key) return this.sessionFor(userId);
     const composio = this.sdk();
     const existing = this.executeSessions.get(userId);
@@ -210,8 +227,7 @@ export class ComposioConnector implements ComposioProvider {
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
-      toolkits: key.split(","),
-      sessionPreset: "direct_tools",
+      toolkits: canonicalToolkits,
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
@@ -229,6 +245,20 @@ export class ComposioConnector implements ComposioProvider {
 
   async warmDirectory(): Promise<void> {
     await this.directory();
+  }
+
+  private async canonicalizeToolkits(toolkits: string[]): Promise<string[]> {
+    const directory = await this.directory().catch(() => []);
+    const canonical = new Map(directory.map((item) => [composioSlugKey(item.slug), item.slug]));
+    const unique = new Map<string, string>();
+    for (const toolkit of toolkits) {
+      const trimmed = toolkit.trim();
+      const key = composioSlugKey(trimmed);
+      if (key && !unique.has(key)) {
+        unique.set(key, canonical.get(key) ?? trimmed.toUpperCase());
+      }
+    }
+    return [...unique.values()].sort();
   }
 
   private async directory(): Promise<ToolkitDirectoryEntry[]> {
@@ -317,7 +347,7 @@ export class ComposioConnector implements ComposioProvider {
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
     const session = await this.sessionFor(context.userId);
     const page = await session.toolkits({ search: slug, limit: 50 });
-    const match = page.items.find((item) => item.slug === slug);
+    const match = page.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug));
     if (!match) return false;
     return Boolean(match.connection?.isActive) || Boolean(match.isNoAuth);
   }
@@ -337,7 +367,8 @@ export class ComposioConnector implements ComposioProvider {
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
     const session = await this.sessionFor(userId);
     const toolkits = await session.toolkits({ isConnected: true });
-    return toolkits.items.find((item) => item.slug === slug)?.connection?.connectedAccount?.id;
+    return toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
+      ?.connection?.connectedAccount?.id;
   }
 
   private sdk(): Composio {
@@ -386,7 +417,8 @@ export class ConnectorRegistry implements ConnectorProvider {
       [...this.providers].map(async ([connectorId, provider]) => {
         try {
           return [connectorId, await provider.discoverTools(context)] as const;
-        } catch {
+        } catch (error) {
+          console.error("connector discovery failed", connectorId, sanitizeComposioError(error));
           return [connectorId, []] as const;
         }
       }),
@@ -420,6 +452,16 @@ export class ConnectorRegistry implements ConnectorProvider {
       return;
     }
     yield* provider.execute({ ...call, tool: call.route?.toolName ?? call.tool }, context);
+  }
+
+  async resolveCall(
+    call: ConnectorCall,
+    context: AdapterContext,
+  ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
+    const connectorId = call.route?.connectorId;
+    if (!connectorId) return undefined;
+    const provider = this.providers.get(connectorId);
+    return provider?.resolveCall?.({ ...call, tool: call.route?.toolName ?? call.tool }, context);
   }
 }
 

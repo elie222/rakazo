@@ -9,7 +9,9 @@ import {
 } from "./helpers";
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
-  return page.locator("[data-sidebar-group]").getByRole("button", { name });
+  return page.locator("[data-sidebar-group] [data-roster-bot-id]").filter({
+    has: page.locator("[data-roster-bot-name]").filter({ hasText: name }),
+  });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -75,7 +77,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect(mainBox).not.toBeNull();
   expect(panelBox).not.toBeNull();
   expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
-  await page.getByRole("button", { name: "Take control" }).click();
+  await sidePanel.getByTestId("computer-preview").hover();
+  await sidePanel.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
   await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
@@ -95,16 +98,16 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel — only open it when closed so we don't hide Take control.
-  // Opening refreshes thread/computer status so Take control can clear a stale busyBotName.
+  // Agent computer toggles the panel. Re-open when closed so Open can refresh computer status.
   if ((await sidePanel.getAttribute("data-panel")) === "computer") {
     await page.getByTitle("Agent computer").click();
   }
   await page.getByTitle("Agent computer").click();
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
-  const takeControl = sidePanel.getByRole("button", { name: "Take control" });
-  await expect(takeControl).toBeEnabled({ timeout: 30_000 });
-  await takeControl.click();
+  await sidePanel.getByTestId("computer-preview").hover();
+  const openComputer = sidePanel.getByTestId("computer-preview-open");
+  await expect(openComputer).toBeVisible({ timeout: 30_000 });
+  await openComputer.click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Skip", exact: true }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
@@ -113,21 +116,31 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
-  await page.getByText("+ New routine").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
     .locator("label:has-text('Instruction') textarea")
     .fill("write a file in your home called notes/result.txt that says routine-ok");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "On a schedule" }).hover();
+  await page.getByRole("menuitem", { name: "Every day", exact: true }).click();
+  const savedRoutine = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
   await page.getByRole("button", { name: "Save" }).click();
+  await savedRoutine;
+  await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+  await page.getByRole("button", { name: "Back" }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
   await page.getByText("Integrations").click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
-  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
-  await expect(page.getByText("Slack", { exact: true })).toBeVisible();
+  const featured = page.getByTestId("featured-connectors");
+  await expect(featured).toContainText(
+    /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
+  );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-  await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -137,7 +150,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  const gmailRow = page.getByText("Gmail", { exact: true }).locator("..").locator("..");
+  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
+  const gmailRow = featured
+    .getByText("Gmail", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
@@ -146,7 +162,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
-  const linearRow = page.getByText("Linear", { exact: true }).locator("..").locator("..");
+  const linearRow = page
+    .getByText("Linear", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
   const connectPopup = page.waitForEvent("popup");
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;
@@ -225,12 +243,29 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 });
 
 test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) => {
+  const browserErrors: string[] = [];
+  const failedRequests: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("requestfailed", (request) => {
+    failedRequests.push(
+      `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
+    );
+  });
   const stamp = Date.now();
   const email = `shell-${stamp}@rakazo.test`;
   await signup(page, email, "password12", "Shell");
   await completeOnboarding(page);
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    });
+  });
 
-  const composer = page.getByPlaceholder(/Message/);
+  const composer = page.locator('textarea[name="chat-message"]');
   await composer.fill("spawn a bot named Scout to research venues");
   await page.keyboard.press("Enter");
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
@@ -245,9 +280,51 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
   await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("composer-steering-status")).toHaveCount(0);
+  await expect(page.getByText("Messages sent now guide the next turn.")).toHaveCount(0);
+  await expect(page.getByText(/^Steer /)).toHaveCount(0);
+  await expect(composer).toHaveAttribute("placeholder", "Message Chief");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await composer.fill("Use the newer report and keep the answer short.");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("transcript").getByText("Use the newer report and keep the answer short."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "14-active-bot-work");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(composer).toHaveAttribute("placeholder", "Message Chief");
+  await captureScreenshot(page, testInfo, "14-active-bot-work-mobile");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  expect(browserErrors).toEqual([]);
+  expect(failedRequests).toEqual([]);
+  let releaseStopRequest: () => void = () => undefined;
+  let markStopRequestStarted: () => void = () => undefined;
+  const stopRequestStarted = new Promise<void>((resolve) => {
+    markStopRequestStarted = resolve;
+  });
+  await page.route("**/rpc/threads/stop", async (route) => {
+    markStopRequestStarted();
+    await new Promise<void>((release) => {
+      releaseStopRequest = release;
+    });
+    await route.continue();
+  });
   await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
+  await stopRequestStarted;
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
+  releaseStopRequest();
+  // Idle Send stays disabled with an empty draft; wait for Stop to leave instead.
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
 
   await page.context().clearCookies();
   await page.goto("/sign-in");

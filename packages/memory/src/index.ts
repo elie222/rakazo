@@ -27,7 +27,7 @@ export class MarkdownMemoryStore implements MemoryStore {
   async read(request: MemoryReadRequest, context: AdapterContext): Promise<MemorySnapshot> {
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
-        workspaceId: context.workspaceId,
+        spaceId: context.spaceId,
         userId: context.userId,
         scope: request.scope,
         ...(request.botId ? { botId: request.botId } : {}),
@@ -52,7 +52,7 @@ export class MarkdownMemoryStore implements MemoryStore {
   ): Promise<MemorySearchResult[]> {
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
-        workspaceId: context.workspaceId,
+        spaceId: context.spaceId,
         userId: context.userId,
         ...(request.scope === "all" ? {} : { scope: request.scope }),
         ...(request.botId ? { botId: request.botId } : {}),
@@ -71,7 +71,7 @@ export class MarkdownMemoryStore implements MemoryStore {
   async commit(request: MemoryCommitRequest, context: AdapterContext): Promise<MemoryRevision> {
     const existing = await this.prisma.memoryDocument.findFirst({
       where: {
-        workspaceId: context.workspaceId,
+        spaceId: context.spaceId,
         userId: context.userId,
         scope: request.scope,
         botId: request.botId ?? null,
@@ -85,7 +85,7 @@ export class MarkdownMemoryStore implements MemoryStore {
         })
       : await this.prisma.memoryDocument.create({
           data: {
-            workspaceId: context.workspaceId,
+            spaceId: context.spaceId,
             userId: context.userId,
             botId: request.botId,
             scope: request.scope,

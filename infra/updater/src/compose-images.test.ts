@@ -1,0 +1,148 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+
+interface ComposeService {
+  image?: string;
+  build?: unknown;
+  command?: unknown;
+  env_file?: unknown;
+  /** YAML may parse unquoted scalars as null/number/boolean. */
+  environment?: Record<string, unknown>;
+  volumes?: string[];
+  ports?: unknown[];
+  user?: string;
+  restart?: string;
+}
+
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
+const composeFile = path.resolve(repoRoot, "infra/compose/docker-compose.images.yml");
+const publishWorkflowFile = path.resolve(repoRoot, ".github/workflows/publish-server-image.yml");
+const compose = parse(readFileSync(composeFile, "utf8")) as {
+  services: Record<string, ComposeService>;
+};
+const publishWorkflow = parse(readFileSync(publishWorkflowFile, "utf8")) as {
+  jobs?: {
+    publish?: {
+      strategy?: {
+        matrix?: {
+          include?: Array<{ name?: string }>;
+        };
+      };
+    };
+  };
+};
+
+const appServices = ["api", "worker", "web", "supervisor"] as const;
+const FIRST_PARTY_IMAGE = /ghcr\.io\/elie222\/rakazo\/([a-z0-9][a-z0-9._-]*)/g;
+
+function firstPartyImageNames(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return [...value.matchAll(FIRST_PARTY_IMAGE)].map((match) => match[1] ?? "");
+}
+
+/**
+ * The images compose file is the no-checkout happy path. It must stay pull-only and self-contained
+ * so operators can drop it next to a .env outside any git worktree. Local Docker computers run via
+ * an in-stack supervisor (app image + docker.sock) that stays unpublished on the host.
+ */
+describe("the images compose file", () => {
+  it("runs postgres, app roles, supervisor, and a published computer image", () => {
+    expect(Object.keys(compose.services).sort()).toEqual([
+      "api",
+      "computer",
+      "data-init",
+      "postgres",
+      "supervisor",
+      "web",
+      "worker",
+    ]);
+    for (const service of appServices) {
+      expect(compose.services[service]?.image).toContain("ghcr.io/elie222/rakazo/app");
+      expect(compose.services[service]?.image).toContain("RAKAZO_IMAGE_TAG");
+    }
+    expect(compose.services.computer?.image).toContain("ghcr.io/elie222/rakazo/computer");
+    expect(compose.services.computer?.image).toContain("RAKAZO_COMPUTER_IMAGE_TAG");
+    expect(compose.services.postgres?.image).toMatch(
+      /^\$\{POSTGRES_IMAGE:-postgres:16@sha256:[0-9a-f]{64}\}$/,
+    );
+    expect(compose.services["data-init"]?.image).toMatch(/^\$\{BUSYBOX_IMAGE:-busybox:1\}$/);
+  });
+
+  it("skips non-string Compose environment scalars when collecting image names", () => {
+    expect(firstPartyImageNames(null)).toEqual([]);
+    expect(firstPartyImageNames(true)).toEqual([]);
+    expect(firstPartyImageNames(7091)).toEqual([]);
+    expect(firstPartyImageNames("ghcr.io/elie222/rakazo/computer:edge")).toEqual(["computer"]);
+  });
+
+  it("only references first-party images that the publish matrix publishes", () => {
+    const published = new Set(
+      (publishWorkflow.jobs?.publish?.strategy?.matrix?.include ?? [])
+        .map((entry) => entry.name)
+        .filter((name): name is string => typeof name === "string" && name.length > 0),
+    );
+    const referenced = new Set<string>();
+    for (const service of Object.values(compose.services)) {
+      for (const name of firstPartyImageNames(service.image)) {
+        referenced.add(name);
+      }
+      for (const value of Object.values(service.environment ?? {})) {
+        for (const name of firstPartyImageNames(value)) {
+          referenced.add(name);
+        }
+      }
+    }
+    expect(published.size).toBeGreaterThan(0);
+    expect(referenced.has("computer")).toBe(true);
+    for (const name of referenced) {
+      expect(
+        published.has(name),
+        `${name} referenced by images compose but omitted from publish matrix`,
+      ).toBe(true);
+    }
+  });
+
+  it("never builds from a checkout", () => {
+    for (const service of Object.values(compose.services)) {
+      expect(service.build).toBeUndefined();
+    }
+  });
+
+  it("loads secrets from a colocated .env", () => {
+    expect(compose.services.api?.env_file).toEqual([".env"]);
+    expect(compose.services.worker?.env_file).toEqual([".env"]);
+  });
+
+  it("defaults API and worker to Docker computers via the supervisor", () => {
+    expect(compose.services.api?.environment?.SANDBOX_PROVIDER).toContain("docker");
+    expect(compose.services.worker?.environment?.SANDBOX_PROVIDER).toContain("docker");
+    expect(compose.services.api?.environment?.SANDBOX_SUPERVISOR_URL).toBe(
+      "http://supervisor:7091",
+    );
+    expect(compose.services.worker?.environment?.SANDBOX_SUPERVISOR_URL).toBe(
+      "http://supervisor:7091",
+    );
+  });
+
+  it("keeps the Docker socket on the unpublished supervisor only", () => {
+    for (const [name, service] of Object.entries(compose.services)) {
+      const hasSocket = (service.volumes ?? []).some((volume) => volume.includes("docker.sock"));
+      if (name === "supervisor") {
+        expect(hasSocket).toBe(true);
+        expect(service.ports).toBeUndefined();
+        expect(service.user).toBe("root");
+        expect(String(service.command)).toContain("sandbox-supervisor");
+      } else {
+        expect(hasSocket).toBe(false);
+      }
+    }
+  });
+
+  it("publishes the web UI on loopback only", () => {
+    expect(compose.services.web?.ports).toEqual(["127.0.0.1:5173:5173"]);
+    expect(compose.services.postgres?.ports).toBeUndefined();
+    expect(compose.services.supervisor?.ports).toBeUndefined();
+  });
+});

@@ -86,7 +86,7 @@ const destinationTool: ConnectorTool = {
 const runContext = {
   operationId: "approval-pi",
   traceId: "approval-pi",
-  workspaceId: "workspace",
+  spaceId: "workspace",
   userId: "user",
   signal: new AbortController().signal,
 };

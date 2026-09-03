@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The phone surface became a multi-platform messaging surface built on the open-source Chat SDK. Slack, WhatsApp Business Cloud, and Telegram DMs now work alongside iMessage/SMS (Sendblue). Link a chat app to your account from Messaging settings on the web: pick a bot, send the short-lived code to the line, and that conversation reaches that bot — each app can point at a different bot. Unknown senders are ignored unless `MESSAGING_OPEN_SIGNUP=true`, which restores the old text-first auto-provisioning (and is the only mode that needs the deployment model key). Webhooks move to `/api/v1/messaging/webhook/<provider>` (the old Sendblue path still works), and each platform mounts when its env credentials are set — see `.env.example`. Group channels remain iMessage-only for now; other platforms are 1:1 until their channel semantics are mapped.
 - Model picker includes Grok 4.6 (xAI) and Ox Alpha Free / GLM-5.3 (OpenCode Go).
 
 ### Added

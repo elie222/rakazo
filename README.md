@@ -20,7 +20,7 @@ Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 - Bots that can delegate to peer bots or short-lived subagents
 - Bring-your-own model credentials through Pi
 - App integrations through Composio or Pipedream Connect, plus user-installed Treg, remote MCP, and OpenAPI tool sources
-- Docker, E2B, Daytona, and trusted local-computer support
+- Docker, E2B, Daytona, Box, and trusted local-computer support
 
 ## Demo
 
@@ -36,12 +36,39 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Better Auth
 - Graphile Worker
 - Pi
-- Docker, E2B, and Daytona
+- Docker, E2B, Daytona, and Box
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
-## Quick start
+## Quick start (published images)
 
-You need Node.js 22+, pnpm 9, and Docker Desktop.
+You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
+
+```bash
+mkdir -p rakazo && cd rakazo &&
+curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/install-images.sh &&
+bash install-images.sh
+```
+
+The installer downloads the Compose files, creates `.env` with random secrets, and starts Rakazo.
+It preserves an existing `.env` when rerun.
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
+Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, or `box`
+with the matching API key.
+
+Default image tag is `edge` (main builds, `linux/amd64`). Details and tags:
+[self-hosting guide](./docs/self-host.md#published-images-no-checkout).
+
+On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
+existing Compose files (`--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING`), or mirror the bootstrap
+script URL — see
+[Restricted networks / mirror downloads](./docs/self-host.md#restricted-networks--mirror-downloads).
+
+For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
+
+## Local development (source checkout)
+
+You need Node.js 22+, pnpm 9, and Docker.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -49,7 +76,8 @@ cd rakazo
 cp .env.example .env
 ```
 
-Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` in `.env` to independent, long random values. You can
+Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` in `.env` to independent
+long random values. Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. You can
 also set `OPENROUTER_API_KEY`, or connect a supported model provider during onboarding.
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
@@ -74,8 +102,8 @@ pnpm dev
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, connect a model, and create
 your first bot.
 
-For an agent-assisted installation, use [SETUP_PROMPT.md](./SETUP_PROMPT.md). For deployment,
-provider selection, backups, and upgrades, see the [self-hosting guide](./docs/self-host.md).
+For deployment, provider selection, backups, and upgrades, see the
+[self-hosting guide](./docs/self-host.md).
 
 ## Desktop and mobile
 
@@ -101,9 +129,10 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 
 ## Web UI language
 
-The web (and Electron-hosted) UI supports English, Deutsch, and 한국어. Change it under
-**Settings → Language**. The marketing homepage (`apps/www`) is available in en/de/ko via
-footer language links (`/`, `/de/`, `/ko/`); other marketing pages stay English.
+The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
+Português (Brasil), and 简体中文. Change it under **Settings → Language**. The marketing
+homepage (`apps/www`) is available in en/de/ko via footer language links (`/`, `/de/`,
+`/ko/`); other marketing pages stay English.
 
 ## Development
 

@@ -13,7 +13,7 @@ import { provisionPrepared } from "./sandbox-test-support.js";
 const context = {
   operationId: "sandbox-fault-test",
   traceId: "sandbox-fault-test",
-  workspaceId: "workspace",
+  spaceId: "workspace",
   userId: "user",
   signal: new AbortController().signal,
 };

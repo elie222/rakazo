@@ -59,6 +59,17 @@ describe("window chrome", () => {
     expect(shell).not.toContain("FF5F57");
     expect(welcome).not.toContain("FF5F57");
   });
+
+  it("keeps conversation header controls clickable", () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
+    const shell = readFileSync(path.join(root, "Shell.tsx"), "utf8");
+    expect(shell).toContain(
+      'className="app-drag flex items-center justify-between border-b border-[var(--rk-surface)]',
+    );
+    expect(shell).toContain('className="app-no-drag grid h-8 w-8');
+    expect(shell).toContain('className="app-no-drag flex min-w-0 items-center gap-3"');
+    expect(shell.match(/className="app-no-drag grid h-\[30px\] w-\[34px\]/g)).toHaveLength(2);
+  });
 });
 
 describe("captured OAuth callbacks", () => {

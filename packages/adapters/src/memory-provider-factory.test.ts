@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createMemoryProvider,
-  WorkspaceMemoryProviderResolver,
-} from "./memory-provider-factory.js";
+import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
 
 function resolverFor(plaintext: string) {
   const prisma = {
-    workspaceMemoryConfig: {
+    spaceMemoryConfig: {
       findUnique: vi.fn(async () => ({
         provider: "supermemory",
         settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
@@ -17,12 +14,12 @@ function resolverFor(plaintext: string) {
   };
   const secrets = { load: vi.fn(() => plaintext) };
   return {
-    resolver: new WorkspaceMemoryProviderResolver(prisma as never, secrets as never),
+    resolver: new SpaceMemoryProviderResolver(prisma as never, secrets as never),
     secrets,
   };
 }
 
-describe("WorkspaceMemoryProviderResolver", () => {
+describe("SpaceMemoryProviderResolver", () => {
   it("loads generic JSON credential payloads", async () => {
     const { resolver } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
 
@@ -67,7 +64,7 @@ describe("WorkspaceMemoryProviderResolver", () => {
       {
         operationId: "op-1",
         traceId: "trace-1",
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         userId: "user-1",
         signal: new AbortController().signal,
       },

@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearSessionToken,
   loadSessionToken,
+  restoreSessionToken,
   saveSessionToken,
+  snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session.js";
 
@@ -12,12 +14,16 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
+vi.mock("./live-notifications.js", () => ({
+  stopLiveNotifications: vi.fn(async () => undefined),
+}));
 
 describe("mobile session storage", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.mocked(SecureStore.getItemAsync).mockReset();
     vi.mocked(SecureStore.setItemAsync).mockReset();
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
+    await restoreSessionToken("");
   });
 
   it("stores and clears only the session token key", async () => {
@@ -28,12 +34,49 @@ describe("mobile session storage", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
   });
 
+  it("overwrites the token when SecureStore delete fails", async () => {
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    await expect(clearSessionToken()).resolves.toBe(true);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "");
+  });
+
+  it("invalidates the in-memory session when SecureStore cannot clear the token", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("secret-token");
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValue(new Error("device locked"));
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValue(new Error("device locked"));
+
+    await expect(clearSessionToken()).resolves.toBe(false);
+    await expect(loadSessionToken()).resolves.toBe("");
+  });
+
   it("returns an empty token when secure storage is empty or unavailable", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(null);
     await expect(loadSessionToken()).resolves.toBe("");
 
     vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
     await expect(loadSessionToken()).resolves.toBe("");
+
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
+    expect(SecureStore.getItemAsync).toHaveBeenNthCalledWith(1, "rakazo.session_token");
+    expect(SecureStore.getItemAsync).toHaveBeenNthCalledWith(2, "rakazo.session_token");
+  });
+
+  it("restores the active session in memory when persistence is unavailable", async () => {
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValue(new Error("device locked"));
+
+    await restoreSessionToken("secret-token");
+    await expect(loadSessionToken()).resolves.toBe("secret-token");
+    await expect(snapshotSessionToken()).resolves.toEqual({ ok: true, value: "secret-token" });
+
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValue(new Error("device locked"));
+    await expect(clearSessionToken()).resolves.toBe(false);
+    await expect(loadSessionToken()).resolves.toBe("");
+  });
+
+  it("distinguishes an unreadable token store from an empty session", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
+
+    await expect(snapshotSessionToken()).resolves.toEqual({ ok: false });
   });
 });
 

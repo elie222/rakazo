@@ -71,6 +71,11 @@ export type HomeCopy = {
     eyebrow: string;
     title: string;
     copy: string;
+    selfHostNow: string;
+    selfHostHint: string;
+    cloudWaitlist: string;
+    cloudHint: string;
+    back: string;
     successTitle: string;
     successCopy: string;
     done: string;
@@ -223,16 +228,16 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "View on GitHub",
       setupWithAgent: "Set up with your agent",
       copiedForAgent: "Copied for your agent",
-      copyFailed: "Copy failed — try again",
+      copyFailed: "Copy failed. Try again.",
     },
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "The computer is yours",
-      copy: "Every bot gets a sandboxed browser and shell — running in your Docker, in your account, behind your firewall. Sessions and credentials never leave it.",
+      copy: "Run Rakazo on your machine. Your keys, your model, your data.",
       features: [
         {
           title: "Any model, your key",
-          body: "Point a bot at Claude, GPT, Grok, or a local model. Swap per bot — the cheap one triages, the smart one writes.",
+          body: "Point a bot at Claude, GPT, Grok, or a local model. Swap per bot: the cheap one triages, the smart one writes.",
         },
         {
           title: "Readable routines",
@@ -291,12 +296,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "Close get started dialog",
-      eyebrow: "Rakazo Cloud",
-      title: "Get started with Rakazo",
-      copy: "Leave your email and we’ll let you know when your hosted workspace is ready.",
-      successTitle: "You’re in.",
+      eyebrow: "Get started",
+      title: "How do you want to start?",
+      copy: "Self-host on your machine, or join the Cloud waitlist.",
+      selfHostNow: "Self-host now",
+      selfHostHint: "Install steps are in the docs.",
+      cloudWaitlist: "Cloud waitlist",
+      cloudHint: "Hosted Rakazo is coming. Leave your email.",
+      back: "Back",
+      successTitle: "You're in.",
       successCopy:
-        "We’ll email you when hosted Rakazo is ready. Want to start today? Rakazo is already available on GitHub.",
+        "We'll email you when hosted Rakazo is ready. Want to start today? Jump to Self-host on this page.",
       done: "Done",
       viewOnGithub: "View on GitHub",
     },
@@ -342,20 +352,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "Auf GitHub ansehen",
       setupWithAgent: "Mit deinem Agenten einrichten",
       copiedForAgent: "Für deinen Agenten kopiert",
-      copyFailed: "Kopieren fehlgeschlagen — erneut versuchen",
+      copyFailed: "Kopieren fehlgeschlagen. Erneut versuchen.",
     },
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "Der Computer gehört dir",
-      copy: "Jeder Bot bekommt einen sandboxierten Browser und eine Shell — in deinem Docker, in deinem Account, hinter deiner Firewall. Sessions und Zugangsdaten verlassen ihn nie.",
+      copy: "Betreibe Rakazo auf deiner Maschine. Deine Keys, dein Modell, deine Daten.",
       features: [
         {
           title: "Beliebiges Modell, dein Key",
-          body: "Richte einen Bot auf Claude, GPT, Grok oder ein lokales Modell aus. Pro Bot wechselbar — der günstige triagiert, der smarte schreibt.",
+          body: "Richte einen Bot auf Claude, GPT, Grok oder ein lokales Modell aus. Pro Bot wechselbar: der günstige triagiert, der smarte schreibt.",
         },
         {
           title: "Lesbare Routinen",
-          body: "Zeig einem Bot einmal einen Workflow — er speichert eine Routine als Markdown, das du lesen, editieren und committen kannst.",
+          body: "Zeig einem Bot einmal einen Workflow. Er speichert eine Routine als Markdown, das du lesen, editieren und committen kannst.",
         },
         {
           title: "Freigaben, die greifen",
@@ -410,12 +420,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "Loslegen-Dialog schließen",
-      eyebrow: "Rakazo Cloud",
-      title: "Mit Rakazo loslegen",
-      copy: "Hinterlasse deine E-Mail — wir melden uns, wenn dein gehosteter Workspace bereit ist.",
+      eyebrow: "Loslegen",
+      title: "Wie willst du starten?",
+      copy: "Self-host auf deiner Maschine, oder auf die Cloud-Warteliste.",
+      selfHostNow: "Jetzt self-hosten",
+      selfHostHint: "Installationsschritte stehen in den Docs.",
+      cloudWaitlist: "Cloud-Warteliste",
+      cloudHint: "Gehostetes Rakazo kommt. Hinterlasse deine E-Mail.",
+      back: "Zurück",
       successTitle: "Du bist dabei.",
       successCopy:
-        "Wir mailen dir, wenn gehostetes Rakazo bereit ist. Heute starten? Rakazo ist schon auf GitHub verfügbar.",
+        "Wir mailen dir, wenn gehostetes Rakazo bereit ist. Heute starten? Zum Self-host-Abschnitt auf dieser Seite.",
       done: "Fertig",
       viewOnGithub: "Auf GitHub ansehen",
     },
@@ -460,16 +475,16 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "GitHub에서 보기",
       setupWithAgent: "에이전트로 설정하기",
       copiedForAgent: "에이전트용으로 복사됨",
-      copyFailed: "복사 실패 — 다시 시도",
+      copyFailed: "복사 실패. 다시 시도하세요.",
     },
     selfHost: {
       eyebrow: "셀프 호스트",
       heading: "컴퓨터는 당신 것",
-      copy: "모든 봇은 샌드박스 브라우저와 셸을 가집니다 — 당신의 Docker, 당신의 계정, 당신의 방화벽 안에서. 세션과 자격 증명은 밖으로 나가지 않습니다.",
+      copy: "당신 머신에서 Rakazo를 실행하세요. 키, 모델, 데이터는 모두 당신 것.",
       features: [
         {
           title: "어떤 모델이든, 키는 당신 것",
-          body: "봇을 Claude, GPT, Grok 또는 로컬 모델에 연결하세요. 봇마다 바꿀 수 있습니다 — 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
+          body: "봇을 Claude, GPT, Grok 또는 로컬 모델에 연결하세요. 봇마다 바꿀 수 있습니다. 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
         },
         {
           title: "읽을 수 있는 루틴",
@@ -528,12 +543,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     getStartedDialog: {
       closeLabel: "시작하기 대화상자 닫기",
-      eyebrow: "Rakazo Cloud",
-      title: "Rakazo 시작하기",
-      copy: "이메일을 남겨 주세요. 호스팅 워크스페이스가 준비되면 알려 드립니다.",
+      eyebrow: "시작하기",
+      title: "어떻게 시작할까요?",
+      copy: "당신 머신에서 셀프 호스트하거나, Cloud 대기열에 등록하세요.",
+      selfHostNow: "지금 셀프 호스트",
+      selfHostHint: "설치 단계는 문서에 있습니다.",
+      cloudWaitlist: "Cloud 대기열",
+      cloudHint: "호스팅 Rakazo가 곧 옵니다. 이메일을 남겨 주세요.",
+      back: "뒤로",
       successTitle: "등록되었습니다.",
       successCopy:
-        "호스팅 Rakazo가 준비되면 메일로 알려 드립니다. 오늘 시작하려면? Rakazo는 이미 GitHub에서 사용할 수 있습니다.",
+        "호스팅 Rakazo가 준비되면 메일로 알려 드립니다. 오늘 시작하려면 이 페이지의 셀프 호스트 섹션으로 이동하세요.",
       done: "완료",
       viewOnGithub: "GitHub에서 보기",
     },

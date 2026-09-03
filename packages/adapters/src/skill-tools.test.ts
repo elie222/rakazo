@@ -16,7 +16,7 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
         store
           .filter((row) => {
             if (!where) return true;
-            if (where.workspaceId && row.workspaceId !== where.workspaceId) return false;
+            if (where.spaceId && row.spaceId !== where.spaceId) return false;
             if (where.userId && row.userId !== where.userId) return false;
             return true;
           })
@@ -52,7 +52,7 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
           const index = store.findIndex(
             (row) =>
               row.id === where.id &&
-              row.workspaceId === where.workspaceId &&
+              row.spaceId === where.spaceId &&
               row.userId === where.userId &&
               row.source === where.source,
           );
@@ -71,7 +71,7 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
         const index = store.findIndex(
           (row) =>
             row.id === where.id &&
-            row.workspaceId === where.workspaceId &&
+            row.spaceId === where.spaceId &&
             row.userId === where.userId &&
             row.source === where.source,
         );
@@ -84,7 +84,7 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
   };
 }
 
-const owner = { workspaceId: "ws-1", userId: "user-1" };
+const owner = { spaceId: "ws-1", userId: "user-1" };
 
 describe("skill tools", () => {
   let prisma: ReturnType<typeof makePrisma>;
@@ -188,7 +188,7 @@ describe("skill tools", () => {
     prisma = makePrisma([
       {
         id: "other-1",
-        workspaceId: "ws-2",
+        spaceId: "ws-2",
         userId: "user-2",
         name: "Other workspace skill",
         description: "not visible",
@@ -217,7 +217,7 @@ describe("skill tools", () => {
     prisma = makePrisma([
       {
         id: "plugin-1",
-        workspaceId: owner.workspaceId,
+        spaceId: owner.spaceId,
         userId: owner.userId,
         name: "Plugin recipe",
         description: "From a plugin",

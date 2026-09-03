@@ -164,6 +164,13 @@ const structuredData = {
             {copy.selfHost.copy}
           </p>
         </div>
+        <div class="selfhost-cta">
+          <button class="button button--primary" type="button" data-get-started-open>
+            {copy.hero.getStarted}
+          </button>
+          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
+          <Button href={DOCS_URL} variant="secondary" external>{copy.openSource.readTheDocs}</Button>
+        </div>
         <div class="card-grid-3">
           {
             copy.selfHost.features.map((feature) => (

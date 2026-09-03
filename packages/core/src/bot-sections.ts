@@ -48,3 +48,18 @@ export function groupBotsForSidebar<T extends SectionedBot>(
 
   return grouped;
 }
+
+export function reorderBotTo<T extends { id: string }>(
+  bots: readonly T[],
+  sourceId: string,
+  targetId: string,
+): readonly T[] {
+  const sourceIndex = bots.findIndex((bot) => bot.id === sourceId);
+  const targetIndex = bots.findIndex((bot) => bot.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return bots;
+  const reordered = [...bots];
+  const [source] = reordered.splice(sourceIndex, 1);
+  if (!source) return bots;
+  reordered.splice(targetIndex, 0, source);
+  return reordered;
+}

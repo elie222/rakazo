@@ -10,7 +10,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   let oauthStatus: McpServer["oauthStatus"] = "none";
   const server: McpServer = {
     id: "mcp-oauth-server",
-    workspaceId: "mcp-oauth-workspace",
+    spaceId: "mcp-oauth-workspace",
     slug: "linear",
     name: "Linear MCP",
     description: "",

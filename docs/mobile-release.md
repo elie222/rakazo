@@ -38,3 +38,28 @@ local change that is never committed.
 Before submission, verify the production API, account deletion, sign-in,
 notifications, store privacy answers, age rating, screenshots, support page,
 and review account on a physical device.
+
+## Over-the-air updates
+
+Production and preview builds include `expo-updates` and use the corresponding
+EAS Update channel. The runtime version follows the public app version, so bump
+`expo.version` whenever native code, config plugins, permissions, or native
+dependencies change, then create and submit new store builds.
+
+After the full GitHub Actions test suite passes on `main`, CI publishes a
+production OTA update when the revision only changes the mobile JavaScript,
+TypeScript, or bundled CSS. CI deliberately skips OTA publishing when native
+configuration, modules, dependencies, assets, or the update workflow changed.
+The repository needs an `EXPO_TOKEN` Actions secret with access to the linked
+Expo project.
+
+To publish a compatible update manually from `apps/mobile`:
+
+```sh
+eas update --platform all --channel production --environment production --message "Short description"
+```
+
+Installed release builds download a compatible update in the background on
+launch and apply it after the next restart. Builds created before
+`expo-updates` was configured cannot receive OTA updates and must be replaced
+with a new iOS and Android build once.

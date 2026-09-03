@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
+import {
+  abortableDelay,
+  buildFeaturedConnectorTiles,
+  EMPTY_PLUGIN_CATALOG_MESSAGE,
+  matchFeaturedConnectorId,
+} from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
@@ -25,9 +30,11 @@ function markConnected(
 export function PluginsOverlay({
   onClose,
   onOpenMcp,
+  activeBotId,
 }: {
   onClose: () => void;
   onOpenMcp?: () => void;
+  activeBotId?: string;
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
@@ -64,16 +71,33 @@ export function PluginsOverlay({
     return () => connectionAttempt.current?.abort();
   }, []);
 
+  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const showFeatured = !query.trim();
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return catalog;
-    return catalog.filter(
+    const scoped = showFeatured
+      ? catalog.filter(
+          (item) =>
+            matchFeaturedConnectorId(item.slug) === null &&
+            matchFeaturedConnectorId(item.name) === null,
+        )
+      : catalog;
+    if (!needle) return scoped;
+    return scoped.filter(
       (item) =>
         item.name.toLowerCase().includes(needle) ||
         item.slug.toLowerCase().includes(needle) ||
         item.connectorId.toLowerCase().includes(needle),
     );
-  }, [catalog, query]);
+  }, [catalog, query, showFeatured]);
+
+  async function notifyAppConnected(item: ConnectionCatalogItem) {
+    if (!activeBotId) return;
+    await rpc.onboarding
+      .appConnected({ botId: activeBotId, provider: item.slug })
+      .catch(() => undefined);
+  }
 
   function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
     setCatalog((prev) => markConnected(prev, item.connectorId, item.slug, connected));
@@ -93,10 +117,11 @@ export function PluginsOverlay({
         displayName: item.name,
       });
       if (started.authorizationUrl)
-        window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
+        window.open(started.authorizationUrl, "rakazo-plugin-connect", "noopener,noreferrer");
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
+        void notifyAppConnected(item);
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -107,6 +132,7 @@ export function PluginsOverlay({
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
           setItemConnected(item, true);
+          void notifyAppConnected(item);
           return;
         }
         await abortableDelay(2_000, controller.signal);
@@ -205,16 +231,16 @@ export function PluginsOverlay({
 
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
-      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
         <div className="flex items-start justify-between px-8 pt-7">
-          <div className="text-2xl font-medium text-[#F1F1F2]">
+          <div className="text-2xl font-medium text-[var(--rk-ink-strong)]">
             <Trans>Integrations</Trans>
           </div>
           <button
             type="button"
             aria-label={t`Close integrations`}
             onClick={onClose}
-            className="text-[#85858A]"
+            className="text-[var(--rk-muted)]"
           >
             ✕
           </button>
@@ -226,25 +252,97 @@ export function PluginsOverlay({
             onChange={(event) => setQuery(event.target.value)}
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
+            className="w-full rounded-[13px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-3 text-[15px] text-[var(--rk-ink)] outline-none"
           />
         </div>
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-          {catalogError ? <p className="mb-4 text-sm text-[#C94244]">{catalogError}</p> : null}
+          {catalogError ? (
+            <p className="mb-4 text-sm text-[var(--rk-danger)]">{catalogError}</p>
+          ) : null}
           {loading ? (
-            <p className="text-[#6C6C70]">
+            <p className="text-[var(--rk-muted-2)]">
               <Trans>Loading integrations…</Trans>
             </p>
           ) : null}
 
-          {!loading && catalog.length === 0 ? (
-            <p className="text-[#6C6C70]">
+          {showFeatured ? (
+            <div className="mb-6" data-testid="featured-connectors">
+              {!loading && catalog.length === 0 ? (
+                <p className="text-[13.5px] leading-6 text-[var(--rk-muted-2)]">
+                  {EMPTY_PLUGIN_CATALOG_MESSAGE}
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {featuredTiles.map((tile) => {
+                    const item = tile.item;
+                    const key = item ? itemKey(item) : tile.id;
+                    const disabled = tile.missing || !item;
+                    const connected = item?.connected ?? false;
+                    return (
+                      <div
+                        key={key}
+                        className={`flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${
+                          disabled ? "opacity-70" : ""
+                        }`}
+                      >
+                        {item?.logo ? (
+                          <img
+                            src={item.logo}
+                            alt=""
+                            className="h-9 w-9 shrink-0 rounded-xl bg-[var(--rk-scroll)] object-contain"
+                          />
+                        ) : (
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--rk-scroll)] text-sm font-semibold text-[var(--rk-ink)]">
+                            {tile.label[0]}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[15px] font-medium text-[var(--rk-ink)]">
+                            {tile.label}
+                          </div>
+                          {disabled ? (
+                            <div className="truncate text-[12.5px] text-[#707077]">
+                              <Trans>Not in the plugin catalog</Trans>
+                            </div>
+                          ) : null}
+                        </div>
+                        {item && !tile.missing ? (
+                          <Button
+                            type="button"
+                            variant="pill"
+                            size="sm"
+                            disabled={pending === key}
+                            onClick={() => void (connected ? revoke(item) : connect(item))}
+                          >
+                            {pending === key ? (
+                              connected ? (
+                                <Trans>Removing…</Trans>
+                              ) : (
+                                <Trans>Adding…</Trans>
+                              )
+                            ) : connected ? (
+                              <Trans>Remove</Trans>
+                            ) : (
+                              <Trans>Add</Trans>
+                            )}
+                          </Button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {!loading && catalog.length === 0 && !showFeatured ? (
+            <p className="text-[var(--rk-muted-2)]">
               <Trans>No managed app catalog is configured on this deployment.</Trans>
             </p>
           ) : null}
-          {!loading && catalog.length > 0 && visible.length === 0 ? (
-            <p className="text-[#6C6C70]">
+          {!loading && catalog.length > 0 && visible.length === 0 && !showFeatured ? (
+            <p className="text-[var(--rk-muted-2)]">
               <Trans>No apps match your search.</Trans>
             </p>
           ) : null}
@@ -261,15 +359,15 @@ export function PluginsOverlay({
                       <img
                         src={item.logo}
                         alt=""
-                        className="h-9 w-9 shrink-0 rounded-xl bg-[#2C2C30] object-contain"
+                        className="h-9 w-9 shrink-0 rounded-xl bg-[var(--rk-scroll)] object-contain"
                       />
                     ) : (
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2C2C30] text-sm font-semibold text-[#ECECEE]">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--rk-scroll)] text-sm font-semibold text-[var(--rk-ink)]">
                         {item.name[0]}
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-medium text-[#ECECEE]">
+                      <div className="truncate text-[15px] font-medium text-[var(--rk-ink)]">
                         {item.name}
                       </div>
                     </div>
@@ -313,8 +411,8 @@ export function PluginsOverlay({
               }
             }}
           >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
-              <span className="text-[#85858A]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
+              <span className="text-[var(--rk-muted)]">
                 <Trans>Advanced</Trans>
               </span>
               <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -327,7 +425,7 @@ export function PluginsOverlay({
                 <button
                   type="button"
                   onClick={onOpenMcp}
-                  className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
+                  className="rounded-full border border-[var(--rk-border)] px-3 py-1.5 text-xs text-[var(--rk-soft)] hover:bg-[var(--rk-hairline-strong)]"
                 >
                   <Trans>MCP servers</Trans>
                 </button>
@@ -345,11 +443,13 @@ export function PluginsOverlay({
                 </Button>
               </div>
 
-              {sourceError ? <p className="text-sm text-[#C94244]">{sourceError}</p> : null}
+              {sourceError ? (
+                <p className="text-sm text-[var(--rk-danger)]">{sourceError}</p>
+              ) : null}
 
               {sourceKind ? (
-                <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
-                  <div className="text-base font-medium text-[#ECECEE]">
+                <div className="space-y-3 rounded-[16px] border border-[var(--rk-scroll)] bg-[var(--rk-inset)] p-5">
+                  <div className="text-base font-medium text-[var(--rk-ink)]">
                     {sourceKind === "treg" ? (
                       <Trans>Connect Treg</Trans>
                     ) : sourceKind === "mcp" ? (
@@ -362,7 +462,7 @@ export function PluginsOverlay({
                     value={sourceName}
                     onChange={(event) => setSourceName(event.target.value)}
                     placeholder={t`Display name`}
-                    className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
+                    className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                   />
                   {sourceKind !== "treg" ? (
                     <input
@@ -373,14 +473,14 @@ export function PluginsOverlay({
                           ? "https://example.com/mcp"
                           : "https://example.com/openapi.json"
                       }
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
+                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                     />
                   ) : null}
                   {sourceKind !== "treg" ? (
                     <select
                       value={authType}
                       onChange={(event) => setAuthType(event.target.value as typeof authType)}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
+                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                     >
                       <option value="none">
                         <Trans>No authentication</Trans>
@@ -398,7 +498,7 @@ export function PluginsOverlay({
                       value={authName}
                       onChange={(event) => setAuthName(event.target.value)}
                       placeholder={t`Header name`}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
+                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                     />
                   ) : null}
                   {sourceKind === "treg" || authType !== "none" ? (
@@ -408,7 +508,7 @@ export function PluginsOverlay({
                       value={credential}
                       onChange={(event) => setCredential(event.target.value)}
                       placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
+                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
                     />
                   ) : null}
                   <p className="text-xs leading-5 text-[#707077]">
@@ -444,11 +544,11 @@ export function PluginsOverlay({
               ) : null}
 
               <div>
-                <div className="mb-3 text-sm font-medium text-[#A8A8AD]">
+                <div className="mb-3 text-sm font-medium text-[var(--rk-soft)]">
                   <Trans>Tool sources</Trans>
                 </div>
                 {sources.length === 0 && !sourceKind ? (
-                  <p className="text-[#6C6C70]">
+                  <p className="text-[var(--rk-muted-2)]">
                     <Trans>No MCP or API tool sources installed yet.</Trans>
                   </p>
                 ) : null}
@@ -457,12 +557,14 @@ export function PluginsOverlay({
                     key={source.id}
                     className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
                   >
-                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
+                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[var(--rk-scroll)] font-semibold uppercase text-[var(--rk-ink)]">
                       {source.kind === "mcp" ? "M" : "A"}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
-                      <div className="truncate text-[13.5px] text-[#7A7A80]">
+                      <div className="text-[15.5px] font-medium text-[var(--rk-ink)]">
+                        {source.name}
+                      </div>
+                      <div className="truncate text-[13.5px] text-[var(--rk-faint)]">
                         {source.kind.toUpperCase()} · {source.source} ·{" "}
                         {source.secretConfigured ? (
                           <Trans>credential saved</Trans>

@@ -216,7 +216,7 @@ function testContext(botId: string) {
   return {
     operationId: "computer-e2e",
     traceId: "computer-e2e",
-    workspaceId: "computer-e2e",
+    spaceId: "computer-e2e",
     userId: "computer-e2e",
     botId,
     signal: new AbortController().signal,

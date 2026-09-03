@@ -5,7 +5,7 @@ import { DaytonaSandboxProvider, type DaytonaSandboxSdk } from "./daytona-sandbo
 const context = {
   operationId: "test",
   traceId: "test",
-  workspaceId: "workspace",
+  spaceId: "workspace",
   userId: "user",
   signal: new AbortController().signal,
 };

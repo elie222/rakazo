@@ -101,6 +101,14 @@ export class FakeSandboxProvider implements SandboxProvider {
     yield { type: "exit", code: 0 };
   }
 
+  async inspectBackgroundWork(
+    _computer: ComputerRef,
+    _markerId: string,
+    _context: AdapterContext,
+  ): Promise<"idle"> {
+    return "idle";
+  }
+
   async connectScreen(
     computer: ComputerRef,
     _request: ScreenRequest,

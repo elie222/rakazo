@@ -6,11 +6,11 @@ const MAX_OPEN_ITEMS = 40;
 
 export async function loadAgentScratchpadContext(
   deps: ScratchpadToolDeps | { prisma: PrismaClient },
-  input: { workspaceId: string; botId: string },
+  input: { spaceId: string; botId: string },
   maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
 ): Promise<string | undefined> {
   const items = await listScratchpadItems(deps, {
-    workspaceId: input.workspaceId,
+    spaceId: input.spaceId,
     botId: input.botId,
     includeDone: false,
   });

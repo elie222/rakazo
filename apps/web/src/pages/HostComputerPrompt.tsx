@@ -43,12 +43,12 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
   }
 
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center bg-[#050506]/80 px-6">
-      <div className="w-[440px] rounded-[20px] border border-[#26262A] bg-[#121214] p-6">
-        <h2 className="text-[22px] font-medium text-[#F1F1F2]">
+    <div className="absolute inset-0 z-40 grid place-items-center bg-[var(--rk-page)]/80 px-6">
+      <div className="w-[440px] rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-inset)] p-6">
+        <h2 className="text-[22px] font-medium text-[var(--rk-ink-strong)]">
           <Trans>Where should bots run?</Trans>
         </h2>
-        <p className="mt-2 text-[14px] leading-relaxed text-[#85858A]">
+        <p className="mt-2 text-[14px] leading-relaxed text-[var(--rk-muted)]">
           <Trans>Docker is the default: bots use a shared Team Computer.</Trans>
           {mac ? (
             <Trans>
@@ -64,13 +64,13 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             </Trans>
           )}
         </p>
-        {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
             disabled={pending}
             onClick={() => void choose("docker")}
-            className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
+            className="rounded-[11px] bg-[var(--rk-cream)] px-5 py-2.5 text-[var(--rk-cream-ink)] disabled:opacity-40"
           >
             <Trans>Docker (recommended)</Trans>
           </button>
@@ -78,12 +78,12 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             type="button"
             disabled={pending}
             onClick={() => void choose("this-mac")}
-            className="rounded-[11px] border border-[#26262A] px-5 py-2.5 text-[#ECECEE] disabled:opacity-40"
+            className="rounded-[11px] border border-[var(--rk-border)] px-5 py-2.5 text-[var(--rk-ink)] disabled:opacity-40"
           >
             <Trans>Use {hostLabel}</Trans>
           </button>
         </div>
-        <p className="mt-3 text-[12px] leading-relaxed text-[#6C6C70]">
+        <p className="mt-3 text-[12px] leading-relaxed text-[var(--rk-muted-2)]">
           {mac ? (
             <Trans>
               This Mac runs shell commands with your account, including files in your home folder.

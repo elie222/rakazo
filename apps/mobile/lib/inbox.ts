@@ -1,8 +1,9 @@
-import type { MobileBot } from "./api";
-
 const DAY_MS = 86_400_000;
 
-export function filterBots(bots: MobileBot[], query: string) {
+export function filterBots<T extends { name: string; title: string; preview: string }>(
+  bots: T[],
+  query: string,
+): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return bots;
   return bots.filter((bot) =>

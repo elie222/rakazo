@@ -44,14 +44,14 @@ For help with the Rakazo mobile app or a hosted Rakazo account, email [hello@rak
 
 For self-hosted Rakazo, start with the [self-hosting guide](https://github.com/elie222/rakazo/blob/main/docs/self-host.md). Open reproducible bugs and feature requests in the [public GitHub repository](https://github.com/elie222/rakazo/issues). Report vulnerabilities only to [security@rakazo.com](mailto:security@rakazo.com).
 
-Hosted users can permanently delete their account and associated personal workspace data from the Account screen in the Rakazo app.
+Hosted users can permanently delete their account and associated personal Space data from the Account screen in the Rakazo app.
 `;
 
 export const PRIVACY_MARKDOWN = `# Rakazo privacy
 
 Inbox Zero Inc. operates Rakazo's hosted services and rakazo.com. Rakazo processes account details, user-provided bot content, connection information, and the technical records needed to operate and secure the service. Information is sent to model providers and connected apps only as needed to perform work the user requests. Rakazo does not sell personal information or use Rakazo content for third-party advertising.
 
-In a self-hosted deployment, the server operator controls the information sent to that deployment. Hosted users can delete their account and associated personal workspace data from the Account screen. For privacy requests, email [hello@rakazo.com](mailto:hello@rakazo.com).
+In a self-hosted deployment, the server operator controls the information sent to that deployment. Hosted users can delete their account and associated personal Space data from the Account screen. For privacy requests, email [hello@rakazo.com](mailto:hello@rakazo.com).
 
 Read the [complete privacy policy](https://rakazo.com/privacy/) in HTML.
 `;

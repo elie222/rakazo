@@ -164,6 +164,8 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
     DAYTONA_API_KEY: "",
     BETTER_AUTH_SECRET: "rakazo-benchmark-auth-secret-over-32-characters",
     ENCRYPTION_KEY: "rakazo-benchmark-encryption-key-over-32-characters",
+    SANDBOX_SUPERVISOR_TOKEN: "rakazo-benchmark-supervisor-token-over-32-characters",
+    SCREEN_PROXY_SECRET: "rakazo-benchmark-screen-proxy-secret-over-32-characters",
     BETTER_AUTH_URL: webOrigin,
     WEB_ORIGIN: webOrigin,
     API_PORT: String(apiPort),
@@ -266,7 +268,7 @@ async function prepareAuthenticatedProfile(benchmark: BenchmarkContext, profile:
       })
       .catch(async (error) => {
         const message = await page
-          .locator("form p.text-\\[\\#C94244\\]")
+          .locator('form p[role="alert"]')
           .textContent()
           .catch(() => null);
         throw new Error(

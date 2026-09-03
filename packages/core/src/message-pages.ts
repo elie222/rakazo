@@ -67,6 +67,14 @@ export function mergeMessagesById<T extends { id: string }>(
   });
 }
 
+export function upsertMessageById<T extends { id: string }>(messages: readonly T[], next: T): T[] {
+  const index = messages.findIndex((message) => message.id === next.id);
+  if (index < 0) return [...messages, next];
+  const updated = [...messages];
+  updated[index] = next;
+  return updated;
+}
+
 function isDurableMessage(message: { id: string }): boolean {
   return !message.id.startsWith("progress:") && !message.id.startsWith("subagent:");
 }

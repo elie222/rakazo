@@ -8,11 +8,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[#121215] text-[#FBFBF9] hover:bg-[#26262B]",
-        cream: "bg-[#F1F1EF] text-[#17171A] hover:opacity-90",
-        outline: "border border-[#26262A] text-[#ECECEE] hover:bg-[#1A1A1D]",
-        ghost: "text-[#C9C9CE] hover:bg-[#131315]",
-        pill: "rounded-full bg-[#1B1B1F] text-[#F2F2F3] hover:bg-[#26262B] hover:scale-[1.04]",
+        default: "bg-[var(--rk-elevated)] text-[var(--rk-ink)] hover:bg-[var(--rk-scroll)]",
+        cream: "bg-[var(--rk-cream)] text-[var(--rk-cream-ink)] hover:opacity-90",
+        outline:
+          "border border-[var(--rk-border)] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]",
+        ghost: "text-[var(--rk-soft)] hover:bg-[var(--rk-page)]",
+        pill: "rounded-full bg-[var(--rk-elevated)] text-[var(--rk-ink)] hover:bg-[var(--rk-scroll)] hover:scale-[1.04]",
       },
       size: {
         default: "h-10 px-4",

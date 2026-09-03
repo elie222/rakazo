@@ -217,7 +217,7 @@ function compactionHarness(
     wasCleared?: boolean;
     resolveModel?: (scope: {
       userId: string;
-      workspaceId: string;
+      spaceId: string;
       botId?: string;
     }) => Promise<AgentRunRequest["model"]>;
     withMemoryProvider?: boolean;
@@ -236,7 +236,7 @@ function compactionHarness(
   const thread = {
     id: "thread-1",
     botId: "bot-1",
-    workspaceId: "workspace-1",
+    spaceId: "workspace-1",
     userId: "user-1",
     nextEventSeq: 0,
     nextMessageSeq: options.nextMessageSeq ?? messages.length,
@@ -391,12 +391,13 @@ describe("compactHistory", () => {
         botId: "bot-1",
         source: { kind: "history", generation: 0 },
       },
-      expect.objectContaining({ workspaceId: "workspace-1", botId: "bot-1" }),
+      expect.objectContaining({ spaceId: "workspace-1", botId: "bot-1" }),
     );
 
-    const [, context] = harness.runtime.run.mock.calls[0]!;
-    expect(context.workspaceId).toBe("workspace-1");
-    expect(context.userId).toBe("user-1");
+    const context = harness.runtime.run.mock.calls[0]![1];
+    expect(context).toBeDefined();
+    expect(context!.spaceId).toBe("workspace-1");
+    expect(context!.userId).toBe("user-1");
 
     expect(harness.prisma.thread.updateMany).toHaveBeenCalledWith({
       where: {
@@ -503,7 +504,7 @@ describe("compactHistory", () => {
 
     expect(resolveModel).toHaveBeenCalledWith({
       userId: "user-1",
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       botId: "bot-1",
     });
     expect(harness.runtime.run.mock.calls[0]![0].model).toEqual({

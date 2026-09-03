@@ -18,13 +18,14 @@ import type {
   ProductEvent,
   Routine,
   SearchHit,
+  Space,
+  SpaceMemoryConfig,
   TaughtSkill,
   ThinkingLevel,
   ThreadMessage,
   ThreadSnapshot,
   VoiceInfo,
   VoiceStatus,
-  WorkspaceMemoryConfig,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
@@ -35,6 +36,7 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
+  canReactToThreadMessage,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
@@ -42,35 +44,47 @@ import {
   attachmentsForThread,
   buildComposerMentionOptions,
   type ComposerMention,
+  clampMentionHighlightIndex,
   cronFromPreset,
-  defaultCronPreset,
-  formatCron,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  isPeerReceiptBlocks,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
   mentionChipKey,
-  presetFromCron,
+  reorderBotTo,
   resolveComposerSendPlan,
+  resolveMentionPickerKey,
   SLASH_ACTIONS,
   type SlashActionId,
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
+  toolActivityLabel,
   truncateSlashDescription,
+  userVisibleMessages,
 } from "@rakazo/core";
-import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import {
+  AvatarStyleProvider,
+  BotAvatar,
+  Button,
+  GroupAvatar,
+  type GroupAvatarMember,
+} from "@rakazo/ui-web";
+import {
+  ArrowDown,
   ArrowUp,
   Bell,
   Box,
-  ChevronLeft,
+  ChevronDown,
   Clock,
   Copy,
   Cpu,
   Gauge,
+  Lock,
   LogOut,
+  Maximize2,
   Menu,
   Mic,
   Monitor,
@@ -81,10 +95,12 @@ import {
   Reply,
   Settings,
   Square,
+  ThumbsUp,
   Volume2,
   X,
 } from "lucide-react";
 import {
+  type DragEvent,
   lazy,
   type MutableRefObject,
   memo,
@@ -92,6 +108,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -101,28 +118,41 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import {
-  BuiButton,
-  BuiCard,
-  LoadingState,
-  SuccessPop,
-} from "../components/beautiful-ui/primitives";
+  ActiveBotGlyph,
+  CollaborationMarker,
+} from "../components/beautiful-ui/CollaborationMarker";
+import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
+import {
+  ComputersUnavailableHint,
+  computersAreUnavailable,
+} from "../components/ComputersUnavailableHint";
+import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
+import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
-import { TeachComputerSection } from "../components/teach/TeachComputerSection";
+import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { botProfileUpdate } from "../lib/bot-profile";
+import {
+  deliverBrowserNotification as deliverNativeBrowserNotification,
+  requestBrowserNotificationPermission,
+  shouldNotifyBrowser,
+} from "../lib/browser-notifications";
 import { chartViewport } from "../lib/chart-viewport";
 import { dictation } from "../lib/dictation";
 import { localTimezone } from "../lib/local-timezone";
 import { connectMcpOauth } from "../lib/mcp-connect";
-import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
+import { copyableMessageText } from "../lib/message-text";
+import { providerLabel } from "../lib/messaging";
+import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
-import { rpc } from "../lib/rpc";
+import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
+import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
   activeThreadRuns,
   clearActiveThreadRuns,
@@ -135,15 +165,30 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  threadRunError,
   userHoldsComputerControl,
 } from "../lib/thread-events";
+import {
+  transcriptCanSnapAfterFrame,
+  transcriptIsNearEnd,
+  transcriptMovedDown,
+} from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
 import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
+import {
+  draftFromRoutine,
+  emptyRoutineDraft,
+  type RoutineDraftState,
+  RoutineEditor,
+  RoutineListHeader,
+  RoutineListRow,
+  routineNeedsOneShotArm,
+} from "./RoutineEditor";
+import { SpaceSearchResults } from "./SpaceSearch";
 import { WindowChrome } from "./WindowChrome";
-import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
   import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
@@ -151,6 +196,11 @@ const BotContextMenu = lazy(() =>
 const AccountSettingsOverlay = lazy(() =>
   import("./AccountSettingsOverlay").then((module) => ({
     default: module.AccountSettingsOverlay,
+  })),
+);
+const MessagingSettingsOverlay = lazy(() =>
+  import("./MessagingSettingsOverlay").then((module) => ({
+    default: module.MessagingSettingsOverlay,
   })),
 );
 const ModelSettingsOverlay = lazy(() =>
@@ -169,9 +219,6 @@ const MemorySettingsOverlay = lazy(() =>
   import("./MemorySettingsOverlay").then((module) => ({
     default: module.MemorySettingsOverlay,
   })),
-);
-const RoutineSchedules = lazy(() =>
-  import("./RoutineSchedule").then((module) => ({ default: module.RoutineSchedules })),
 );
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
@@ -197,7 +244,38 @@ type PendingAttachment = {
   previewUrl?: string;
 };
 
+type PendingBrowserNotification = {
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
+  botId: string;
+  botName: string;
+  groupNotification: boolean;
+};
+
 const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
+const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
+
+function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
+  return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
+}
+
+function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
+  if (!userId) return null;
+  return `rakazo:collapsed-sidebar-sections:${userId}`;
+}
+
+function readCollapsedSidebarSections(userId: string | null | undefined): Set<string> {
+  const storageKey = collapsedSidebarSectionsStorageKey(userId);
+  if (!storageKey) return new Set();
+  try {
+    const value = window.localStorage.getItem(storageKey);
+    const keys: unknown = value ? JSON.parse(value) : [];
+    return new Set(
+      Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
 
 export function ShellPage() {
   const { t } = useLingui();
@@ -210,11 +288,24 @@ export function ShellPage() {
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
   const session = authClient.useSession();
+  const userId = session.data?.user.id;
   const [groups, setGroups] = useState<Group[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const botsRef = useRef(bots);
+  botsRef.current = bots;
+  const botOrderEpochRef = useRef(0);
+  const pendingBotOrderRef = useRef<string[] | null>(null);
+  const savingBotOrderRef = useRef(false);
   const [botSections, setBotSections] = useState<BotSection[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
+  const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
+  }, [userId]);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -227,8 +318,10 @@ export function ShellPage() {
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  const [peerMessagesOpen, setPeerMessagesOpen] = useState(false);
-  const [peerMessagesFocusId, setPeerMessagesFocusId] = useState<string | null>(null);
+  const [peerConversation, setPeerConversation] = useState<{
+    peerBotId: string;
+    peerBotName: string;
+  } | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
@@ -248,6 +341,10 @@ export function ShellPage() {
   const computerRef = useRef<ComputerStatus | null>(null);
   const threadRefreshEpoch = useRef(0);
   const groupRefreshEpoch = useRef(0);
+  const botsRefreshEpoch = useRef(0);
+  const botsRefreshApplied = useRef(0);
+  const archivedBotsRefreshEpoch = useRef(0);
+  const botsRefreshInFlight = useRef(0);
   // Last-known computer/screen per bot, so switching back to an already-seen
   // bot paints its computer pane instantly instead of blanking it while the
   // thread + screen RPCs round-trip again (see refreshThread / refreshComputerScreen).
@@ -290,11 +387,13 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [messagingSettingsOpen, setMessagingSettingsOpen] = useState(false);
+  const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
   const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
-    WorkspaceMemoryConfig | null | undefined
+    SpaceMemoryConfig | null | undefined
   >(undefined);
   const memoryProviderConfigRevision = useRef(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -303,9 +402,23 @@ export function ShellPage() {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [dictating, setDictating] = useState(false);
   const [dictationError, setDictationError] = useState<string | null>(null);
+  const [dismissedRunErrorIds, setDismissedRunErrorIds] =
+    useState<ReadonlySet<string>>(readSeenRunErrorIds);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 768px)");
+    function closeMobileSidebar() {
+      if (desktop.matches) setMobileSidebarOpen(false);
+    }
+    closeMobileSidebar();
+    desktop.addEventListener("change", closeMobileSidebar);
+    return () => desktop.removeEventListener("change", closeMobileSidebar);
+  }, []);
   const [activityMode, setActivityMode] = useState(readActivityMode);
   const toggleActivityMode = useCallback(() => {
     setActivityMode((on) => {
@@ -315,21 +428,24 @@ export function ShellPage() {
     });
   }, []);
   const [botMenu, setBotMenu] = useState<{
-    botId: string;
+    kind: "bot" | "group";
+    id: string;
     position: ContextMenuPosition;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
-  const [clearTarget, setClearTarget] = useState<Bot | null>(null);
-  const [newSectionBot, setNewSectionBot] = useState<Bot | null>(null);
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
+  const [clearTarget, setClearTarget] = useState<
+    { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
+  >(null);
+  const [newSectionTarget, setNewSectionTarget] = useState<
+    { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
+  >(null);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
-  const [routineDraft, setRoutineDraft] = useState({
-    name: "",
-    prompt: "",
-    schedules: [defaultCronPreset()],
-  });
+  const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
+  const [routineWebhookSecret, setRoutineWebhookSecret] = useState<string | null>(null);
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -337,7 +453,20 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
-  const [computerError, setComputerError] = useState<string | null>(null);
+  const [, setComputerError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session.data?.user) return;
+    let cancelled = false;
+    void rpc.messaging
+      .status()
+      .then((status) => {
+        if (!cancelled) setMessagingSurfaceEnabled(status.enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [session.data?.user]);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -363,6 +492,8 @@ export function ShellPage() {
   } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
   const readVisibleGroups = useRef(new Set<string>());
+  const notifiedBrowserEvents = useRef(new Set<string>());
+  const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const computerVisible = useRef(false);
   computerVisible.current = panel === "computer" || computerOpen;
   const autoSpoken = useRef<string | null>(null);
@@ -387,7 +518,11 @@ export function ShellPage() {
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const screenRequest = useRef(0);
-  const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
+  const contextBot =
+    botMenu?.kind === "bot" ? bots.find((bot) => bot.id === botMenu.id) : undefined;
+  const contextGroup =
+    botMenu?.kind === "group" ? groups.find((group) => group.id === botMenu.id) : undefined;
+  const contextChat = contextBot ?? contextGroup;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const updateBotUnread = useCallback((id: string, unread: boolean) => {
     setBots((current) => {
@@ -430,54 +565,155 @@ export function ShellPage() {
     },
     [markBotRead],
   );
+  const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
+    const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
+    if (!currentBot || typeof Notification === "undefined") return true;
+    const result = deliverNativeBrowserNotification(
+      pending.event,
+      currentBot.name || pending.botName,
+      {
+        enabled: pending.groupNotification || currentBot.notifyOnFinish,
+        pageVisible: document.visibilityState === "visible",
+        windowFocused: document.hasFocus(),
+        permission: Notification.permission,
+        notifiedEventIds: notifiedBrowserEvents.current,
+        show: (title, body, tag) => new Notification(title, { body, tag }),
+      },
+    );
+    return result !== "pending";
+  }, []);
+  const flushPendingBrowserNotifications = useCallback(() => {
+    for (const [threadId, pending] of pendingBrowserNotifications.current) {
+      if (deliverBrowserNotification(pending)) {
+        pendingBrowserNotifications.current.delete(threadId);
+      }
+    }
+  }, [deliverBrowserNotification]);
+  const notifyBrowserForEvent = useCallback(
+    (
+      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "botId" | "payload">,
+      subscribedThreadId: string | undefined,
+      initialCursor: number,
+      streamReady: boolean,
+      botName: string,
+      enabled: boolean,
+      groupNotification: boolean,
+    ) => {
+      const botId = event.botId;
+      if (typeof botId !== "string") return;
+      const eligible = shouldNotifyBrowser(event, {
+        subscribedThreadId: subscribedThreadId ?? "",
+        initialCursor,
+        streamReady,
+        pageVisible: document.visibilityState === "visible",
+        windowFocused: document.hasFocus(),
+        permission: "granted",
+        notifiedEventIds: notifiedBrowserEvents.current,
+      });
+      if (!eligible || !enabled) return;
+      const pending = {
+        event,
+        botId,
+        botName,
+        groupNotification,
+      } satisfies PendingBrowserNotification;
+      if (typeof Notification === "undefined" || Notification.permission === "denied") return;
+      if (Notification.permission === "default") {
+        pendingBrowserNotifications.current.set(event.threadId, pending);
+        return;
+      }
+      if (deliverBrowserNotification(pending)) {
+        pendingBrowserNotifications.current.delete(event.threadId);
+      } else {
+        pendingBrowserNotifications.current.set(event.threadId, pending);
+      }
+    },
+    [deliverBrowserNotification],
+  );
 
   const refreshBots = useCallback(
-    async (includeArchived = false) => {
+    async (includeArchived = false, replaceBotOrder = false) => {
       markOnce("rk:renderer:bots-request-start");
-      const [list, sections, archived, groupList] = await Promise.all([
-        rpc.bots.list(),
-        rpc.botSections.list(),
-        includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
-        rpc.groups.list(),
-      ]);
-      markOnce("rk:renderer:bots-response");
-      setBots(list);
-      setBotSections(sections);
-      setGroups(groupList);
-      setInitialBotsLoaded(true);
-      if (archived) setArchivedBots(archived);
-      if (
-        includeArchived &&
-        list.length === 0 &&
-        archived?.length === 0 &&
-        groupList.length === 0
-      ) {
-        navigate("/onboarding", { replace: true });
-        return;
-      }
-      const currentGroupId = routeGroupId.current;
-      if (currentGroupId) {
-        if (!groupList.some((group) => group.id === currentGroupId)) {
+      const request = ++botsRefreshEpoch.current;
+      const botOrderEpoch = botOrderEpochRef.current;
+      const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
+      const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
+      botsRefreshInFlight.current += 1;
+      try {
+        const [navigation, archived, archivedGroupList] = await Promise.all([
+          rpc.spaces.list(),
+          includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
+          includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
+        ]);
+        const { bots: list, botSections: sections, groups: groupList } = navigation.current;
+        markOnce("rk:renderer:bots-response");
+        const botsFresh = request === botsRefreshEpoch.current;
+        const archivedFresh =
+          archivedRequest != null && archivedRequest === archivedBotsRefreshEpoch.current;
+        // A newer non-archived refresh can win the bots epoch while an older
+        // includeArchived request still owns archivedBotsRefreshEpoch — apply
+        // whichever slices are still current.
+        if (!botsFresh && !archivedFresh) return;
+        if (archivedFresh && archived) setArchivedBots(archived);
+        if (archivedFresh && archivedGroupList) setArchivedGroups(archivedGroupList);
+        if (!botsFresh) return;
+        if (
+          botOrderEpoch === botOrderEpochRef.current &&
+          (replaceBotOrder || (!preserveBotOrder && !savingBotOrderRef.current))
+        ) {
+          setBots(list);
+        }
+        setBotSections(sections);
+        setGroups(groupList);
+        setSpaces(navigation.spaces);
+        setInitialBotsLoaded(true);
+        botsRefreshApplied.current = request;
+        if (
+          includeArchived &&
+          list.length === 0 &&
+          archived?.length === 0 &&
+          groupList.length === 0 &&
+          archivedGroupList?.length === 0
+        ) {
+          navigate("/onboarding", { replace: true });
+          return;
+        }
+        const currentGroupId = routeGroupId.current;
+        if (currentGroupId) {
+          if (!groupList.some((group) => group.id === currentGroupId)) {
+            navigate(firstThreadRoute(list, groupList), { replace: true });
+          }
+          return;
+        }
+        const currentBotId = routeBotId.current;
+        if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
           navigate(firstThreadRoute(list, groupList), { replace: true });
         }
-        return;
-      }
-      const currentBotId = routeBotId.current;
-      if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
-        navigate(firstThreadRoute(list, groupList), { replace: true });
+      } finally {
+        botsRefreshInFlight.current -= 1;
       }
     },
     [navigate],
   );
 
-  async function refreshGroupThread(id: string) {
+  function snapTranscriptToEndAfterFrame() {
+    const queuedElement = messageScroll.current;
+    if (!queuedElement) return;
+    const queuedScrollTop = queuedElement.scrollTop;
+    window.requestAnimationFrame(() => {
+      const element = messageScroll.current;
+      if (transcriptCanSnapAfterFrame(element, queuedElement, queuedScrollTop)) {
+        queuedElement.scrollTop = queuedElement.scrollHeight;
+      }
+    });
+  }
+
+  async function refreshGroupThread(id: string, signal?: AbortSignal) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
-    const snap = await rpc.threads.get({ groupId: id });
+    const snap = await rpc.threads.get({ groupId: id }, signal ? { signal } : undefined);
     markOnce("rk:renderer:thread-response");
     if (activeGroupId.current !== id || request !== groupRefreshEpoch.current) return snap;
     const reconciled = reconcileRefreshedThread(
@@ -491,26 +727,25 @@ export function ShellPage() {
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
-      window.requestAnimationFrame(() => {
-        const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
-      });
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
+      snapTranscriptToEndAfterFrame();
     }
     return snap;
   }
 
-  async function refreshThread(id: string) {
+  async function refreshThread(id: string, signal?: AbortSignal) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
     // Apply threads.get as soon as it returns so stop/takeover status is not held behind
     // routines/skills/screen fetches (progress can advance the cursor meanwhile).
-    const snap = await rpc.threads.get({ botId: id });
+    const snap = await rpc.threads.get({ botId: id }, signal ? { signal } : undefined);
     markOnce("rk:renderer:thread-response");
     if (
       activeBotId.current !== id ||
@@ -528,28 +763,34 @@ export function ShellPage() {
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
-      window.requestAnimationFrame(() => {
-        const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
-      });
-    }
-    const [routines, skills] = await Promise.all([
-      rpc.routines.list({ botId: id }),
-      rpc.skills.list({ botId: id }),
-      refreshComputerScreen(id),
-    ]);
     if (
-      activeBotId.current !== id ||
-      epoch !== historyEpoch.current ||
-      request !== threadRefreshEpoch.current
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
     ) {
-      return snap;
+      snapTranscriptToEndAfterFrame();
     }
-    setRoutines(routines);
-    setRoutinesBotId(id);
-    setTaughtSkills(skills);
-    setTaughtSkillsBotId(id);
+    void Promise.all([
+      rpc.routines.list({ botId: id }).catch(() => null),
+      rpc.skills.list({ botId: id }).catch(() => null),
+      refreshComputerScreen(id).catch(() => null),
+    ]).then(([routines, skills]) => {
+      if (
+        activeBotId.current !== id ||
+        epoch !== historyEpoch.current ||
+        request !== threadRefreshEpoch.current
+      ) {
+        return;
+      }
+      if (routines) {
+        setRoutines(routines);
+        setRoutinesBotId(id);
+      }
+      if (skills) {
+        setTaughtSkills(skills);
+        setTaughtSkillsBotId(id);
+      }
+    });
     return snap;
   }
 
@@ -625,15 +866,24 @@ export function ShellPage() {
           setMemoryProviderConfig(null);
         }
       });
-    void Promise.all([takeInitialBootstrap(botId), rpc.groups.list()])
-      .then(([bootstrap, groupList]) => {
+    const appliedAtStart = botsRefreshApplied.current;
+    void takeInitialBootstrap(botId)
+      .then((bootstrap) => {
         if (cancelled) return;
+        const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
-        setBots(bootstrap.bots);
-        setBotSections(bootstrap.botSections);
-        setArchivedBots(bootstrap.archivedBots);
-        setGroups(groupList);
-        setInitialBotsLoaded(true);
+        // Skip list/route writes only if a later refreshBots() successfully
+        // committed (failed refreshes bump epoch but not botsRefreshApplied).
+        const applyBotLists = appliedAtStart === botsRefreshApplied.current;
+        if (applyBotLists) {
+          setBots(bootstrap.bots);
+          setBotSections(bootstrap.botSections);
+          setArchivedBots(bootstrap.archivedBots);
+          setArchivedGroups(bootstrap.archivedGroups);
+          setGroups(groupList);
+          setSpaces(bootstrap.spaces);
+          setInitialBotsLoaded(true);
+        }
         if (!groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
           commitSnapshot(bootstrap.thread);
@@ -643,7 +893,13 @@ export function ShellPage() {
           markOnce("rk:renderer:bots-response");
           markOnce("rk:renderer:thread-response");
         }
-        if (bootstrap.bots.length === 0 && bootstrap.archivedBots.length === 0) {
+        if (!applyBotLists) return;
+        if (
+          bootstrap.bots.length === 0 &&
+          bootstrap.archivedBots.length === 0 &&
+          groupList.length === 0 &&
+          bootstrap.archivedGroups.length === 0
+        ) {
           navigate("/onboarding", { replace: true });
           return;
         }
@@ -671,7 +927,12 @@ export function ShellPage() {
     };
     window.addEventListener("focus", refreshVisibleBots);
     document.addEventListener("visibilitychange", refreshVisibleBots);
-    const poll = window.setInterval(refreshVisibleBots, 60_000);
+    // Poll skips while a refresh is in flight; focus/visibility and event-driven
+    // callers still bump botsRefreshEpoch so only the latest response applies.
+    const poll = window.setInterval(() => {
+      if (botsRefreshInFlight.current > 0) return;
+      refreshVisibleBots();
+    }, 3_000);
     return () => {
       cancelled = true;
       window.clearTimeout(refreshTimer);
@@ -792,10 +1053,61 @@ export function ShellPage() {
         primed?.botId === active.id
           ? primed
           : pendingJump
-            ? await rpc.threads.get({ botId: active.id }).catch(() => null)
-            : await refreshThread(active.id).catch(() => null);
+            ? await rpc.threads
+                .get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+                .catch(() => null)
+            : await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
       if (abort.signal.aborted) return;
-      let cursor = snap?.cursor ?? -1;
+      let subscribedThreadId = snap?.threadId;
+      let initialCursor = snap?.cursor ?? -1;
+      let headRetryMs = 250;
+      while (!subscribedThreadId && !abort.signal.aborted) {
+        const head = await rpc.threads
+          .head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+          .catch(() => null);
+        if (head) {
+          subscribedThreadId = head.threadId;
+          initialCursor = head.cursor;
+          break;
+        }
+        try {
+          await abortableDelay(headRetryMs, abort.signal);
+        } catch {
+          return;
+        }
+        headRetryMs = Math.min(headRetryMs * 2, 5_000);
+      }
+      if (!subscribedThreadId || abort.signal.aborted) return;
+      let cursor = initialCursor;
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!snapshotReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
+      const streamReady = true;
       let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
@@ -807,7 +1119,21 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
+              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
+            }
+            const currentBot = botsRef.current.find((bot) => bot.id === active.id);
+            notifyBrowserForEvent(
+              event,
+              subscribedThreadId,
+              initialCursor,
+              streamReady,
+              currentBot?.name ?? active.name,
+              currentBot?.notifyOnFinish ?? false,
+              false,
+            );
             if (event.type === "thread.cleared") {
               expandedHistoryThread.current = null;
               pinnedAroundRef.current = null;
@@ -818,6 +1144,7 @@ export function ShellPage() {
             } else if (
               event.type === "bot.spawned" ||
               event.type === "bot.deleted" ||
+              event.type === "run.started" ||
               isRunTerminalEvent(event) ||
               event.type === "thread.cleared"
             ) {
@@ -845,7 +1172,7 @@ export function ShellPage() {
           // The durable cursor below makes reconnects safe after a transient network failure.
         }
         if (abort.signal.aborted) break;
-        await refreshThread(active.id).catch(() => null);
+        await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
         await abortableDelay(retryMs, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
@@ -853,7 +1180,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -894,10 +1221,61 @@ export function ShellPage() {
     const abort = new AbortController();
     void (async () => {
       const snap = pendingJump
-        ? await rpc.threads.get({ groupId }).catch(() => null)
-        : await refreshGroupThread(groupId).catch(() => null);
+        ? await rpc.threads
+            .get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+            .catch(() => null)
+        : await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
       if (abort.signal.aborted) return;
-      let cursor = snap?.cursor ?? -1;
+      let subscribedThreadId = snap?.threadId;
+      let initialCursor = snap?.cursor ?? -1;
+      let headRetryMs = 250;
+      while (!subscribedThreadId && !abort.signal.aborted) {
+        const head = await rpc.threads
+          .head({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+          .catch(() => null);
+        if (head) {
+          subscribedThreadId = head.threadId;
+          initialCursor = head.cursor;
+          break;
+        }
+        try {
+          await abortableDelay(headRetryMs, abort.signal);
+        } catch {
+          return;
+        }
+        headRetryMs = Math.min(headRetryMs * 2, 5_000);
+      }
+      if (!subscribedThreadId || abort.signal.aborted) return;
+      let cursor = initialCursor;
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!snapshotReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
+      const streamReady = true;
       let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
@@ -906,10 +1284,27 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
-            applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
+              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
+            }
+            const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
+            notifyBrowserForEvent(
+              event,
+              subscribedThreadId,
+              initialCursor,
+              streamReady,
+              eventBot?.name ?? activeGroup.name,
+              true,
+              true,
+            );
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
+            }
+            if (event.type === "run.started" || isRunTerminalEvent(event)) {
+              void refreshBots().catch(() => undefined);
             }
             if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
               // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
@@ -920,7 +1315,7 @@ export function ShellPage() {
           // reconnect safely
         }
         if (abort.signal.aborted) break;
-        await refreshGroupThread(groupId).catch(() => null);
+        await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
         await abortableDelay(retryMs, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
@@ -930,21 +1325,151 @@ export function ShellPage() {
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
-  }, [activeGroup?.id, groupId]);
+  }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
 
-  const filtered = useMemo(
-    () => bots.filter((b) => `${b.name} ${b.preview}`.toLowerCase().includes(query.toLowerCase())),
-    [bots, query],
+  const sidebarGroups = useMemo(() => {
+    const needle = query.toLowerCase();
+    const sidebarSpaces =
+      spaces.length > 0
+        ? spaces.map((space) =>
+            space.id === bootstrapMe?.spaceId ? { ...space, bots, groups, botSections } : space,
+          )
+        : bootstrapMe
+          ? [
+              {
+                id: bootstrapMe.spaceId,
+                name: "Personal",
+                isDefault: true,
+                bots,
+                groups,
+                botSections,
+              },
+            ]
+          : [];
+    const showSpaceNames = sidebarSpaces.length > 1;
+    return sidebarSpaces.flatMap((space) => {
+      const visibleBots = space.bots.filter((bot) =>
+        `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
+      );
+      const visibleGroups = space.groups.filter((group) =>
+        `${group.name} ${group.preview}`.toLowerCase().includes(needle),
+      );
+      const sections = groupBotsForSidebar(
+        [
+          ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
+          ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
+        ].map((item) => ({ ...item, pinned: item.chat.pinned, sectionId: item.chat.sectionId })),
+        space.botSections,
+      ).map((group) => ({
+        ...group,
+        key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
+        title: showSpaceNames
+          ? group.title
+            ? `${space.name} · ${group.title}`
+            : space.name
+          : group.title,
+        showLock: showSpaceNames,
+        emptySpaceId: undefined as string | undefined,
+      }));
+      if (sections.length > 0) return sections;
+      // Keep empty spaces selectable; chat clicks are the only switch control.
+      if (!showSpaceNames) return [];
+      if (needle && (space.bots.length > 0 || space.groups.length > 0)) return [];
+      return [
+        {
+          key: `space:${space.id}:empty`,
+          title: space.name,
+          bots: [],
+          showLock: true,
+          emptySpaceId: space.id,
+        },
+      ];
+    });
+  }, [bootstrapMe, botSections, bots, groups, spaces, query]);
+
+  const openSpaceChat = useCallback(
+    (spaceId: string, path: string) => {
+      setMobileSidebarOpen(false);
+      const previousSpaceId = selectedSpaceId();
+      // Persist the active space (including primary) so voice/RPC headers match the chat.
+      const selectionStored = selectSpace(spaceId);
+      if (!selectionStored) return;
+      const previousEffective = previousSpaceId ?? bootstrapMe?.spaceId;
+      const boundaryChanged = previousEffective !== spaceId;
+      // Soft-navigate within the same space; reload only when the auth boundary changes
+      // so bootstrapped bots/groups match the request header.
+      if (boundaryChanged) {
+        window.location.assign(path);
+        return;
+      }
+      navigate(path);
+    },
+    [bootstrapMe?.spaceId, navigate],
   );
-  const sidebarGroups = useMemo(
-    () => groupBotsForSidebar<Bot>(filtered, botSections),
-    [botSections, filtered],
+  const flushBotOrder = useCallback(async () => {
+    if (savingBotOrderRef.current) return;
+    savingBotOrderRef.current = true;
+    try {
+      while (pendingBotOrderRef.current) {
+        const botIds = pendingBotOrderRef.current;
+        pendingBotOrderRef.current = null;
+        try {
+          await rpc.bots.reorder({ botIds });
+        } catch {
+          // Keep a newer order queued during this failed save; only roll back
+          // when nothing else is pending.
+          if (pendingBotOrderRef.current === null) {
+            await refreshBots(false, true).catch(() => undefined);
+          }
+        }
+      }
+    } finally {
+      savingBotOrderRef.current = false;
+      // A reorder may have arrived while saving=true and returned early.
+      if (pendingBotOrderRef.current) {
+        void flushBotOrder();
+      }
+    }
+  }, [refreshBots]);
+  const reorderRosterBot = useCallback(
+    (sourceId: string, targetId: string, groupBotIds: string[]) => {
+      if (!groupBotIds.includes(sourceId) || !groupBotIds.includes(targetId)) return;
+      const current = botsRef.current;
+      const reordered = reorderBotTo(current, sourceId, targetId);
+      if (reordered === current) return;
+      const next = [...reordered];
+      botOrderEpochRef.current += 1;
+      botsRef.current = next;
+      setBots(next);
+      pendingBotOrderRef.current = next.map((bot) => bot.id);
+      void flushBotOrder();
+    },
+    [flushBotOrder],
   );
-  const workspaceQuery = query.trim();
-  const showWorkspaceSearch = workspaceQuery.length > 0;
+  const toggleSidebarSection = useCallback(
+    (key: string) => {
+      setCollapsedSidebarSections((previous) => {
+        const next = new Set(previous);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        const storageKey = collapsedSidebarSectionsStorageKey(userId);
+        if (storageKey) {
+          try {
+            window.localStorage.setItem(storageKey, JSON.stringify([...next]));
+          } catch {
+            // Keep the UI usable when storage is unavailable.
+          }
+        }
+        return next;
+      });
+    },
+    [userId],
+  );
+  const spaceQuery = query.trim();
+  const showSpaceSearch = spaceQuery.length > 0;
 
   useEffect(() => {
-    if (!showWorkspaceSearch) {
+    if (!showSpaceSearch) {
       setSearchHits([]);
       setSearchLoading(false);
       return;
@@ -953,7 +1478,7 @@ export function ShellPage() {
     const timer = window.setTimeout(() => {
       setSearchLoading(true);
       void rpc.search
-        .query({ q: workspaceQuery })
+        .query({ q: spaceQuery })
         .then((result) => {
           if (!abort.signal.aborted) setSearchHits(result.hits);
         })
@@ -968,7 +1493,7 @@ export function ShellPage() {
       abort.abort();
       window.clearTimeout(timer);
     };
-  }, [showWorkspaceSearch, workspaceQuery]);
+  }, [showSpaceSearch, spaceQuery]);
 
   async function jumpToSearchHit(hit: SearchHit) {
     setQuery("");
@@ -997,19 +1522,24 @@ export function ShellPage() {
     if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    expandedHistoryThread.current = page.threadId;
-    pinnedAroundRef.current = {
-      ...threadTarget,
-      messageId: target.messageId,
-      threadId: page.threadId,
-      messages: page.messages,
-      olderCursor: page.olderCursor,
-    };
-    initiallyScrolledThread.current = page.threadId;
+    const targetInPage = userVisibleMessages(page.messages, { includePeerReceipts: true }).some(
+      (message) => message.id === target.messageId,
+    );
+    expandedHistoryThread.current = targetInPage ? page.threadId : null;
+    pinnedAroundRef.current = targetInPage
+      ? {
+          ...threadTarget,
+          messageId: target.messageId,
+          threadId: page.threadId,
+          messages: page.messages,
+          olderCursor: page.olderCursor,
+        }
+      : null;
+    if (targetInPage) initiallyScrolledThread.current = page.threadId;
     commitSnapshot({
       ...snap,
-      messages: page.messages,
-      olderCursor: page.olderCursor,
+      messages: targetInPage ? page.messages : snap.messages,
+      olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
     });
     if (threadTarget.botId) {
       commitComputer(snap.computer ?? null);
@@ -1030,6 +1560,14 @@ export function ShellPage() {
     }
     window.requestAnimationFrame(() => {
       if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
+      if (!targetInPage) {
+        const element = messageScroll.current;
+        if (element) {
+          element.scrollTop = element.scrollHeight;
+          initiallyScrolledThread.current = page.threadId;
+        }
+        return;
+      }
       document
         .querySelector(`[data-message-id="${target.messageId}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1052,11 +1590,8 @@ export function ShellPage() {
     if (routineId && routinesBotId === active.id) {
       const routine = routines.find((item) => item.id === routineId);
       if (routine) {
-        setRoutineDraft({
-          name: routine.name,
-          prompt: routine.prompt,
-          schedules: routine.crons.map(presetFromCron),
-        });
+        setRoutineDraft(draftFromRoutine(routine));
+        setRoutineWebhookSecret(null);
         setEditingRoutine(routine);
         setPanel("routine");
       } else {
@@ -1091,24 +1626,39 @@ export function ShellPage() {
     ["running", "queued", "leased"].includes(run.status),
   );
   const transcriptRunning = workingRuns.length > 0;
-  const workingStartedAtMs = (() => {
-    let earliest: number | undefined;
-    for (const run of workingRuns) {
-      // Prefer startedAt; fall back to createdAt so queued/leased runs keep a
-      // stable clock across remounts before the executor sets startedAt.
-      const iso = run.startedAt ?? run.createdAt;
-      const ms = Date.parse(iso);
-      if (Number.isNaN(ms)) continue;
-      if (earliest === undefined || ms < earliest) earliest = ms;
-    }
-    return earliest;
-  })();
   const composerRunning = currentRuns.some((run) => isActive(run.status));
+  const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
+  const displayedRunError = !sendError && !dictationError ? runError : null;
+  const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
+  const handleRunErrorPresented = useCallback((runId: string) => {
+    rememberSeenRunErrorId(runId);
+  }, []);
+  const transcriptMessages = useMemo(
+    () => userVisibleMessages(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
+    [activeSnapshot?.messages],
+  );
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
+  const resolveTranscriptBot = useCallback(
+    (botId: string) => {
+      const bot = bots.find((candidate) => candidate.id === botId);
+      if (bot) return bot;
+      return transcriptMembers?.find((member) => member.botId === botId);
+    },
+    [bots, transcriptMembers],
+  );
+  const workingBots: GroupAvatarMember[] = workingRuns.map((run) => {
+    const bot = resolveTranscriptBot(run.botId);
+    return {
+      botId: run.botId,
+      color: bot?.color ?? "#85858A",
+      name: bot?.name,
+      status: run.status,
+    };
+  });
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -1291,6 +1841,27 @@ export function ShellPage() {
       await refreshThreadRef.current(botId);
     }
   }, []);
+  const reactToMessage = useCallback(
+    async (message: ThreadMessage) => {
+      const botId = activeBotId.current;
+      const groupId = activeGroupId.current;
+      if (!botId && !groupId) return;
+      try {
+        await rpc.threads.react({
+          ...(groupId ? { groupId } : { botId: botId! }),
+          messageId: message.id,
+          thumbsUp: !message.thumbsUp,
+        });
+      } catch (error) {
+        const stillHere = groupId
+          ? activeGroupId.current === groupId
+          : activeBotId.current === botId;
+        if (!stillHere) return;
+        setSendError(error instanceof Error ? error.message : t`Could not update reaction`);
+      }
+    },
+    [t],
+  );
   const onAttachmentPick = useCallback(
     async (files: FileList | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
@@ -1347,12 +1918,19 @@ export function ShellPage() {
       );
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+      if (
+        plan.shouldSend &&
+        (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
+      ) {
+        const permissionRequest = requestBrowserNotificationPermission();
+        if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);
+      }
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
       try {
         if (plan.shouldRunRoutines) {
-          const sendNonce = crypto.randomUUID();
+          const sendNonce = newClientNonce();
           await Promise.all(
             plan.routineIds.map((routineId) =>
               rpc.routines.testRun({
@@ -1394,9 +1972,11 @@ export function ShellPage() {
           );
           artifactIds.push(artifact.id);
         }
+        const clientNonce = newClientNonce();
         if (groupTarget) {
           await rpc.threads.send({
             groupId: groupTarget,
+            clientNonce,
             text: trimmed || undefined,
             mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
@@ -1405,6 +1985,7 @@ export function ShellPage() {
         } else if (botTarget) {
           await rpc.threads.send({
             botId: botTarget,
+            clientNonce,
             text: trimmed || undefined,
             mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
@@ -1416,6 +1997,8 @@ export function ShellPage() {
         setPendingAttachments((current) =>
           current.filter((attachment) => attachment.threadKey !== originThreadKey),
         );
+        // Refresh sidebar status even when a bot→group reroute navigates away below.
+        void refreshBots().catch(() => undefined);
         if (reroutedToGroup && groupTarget) {
           navigate(`/app/g/${groupTarget}`);
           return;
@@ -1436,7 +2019,14 @@ export function ShellPage() {
         setSending(false);
       }
     },
-    [activeReplyTarget?.id, navigate, pendingAttachments, sending, t],
+    [
+      activeReplyTarget?.id,
+      flushPendingBrowserNotifications,
+      navigate,
+      pendingAttachments,
+      sending,
+      t,
+    ],
   );
   const followUpMessage = useCallback(async (text: string) => {
     const id = activeBotId.current;
@@ -1445,52 +2035,57 @@ export function ShellPage() {
     await refreshThreadRef.current(id);
   }, []);
   const stopRun = useCallback(async () => {
-    const botTarget = activeBotId.current;
-    const groupTarget = activeGroupId.current;
-    if (groupTarget) {
+    if (sending) return;
+    setSending(true);
+    try {
+      const botTarget = activeBotId.current;
+      const groupTarget = activeGroupId.current;
+      if (groupTarget) {
+        setSendError(null);
+        try {
+          await rpc.threads.stop({ groupId: groupTarget });
+        } catch (error) {
+          if (activeGroupId.current === groupTarget) {
+            setSendError(error instanceof Error ? error.message : t`Failed to stop`);
+          }
+          return;
+        }
+        // Stop has no terminal event; clear run UI before refresh races with in-flight gets.
+        if (activeGroupId.current === groupTarget) {
+          updateSnapshot((prev) =>
+            prev && prev.groupId === groupTarget ? clearActiveThreadRuns(prev) : prev,
+          );
+        }
+        await refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
+        return;
+      }
+      if (!botTarget) return;
       setSendError(null);
       try {
-        await rpc.threads.stop({ groupId: groupTarget });
+        await rpc.threads.stop({ botId: botTarget });
       } catch (error) {
-        if (activeGroupId.current === groupTarget) {
+        if (activeBotId.current === botTarget) {
           setSendError(error instanceof Error ? error.message : t`Failed to stop`);
         }
         return;
       }
-      // Stop has no terminal event; clear run UI before refresh races with in-flight gets.
-      if (activeGroupId.current === groupTarget) {
-        updateSnapshot((prev) =>
-          prev && prev.groupId === groupTarget ? clearActiveThreadRuns(prev) : prev,
-        );
-      }
-      await refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
-      return;
-    }
-    if (!botTarget) return;
-    setSendError(null);
-    try {
-      await rpc.threads.stop({ botId: botTarget });
-    } catch (error) {
+      // Stop does not emit a terminal thread event. Clear local run/busy immediately so a
+      // superseded in-flight refresh (older cursor) cannot leave Stop enabled / Take control
+      // blocked while the API is already idle.
       if (activeBotId.current === botTarget) {
-        setSendError(error instanceof Error ? error.message : t`Failed to stop`);
+        updateSnapshot((prev) =>
+          !prev || (prev.botId !== botTarget && prev.botId) ? prev : clearActiveThreadRuns(prev),
+        );
+        const currentComputer = computerRef.current;
+        if (currentComputer?.busyBotName) {
+          commitComputer({ ...currentComputer, busyBotName: null });
+        }
       }
-      return;
+      await refreshThreadRef.current(botTarget).catch(() => undefined);
+    } finally {
+      setSending(false);
     }
-    // Stop does not emit a terminal thread event. Clear local run/busy immediately so a
-    // superseded in-flight refresh (older cursor) cannot leave Stop enabled / Take control
-    // blocked while the API is already idle.
-    if (activeBotId.current === botTarget) {
-      updateSnapshot((prev) => {
-        if (!prev || (prev.botId !== botTarget && prev.botId)) return prev;
-        return clearActiveThreadRuns(prev);
-      });
-      const currentComputer = computerRef.current;
-      if (currentComputer?.busyBotName) {
-        commitComputer({ ...currentComputer, busyBotName: null });
-      }
-    }
-    await refreshThreadRef.current(botTarget).catch(() => undefined);
-  }, [t]);
+  }, [sending, t]);
   const stopTeaching = useCallback(async () => {
     const id = activeBotId.current;
     if (!id || teachBusy) return;
@@ -1519,8 +2114,21 @@ export function ShellPage() {
     if (!id) return;
     await refreshThreadRef.current(id);
   }, []);
+  // Teach chrome needs skills applied before this resolves — refreshThread only
+  // kicks skills.list off in the background, so Stop teaching would never mount
+  // if that background call failed or lagged behind local recovery.
+  const refreshActiveTeaching = useCallback(async () => {
+    const id = activeBotId.current;
+    if (!id) return;
+    await refreshThreadRef.current(id);
+    const skills = await rpc.skills.list({ botId: id });
+    if (activeBotId.current !== id) return;
+    setTaughtSkills(skills);
+    setTaughtSkillsBotId(id);
+  }, []);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
-    setRoutineDraft({ name, prompt, schedules: [defaultCronPreset()] });
+    setRoutineDraft({ ...emptyRoutineDraft(), name, prompt });
+    setRoutineWebhookSecret(null);
     setEditingRoutine(null);
     setPanel("routine");
   }, []);
@@ -1709,9 +2317,20 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
+  function dismissComposerError() {
+    // The strip shows one message at a time, so only dismiss the run failure when it is the
+    // one on screen; otherwise a live run would be silenced before it has even failed.
+    const failedRunId = displayedRunErrorId;
+    setSendError(null);
+    setDictationError(null);
+    if (failedRunId) {
+      rememberSeenRunErrorId(failedRunId);
+      setDismissedRunErrorIds((current) => new Set(current).add(failedRunId));
+    }
+  }
+
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
-  const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
@@ -1721,11 +2340,11 @@ export function ShellPage() {
     .slice(0, 2)
     .toUpperCase();
 
-  return (
+  const shell = (
     <div
       data-testid="shell-root"
       data-ready={shellReady}
-      className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
+      className="relative flex h-full min-w-0 overflow-hidden bg-[var(--rk-page)] text-[var(--rk-body)]"
     >
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
@@ -1739,7 +2358,7 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[#171719] bg-[#0B0B0C] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[var(--rk-hairline)] bg-[var(--rk-sidebar)] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         }`}
       >
@@ -1754,7 +2373,9 @@ export function ShellPage() {
               data-activity-mode={activityMode ? "on" : "off"}
               onClick={toggleActivityMode}
               className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
-                activityMode ? "bg-[#4C8DFF] text-white" : "text-[#7A7A80] hover:text-[#C9C9CE]"
+                activityMode
+                  ? "bg-[#4C8DFF] text-white"
+                  : "text-[var(--rk-faint)] hover:text-[var(--rk-soft)]"
               }`}
             >
               <Bell
@@ -1767,16 +2388,16 @@ export function ShellPage() {
             <button
               type="button"
               onClick={() => setCreateMenuOpen((open) => !open)}
-              className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
+              className="app-no-drag text-[21px] text-[var(--rk-faint)] hover:text-[var(--rk-soft)]"
               title={t`Create`}
             >
               +
             </button>
             {createMenuOpen ? (
-              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
+              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[var(--rk-border)] bg-[var(--rk-surface)] py-1 shadow-lg">
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create");
@@ -1786,7 +2407,7 @@ export function ShellPage() {
                 </button>
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create-group");
@@ -1794,22 +2415,34 @@ export function ShellPage() {
                 >
                   <Trans>New group</Trans>
                 </button>
+                <div className="my-1 border-t border-[var(--rk-border)]" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
+                  onClick={() => {
+                    setCreateMenuOpen(false);
+                    setNewSpaceOpen(true);
+                  }}
+                >
+                  <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
+                  <Trans>New space</Trans>
+                </button>
               </div>
             ) : null}
           </div>
         </div>
-        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[#202023] bg-[#141416] px-3 py-2 text-[14px] text-[#6C6C70]">
-          <span>⌕</span>
+        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-2 text-[14px] text-[var(--rk-body)]">
+          <span aria-hidden="true">⌕</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
-            className="w-full bg-transparent outline-none"
+            className="w-full bg-transparent text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-body)]"
           />
         </div>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
-          {showWorkspaceSearch ? (
-            <WorkspaceSearchResults
+          {showSpaceSearch ? (
+            <SpaceSearchResults
               hits={searchHits}
               loading={searchLoading}
               onSelect={(hit) => void jumpToSearchHit(hit)}
@@ -1825,139 +2458,245 @@ export function ShellPage() {
                   }}
                 />
               ) : null}
-              {sidebarGroups.map((group) => (
-                <div key={group.key} data-sidebar-group={group.key}>
-                  {group.title ? (
-                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
-                      {group.title}
-                    </div>
-                  ) : null}
-                  {group.bots.map((bot) => (
-                    <button
-                      key={bot.id}
-                      type="button"
-                      onClick={() => {
-                        setMobileSidebarOpen(false);
-                        navigate(`/app/${bot.id}`);
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setBotMenu({
-                          botId: bot.id,
-                          position: { x: event.clientX, y: event.clientY },
-                        });
-                      }}
-                      className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                      style={{
-                        background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
-                      }}
-                    >
-                      <BotAvatar color={bot.color} size={38} status={bot.status} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span
-                            dir="auto"
-                            className={`truncate text-[15px] text-[#ECECEE] ${
-                              bot.unread ? "font-semibold" : "font-medium"
-                            }`}
-                          >
-                            {bot.name}
-                            {bot.unread ? (
-                              <span className="sr-only">
-                                <Trans> (unread)</Trans>
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                            {bot.status === "idle" ? "" : bot.status}
-                            {bot.unread ? (
-                              <span
-                                aria-hidden="true"
-                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                              />
-                            ) : null}
-                          </span>
-                        </div>
-                        <div
-                          dir="auto"
-                          className={`mt-0.5 truncate text-[13.5px] ${
-                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
-                          }`}
+              {sidebarGroups.map((group) => {
+                const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
+                const groupBotIds = group.bots.flatMap((item) =>
+                  item.kind === "bot" ? [item.chat.id] : [],
+                );
+                return (
+                  <div key={group.key} data-sidebar-group={group.key}>
+                    {group.title ? (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-[var(--rk-muted-2)] hover:bg-[var(--rk-surface-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#8B5CF6]"
+                          onClick={() => {
+                            if (group.emptySpaceId) {
+                              openSpaceChat(group.emptySpaceId, "/onboarding");
+                              return;
+                            }
+                            toggleSidebarSection(group.key);
+                          }}
+                          aria-expanded={group.emptySpaceId ? undefined : !collapsed}
+                          aria-label={
+                            group.emptySpaceId
+                              ? t`Open ${group.title}`
+                              : collapsed
+                                ? t`Expand ${group.title}`
+                                : t`Collapse ${group.title}`
+                          }
                         >
-                          {bot.preview || bot.title}
-                        </div>
+                          <span className="flex min-w-0 items-center gap-1.5 truncate">
+                            {group.showLock ? (
+                              <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                            ) : null}
+                            <span className="truncate">{group.title}</span>
+                          </span>
+                          {group.emptySpaceId ? null : (
+                            <ChevronDown
+                              size={14}
+                              strokeWidth={1.8}
+                              className={
+                                collapsed
+                                  ? "-rotate-90 transition-transform"
+                                  : "transition-transform"
+                              }
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              ))}
+                    ) : null}
+                    {!collapsed &&
+                      group.bots.map((item) => (
+                        <button
+                          key={`${item.kind}:${item.chat.id}`}
+                          type="button"
+                          draggable={item.kind === "bot"}
+                          data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
+                          aria-keyshortcuts={
+                            item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                          }
+                          onDragStart={(event) => {
+                            if (item.kind !== "bot") return;
+                            setDraggedBotId(item.chat.id);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", item.chat.id);
+                          }}
+                          onDragOver={(event) => {
+                            if (
+                              item.kind === "bot" &&
+                              draggedBotId &&
+                              groupBotIds.includes(draggedBotId)
+                            ) {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                            }
+                          }}
+                          onDrop={(event) => {
+                            if (item.kind !== "bot" || !draggedBotId) return;
+                            event.preventDefault();
+                            reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
+                            setDraggedBotId(null);
+                          }}
+                          onDragEnd={() => setDraggedBotId(null)}
+                          onKeyDown={(event) => {
+                            if (
+                              item.kind !== "bot" ||
+                              !event.altKey ||
+                              (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+                            )
+                              return;
+                            const index = groupBotIds.indexOf(item.chat.id);
+                            const target = groupBotIds[index + (event.key === "ArrowUp" ? -1 : 1)];
+                            if (!target) return;
+                            event.preventDefault();
+                            reorderRosterBot(item.chat.id, target, groupBotIds);
+                          }}
+                          onClick={() => {
+                            openSpaceChat(
+                              item.chat.spaceId,
+                              item.kind === "bot"
+                                ? `/app/${item.chat.id}`
+                                : `/app/g/${item.chat.id}`,
+                            );
+                          }}
+                          onContextMenu={(event) => {
+                            if (item.chat.spaceId !== bootstrapMe?.spaceId) return;
+                            event.preventDefault();
+                            setBotMenu({
+                              kind: item.kind,
+                              id: item.chat.id,
+                              position: { x: event.clientX, y: event.clientY },
+                            });
+                          }}
+                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                            item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
+                          } ${
+                            (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
+                            (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
+                              ? "bg-[var(--rk-surface)]"
+                              : "hover:bg-[var(--rk-page)]"
+                          }`}
+                          style={{
+                            opacity:
+                              item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
+                          }}
+                        >
+                          {item.kind === "bot" ? (
+                            <BotAvatar
+                              color={item.chat.color}
+                              identity={item.chat.id}
+                              size={38}
+                              status={item.chat.status}
+                            />
+                          ) : (
+                            <GroupAvatar
+                              members={
+                                item.chat.id === activeSnapshot?.groupId
+                                  ? (activeSnapshot.members ?? item.chat.members)
+                                  : item.chat.members
+                              }
+                              size={38}
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span
+                                dir="auto"
+                                data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                                className={`truncate text-[15px] text-[var(--rk-ink)] ${
+                                  item.chat.unread ? "font-semibold" : "font-medium"
+                                }`}
+                              >
+                                {item.chat.name}
+                                {item.chat.unread ? (
+                                  <span className="sr-only">
+                                    <Trans> (unread)</Trans>
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[var(--rk-muted-2)]">
+                                {item.kind === "bot" && item.chat.status !== "idle"
+                                  ? item.chat.status
+                                  : ""}
+                                {item.chat.unread ? (
+                                  <span
+                                    aria-hidden="true"
+                                    className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                  />
+                                ) : null}
+                              </span>
+                            </div>
+                            {item.kind === "bot" && item.chat.title ? (
+                              <>
+                                <div
+                                  dir="auto"
+                                  className={`mt-0.5 truncate text-[13.5px] ${
+                                    item.chat.unread
+                                      ? "font-medium text-[var(--rk-soft)]"
+                                      : "text-[var(--rk-muted)]"
+                                  }`}
+                                >
+                                  {item.chat.title}
+                                </div>
+                                {item.chat.preview ? (
+                                  <div
+                                    dir="auto"
+                                    className="truncate text-[12.5px] text-[var(--rk-muted-2)]"
+                                  >
+                                    {item.chat.preview}
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : (
+                              <div
+                                dir="auto"
+                                className={`mt-0.5 truncate text-[13.5px] ${
+                                  item.chat.unread
+                                    ? "font-medium text-[var(--rk-soft)]"
+                                    : "text-[var(--rk-muted)]"
+                                }`}
+                              >
+                                {item.kind === "bot"
+                                  ? item.chat.preview
+                                  : item.chat.preview ||
+                                    item.chat.members.map((member) => member.name).join(", ")}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                );
+              })}
             </>
           )}
-          {!showWorkspaceSearch
-            ? groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    navigate(`/app/g/${group.id}`);
-                  }}
-                  className="flex gap-3 rounded-xl px-2.5 py-[11px] text-start"
-                  style={{
-                    background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
-                  }}
-                >
-                  <GroupAvatar
-                    members={
-                      group.id === activeSnapshot?.groupId
-                        ? (activeSnapshot.members ?? group.members)
-                        : group.members
-                    }
-                    size={38}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span
-                        dir="auto"
-                        className={`min-w-0 truncate text-[15px] text-[#ECECEE] ${
-                          group.unread ? "font-semibold" : "font-medium"
-                        }`}
-                      >
-                        {group.name}
-                      </span>
-                      {group.unread ? (
-                        <span
-                          aria-hidden="true"
-                          className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
-                        />
-                      ) : null}
-                    </div>
-                    <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
-                      {group.members.map((member) => member.name).join(", ")}
-                    </div>
-                  </div>
-                </button>
-              ))
-            : null}
-          {archivedBots.length > 0 && !showWorkspaceSearch ? (
-            <div className="mt-2 border-t border-[#202023] pt-2">
+          {archivedBots.length + archivedGroups.length > 0 && !showSpaceSearch ? (
+            <div className="mt-2 border-t border-[var(--rk-hairline-strong)] pt-2">
               <button
                 type="button"
                 aria-expanded={archivedOpen}
                 onClick={() => setArchivedOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[var(--rk-muted)] hover:bg-[var(--rk-page)]"
               >
                 <span>
                   <Trans>Archived</Trans>
                 </span>
-                <span>{archivedBots.length}</span>
+                <span>{archivedBots.length + archivedGroups.length}</span>
               </button>
-              {archivedOpen
-                ? archivedBots.map((bot) => (
+              {archivedOpen ? (
+                <>
+                  {archivedBots.map((bot) => (
                     <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
-                      <BotAvatar color={bot.color} size={28} status={bot.status} />
+                      <BotAvatar
+                        color={bot.color}
+                        identity={bot.id}
+                        size={28}
+                        status={bot.status}
+                      />
                       <span
-                        className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]"
+                        className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-soft)]"
                         dir="auto"
                       >
                         {bot.name}
@@ -1967,7 +2706,7 @@ export function ShellPage() {
                         onClick={() =>
                           void rpc.bots.restore({ botId: bot.id }).then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                        className="text-[12.5px] text-[var(--rk-soft)] hover:text-[var(--rk-ink)]"
                       >
                         <Trans>Restore</Trans>
                       </button>
@@ -1975,31 +2714,62 @@ export function ShellPage() {
                         type="button"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-[#FF5364]"
+                        className="text-[12.5px] text-[var(--rk-danger)]"
                       >
                         <Trans>Delete</Trans>
                       </button>
                     </div>
-                  ))
-                : null}
+                  ))}
+                  {archivedGroups.map((group) => (
+                    <div key={group.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
+                      <GroupAvatar members={group.members} size={28} />
+                      <span
+                        className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-soft)]"
+                        dir="auto"
+                      >
+                        {group.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void rpc.groups
+                            .restore({ groupId: group.id })
+                            .then(() => refreshBots(true))
+                        }
+                        className="text-[12.5px] text-[var(--rk-soft)] hover:text-[var(--rk-ink)]"
+                      >
+                        <Trans>Restore</Trans>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t`Delete ${group.name}`}
+                        onClick={() => setDeleteGroupTarget(group)}
+                        className="text-[12.5px] text-[var(--rk-danger)]"
+                      >
+                        <Trans>Delete</Trans>
+                      </button>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[var(--rk-page)]"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-hairline)] text-[var(--rk-soft)]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">
+          <span className="text-[14.5px] text-[var(--rk-body)]">
             <Trans>Integrations</Trans>
           </span>
         </button>
         <div className="relative">
           {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
+            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
               <button
                 type="button"
                 aria-label={t`Settings`}
@@ -2008,10 +2778,10 @@ export function ShellPage() {
                   setAccountSettingsFocusUsage(false);
                   setAccountSettingsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <span className="text-[#9A9AA0]">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                <span className="text-[var(--rk-muted)]">⚙</span>
+                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Settings</Trans>
                 </span>
               </button>
@@ -2021,10 +2791,10 @@ export function ShellPage() {
                   setMenuOpen(false);
                   setModelsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                <Cpu size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Models</Trans>
                 </span>
               </button>
@@ -2034,10 +2804,10 @@ export function ShellPage() {
                   setMenuOpen(false);
                   setMemorySettingsOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <span className="text-[#9A9AA0]">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                <span className="text-[var(--rk-muted)]">◇</span>
+                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Memory</Trans>
                 </span>
               </button>
@@ -2047,27 +2817,27 @@ export function ShellPage() {
                   setMenuOpen(false);
                   setVoiceOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                <Volume2 size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Voice</Trans>
                 </span>
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
                 onClick={async () => {
                   setUsage(await rpc.usage.summary());
                 }}
               >
-                <Gauge size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                <Gauge size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Usage</Trans>
                 </span>
               </button>
               {usage ? (
-                <p className="px-3 pb-2 text-[12.5px] text-[#85858A]">
+                <p className="px-3 pb-2 text-[12.5px] text-[var(--rk-muted)]">
                   <Trans>
                     {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
                   </Trans>
@@ -2075,11 +2845,16 @@ export function ShellPage() {
               ) : null}
               <button
                 type="button"
-                onClick={() => void authClient.signOut().then(() => navigate("/"))}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                onClick={() =>
+                  void authClient.signOut().then(() => {
+                    clearSpaceSelection();
+                    navigate("/");
+                  })
+                }
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hairline-strong)]"
               >
-                <LogOut size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="text-[14.5px] text-[#ECECEE]">
+                <LogOut size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                <span className="text-[14.5px] text-[var(--rk-ink)]">
                   <Trans>Log out</Trans>
                 </span>
               </button>
@@ -2091,22 +2866,26 @@ export function ShellPage() {
             onClick={() => setMenuOpen((v) => !v)}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--rk-hairline-strong)] text-[12px] text-[var(--rk-soft)]">
               {initials}
             </span>
-            <span className="text-[14.5px] text-[#C9C9CE]">{userName}</span>
+            <span className="text-[14.5px] text-[var(--rk-body)]">{userName}</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
-        <div className="flex items-center justify-between border-b border-[#141416] px-3 py-[17px] md:px-[22px]">
+      <main
+        aria-hidden={mobileSidebarOpen || undefined}
+        inert={mobileSidebarOpen}
+        className="flex min-w-0 flex-1 flex-col bg-[var(--rk-main)]"
+      >
+        <div className="app-drag flex items-center justify-between border-b border-[var(--rk-surface)] px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
+              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--rk-soft)] hover:bg-[var(--rk-elevated)] md:hidden"
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
@@ -2114,7 +2893,7 @@ export function ShellPage() {
               type="button"
               data-testid="bot-settings-trigger"
               onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="flex min-w-0 items-center gap-3"
+              className="app-no-drag flex min-w-0 items-center gap-3"
             >
               {inGroup ? (
                 <GroupAvatar
@@ -2122,10 +2901,18 @@ export function ShellPage() {
                   size={26}
                 />
               ) : active ? (
-                <BotAvatar color={active.color} size={26} status={active.status} />
+                <BotAvatar
+                  color={active.color}
+                  identity={active.id}
+                  size={26}
+                  status={active.status}
+                />
               ) : null}
               <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
+                <span
+                  className="block truncate text-[16px] font-medium text-[var(--rk-ink)]"
+                  dir="auto"
+                >
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
                     : (active?.name ?? t`Select a bot`)}
@@ -2146,10 +2933,10 @@ export function ShellPage() {
                   }
                   setCallOpen(true);
                 }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-elevated)]"
+                style={{ background: callOpen ? "var(--rk-elevated)" : "transparent" }}
               >
-                <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
+                <Phone size={16} strokeWidth={1.6} className="text-[var(--rk-soft)]" />
               </button>
             ) : null}
             {!inGroup ? (
@@ -2164,33 +2951,35 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: panel ? "#1B1B1E" : "transparent" }}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-elevated)]"
+                style={{ background: panel ? "var(--rk-elevated)" : "transparent" }}
               >
-                <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
+                <Monitor size={18} strokeWidth={1.6} className="text-[var(--rk-soft)]" />
               </button>
             ) : null}
           </div>
         </div>
         <Transcript
+          key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
           artifactTarget={transcriptArtifactTarget}
-          messages={activeSnapshot?.messages ?? []}
+          messages={transcriptMessages}
           olderCursor={activeSnapshot?.olderCursor ?? null}
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
           running={transcriptRunning}
-          workingStartedAt={workingStartedAtMs}
+          workingBots={workingBots}
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
           onReply={setReplyTarget}
+          onReact={reactToMessage}
           onJumpToMessage={jumpToReplyMessage}
-          onOpenPeerMessages={(peerBotId) => {
-            setPeerMessagesFocusId(peerBotId);
-            setPeerMessagesOpen(true);
+          onOpenPeerMessages={(peer) => {
+            setPeerConversation(peer);
           }}
           memberName={resolveTranscriptMemberName}
+          peerBot={resolveTranscriptBot}
           onRefresh={refreshActiveThread}
           onBotChanged={refreshBots}
           onAddRoutine={addSkillRoutine}
@@ -2199,7 +2988,7 @@ export function ShellPage() {
           onSpeak={speakMessage}
         />
         {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+          <div className="px-6 pb-2 text-center text-[13px] text-[var(--rk-danger)]">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
@@ -2212,6 +3001,10 @@ export function ShellPage() {
           attachmentNotice={attachmentNotice}
           sendError={sendError}
           dictationError={dictationError}
+          runError={displayedRunError}
+          runErrorId={displayedRunErrorId}
+          onRunErrorPresented={handleRunErrorPresented}
+          onDismissError={dismissComposerError}
           sending={sending}
           fileInputRef={fileInputRef}
           onAttachmentPick={onAttachmentPick}
@@ -2259,9 +3052,9 @@ export function ShellPage() {
       <aside
         data-testid="side-panel"
         data-panel={panel ?? "closed"}
-        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-150 ease-out md:relative ${
+        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[var(--rk-panel)] transition-[width] duration-150 ease-out md:relative ${
           panel && (active || activeGroup)
-            ? "w-full max-w-[384px] border-s border-[#141416] md:w-[384px] md:max-w-none"
+            ? "w-full max-w-[384px] border-s border-[var(--rk-surface)] md:w-[384px] md:max-w-none"
             : "pointer-events-none w-0"
         }`}
       >
@@ -2272,7 +3065,7 @@ export function ShellPage() {
             panel !== "create-group" &&
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-[13.5px] text-[#85858A]">
+                <span className="text-[13.5px] text-[var(--rk-muted)]">
                   {panel === "settings" ? (
                     <Trans>Settings</Trans>
                   ) : active ? (
@@ -2289,8 +3082,8 @@ export function ShellPage() {
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={
                         panel === "settings"
-                          ? "text-[#ECECEE]"
-                          : "text-[#85858A] hover:text-[#ECECEE]"
+                          ? "text-[var(--rk-ink)]"
+                          : "text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                       }
                     >
                       <Settings size={16} strokeWidth={1.7} />
@@ -2304,13 +3097,16 @@ export function ShellPage() {
             ) : null}
             {panel === "computer" && active ? (
               <div>
-                <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+                <div
+                  data-testid="computer-preview"
+                  className="group relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[var(--rk-panel)]"
+                >
                   {computerOpen ? (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                    <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
                       <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[var(--rk-muted-2)]">
                       <Trans>
                         This bot runs on this computer, not a Linux desktop. Shell and files use
                         your home folder.
@@ -2326,141 +3122,62 @@ export function ShellPage() {
                       style={{ pointerEvents: "none" }}
                     />
                   ) : (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      {computerPlaceholder(
-                        computer?.state,
-                        booting,
-                        computerLabel(computer?.mode, active.name),
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[var(--rk-muted-2)]">
+                      {computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
+                        <ComputersUnavailableHint />
+                      ) : (
+                        computerPlaceholder(
+                          computer?.state,
+                          booting,
+                          computerLabel(computer?.mode, active.name),
+                        )
                       )}
                     </div>
                   )}
                   <button
                     type="button"
-                    className="absolute inset-0 cursor-pointer"
-                    aria-label={t`Open computer`}
+                    data-testid="computer-preview-open"
+                    className="absolute inset-0 flex cursor-pointer items-center justify-center bg-[rgba(4,4,5,.28)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    aria-label={t`Open`}
                     onClick={() => void openComputer()}
-                  />
+                  >
+                    <span className="inline-flex items-center gap-2 rounded-full bg-[rgba(12,12,14,.82)] px-3.5 py-2 text-[14px] text-[var(--rk-ink-strong)] shadow-[0_8px_24px_rgba(0,0,0,.45)]">
+                      <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
+                      <Trans>Open</Trans>
+                    </span>
+                  </button>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="min-w-0 text-[13.5px] text-[#85858A]">
-                    {hasControl
-                      ? t`You have control`
-                      : computerError
-                        ? computerError
-                        : computer?.busyBotName
-                          ? t`${computer.busyBotName} is using it`
-                          : computer?.state === "suspended"
-                            ? t`Asleep`
-                            : computerLabel(computer?.mode, active.name)}
-                  </span>
-                  {hasControl ? (
-                    <ComputerReleaseActions
-                      takeoverRequested={computer?.takeoverRequested ?? false}
-                      onRelease={releaseComputer}
-                    />
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={takeoverBlocked}
-                      title={takeoverBlocked ? t`Stop the bot first` : undefined}
-                      onClick={() => void openComputer()}
-                    >
-                      <Trans>Take control</Trans>
-                    </Button>
-                  )}
-                </div>
-                {computer?.state === "error" ||
-                computer?.state === "stopped" ||
-                (computer?.state === "running" && !embeddedScreenUrl) ? (
-                  <ComputerMaintenanceActions
-                    botId={active.id}
-                    computer={computer}
-                    compact
-                    onChanged={async () => {
-                      await refreshThread(active.id);
-                    }}
-                  />
-                ) : null}
-                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">
-                  <Trans>Routines</Trans>
-                </div>
+                <p className="mt-2 truncate text-[13.5px] text-[var(--rk-muted)]" dir="auto">
+                  {t`${active.name}'s screen`}
+                </p>
+                <RoutineListHeader
+                  onCreate={() => {
+                    setRoutineDraft(emptyRoutineDraft());
+                    setRoutineWebhookSecret(null);
+                    setEditingRoutine(null);
+                    setRoutineError(null);
+                    setPanel("routine");
+                  }}
+                />
                 {activeRoutines.map((routine) => {
                   const routineRunning =
                     snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
                   return (
-                    <div
+                    <RoutineListRow
                       key={routine.id}
-                      className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRoutineDraft({
-                            name: routine.name,
-                            prompt: routine.prompt,
-                            schedules: routine.crons.map(presetFromCron),
-                          });
-                          setEditingRoutine(routine);
-                          setPanel("routine");
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-start"
-                      >
-                        <span className="text-[#E65707]">◷</span>
-                        <span
-                          className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[#ECECEE]"
-                          dir="auto"
-                        >
-                          {routine.name}
-                        </span>
-                        <span className="shrink-0 text-[13px] text-[#6C6C70]">
-                          {routine.crons.map(formatCron).join(" · ")}
-                        </span>
-                      </button>
-                      {routineRunning ? (
-                        <button
-                          type="button"
-                          onClick={() => void stopRun()}
-                          className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
-                        >
-                          <Trans>Running · Stop</Trans>
-                        </button>
-                      ) : null}
-                    </div>
+                      routine={routine}
+                      running={routineRunning}
+                      onOpen={() => {
+                        setRoutineDraft(draftFromRoutine(routine));
+                        setRoutineWebhookSecret(null);
+                        setEditingRoutine(routine);
+                        setRoutineError(null);
+                        setPanel("routine");
+                      }}
+                      onStop={() => void stopRun()}
+                    />
                   );
                 })}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
-                    setEditingRoutine(null);
-                    setPanel("routine");
-                  }}
-                  className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
-                >
-                  + <Trans>New routine</Trans>
-                </button>
-                {active ? (
-                  <TeachComputerSection
-                    botId={active.id}
-                    computer={computer}
-                    skills={activeTaughtSkills}
-                    busy={teachBusy}
-                    onRefresh={refreshActiveThread}
-                    onOpenComputer={openComputer}
-                    onStopTeaching={stopTeaching}
-                    onAddRoutine={(skill) => {
-                      setRoutineDraft({
-                        name: skill.name || skill.goal.slice(0, 80),
-                        prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-                        schedules: [defaultCronPreset()],
-                      });
-                      setEditingRoutine(null);
-                      setPanel("routine");
-                    }}
-                  />
-                ) : null}
               </div>
             ) : null}
             {panel === "create-group" ? (
@@ -2532,220 +3249,257 @@ export function ShellPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                onClear={() => setClearTarget(active)}
+                onClear={() => setClearTarget({ kind: "bot", chat: active })}
                 onComputerChanged={async () => {
                   await refreshThread(active.id);
                 }}
               />
             ) : null}
             {panel === "routine" && active ? (
-              <div>
-                <div className="mb-5 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setPanel("computer")}
-                    className="text-[#9A9AA0]"
-                  >
-                    <ChevronLeft size={18} strokeWidth={1.8} />
-                  </button>
-                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">
-                    <Trans>Routine</Trans>
-                  </div>
-                  <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
-                    <X size={16} strokeWidth={1.8} />
-                  </button>
-                </div>
-                <label className="text-[14px] text-[#85858A]">
-                  <Trans>Name</Trans>
-                  <input
-                    value={routineDraft.name}
-                    onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-                  />
-                </label>
-                <label className="mt-5 block text-[14px] text-[#85858A]">
-                  <Trans>Instruction</Trans>
-                  <textarea
-                    value={routineDraft.prompt}
-                    onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
-                    rows={4}
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-                  />
-                </label>
-                <div className="mt-5 text-[14px] text-[#85858A]">
-                  <Trans>When to run</Trans>
-                  <span className="ml-2 text-[12.5px] text-[#6E6E74]">
-                    {editingRoutine?.timezone ?? localTimezone()}
-                  </span>
-                  <Suspense fallback={null}>
-                    <RoutineSchedules
-                      value={routineDraft.schedules}
-                      onChange={(schedules) => setRoutineDraft((s) => ({ ...s, schedules }))}
-                    />
-                  </Suspense>
-                </div>
-                <div className="mt-5 flex items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={savingRoutine || runningRoutine}
-                    onClick={async () => {
-                      if (routineSavePending.current) return;
-                      const targetBotId = active.id;
-                      const targetRoutine = editingRoutine;
-                      if (targetRoutine && targetRoutine.botId !== targetBotId) return;
-                      const saveRequest = ++routineSaveRequest.current;
-                      routineSavePending.current = true;
-                      setSavingRoutine(true);
-                      setRoutineError(null);
-                      try {
-                        const crons = routineDraft.schedules.map(cronFromPreset);
-                        if (targetRoutine) {
-                          await rpc.routines.update({
-                            routineId: targetRoutine.id,
-                            name: routineDraft.name || t`Routine`,
-                            prompt: routineDraft.prompt || t`Check in.`,
-                            crons,
-                          });
-                        } else {
-                          await rpc.routines.create({
-                            botId: targetBotId,
-                            name: routineDraft.name || t`Routine`,
-                            prompt: routineDraft.prompt || t`Check in.`,
-                            crons,
-                            timezone: localTimezone(),
-                            active: true,
-                            notify: true,
-                          });
-                        }
-                      } catch (error) {
-                        if (
-                          routineSaveRequest.current !== saveRequest ||
-                          activeBotId.current !== targetBotId
-                        ) {
+              <RoutineEditor
+                draft={routineDraft}
+                onChange={setRoutineDraft}
+                editing={editingRoutine}
+                timezone={editingRoutine?.timezone ?? localTimezone()}
+                webhook={{
+                  path:
+                    typeof window !== "undefined"
+                      ? `${window.location.origin}/api/v1/bots/${active.id}/webhook`
+                      : `/api/v1/bots/${active.id}/webhook`,
+                  secret: routineWebhookSecret,
+                  configured: active.webhookConfigured || Boolean(routineWebhookSecret),
+                }}
+                saving={savingRoutine}
+                running={runningRoutine}
+                error={routineError}
+                onBack={() => setPanel("computer")}
+                onClose={() => setPanel(null)}
+                onEnsureWebhook={async () => {
+                  const result = await rpc.bots.rotateWebhookSecret({ botId: active.id });
+                  setRoutineWebhookSecret(result.secret);
+                  setBots((current) =>
+                    current.map((bot) =>
+                      bot.id === active.id ? { ...bot, webhookConfigured: true } : bot,
+                    ),
+                  );
+                }}
+                onSave={async () => {
+                  if (routineSavePending.current) return;
+                  const targetBotId = active.id;
+                  const targetRoutine = editingRoutine;
+                  if (targetRoutine && targetRoutine.botId !== targetBotId) return;
+                  if (!routineDraft.schedules.length && !routineDraft.webhookEnabled) {
+                    setRoutineError(t`Add a schedule or webhook trigger`);
+                    return;
+                  }
+                  const saveRequest = ++routineSaveRequest.current;
+                  routineSavePending.current = true;
+                  setSavingRoutine(true);
+                  setRoutineError(null);
+                  try {
+                    if (
+                      routineDraft.webhookEnabled &&
+                      !active.webhookConfigured &&
+                      !routineWebhookSecret
+                    ) {
+                      const rotated = await rpc.bots.rotateWebhookSecret({ botId: targetBotId });
+                      setRoutineWebhookSecret(rotated.secret);
+                      setBots((current) =>
+                        current.map((bot) =>
+                          bot.id === targetBotId ? { ...bot, webhookConfigured: true } : bot,
+                        ),
+                      );
+                    }
+                    const crons = routineDraft.schedules.map(cronFromPreset);
+                    let saved: Routine;
+                    if (targetRoutine) {
+                      const armOneShot = routineNeedsOneShotArm(targetRoutine, crons);
+                      let runAt: string | undefined;
+                      if (armOneShot) {
+                        if (!routineDraft.runAtLocal) {
+                          setRoutineError(t`Add a run time for this one-shot.`);
                           return;
                         }
-                        setRoutineError(
-                          error instanceof Error ? error.message : t`Could not save routine`,
-                        );
-                        return;
-                      } finally {
-                        routineSavePending.current = false;
-                        setSavingRoutine(false);
+                        const parsed = new Date(routineDraft.runAtLocal);
+                        if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+                          setRoutineError(t`Run time must be in the future.`);
+                          return;
+                        }
+                        runAt = parsed.toISOString();
                       }
-                      if (
-                        routineSaveRequest.current !== saveRequest ||
-                        activeBotId.current !== targetBotId
-                      ) {
-                        return;
-                      }
-                      await refreshThread(targetBotId).catch(() => undefined);
-                      if (
-                        routineSaveRequest.current === saveRequest &&
-                        activeBotId.current === targetBotId
-                      ) {
-                        setPanel("computer");
-                      }
-                    }}
-                    className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
-                  >
-                    {savingRoutine ? t`Saving…` : t`Save`}
-                  </button>
-                  {editingRoutine?.botId === active.id ? (
-                    <>
-                      <button
-                        type="button"
-                        disabled={savingRoutine || runningRoutine}
-                        onClick={async () => {
-                          if (routineRunPending.current) return;
-                          const targetBotId = active.id;
-                          const targetRoutine = editingRoutine;
-                          if (!targetRoutine) return;
-                          routineRunPending.current = true;
-                          setRunningRoutine(true);
-                          try {
-                            await rpc.routines.testRun({ routineId: targetRoutine.id });
-                            await refreshThread(targetBotId);
-                          } finally {
-                            routineRunPending.current = false;
-                            setRunningRoutine(false);
-                          }
-                        }}
-                        className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40"
-                      >
-                        {runningRoutine ? t`Running…` : t`Run now`}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingRoutine || runningRoutine}
-                        onClick={() => setDeleteRoutineTarget(editingRoutine)}
-                        className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364] disabled:opacity-40"
-                      >
-                        <Trans>Delete routine</Trans>
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-                {routineError ? (
-                  <p role="alert" className="mt-3 text-[13px] text-[#EF6461]">
-                    {routineError}
-                  </p>
-                ) : null}
-              </div>
+                      saved = await rpc.routines.update({
+                        routineId: targetRoutine.id,
+                        name: routineDraft.name || t`Routine`,
+                        prompt: routineDraft.prompt || t`Check in.`,
+                        crons,
+                        active: armOneShot ? true : routineDraft.active,
+                        webhookEnabled: routineDraft.webhookEnabled,
+                        ...(runAt ? { runAt } : {}),
+                      });
+                    } else {
+                      saved = await rpc.routines.create({
+                        botId: targetBotId,
+                        name: routineDraft.name || t`Routine`,
+                        prompt: routineDraft.prompt || t`Check in.`,
+                        crons,
+                        timezone: localTimezone(),
+                        active: routineDraft.active,
+                        notify: true,
+                        webhookEnabled: routineDraft.webhookEnabled,
+                      });
+                    }
+                    if (
+                      routineSaveRequest.current === saveRequest &&
+                      activeBotId.current === targetBotId
+                    ) {
+                      setEditingRoutine(saved);
+                      setRoutineDraft(draftFromRoutine(saved));
+                    }
+                  } catch (error) {
+                    if (
+                      routineSaveRequest.current !== saveRequest ||
+                      activeBotId.current !== targetBotId
+                    ) {
+                      return;
+                    }
+                    setRoutineError(
+                      error instanceof Error ? error.message : t`Could not save routine`,
+                    );
+                    return;
+                  } finally {
+                    routineSavePending.current = false;
+                    setSavingRoutine(false);
+                  }
+                  if (
+                    routineSaveRequest.current !== saveRequest ||
+                    activeBotId.current !== targetBotId
+                  ) {
+                    return;
+                  }
+                  await refreshThread(targetBotId).catch(() => undefined);
+                }}
+                onTestRun={async () => {
+                  if (routineRunPending.current) return;
+                  const targetBotId = active.id;
+                  const targetRoutine = editingRoutine;
+                  if (!targetRoutine) return;
+                  routineRunPending.current = true;
+                  setRunningRoutine(true);
+                  setRoutineError(null);
+                  try {
+                    await rpc.routines.testRun({ routineId: targetRoutine.id });
+                    await refreshThread(targetBotId);
+                  } catch (error) {
+                    if (activeBotId.current === targetBotId) {
+                      setRoutineError(
+                        error instanceof Error ? error.message : t`Could not run routine`,
+                      );
+                    }
+                  } finally {
+                    routineRunPending.current = false;
+                    setRunningRoutine(false);
+                  }
+                }}
+                onDelete={() => {
+                  if (editingRoutine) {
+                    setDeleteRoutineTarget(editingRoutine);
+                    return;
+                  }
+                  setPanel("computer");
+                }}
+              />
             ) : null}
           </div>
         ) : null}
       </aside>
 
       <Suspense fallback={null}>
-        {contextBot && botMenu ? (
+        {contextChat && botMenu ? (
           <BotContextMenu
-            bot={contextBot}
+            bot={contextChat}
             position={botMenu.position}
             onClose={closeBotMenu}
             sections={botSections}
             onTogglePinned={() => {
               setBotMenu(null);
-              void rpc.bots
-                .update({ botId: contextBot.id, pinned: !contextBot.pinned })
-                .then(() => refreshBots());
+              const request = contextBot
+                ? rpc.bots.update({ botId: contextBot.id, pinned: !contextBot.pinned })
+                : rpc.groups.update({
+                    groupId: contextGroup!.id,
+                    pinned: !contextGroup!.pinned,
+                  });
+              void request.then(() => refreshBots());
             }}
             onToggleUnread={() => {
-              const unread = !contextBot.unread;
+              const unread = !contextChat.unread;
               setBotMenu(null);
-              const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
-              void request.catch(() => undefined);
+              if (contextBot) {
+                const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
+                void request.catch(() => undefined);
+              } else {
+                const request = unread
+                  ? rpc.threads.markUnread({ groupId: contextGroup!.id })
+                  : rpc.threads.markRead({ groupId: contextGroup!.id });
+                void request
+                  .then(() =>
+                    setGroups((current) =>
+                      current.map((group) =>
+                        group.id === contextGroup!.id ? { ...group, unread } : group,
+                      ),
+                    ),
+                  )
+                  .catch(() => undefined);
+              }
             }}
             onMoveToSection={(sectionId) => {
               setBotMenu(null);
-              if (sectionId === contextBot.sectionId) return;
-              void rpc.bots.update({ botId: contextBot.id, sectionId }).then(() => refreshBots());
+              if (sectionId === contextChat.sectionId) return;
+              const request = contextBot
+                ? rpc.bots.update({ botId: contextBot.id, sectionId })
+                : rpc.groups.update({ groupId: contextGroup!.id, sectionId });
+              void request.then(() => refreshBots());
             }}
             onCreateSection={() => {
-              setNewSectionBot(contextBot);
+              setNewSectionTarget(
+                contextBot
+                  ? { kind: "bot", chat: contextBot }
+                  : { kind: "group", chat: contextGroup! },
+              );
               setBotMenu(null);
             }}
             onEdit={() => {
-              navigate(`/app/${contextBot.id}`);
-              setPanel("settings");
+              navigate(contextBot ? `/app/${contextBot.id}` : `/app/g/${contextGroup!.id}`);
+              setPanel(contextBot ? "settings" : "group-settings");
               setBotMenu(null);
             }}
             onDuplicate={() => {
               setBotMenu(null);
-              void rpc.bots.duplicate({ botId: contextBot.id }).then(async (bot) => {
+              const request = contextBot
+                ? rpc.bots.duplicate({ botId: contextBot.id })
+                : rpc.groups.duplicate({ groupId: contextGroup!.id });
+              void request.then(async (chat) => {
                 await refreshBots();
-                navigate(`/app/${bot.id}`);
+                navigate(contextBot ? `/app/${chat.id}` : `/app/g/${chat.id}`);
               });
             }}
             onClear={() => {
-              setClearTarget(contextBot);
+              setClearTarget(
+                contextBot
+                  ? { kind: "bot", chat: contextBot }
+                  : { kind: "group", chat: contextGroup! },
+              );
               setBotMenu(null);
             }}
             onArchive={() => {
               setBotMenu(null);
-              void rpc.bots.archive({ botId: contextBot.id }).then(() => refreshBots(true));
+              const request = contextBot
+                ? rpc.bots.archive({ botId: contextBot.id })
+                : rpc.groups.archive({ groupId: contextGroup!.id });
+              void request.then(() => refreshBots(true));
             }}
             onDelete={() => {
-              setDeleteTarget(contextBot);
+              if (contextBot) setDeleteTarget(contextBot);
+              else setDeleteGroupTarget(contextGroup!);
               setBotMenu(null);
             }}
           />
@@ -2764,25 +3518,65 @@ export function ShellPage() {
           />
         ) : null}
 
-        {newSectionBot ? (
+        {deleteGroupTarget ? (
+          <DeleteItemDialog
+            item={deleteGroupTarget}
+            noun="group"
+            onCancel={() => setDeleteGroupTarget(null)}
+            onConfirm={async () => {
+              await rpc.groups.remove({ groupId: deleteGroupTarget.id });
+              setDeleteGroupTarget(null);
+              setPanel(null);
+              await refreshBots(true);
+            }}
+          />
+        ) : null}
+
+        {newSectionTarget ? (
           <NewBotSectionDialog
-            bot={newSectionBot}
-            onCancel={() => setNewSectionBot(null)}
+            bot={newSectionTarget.chat}
+            onCancel={() => setNewSectionTarget(null)}
             onConfirm={async (name) => {
-              await rpc.botSections.create({ botId: newSectionBot.id, name });
-              setNewSectionBot(null);
+              await rpc.botSections.create(
+                newSectionTarget.kind === "bot"
+                  ? { botId: newSectionTarget.chat.id, name }
+                  : { groupId: newSectionTarget.chat.id, name },
+              );
+              setNewSectionTarget(null);
               await refreshBots();
+            }}
+          />
+        ) : null}
+
+        {newSpaceOpen ? (
+          <NewSpaceDialog
+            onCancel={() => setNewSpaceOpen(false)}
+            onConfirm={async (name) => {
+              const space = await rpc.spaces.create({ name });
+              if (!selectSpace(space.id)) {
+                setNewSpaceOpen(false);
+                await refreshBots();
+                return;
+              }
+              window.location.assign("/onboarding");
             }}
           />
         ) : null}
 
         {clearTarget ? (
           <ClearConversationDialog
-            bot={clearTarget}
+            bot={clearTarget.chat}
             onCancel={() => setClearTarget(null)}
             onConfirm={async () => {
-              await rpc.threads.clear({ botId: clearTarget.id });
-              if (active?.id === clearTarget.id) {
+              await rpc.threads.clear(
+                clearTarget.kind === "bot"
+                  ? { botId: clearTarget.chat.id }
+                  : { groupId: clearTarget.chat.id },
+              );
+              if (
+                (clearTarget.kind === "bot" && active?.id === clearTarget.chat.id) ||
+                (clearTarget.kind === "group" && activeGroup?.id === clearTarget.chat.id)
+              ) {
                 expandedHistoryThread.current = null;
                 pinnedAroundRef.current = null;
                 historyEpoch.current += 1;
@@ -2797,8 +3591,9 @@ export function ShellPage() {
         ) : null}
 
         {deleteRoutineTarget ? (
-          <DeleteRoutineDialog
-            routine={deleteRoutineTarget}
+          <DeleteItemDialog
+            item={deleteRoutineTarget}
+            noun="routine"
             onCancel={() => setDeleteRoutineTarget(null)}
             onConfirm={async () => {
               const target = deleteRoutineTarget;
@@ -2814,6 +3609,7 @@ export function ShellPage() {
 
         {pluginsOpen ? (
           <PluginsOverlay
+            activeBotId={activeBotId.current}
             onClose={() => setPluginsOpen(false)}
             onOpenMcp={() => {
               setPluginsOpen(false);
@@ -2822,6 +3618,9 @@ export function ShellPage() {
           />
         ) : null}
         {mcpOpen ? <McpServersOverlay onClose={() => setMcpOpen(false)} /> : null}
+        {messagingSettingsOpen ? (
+          <MessagingSettingsOverlay onClose={() => setMessagingSettingsOpen(false)} />
+        ) : null}
       </Suspense>
 
       <Suspense fallback={null}>
@@ -2831,6 +3630,18 @@ export function ShellPage() {
             email={session.data?.user.email}
             usage={usage}
             focusUsage={accountSettingsFocusUsage}
+            avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
+            sandboxProvider={bootstrapMe?.sandboxProvider}
+            messagingEnabled={messagingSurfaceEnabled}
+            onOpenMessaging={() => {
+              setAccountSettingsOpen(false);
+              setMessagingSettingsOpen(true);
+            }}
+            onAvatarStyleChange={async (avatarStyle) => {
+              const nextMe = await rpc.preferences.update({ avatarStyle });
+              setBootstrapMe(nextMe);
+            }}
             onClose={() => {
               setAccountSettingsOpen(false);
               setAccountSettingsFocusUsage(false);
@@ -2838,17 +3649,15 @@ export function ShellPage() {
           />
         ) : null}
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
-        {peerMessagesOpen && active ? (
+        {peerConversation && active ? (
           <PeerMessagesOverlay
             botId={active.id}
             botName={active.name}
-            messages={activeSnapshot?.messages ?? []}
-            olderCursor={activeSnapshot?.olderCursor ?? null}
-            initialPeerBotId={peerMessagesFocusId}
-            onClose={() => {
-              setPeerMessagesOpen(false);
-              setPeerMessagesFocusId(null);
-            }}
+            botColor={active.color}
+            peerBotId={peerConversation.peerBotId}
+            peerBotName={peerConversation.peerBotName}
+            peerBotColor={resolveTranscriptBot(peerConversation.peerBotId)?.color ?? "#85858A"}
+            onClose={() => setPeerConversation(null)}
           />
         ) : null}
         {voiceOpen ? (
@@ -2891,18 +3700,26 @@ export function ShellPage() {
 
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
-          <div className="text-[19px] font-medium text-[#F1F1F2]">
+          <div className="text-[19px] font-medium text-[var(--rk-ink-strong)]">
             <Trans>Booting up {active?.name}’s computer</Trans>
           </div>
-          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[#232327]">
-            <div className="h-full w-2/3 rounded-full bg-[#F1F1EF]" />
+          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[var(--rk-hairline-strong)]">
+            <div className="h-full w-2/3 rounded-full bg-[var(--rk-cream)]" />
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
-          <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
+        <div className="absolute inset-0 z-30 flex flex-col bg-[var(--rk-page)]">
+          <div
+            data-testid="computer-chrome"
+            className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5"
+          >
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <BotAvatar color={active.color} size={28} status={active.status} />
+              <BotAvatar
+                color={active.color}
+                identity={active.id}
+                size={28}
+                status={active.status}
+              />
               {recordingSkill ? (
                 <TeachRecordingChrome
                   recording={recordingSkill}
@@ -2911,12 +3728,15 @@ export function ShellPage() {
                   variant="overlay"
                 />
               ) : (
-                <span className="truncate text-[15.5px] font-medium text-[#ECECEE]" dir="auto">
+                <span
+                  className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
+                  dir="auto"
+                >
                   {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[var(--rk-success-soft)]">
                   <Trans>You have control</Trans>
                 </span>
               ) : null}
@@ -2930,34 +3750,38 @@ export function ShellPage() {
                   aria-label={t`Stop`}
                   data-testid="computer-overlay-stop"
                   onClick={() => void stopRun()}
+                  disabled={sending}
                 >
                   <Trans>Stop</Trans>
                 </Button>
               ) : null}
               {recordingSkill ? (
                 <TeachStopButton busy={teachBusy} onStop={stopTeaching} />
-              ) : hasControl ? (
-                <ComputerReleaseActions
-                  takeoverRequested={computer?.takeoverRequested ?? false}
-                  onRelease={releaseComputer}
+              ) : hasControl && computer?.takeoverRequested ? (
+                <ComputerReleaseActions takeoverRequested onRelease={releaseComputer} />
+              ) : null}
+              {active && !recordingSkill ? (
+                <TeachComputerOverlayControl
+                  key={active.id}
+                  botId={active.id}
+                  computer={computer}
+                  busy={teachBusy}
+                  onRefresh={refreshActiveTeaching}
                 />
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={takeoverBlocked}
-                  title={takeoverBlocked ? t`Stop the bot first` : undefined}
-                  onClick={() =>
-                    void bootComputer({ takeControl: true, overlay: false }).catch(() => undefined)
-                  }
-                >
-                  <Trans>Take control</Trans>
-                </Button>
-              )}
+              ) : null}
+              {active && !recordingSkill ? (
+                <ComputerMaintenanceActions
+                  botId={active.id}
+                  computer={computer}
+                  variant="menu"
+                  onChanged={async () => {
+                    await refreshThread(active.id);
+                  }}
+                />
+              ) : null}
               <button
                 type="button"
-                className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[16px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                 aria-label={t`Close computer`}
                 onClick={() => setComputerOpen(false)}
               >
@@ -2968,14 +3792,14 @@ export function ShellPage() {
           {sendError ? (
             <div
               role="alert"
-              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[#F1A8A8]"
+              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[var(--rk-danger-soft)]"
             >
               {sendError}
             </div>
           ) : null}
-          <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
+          <div className="relative min-h-0 flex-1 bg-[var(--rk-panel)]">
             {computer?.kind === "desktop" ? (
-              <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
+              <div className="grid h-full place-items-center px-8 text-center text-sm text-[var(--rk-muted-2)]">
                 <Trans>
                   This bot runs on this computer. There is no separate Linux desktop. Ask it to use
                   the shell; working directories under your home folder are allowed.
@@ -3004,7 +3828,7 @@ export function ShellPage() {
                 ) : null}
               </>
             ) : (
-              <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+              <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
                   : computerLabel(computer?.mode, active.name)}
@@ -3014,6 +3838,10 @@ export function ShellPage() {
         </div>
       ) : null}
     </div>
+  );
+
+  return (
+    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
   );
 }
 
@@ -3025,14 +3853,16 @@ const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskMessageId,
   running,
-  workingStartedAt,
+  workingBots,
   onLoadOlder,
   onOpenBot,
   onAnswer,
   onReply,
+  onReact,
   onJumpToMessage,
   onOpenPeerMessages,
   memberName,
+  peerBot,
   onRefresh,
   onBotChanged,
   onAddRoutine,
@@ -3047,14 +3877,16 @@ const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskMessageId: string | null;
   running: boolean;
-  workingStartedAt?: number;
+  workingBots: GroupAvatarMember[];
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
-  onOpenPeerMessages: (peerBotId: string) => void;
+  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
+  peerBot: (botId: string) => { color: string; status?: string } | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
@@ -3063,71 +3895,215 @@ const Transcript = memo(function Transcript({
   onSpeak: (message: ThreadMessage) => void;
 }) {
   const { t } = useLingui();
+  const [atEnd, setAtEnd] = useState(true);
+  const following = useRef(true);
+  const autoScrolling = useRef(false);
+  const lastScrollTop = useRef<number | null>(null);
+  const autoScrollTimer = useRef<number | undefined>(undefined);
+  const jumpButtonRef = useRef<HTMLButtonElement>(null);
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
+  const workingLabel =
+    workingBotName != null && workingBotName !== ""
+      ? t`${workingBotName} is working`
+      : t`Bots are working`;
+  const snapToEnd = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    following.current = true;
+    autoScrolling.current = false;
+    setAtEnd(true);
+    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+  }, [scrollRef]);
+
+  const jumpToLatest = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    following.current = true;
+    autoScrolling.current = !reducedMotion;
+    setAtEnd(true);
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+    window.clearTimeout(autoScrollTimer.current);
+    // Fallback only: onScroll clears autoScrolling once near-end is reached.
+    autoScrollTimer.current = window.setTimeout(
+      () => {
+        autoScrolling.current = false;
+      },
+      reducedMotion ? 0 : 2_000,
+    );
+  }, [scrollRef]);
+
+  useLayoutEffect(() => {
+    if (following.current) snapToEnd();
+  }, [messages, running, snapToEnd]);
+
+  useLayoutEffect(() => {
+    const button = jumpButtonRef.current;
+    if (atEnd && button && document.activeElement === button) {
+      button.blur();
+    }
+  }, [atEnd]);
+
+  const loadOlder = useCallback(() => {
+    const wasFollowing = following.current;
+    // Prepend must not race the messages-driven snap-to-end follow path.
+    following.current = false;
+    autoScrolling.current = false;
+    const pending = onLoadOlder();
+    if (!pending) return;
+    return Promise.resolve(pending).catch((error) => {
+      const element = scrollRef.current;
+      if (wasFollowing && element && transcriptIsNearEnd(element)) {
+        following.current = true;
+        setAtEnd(true);
+      }
+      throw error;
+    });
+  }, [onLoadOlder, scrollRef]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(autoScrollTimer.current);
+    },
+    [],
+  );
+
   return (
-    <div
-      ref={scrollRef}
-      data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
-    >
-      {olderCursor != null ? (
-        <button
-          type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-        >
-          {loadingOlder ? t`Loading…` : t`Load earlier messages`}
-        </button>
-      ) : null}
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          data-message-id={message.id}
-          className="group/message relative pt-9 hover:z-20"
-        >
-          <MessageHoverActions message={message} onReply={onReply} />
-          <MessageView
-            artifactTarget={artifactTarget}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onOpenPeerMessages={onOpenPeerMessages}
-            onAnswer={onAnswer}
-            speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
-            memberName={memberName}
-            replyPreview={
-              message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+    <div className="relative flex min-h-0 flex-1">
+      <div
+        ref={scrollRef}
+        data-testid="transcript"
+        onPointerDown={(event) => {
+          lastScrollTop.current = event.currentTarget.scrollTop;
+          autoScrolling.current = false;
+          following.current = false;
+        }}
+        onTouchStart={(event) => {
+          lastScrollTop.current = event.currentTarget.scrollTop;
+          autoScrolling.current = false;
+          following.current = false;
+        }}
+        onWheel={(event) => {
+          if (event.deltaY < 0) {
+            lastScrollTop.current = event.currentTarget.scrollTop;
+            autoScrolling.current = false;
+            following.current = false;
+          }
+        }}
+        onScroll={(event) => {
+          const scrolledDown = transcriptMovedDown(
+            lastScrollTop.current,
+            event.currentTarget.scrollTop,
+          );
+          lastScrollTop.current = event.currentTarget.scrollTop;
+          const nearEnd = transcriptIsNearEnd(event.currentTarget);
+          setAtEnd(nearEnd);
+          if (nearEnd) {
+            if (scrolledDown) following.current = true;
+            if (autoScrolling.current) {
+              autoScrolling.current = false;
+              window.clearTimeout(autoScrollTimer.current);
             }
-            replyToMessageId={message.replyToMessageId}
-            onJumpToMessage={onJumpToMessage}
-            onRefresh={onRefresh}
-            onBotChanged={onBotChanged}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running &&
-      !messages.some(
-        (message) =>
-          message.id.startsWith("progress:") &&
-          message.blocks[0]?.kind === "progress" &&
-          message.blocks[0].text,
-      ) ? (
-        <div className="flex justify-start">
-          {/* Box metrics match the progress bubble exactly so swapping between
-              them never changes height or text position. */}
-          <div className="flex max-w-[74%] items-center rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5]">
-            <LoadingState label="working" startedAt={workingStartedAt} />
-          </div>
-        </div>
-      ) : null}
+          } else if (!autoScrolling.current) {
+            following.current = false;
+          }
+        }}
+        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+      >
+        {olderCursor != null ? (
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlder()}
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-soft)] disabled:opacity-50"
+          >
+            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+          </button>
+        ) : null}
+        {messages.map((message) => {
+          const peerReceipt = isPeerReceiptBlocks(message.blocks);
+          return (
+            <div
+              key={message.id}
+              data-message-id={message.id}
+              className={peerReceipt ? "relative py-0.5" : "group/message relative pt-9 hover:z-20"}
+            >
+              {peerReceipt ? null : (
+                <MessageHoverActions message={message} onReply={onReply} onReact={onReact} />
+              )}
+              <MessageView
+                artifactTarget={artifactTarget}
+                message={message}
+                canAnswer={message.id === answerableAskMessageId}
+                onOpenBot={onOpenBot}
+                onOpenPeerMessages={onOpenPeerMessages}
+                onAnswer={onAnswer}
+                speakerName={
+                  peerReceipt
+                    ? undefined
+                    : message.role === "bot"
+                      ? memberName?.(message.botId)
+                      : undefined
+                }
+                memberName={memberName}
+                peerBot={peerBot}
+                replyPreview={
+                  message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+                }
+                replyToMessageId={message.replyToMessageId}
+                onJumpToMessage={onJumpToMessage}
+                onRefresh={onRefresh}
+                onBotChanged={onBotChanged}
+                onAddRoutine={onAddRoutine}
+                voiceReady={voiceReady}
+                speaking={speakingMessageId === message.id}
+                onSpeak={() => onSpeak(message)}
+              />
+              {!peerReceipt && message.thumbsUp ? (
+                <button
+                  type="button"
+                  aria-label={t`Remove thumbs-up`}
+                  onClick={() => void onReact(message)}
+                  className={`mt-1 rounded-full border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)] px-2 py-0.5 text-xs ${
+                    message.role === "user" ? "ml-auto block" : ""
+                  }`}
+                >
+                  👍
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+        {running &&
+        !messages.some(
+          (message) =>
+            message.id.startsWith("progress:") &&
+            message.blocks[0]?.kind === "progress" &&
+            message.blocks[0].text,
+        ) ? (
+          <ActiveBotGlyph bots={workingBots} label={workingLabel} />
+        ) : null}
+      </div>
+      <button
+        ref={jumpButtonRef}
+        type="button"
+        aria-label={t`Jump to latest`}
+        aria-hidden={atEnd}
+        tabIndex={atEnd ? -1 : 0}
+        onClick={jumpToLatest}
+        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[var(--rk-scroll)] bg-[var(--rk-surface-2)]/95 text-[var(--rk-soft)] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[var(--rk-border)] motion-reduce:transition-none ${
+          atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
+        }`}
+      >
+        <ArrowDown size={17} strokeWidth={1.8} />
+      </button>
     </div>
   );
 });
@@ -3140,6 +4116,10 @@ const Composer = memo(function Composer({
   attachmentNotice,
   sendError,
   dictationError,
+  runError,
+  runErrorId,
+  onRunErrorPresented,
+  onDismissError,
   sending,
   fileInputRef,
   onAttachmentPick,
@@ -3165,6 +4145,10 @@ const Composer = memo(function Composer({
   attachmentNotice: string | null;
   sendError: string | null;
   dictationError: string | null;
+  runError: string | null;
+  runErrorId: string | null;
+  onRunErrorPresented: (runId: string) => void;
+  onDismissError: () => void;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | null) => void | Promise<void>;
@@ -3186,15 +4170,55 @@ const Composer = memo(function Composer({
   const { t } = useLingui();
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const runErrorRef = useRef<HTMLDivElement>(null);
+  const presentedRunErrorIdRef = useRef<string | null>(null);
+  const mentionListboxId = useId();
+  const dragDepth = useRef(0);
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const canSend =
     draft.trim().length > 0 ||
     selectedSkill !== null ||
     selectedMentions.length > 0 ||
     pendingAttachments.length > 0;
+
+  useEffect(() => {
+    if (!runError || !runErrorId) return;
+    const currentRunErrorId = runErrorId;
+    let frame = 0;
+    function recordIfPresented() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const element = runErrorRef.current;
+        if (!element || document.visibilityState !== "visible") return;
+        const rect = element.getBoundingClientRect();
+        const topElement = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        if (topElement && (topElement === element || element.contains(topElement))) {
+          if (presentedRunErrorIdRef.current === currentRunErrorId) return;
+          presentedRunErrorIdRef.current = currentRunErrorId;
+          onRunErrorPresented(currentRunErrorId);
+        }
+      });
+    }
+    recordIfPresented();
+    const observer = new MutationObserver(recordIfPresented);
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("transitionend", recordIfPresented);
+    document.addEventListener("visibilitychange", recordIfPresented);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      document.removeEventListener("transitionend", recordIfPresented);
+      document.removeEventListener("visibilitychange", recordIfPresented);
+    };
+  }, [onRunErrorPresented, runError, runErrorId]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -3232,14 +4256,20 @@ const Composer = memo(function Composer({
     setSlashQuery(nextSlash);
   }
 
+  function focusComposer() {
+    textareaRef.current?.focus();
+  }
+
   function insertMention(mention: ComposerMention) {
     setDraft((current) => current.replace(/@([\w-]*)$/, ""));
     setMentionQuery(null);
+    setMentionHighlightIndex(0);
     setSelectedMentions((current) =>
       current.some((selected) => mentionChipKey(selected) === mentionChipKey(mention))
         ? current
         : [...current, mention],
     );
+    focusComposer();
   }
 
   function insertSkill(skill: AgentSkillCatalogEntry) {
@@ -3269,6 +4299,19 @@ const Composer = memo(function Composer({
       .filter((target) => !query || target.name.toLowerCase().startsWith(query))
       .slice(0, 10);
   }, [mentionQuery, mentionTargets]);
+
+  useEffect(() => {
+    setMentionHighlightIndex(0);
+  }, [mentionQuery, mentionOptions]);
+
+  const activeMentionIndex = clampMentionHighlightIndex(
+    mentionHighlightIndex,
+    mentionOptions.length,
+  );
+  const mentionPickerOpen = mentionOptions.length > 0;
+  const activeMentionOptionId = mentionPickerOpen
+    ? `${mentionListboxId}-option-${activeMentionIndex}`
+    : undefined;
 
   const slashSkillOptions = useMemo(() => {
     if (slashQuery === null) return [];
@@ -3301,6 +4344,7 @@ const Composer = memo(function Composer({
     const text = serializeComposerPrompt(draft, selectedSkill, selectedMentions);
     setDraft("");
     setMentionQuery(null);
+    setMentionHighlightIndex(0);
     setSlashQuery(null);
     setSelectedSkill(null);
     const mentions = selectedMentions;
@@ -3308,28 +4352,101 @@ const Composer = memo(function Composer({
     void onSend(text, mentions);
   }
 
+  function handleDragEnter(event: DragEvent<HTMLFieldSetElement>) {
+    const dataTransfer = event.dataTransfer;
+    if (!isFileDrag(dataTransfer)) return;
+    event.preventDefault();
+    if (disabled) {
+      dragDepth.current = 0;
+      setDraggingFiles(false);
+      return;
+    }
+    dragDepth.current += 1;
+    setDraggingFiles(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLFieldSetElement>) {
+    const dataTransfer = event.dataTransfer;
+    if (!isFileDrag(dataTransfer)) return;
+    event.preventDefault();
+    dataTransfer.dropEffect = disabled ? "none" : "copy";
+    if (disabled) {
+      dragDepth.current = 0;
+      setDraggingFiles(false);
+      return;
+    }
+    setDraggingFiles(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLFieldSetElement>) {
+    if (!isFileDrag(event.dataTransfer)) return;
+    if (disabled) {
+      dragDepth.current = 0;
+      setDraggingFiles(false);
+      return;
+    }
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDraggingFiles(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLFieldSetElement>) {
+    const dataTransfer = event.dataTransfer;
+    if (!isFileDrag(dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDraggingFiles(false);
+    if (!disabled) void onAttachmentPick(dataTransfer.files);
+  }
+
   const showComposerPlaceholder =
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
 
   return (
-    <div className="relative z-30 px-3 pb-4 pt-3 md:px-6 md:pb-6">
-      {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
-          {sendError ?? dictationError}
+    <fieldset
+      aria-label={t`Message composer`}
+      data-dragging={draggingFiles ? "files" : undefined}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-6 md:pb-6 ${
+        draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-[#8B5CF6]" : ""
+      }`}
+    >
+      {sendError || dictationError || runError ? (
+        <div
+          ref={runErrorRef}
+          role="alert"
+          data-testid="composer-error"
+          className="mb-3 flex items-center gap-2 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[var(--rk-danger-soft)]"
+        >
+          <span className="min-w-0 flex-1">{sendError ?? dictationError ?? runError}</span>
+          <button
+            type="button"
+            aria-label={t`Dismiss error`}
+            data-testid="composer-error-dismiss"
+            onClick={() => {
+              onDismissError();
+              window.requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+            className="shrink-0 text-[var(--rk-danger-soft)] hover:text-[var(--rk-ink)]"
+          >
+            <X size={13} strokeWidth={2} />
+          </button>
         </div>
       ) : null}
       {replyTarget ? (
         <div
           data-testid="reply-chip"
-          className="mb-2 flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+          className="mb-2 flex items-center gap-2 rounded-full border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-3 py-1.5 text-[13px] text-[var(--rk-soft)]"
         >
-          <span className="min-w-0 flex-1 truncate text-[#85858A]">{t`Replying to ${replyName}`}</span>
+          <span className="min-w-0 flex-1 truncate text-[var(--rk-muted)]">{t`Replying to ${replyName}`}</span>
           <button
             type="button"
             aria-label={t`Cancel reply`}
             onClick={onClearReply}
-            className="shrink-0 text-[#85858A] hover:text-[#ECECEE]"
+            className="shrink-0 text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
           >
             <X size={13} strokeWidth={2} />
           </button>
@@ -3345,7 +4462,7 @@ const Composer = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+              className="flex items-center gap-2 rounded-full border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-3 py-1.5 text-[13px] text-[var(--rk-soft)]"
             >
               {attachment.previewUrl ? (
                 <img
@@ -3363,7 +4480,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove ${attachment.file.name}`}
                 onClick={() => onRemoveAttachment(attachment)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={13} strokeWidth={2} />
               </button>
@@ -3371,38 +4488,55 @@ const Composer = memo(function Composer({
           ))}
         </div>
       ) : null}
-      {mentionOptions.length ? (
+      {mentionPickerOpen ? (
         <div
+          id={mentionListboxId}
+          role="listbox"
+          aria-label={t`Mentions`}
           data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[#26262A] bg-[#17171A]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-hairline)]"
         >
-          {mentionOptions.map((mention) => (
-            <button
-              key={mentionChipKey(mention)}
-              type="button"
-              aria-label={t`@${mention.name}`}
-              onClick={() => insertMention(mention)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
-            >
-              <MentionOptionIcon mention={mention} />
-              <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-[#ECECEE]">
-                  @{mention.name}
-                </span>
-                {mention.subtitle ? (
-                  <span dir="auto" className="block truncate text-[12.5px] text-[#85858A]">
-                    {mention.subtitle}
+          {mentionOptions.map((mention, index) => {
+            const optionId = `${mentionListboxId}-option-${index}`;
+            const highlighted = index === activeMentionIndex;
+            return (
+              <button
+                id={optionId}
+                key={mentionChipKey(mention)}
+                type="button"
+                role="option"
+                aria-selected={highlighted}
+                aria-label={t`@${mention.name}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMention(mention)}
+                onMouseEnter={() => setMentionHighlightIndex(index)}
+                className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)] ${
+                  highlighted ? "bg-[var(--rk-elevated)]" : ""
+                }`}
+              >
+                <MentionOptionIcon mention={mention} />
+                <span className="min-w-0">
+                  <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
+                    @{mention.name}
                   </span>
-                ) : null}
-              </span>
-            </button>
-          ))}
+                  {mention.subtitle ? (
+                    <span
+                      dir="auto"
+                      className="block truncate text-[12.5px] text-[var(--rk-muted)]"
+                    >
+                      {mention.subtitle}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
         </div>
       ) : null}
       {showSlashPicker ? (
         <div
           data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[#26262A] bg-[#17171A]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-hairline)]"
         >
           {slashSkillOptions.map((skill) => (
             <button
@@ -3410,14 +4544,14 @@ const Composer = memo(function Composer({
               type="button"
               aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)]"
             >
-              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />
+              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-[#ECECEE]">
+                <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
                   {skill.name}
                 </span>
-                <span dir="auto" className="block truncate text-[12.5px] text-[#85858A]">
+                <span dir="auto" className="block truncate text-[12.5px] text-[var(--rk-muted)]">
                   {truncateSlashDescription(skill.description)}
                 </span>
               </span>
@@ -3431,16 +4565,19 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={label}
                 onClick={() => runSlashAction(action.id)}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-elevated)]"
               >
-                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[#9A9AA0]" />
-                <span className="text-[14px] text-[#ECECEE]">{label}</span>
+                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />
+                <span className="text-[14px] text-[var(--rk-ink)]">{label}</span>
               </button>
             );
           })}
         </div>
       ) : null}
-      <div className="flex items-end gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3">
+      <div
+        data-testid="composer-bar"
+        className="flex items-center gap-3.5 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-page)] py-[9px] pe-2.5 ps-3"
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -3454,7 +4591,7 @@ const Composer = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[var(--rk-border)] text-[var(--rk-soft)] disabled:opacity-40"
         >
           <Plus size={17} strokeWidth={1.8} />
         </button>
@@ -3476,8 +4613,8 @@ const Composer = memo(function Composer({
           onTouchEnd={onDictateStop}
           className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
             dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
-              : "border-[#26262A] text-[#9A9AA0]"
+              ? "border-[var(--rk-success-soft)] bg-[rgba(48,162,75,.16)] text-[var(--rk-success-soft)]"
+              : "border-[var(--rk-border)] text-[var(--rk-soft)]"
           }`}
           title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
         >
@@ -3487,7 +4624,7 @@ const Composer = memo(function Composer({
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#1C1C1F] px-2.5 py-1 text-[13px] text-[#ECECEE]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-elevated)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
             >
               <Box size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />
               <span dir="auto" className="truncate">
@@ -3497,7 +4634,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove skill ${selectedSkill.name}`}
                 onClick={() => setSelectedSkill(null)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -3508,7 +4645,7 @@ const Composer = memo(function Composer({
               key={mentionChipKey(mention)}
               data-testid="mention-chip"
               data-mention-kind={mention.kind}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#1C1C1F] px-2.5 py-1 text-[13px] text-[#ECECEE]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-elevated)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
             >
               <MentionChipIcon mention={mention} />
               <span dir="auto" className="truncate">
@@ -3524,7 +4661,7 @@ const Composer = memo(function Composer({
                     ),
                   )
                 }
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -3544,7 +4681,32 @@ const Composer = memo(function Composer({
                 removeLastChip();
                 return;
               }
-              if (event.key === "Enter" && !event.shiftKey) {
+              const action = resolveMentionPickerKey({
+                key: event.key,
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
+                optionCount: mentionOptions.length,
+                highlightedIndex: activeMentionIndex,
+              });
+              if (action.type === "complete") {
+                const mention = mentionOptions[action.index];
+                if (!mention) return;
+                event.preventDefault();
+                insertMention(mention);
+                return;
+              }
+              if (action.type === "move") {
+                event.preventDefault();
+                setMentionHighlightIndex(action.index);
+                return;
+              }
+              if (action.type === "dismiss") {
+                event.preventDefault();
+                setMentionQuery(null);
+                setMentionHighlightIndex(0);
+                return;
+              }
+              if (action.type === "send") {
                 event.preventDefault();
                 send();
               }
@@ -3558,35 +4720,53 @@ const Composer = memo(function Composer({
                 : undefined
             }
             aria-label={activeName ? t`Message ${activeName}` : t`Message`}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-expanded={mentionPickerOpen}
+            aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
+            aria-activedescendant={activeMentionOptionId}
             name="chat-message"
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[#E9E9EA] outline-none disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-body)] disabled:opacity-40"
           />
         </div>
         {running ? (
-          <button
-            type="button"
-            aria-label={t`Stop`}
-            onClick={() => void onStop()}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
-          >
-            <Square size={12} strokeWidth={0} fill="currentColor" />
-          </button>
+          <>
+            <button
+              type="button"
+              aria-label={t`Send`}
+              disabled={sending || !canSend || disabled}
+              onClick={send}
+              className="grid h-10 w-10 place-items-center rounded-full bg-[var(--rk-cream)] text-[var(--rk-cream-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD] disabled:opacity-50"
+            >
+              <ArrowUp size={18} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              aria-label={t`Stop`}
+              disabled={sending}
+              onClick={() => void onStop()}
+              className="grid h-10 w-10 place-items-center rounded-full border border-[var(--rk-scroll)] text-[var(--rk-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD] disabled:opacity-50"
+            >
+              <Square size={12} strokeWidth={0} fill="currentColor" />
+            </button>
+          </>
         ) : (
           <button
             type="button"
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
+            className="grid h-9 w-9 place-items-center rounded-full bg-[var(--rk-cream)] text-[var(--rk-cream-ink)] disabled:opacity-50"
           >
             <ArrowUp size={18} strokeWidth={2} />
           </button>
         )}
       </div>
-    </div>
+    </fieldset>
   );
 });
 
@@ -3603,26 +4783,28 @@ function slashActionLabel(id: SlashActionId) {
 
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />;
+    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />;
+    return (
+      <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
+    );
   }
   if (mention.kind === "group") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
         G
       </span>
     );
   }
   if (mention.kind === "everyone") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
         @
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} size={16} />;
+  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
 }
 
 function MentionChipIcon({ mention }: { mention: ComposerMention }) {
@@ -3634,17 +4816,17 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   }
   if (mention.kind === "group" || mention.kind === "everyone") {
     return (
-      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-scroll)] text-[9px] text-[var(--rk-soft)]">
         {mention.kind === "group" ? "G" : "@"}
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} size={16} />;
+  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
 }
 
 function previewMessageText(message: ThreadMessage): string {
   const text = message.blocks
-    .map((block) => (block.kind === "text" ? block.text : ""))
+    .map((block) => (block.kind === "text" || block.kind === "channel_message" ? block.text : ""))
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -3655,26 +4837,14 @@ function previewMessageText(message: ThreadMessage): string {
   return t`Message`;
 }
 
-/** Plain message text for clipboard copy — text/ask/progress only, no chrome. */
-function copyableMessageText(message: ThreadMessage): string {
-  return message.blocks
-    .map((block) => {
-      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask") {
-        return block.text;
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-}
-
 function MessageHoverActions({
   message,
   onReply,
+  onReact,
 }: {
   message: ThreadMessage;
   onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage) => Promise<void>;
 }) {
   const { t } = useLingui();
   // Streaming progress bubbles keep hover free for selection / stop clicks.
@@ -3687,27 +4857,42 @@ function MessageHoverActions({
   }
 
   return (
-    <div
-      data-testid="message-hover-actions"
-      className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
-    >
-      <button
-        type="button"
-        aria-label={t`Reply`}
-        onClick={() => onReply(message)}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+    <MessageHoverMetadata createdAt={message.createdAt}>
+      <div
+        data-testid="message-hover-actions"
+        className="flex items-center gap-0.5 rounded-full bg-[var(--rk-elevated)] p-0.5 shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
       >
-        <Reply size={14} strokeWidth={1.8} />
-      </button>
-      <button
-        type="button"
-        aria-label={t`Copy`}
-        onClick={copyMessage}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
-      >
-        <Copy size={14} strokeWidth={1.8} />
-      </button>
-    </div>
+        <button
+          type="button"
+          aria-label={t`Reply`}
+          onClick={() => onReply(message)}
+          className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)]"
+        >
+          <Reply size={14} strokeWidth={1.8} />
+        </button>
+        {canReactToThreadMessage(message) ? (
+          <button
+            type="button"
+            aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
+            aria-pressed={Boolean(message.thumbsUp)}
+            onClick={() => void onReact(message)}
+            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)] ${
+              message.thumbsUp ? "text-[#E9C46A]" : "text-[var(--rk-soft)]"
+            }`}
+          >
+            <ThumbsUp size={14} strokeWidth={1.8} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-label={t`Copy`}
+          onClick={copyMessage}
+          className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)]"
+        >
+          <Copy size={14} strokeWidth={1.8} />
+        </button>
+      </div>
+    </MessageHoverMetadata>
   );
 }
 
@@ -3763,42 +4948,6 @@ function ComputerReleaseActions({
   );
 }
 
-function ToolSteps({
-  steps,
-  currentIndex,
-}: {
-  steps: Extract<ThreadMessage["blocks"][number], { kind: "steps" }>["steps"];
-  currentIndex?: number;
-}) {
-  return (
-    <div className="space-y-1.5">
-      {steps.map((step, index) => {
-        const isCurrent = index === currentIndex;
-        return (
-          <div key={index} className="flex items-center gap-2">
-            <span
-              className="text-[13px]"
-              style={{
-                color: isCurrent ? "#F5A03C" : "#4ECB71",
-                animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-              }}
-            >
-              {isCurrent ? "◷" : "✓"}
-            </span>
-            <span
-              className="truncate text-[14px]"
-              style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
-            >
-              {step.label}
-              {step.count > 1 ? ` ×${step.count}` : ""}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 const MessageView = memo(function MessageView({
   artifactTarget,
   canAnswer,
@@ -3808,6 +4957,7 @@ const MessageView = memo(function MessageView({
   onOpenPeerMessages,
   speakerName,
   memberName,
+  peerBot,
   replyPreview,
   replyToMessageId,
   onJumpToMessage,
@@ -3823,9 +4973,10 @@ const MessageView = memo(function MessageView({
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
-  onOpenPeerMessages: (peerBotId: string) => void;
+  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
+  peerBot: (botId: string) => { color: string; status?: string } | undefined;
   replyPreview?: ThreadMessage;
   replyToMessageId?: string;
   onJumpToMessage?: (messageId: string) => void;
@@ -3848,7 +4999,7 @@ const MessageView = memo(function MessageView({
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-[#85858A]" dir="auto">
+        <div className="mb-1 text-[12.5px] font-medium text-[var(--rk-muted)]" dir="auto">
           {speakerName}
         </div>
       ) : null}
@@ -3858,7 +5009,7 @@ const MessageView = memo(function MessageView({
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
           onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-start text-[12.5px] text-[#85858A] hover:border-[#34343B] hover:text-[#C9C9CE]"
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-page)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[var(--rk-elevated)] hover:text-[var(--rk-soft)]"
           dir="auto"
         >
           {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
@@ -3872,19 +5023,23 @@ const MessageView = memo(function MessageView({
         {messageContext}
         <div className="flex justify-start">
           <div
-            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
             dir="auto"
           >
             {message.blocks.map((block, i) => {
               if (block.kind === "steps") {
                 const isCurrentBlock = isLive && i === message.blocks.length - 1;
                 return (
-                  <div key={i} dir="ltr">
+                  <ToolActivityDisclosure
+                    key={i}
+                    live={isLive}
+                    label={isLive ? t`Working…` : toolActivityLabel(block.durationMs, false)}
+                  >
                     <ToolSteps
                       steps={block.steps}
                       currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
                     />
-                  </div>
+                  </ToolActivityDisclosure>
                 );
               }
               if (block.kind === "text" || block.kind === "progress") {
@@ -3901,7 +5056,7 @@ const MessageView = memo(function MessageView({
                 type="button"
                 aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                 onClick={onSpeak}
-                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
               </button>
@@ -3921,7 +5076,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
               <span>
                 ↪ {to} ← {from}
@@ -3936,23 +5091,33 @@ const MessageView = memo(function MessageView({
           const peerBotId = sent ? block.toBotId : block.fromBotId;
           const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
           return (
-            <button
+            <CollaborationMarker
               key={i}
-              type="button"
-              aria-label={label}
-              onClick={() => onOpenPeerMessages(peerBotId)}
-              className="flex items-center justify-center gap-2 self-center rounded-full border border-[#26262A] px-3 py-1 text-[13px] text-[#85858A] hover:bg-[#161618]"
+              ariaLabel={label}
+              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              identity={peerBotId}
+              label={label}
+              onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+            />
+          );
+        }
+        if (block.kind === "channel_message") {
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
-              <span aria-hidden>↔</span>
-              <span>{label}</span>
-            </button>
+              <span>
+                {providerLabel(block.provider)} · {block.fromLabel}: {block.text}
+              </span>
+            </div>
           );
         }
         if (block.kind === "meta") {
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
               <span className="text-[#E65707]">◷</span>
               <span>{block.text}</span>
@@ -3963,7 +5128,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
@@ -3975,13 +5140,18 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3"
+                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3"
                 dir="ltr"
               >
-                <ToolSteps
-                  steps={block.steps}
-                  currentIndex={isLive ? block.steps.length - 1 : undefined}
-                />
+                <ToolActivityDisclosure
+                  live={isLive}
+                  label={isLive ? t`Working…` : toolActivityLabel(block.durationMs, false)}
+                >
+                  <ToolSteps
+                    steps={block.steps}
+                    currentIndex={isLive ? block.steps.length - 1 : undefined}
+                  />
+                </ToolActivityDisclosure>
               </div>
             </div>
           );
@@ -3992,30 +5162,30 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+              className="w-[min(420px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
                   {block.name}
                 </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
                     background: failed
-                      ? "rgba(230,87,7,.14)"
+                      ? "rgba(239,68,68,.14)"
                       : running
                         ? "rgba(245,160,60,.14)"
                         : "rgba(48,162,75,.14)",
-                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                    color: failed ? "#EF4444" : running ? "#F5A03C" : "#4ECB71",
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
                   {running ? <Trans>subagent</Trans> : block.status}
                 </span>
               </div>
-              <div className="mt-2 text-[13.5px] text-[#85858A]">{block.task}</div>
+              <div className="mt-2 text-[13.5px] text-[var(--rk-muted)]">{block.task}</div>
               {block.progress || block.result ? (
-                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]">
                   <ChatMarkdown streaming={running}>
                     {block.result || block.progress || ""}
                   </ChatMarkdown>
@@ -4032,17 +5202,17 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-start disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
                   {block.name}
                 </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
-                    background: removed ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#E65707" : "#4ECB71",
+                    background: removed ? "rgba(239,68,68,.14)" : "rgba(48,162,75,.14)",
+                    color: removed ? "#EF4444" : "#4ECB71",
                   }}
                 >
                   {block.status === "archived" ? (
@@ -4054,7 +5224,7 @@ const MessageView = memo(function MessageView({
                   )}
                 </span>
               </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
+              <div className="mt-2 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]" dir="auto">
                 {removed
                   ? block.status === "archived"
                     ? t`Archived. Chat, memory, and files kept.`
@@ -4133,7 +5303,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-end">
               <div
-                className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]"
+                className="max-w-[70%] whitespace-pre-wrap rounded-[20px] bg-[var(--rk-cream)] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[var(--rk-cream-ink)]"
                 dir="auto"
               >
                 {block.text}
@@ -4145,7 +5315,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
@@ -4154,7 +5324,7 @@ const MessageView = memo(function MessageView({
                     type="button"
                     aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                     onClick={onSpeak}
-                    className="mt-2 text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                    className="mt-2 text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                   >
                     {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
                   </button>
@@ -4166,12 +5336,12 @@ const MessageView = memo(function MessageView({
         if (block.kind === "card") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="flex flex-col gap-2 rounded-[20px] bg-[#1A1A1D] px-5 py-4">
+              <div className="flex flex-col gap-2 rounded-[20px] bg-[var(--rk-surface-2)] px-5 py-4">
                 {block.lines.map((line) => (
                   <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-[#30A24B]">✓</span>
+                    <span className="text-[var(--rk-success)]">✓</span>
                     <span className="font-semibold text-white">{line.k}</span>
-                    <span className="text-[#85858A]">→</span>
+                    <span className="text-[var(--rk-muted)]">→</span>
                     <span>{line.v}</span>
                   </div>
                 ))}
@@ -4200,17 +5370,17 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+              className="w-[340px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hairline)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[var(--rk-success-soft)]">
                   {block.state}
                 </span>
               </div>
-              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-soft)]">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
               </div>
             </div>
@@ -4231,7 +5401,7 @@ function ComputerModePicker({
 }) {
   return (
     <div className="mt-4">
-      <div className="text-[14px] text-[#85858A]">
+      <div className="text-[14px] text-[var(--rk-muted)]">
         <Trans>Computer</Trans>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -4243,8 +5413,8 @@ function ComputerModePicker({
             onClick={() => onChange(mode)}
             className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize ${
               value === mode
-                ? "border-[#6C6C70] bg-[#1A1A1D] text-[#ECECEE]"
-                : "border-[#26262A] text-[#85858A]"
+                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                : "border-[var(--rk-border)] text-[var(--rk-muted)]"
             }`}
           >
             {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
@@ -4478,7 +5648,7 @@ function CreateBotForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">
+        <span className="text-[13.5px] text-[var(--rk-muted)]">
           <Trans>New bot</Trans>
         </span>
         <button type="button" aria-label={t`Cancel new bot`} onClick={onCancel}>
@@ -4486,31 +5656,35 @@ function CreateBotForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
+        <p
+          role="alert"
+          data-testid="create-bot-error"
+          className="mb-3 text-[13px] text-[var(--rk-danger)]"
+        >
           {error}
         </p>
       ) : null}
-      <label className="mt-6 block text-[14px] text-[#85858A]">
+      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this bot`}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t`Describe what this bot does`}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Description</Trans>
         <textarea
           value={description}
@@ -4518,7 +5692,7 @@ function CreateBotForm({
           onChange={(e) => setDescription(e.target.value)}
           placeholder={t`What this bot is for`}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
@@ -4539,7 +5713,7 @@ function CreateBotForm({
         type="button"
         disabled={!name.trim() || submitting}
         onClick={() => void handleSubmit()}
-        className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+        className="mt-5 rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[var(--rk-cream-ink)] disabled:opacity-40"
       >
         {submitting ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
       </button>
@@ -4606,7 +5780,6 @@ function BotSettings({
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     void rpc.voice
       .voices({})
@@ -4680,34 +5853,34 @@ function BotSettings({
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
-        <BotAvatar color={color} size={64} status={bot.status} />
+        <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
       </div>
-      <label className="mt-6 block text-[14px] text-[#85858A]">
+      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Description</Trans>
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
@@ -4724,8 +5897,8 @@ function BotSettings({
       <BotSectionPicker sections={sections} value={sectionId} onChange={setSectionId} />
       <BotSkillsPicker skills={agentSkills} value={agentSkillIds} onChange={setAgentSkillIds} />
       <details data-testid="bot-settings-advanced" className="group mt-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
-          <span className="text-[#85858A]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
+          <span className="text-[var(--rk-muted)]">
             <Trans>Advanced</Trans>
           </span>
           <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -4736,7 +5909,7 @@ function BotSettings({
         <Suspense fallback={null}>
           <ScratchpadSection botId={bot.id} />
         </Suspense>
-        <label className="mt-4 block text-[14px] text-[#85858A]">
+        <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
           <Trans>Model</Trans>
           <select
             value={modelKey}
@@ -4744,10 +5917,10 @@ function BotSettings({
               setModelKey(event.target.value);
               setThinkingLevel("");
             }}
-            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
           >
             <option value="">
-              {t`Workspace default`}
+              {t`Space default`}
               {me?.defaultModel
                 ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
                 : ""}
@@ -4763,12 +5936,12 @@ function BotSettings({
           </select>
         </label>
         {thinkingOptions.length ? (
-          <label className="mt-4 block text-[14px] text-[#85858A]">
+          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
             <Trans>Thinking</Trans>
             <select
               value={thinkingLevel}
               onChange={(event) => setThinkingLevel(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+              className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
             >
               <option value="">{t`Default (medium)`}</option>
               {thinkingOptions.map((level) => (
@@ -4780,7 +5953,7 @@ function BotSettings({
           </label>
         ) : null}
         {memoryProviderConfigured ? (
-          <div className="mt-4 text-[14px] text-[#85858A]">
+          <div className="mt-4 text-[14px] text-[var(--rk-muted)]">
             <Trans>Memory scope</Trans>
             <div className="mt-2 flex gap-2">
               {(
@@ -4797,8 +5970,8 @@ function BotSettings({
                   onClick={() => setMemoryScope(option.value)}
                   className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
                     memoryScope === option.value
-                      ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
-                      : "border-[#26262A] text-[#85858A]"
+                      ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                      : "border-[var(--rk-border)] text-[var(--rk-muted)]"
                   }`}
                 >
                   {option.label}
@@ -4807,7 +5980,7 @@ function BotSettings({
             </div>
           </div>
         ) : null}
-        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
+        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[var(--rk-soft)]">
           <input
             type="checkbox"
             checked={autoSpeak}
@@ -4816,12 +5989,12 @@ function BotSettings({
           <Trans>Read replies aloud</Trans>
         </label>
         {voices.length ? (
-          <label className="mt-4 block text-[14px] text-[#85858A]">
+          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
             <Trans>Voice</Trans>
             <select
               value={voiceId}
               onChange={(event) => setVoiceId(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+              className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
             >
               <option value="">{t`Account default`}</option>
               {voices.map((voice) => (
@@ -4833,7 +6006,7 @@ function BotSettings({
           </label>
         ) : null}
       </details>
-      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
@@ -4871,18 +6044,18 @@ function BotSettings({
               .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
               .finally(() => setSaving(false));
           }}
-          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+          className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[var(--rk-cream-ink)] disabled:opacity-40"
         >
           <Trans>Save</Trans>
         </button>
         <button
           type="button"
           onClick={() => void onExport()}
-          className="text-[14px] text-[#85858A]"
+          className="text-[14px] text-[var(--rk-muted)]"
         >
           <Trans>Export</Trans>
         </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+        <button type="button" onClick={onClear} className="text-[14px] text-[var(--rk-danger)]">
           <Trans>Clear conversation</Trans>
         </button>
         <ComputerMaintenanceActions
@@ -4924,12 +6097,92 @@ function catalogLabel(
   return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
 }
 
+function NewSpaceDialog({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: (name: string) => Promise<void>;
+}) {
+  const { t } = useLingui();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel, saving]);
+
+  const create = () => {
+    const trimmed = name.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    setError(null);
+    void onConfirm(trimmed).catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : t`Could not create space`);
+      setSaving(false);
+    });
+  };
+
+  return (
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      onPointerDown={() => {
+        if (!saving) onCancel();
+      }}
+    >
+      <BuiCard
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-space-title"
+        className="w-full max-w-[420px] border border-[var(--rk-elevated)] p-5"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-2.5">
+          <Lock size={17} strokeWidth={1.8} className="text-[#A78BFA]" aria-hidden="true" />
+          <h2 id="new-space-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
+            <Trans>New space</Trans>
+          </h2>
+        </div>
+        <label className="mt-4 block text-[13.5px] text-[var(--rk-soft)]">
+          <Trans>Name</Trans>
+          <input
+            maxLength={60}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") create();
+              if (event.key === "Escape" && !saving) onCancel();
+            }}
+            placeholder={t`Customer support`}
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-elevated)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
+          />
+        </label>
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2.5">
+          <BuiButton disabled={saving} onClick={onCancel}>
+            <Trans>Cancel</Trans>
+          </BuiButton>
+          <BuiButton tone="accent" disabled={saving || !name.trim()} onClick={create}>
+            {saving ? <Trans>Creating…</Trans> : <Trans>Create space</Trans>}
+          </BuiButton>
+        </div>
+      </BuiCard>
+    </div>
+  );
+}
+
 function NewBotSectionDialog({
   bot,
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "name">;
   onCancel: () => void;
   onConfirm: (name: string) => Promise<void>;
 }) {
@@ -4958,7 +6211,7 @@ function NewBotSectionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-bot-section-title"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
@@ -4972,35 +6225,38 @@ function NewBotSectionDialog({
           });
         }}
       >
-        <h2 id="new-bot-section-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2
+          id="new-bot-section-title"
+          className="text-[17px] font-medium text-[var(--rk-ink-strong)]"
+        >
           <Trans>New section</Trans>
         </h2>
-        <p className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]">
           <Trans>Create a section and move {bot.name} into it.</Trans>
         </p>
-        <label className="mt-4 block text-[13.5px] text-[#C9C9CE]">
+        <label className="mt-4 block text-[13.5px] text-[var(--rk-soft)]">
           <Trans>Name</Trans>
           <input
             maxLength={60}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-[#343438] bg-[#101012] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-elevated)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
           />
         </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={saving}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
           <button
             type="submit"
             disabled={saving || !name.trim()}
-            className="rounded-[10px] bg-[#F1F1EF] px-3.5 py-2 text-[14px] font-medium text-[#17171A] disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-cream)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-40"
           >
             {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
           </button>
@@ -5015,7 +6271,7 @@ function ClearConversationDialog({
   onCancel,
   onConfirm,
 }: {
-  bot: Bot;
+  bot: Pick<Bot, "name">;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -5044,28 +6300,31 @@ function ClearConversationDialog({
         aria-modal="true"
         aria-labelledby="clear-conversation-title"
         aria-describedby="clear-conversation-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2
+          id="clear-conversation-title"
+          className="text-[17px] font-medium text-[var(--rk-ink-strong)]"
+        >
           <Trans>Clear {bot.name}’s conversation?</Trans>
         </h2>
         <p
           id="clear-conversation-description"
-          className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
         >
           <Trans>
-            This permanently removes every message and stops current work. The bot, computer,
-            memory, and routines are kept.
+            This permanently removes every message and stops current work. The chat remains
+            available.
           </Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={clearing}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5080,7 +6339,7 @@ function ClearConversationDialog({
                 setClearing(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
           </button>
@@ -5125,23 +6384,26 @@ function DeleteBotDialog({
         aria-modal="true"
         aria-labelledby="delete-bot-title"
         aria-describedby="delete-bot-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
           <Trans>Delete {bot.name}?</Trans>
         </h2>
-        <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p
+          id="delete-bot-description"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
+        >
           <Trans>
             Its conversation, files, and routines will be permanently deleted. Bots it created stay
             in your list.
           </Trans>
         </p>
         <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">
+          <legend className="mb-2 text-[13.5px] text-[var(--rk-soft)]">
             <Trans>What about its memories?</Trans>
           </legend>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-elevated)] p-3">
             <input
               type="radio"
               name="delete-memory"
@@ -5149,15 +6411,15 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(false)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">
+              <span className="block text-[14px] text-[var(--rk-ink)]">
                 <Trans>Keep memories</Trans>
               </span>
-              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
                 <Trans>Move them to your shared memory.</Trans>
               </span>
             </span>
           </label>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-elevated)] p-3">
             <input
               type="radio"
               name="delete-memory"
@@ -5165,22 +6427,22 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(true)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">
+              <span className="block text-[14px] text-[var(--rk-ink)]">
                 <Trans>Delete memories too</Trans>
               </span>
-              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
                 <Trans>This cannot be undone.</Trans>
               </span>
             </span>
           </label>
         </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5195,7 +6457,7 @@ function DeleteBotDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5205,12 +6467,14 @@ function DeleteBotDialog({
   );
 }
 
-function DeleteRoutineDialog({
-  routine,
+function DeleteItemDialog({
+  item,
+  noun,
   onCancel,
   onConfirm,
 }: {
-  routine: Routine;
+  item: { name: string };
+  noun: "group" | "routine";
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -5237,24 +6501,27 @@ function DeleteRoutineDialog({
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="delete-routine-title"
-        aria-describedby="delete-routine-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        aria-labelledby="delete-item-title"
+        aria-describedby="delete-item-description"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-elevated)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
-          <Trans>Delete {routine.name}?</Trans>
+        <h2 id="delete-item-title" className="text-[17px] font-medium text-[var(--rk-ink-strong)]">
+          <Trans>Delete {item.name}?</Trans>
         </h2>
-        <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p
+          id="delete-item-description"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
+        >
           <Trans>This cannot be undone.</Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5265,11 +6532,17 @@ function DeleteRoutineDialog({
               setDeleting(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete routine`);
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : noun === "group"
+                      ? t`Could not delete group`
+                      : t`Could not delete routine`,
+                );
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger-strong)] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5313,7 +6586,7 @@ function computerPlaceholder(
 ) {
   if (state === "booting" || booting) return t`Booting live desktop…`;
   if (state === "running") return label;
-  if (state === "suspended") return t`Computer is asleep — take control to wake it`;
+  if (state === "suspended") return t`Computer is asleep. Open it to wake.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;
 }
@@ -5349,10 +6622,10 @@ function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="w-[min(420px,80%)] rounded-[20px] bg-[#1A1A1D] px-[18px] py-[14px]">
-        <div className="text-[15.5px] text-[#DFDFE2]">{block.question}</div>
+      <div className="w-[min(420px,80%)] rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-surface)] px-[18px] py-[14px]">
+        <div className="text-[15.5px] text-[var(--rk-body)]">{block.question}</div>
         {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-[#85858A]">{block.subtitle}</div>
+          <div className="mt-0.5 text-[13px] text-[var(--rk-soft)]">{block.subtitle}</div>
         ) : null}
         <div className="mt-3 space-y-1.5">
           {block.options
@@ -5363,17 +6636,19 @@ function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-border)] px-3.5 py-3 text-start text-[var(--rk-ink)] disabled:opacity-60 ${block.answerId ? "bg-[var(--rk-elevated)]" : "bg-[var(--rk-surface-2)] hover:bg-[var(--rk-elevated)]"}`}
               >
-                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[var(--rk-elevated)] text-[12.5px] font-medium text-[var(--rk-soft)]">
                   {option.letter}
                 </span>
                 <span
-                  className={`flex-1 text-[15px] ${block.answerId ? "text-[#85858A]" : "text-[#ECECEE]"}`}
+                  className={`flex-1 text-[15px] ${block.answerId ? "text-[var(--rk-soft)]" : "text-[var(--rk-ink)]"}`}
                 >
                   {option.label}
                 </span>
-                {block.answerId === option.id ? <span className="text-[#B9B9C0]">✓</span> : null}
+                {block.answerId === option.id ? (
+                  <span className="text-[var(--rk-soft)]">✓</span>
+                ) : null}
               </button>
             ))}
         </div>
@@ -5536,9 +6811,9 @@ function ChartCanvas({
       </div>
     );
   return (
-    <div className="text-[#C9C9CE]">
+    <div className="text-[var(--rk-soft)]">
       {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-[#ECECEE]">{meta.title}</div>
+        <div className="mb-1 text-[14.5px] font-semibold text-[var(--rk-ink)]">{meta.title}</div>
       ) : null}
       {meta.swatches.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
@@ -5649,7 +6924,7 @@ function McpApprovalCard({
         </div>
       ) : null}
       {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-[#85858A]">
+        <p className="mt-2 text-[13px] text-[var(--rk-muted)]">
           <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
@@ -5689,12 +6964,12 @@ function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-[#17171A] p-4">
+      <div className="group relative max-w-[74%] rounded-[20px] bg-[var(--rk-hairline)] p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="absolute end-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+          className="absolute end-3 top-3 rounded-lg border border-[var(--rk-elevated)] bg-[var(--rk-elevated)] px-2.5 py-1 text-[11px] text-[var(--rk-soft)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
         >
           <Trans>Expand</Trans>
         </button>
@@ -5712,14 +6987,14 @@ function ChartBlockView({
             if (event.key === "Escape") setExpanded(false);
           }}
         >
-          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[#2A2A31] bg-[#141416] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]">
+          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[var(--rk-border)] bg-[var(--rk-surface)] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[13px] text-[#85858A]">{name}</span>
+              <span className="text-[13px] text-[var(--rk-muted)]">{name}</span>
               <button
                 type="button"
                 aria-label={t`Close chart`}
                 onClick={() => setExpanded(false)}
-                className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
+                className="text-lg text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
               >
                 ✕
               </button>
@@ -5810,7 +7085,7 @@ function ArtifactImage({
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-[#26262A] bg-[#17171A] px-4 py-3 text-[14px] text-[#85858A]">
+        <div className="rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-4 py-3 text-[14px] text-[var(--rk-muted)]">
           {name}
         </div>
       )}
@@ -5830,6 +7105,14 @@ function ArtifactImage({
       ) : null}
     </div>
   );
+}
+
+function newClientNonce(): string {
+  const webCrypto = globalThis.crypto;
+  if (webCrypto && typeof webCrypto.randomUUID === "function") {
+    return webCrypto.randomUUID();
+  }
+  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function readFileAsBase64(file: File): Promise<string> {

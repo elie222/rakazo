@@ -98,13 +98,26 @@ jobs:
           DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
           BOX_API_KEY: ${{ inputs.sandbox_provider == 'box' && secrets.BOX_API_KEY || '' }}
         run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER"
+      # Marketing homepage only: separate config so product chromium does not start Astro.
+      # Runs after product e2e so shared apps/web/test-results is not wiped by the product run.
+      - name: Run marketing homepage E2E
+        id: www_playwright_tests
+        if: always() && (steps.playwright_tests.outcome == 'success' || steps.playwright_tests.outcome == 'failure')
+        run: pnpm --filter @rakazo/www e2e
       - name: Record Playwright result
         if: always() && inputs.upload_artifacts
         env:
           PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
+          WWW_PLAYWRIGHT_RESULT: ${{ steps.www_playwright_tests.outcome }}
         run: |
           mkdir -p test-report/e2e
-          printf '%s\n' "$PLAYWRIGHT_RESULT" > test-report/e2e/outcome.txt
+          if [[ "$PLAYWRIGHT_RESULT" == "success" && "$WWW_PLAYWRIGHT_RESULT" == "success" ]]; then
+            printf 'success\n' > test-report/e2e/outcome.txt
+          elif [[ "$PLAYWRIGHT_RESULT" == "success" && ( "$WWW_PLAYWRIGHT_RESULT" == "skipped" || -z "$WWW_PLAYWRIGHT_RESULT" ) ]]; then
+            printf 'success\n' > test-report/e2e/outcome.txt
+          else
+            printf 'failure\n' > test-report/e2e/outcome.txt
+          fi
       - name: Upload Playwright artifacts
         if: always() && inputs.upload_artifacts
         uses: actions/upload-artifact@v4
@@ -112,6 +125,7 @@ jobs:
           name: playwright-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             playwright-report
+            playwright-report-www
             apps/web/test-results
             test-report/e2e
           retention-days: 7
@@ -126,7 +140,7 @@ jobs:
           S3_BUCKET: ${{ vars.S3_BUCKET }}
           S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
-          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome }}
+          PLAYWRIGHT_RESULT: ${{ steps.playwright_tests.outcome == 'success' && steps.www_playwright_tests.outcome == 'success' && 'success' || 'failure' }}
           PLAYWRIGHT_RUN_ATTEMPT: ${{ github.run_attempt }}
           PLAYWRIGHT_RUN_ID: ${{ github.run_id }}
           PLAYWRIGHT_RUN_NUMBER: ${{ github.run_number }}

@@ -5,12 +5,18 @@ name: Rakazo mobile smoke
     clearState: true
 
 - assertVisible: "Sign in to Rakazo"
+- assertVisible: "Sign up"
+- tapOn: "Sign up"
+- assertVisible: "Sign up for Rakazo"
+- assertVisible: "Name"
+- tapOn: "Sign in"
+- assertVisible: "Sign in to Rakazo"
 - tapOn: "Email"
 - inputText: ${RAKAZO_E2E_EMAIL}
 - tapOn: "Password"
 - inputText: ${RAKAZO_E2E_PASSWORD}
-- hideKeyboard
-- tapOn: "Continue with email"
+- tapOn: "Sign in to Rakazo"
+- tapOn: "Sign in"
 
 - extendedWaitUntil:
     visible: "New bot"

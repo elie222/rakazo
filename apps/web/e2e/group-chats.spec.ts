@@ -15,7 +15,7 @@ async function createBot(page: import("@playwright/test").Page, name: string) {
   await page.locator("label:has-text('Name') input").fill(name);
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(botList.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: `Message ${name}` })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: `Message ${name}` })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   return activeBotId(page);
 }
@@ -30,7 +30,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const researcherId = await createBot(page, "Researcher");
   const writerId = await createBot(page, "Research Writer");
 
-  await page.getByTitle("Create").click();
+  await page.getByTitle("Create", { exact: true }).click();
   await page.getByRole("button", { name: "New group" }).click();
   await page.locator("label:has-text('Name') input").fill("Draft team");
   const panel = page.getByTestId("side-panel");
@@ -56,7 +56,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   });
   await page.reload();
   await expect(page).toHaveURL(groupUrl);
-  await expect(page.getByRole("textbox", { name: "Message Draft team" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Message Draft team" })).toBeVisible();
 
   const groups = await rpc<
     Array<{
@@ -129,22 +129,22 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await desktopSettings.getByRole("button", { name: "Save", exact: true }).click();
 
   await page
-    .getByRole("textbox", { name: "Message Draft team" })
+    .getByRole("combobox", { name: "Message Draft team" })
     .fill("@Researcher unfinished draft");
   await sidebar.getByRole("button", { name: /^Review team/ }).click();
-  await expect(page.getByRole("textbox", { name: "Message Review team" })).toHaveValue("");
+  await expect(page.getByRole("combobox", { name: "Message Review team" })).toHaveValue("");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
-  await expect(page.getByRole("textbox", { name: "Message Draft team" })).toHaveValue("");
+  await expect(page.getByRole("combobox", { name: "Message Draft team" })).toHaveValue("");
 
-  const composer = page.getByRole("textbox", { name: "Message Draft team" });
+  const composer = page.getByRole("combobox", { name: "Message Draft team" });
   await composer.fill("@Res");
   await captureScreenshot(page, testInfo, "group-mention-picker");
-  await page.getByRole("button", { name: "@Research Writer", exact: true }).click();
+  await page.getByRole("option", { name: "@Research Writer", exact: true }).click();
   await expect(
     page.getByTestId("mention-chip").filter({ hasText: "Research Writer" }),
   ).toBeVisible();
   await composer.fill("turn the sources into a draft. @Res");
-  await page.getByRole("button", { name: "@Researcher", exact: true }).click();
+  await page.getByRole("option", { name: "@Researcher", exact: true }).click();
   await expect(page.getByTestId("mention-chip").filter({ hasText: "Researcher" })).toBeVisible();
   await composer.fill(`${await composer.inputValue()}gather sources.`);
   await composer.press("Enter");
@@ -166,7 +166,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await captureScreenshot(page, testInfo, "group-transcript");
 
   await composer.fill("@Res");
-  await page.getByRole("button", { name: "@Research Writer", exact: true }).click();
+  await page.getByRole("option", { name: "@Research Writer", exact: true }).click();
   await expect(
     page.getByTestId("mention-chip").filter({ hasText: "Research Writer" }),
   ).toBeVisible();
@@ -179,7 +179,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const cityAsk = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
   if ((await cityAsk.count()) === 0) {
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("textbox", { name: "Message Draft team" })).toBeVisible({
+    await expect(page.getByRole("combobox", { name: "Message Draft team" })).toBeVisible({
       timeout: 15_000,
     });
   }
@@ -219,7 +219,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(page).toHaveURL(new RegExp(`/app/g/${reviewGroup.id}$`));
   await expect(page.getByTestId("transcript")).not.toContainText("Answered: Paris");
   releaseReviewSnapshot();
-  await expect(page.getByRole("textbox", { name: "Message Review team" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
   await page.unroute("**/rpc/threads/get");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
@@ -250,5 +250,5 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await rpc(page, "groups/remove", { groupId: reviewGroup.id });
   await page.goto(`/app/g/${reviewGroup.id}`);
   await page.waitForURL(/\/app\/(?!g\/)[^/]+$/);
-  await expect(page.getByRole("textbox", { name: /Message/ })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
 });

@@ -11,7 +11,29 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("de-DE")).toBe("de");
     expect(normalizeUiLocale("ko-KR")).toBe("ko");
     expect(normalizeUiLocale("en-US")).toBe("en");
+    expect(normalizeUiLocale("pt-BR")).toBe("pt-BR");
+    expect(normalizeUiLocale("pt")).toBe("pt-BR");
+    expect(normalizeUiLocale("hi-IN")).toBe("hi");
     expect(normalizeUiLocale("DE")).toBe("de");
+    expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-Hans")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-Hans-CN")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-Hans-SG")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-SG")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh_cn")).toBe("zh-CN");
+    expect(normalizeUiLocale("ZH-cn")).toBe("zh-CN");
+    expect(normalizeUiLocale(" zh-CN ")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh_Hans_CN")).toBe("zh-CN");
+  });
+
+  it("does not fold Traditional Chinese into Simplified", () => {
+    expect(normalizeUiLocale("zh-TW")).toBe("en");
+    expect(normalizeUiLocale("zh-HK")).toBe("en");
+    expect(normalizeUiLocale("zh-MO")).toBe("en");
+    expect(normalizeUiLocale("zh-Hant")).toBe("en");
+    expect(normalizeUiLocale("zh-Hant-TW")).toBe("en");
+    expect(normalizeUiLocale("zh-Hant-HK")).toBe("en");
   });
 
   it("falls back to English for unknown locales", () => {
@@ -51,6 +73,13 @@ describe("resolveUiLocale", () => {
         navigatorLanguage: "ko-KR",
       }),
     ).toBe("ko");
+    expect(
+      resolveUiLocale({
+        stored: null,
+        envDefault: null,
+        navigatorLanguage: "zh-CN",
+      }),
+    ).toBe("zh-CN");
     expect(
       resolveUiLocale({
         stored: null,

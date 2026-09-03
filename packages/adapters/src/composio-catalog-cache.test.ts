@@ -58,7 +58,7 @@ describe("composio toolkit directory cache", () => {
         { slug: "github", name: "GitHub", logo: null, noAuth: false },
         { slug: "hackernews", name: "Hacker News", logo: null, noAuth: true },
       ],
-      ["hackernews"],
+      ["HACKERNEWS"],
     );
     expect(items.find((item) => item.slug === "github")?.connected).toBe(false);
     expect(items.find((item) => item.slug === "hackernews")?.connected).toBe(true);

@@ -17,7 +17,7 @@ function skillRow(
 function emptySkill() {
   return {
     id: "skill-1",
-    workspaceId: "workspace-1",
+    spaceId: "workspace-1",
     botId: "bot-1",
     userId: "user-1",
     name: "",
@@ -221,7 +221,7 @@ describe("completeTeachingSession", () => {
     const bot = { id: "bot-1", thread: { id: "thread-1" }, computer: null };
     deps.prisma.bot.findUnique = vi.fn().mockResolvedValue(bot);
     tx.bot.findUnique = vi.fn().mockResolvedValue(bot);
-    const actor = { workspaceId: "workspace-1", userId: "user-1" } as never;
+    const actor = { spaceId: "workspace-1", userId: "user-1" } as never;
 
     await completeTeachingSession(deps as never, actor, "skill-1", "stopped");
     const stoppedEvents = () =>
@@ -246,7 +246,7 @@ describe("recordTeachingInputEvent", () => {
       .mockResolvedValue(skillRow({ status: "recording" }));
     const recorded = await recordTeachingInputEvent(
       deps as never,
-      { workspaceId: "workspace-1", userId: "user-1" } as never,
+      { spaceId: "workspace-1", userId: "user-1" } as never,
       "bot-1",
       { kind: "key", key: "x" },
     );
@@ -257,7 +257,7 @@ describe("recordTeachingInputEvent", () => {
     const { deps, current } = recordingDeps(skillRow({ expiresAt: new Date(Date.now() - 1000) }));
     const outcome = await recordTeachingInputEvent(
       deps as never,
-      { workspaceId: "workspace-1", userId: "user-1" } as never,
+      { spaceId: "workspace-1", userId: "user-1" } as never,
       "bot-1",
       { kind: "key", key: "x" },
     );
@@ -289,7 +289,7 @@ describe("recordTeachingInputEvent", () => {
     await expect(
       recordTeachingInputEvent(
         deps as never,
-        { workspaceId: "workspace-1", userId: "user-1" } as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
         "bot-1",
         { kind: "pointer", x: 12, y: 40, button: "left", type: "click" },
       ),
@@ -319,7 +319,7 @@ describe("recordTeachingInputEvent", () => {
       await expect(
         recordTeachingInputEvent(
           deps as never,
-          { workspaceId: "workspace-1", userId: "user-1" } as never,
+          { spaceId: "workspace-1", userId: "user-1" } as never,
           "bot-1",
           input,
         ),
@@ -327,7 +327,7 @@ describe("recordTeachingInputEvent", () => {
       await expect(
         recordTeachingInputEvent(
           deps as never,
-          { workspaceId: "workspace-1", userId: "user-1" } as never,
+          { spaceId: "workspace-1", userId: "user-1" } as never,
           "bot-1",
           input,
         ),
@@ -359,7 +359,7 @@ describe("recordTeachingInputEvent", () => {
     await expect(
       recordTeachingInputEvent(
         deps as never,
-        { workspaceId: "workspace-1", userId: "user-1" } as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
         "bot-1",
         { kind: "key", key: "x" },
       ),

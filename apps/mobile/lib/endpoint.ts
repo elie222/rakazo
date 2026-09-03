@@ -1,9 +1,10 @@
-const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
+const LOCAL_API = "http://127.0.0.1:3100";
+const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
 
 export function defaultApiBase() {
-  return originOnly(DEFAULT_API) ?? DEFAULT_API.replace(/\/+$/, "");
+  return originOnly(DEFAULT_API) ?? LOCAL_API;
 }
 
 export function normalizeApiBase(input: string): EndpointResult {
@@ -20,6 +21,9 @@ export function normalizeApiBase(input: string): EndpointResult {
     return { ok: false, error: "Use an http or https URL" };
   }
   if (!parsed.hostname) return { ok: false, error: "That URL is missing a host" };
+  if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
+    return { ok: false, error: "Public servers need https://" };
+  }
   const url = `${parsed.protocol}//${parsed.host}`;
   return { ok: true, url };
 }
@@ -80,13 +84,8 @@ export async function probeApiBase(
 }
 
 function originOnly(value: string) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch {
-    return null;
-  }
+  const parsed = normalizeApiBase(value);
+  return parsed.ok ? parsed.url : null;
 }
 
 function isLanOrLocalHost(hostname: string) {
@@ -96,5 +95,6 @@ function isLanOrLocalHost(hostname: string) {
   if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
   if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
   if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true;
+  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host)) return true;
   return false;
 }

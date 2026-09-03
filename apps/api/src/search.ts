@@ -6,7 +6,7 @@ const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
 const CONVERSATION_HIT_LIMIT = 5;
 
-export async function queryWorkspaceSearch(
+export async function querySpaceSearch(
   prisma: PrismaClient,
   actor: Actor,
   q: string,
@@ -35,7 +35,7 @@ export async function queryWorkspaceSearch(
 
   const bots = await prisma.bot.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       archivedAt: null,
       OR: [
@@ -62,7 +62,7 @@ export async function queryWorkspaceSearch(
 
   const groups = await prisma.chatGroup.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       name: { contains: query, mode: "insensitive" },
     },
@@ -86,7 +86,7 @@ export async function queryWorkspaceSearch(
 
   const artifacts = await prisma.artifact.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       groupId: null,
       botId: { not: null },
@@ -102,7 +102,7 @@ export async function queryWorkspaceSearch(
       SELECT m.id, m.seq
       FROM messages m
       INNER JOIN threads t ON t.id = m."threadId"
-      WHERE t."workspaceId" = ${actor.workspaceId}
+      WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."botId" = ${artifact.botId}
         AND m.blocks::text ILIKE ${`%${artifact.id}%`}
@@ -129,7 +129,7 @@ export async function queryWorkspaceSearch(
 
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       groupId: { not: null },
       name: { contains: query, mode: "insensitive" },
@@ -143,7 +143,7 @@ export async function queryWorkspaceSearch(
       SELECT m.id, m.seq
       FROM messages m
       INNER JOIN threads t ON t.id = m."threadId"
-      WHERE t."workspaceId" = ${actor.workspaceId}
+      WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."groupId" = ${artifact.groupId}
         AND m.blocks::text ILIKE ${`%${artifact.id}%`}
@@ -170,7 +170,7 @@ export async function queryWorkspaceSearch(
 
   const routines = await prisma.routine.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       OR: [
         { name: { contains: query, mode: "insensitive" } },
@@ -211,7 +211,7 @@ export async function queryWorkspaceSearch(
     FROM messages m
     INNER JOIN threads t ON t.id = m."threadId"
     INNER JOIN bots b ON b.id = t."botId"
-    WHERE t."workspaceId" = ${actor.workspaceId}
+    WHERE t."spaceId" = ${actor.spaceId}
       AND t."userId" = ${actor.userId}
       AND b."archivedAt" IS NULL
       AND m.blocks::text ILIKE ${pattern}
@@ -244,7 +244,7 @@ export async function queryWorkspaceSearch(
     FROM messages m
     INNER JOIN threads t ON t.id = m."threadId"
     INNER JOIN chat_groups g ON g.id = t."groupId"
-    WHERE t."workspaceId" = ${actor.workspaceId}
+    WHERE t."spaceId" = ${actor.spaceId}
       AND t."userId" = ${actor.userId}
       AND t."groupId" IS NOT NULL
       AND m.blocks::text ILIKE ${pattern}

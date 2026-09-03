@@ -8,6 +8,7 @@ import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { NoneSandboxProvider } from "./none-sandbox.js";
 
 export interface SandboxProviderOptions {
   supervisorUrl?: string;
@@ -21,22 +22,29 @@ export interface SandboxProviderOptions {
   dataDir?: string;
 }
 
+function missingRemoteKey(provider: "e2b" | "daytona" | "box", envName: string): SandboxProvider {
+  return new NoneSandboxProvider(
+    `Computers unavailable: ${envName} is required for SANDBOX_PROVIDER=${provider}.`,
+  );
+}
+
 export function createSandboxProvider(kind: string, opts: SandboxProviderOptions): SandboxProvider {
   switch (kind) {
+    case "none":
+    case "":
+      return new NoneSandboxProvider();
     case "e2b":
-      if (!opts.e2bApiKey) throw new Error("E2B_API_KEY is required for the e2b sandbox provider");
+      if (!opts.e2bApiKey?.trim()) return missingRemoteKey("e2b", "E2B_API_KEY");
       return new E2BSandboxProvider(opts.e2bApiKey);
     case "daytona":
-      if (!opts.daytonaApiKey) {
-        throw new Error("DAYTONA_API_KEY is required for the daytona sandbox provider");
-      }
+      if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");
       return new DaytonaSandboxProvider({
         apiKey: opts.daytonaApiKey,
         apiUrl: opts.daytonaApiUrl,
         target: opts.daytonaTarget,
       });
     case "box":
-      if (!opts.boxApiKey) throw new Error("BOX_API_KEY is required for the box sandbox provider");
+      if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
       return new BoxSandboxProvider({ apiKey: opts.boxApiKey, apiUrl: opts.boxApiUrl });
     case "docker":
       return new DockerSandboxProvider(
@@ -57,7 +65,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
       );
   }
 }

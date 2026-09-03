@@ -1,3 +1,4 @@
+import { createCipheriv, createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
@@ -9,12 +10,24 @@ describe("secret store", () => {
     const record = await store.put("sk-or-v1-secretvalue", {
       operationId: "1",
       traceId: "1",
-      workspaceId: "w",
+      spaceId: "w",
       userId: "u",
       signal: new AbortController().signal,
     });
     expect(record.ciphertext).not.toContain("sk-or-v1-secretvalue");
-    expect(store.load(record.ciphertext)).toBe("sk-or-v1-secretvalue");
+    expect(record.ciphertext).toMatch(/^v2:/);
+    expect(store.load(record.ciphertext, record.id)).toBe("sk-or-v1-secretvalue");
+    expect(() => store.load(record.ciphertext, "another-row")).toThrow();
+  });
+
+  it("keeps legacy ciphertext readable without rewriting it at startup", () => {
+    const key = "legacy-test-key";
+    const iv = Buffer.alloc(12, 7);
+    const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(key).digest(), iv);
+    const encrypted = Buffer.concat([cipher.update("legacy-secret", "utf8"), cipher.final()]);
+    const legacy = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64");
+    const store = new EncryptedSecretStore(key);
+    expect(store.load(legacy, "secret-row")).toBe("legacy-secret");
   });
 });
 
@@ -55,6 +68,17 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.toolCalls?.some((c) => c.args.name === "Scout"))).toBe(true);
   });
 
+  it("proposes a named space", () => {
+    const script = inferScript("create a space named Customer support");
+    expect(
+      script?.some((turn) =>
+        turn.toolCalls?.some(
+          (call) => call.name === "create_space" && call.args.name === "Customer support",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("runs an in-thread subagent", () => {
     const script = inferScript("run a subagent to summarize the notes");
     expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "run_subagent"))).toBe(true);
@@ -70,7 +94,7 @@ describe("scripted runtime", () => {
     const ctx = {
       operationId: "1",
       traceId: "1",
-      workspaceId: "w",
+      spaceId: "w",
       userId: "u",
       signal: new AbortController().signal,
     };
@@ -147,13 +171,18 @@ describe("builtin tools", () => {
         "shell",
         "remember",
         "request_takeover",
+        "ask_user",
+        "request_secret",
         "run_subagent",
+        "create_space",
         "spawn_bot",
         "archive_bot",
         "skill_read",
         "skill_create",
         "skill_update",
         "skill_delete",
+        "web_search",
+        "web_fetch",
       ]),
     );
   });
@@ -165,7 +194,7 @@ describe("fake sandbox", () => {
     const ctx = {
       operationId: "1",
       traceId: "1",
-      workspaceId: "w",
+      spaceId: "w",
       userId: "u",
       signal: new AbortController().signal,
     };

@@ -1,10 +1,10 @@
 import type { PrismaClient } from "./client.js";
 
-export function findWorkspaceMemoryConfig(
-  prisma: Pick<PrismaClient, "workspaceMemoryConfig">,
-  workspaceId: string,
+export function findSpaceMemoryConfig(
+  prisma: Pick<PrismaClient, "spaceMemoryConfig">,
+  spaceId: string,
 ) {
-  return prisma.workspaceMemoryConfig.findUnique({ where: { workspaceId } });
+  return prisma.spaceMemoryConfig.findUnique({ where: { spaceId } });
 }
 
 export function effectiveMemoryScope(

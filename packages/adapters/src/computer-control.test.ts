@@ -77,7 +77,7 @@ describe("computer control leases", () => {
       "lease-1",
     );
     expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith({
-      workspaceId: "workspace",
+      spaceId: "workspace",
       computerId: "computer-id",
       botId: "bot",
       runId: "run-1",
@@ -241,7 +241,7 @@ function controlHarness(
       options.controlLeaseExpiresAt === undefined
         ? new Date("2026-01-01T00:00:00.000Z")
         : options.controlLeaseExpiresAt,
-    workspaceId: "workspace",
+    spaceId: "workspace",
     userId: "user",
   };
   const prisma = {

@@ -1,7 +1,10 @@
 #!/bin/sh
 set -eu
 RAKAZO_HOME="${HOME:-/home/rakazo}"
-PROFILE="$RAKAZO_HOME/.browser-profiles/chromium"
+case "${DISPLAY:-:1}" in
+  :[2-9]|:[1-9][0-9]*) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-${DISPLAY#:}" ;;
+  *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
+esac
 mkdir -p "$PROFILE"
 rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
@@ -9,16 +12,37 @@ if [ -z "$BIN" ]; then
   echo "chromium is not installed" >&2
   exit 1
 fi
-exec "$BIN" \
-  --test-type \
-  --no-sandbox \
-  --disable-dev-shm-usage \
-  --disable-gpu \
-  --disable-software-rasterizer \
-  --no-first-run \
-  --no-default-browser-check \
-  --disable-session-crashed-bubble \
-  --password-store=basic \
-  --user-data-dir="$PROFILE" \
-  --start-maximized \
-  "$@"
+USER_DATA_DIR_SET=0
+ACTUAL_PROFILE="$PROFILE"
+PREV_ARG_WAS_USER_DATA_DIR=0
+for arg in "$@"; do
+  if [ "$PREV_ARG_WAS_USER_DATA_DIR" -eq 1 ]; then
+    ACTUAL_PROFILE="$arg"
+    PREV_ARG_WAS_USER_DATA_DIR=0
+  fi
+  case "$arg" in
+    --user-data-dir=*) ACTUAL_PROFILE="${arg#*=}"; USER_DATA_DIR_SET=1 ;;
+    --user-data-dir) PREV_ARG_WAS_USER_DATA_DIR=1; USER_DATA_DIR_SET=1 ;;
+  esac
+done
+
+clear_crash_state() {
+  f="$1"
+  [ -f "$f" ] || return 0
+  sed -E \
+    's/"exit_type"[[:space:]]*:[[:space:]]*"Crashed"/"exit_type":"Normal"/g; s/"exited_cleanly"[[:space:]]*:[[:space:]]*false/"exited_cleanly":true/g' \
+    "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+}
+
+if [ -d "$ACTUAL_PROFILE" ] && [ ! -e "$ACTUAL_PROFILE/SingletonLock" ] && [ ! -L "$ACTUAL_PROFILE/SingletonLock" ]; then
+  find "$ACTUAL_PROFILE" \( -name Preferences -o -name 'Local State' \) -type f 2>/dev/null |
+    while IFS= read -r f; do
+      clear_crash_state "$f" 2>/dev/null || rm -f "${f}.tmp"
+    done || true
+fi
+
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized"
+if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
+  exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
+fi
+exec "$BIN" $FLAGS "$@"

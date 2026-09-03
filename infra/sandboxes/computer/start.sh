@@ -9,6 +9,10 @@ export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
 cd "$AGENT_HOME"
 
+if [[ -n "${RAKAZO_COMPUTER_CONTROL_TOKEN:-}" ]]; then
+  /usr/local/bin/rakazo-computer-control >/tmp/rakazo/control.log 2>&1 &
+fi
+
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
 
 Xvfb :1 -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >/tmp/rakazo/xvfb.log 2>&1 &
@@ -45,6 +49,27 @@ EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
+register_browser_handler() {
+  local mime="$1"
+  if ! xdg-mime default rakazo-browser.desktop "$mime" >/dev/null 2>&1 \
+    || [[ "$(xdg-mime query default "$mime" 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+    echo "failed to register rakazo-browser for $mime" >&2
+    exit 1
+  fi
+}
+register_browser_handler x-scheme-handler/http
+register_browser_handler x-scheme-handler/https
+register_browser_handler text/html
+if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1 \
+  || [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+  echo "failed to set default web browser to rakazo-browser" >&2
+  exit 1
+fi
+
+rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
+  "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
+  "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"
+
 HOME="$AGENT_HOME" rakazo-browser >/tmp/rakazo/browser.log 2>&1 &
 browser_up=0
 for _ in $(seq 1 40); do
@@ -73,6 +98,10 @@ if [[ ! -d "$NOVNC_ROOT" ]]; then
 fi
 if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
   echo "noVNC embed.html is missing from the computer image" >&2
+  exit 1
+fi
+if [[ ! -f "$NOVNC_ROOT/clipboard-bridge.js" ]]; then
+  echo "noVNC clipboard-bridge.js is missing from the computer image" >&2
   exit 1
 fi
 websockify --heartbeat=30 --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &

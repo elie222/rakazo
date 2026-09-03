@@ -37,7 +37,7 @@ describeE2b("live E2B canary", () => {
     const ctx = {
       operationId: "canary",
       traceId: "canary",
-      workspaceId: "canary",
+      spaceId: "canary",
       userId: "canary",
       signal: new AbortController().signal,
     };
@@ -68,7 +68,7 @@ describeBox("live Box canary", () => {
     const ctx = {
       operationId: "box-canary",
       traceId: "box-canary",
-      workspaceId: "box-canary",
+      spaceId: "box-canary",
       userId: "box-canary",
       signal: new AbortController().signal,
     };
@@ -127,7 +127,7 @@ describePi("live OpenRouter / Pi canary", () => {
       {
         operationId: "canary",
         traceId: "canary",
-        workspaceId: "canary",
+        spaceId: "canary",
         userId: "canary",
         signal: new AbortController().signal,
       },

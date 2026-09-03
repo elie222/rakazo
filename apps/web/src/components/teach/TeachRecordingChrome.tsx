@@ -39,10 +39,10 @@ export function TeachRecordingChrome({
         data-testid="teach-recording-overlay"
         className="flex min-w-0 flex-1 flex-col gap-1 px-3"
       >
-        <div className="truncate text-[13px] text-[#ECECEE]">
+        <div className="truncate text-[13px] text-[var(--rk-ink)]">
           <Trans>Recording: {recording.goal}</Trans>
         </div>
-        <div className="text-[12px] text-[#85858A]">
+        <div className="text-[12px] text-[var(--rk-muted)]">
           <Trans>{remaining} left · bot is watching, not acting</Trans>
         </div>
         <div className="text-[12px] text-[#E65707]">
@@ -55,12 +55,12 @@ export function TeachRecordingChrome({
   return (
     <div
       data-testid="teach-recording"
-      className="rounded-[11px] border border-[#232326] bg-[#121214] px-3 py-3"
+      className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-inset)] px-3 py-3"
     >
-      <div className="text-[14px] text-[#ECECEE]">
+      <div className="text-[14px] text-[var(--rk-ink)]">
         <Trans>Recording: {recording.goal}</Trans>
       </div>
-      <div className="mt-1 text-[13px] text-[#85858A]">
+      <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
         <Trans>{remaining} left · bot is watching, not acting</Trans>
       </div>
       <div className="mt-2 text-[13px] text-[#E65707]">

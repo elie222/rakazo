@@ -30,7 +30,7 @@ describe("current-turn thread files", () => {
           } as unknown as ArtifactStore,
         },
         {
-          workspaceId: "workspace-1",
+          spaceId: "workspace-1",
           userId: "user-1",
           botId: "bot-1",
           runId: "run-1",
@@ -42,7 +42,7 @@ describe("current-turn thread files", () => {
     ).rejects.toBe(failure);
     expect(remove).toHaveBeenCalledWith(
       "stored-1",
-      expect.objectContaining({ workspaceId: "workspace-1", botId: "bot-1" }),
+      expect.objectContaining({ spaceId: "workspace-1", botId: "bot-1" }),
     );
   });
 
@@ -50,7 +50,7 @@ describe("current-turn thread files", () => {
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "artifact-1",
-        workspaceId: "workspace-1",
+        spaceId: "workspace-1",
         botId: "bot-1",
         name: "../quarterly report.pdf",
         mimeType: "application/pdf",
@@ -63,7 +63,7 @@ describe("current-turn thread files", () => {
     const context: AdapterContext & { botId: string } = {
       operationId: "run-1",
       traceId: "run-1",
-      workspaceId: "workspace-1",
+      spaceId: "workspace-1",
       userId: "user-1",
       botId: "bot-1",
       runId: "run-1",
@@ -135,7 +135,7 @@ describe("current-turn thread files", () => {
         context: {
           operationId: "run-1",
           traceId: "run-1",
-          workspaceId: "workspace-1",
+          spaceId: "workspace-1",
           userId: "user-1",
           botId: "bot-1",
           signal: new AbortController().signal,

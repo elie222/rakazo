@@ -6,7 +6,7 @@ import { ThirdPartyConnectorEmulator } from "./third-party-connector-emulator.js
 const context: AdapterContext = {
   operationId: "pipedream-test",
   traceId: "pipedream-test",
-  workspaceId: "workspace-example",
+  spaceId: "workspace-example",
   userId: "user-example",
   signal: new AbortController().signal,
 };
@@ -98,7 +98,7 @@ describe("PipedreamConnector", () => {
     const externalId = new URL(accountUrl!).searchParams.get("external_user_id");
     expect(externalId).toMatch(/^rkz_[a-f0-9]{64}$/);
     expect(externalId).not.toContain(context.userId);
-    expect(externalId).not.toContain(context.workspaceId);
+    expect(externalId).not.toContain(context.spaceId);
     expect(JSON.parse(String(connectRequest?.init?.body))).toEqual(
       expect.objectContaining({ external_user_id: externalId }),
     );

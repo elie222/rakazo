@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node ../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/api/src"

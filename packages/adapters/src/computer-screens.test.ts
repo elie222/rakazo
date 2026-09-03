@@ -11,7 +11,7 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 const writer = {
   operationId: "1",
   traceId: "1",
-  workspaceId: "w",
+  spaceId: "w",
   userId: "u",
   botId: "writer",
   signal: new AbortController().signal,

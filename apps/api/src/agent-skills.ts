@@ -116,7 +116,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
     const row = await prisma.agentSkill.findFirst({
       where: {
         id: skillId,
-        workspaceId: actor.workspaceId,
+        spaceId: actor.spaceId,
         userId: actor.userId,
       },
     });
@@ -127,7 +127,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
   return {
     async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
       const rows = await prisma.agentSkill.findMany({
-        where: { workspaceId: actor.workspaceId, userId: actor.userId },
+        where: { spaceId: actor.spaceId, userId: actor.userId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
       const catalog = [...builtinCatalog(), ...rows.map(mapAgentSkill)].map(
@@ -138,7 +138,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {
       const rows = await prisma.agentSkill.findMany({
-        where: { workspaceId: actor.workspaceId, userId: actor.userId },
+        where: { spaceId: actor.spaceId, userId: actor.userId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
       return [...builtinCatalog(), ...rows.map(mapAgentSkill)];
@@ -160,7 +160,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       if (builtin) return builtin;
       const row = await prisma.agentSkill.findFirst({
         where: {
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           userId: actor.userId,
           name: { equals: name, mode: "insensitive" },
         },
@@ -176,7 +176,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       const resolved = resolveSkillContent(input);
       const clash = await prisma.agentSkill.findFirst({
         where: {
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           userId: actor.userId,
           name: { equals: resolved.name, mode: "insensitive" },
         },
@@ -190,7 +190,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       try {
         const row = await prisma.agentSkill.create({
           data: {
-            workspaceId: actor.workspaceId,
+            spaceId: actor.spaceId,
             userId: actor.userId,
             name: resolved.name,
             description: resolved.description,
@@ -229,7 +229,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       if (resolved.name.toLowerCase() !== existing.name.toLowerCase()) {
         const clash = await prisma.agentSkill.findFirst({
           where: {
-            workspaceId: actor.workspaceId,
+            spaceId: actor.spaceId,
             userId: actor.userId,
             name: { equals: resolved.name, mode: "insensitive" },
             NOT: { id: existing.id },
@@ -247,7 +247,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         const updated = await prisma.agentSkill.updateMany({
           where: {
             id: existing.id,
-            workspaceId: actor.workspaceId,
+            spaceId: actor.spaceId,
             userId: actor.userId,
             source: "user",
           },
@@ -272,7 +272,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       const row = await prisma.agentSkill.findFirst({
         where: {
           id: existing.id,
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           userId: actor.userId,
         },
       });
@@ -288,7 +288,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       const deleted = await prisma.agentSkill.deleteMany({
         where: {
           id: existing.id,
-          workspaceId: actor.workspaceId,
+          spaceId: actor.spaceId,
           userId: actor.userId,
           source: "user",
         },

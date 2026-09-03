@@ -133,11 +133,44 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for login or human judgment. Protected input stays off the thread.",
+      "Ask the user to take over the computer screen for passwords, 2FA, CAPTCHA, payment, passkeys, or other protected input. Never ask the user to paste protected values in chat.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },
       required: ["reason"],
+    },
+  },
+  {
+    name: "ask_user",
+    description:
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string", maxLength: 240 },
+        options: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 80 },
+          minItems: 2,
+          maxItems: 4,
+          uniqueItems: true,
+        },
+      },
+      required: ["question", "options"],
+    },
+  },
+  {
+    name: "request_secret",
+    description:
+      "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        connectionId: { type: "string" },
+      },
+      required: ["label", "purpose"],
     },
   },
   {
@@ -183,7 +216,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "add_mcp_server",
     description:
-      "Connect an MCP tool server to this workspace when the user asks you to add one and provides the details (URL or command, optional token/headers/env). The server is created immediately and assigned to you. If it needs browser OAuth authorization, an approval card appears in the chat for the user to complete — tell them to click Authorize. Do not invent endpoints; only use details the user provided.",
+      "Connect an MCP tool server to this Space when the user asks you to add one and provides the details (URL or command, optional token/headers/env). The server is created immediately and assigned to you. If it needs browser OAuth authorization, an approval card appears in the chat for the user to complete — tell them to click Authorize. Do not invent endpoints; only use details the user provided.",
     inputSchema: {
       type: "object",
       properties: {
@@ -242,8 +275,42 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["content"],
     },
   },
+  {
+    name: "web_search",
+    description:
+      "Search the public web. Returns titles, URLs, and snippets. Use when you need current information or links; follow with web_fetch to read a page. Does not need a computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query." },
+        maxResults: {
+          type: "number",
+          description: "Max results to return (default 5, max 10).",
+        },
+      },
+      required: ["query"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "web_fetch",
+    description:
+      "Fetch a public http(s) page and return readable text (title + content). Read-only; no JavaScript. Use after web_search when you need the page itself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Page URL (http or https)." },
+        maxChars: {
+          type: "number",
+          description: "Max characters of body text (default 8000).",
+        },
+      },
+      required: ["url"],
+    },
+    readOnly: true,
+  },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
-  // workspace memory provider is configured (which hides `remember`).
+  // A Space memory provider is configured (which hides `remember`).
   {
     name: "save_memory",
     description:
@@ -472,6 +539,23 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "create_space",
+    description:
+      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. This always shows the user a confirmation card before creation. Creating the space is the whole action; do not create bots in it unless the user asks later.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          minLength: 1,
+          maxLength: 60,
+          description: 'Short display name, e.g. "Customer support".',
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "spawn_bot",
     description:
       "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
@@ -509,7 +593,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "message_bot",
     description:
-      "Send a message to one of the user's other bots. Asynchronous: this returns as soon as the message is sent, and any reply arrives later as a new message that wakes you. Never wait for a reply in this turn.",
+      "Send a useful update, question, or result to another of the user's bots. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.",
     inputSchema: {
       type: "object",
       properties: {
@@ -519,6 +603,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target bot when bot_id is omitted.",
         },
         message: { type: "string", description: "What to send." },
+        intent: {
+          type: "string",
+          enum: ["request", "result", "question", "status", "fyi"],
+          description: "What the recipient should do with this message. Defaults to request.",
+        },
       },
       required: ["message"],
     },
@@ -526,7 +615,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "In a group chat only: hand the next stage to another current member. Appends a visible handoff in the shared thread and starts that bot asynchronously.",
+      "In a group chat only: transfer a genuinely distinct next stage to another current member. Appends a visible handoff and starts that bot asynchronously. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
     inputSchema: {
       type: "object",
       properties: {
@@ -538,6 +627,55 @@ export const builtinAgentTools: ConnectorTool[] = [
         message: { type: "string", description: "What the receiving bot should do next." },
       },
       required: ["message"],
+    },
+  },
+];
+
+/** Agent-connection tools, exposed only when the messaging surface is enabled. */
+export const agentConnectionTools: ConnectorTool[] = [
+  {
+    name: "connect_agent",
+    description:
+      "Request a standing connection to another person's agent by their owner's chat address. The other owner must approve before either agent can message the other. Only for agents whose owner messaged the deployment's chat line.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        address: {
+          type: "string",
+          description:
+            "The owner's address on the chat surface: an E.164 phone number (e.g. +15551234567) or platform user id.",
+        },
+      },
+      required: ["address"],
+    },
+  },
+  {
+    name: "respond_agent_connection",
+    description:
+      "Approve or decline the newest pending agent connection request addressed to you. Use only on your owner's explicit instruction.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accept: { type: "boolean", description: "true to approve, false to decline." },
+      },
+      required: ["accept"],
+    },
+  },
+  {
+    name: "message_agent",
+    description:
+      "Send a useful update, question, or result to another person's agent over an approved connection. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        address: {
+          type: "string",
+          description:
+            "Chat address (phone number or platform user id) of the connected agent's owner.",
+        },
+        message: { type: "string", description: "What to send." },
+      },
+      required: ["address", "message"],
     },
   },
 ];

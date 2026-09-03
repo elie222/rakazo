@@ -48,7 +48,7 @@ describe("Pi runtime errors", () => {
         {
           operationId: "operation",
           traceId: "trace",
-          workspaceId: "workspace",
+          spaceId: "workspace",
           userId: "user",
           signal: new AbortController().signal,
         },

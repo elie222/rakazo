@@ -3,7 +3,7 @@ import type { ConnectionCatalogItem, SandboxKind } from "@rakazo/contracts";
 export interface AdapterContext {
   operationId: string;
   traceId: string;
-  workspaceId: string;
+  spaceId: string;
   userId: string;
   botId?: string;
   runId?: string;
@@ -179,6 +179,9 @@ export interface ConnectorRoute {
   connectorId: string;
   toolName: string;
   resourceId?: string;
+  resourceRevision?: string | number;
+  /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
+  catalogGroup?: string;
 }
 
 export interface ConnectorCall {
@@ -297,18 +300,30 @@ export interface SemanticMemoryPurgeHistoryRequest {
   generations: number[];
 }
 
+export interface AgentInputImage {
+  name: string;
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  data: Uint8Array;
+}
+
+export interface AgentSteeringMessage {
+  id: string;
+  messageId: string;
+  text: string;
+  /** Persisted history text before attachment paths are appended. */
+  historyText?: string;
+  images?: AgentInputImage[];
+}
+
 export interface AgentRunRequest {
   botId: string;
   threadId: string;
   runId: string;
+  sourceMessageId?: string | null;
   prompt: string;
   instructions: string;
-  history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  currentTurnImages?: Array<{
-    name: string;
-    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
-    data: Uint8Array;
-  }>;
+  history: Array<{ id?: string; role: "user" | "assistant" | "system"; content: string }>;
+  currentTurnImages?: AgentInputImage[];
   tools: ConnectorTool[];
   model: {
     provider: string;
@@ -325,18 +340,27 @@ export interface AgentRunRequest {
   };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
+  /**
+   * Bot-message wakes may finish with no text and no tools (FYI silence).
+   * When set, skip synthetic empty-turn fallbacks.
+   */
+  allowSilentEmpty?: boolean;
+  /** Contextual fallback when a non-silent run produces no written response. */
+  emptyResponseText?: string;
   executeTool?: (
     name: string,
     args: Record<string, unknown>,
     executionId: string,
     route?: ConnectorRoute,
   ) => Promise<unknown>;
+  /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
+  claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
 }
 
 export interface ScriptedTurn {
   assistant?: string;
   toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
-  ask?: { text: string; detail?: string };
+  ask?: { text: string; detail?: string; actions?: Array<{ id: string; label: string }> };
   takeover?: { reason: string };
   files?: Array<{ path: string; content: string }>;
   memory?: Array<{ scope: "bot" | "user"; path: string; content: string }>;
@@ -347,7 +371,12 @@ export type AgentRuntimeEvent =
   | { type: "text"; text: string }
   | { type: "progress"; text: string }
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
-  | { type: "ask"; text: string; detail?: string }
+  | {
+      type: "ask";
+      text: string;
+      detail?: string;
+      actions?: Array<{ id: string; label: string }>;
+    }
   | { type: "takeover"; reason: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }
   | { type: "checkpoint"; blob: string }
@@ -412,6 +441,7 @@ export interface BackgroundJobPayloads {
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
   "history.compact": { threadId: string };
+  "messaging.deliver": { runId?: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -446,4 +476,105 @@ export interface NotificationMessage {
   body: string;
   botId: string;
   threadId: string;
+}
+
+/** A product-authored transactional email, independent of its delivery vendor. */
+export interface TransactionalEmail {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}
+
+export interface MessagingCapabilities {
+  direct: boolean;
+  groups: boolean;
+  typing: boolean;
+}
+
+/** One messaging platform behind the chat surface (sendblue, slack, …). */
+export interface MessagingPlatformDescriptor {
+  provider: string;
+  capabilities: MessagingCapabilities;
+}
+
+/** Send into an existing conversation, addressed by its opaque thread id. */
+export interface MessagingSendRequest {
+  threadId: string;
+  body: string;
+}
+
+export interface MessagingSendResult {
+  handle: string;
+}
+
+/** Provider-neutral inbound message after platform webhook parsing. */
+export interface MessagingInboundMessage {
+  type: "message";
+  provider: string;
+  /** Provider message id; drives replay-safe client nonces downstream. */
+  handle: string;
+  /** Opaque conversation id — pass back to sendToThread to reply. */
+  threadId: string;
+  /** True for a 1:1 conversation with the deployment's line/bot. */
+  isDirect: boolean;
+  /** Sender address within the provider (E.164, Slack user id, …). */
+  from: string;
+  /** Sender display name when the platform provides one. */
+  fromLabel: string | null;
+  /** Group/channel display name; null for DMs or when unknown. */
+  channelName: string | null;
+  /** Group roster addresses when the platform reports them; often empty. */
+  participants: string[];
+  content: string;
+  mediaUrl: string | null;
+}
+
+/** Provider-neutral outbound delivery status after platform webhook parsing. */
+export interface MessagingOutboundStatus {
+  type: "status";
+  provider: string;
+  handle: string;
+  status: string;
+}
+
+export type MessagingInboundEvent = MessagingInboundMessage | MessagingOutboundStatus;
+
+export interface WebSearchCapabilities {
+  search: boolean;
+  /** True when results come from the active model’s native search, not a third-party API. */
+  native?: boolean;
+  /** True when search works without a hosted search vendor or API key. */
+  keyless?: boolean;
+}
+
+export interface WebFetchCapabilities {
+  fetch: boolean;
+  /** True when readable extraction runs without executing page JavaScript. */
+  readability: boolean;
+}
+
+export interface WebSearchRequest {
+  query: string;
+  maxResults?: number;
+  signal?: AbortSignal;
+}
+
+export interface WebSearchHit {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface WebFetchRequest {
+  url: string;
+  maxChars?: number;
+  signal?: AbortSignal;
+}
+
+export interface WebFetchResult {
+  url: string;
+  title: string;
+  text: string;
+  truncated: boolean;
 }

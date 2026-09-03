@@ -3,7 +3,7 @@ import { persistMemoryProviderConfig, updateMemoryProviderDefaultScope } from ".
 
 const actor = {
   userId: "user-1",
-  workspaceId: "ws-1",
+  spaceId: "ws-1",
   email: "a@b.com",
   isDeploymentOwner: false,
 };
@@ -23,7 +23,7 @@ function makeDeps(
       defaultMemoryScope: string;
       updatedAt: Date;
     };
-    workspaceOwner?: boolean;
+    spaceOwner?: boolean;
     memberRole?: string;
   } = {},
 ) {
@@ -47,14 +47,14 @@ function makeDeps(
     },
   );
   const prisma = {
-    member: {
-      findFirst: vi
+    spaceMember: {
+      findUnique: vi
         .fn()
         .mockResolvedValue(
-          overrides.workspaceOwner === false ? null : { role: overrides.memberRole ?? "owner" },
+          overrides.spaceOwner === false ? null : { role: overrides.memberRole ?? "owner" },
         ),
     },
-    workspaceMemoryConfig: { findUnique, update, upsert },
+    spaceMemoryConfig: { findUnique, update, upsert },
     secret: { create: secretCreate, deleteMany: secretDeleteMany },
     $transaction: vi.fn(),
   };
@@ -86,10 +86,10 @@ function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
 }
 
 describe("persistMemoryProviderConfig", () => {
-  it("rejects non-owners before probing or writing workspace configuration", async () => {
+  it("rejects non-owners before probing or writing Space configuration", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { deps, upsert } = makeDeps({ workspaceOwner: false });
+    const { deps, upsert } = makeDeps({ spaceOwner: false });
 
     await expect(
       persistMemoryProviderConfig(deps as never, actor, connectionInput("cloud")),
@@ -163,7 +163,7 @@ describe("persistMemoryProviderConfig", () => {
     );
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workspaceId: "ws-1" },
+        where: { spaceId: "ws-1" },
         create: expect.objectContaining({
           provider: "supermemory",
           settings: { mode: "cloud", baseUrl: "https://api.supermemory.ai" },
@@ -225,7 +225,7 @@ describe("updateMemoryProviderDefaultScope", () => {
   it("rejects non-owners without updating provider configuration", async () => {
     const { deps, update } = makeDeps({
       existing: { id: "cfg-1", secretId: "secret-existing" },
-      workspaceOwner: false,
+      spaceOwner: false,
     });
 
     await expect(

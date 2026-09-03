@@ -9,7 +9,7 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
 
   const parentText = `hover-parent-${stamp}`;
   const replyText = `hover-reply-${stamp}`;
-  const composer = page.getByRole("textbox", { name: /^Message/ });
+  const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
   await composer.fill(parentText);
   await composer.press("Enter");
@@ -23,6 +23,8 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Copy" })).toBeVisible();
+  const thumbsUp = toolbar.getByRole("button", { name: "Add thumbs-up" });
+  await expect(thumbsUp).toBeVisible();
 
   // Pill must float above the bubble text, not cover the first line.
   const bubble = parentRow.locator("div").filter({ hasText: parentText }).last();
@@ -63,6 +65,14 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   });
   await testInfo.attach("message-hover-toolbar", { contentType: "image/png", path: hoverPath });
 
+  await thumbsUp.click();
+  const reactionChip = parentRow
+    .getByRole("button", { name: "Remove thumbs-up" })
+    .filter({ hasText: "👍" });
+  await expect(reactionChip).toBeVisible();
+  await captureScreenshot(page, testInfo, "message-thumbs-up");
+
+  await parentRow.hover();
   await toolbar.getByRole("button", { name: "Copy" }).click();
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
@@ -96,7 +106,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
 
   const parentText = `page-parent-${stamp}`;
   const replyText = `page-reply-${stamp}`;
-  const composer = page.getByRole("textbox", { name: /^Message/ });
+  const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
   await composer.fill(parentText);
   await composer.press("Enter");
@@ -159,7 +169,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   });
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("textbox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toHaveCount(0);
   const offlinePreview = page
     .locator(`[data-message-id]`)

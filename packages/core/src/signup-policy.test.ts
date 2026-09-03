@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emailAllowed, parseAllowlist, signupsOpen } from "./signup-policy.js";
+import { emailAllowed, parseAllowlist, signupPolicyFromEnv, signupsOpen } from "./signup-policy.js";
 
 describe("signup policy", () => {
   it("allows any email when the list is empty", () => {
@@ -16,5 +16,14 @@ describe("signup policy", () => {
   it("honors SIGNUPS_ENABLED", () => {
     expect(signupsOpen(undefined)).toBe(true);
     expect(signupsOpen("false")).toBe(false);
+  });
+
+  it("builds a normalized policy from environment defaults", () => {
+    expect(
+      signupPolicyFromEnv({
+        signupsEnabled: "false",
+        signupAllowlist: " You@Example.com, @company.test ",
+      }),
+    ).toEqual({ enabled: false, allowlist: ["you@example.com", "@company.test"] });
   });
 });
