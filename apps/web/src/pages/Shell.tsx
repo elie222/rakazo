@@ -3076,6 +3076,7 @@ export function ShellPage() {
                 <div className="flex gap-1">
                   {active &&
                   panel === "computer" &&
+                  !computerOpen &&
                   computerPanelNeedsMaintenance(computer?.state, booting) ? (
                     <ComputerMaintenanceActions
                       botId={active.id}

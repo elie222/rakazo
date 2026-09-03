@@ -1327,6 +1327,16 @@ describe("computer event reduction", () => {
     expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
     expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
   });
+
+  it("hides side-panel maintenance while the computer overlay is open", () => {
+    const panel = "computer";
+    const booting = false;
+    const showInSidePanel = (computerOpen: boolean) =>
+      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("stopped", booting);
+
+    expect(showInSidePanel(false)).toBe(true);
+    expect(showInSidePanel(true)).toBe(false);
+  });
 });
 
 function snapshot(messages: ThreadMessage[], olderCursor: number | null = null): ThreadSnapshot {
