@@ -32,7 +32,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await page.goto("/");
   await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Sign in/ })).toBeVisible();
+  await page.getByRole("button", { name: /Sign up/ }).click();
+  await expect(page).toHaveURL(/\/sign-up$/);
+  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await page.goto("/");
   await captureScreenshot(page, testInfo, "37-logged-out-welcome");
 
   await page.goto(protectedBotPath);

@@ -148,7 +148,7 @@ export default function Account() {
     try {
       await signOut();
       router.dismissAll();
-      router.replace("/sign-in");
+      router.replace({ pathname: "/sign-in", params: { mode: "in" } });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not sign out"));
       setPending(false);
