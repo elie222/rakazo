@@ -37,8 +37,8 @@ when every platform that was built produced its installer and update feed.
 Set a secret from a file without echoing it:
 
 ```sh
-base64 -i devid.p12 | gh secret set DESKTOP_MAC_CSC_LINK --repo elie222/rakazo
-gh secret set APPLE_API_KEY_P8 --repo elie222/rakazo < AuthKey_XXXXXXXXXX.p8
+base64 -i devid.p12 | gh secret set DESKTOP_MAC_CSC_LINK
+gh secret set APPLE_API_KEY_P8 < AuthKey_XXXXXXXXXX.p8
 ```
 
 ## Cut a release
