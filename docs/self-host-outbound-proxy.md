@@ -46,8 +46,12 @@ running it (values are examples; use your gateway):
 ```bash
 export HTTP_PROXY=http://proxy.example.com:8080
 export HTTPS_PROXY=http://proxy.example.com:8080
+# curl only honors lowercase http_proxy for http:// URLs:
+export http_proxy="$HTTP_PROXY"
+export https_proxy="$HTTPS_PROXY"
 # Keep loopback and internal Compose DNS off the proxy:
 export NO_PROXY=localhost,127.0.0.1,::1,postgres,api,web,worker,supervisor,updater
+export no_proxy="$NO_PROXY"
 mkdir -p rakazo && cd rakazo
 curl -fsSLO "${RAKAZO_INSTALLER_URL:-https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/install-images.sh}"
 bash install-images.sh
@@ -107,7 +111,10 @@ Passing an explicit `-f` disables Compose’s auto-load of `docker-compose.overr
 so the second `-f` is required when that override exists.
 
 Keep `NO_PROXY` broad enough for in-stack service names (`postgres`,
-`supervisor`, `api`, …) so internal traffic stays direct.
+`supervisor`, `api`, …) so internal traffic stays direct. On Node 22,
+global `fetch` also needs `NODE_USE_ENV_PROXY=1` (or an equivalent undici
+proxy agent) before `HTTP_PROXY` / `HTTPS_PROXY` apply; Rakazo does not
+enable that by default today.
 
 Bot **computer** containers and remote sandbox providers (E2B / Daytona /
 Box) have their own egress story; host Docker proxy settings do not
@@ -117,7 +124,8 @@ internet.” Treat computer egress as a separate ops concern.
 ## 4. Quick verification
 
 ```bash
-# Host curl via proxy (should show your gateway’s effect)
+# Host curl via proxy: use -v locally and confirm a CONNECT to your gateway
+# (or check proxy access logs). Do not share verbose output; it can leak secrets.
 curl -fsSI https://example.com | head -n5
 
 # Daemon can pull (after daemon proxy restart)
