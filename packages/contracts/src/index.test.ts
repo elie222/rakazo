@@ -250,6 +250,7 @@ describe("contracts", () => {
     expect(AgentSecretInputSchema.safeParse({ name: "NODE_OPTIONS", value: "x" }).success).toBe(
       false,
     );
+    expect(AgentSecretInputSchema.safeParse({ name: "SHELLOPTS", value: "x" }).success).toBe(false);
     expect(AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "" }).success).toBe(false);
     expect(
       AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "x".repeat(16_385) }).success,
