@@ -501,10 +501,16 @@ it("reports interruption instead of a pull failure when docker returns 130", asy
 
 
   it("surfaces a broken resource bundle instead of hanging", async () => {
-    await mkdir(path.join(root, "empty"));
-    const stack = controller({ resourceDir: path.join(root, "empty") });
+    const resourceDir = path.join(root, "empty");
+    await mkdir(resourceDir);
+    const stack = controller({ resourceDir });
     const state = await stack.start();
-    expect(state.phase).toBe("failed");
-    expect(state.message).toContain("Could not prepare the local stack.");
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "Could not prepare the local stack. Retry.",
+    });
+    // copyFile/readFile ENOENT must not leak absolute paths into user-facing state.
+    expect(state.message).not.toContain(resourceDir);
+    expect(state.message).not.toContain(root);
   });
 });
