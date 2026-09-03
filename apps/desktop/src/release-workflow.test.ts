@@ -45,10 +45,14 @@ describe("desktop release workflow", () => {
       expect(workflow).toContain(`secrets.${secret}`);
     }
     expect(workflow).not.toMatch(/secrets\.(?:APPLE_ID|APPLE_APP_SPECIFIC_PASSWORD)\b/);
-    expect(workflow).toContain(`APPLE_API_KEY: ${expression("runner.temp")}/apple-api-key.p8`);
+    // The same temp path is declared by the setup, packaging, and cleanup steps.
+    const keyFile = `APPLE_API_KEY: ${expression("runner.temp")}/apple-api-key.p8`;
+    expect(workflow.split(keyFile)).toHaveLength(4);
+    expect(workflow).toContain(`printf '%s\\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"`);
     expect(workflow).toContain('chmod 600 "$APPLE_API_KEY"');
-    expect(workflow).toContain("if: always() && runner.os == 'macOS'");
-    expect(workflow).toContain('run: rm -f "$APPLE_API_KEY"');
+    expect(workflow).toMatch(
+      /if: always\(\) && runner\.os == 'macOS'\n(?:.*\n){3}\s+run: rm -f "\$APPLE_API_KEY"/,
+    );
   });
 
   it("builds Windows only when an Authenticode certificate is configured", () => {
@@ -58,9 +62,13 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain(
       `include: ${expression("fromJSON(needs.validate.outputs.platforms)")}`,
     );
-    expect(workflow).toContain('{"os":"macos-14","artifact":"macos"}');
-    expect(workflow).toContain('{"os":"ubuntu-24.04","artifact":"linux"}');
-    expect(workflow).toContain('{"os":"windows-2022","artifact":"windows"}');
+    expect(workflow).toContain(
+      `include='[{"os":"macos-14","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'`,
+    );
+    expect(workflow).toMatch(
+      /if \[\[ "\$WINDOWS_SIGNING" == "true" \]\]; then\n\s+include=.*\{"os":"windows-2022","artifact":"windows"\}/,
+    );
+    expect(workflow.split("windows-2022")).toHaveLength(2);
     expect(workflow).toContain(`WINDOWS_BUILT: ${expression("needs.validate.outputs.windows")}`);
     expect(workflow).toContain('if [[ "$WINDOWS_BUILT" == "true" ]]; then');
     expect(workflow).toContain("feeds+=(release-artifacts/latest.yml)");
