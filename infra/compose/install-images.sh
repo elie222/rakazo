@@ -59,6 +59,31 @@ done
 
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
+# Optional proxy knobs from an existing .env (operators often set them there for
+# containers). Do not override values already present in the shell.
+load_proxy_vars_from_env_file() {
+  local file="$1"
+  local line key value
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    [[ "$line" =~ ^[[:space:]]*(HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)=(.*)$ ]] || continue
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    if [[ -n "${!key+x}" ]]; then
+      continue
+    fi
+    export "${key}=${value}"
+  done <"$file"
+}
+
 # curl uses lowercase http_proxy for http:// URLs; many Mainland hosts only export HTTP_PROXY.
 sync_curl_proxy_env() {
   if [[ -n "${HTTP_PROXY:-}" && -z "${http_proxy:-}" ]]; then
@@ -71,7 +96,12 @@ sync_curl_proxy_env() {
     export no_proxy="$NO_PROXY"
   fi
 }
-sync_curl_proxy_env
+
+prepare_proxy_env() {
+  load_proxy_vars_from_env_file "$ENV_FILE"
+  sync_curl_proxy_env
+}
+prepare_proxy_env
 
 curl_download() {
   local url="$1"
@@ -109,7 +139,7 @@ download() {
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
   if ! curl_download "$url" "$temporary_file"; then
-    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY (NO_PROXY for localhost), or pre-place the file and use --local."
+    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY in the shell or .env (NO_PROXY for localhost), or pre-place the file and use --local."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""
@@ -204,6 +234,7 @@ if [[ "$prepare_only" == true ]]; then
   exit 0
 fi
 
+prepare_proxy_env
 if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
   fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
 fi
