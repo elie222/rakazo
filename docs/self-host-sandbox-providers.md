@@ -15,7 +15,7 @@ not catch that until provisioning fails.
 | Goal | Set | Also need |
 | --- | --- | --- |
 | Default self-host (local Docker desktop per bot) | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
-| UI only, no computers | `SANDBOX_PROVIDER=none` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose) |
+| UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
 | Managed remote desktop | `e2b` / `daytona` / `box` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Box) |
 
 Published-images `infra/compose/.env.images.example` defaults to **`docker`**.
@@ -70,7 +70,8 @@ Published-images Compose (`docker-compose.images.yml`) still requires
 depend on it). The token is a Compose stack requirement; it does not replace
 the remote API key.
 
-After changing provider or keys:
+After changing provider or keys (from the published-images drop directory that
+holds `docker-compose.images.yml` and `.env`):
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml up -d
