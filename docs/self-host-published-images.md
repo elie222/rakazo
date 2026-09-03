@@ -1,7 +1,7 @@
 # Self-host with published images (no checkout)
 
 Pull Postgres + `ghcr.io/elie222/rakazo/{app,computer}` into an empty folder.
-No git clone and no image build. New file only — does not edit `docs/self-host.md`.
+No git clone and no image build.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ bash install-images.sh
 The installer downloads `docker-compose.images.yml` and `.env.images.example`,
 creates `.env` with random secrets, pulls, and starts. Re-runs preserve `.env`.
 
-UI: http://127.0.0.1:5173 — first registered user becomes deployment owner.
+UI: http://127.0.0.1:5173. First registered user becomes deployment owner.
 Probe API health on **:3100** (Vite preview does not proxy `/health`):
 
 ```bash
@@ -39,21 +39,22 @@ Flags may combine: `--prepare-only`, `--local` (skip curl when Compose files alr
 
 ## Defaults worth knowing
 
-- Image tag default `edge` is **amd64-only**; arm64 hosts must pin **both** app and computer tags to the same multi-arch release (see `docs/self-host-arm64.md`).
+- Image tag default `edge` is **amd64-only**; arm64 hosts must pin **both** app and computer tags to the same multi-arch release (see [Published images and tags](self-host.md#published-images-and-tags)).
 - Do not assume `latest` exists.
 - `SANDBOX_PROVIDER` defaults to `docker` (needs `SANDBOX_SUPERVISOR_TOKEN`).
-- Secrets must stay distinct — see `docs/self-host-secrets.md`.
+- Secrets must stay distinct. See [Docker Compose secrets guidance](self-host.md#docker-compose-single-machine).
 
 ## Restricted networks
 
 Override installer URL / download base / registry image env as needed.
-Start from `docs/self-host-restricted-network.md` and the satellite guides it lists.
+Start from [Restricted networks / mirror downloads](self-host.md#restricted-networks--mirror-downloads).
 No vendor CDN hostnames as project defaults.
 
 ## TLS
 
 Images Compose binds web to `127.0.0.1:5173`. Terminate TLS on the host and
-set `BETTER_AUTH_URL`, `WEB_ORIGIN`, `API_URL`, and `RAKAZO_HOST` to that HTTPS origin.
+set `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that HTTPS origin, and set
+`RAKAZO_HOST` to its hostname (for example, `app.example.com`).
 For in-stack Caddy + updater, use the production Compose path instead.
 
 ## Stop
