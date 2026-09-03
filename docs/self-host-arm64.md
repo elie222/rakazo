@@ -108,10 +108,12 @@ From the install directory (or `infra/compose`):
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml images
-docker image inspect "$(docker compose --env-file .env -f docker-compose.images.yml images -q api | head -1)" \
-  --format '{{.Architecture}}'
+for service in api computer; do
+  docker image inspect "$(docker compose --env-file .env -f docker-compose.images.yml images -q "$service" | head -1)" \
+    --format "$service: {{.Architecture}}"
+done
 curl -fsS http://127.0.0.1:3100/health
 ```
 
-Architecture should be `arm64` (or your host arch). Health notes:
+Both should report `arm64` (or your host arch). Health notes:
 [docs/self-host.md](./self-host.md).
