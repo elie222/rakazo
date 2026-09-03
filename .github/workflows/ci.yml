@@ -60,6 +60,13 @@ jobs:
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
       - name: Electron smoke
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
+      - name: Upload desktop setup screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-screenshots
+          path: apps/desktop/e2e/screenshots
+          if-no-files-found: ignore
 
   test:
     name: Unit tests

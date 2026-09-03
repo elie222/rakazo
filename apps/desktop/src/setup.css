@@ -209,6 +209,66 @@ body {
   font-size: 12px;
 }
 
+.stack-phase {
+  margin: 12px 0 0;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.stack-phase[data-tone="error"] {
+  color: var(--danger);
+}
+
+.stack-phase[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.stack-output {
+  margin: 10px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: #08080a;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stack-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent-hover);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--text);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .status {
   margin: 14px 0 0;
   min-height: 20px;
@@ -274,4 +334,9 @@ body {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* Last so it wins over the flex layouts above at equal specificity. */
+[hidden] {
+  display: none;
 }

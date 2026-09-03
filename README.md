@@ -115,10 +115,16 @@ With the development stack running, launch Electron with:
 pnpm --filter @rakazo/desktop dev
 ```
 
-On first run the desktop app asks whether to use the Rakazo stack on this computer
-(`http://127.0.0.1:5173`) or connect to an existing server. Public servers must use HTTPS; HTTP is
-accepted only for loopback and private LAN addresses (not link-local). The app verifies Rakazo's
-health endpoint before saving, and later launches go straight to that instance.
+On first run the desktop app asks whether to run Rakazo on this computer or connect to an existing
+server. **This computer** installs and starts the published images with Docker Compose (the same
+files as `infra/compose/install-images.sh`) under the app's data directory, so Docker Desktop,
+OrbStack, or Docker Engine must be installed; the app links to them when it is not. Installed
+builds pin the image tag to their own version; unpackaged builds pull `edge`. Developers running
+`pnpm dev` should pick **Existing instance** with `http://127.0.0.1:5173` instead. Public servers
+must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
+app verifies Rakazo's health endpoint before saving, and later launches go straight to that
+instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
+menu turns it off.
 
 Use **Change Rakazo Server…** in the application menu to reconnect. Closing that window without
 saving returns to the previous instance. For development automation, set `RAKAZO_WEB_URL` to point

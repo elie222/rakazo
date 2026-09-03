@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -8,6 +9,13 @@ import {
   type ElectronAutoUpdater,
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
+import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
+import {
+  LocalStackController,
+  resolveImageTag,
+  stackDir,
+  stackResourceDir,
+} from "./local-stack.js";
 import { oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
@@ -32,6 +40,8 @@ import { shouldOpenInAppPopup } from "./window-open.js";
 import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
+/** Test hook: where the app-managed stack answers. Mode `new` still requires loopback. */
+const LOCAL_WEB_URL = process.env.RAKAZO_LOCAL_WEB_URL?.trim() || DEFAULT_LOCAL_WEB_URL;
 const PROBE_TIMEOUT_MS = 8_000;
 const PROBE_RESPONSE_LIMIT_BYTES = 64 * 1024;
 let mainWindow: BrowserWindow | null = null;
@@ -58,6 +68,7 @@ const desktopUpdater = new DesktopUpdateController(updaterEnvironment, async () 
   return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
 });
 let launchUpdateCheckScheduled = false;
+let localStack: LocalStackController;
 
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
@@ -561,6 +572,14 @@ function installApplicationMenu() {
     accelerator: "CmdOrCtrl+Shift+K",
     click: () => showSetupWindow(),
   };
+  const stopStack: Electron.MenuItemConstructorOptions = {
+    id: "stop-local-stack",
+    label: "Stop Local Stack",
+    // The stack keeps running after quit (bots are always on); this is the explicit off switch.
+    click: () => {
+      if (currentSetup?.mode === "new") void localStack.stop();
+    },
+  };
   const template: Electron.MenuItemConstructorOptions[] =
     process.platform === "darwin"
       ? [
@@ -570,6 +589,7 @@ function installApplicationMenu() {
               { role: "about" },
               { type: "separator" },
               changeServer,
+              stopStack,
               { type: "separator" },
               { role: "hide" },
               { role: "hideOthers" },
@@ -584,7 +604,7 @@ function installApplicationMenu() {
       : [
           {
             label: "File",
-            submenu: [changeServer, { type: "separator" }, { role: "quit" }],
+            submenu: [changeServer, stopStack, { type: "separator" }, { role: "quit" }],
           },
           { role: "editMenu" },
           { role: "windowMenu" },
@@ -831,6 +851,25 @@ function safeOrigin(targetUrl: string) {
 
 app.whenReady().then(async () => {
   const userDataDir = app.getPath("userData");
+  localStack = new LocalStackController({
+    platform: process.platform,
+    env: process.env,
+    exists: existsSync,
+    run: runDocker,
+    stackDir: stackDir(userDataDir),
+    resourceDir: stackResourceDir({
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
+    imageTag: resolveImageTag({
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      override: process.env.RAKAZO_IMAGE_TAG,
+    }),
+    probe: async () => (await probeServer(LOCAL_WEB_URL)).ok,
+    randomHex: (bytes) => randomBytes(bytes).toString("hex"),
+  });
   currentSetup = await readSetup(userDataDir);
   const target = resolveStartupTarget({
     envUrl: process.env.RAKAZO_WEB_URL,
@@ -897,7 +936,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("desktop.setup.state", (event) => {
     if (!fromSetupWindow(event)) return null;
     return {
-      defaultLocalUrl: DEFAULT_LOCAL_WEB_URL,
+      defaultLocalUrl: LOCAL_WEB_URL,
       saved: currentSetup,
       error: setupError ?? undefined,
     };
@@ -984,6 +1023,19 @@ app.whenReady().then(async () => {
   ipcMain.handle("desktop.setup.quit", (event) => {
     if (fromSetupWindow(event)) app.quit();
   });
+  ipcMain.handle("desktop.setup.openLink", async (event, link: unknown) => {
+    if (!fromSetupWindow(event) || !isDesktopSetupLink(link)) return;
+    await shell.openExternal(DOCKER_INSTALL_LINKS[link]);
+  });
+  ipcMain.handle("desktop.setup.stack.state", (event) =>
+    fromSetupWindow(event) ? localStack.state() : null,
+  );
+  ipcMain.handle("desktop.setup.stack.start", (event) => {
+    if (!fromSetupWindow(event)) return null;
+    // Respond right away; the setup window polls `stack.state` until a terminal phase.
+    void localStack.start();
+    return localStack.state();
+  });
 
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
   app.on("activate", () => {
@@ -1015,6 +1067,11 @@ app.whenReady().then(async () => {
         commitPendingAppSwitch();
         destroySetupWindow();
       }
+    } else if (currentSetup?.mode === "new") {
+      // The app-managed stack is down (reboot, Docker quit): bring it back up and let
+      // the setup window follow along instead of asking for a server address again.
+      void localStack.start();
+      showSetupWindow();
     } else {
       showSetupWindow(`Could not reconnect to the saved server. ${reachability.error}`);
     }
@@ -1033,4 +1090,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   quitting = true;
   clearTimeout(warmWindowTimer);
+  // Containers keep running; only an in-flight pull/up is cut short.
+  localStack?.abort();
 });
