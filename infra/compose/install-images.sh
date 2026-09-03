@@ -188,7 +188,7 @@ warn_arm64_edge_tags() {
     computer_tag="$(printf '%s\n' "$compose_env" | awk -F= '$1 == "RAKAZO_COMPUTER_IMAGE_TAG" { print substr($0, index($0, "=") + 1); exit }')"
   else
     # Older Compose without `config --environment`: shell env overrides .env
-    # (same precedence as `docker compose pull`).
+    # (same precedence as `docker compose pull`), then trivial ${NAME:-default}.
     normalize_env_tag() {
       local v="$1"
       v="${v%%#*}"
@@ -200,18 +200,45 @@ warn_arm64_edge_tags() {
       v="${v%"${v##*[![:space:]]}"}"
       printf '%s' "$v"
     }
+    resolve_env_default() {
+      local v name def cur
+      v="$(normalize_env_tag "$1")"
+      if [[ "$v" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-)([^}]*)\}$ ]]; then
+        name="${BASH_REMATCH[1]}"
+        def="${BASH_REMATCH[3]}"
+        if [[ -n "${!name:-}" ]]; then
+          printf '%s' "${!name}"
+          return 0
+        fi
+        cur="$(awk -F= -v k="$name" '
+          $0 ~ "^[[:space:]]*" k "=" {
+            sub(/^[^=]*=/, "")
+            print
+            exit
+          }
+        ' "$ENV_FILE" 2>/dev/null || true)"
+        cur="$(normalize_env_tag "$cur")"
+        if [[ -n "$cur" ]]; then
+          printf '%s' "$cur"
+        else
+          printf '%s' "$def"
+        fi
+        return 0
+      fi
+      printf '%s' "$v"
+    }
     if [[ -n "${RAKAZO_IMAGE_TAG:-}" ]]; then
       app_tag="$RAKAZO_IMAGE_TAG"
     else
       app_tag="$(awk -F= '/^[[:space:]]*RAKAZO_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
-      app_tag="$(normalize_env_tag "$app_tag")"
     fi
     if [[ -n "${RAKAZO_COMPUTER_IMAGE_TAG:-}" ]]; then
       computer_tag="$RAKAZO_COMPUTER_IMAGE_TAG"
     else
       computer_tag="$(awk -F= '/^[[:space:]]*RAKAZO_COMPUTER_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
-      computer_tag="$(normalize_env_tag "$computer_tag")"
     fi
+    app_tag="$(resolve_env_default "$app_tag")"
+    computer_tag="$(resolve_env_default "$computer_tag")"
   fi
   # Defaults match .env.images.example (edge = amd64-only main builds).
   app_tag="${app_tag:-edge}"
