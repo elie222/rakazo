@@ -13,7 +13,7 @@ Stage A bootstrap discoverability is also summarized in the [README](../README.m
 | --- | --- | --- |
 | A: fetch installer | curl to raw GitHub fails | [`RAKAZO_INSTALLER_URL`](./self-host.md#restricted-networks--mirror-downloads) or pre-copy the script ([README](../README.md)) |
 | B: Compose + env example | curl under `infra/compose` fails | [`RAKAZO_DOWNLOAD_BASE`](./self-host.md#restricted-networks--mirror-downloads), [`--local`](./self-host.md#restricted-networks--mirror-downloads), or [`RAKAZO_DOWNLOAD_SKIP_EXISTING=1`](./self-host.md#restricted-networks--mirror-downloads) |
-| C: image pull | GHCR / Hub pull fails | [`RAKAZO_*_IMAGE*`](./self-host.md#restricted-networks--mirror-downloads), [`POSTGRES_IMAGE`](../infra/compose/docker-compose.images.yml) / [`BUSYBOX_IMAGE`](../infra/compose/docker-compose.images.yml); optional daemon [`registry-mirrors`](../infra/compose/docker-daemon.json) |
+| C: image pull | GHCR / Hub pull fails | [`RAKAZO_*_IMAGE*`](./self-host.md#restricted-networks--mirror-downloads), [`POSTGRES_IMAGE`](../infra/compose/docker-compose.images.yml) / [`BUSYBOX_IMAGE`](../infra/compose/docker-compose.images.yml); optional daemon `registry-mirrors` ([how](./self-host.md#restricted-networks--mirror-downloads); base example [docker-daemon.json](../infra/compose/docker-daemon.json)) |
 
 ## Decision tree
 
@@ -36,5 +36,5 @@ Focused `docs/self-host-*.md` satellites may land later. Until then, use these e
 | Sandbox / computer providers | [Choosing a computer provider](./self-host.md#choosing-a-computer-provider) |
 | Stage A installer discoverability | [README](../README.md) |
 | Compose image overrides (`POSTGRES_IMAGE`, `BUSYBOX_IMAGE`, app/computer) | [docker-compose.images.yml](../infra/compose/docker-compose.images.yml) |
-| Example Docker daemon config | [docker-daemon.json](../infra/compose/docker-daemon.json) |
+| Example Docker daemon config (add `registry-mirrors` locally if Hub is blocked) | [docker-daemon.json](../infra/compose/docker-daemon.json) |
 | Full self-host narrative | [self-host.md](./self-host.md) |
