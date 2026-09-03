@@ -24,6 +24,14 @@ Stage A bootstrap discoverability is also summarized in the [README](../README.m
 5. Stack is up but bots cannot call models / remote sandboxes → day-2 egress and [computer provider](./self-host.md#choosing-a-computer-provider) choice; local `SANDBOX_PROVIDER=docker` still needs a computer image.
 6. Arm host + mysterious computer crash → pin both image tags to one multi-arch release ([Published images and tags](./self-host.md#published-images-and-tags)).
 
+For Hub pulls, prefer `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` when you can vendor those images. If you need a daemon mirror instead, merge a `registry-mirrors` array into your Docker daemon JSON (start from [docker-daemon.json](../infra/compose/docker-daemon.json); do not commit vendor CDN hostnames as repo defaults):
+
+```json
+{
+  "registry-mirrors": ["https://mirror.example.com"]
+}
+```
+
 ## Related guides
 
 Focused `docs/self-host-*.md` satellites may land later. Until then, use these existing pages:
