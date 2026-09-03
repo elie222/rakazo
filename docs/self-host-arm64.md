@@ -91,7 +91,7 @@ RAKAZO_COMPUTER_IMAGE_TAG=v0.0.0
 Keep app and computer on the **same mirror** and the **same multi-arch tag**.
 Prefer **digest-pinned** refs when the mirror serves them (immutable content).
 Hub Postgres/busybox overrides (`POSTGRES_IMAGE` / `BUSYBOX_IMAGE`) are
-independent — keep digests when available; use digest-less tags only if the
+independent. Keep digests when available; use digest-less tags only if the
 mirror rejects digests, then verify the pulled digest before deploy. Registry
 override details: [docs/self-host.md](./self-host.md).
 
