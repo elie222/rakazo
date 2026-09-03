@@ -49,6 +49,7 @@ import {
   parseReleasedExtraDisplay,
   releaseExtraDisplayCommand,
   screenControlKey,
+  websockifyProcessPattern,
 } from "./extra-displays.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
@@ -266,7 +267,9 @@ export class E2BSandboxProvider implements SandboxProvider {
       ensureE2BPrimaryViewCommand(desktop.display ?? ":0", randomBytes(6).toString("base64url")),
     );
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || `screen stream failed to start (exit ${result.exitCode})`);
+      throw new Error(
+        `screen stream failed to start (exit ${result.exitCode})${result.stderr ? `: ${result.stderr}` : ""}`,
+      );
     }
     if (this.boxes.get(desktop.sandboxId) !== desktop) {
       throw new Error("screen stream stopped during computer teardown");
@@ -710,7 +713,8 @@ export class E2BSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
   ): Promise<CommandResult> {
     try {
-      return await desktop.commands.run(command, {
+      // E2B's outer login shell can fail its logout hook under `set -e`, even after `exit 0`.
+      return await desktop.commands.run(`bash -c ${shellQuote(command)}`, {
         ...(signal ? { signal } : {}),
         timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
       });
@@ -868,11 +872,11 @@ export function ensureE2BPrimaryViewCommand(display: string, password: string): 
     `if [ -s ${passwordFile} ] && [ -s ${authFile} ] && pgrep -f '(^|/)x11vnc .* -viewonly .* -rfbport 5900 -rfbauth ${authFile}( |$)' >/dev/null && (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$(cat ${passwordFile})"; exit 0; fi`,
     "pkill -f '(^|/)x11vnc .* -rfbport 5900( |$)' || true",
     `pkill -f '${noVncProxyProcessPattern(6080)}' || true`,
-    "pkill -f '^/usr/bin/python3 .*websockify.*[ :]6080( |$)' || true",
+    `pkill -f '${websockifyProcessPattern(6080)}' || true`,
     "for i in $(seq 1 50); do if ! (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && ! (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then break; fi; sleep 0.1; done",
     "if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 || (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then exit 1; fi",
     `if [ -s ${passwordFile} ]; then password=$(cat ${passwordFile}); else password=${shellQuote(password)}; printf %s "$password" >${passwordFile}; fi`,
-    `x11vnc -storepasswd "$password" ${authFile} >/dev/null`,
+    `x11vnc -storepasswd "$password" ${authFile} >/dev/null 2>&1`,
     `x11vnc -bg -display ${shellQuote(display)} -forever -wait 50 -shared -viewonly -listen 127.0.0.1 -rfbport 5900 -rfbauth ${authFile} 8>&- >/tmp/rakazo-primary-view-x11vnc.log 2>&1`,
     "cd /opt/noVNC/utils",
     "(nohup ./novnc_proxy --vnc localhost:5900 --listen 6080 --web /opt/noVNC 8>&- >/tmp/rakazo-primary-view-novnc.log 2>&1 &)",
@@ -892,7 +896,7 @@ function controlStreamStopCommand(controlToken?: string) {
   // would pkill the runner itself.
   const stop = [
     "pkill -f '(^|/)x11vnc .* -rfbport 5901' || true",
-    "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true",
+    `pkill -f '${websockifyProcessPattern(6081)}' || true`,
     `pkill -f '${noVncProxyProcessPattern(6081)}' || true`,
     "rm -f /tmp/rakazo-control.vncpass",
     "rm -f /tmp/rakazo-control.token",

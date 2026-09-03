@@ -29,6 +29,10 @@ export function noVncProxyProcessPattern(port: number | string): string {
   return `^(([^ ]*/)?(bash|sh) +)?([^ ]*/)?novnc_proxy +.*--listen +${port}( |$)`;
 }
 
+export function websockifyProcessPattern(port: number | string): string {
+  return `^([^ ]*/)?python[0-9.]* +(-m +websockify|[^ ]*websockify[^ ]*) +.*[ :]${port}( |$)`;
+}
+
 export function allocateExtraDisplayCommand(screenKey: string, leaseId?: string): string {
   const key = createHash("sha256").update(screenKey).digest("hex");
   const owner = leaseId ?? "";
@@ -75,7 +79,7 @@ export function releaseExtraDisplayCommand(screenKey: string, leaseId?: string):
     // biome-ignore lint/suspicious/noTemplateCurlyInString: POSIX parameter expansion in the remote shell script
     'case "$current" in *:*) rest=${current##*:}; case "$rest" in \'\'|*[!0-9]*) ;; *) current_fence=$rest; current_owner=${current%:*}; esac ;; esac',
     '[ -z "$owner" ] || [ "$current" = "$owner" ] || { [ "$incoming_owner" = "$current_owner" ] && [ "$incoming_fence" -ge "$current_fence" ]; } || { printf \'RAKAZO_SCREEN_RELEASE=stale\\n\'; exit 0; }',
-    `if [ "$index" -ne 0 ]; then display_number=$((index + 1)); view_port=$((6080 + index * 2)); control_port=$((6081 + index * 2)); view_vnc_port=$((5900 + index * 2)); control_vnc_port=$((5901 + index * 2)); pkill -f "Xvfb :$display_number -screen" || true; pkill -f "HOME=/tmp/fluxbox-home-$display_number DISPLAY=:$display_number fluxbox" || true; pkill -f -- "chromium-screen-$display_number" || true; pkill -f "(^|/)x11vnc .* -rfbport $view_vnc_port" || true; pkill -f "(^|/)x11vnc .* -rfbport $control_vnc_port" || true; pkill -f "^/usr/bin/python3 .*websockify.*$view_port" || true; pkill -f "${noVncProxyProcessPattern("$view_port")}" || true; pkill -f "^/usr/bin/python3 .*websockify.*$control_port" || true; pkill -f "${noVncProxyProcessPattern("$control_port")}" || true; rm -f "/tmp/.X$display_number-lock" "/tmp/.X11-unix/X$display_number" "/tmp/rakazo/control-token-$display_number" "/tmp/rakazo/view-password-$display_number" "/tmp/rakazo-view-$display_number.vncpass" "/tmp/rakazo-control-$display_number.vncpass" "/tmp/rakazo/screen-$display_number.lock"; fi`,
+    `if [ "$index" -ne 0 ]; then display_number=$((index + 1)); view_port=$((6080 + index * 2)); control_port=$((6081 + index * 2)); view_vnc_port=$((5900 + index * 2)); control_vnc_port=$((5901 + index * 2)); pkill -f "Xvfb :$display_number -screen" || true; pkill -f "HOME=/tmp/fluxbox-home-$display_number DISPLAY=:$display_number fluxbox" || true; pkill -f -- "chromium-screen-$display_number" || true; pkill -f "(^|/)x11vnc .* -rfbport $view_vnc_port" || true; pkill -f "(^|/)x11vnc .* -rfbport $control_vnc_port" || true; pkill -f "${websockifyProcessPattern("$view_port")}" || true; pkill -f "${noVncProxyProcessPattern("$view_port")}" || true; pkill -f "${websockifyProcessPattern("$control_port")}" || true; pkill -f "${noVncProxyProcessPattern("$control_port")}" || true; rm -f "/tmp/.X$display_number-lock" "/tmp/.X11-unix/X$display_number" "/tmp/rakazo/control-token-$display_number" "/tmp/rakazo/view-password-$display_number" "/tmp/rakazo-view-$display_number.vncpass" "/tmp/rakazo-control-$display_number.vncpass" "/tmp/rakazo/screen-$display_number.lock"; fi`,
     'rm -f "$slot"',
     "printf 'RAKAZO_SCREEN_RELEASE=%s\\n' \"$index\"",
   ].join("; ");
@@ -168,7 +172,7 @@ export function ensureExtraDisplayCommand(
     `  done`,
     `fi`,
     `pkill -f '(^|/)x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
-    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
+    `pkill -f '${websockifyProcessPattern(layout.viewPort)}' || true`,
     `pkill -f '${noVncProxyProcessPattern(layout.viewPort)}' || true`,
     `x11vnc -storepasswd "$view_password" ${shellQuote(passwordAuthFile)} >/dev/null`,
     `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
@@ -232,7 +236,7 @@ export function extraDisplayControlStopCommand(
   const stop = [
     // Anchor to the x11vnc binary (path-prefixed OK); avoid unanchored matches that hit the runner argv.
     `pkill -f '(^|/)x11vnc .* -rfbport ${layout.controlVncPort}' || true`,
-    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true`,
+    `pkill -f '${websockifyProcessPattern(layout.controlPort)}' || true`,
     `pkill -f '${noVncProxyProcessPattern(layout.controlPort)}' || true`,
     `rm -f /tmp/rakazo-control-${layout.displayNumber}.vncpass`,
     `rm -f /tmp/rakazo/control-token-${layout.displayNumber}`,
@@ -335,7 +339,7 @@ export function primaryStreamCleanupCommand(primaryViewPort = 6080): string {
   return [
     "pkill -f '(^|/)x11vnc .* -R viewonly' || true",
     `pkill -f '${noVncProxyProcessPattern(primaryViewPort)}' || true`,
-    `pkill -f '[w]ebsockify.*${primaryViewPort}' || true`,
+    `pkill -f '${websockifyProcessPattern(primaryViewPort)}' || true`,
   ].join("; ");
 }
 

@@ -475,7 +475,7 @@ describe("E2B computer backend", () => {
     ).toHaveLength(1);
     expect(control.url).toMatch(/^https:\/\/6081-desktop\.test\/vnc\.html\?/);
     const startControl = command.mock.calls
-      .map(([value]) => String(value))
+      .map(([value]) => unwrapSetupCommand(String(value)))
       .find((value) => value.includes("novnc_proxy") && value.includes("-rfbport 5901"));
     expect(startControl).toBeDefined();
     expect(startControl).toContain("pkill -f '(^|/)x11vnc .* -rfbport 5901'");
@@ -708,7 +708,7 @@ describe("E2B computer backend", () => {
     );
     expect(control.url).toMatch(/6083-desktop\.test/);
     const startControl = command.mock.calls
-      .map(([value]) => String(value))
+      .map(([value]) => unwrapSetupCommand(String(value)))
       .find((value) => value.includes("-rfbport 5903") && value.includes("novnc_proxy"));
     expect(startControl).toBeDefined();
     expect(startControl).toContain("pkill -f '(^|/)x11vnc .* -rfbport 5903'");
@@ -846,3 +846,7 @@ describe("sandbox-gone detection", () => {
     expect(revived.setTimeout).toHaveBeenCalledTimes(1);
   });
 });
+
+function unwrapSetupCommand(command: string): string {
+  return command.startsWith("bash -c '") ? command.slice(9, -1).replaceAll(`'"'"'`, "'") : command;
+}

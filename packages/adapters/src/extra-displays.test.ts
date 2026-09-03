@@ -10,6 +10,7 @@ import {
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
   releaseExtraDisplayCommand,
+  websockifyProcessPattern,
 } from "./extra-displays.js";
 
 describe("extra display ports", () => {
@@ -42,6 +43,21 @@ describe("extra display ports", () => {
       }
       expect(`bash ./novnc_proxy --vnc localhost:5900 --listen ${port}0`).not.toMatch(pattern);
       expect(`bash ./novnc_proxy --vnc localhost:5900 --listen ${port + 1}`).not.toMatch(pattern);
+    }
+  });
+
+  it("targets module and executable websockify children on only the intended port", () => {
+    const pattern = new RegExp(websockifyProcessPattern(6080));
+    for (const command of [
+      "python3 -m websockify --web /opt/noVNC 6080 localhost:5900",
+      "/usr/bin/python3 -m websockify --web /opt/noVNC 6080 localhost:5900",
+      "/usr/bin/python3 /opt/noVNC/utils/websockify/run --web /opt/noVNC 6080 localhost:5900",
+      "/usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900",
+    ]) {
+      expect(command).toMatch(pattern);
+      expect(`/bin/bash -l -c ${command}`).not.toMatch(pattern);
+      expect(command.replace(/6080/g, "6081")).not.toMatch(pattern);
+      expect(command.replace(/6080/g, "60800")).not.toMatch(pattern);
     }
   });
 
