@@ -2,9 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { installPreloadRecovery } from "./preload-recovery";
 
 describe("preload recovery", () => {
-  it("reloads once when a stale lazy chunk fails", () => {
+  function createTarget(store = new Map<string, string>()) {
     let listener: EventListener | undefined;
-    const store = new Map<string, string>();
     const reload = vi.fn();
     const target = {
       addEventListener: (_type: string, next: EventListener) => {
@@ -20,15 +19,30 @@ describe("preload recovery", () => {
       },
       setTimeout: vi.fn(() => 1),
     };
-
     installPreloadRecovery(target as unknown as Window);
+    return { listener: () => listener, reload };
+  }
+
+  it("reloads once and suppresses failures during the same navigation", () => {
+    const { listener, reload } = createTarget();
     const first = new Event("vite:preloadError", { cancelable: true });
     const second = new Event("vite:preloadError", { cancelable: true });
-    listener?.(first);
-    listener?.(second);
+    listener()?.(first);
+    listener()?.(second);
 
     expect(first.defaultPrevented).toBe(true);
-    expect(second.defaultPrevented).toBe(false);
+    expect(second.defaultPrevented).toBe(true);
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("does not suppress a new failure after the recovery reload", () => {
+    const store = new Map([["rk:preload-recovery", "1"]]);
+    const { listener, reload } = createTarget(store);
+    const nextPageFailure = new Event("vite:preloadError", { cancelable: true });
+
+    listener()?.(nextPageFailure);
+
+    expect(nextPageFailure.defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
   });
 });
