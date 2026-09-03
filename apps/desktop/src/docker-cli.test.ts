@@ -163,7 +163,7 @@ describe("runDocker", () => {
       ["-e", 'process.stdout.write("a\\nb"); process.stderr.write("err\\n"); process.exit(3)'],
       { ...options, onLine: (line) => lines.push(line) },
     );
-    expect(result).toEqual({ code: 3, stdout: "a\nb", stderr: "err\n", timedOut: false });
+    expect(result).toEqual({ code: 3, stdout: "a\nb", stderr: "err\n" });
     expect(lines.sort()).toEqual(["a", "b", "err"]);
   });
 
@@ -182,7 +182,6 @@ describe("runDocker", () => {
       ...options,
       timeoutMs: 300,
     });
-    expect(result.timedOut).toBe(true);
     expect(result.code).toBe(124);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
@@ -196,7 +195,6 @@ describe("runDocker", () => {
     controller.abort();
     const result = await pending;
     expect(result.code).toBe(130);
-    expect(result.timedOut).toBe(false);
   });
 
   it("reports a missing binary as a failure instead of throwing", async () => {

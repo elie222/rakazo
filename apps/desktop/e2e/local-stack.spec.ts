@@ -90,22 +90,29 @@ async function writeFakeDocker(mode: FakeDockerMode) {
   return script;
 }
 
-async function launch(mode: FakeDockerMode | "missing", extraEnv: Record<string, string> = {}) {
+async function launch(mode: FakeDockerMode | "missing") {
   const env = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
-  const binary = mode === "missing" ? "/nonexistent/docker" : await writeFakeDocker(mode);
   return electron.launch({
     args: ["."],
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       ...env,
-      RAKAZO_DOCKER_BINARY: binary,
+      RAKAZO_DOCKER_BINARY:
+        mode === "missing" ? "/nonexistent/docker" : await writeFakeDocker(mode),
       RAKAZO_LOCAL_WEB_URL: serverUrl,
       RAKAZO_IMAGE_TAG: IMAGE_TAG,
-      ...extraEnv,
     },
   });
+}
+
+async function savedSetup() {
+  try {
+    return JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 async function readLog() {
@@ -121,7 +128,9 @@ test("This computer installs and starts the stack, then opens the app", async ()
   const setup = await app.firstWindow();
 
   await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
-  await expect(setup.locator("#local-address")).toHaveText(serverUrl);
+  // The panel is empty until a start begins, so check the attribute rather than the box.
+  await expect(setup.locator("#panel-new")).toHaveJSProperty("hidden", false);
+  await expect(setup.locator("#stack")).toBeHidden();
   await expect(setup.getByRole("button", { name: "Check connection" })).toBeHidden();
 
   const appWindowPromise = app.waitForEvent("window");
@@ -135,16 +144,7 @@ test("This computer installs and starts the stack, then opens the app", async ()
 
   const appWindow = await appWindowPromise;
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
-
-  await expect
-    .poll(async () => {
-      try {
-        return JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
-      } catch {
-        return null;
-      }
-    })
-    .toEqual({ mode: "new", serverUrl });
+  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
 
   const stackDir = path.join(userData, "stack");
   const envFile = path.join(stackDir, ".env");
@@ -188,9 +188,28 @@ test("without Docker the app explains how to get it and offers to check again", 
   await setup.getByRole("radio", { name: /Existing instance/ }).check();
   await expect(setup.locator("#stack")).toBeHidden();
   await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
-  await expect(async () => {
-    await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
-  }).toPass();
+  expect(await savedSetup()).toBeNull();
+});
+
+test("switching to Existing instance while the stack starts keeps that choice", async () => {
+  app = await launch("ok");
+  const setup = await app.firstWindow();
+
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
+  await setup.getByRole("radio", { name: /Existing instance/ }).check();
+
+  // The stack still finishes (the fake pull sleeps 2 s) but nothing is saved or opened.
+  await expect(setup.locator("#stack-phase")).toHaveText("Rakazo is running.", { timeout: 10_000 });
+  expect(await savedSetup()).toBeNull();
+  expect(app.windows()).toHaveLength(1);
+
+  // Back on This computer, Continue opens the stack that is already running.
+  await setup.getByRole("radio", { name: /This computer/ }).check();
+  const appWindowPromise = app.waitForEvent("window");
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect((await appWindowPromise).getByText(APP_MARKER)).toBeVisible();
+  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
 });
 
 test("a stopped Docker daemon is reported and Check again asks Docker once more", async () => {
@@ -249,15 +268,7 @@ test("a saved local stack that is down is started again without asking", async (
 
   const appWindow = await app.waitForEvent("window");
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
-  await expect
-    .poll(async () => {
-      try {
-        return JSON.parse(await readFile(path.join(userData, "setup.json"), "utf8"));
-      } catch {
-        return null;
-      }
-    })
-    .toEqual({ mode: "new", serverUrl });
+  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
   expect((await readLog()).some((line) => line.includes(" pull"))).toBe(true);
 });
 

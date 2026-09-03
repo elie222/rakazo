@@ -203,14 +203,9 @@ type Script = (args: string[]) => Partial<RunDockerResult> & { lines?: string[] 
 function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
   return async (binary, args, options) => {
     calls.push({ binary, args, cwd: options.cwd, env: options.env });
-    const reply = script(args);
-    for (const line of reply.lines ?? []) options.onLine?.(line);
-    return {
-      code: reply.code ?? 0,
-      stdout: reply.stdout ?? "",
-      stderr: reply.stderr ?? "",
-      timedOut: reply.timedOut ?? false,
-    };
+    const { lines = [], ...reply } = script(args);
+    for (const line of lines) options.onLine?.(line);
+    return { code: 0, stdout: "", stderr: "", ...reply };
   };
 }
 
@@ -459,6 +454,18 @@ describe("LocalStackController", () => {
     const state = await stack.stop();
     expect(state).toEqual(initialStackState("v1.2.3"));
     expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+  });
+
+  it("reports a stop that docker refused instead of pretending the stack is down", async () => {
+    const stack = controller({}, (args) =>
+      args[5] === "stop" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    await stack.start();
+    const state = await stack.stop();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    });
   });
 
   it("surfaces a broken resource bundle instead of hanging", async () => {

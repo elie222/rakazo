@@ -108,10 +108,10 @@ export interface RunDockerOptions {
 }
 
 export interface RunDockerResult {
+  /** Exit status; 124 after the timeout, 130 after an abort. */
   code: number;
   stdout: string;
   stderr: string;
-  timedOut: boolean;
 }
 
 export type RunDocker = (
@@ -130,30 +130,23 @@ export function runDocker(
   options: RunDockerOptions,
 ): Promise<RunDockerResult> {
   return new Promise((resolve) => {
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(binary, args, {
-        cwd: options.cwd,
-        env: options.env,
-        shell: false,
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-      });
-    } catch (error) {
-      resolve({ code: 1, stdout: "", stderr: errorText(error), timedOut: false });
-      return;
-    }
-    let stdout = "";
-    let stderr = "";
+    const child = spawn(binary, args, {
+      cwd: options.cwd,
+      env: options.env,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+    const captured = { stdout: "", stderr: "" };
+    const pending = { stdout: "", stderr: "" };
     let settled = false;
-    let timedOut = false;
     const finish = (code: number) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", abort);
-      resolve({ code, stdout, stderr, timedOut });
+      resolve({ code, ...captured });
     };
     const terminate = (code: number) => {
       killProcessTree(child.pid);
@@ -162,52 +155,35 @@ export function runDocker(
       finish(code);
     };
     const abort = () => terminate(130);
-    const timer = setTimeout(() => {
-      timedOut = true;
-      terminate(124);
-    }, options.timeoutMs);
+    const timer = setTimeout(() => terminate(124), options.timeoutMs);
     timer.unref?.();
     options.signal?.addEventListener("abort", abort, { once: true });
 
-    const lines = { stdout: "", stderr: "" };
-    const consume = (stream: "stdout" | "stderr", chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      if (stream === "stdout") stdout += text;
-      else stderr += text;
-      if (!options.onLine) return;
-      lines[stream] += text;
-      let newline = lines[stream].indexOf("\n");
-      while (newline !== -1) {
-        emitLine(options.onLine, lines[stream].slice(0, newline));
-        lines[stream] = lines[stream].slice(newline + 1);
-        newline = lines[stream].indexOf("\n");
-      }
+    const emit = (raw: string) => {
+      // Docker progress rewrites lines with carriage returns; keep the final rendering.
+      const line = raw.split("\r").pop()?.trimEnd() ?? "";
+      if (line !== "") options.onLine?.(line);
     };
-    child.stdout?.on("data", (chunk: Buffer) => consume("stdout", chunk));
-    child.stderr?.on("data", (chunk: Buffer) => consume("stderr", chunk));
+    for (const stream of ["stdout", "stderr"] as const) {
+      child[stream]?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString("utf8");
+        captured[stream] += text;
+        const parts = (pending[stream] + text).split("\n");
+        pending[stream] = parts.pop() ?? "";
+        for (const part of parts) emit(part);
+      });
+    }
     child.on("error", (error) => {
-      stderr += errorText(error);
+      captured.stderr += error.message;
       finish(1);
     });
     child.on("close", (code) => {
-      if (options.onLine) {
-        emitLine(options.onLine, lines.stdout);
-        emitLine(options.onLine, lines.stderr);
-      }
+      emit(pending.stdout);
+      emit(pending.stderr);
       finish(code ?? 1);
     });
     if (options.signal?.aborted) abort();
   });
-}
-
-function emitLine(onLine: (line: string) => void, raw: string) {
-  // Docker progress output rewrites lines with carriage returns; keep the final rendering.
-  const line = raw.split("\r").pop()?.trimEnd() ?? "";
-  if (line !== "") onLine(line);
-}
-
-function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function killProcessTree(pid: number | undefined) {

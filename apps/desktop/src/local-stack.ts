@@ -7,6 +7,7 @@ import {
   type DockerFailureKind,
   dockerSpawnEnv,
   type RunDocker,
+  type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
 import { writePrivateFile } from "./setup-store.js";
@@ -161,6 +162,7 @@ export function reduceStackState(
 
 const DOCKER_GROUP_HINT =
   "This user cannot access Docker. Add it to the docker group (sudo usermod -aG docker $USER), sign out and back in, then check again.";
+const STOP_FAILED = "Could not stop the local stack. Check that Docker is running, then try again.";
 
 /** Docker output may contain paths and hostnames, so the person only ever sees these. */
 export function stackFailureMessage(
@@ -188,9 +190,8 @@ export function stackFailureMessage(
   }
 }
 
-function dockerNotRunningMessage(kind: DockerFailureKind): string {
-  if (kind === "socket-permission") return DOCKER_GROUP_HINT;
-  return "Docker is installed but not running. Start Docker, then check again.";
+function failureKind(result: RunDockerResult): DockerFailureKind {
+  return classifyDockerFailure(`${result.stdout}\n${result.stderr}`);
 }
 
 export interface LocalStackDeps {
@@ -212,8 +213,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 
 /**
  * Installs and starts the compose stack under the app's user data. Every docker call
- * uses a fixed argv and an allowlisted environment; nothing from the renderer reaches
- * either. State is polled by the setup window, never pushed.
+ * uses a fixed argv and an allowlisted environment; the setup window polls `state()`.
  */
 export class LocalStackController {
   private current: DesktopLocalStackState;
@@ -249,8 +249,11 @@ export class LocalStackController {
     if (this.running !== null) await this.running.catch(() => undefined);
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     if (binary === null) return this.current;
-    await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
-    this.current = initialStackState(this.deps.imageTag);
+    const stopped = await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
+    this.current =
+      stopped.code === 0
+        ? initialStackState(this.deps.imageTag)
+        : { ...this.current, phase: "failed", message: STOP_FAILED };
     return this.current;
   }
 
@@ -263,11 +266,9 @@ export class LocalStackController {
     this.inFlight = controller;
     try {
       await this.attempt(controller.signal);
-    } catch (error) {
-      this.push({
-        type: "failed",
-        message: `Could not prepare the local stack. ${error instanceof Error ? error.message : String(error)}`,
-      });
+    } catch {
+      // Copying the bundled compose files failed; the path would not help the person.
+      this.push({ type: "failed", message: "Could not prepare the local stack. Retry." });
     } finally {
       if (this.inFlight === controller) this.inFlight = null;
     }
@@ -304,8 +305,13 @@ export class LocalStackController {
       signal,
     );
     if (info.code !== 0) {
-      const kind = classifyDockerFailure(`${info.stdout}\n${info.stderr}`);
-      this.push({ type: "docker-not-running", message: dockerNotRunningMessage(kind) });
+      this.push({
+        type: "docker-not-running",
+        message:
+          failureKind(info) === "socket-permission"
+            ? DOCKER_GROUP_HINT
+            : "Docker is installed but not running. Start Docker, then check again.",
+      });
       return;
     }
 
@@ -320,10 +326,9 @@ export class LocalStackController {
     this.push({ type: "pull-start" });
     const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
     if (pulled.code !== 0) {
-      const kind = classifyDockerFailure(`${pulled.stdout}\n${pulled.stderr}`);
       this.push({
         type: "failed",
-        message: stackFailureMessage(kind, "pulling", this.deps.imageTag),
+        message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
       });
       return;
     }
@@ -334,12 +339,11 @@ export class LocalStackController {
       : ["up", "-d"];
     const up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
     if (up.code !== 0) {
-      const kind = classifyDockerFailure(`${up.stdout}\n${up.stderr}`);
       // Best effort: recent service logs usually name the failing service.
       await this.compose(binary, ["logs", "--tail", "30", "--no-color"], LOGS_TIMEOUT_MS, signal);
       this.push({
         type: "failed",
-        message: stackFailureMessage(kind, "starting", this.deps.imageTag),
+        message: stackFailureMessage(failureKind(up), "starting", this.deps.imageTag),
       });
       return;
     }

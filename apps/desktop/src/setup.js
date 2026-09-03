@@ -5,7 +5,6 @@
   const serverUrl = document.getElementById("server-url");
   const panelNew = document.getElementById("panel-new");
   const panelExisting = document.getElementById("panel-existing");
-  const localAddress = document.getElementById("local-address");
   const stackSection = document.getElementById("stack");
   const stackPhase = document.getElementById("stack-phase");
   const stackOutput = document.getElementById("stack-output");
@@ -71,9 +70,9 @@
       continueButton.textContent = "Continue";
       return;
     }
-    const label = isDockerPhase(phase) || phase === "failed" ? stack.message : PHASE_LABELS[phase];
-    stackPhase.textContent = label ?? "";
-    if (isDockerPhase(phase) || phase === "failed") stackPhase.setAttribute("data-tone", "error");
+    const failed = isDockerPhase(phase) || phase === "failed";
+    stackPhase.textContent = (failed ? stack.message : PHASE_LABELS[phase]) ?? "";
+    if (failed) stackPhase.setAttribute("data-tone", "error");
     else if (phase === "ready") stackPhase.setAttribute("data-tone", "ok");
     else stackPhase.removeAttribute("data-tone");
 
@@ -116,7 +115,10 @@
         if (stack === null) throw new Error("Setup is not active");
         renderStack(stack);
         if (TERMINAL_PHASES.has(stack.phase)) {
-          if (stack.phase === "ready") await save("new", defaultLocalUrl);
+          // Someone who switched to Existing instance meanwhile keeps that choice.
+          if (stack.phase === "ready" && selectedMode() === "new") {
+            await save("new", defaultLocalUrl);
+          }
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, STACK_POLL_MS));
@@ -206,7 +208,6 @@
       const state = await bridge.state();
       if (state === null) throw new Error("Setup is not active");
       defaultLocalUrl = state.defaultLocalUrl;
-      localAddress.textContent = defaultLocalUrl;
       if (state.saved !== null) {
         const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
         if (modeInput !== null) modeInput.checked = true;
