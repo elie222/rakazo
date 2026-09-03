@@ -29,7 +29,12 @@ import {
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
 import { shouldOpenInAppPopup } from "./window-open.js";
-import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
+import {
+  browserWindowOptions,
+  developmentIconFile,
+  setupWindowOptions,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 const PROBE_TIMEOUT_MS = 8_000;
@@ -81,7 +86,7 @@ function fromMainWindow(event: Electron.IpcMainInvokeEvent) {
 
 function developmentIcon() {
   if (app.isPackaged) return undefined;
-  const icon = path.join(app.getAppPath(), "assets", "icon.png");
+  const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
   return existsSync(icon) ? icon : undefined;
 }
 
