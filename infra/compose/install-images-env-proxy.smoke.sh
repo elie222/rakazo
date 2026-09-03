@@ -67,4 +67,12 @@ printf '%s\n' 'HTTP_PROXY=http://first:1' 'HTTP_PROXY=http://second:2' 'http_pro
 prepare_proxy_env
 [[ -z "${HTTP_PROXY+x}" ]] || fail "cross-case last win should clear HTTP_PROXY"
 [[ "$http_proxy" == "http://third:3" ]] || fail "last .env family assignment should win"
+
+# CRLF .env with quoted values must still unquote (trailing CR must not block it).
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+printf '%s\r\n' 'HTTP_PROXY="http://crlf.example:8080"' 'HTTPS_PROXY='"'"'http://crlf.example:8443'"'" >"$ENV_FILE"
+prepare_proxy_env
+[[ "$HTTP_PROXY" == "http://crlf.example:8080" ]] || fail "CRLF double-quoted HTTP_PROXY must unquote"
+[[ "$HTTPS_PROXY" == "http://crlf.example:8443" ]] || fail "CRLF single-quoted HTTPS_PROXY must unquote"
+[[ "$http_proxy" == "http://crlf.example:8080" ]] || fail "CRLF http_proxy sync"
 echo "ok"

@@ -75,6 +75,8 @@ load_proxy_vars_from_env_file() {
   [[ -n "${HTTPS_PROXY+x}" || -n "${https_proxy+x}" ]] && shell_https=1
   [[ -n "${NO_PROXY+x}" || -n "${no_proxy+x}" ]] && shell_no=1
   while IFS= read -r line || [[ -n "$line" ]]; do
+    # Windows/.editorconfig CRLF: drop trailing CR so quoted values still match.
+    line="${line%$'\r'}"
     out=""
     quote=""
     for ((i = 0; i < ${#line}; i++)); do
