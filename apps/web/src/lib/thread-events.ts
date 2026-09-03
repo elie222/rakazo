@@ -103,6 +103,7 @@ export function applyThreadSendReceipt(
     !snapshot ||
     snapshot.groupId ||
     snapshot.botId !== receipt.botId ||
+    snapshot.run?.id === receipt.runId ||
     terminalRunIds.has(receipt.runId)
   ) {
     return snapshot;

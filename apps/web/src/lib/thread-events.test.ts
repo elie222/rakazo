@@ -48,9 +48,13 @@ describe("thread event reduction", () => {
     const direct: ThreadSnapshot = { ...snapshot([]), run: active, activeRuns: [active] };
     const group: ThreadSnapshot = { ...snapshot([]), groupId: "group-1" };
     const receipt = { botId: "bot-1", runId: "run-new", taskId: "task-new" };
+    const completed = threadRun(receipt.runId, "completed");
 
     expect(applyThreadSendReceipt(direct, receipt)).toBe(direct);
     expect(applyThreadSendReceipt(group, receipt)).toBe(group);
+    expect(applyThreadSendReceipt({ ...snapshot([]), run: completed }, receipt)?.run).toBe(
+      completed,
+    );
     expect(applyThreadSendReceipt(snapshot([]), receipt, new Set([receipt.runId]))).toEqual(
       snapshot([]),
     );
