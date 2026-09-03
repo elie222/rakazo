@@ -11,6 +11,7 @@ const BATCH_SIZE = 20;
 const AMBIENT_BATCH_SIZE = 100;
 const AMBIENT_CONTEXT_MESSAGES = 20;
 const AMBIENT_CONTEXT_MESSAGE_CHARS = 2_000;
+const DELIVERY_RESERVATION_MS = 2 * 60_000;
 
 interface TeamChatBridgeDeps {
   prisma: PrismaClient;
@@ -271,7 +272,7 @@ export class TeamChatBridge {
 
     const running = await this.deps.prisma.externalMessage.findMany({
       where: {
-        status: "running",
+        status: { in: ["running", "delivering"] },
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
         externalConversation: {
           provider: this.deps.provider.id,
@@ -338,6 +339,7 @@ export class TeamChatBridge {
           conversationId: origin.externalConversation.conversationId,
           replyThreadId: origin.replyThreadId,
           content,
+          idempotencyKey: `team-chat-run:${run.id}`,
         });
       }
       await this.markTeamChatMirrored(run.id);
@@ -478,29 +480,43 @@ export class TeamChatBridge {
       const trigger =
         judgedMessages.find((message) => message.providerEventId === decision.askedByEventId) ??
         latest;
-      await this.markAmbientIgnored(evaluated, now);
-      if (!decision.act) continue;
-      await this.deps.prisma.externalMessage.update({
-        where: { id: trigger.id },
-        data: {
-          status: "received",
-          judgedAt: now,
-          engagementReason: decision.reason ?? null,
-          batchContext: teamChatAmbientPrompt({
-            provider: this.deps.provider.id,
-            channelId: latest.externalConversation.conversationId,
-            channelName: latest.externalConversation.displayName,
-            rules,
-            reason: decision.reason,
-            messages: judgedMessages.map((message) => ({
-              senderId: message.senderId,
-              senderName: message.senderName,
-              content: message.content,
-            })),
-          }),
-        },
+      if (!decision.act) {
+        await this.markAmbientIgnored(evaluated, now);
+        continue;
+      }
+      const promoted = await this.promoteAmbientTrigger(trigger.id, {
+        judgedAt: now,
+        engagementReason: decision.reason ?? null,
+        batchContext: teamChatAmbientPrompt({
+          provider: this.deps.provider.id,
+          channelId: latest.externalConversation.conversationId,
+          channelName: latest.externalConversation.displayName,
+          rules,
+          reason: decision.reason,
+          messages: judgedMessages.map((message) => ({
+            senderId: message.senderId,
+            senderName: message.senderName,
+            content: message.content,
+          })),
+        }),
       });
+      if (promoted)
+        await this.markAmbientIgnored(
+          evaluated.filter(({ id }) => id !== trigger.id),
+          now,
+        );
     }
+  }
+
+  private async promoteAmbientTrigger(
+    id: string,
+    data: { judgedAt: Date; engagementReason: string | null; batchContext: string },
+  ): Promise<boolean> {
+    const result = await this.deps.prisma.externalMessage.updateMany({
+      where: { id, status: "observed" },
+      data: { status: "received", ...data },
+    });
+    return result.count === 1;
   }
 
   private async markAmbientIgnored(messages: Array<{ id: string }>, judgedAt: Date): Promise<void> {
@@ -610,10 +626,13 @@ export class TeamChatBridge {
       await this.markDelivered(message.id, "silent");
       return;
     }
+    const reserved = await this.reserveDelivery(message.id);
+    if (!reserved) return;
     const sent = await this.deps.provider.send({
       conversationId: message.externalConversation.conversationId,
       replyThreadId: message.replyThreadId,
       content,
+      idempotencyKey: `external-message:${message.id}`,
     });
     await this.markDelivered(message.id, sent.handle);
   }
@@ -628,12 +647,41 @@ export class TeamChatBridge {
       await this.markDelivered(message.id, "silent-failure");
       return;
     }
+    const reserved = await this.reserveDelivery(message.id);
+    if (!reserved) return;
     const sent = await this.deps.provider.send({
       conversationId: message.externalConversation.conversationId,
       replyThreadId: message.replyThreadId,
       content: `${this.target?.name ?? "The agent"} could not complete that request. Open Rakazo for details.`,
+      idempotencyKey: `external-message:${message.id}:failure`,
     });
     await this.markDelivered(message.id, sent.handle);
+  }
+
+  private async reserveDelivery(id: string): Promise<boolean> {
+    const now = new Date();
+    const leaseUntil = new Date(now.getTime() + DELIVERY_RESERVATION_MS);
+    const claimed = await this.deps.prisma.externalMessage.updateMany({
+      where: { id, status: "running" },
+      data: {
+        status: "delivering",
+        nextAttemptAt: leaseUntil,
+      },
+    });
+    if (claimed.count === 1) return true;
+
+    const reclaimed = await this.deps.prisma.externalMessage.updateMany({
+      where: {
+        id,
+        status: "delivering",
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      },
+      data: {
+        status: "delivering",
+        nextAttemptAt: leaseUntil,
+      },
+    });
+    return reclaimed.count === 1;
   }
 
   private async markDelivered(id: string, handle: string): Promise<void> {
