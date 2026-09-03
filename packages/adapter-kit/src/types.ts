@@ -540,6 +540,8 @@ export interface TeamChatSendRequest {
   conversationId: string;
   replyThreadId: string | null;
   content: string;
+  /** Stable retry key the provider can use to dedupe externally accepted sends. */
+  idempotencyKey?: string;
 }
 
 export interface TeamChatSendResult {

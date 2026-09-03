@@ -12,6 +12,7 @@ const DEFAULT_MAX_MESSAGE_CHARS = 39_000;
 export interface SlackTeamChatConfig {
   appToken: string;
   botToken: string;
+  workspaceId?: string;
 }
 
 type Fetch = typeof fetch;
@@ -30,10 +31,11 @@ export function slackTeamChatConfigFromEnv(
 ): SlackTeamChatConfig | null {
   const appToken = source.SLACK_APP_TOKEN?.trim();
   const botToken = source.SLACK_BOT_TOKEN?.trim();
+  const workspaceId = source.SLACK_WORKSPACE_ID?.trim();
   if (!appToken && !botToken) return null;
   if (!appToken) throw new Error("SLACK_APP_TOKEN is required when Slack is enabled");
   if (!botToken) throw new Error("SLACK_BOT_TOKEN is required when Slack is enabled");
-  return { appToken, botToken };
+  return { appToken, botToken, ...(workspaceId ? { workspaceId } : {}) };
 }
 
 export function splitSlackMessage(content: string, maxChars = DEFAULT_MAX_MESSAGE_CHARS): string[] {
@@ -67,6 +69,7 @@ export function parseSlackSocketEnvelope(
   value: unknown,
   botUserId: string,
   ownBotId?: string,
+  authorizedWorkspaceId?: string,
 ): { envelopeId?: string; message?: TeamChatInboundMessage } {
   if (!isRecord(value)) return {};
   const envelopeId = stringValue(value.envelope_id);
@@ -109,6 +112,7 @@ export function parseSlackSocketEnvelope(
   const workspaceId = stringValue(payload.team_id);
   const eventTimestamp = stringValue(event.ts);
   if (!eventId || !workspaceId || !eventTimestamp) return { envelopeId };
+  if (authorizedWorkspaceId && workspaceId !== authorizedWorkspaceId) return { envelopeId };
   const rootThreadId = stringValue(event.thread_ts) ?? eventTimestamp;
   return {
     envelopeId,
@@ -141,6 +145,7 @@ export class SlackTeamChatProvider implements TeamChatProvider {
   private stopped = true;
   private botUserId = "";
   private botId = "";
+  private authorizedWorkspaceId = "";
   private handle: ((message: TeamChatInboundMessage) => Promise<void>) | undefined;
   private readonly userNames = new Map<string, string>();
   private readonly conversationMetadata = new Map<
@@ -166,6 +171,11 @@ export class SlackTeamChatProvider implements TeamChatProvider {
     const auth = await this.call("auth.test", this.config.botToken);
     this.botUserId = requiredSlackString(auth, "user_id", "auth.test");
     this.botId = stringValue(auth.bot_id) ?? "";
+    const tokenWorkspaceId = requiredSlackString(auth, "team_id", "auth.test");
+    if (this.config.workspaceId && this.config.workspaceId !== tokenWorkspaceId) {
+      throw new Error("SLACK_WORKSPACE_ID does not match the Slack bot token workspace");
+    }
+    this.authorizedWorkspaceId = this.config.workspaceId ?? tokenWorkspaceId;
     await this.connect();
   }
 
@@ -179,10 +189,17 @@ export class SlackTeamChatProvider implements TeamChatProvider {
 
   async send(request: TeamChatSendRequest): Promise<TeamChatSendResult> {
     let handle = "";
-    for (const text of splitSlackMessage(request.content, this.maxMessageChars)) {
+    const chunks = splitSlackMessage(request.content, this.maxMessageChars);
+    for (const [index, text] of chunks.entries()) {
       const response = await this.call("chat.postMessage", this.config.botToken, {
         channel: request.conversationId,
         text,
+        ...(request.idempotencyKey
+          ? {
+              client_msg_id:
+                chunks.length === 1 ? request.idempotencyKey : `${request.idempotencyKey}:${index}`,
+            }
+          : {}),
         ...(request.replyThreadId ? { thread_ts: request.replyThreadId } : {}),
       });
       handle = requiredSlackString(response, "ts", "chat.postMessage");
@@ -223,7 +240,12 @@ export class SlackTeamChatProvider implements TeamChatProvider {
     } catch {
       return;
     }
-    const parsed = parseSlackSocketEnvelope(value, this.botUserId, this.botId);
+    const parsed = parseSlackSocketEnvelope(
+      value,
+      this.botUserId,
+      this.botId,
+      this.authorizedWorkspaceId,
+    );
     if (parsed.envelopeId && this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ envelope_id: parsed.envelopeId }));
     }
