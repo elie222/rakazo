@@ -23,7 +23,7 @@ describe("preload recovery", () => {
     return { listener: () => listener, reload };
   }
 
-  it("reloads once and suppresses failures during the same navigation", () => {
+  it("reloads once without suppressing another failure during navigation", () => {
     const { listener, reload } = createTarget();
     const first = new Event("vite:preloadError", { cancelable: true });
     const second = new Event("vite:preloadError", { cancelable: true });
@@ -31,7 +31,7 @@ describe("preload recovery", () => {
     listener()?.(second);
 
     expect(first.defaultPrevented).toBe(true);
-    expect(second.defaultPrevented).toBe(true);
+    expect(second.defaultPrevented).toBe(false);
     expect(reload).toHaveBeenCalledOnce();
   });
 
