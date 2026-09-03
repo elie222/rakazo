@@ -38,7 +38,9 @@ needs registry access unless you bypass the installer after prepare.
 ```bash
 # Files already on disk next to the script:
 bash install-images.sh --local --prepare-only
-# edit .env (secrets, image overrides)
+# edit .env (image overrides; installer wrote secrets if it created .env)
+# If you already had a hand-written .env, fill required secrets before --prepare-only;
+# prepare-only still validates an existing .env.
 ```
 
 With images already loaded (or pointed at an internal registry you can reach),
@@ -97,12 +99,14 @@ containers may themselves lack egress; that is a separate network policy.
 
 1. On a connected machine: save installer + Compose + env example; `docker pull`
    (or build) the four image refs you will pin; `docker save` → tape/USB.
-2. On the air-gapped host: `docker load`; place Compose files; set
-   `RAKAZO_IMAGE` / `RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE` /
-   `RAKAZO_COMPUTER_IMAGE_TAG` to the repository and tag you loaded (separate
-   vars), plus `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to full digest-less refs if
-   that is what you saved (or point all of them at an internal registry);
-   `bash install-images.sh --local --prepare-only`; fill secrets; then
+2. On the air-gapped host: `docker load`; place Compose files; run
+   `bash install-images.sh --local --prepare-only` first (creates `.env` with
+   secrets when missing; if `.env` already exists, fill required secrets
+   before that command). Then set `RAKAZO_IMAGE` / `RAKAZO_IMAGE_TAG` and
+   `RAKAZO_COMPUTER_IMAGE` / `RAKAZO_COMPUTER_IMAGE_TAG` to the repository and
+   tag you loaded (separate vars), plus `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to
+   full digest-less refs if that is what you saved (or point all of them at an
+   internal registry). Then
    `docker compose --env-file .env -f docker-compose.images.yml up -d --pull never`
    (add `--wait --wait-timeout 300` when Compose supports it). Do not re-run
    the installer for bring-up; it always runs `docker compose pull`.
