@@ -278,7 +278,11 @@ export class LocalStackController {
 
   private async runStop(): Promise<DesktopLocalStackState> {
     this.abort();
-    if (this.running !== null) await this.running.catch(() => undefined);
+    // Release the aborted attempt now so a start requested during this stop queues a
+    // fresh attempt behind it instead of joining the one being torn down.
+    const aborted = this.running;
+    this.running = null;
+    if (aborted !== null) await aborted.catch(() => undefined);
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
     this.current =

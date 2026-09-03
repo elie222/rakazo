@@ -523,6 +523,36 @@ describe("LocalStackController", () => {
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("compose"));
   });
 
+  it("queues a fresh start behind a stop instead of joining the aborted attempt", async () => {
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let probes = 0;
+    const stack = controller(
+      {
+        probe: (signal) => {
+          probes += 1;
+          if (probes > 1) return Promise.resolve(true);
+          return new Promise((resolve) => signal.addEventListener("abort", () => resolve(false)));
+        },
+      },
+      (args) => (args[5] === "stop" ? { wait: stopGate } : ok(args)),
+    );
+    const first = stack.start();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const stopping = stack.stop();
+    const second = stack.start();
+    expect(second).not.toBe(first);
+    expect(stack.start()).toBe(second);
+    releaseStop();
+    await stopping;
+    expect((await first).message).toBe("The start was interrupted. Retry to continue.");
+    expect((await second).phase).toBe("ready");
+    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("up"));
+  });
+
   it("does not wait out a slow health probe when stopped", async () => {
     const stack = controller({
       probe: (signal) =>
