@@ -64,6 +64,13 @@ services:
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -90,6 +97,13 @@ services:
       SANDBOX_PROVIDER: docker
       SCREEN_PROXY_SECRET: ""
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; prefer .env values.
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
     volumes:
       - ../../data:/data
     depends_on:
