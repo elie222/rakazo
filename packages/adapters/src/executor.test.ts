@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   createRunExecutor,
+  createRunWorkspaceCheckpoint,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   runNotificationsEnabled,
@@ -11,6 +12,31 @@ import {
   settleSteeringAttachmentLoads,
   threadContextForRun,
 } from "./executor.js";
+
+describe("run workspace checkpoint", () => {
+  it("skips clean turns and flushes once after a mutation", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markDirty();
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a failed checkpoint dirty for retry", async () => {
+    const persist = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("checkpoint failed"))
+      .mockResolvedValueOnce(undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist, true);
+
+    await expect(checkpoint.flush()).rejects.toThrow("checkpoint failed");
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("run tool selection", () => {
   const toolNames = (trigger: string, groupId: string | null = null) =>

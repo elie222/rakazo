@@ -145,6 +145,7 @@ import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/r
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
   activeThreadRuns,
+  applyThreadSendReceipt,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerPanelAutoUsesBoot,
@@ -350,6 +351,9 @@ export function ShellPage() {
   const botsRefreshApplied = useRef(0);
   const archivedBotsRefreshEpoch = useRef(0);
   const botsRefreshInFlight = useRef(0);
+  // A very fast run can finish over SSE while its threads.send response is still
+  // returning. Do not let that late receipt resurrect terminal work as queued.
+  const terminalRunReceipts = useRef(new Set<string>());
   // Last-known computer/screen per bot, so switching back to an already-seen
   // bot paints its computer pane instantly instead of blanking it while the
   // thread + screen RPCs round-trip again (see refreshThread / refreshComputerScreen).
@@ -1132,6 +1136,13 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
+            if (isRunTerminalEvent(event) && event.runId) {
+              terminalRunReceipts.current.add(event.runId);
+              if (terminalRunReceipts.current.size > 100) {
+                const oldest = terminalRunReceipts.current.values().next().value;
+                if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
+              }
+            }
             if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
               applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             } else {
@@ -1996,7 +2007,7 @@ export function ShellPage() {
             replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
           });
         } else if (botTarget) {
-          await rpc.threads.send({
+          const sent = await rpc.threads.send({
             botId: botTarget,
             clientNonce,
             text: trimmed || undefined,
@@ -2004,6 +2015,19 @@ export function ShellPage() {
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
+          if (activeBotId.current === botTarget) {
+            updateSnapshot((current) =>
+              applyThreadSendReceipt(
+                current,
+                {
+                  botId: botTarget,
+                  runId: sent.runId,
+                  taskId: sent.taskId,
+                },
+                terminalRunReceipts.current,
+              ),
+            );
+          }
         }
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);

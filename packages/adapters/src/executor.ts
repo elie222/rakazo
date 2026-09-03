@@ -264,6 +264,30 @@ const TURN_ATTACHMENT_UNAVAILABLE =
 const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
+/** Avoid an expensive remote workspace export when a turn never touched the computer. */
+export function createRunWorkspaceCheckpoint(
+  checkpoint: () => Promise<unknown>,
+  initiallyDirty = false,
+) {
+  let dirty = initiallyDirty;
+  return {
+    markDirty() {
+      dirty = true;
+    },
+    async flush() {
+      if (!dirty) return false;
+      dirty = false;
+      try {
+        await checkpoint();
+        return true;
+      } catch (error) {
+        dirty = true;
+        throw error;
+      }
+    },
+  };
+}
+
 const SHELL_INTERPRETER_NAMES = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
 const STATIC_SHELL_EXPANSIONS: Readonly<Record<string, string>> = {
   HOME: "/home/rakazo",
@@ -1121,6 +1145,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { context, computer, computerMode },
             )
           : [];
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(
+          () => checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context),
+          currentTurnFiles.length > 0,
+        );
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
@@ -1654,7 +1682,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
             }
-            await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+            await workspaceCheckpoint.flush();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -1772,6 +1800,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }
+            workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
                 computer,
@@ -1844,6 +1873,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "write_file") {
             const filePath = String(args.path ?? "notes/result.txt");
             const content = textContentArg(args.content, "");
+            workspaceCheckpoint.markDirty();
             await deps.sandbox.writeFile(
               computer,
               {
@@ -1891,6 +1921,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 typeof args.path === "string" && args.path
                   ? args.path
                   : `charts/plot-${Date.now()}.png`;
+              workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
                 computer,
                 { path: resolveBotWorkspacePath(computerMode, bot.id, outPath), content: png },
@@ -1996,6 +2027,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               bot.id,
               args.cwd ? String(args.cwd) : undefined,
             );
+            workspaceCheckpoint.markDirty();
             const result = await runSandboxCommand(
               deps.sandbox,
               computer,
@@ -2018,6 +2050,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "open_path") {
             const requestedPath = String(args.path ?? "");
+            workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
                 computer,
@@ -2042,6 +2075,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "launch_app") {
             const application = String(args.application ?? "");
+            workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
                 computer,
@@ -2499,7 +2533,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               return pauseForSecret();
             }
-            await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+            await workspaceCheckpoint.flush();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -2975,7 +3009,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: action.id,
                 label: redactSecrets(action.label, runSecrets),
               }));
-              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              await workspaceCheckpoint.flush();
               const paused = await deps.events.pauseRunForInput({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -3027,7 +3061,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   controlRunId: null,
                 },
               });
-              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              await workspaceCheckpoint.flush();
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
@@ -3074,7 +3108,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (messageSegments.length > 0) {
                   await publishMessage(deps, run, "bot", redactBlocks(messageSegments, runSecrets));
                 }
-                await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+                await workspaceCheckpoint.flush();
                 terminalCheckpointComplete = true;
                 const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
                 const stopped = await deps.events.finalizeRun({
@@ -3179,6 +3213,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           for (const turn of script ?? []) {
             for (const file of turn.files ?? []) {
+              workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
                 computer,
                 {
@@ -3211,7 +3246,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+          await workspaceCheckpoint.flush();
           terminalCheckpointComplete = true;
 
           flushPendingTools();
@@ -3293,12 +3328,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         } catch (error) {
           if (!terminalCheckpointComplete) {
-            await checkpointAndRecordComputerWorkspace(
-              deps,
-              storedComputer,
-              computer,
-              context,
-            ).catch(() => undefined);
+            await workspaceCheckpoint.flush().catch(() => undefined);
           }
           const message = redactSecrets(
             error instanceof Error ? error.message : String(error),
