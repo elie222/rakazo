@@ -109,7 +109,7 @@ download() {
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
   if ! curl_download "$url" "$temporary_file"; then
-    fail "could not download ${filename} from ${url}. If you use an egress proxy, export HTTP_PROXY/HTTPS_PROXY (this script mirrors them to http_proxy/https_proxy for curl) and NO_PROXY for localhost; or pre-place ${filename} and use --local."
+    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY (NO_PROXY for localhost), or pre-place the file and use --local."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""
@@ -205,7 +205,7 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
-  fail "could not pull images. docker compose pull uses the Docker daemon — shell HTTP_PROXY alone often does not apply. Configure daemon proxy and/or registry-mirrors, point RAKAZO_IMAGE*/POSTGRES_IMAGE/BUSYBOX_IMAGE at a registry you can reach, or pre-load images then: docker compose --env-file .env -f docker-compose.images.yml up -d --pull never"
+  fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
 fi
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.

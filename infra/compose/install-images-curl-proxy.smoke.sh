@@ -10,7 +10,9 @@ g 'export https_proxy="$HTTPS_PROXY"'
 g 'export no_proxy="$NO_PROXY"'
 g 'could not pull images'
 g 'registry-mirrors'
-g 'http_proxy/https_proxy for curl'
+g 'Set HTTP_PROXY/HTTPS_PROXY'
+g 'NO_PROXY for localhost'
+g '--pull never'
 bash -n "$src" || fail "bash -n"
 
 # Unit: source only the sync function
