@@ -32,7 +32,8 @@ installer copies `infra/compose/.env.images.example`) to a registry you
 control that already holds the images:
 
 ```env
-POSTGRES_IMAGE=registry.example.com/library/postgres:16
+# Prefer digest when the mirror has it; see section 2 if it only has moving tags.
+POSTGRES_IMAGE=registry.example.com/library/postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
 BUSYBOX_IMAGE=registry.example.com/library/busybox:1
 ```
 
@@ -41,23 +42,30 @@ alternative when you prefer not to change `.env`.
 
 ### 2. Digest-pinned Hub override misses on a mirror
 
-Copying the compose default literally:
+**Prefer keeping the published digest** when your mirror serves that digest
+(content pinning stays intact):
+
+```env
+POSTGRES_IMAGE=registry.example.com/library/postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
+```
+
+Copying the Hub default without a registry prefix:
 
 ```env
 POSTGRES_IMAGE=postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
 ```
 
-often fails on mirrors that only publish moving tags. Prefer a **tag without
-digest** when pointing at a mirror:
+still talks to Docker Hub (or your daemon Hub mirror). If the mirror **only**
+publishes moving tags and rejects digests, fall back to a digest-less tag —
+know that **content pinning is lost**:
 
 ```env
-POSTGRES_IMAGE=postgres:16
-# or
 POSTGRES_IMAGE=registry.example.com/library/postgres:16
 ```
 
-Keep digests for environments that intentionally pin Hub content-addressing;
-use digest-less tags for restricted-network / mirror overrides.
+Before deploying a digest-less override, pull once and record
+`docker image inspect … --format '{{index .RepoDigests 0}}'` (or your
+registry's digest) so you can verify what actually landed.
 
 ### 3. GHCR app / computer pull fails (auth or unreachable)
 
