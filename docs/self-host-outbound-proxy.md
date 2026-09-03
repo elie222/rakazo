@@ -17,7 +17,7 @@ or branded proxy hostnames into project defaults.
 | **Ingress reverse proxy / TLS** | Terminates HTTPS in front of `:5173` or Caddy in prod | Host Caddy/nginx; `docs/self-host.md` published-images TLS snippet |
 | **Screen proxy** | Signed `/novnc/*` capability URLs for bot desktops | `SCREEN_PROXY_SECRET` in `.env` (not an HTTP egress proxy) |
 
-`infra/compose/docker-daemon.json` sets `"userland-proxy": false` — that is
+`infra/compose/docker-daemon.json` sets `"userland-proxy": false`. That is
 Docker’s **NAT** path, unrelated to HTTP(S)_PROXY.
 
 ## When you need outbound proxy
@@ -34,14 +34,14 @@ Use this page when:
 
 If the failure is “registry unreachable” and you already have a **registry
 mirror**, prefer image/env overrides (`RAKAZO_*_IMAGE*`, `POSTGRES_IMAGE`,
-`BUSYBOX_IMAGE`) or daemon `registry-mirrors` — see restricted-network docs /
+`BUSYBOX_IMAGE`) or daemon `registry-mirrors`. See restricted-network docs /
 pull-diagnostics when present. Outbound proxy and registry mirrors solve
 different problems; you may need both.
 
 ## 1. Host shell (installer Stage A / B)
 
 `install-images.sh` uses `curl`. Export proxy vars in the same shell before
-running it (values are examples — use your gateway):
+running it (values are examples; use your gateway):
 
 ```bash
 export HTTP_PROXY=http://proxy.example.com:8080
@@ -68,7 +68,7 @@ Compose `pull` talks to the **daemon**. Shell `HTTP_PROXY` alone often does
 is typical):
 
 ```bash
-# Example only — paths vary by distro.
+# Example only; paths vary by distro.
 sudo mkdir -p /etc/systemd/system/docker.service.d
 sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf >/dev/null <<'UNIT'
 [Service]
@@ -89,7 +89,7 @@ docker compose --env-file .env -f docker-compose.images.yml pull
 Alternatively, some sites put `"proxies": { "http-proxy": "…", "https-proxy": "…", "no-proxy": "…" }`
 in `/etc/docker/daemon.json`. If you also use
 `infra/compose/docker-daemon.json` / `registry-mirrors` fragments, **merge**
-keys carefully — invalid JSON prevents Docker from starting.
+keys carefully. Invalid JSON prevents Docker from starting.
 
 ## 3. Running containers (API → providers)
 
@@ -100,8 +100,11 @@ add the same three variables under `environment:` for those services in an
 next to the install), then recreate:
 
 ```bash
-docker compose --env-file .env -f docker-compose.images.yml up -d
+docker compose --env-file .env -f docker-compose.images.yml -f docker-compose.override.yml up -d
 ```
+
+Passing an explicit `-f` disables Compose’s auto-load of `docker-compose.override.yml`,
+so the second `-f` is required when that override exists.
 
 Keep `NO_PROXY` broad enough for in-stack service names (`postgres`,
 `supervisor`, `api`, …) so internal traffic stays direct.
@@ -120,7 +123,7 @@ curl -fsSI https://example.com | head -n5
 # Daemon can pull (after daemon proxy restart)
 docker pull busybox:1
 
-# API health (loopback — should stay on NO_PROXY)
+# API health (loopback; should stay on NO_PROXY)
 curl -fsS http://127.0.0.1:3100/health
 ```
 
@@ -130,11 +133,11 @@ doc is on your branch/release.
 ## Pitfalls
 
 - Setting only shell `HTTP_PROXY` then wondering why `docker compose pull`
-  still fails — fix the **daemon** proxy.
+  still fails. Fix the **daemon** proxy.
 - Putting the egress proxy URL into `SCREEN_PROXY_SECRET` or into Caddy
-  `reverse_proxy` lines — wrong layer.
-- Proxying `127.0.0.1` / Compose service names — breaks healthchecks and DB
+  `reverse_proxy` lines. Wrong layer.
+- Proxying `127.0.0.1` / Compose service names. Breaks healthchecks and DB
   URLs; extend `NO_PROXY`.
-- Hardcoding阿里云 / ghproxy / other CDN hostnames into Rakazo defaults —
-  project policy forbids vendor CDN defaults; keep overrides in operator
+- Hardcoding Alibaba Cloud, ghproxy, or other CDN hostnames into Rakazo defaults.
+  Project policy forbids vendor CDN defaults; keep overrides in operator
   env only.
