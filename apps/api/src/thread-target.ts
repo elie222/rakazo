@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
 import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
 import {
@@ -54,6 +55,8 @@ export type ThreadTarget =
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued"]);
+
+const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running"]);
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
 
@@ -330,8 +333,17 @@ export async function threadSnapshot(
             where: {
               botId: target.botId,
               threadId: target.threadId,
-              trigger: { not: "bot_message" },
               status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
+              // A run started by another bot's message_bot call is normally kept out of
+              // this thread's spinner/failure surface (see below) so background peer
+              // chatter doesn't bury what the human is looking at. But when that run is
+              // paused waiting on a human (waiting_input/waiting_takeover) it MUST still
+              // surface here — otherwise the ask card it created has nowhere to render
+              // and the bot sits stuck forever with no visible way to unblock it.
+              OR: [
+                { trigger: { not: "bot_message" } },
+                { status: { in: ["waiting_input", "waiting_takeover"] } },
+              ],
             },
             // The id tiebreak keeps ordering deterministic under equal
             // timestamps, matching the supersession probe below.
@@ -396,8 +408,14 @@ export async function threadSnapshot(
       tx.run.findMany({
         where: {
           threadId: target.threadId,
-          trigger: { not: "bot_message" },
           status: { in: [...ACTIVE_RUN_STATUSES] },
+          // See the matching comment in the bot-thread branch above: a bot_message-triggered
+          // run must still surface here once it's waiting on a human, or its ask card is
+          // invisible and the member is stuck with no way to unblock it.
+          OR: [
+            { trigger: { not: "bot_message" } },
+            { status: { in: ["waiting_input", "waiting_takeover"] } },
+          ],
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -580,6 +598,12 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true },
         });
+        if (active && !STEERABLE_RUN_STATUSES.has(active.status)) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              "This bot has a pending approval waiting on you — resolve its ask card before sending a new message.",
+          });
+        }
         if (active) {
           await tx.steeringMessage.create({
             data: {
@@ -691,6 +715,12 @@ export async function sendThreadMessage(
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
         const active = activeByBotId.get(botId);
+        if (active && !STEERABLE_RUN_STATUSES.has(active.status)) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              "This bot has a pending approval waiting on you — resolve its ask card before sending a new message.",
+          });
+        }
         if (active) {
           await tx.steeringMessage.create({
             data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },
