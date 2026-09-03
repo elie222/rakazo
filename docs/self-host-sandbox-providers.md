@@ -5,15 +5,17 @@ only; does not edit `docs/self-host.md`.
 
 `GET /health` reports the effective provider as `sandbox` (see
 `docs/self-host-health-checks.md` when present). HTTP 200 alone is not enough:
-confirm the JSON `sandbox` field matches the provider you set. A missing or
-invalid remote key can leave `sandbox: "none"` while `/health` still returns 200.
+confirm the JSON `sandbox` field matches the provider you set. A **missing**
+remote key falls back to `sandbox: "none"` while `/health` still returns 200.
+A present but **invalid** key still reports the chosen provider; `/health` will
+not catch that until provisioning fails.
 
 ## Quick pick
 
 | Goal | Set | Also need |
 | --- | --- | --- |
 | Default self-host (local Docker desktop per bot) | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
-| UI only, no computers | `SANDBOX_PROVIDER=none` | (none) |
+| UI only, no computers | `SANDBOX_PROVIDER=none` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose) |
 | Managed remote desktop | `e2b` / `daytona` / `box` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Box) |
 
 Published-images `infra/compose/.env.images.example` defaults to **`docker`**.
@@ -46,6 +48,9 @@ Signup and local Docker computers work **without** an E2B (or other remote) acco
 Boots API/web without computer provisioning. Use when Docker/supervisor is
 unavailable and you only need the control plane.
 
+Published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` and starts
+the supervisor service even when `SANDBOX_PROVIDER=none`.
+
 ## Remote providers
 
 Set `SANDBOX_PROVIDER` to exactly one of:
@@ -73,5 +78,6 @@ curl -fsS http://127.0.0.1:3100/health
 ```
 
 Confirm `sandbox` equals the intended provider (`e2b`, `daytona`, or `box`).
-HTTP 200 with `sandbox: "none"` means computers are disabled (missing or invalid
-remote key), not a successful remote setup.
+HTTP 200 with `sandbox: "none"` means computers are disabled because the remote
+key is missing, not a successful remote setup. A present but invalid key still
+reports the chosen provider on `/health`; provisioning fails later.
