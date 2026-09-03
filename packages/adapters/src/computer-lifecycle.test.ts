@@ -100,63 +100,154 @@ describe("computer provisioning", () => {
     }
   });
 
-  it("updates computer providerRef if reconnect provisions a different ref", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-reconnect-update-"));
-    const ref = {
-      id: "provider-2",
-      botId: "bot-1",
-      kind: "cloud" as const,
-      providerRef: "provider-2",
-      fresh: false,
-    };
-    const prepare = vi.fn().mockResolvedValue(undefined);
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "cloud",
-          scope: "dedicated",
-          state: "running",
-          controlLeaseId: null,
-        }),
-        updateMany: vi.fn(),
-        update: vi.fn(),
-      },
-    } as unknown as PrismaClient;
-    const sandbox = {
-      provision: vi.fn().mockResolvedValue(ref),
-      prepare,
-    } as unknown as SandboxProvider;
+  it.each([
+    { stage: "prepare", rollbackFails: false },
+    { stage: "restore", rollbackFails: false },
+    { stage: "record", rollbackFails: false },
+    { stage: "restore", rollbackFails: true },
+  ])(
+    "preserves the original computer when reconnect $stage fails (rollbackFails=$rollbackFails)",
+    async ({ stage, rollbackFails }) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-reconnect-rollback-"));
+      const failure = new Error(`${stage} failed`);
+      const rollbackError = new Error("replacement deletion failed");
+      const original = {
+        id: "computer-1",
+        homeKey: "bot-1",
+        providerRef: "provider-1",
+        kind: "box",
+        scope: "dedicated",
+        state: "running",
+        controlLeaseId: null,
+      };
+      const ref = {
+        id: "provider-2",
+        botId: "bot-1",
+        kind: "e2b" as const,
+        providerRef: "provider-2",
+        fresh: true,
+      };
+      const prisma = {
+        computer: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue(original),
+          update: vi.fn().mockRejectedValue(failure),
+          updateMany: vi.fn(),
+        },
+      } as unknown as PrismaClient;
+      const sandbox = {
+        provision: vi.fn().mockResolvedValue(ref),
+        prepare: stage === "prepare" ? vi.fn().mockRejectedValue(failure) : vi.fn(),
+        importWorkspace: stage === "restore" ? vi.fn().mockRejectedValue(failure) : vi.fn(),
+        releaseScreen: vi.fn().mockResolvedValue(undefined),
+        destroy: rollbackFails ? vi.fn().mockRejectedValue(rollbackError) : vi.fn(),
+        stop: vi.fn(),
+      } as unknown as SandboxProvider;
 
-    try {
-      await expect(
-        provisionComputer(
+      try {
+        const result = provisionComputer(
           {
             prisma,
             sandbox,
-            home: {} as AgentHomeStore,
+            home: new LocalAgentHomeStore(dataDir),
             jobs: {} as JobPublisher,
             events: {} as ThreadEvents,
             dataDir,
           },
           "computer-1",
           context,
-        ),
-      ).resolves.toEqual(ref);
-      expect(prepare).toHaveBeenCalledWith(ref, context);
-      expect(prisma.computer.update).toHaveBeenCalledWith({
-        where: { id: "computer-1" },
-        data: {
-          providerRef: "provider-2",
-          kind: "cloud",
+        );
+        if (rollbackFails) {
+          await expect(result).rejects.toMatchObject({ errors: [failure, rollbackError] });
+        } else {
+          await expect(result).rejects.toBe(failure);
+        }
+        expect(sandbox.releaseScreen).toHaveBeenCalledExactlyOnceWith(ref, context);
+        expect(sandbox.destroy).toHaveBeenCalledExactlyOnceWith(ref, context);
+        expect(sandbox.stop).not.toHaveBeenCalled();
+        expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+        if (stage !== "record") expect(prisma.computer.update).not.toHaveBeenCalled();
+        expect(original).toMatchObject({
+          state: "running",
+          kind: "box",
+          providerRef: "provider-1",
+        });
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    { kind: "e2b" as const, providerRef: "provider-2", fresh: true },
+    { kind: "box" as const, providerRef: "provider-2", fresh: false },
+    { kind: "e2b" as const, providerRef: "provider-1", fresh: false },
+    { kind: "box" as const, providerRef: "provider-1", fresh: true },
+  ])(
+    "restores saved files before reconnecting to $kind/$providerRef (fresh=$fresh)",
+    async (next) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-reconnect-update-"));
+      const home = new LocalAgentHomeStore(dataDir);
+      const sandbox = new FakeSandboxProvider();
+      const ref = {
+        ...(await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context)),
+        ...next,
+      };
+      vi.spyOn(sandbox, "provision").mockResolvedValue(ref);
+      const prepare = vi.spyOn(sandbox, "prepare");
+      const destroy = vi.spyOn(sandbox, "destroy");
+      const stop = vi.spyOn(sandbox, "stop");
+      const saved = new TextEncoder().encode("saved work");
+      const prisma = {
+        computer: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue({
+            id: "computer-1",
+            homeKey: "bot-1",
+            providerRef: "provider-1",
+            kind: "box",
+            scope: "dedicated",
+            state: "running",
+            controlLeaseId: null,
+          }),
+          updateMany: vi.fn(),
+          update: vi.fn(async () => {
+            expect(await sandbox.readFile(ref, "notes/keep.txt", context)).toEqual(saved);
+          }),
         },
-      });
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-    }
-  });
+      } as unknown as PrismaClient;
+
+      try {
+        await home.writeFile("bot-1", "notes/keep.txt", "saved work", context);
+        await expect(
+          provisionComputer(
+            {
+              prisma,
+              sandbox,
+              home,
+              jobs: {} as JobPublisher,
+              events: {} as ThreadEvents,
+              dataDir,
+            },
+            "computer-1",
+            context,
+          ),
+        ).resolves.toEqual(ref);
+        expect(prepare).toHaveBeenCalledWith(ref, context);
+        expect(await sandbox.readFile(ref, "notes/keep.txt", context)).toEqual(saved);
+        if (next.providerRef === "provider-1" && next.kind === "box") {
+          expect(prisma.computer.update).not.toHaveBeenCalled();
+        } else {
+          expect(prisma.computer.update).toHaveBeenCalledWith({
+            where: { id: "computer-1" },
+            data: { providerRef: next.providerRef, kind: next.kind },
+          });
+        }
+        expect(destroy).not.toHaveBeenCalled();
+        expect(stop).not.toHaveBeenCalled();
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([
     { fresh: true, cleanup: "destroy" as const },
@@ -344,39 +435,45 @@ describe("computer provisioning", () => {
     }
   });
 
-  it("reconnects a running computer and still prepares the provider", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-reconnect-"));
-    const ref = {
-      id: "provider-1",
-      botId: "bot-1",
-      kind: "cloud" as const,
-      providerRef: "provider-1",
-      fresh: false,
-    };
-    const prepare = vi.fn().mockResolvedValue(undefined);
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "cloud",
-          scope: "dedicated",
-          state: "running",
-          controlLeaseId: null,
-        }),
-        updateMany: vi.fn(),
-        update: vi.fn(),
-      },
-    } as unknown as PrismaClient;
-    const sandbox = {
-      provision: vi.fn().mockResolvedValue(ref),
-      prepare,
-    } as unknown as SandboxProvider;
+  it.each([false, true])(
+    "preserves a running computer's files on ordinary reconnect (prepare fails=%s)",
+    async (prepareFails) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-reconnect-"));
+      const ref = {
+        id: "provider-1",
+        botId: "bot-1",
+        kind: "cloud" as const,
+        providerRef: "provider-1",
+        fresh: false,
+      };
+      const prepare = prepareFails
+        ? vi.fn().mockRejectedValue(new Error("provider preparation failed"))
+        : vi.fn().mockResolvedValue(undefined);
+      const prisma = {
+        computer: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue({
+            id: "computer-1",
+            homeKey: "bot-1",
+            providerRef: "provider-1",
+            kind: "cloud",
+            scope: "dedicated",
+            state: "running",
+            controlLeaseId: null,
+          }),
+          updateMany: vi.fn(),
+          update: vi.fn(),
+        },
+      } as unknown as PrismaClient;
+      const sandbox = {
+        provision: vi.fn().mockResolvedValue(ref),
+        prepare,
+        importWorkspace: vi.fn(),
+        destroy: vi.fn(),
+        stop: vi.fn(),
+      } as unknown as SandboxProvider;
 
-    try {
-      await expect(
-        provisionComputer(
+      try {
+        const result = provisionComputer(
           {
             prisma,
             sandbox,
@@ -387,15 +484,23 @@ describe("computer provisioning", () => {
           },
           "computer-1",
           context,
-        ),
-      ).resolves.toEqual(ref);
-      expect(prepare).toHaveBeenCalledWith(ref, context);
-      expect(prisma.computer.updateMany).not.toHaveBeenCalled();
-      expect(prisma.computer.update).not.toHaveBeenCalled();
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-    }
-  });
+        );
+        if (prepareFails) {
+          await expect(result).rejects.toThrow("provider preparation failed");
+        } else {
+          await expect(result).resolves.toEqual(ref);
+        }
+        expect(prepare).toHaveBeenCalledWith(ref, context);
+        expect(sandbox.importWorkspace).not.toHaveBeenCalled();
+        expect(sandbox.destroy).not.toHaveBeenCalled();
+        expect(sandbox.stop).not.toHaveBeenCalled();
+        expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+        expect(prisma.computer.update).not.toHaveBeenCalled();
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("computer execution leases", () => {

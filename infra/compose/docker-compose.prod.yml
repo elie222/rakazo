@@ -54,7 +54,7 @@ services:
       API_HOST: "0.0.0.0"
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
-      SANDBOX_PROVIDER: e2b
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-e2b}
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
       RAKAZO_UPDATER_URL: http://updater:7092
@@ -102,7 +102,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
-      SANDBOX_PROVIDER: e2b
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-e2b}
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi

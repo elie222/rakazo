@@ -189,22 +189,41 @@ async function reconnectComputer(
     },
     context,
   );
-  await deps.sandbox.prepare(ref, context);
-  await ensureComputerWorkspaceLayout(
-    deps.sandbox,
-    ref,
-    parseComputerMode(computer.scope),
-    context.botId,
-    context,
-  );
-  if (ref.providerRef !== computer.providerRef || ref.kind !== computer.kind) {
-    await deps.prisma.computer.update({
-      where: { id: computer.id },
-      data: {
-        providerRef: ref.providerRef,
-        kind: ref.kind,
-      },
-    });
+  const changedProvider = ref.providerRef !== computer.providerRef || ref.kind !== computer.kind;
+  const replacement = ref.fresh === true || changedProvider;
+  try {
+    await deps.sandbox.prepare(ref, context);
+    if (replacement) {
+      await restoreComputerWorkspace(deps.home, deps.sandbox, computer.homeKey, ref, context);
+    }
+    await ensureComputerWorkspaceLayout(
+      deps.sandbox,
+      ref,
+      parseComputerMode(computer.scope),
+      context.botId,
+      context,
+    );
+    if (changedProvider) {
+      await deps.prisma.computer.update({
+        where: { id: computer.id },
+        data: {
+          providerRef: ref.providerRef,
+          kind: ref.kind,
+        },
+      });
+    }
+  } catch (error) {
+    // A failed replacement must not overwrite or tear down the original computer.
+    const rollbackError = replacement
+      ? await rollbackProvisionedComputer(deps.sandbox, ref, context, error)
+      : undefined;
+    if (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "Computer reconnection failed and its replacement could not be rolled back",
+      );
+    }
+    throw error;
   }
   return ref;
 }

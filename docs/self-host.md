@@ -279,7 +279,7 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`,
-   `E2B_API_KEY`, `OPENROUTER_API_KEY`,
+   `OPENROUTER_API_KEY`, the API key for your selected sandbox provider,
    `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
    the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
    If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
@@ -297,7 +297,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
-SANDBOX_PROVIDER=e2b
+SANDBOX_PROVIDER=e2b # Production default; or daytona / box with the matching API key.
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
 DATA_DIR=/data
