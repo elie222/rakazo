@@ -30,6 +30,7 @@ import { rpc } from "../lib/rpc";
 
 function oauthStatusText(server: McpServer): string | null {
   if (server.oauthStatus === "connected") return t`OAuth connected`;
+  if (server.oauthStatus === "reconnect") return t`OAuth expired`;
   return server.hasSecret ? t`credential saved` : null;
 }
 
