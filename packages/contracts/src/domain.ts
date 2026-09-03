@@ -13,17 +13,53 @@ export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export const AGENT_SECRET_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/;
+export const RESERVED_AGENT_SECRET_NAMES = new Set([
+  "BASH_ENV",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "ENV",
+  "GIT_CONFIG",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "HOME",
+  "IFS",
+  "LD_LIBRARY_PATH",
+  "LD_PRELOAD",
+  "LOGNAME",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "OLDPWD",
+  "PATH",
+  "PWD",
+  "SHELL",
+  "SSH_AUTH_SOCK",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USER",
+  "XDG_CONFIG_HOME",
+  "ZDOTDIR",
+]);
+export const AgentSecretNameSchema = z
+  .string()
+  .trim()
+  .regex(AGENT_SECRET_NAME_PATTERN)
+  .refine((name) => !RESERVED_AGENT_SECRET_NAMES.has(name), {
+    message: "Secret name is reserved",
+  });
 
 export const AgentSecretSchema = z.object({
   id: Id,
-  name: z.string().regex(AGENT_SECRET_NAME_PATTERN),
+  name: AgentSecretNameSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type AgentSecret = z.infer<typeof AgentSecretSchema>;
 
 export const AgentSecretInputSchema = z.object({
-  name: z.string().trim().regex(AGENT_SECRET_NAME_PATTERN),
+  name: AgentSecretNameSchema,
   value: z.string().min(1).max(16_384),
 });
 export type AgentSecretInput = z.infer<typeof AgentSecretInputSchema>;

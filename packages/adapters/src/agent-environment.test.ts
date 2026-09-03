@@ -26,6 +26,18 @@ describe("managed agent environment", () => {
     expect(instruction).not.toContain("private");
   });
 
+  it("rejects reserved process environment names before decrypting", () => {
+    const load = vi.fn();
+
+    expect(() =>
+      decryptAgentEnvironment(
+        [{ name: "PATH", secret: { id: "secret-1", ciphertext: "cipher-1" } }],
+        { load },
+      ),
+    ).toThrow();
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it("redacts managed values before shell results return to the model", () => {
     expect(
       redactAgentCommandResult(

@@ -245,6 +245,11 @@ describe("contracts", () => {
     );
     expect(AgentSecretInputSchema.safeParse({ name: "lowercase", value: "x" }).success).toBe(false);
     expect(AgentSecretInputSchema.safeParse({ name: "1TOKEN", value: "x" }).success).toBe(false);
+    expect(AgentSecretInputSchema.safeParse({ name: "PATH", value: "x" }).success).toBe(false);
+    expect(AgentSecretInputSchema.safeParse({ name: "HOME", value: "x" }).success).toBe(false);
+    expect(AgentSecretInputSchema.safeParse({ name: "NODE_OPTIONS", value: "x" }).success).toBe(
+      false,
+    );
     expect(AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "" }).success).toBe(false);
     expect(
       AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "x".repeat(16_385) }).success,
