@@ -19,7 +19,7 @@ Stage A bootstrap discoverability is also summarized in the [README](../README.m
 
 1. Cannot download the installer script → Stage A mirror / local copy.
 2. Installer runs but cannot fetch Compose YAML → Stage B base or `--local`.
-3. Compose pull fails on app/computer → GHCR mirror env (`RAKAZO_IMAGE*`).
+3. Compose pull fails on app/computer → GHCR mirror env (`RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE`, `RAKAZO_COMPUTER_IMAGE_TAG`).
 4. Pull fails only on Postgres/busybox → Hub overrides (`POSTGRES_IMAGE` / `BUSYBOX_IMAGE`) or daemon `registry-mirrors`.
 5. Stack is up but bots cannot call models / remote sandboxes → day-2 egress and [computer provider](./self-host.md#choosing-a-computer-provider) choice; local `SANDBOX_PROVIDER=docker` still needs a computer image.
 6. Arm host + mysterious computer crash → pin both image tags to one multi-arch release ([Published images and tags](./self-host.md#published-images-and-tags)).
