@@ -811,7 +811,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' && break; sleep 0.1; done`,
         `if ! netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
         "cd /opt/noVNC/utils",
-        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)`,
+        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC &) 8>&- >/tmp/rakazo-control-novnc.log 2>&1`,
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${proxyPort} ' && exit 0; sleep 0.1; done`,
         "exit 1",
       ].join(" && ");
@@ -879,7 +879,7 @@ export function ensureE2BPrimaryViewCommand(display: string, password: string): 
     `x11vnc -storepasswd "$password" ${authFile} >/dev/null 2>&1`,
     `x11vnc -bg -display ${shellQuote(display)} -forever -wait 50 -shared -viewonly -listen 127.0.0.1 -rfbport 5900 -rfbauth ${authFile} 8>&- >/tmp/rakazo-primary-view-x11vnc.log 2>&1`,
     "cd /opt/noVNC/utils",
-    "(nohup ./novnc_proxy --vnc localhost:5900 --listen 6080 --web /opt/noVNC 8>&- >/tmp/rakazo-primary-view-novnc.log 2>&1 &)",
+    "(nohup ./novnc_proxy --vnc localhost:5900 --listen 6080 --web /opt/noVNC &) 8>&- >/tmp/rakazo-primary-view-novnc.log 2>&1",
     `for i in $(seq 1 50); do if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$password"; exit 0; fi; sleep 0.1; done`,
     "exit 1",
   ].join("\n");

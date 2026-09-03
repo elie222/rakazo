@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
+import { shellQuote } from "./computer-support.js";
 import {
   allocateExtraDisplayCommand,
   ensureExtraDisplayCommand,
@@ -14,6 +19,63 @@ import {
 } from "./extra-displays.js";
 
 describe("extra display ports", () => {
+  it.each(["view", "control"])(
+    "detaches the nested %s proxy without retaining the setup lock or command output",
+    async (kind) => {
+      const fixture = mkdtempSync(join(tmpdir(), "rakazo-proxy-test-"));
+      const pidPath = join(fixture, "child.pid");
+      const descriptorPath = join(fixture, "descriptor");
+      try {
+        writeFileSync(
+          join(fixture, "novnc_proxy"),
+          [
+            "#!/bin/bash",
+            `if [ -e /dev/fd/8 ]; then printf inherited; else printf closed; fi >${shellQuote(descriptorPath)}`,
+            `printf '%s' "$$" >${shellQuote(pidPath)}`,
+            "exec sleep 10",
+          ].join("\n"),
+          { mode: 0o700 },
+        );
+        const layout = extraDisplayLayout(1, ":0");
+        const command =
+          kind === "view"
+            ? ensureExtraDisplayCommand(
+                layout,
+                { homeDir: "/home/user", browserProfilesDir: "/home/user/.browser-profiles" },
+                "test-password",
+              )
+            : extraDisplayControlStartCommand(layout, "test-control", "test-password");
+        const proxy = command
+          .split("\n")
+          .find((line) => line.includes("cd /opt/noVNC/utils"))!
+          .replace("/opt/noVNC/utils", shellQuote(fixture))
+          .replace(
+            /\/tmp\/rakazo\/screen-2(?:-control)?-novnc\.log/,
+            shellQuote(join(fixture, "log")),
+          );
+        const result = spawnSync(
+          "bash",
+          ["-c", `exec 8>${shellQuote(join(fixture, "lock"))}\n${proxy}\nprintf complete`],
+          { encoding: "utf8", timeout: 2_000 },
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe("complete");
+        await vi.waitFor(() => expect(existsSync(pidPath)).toBe(true));
+        expect(readFileSync(descriptorPath, "utf8")).toBe("closed");
+      } finally {
+        if (existsSync(pidPath)) {
+          try {
+            process.kill(Number(readFileSync(pidPath, "utf8")), "SIGTERM");
+          } catch {
+            // The short-lived fixture may already have exited.
+          }
+        }
+        rmSync(fixture, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("releases the setup lock from every persistent extra-screen child", () => {
     const command = ensureExtraDisplayCommand(
       extraDisplayLayout(1, ":0"),
@@ -25,6 +87,9 @@ describe("extra display ports", () => {
     for (const launch of backgroundLaunches) {
       expect(launch).toContain("8>&-");
     }
+    const nestedProxy = backgroundLaunches.find((line) => line.includes("novnc_proxy"));
+    expect(nestedProxy).toContain("&& exec nohup ./novnc_proxy");
+    expect(nestedProxy).toMatch(/\) 8>&- >[^ ]+ 2>&1 &$/);
     expect(command).toContain("flock 8");
   });
 
