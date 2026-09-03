@@ -466,6 +466,9 @@ export function ShellPage() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
+  // Screen-load failures can sit beside a still-valid embed URL; boot and
+  // takeover failures must stay visible even when a URL remains.
+  const [computerErrorFromScreen, setComputerErrorFromScreen] = useState(false);
   useEffect(() => {
     if (!session.data?.user) return;
     let cancelled = false;
@@ -816,6 +819,7 @@ export function ShellPage() {
       commit: (screen) => {
         setScreenUrl(screen.url);
         setComputerError(screen.error);
+        setComputerErrorFromScreen(Boolean(screen.error));
         cacheComputerFor(id, { screenUrl: screen.url });
       },
       fallbackError: t`Could not connect to the computer screen`,
@@ -1046,6 +1050,7 @@ export function ShellPage() {
     }
     screenRequest.current += 1;
     setComputerError(null);
+    setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(active.id);
     if (cached) {
       // Paint the last-known computer instantly; refreshThread/refreshComputerScreen
@@ -2199,12 +2204,14 @@ export function ShellPage() {
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     setComputerError(null);
+    setComputerErrorFromScreen(false);
     try {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
+      setComputerErrorFromScreen(false);
       throw error;
     } finally {
       setBooting(false);
@@ -2249,10 +2256,14 @@ export function ShellPage() {
   useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
+    setComputerErrorFromScreen(false);
   }, [active?.id]);
 
   useEffect(() => {
-    if (!computer?.busyBotName) setComputerError(null);
+    if (!computer?.busyBotName) {
+      setComputerError(null);
+      setComputerErrorFromScreen(false);
+    }
   }, [computer?.busyBotName]);
 
   useEffect(() => {
@@ -2337,8 +2348,9 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
+  const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const computerScreenError =
-    computerError && !embeddedScreenUrl ? (
+    computerError && !hideScreenLoadError ? (
       <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
         <p className="text-destructive">{computerError}</p>
         <Button
@@ -3140,7 +3152,7 @@ export function ShellPage() {
                         your home folder.
                       </Trans>
                     </div>
-                  ) : computer?.state === "running" && embeddedScreenUrl ? (
+                  ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                     <iframe
                       title={t`Bot screen preview`}
                       src={embeddedScreenUrl}
@@ -3831,7 +3843,7 @@ export function ShellPage() {
                   the shell; working directories under your home folder are allowed.
                 </Trans>
               </div>
-            ) : computer?.state === "running" && embeddedScreenUrl ? (
+            ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
               <>
                 <iframe
                   title={t`Bot screen`}
