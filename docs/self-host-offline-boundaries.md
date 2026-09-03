@@ -40,12 +40,15 @@ bash install-images.sh --local --prepare-only
 ```
 
 With images already loaded (or pointed at an internal registry you can reach),
-start Compose yourself instead of re-running the installer:
+start Compose yourself instead of re-running the installer. Compose defaults
+Postgres to a digest pin; if you loaded a digest-less tag (for example
+`postgres:16`), set `POSTGRES_IMAGE` (and `BUSYBOX_IMAGE` / `RAKAZO_*` as
+needed) in `.env` to those exact local refs so `up` does not try to pull.
 
 ```bash
-docker compose --env-file .env -f docker-compose.images.yml up -d
+docker compose --env-file .env -f docker-compose.images.yml up -d --pull never
 # When your Compose plugin supports it:
-# docker compose --env-file .env -f docker-compose.images.yml up -d --wait --wait-timeout 300
+# docker compose --env-file .env -f docker-compose.images.yml up -d --pull never --wait --wait-timeout 300
 ```
 
 `RAKAZO_DOWNLOAD_BASE` must be `https://…` (non-HTTPS is rejected). Trailing
@@ -88,9 +91,11 @@ containers may themselves lack egress; that is a separate network policy.
 1. On a connected machine: save installer + Compose + env example; `docker pull`
    (or build) the four image refs you will pin; `docker save` → tape/USB.
 2. On the air-gapped host: `docker load`; place Compose files; set
-   `RAKAZO_*_IMAGE*` / Hub overrides to local tags or an internal registry;
-   `bash install-images.sh --local --prepare-only`; fill secrets; then
-   `docker compose --env-file .env -f docker-compose.images.yml up -d`
+   `RAKAZO_*_IMAGE*` / `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to the exact local
+   tags you loaded (digest-less Hub tags if that is what you saved) or to an
+   internal registry; `bash install-images.sh --local --prepare-only`; fill
+   secrets; then
+   `docker compose --env-file .env -f docker-compose.images.yml up -d --pull never`
    (add `--wait --wait-timeout 300` when Compose supports it). Do not re-run
    the installer for bring-up; it always runs `docker compose pull`.
 3. Verify with `curl -fsS http://127.0.0.1:3100/health` (see health-checks doc
