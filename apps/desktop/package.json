@@ -70,6 +70,7 @@
       "verifyUpdateCodeSignature": true
     },
     "linux": {
+      "executableName": "rakazo",
       "icon": "assets/icon.png",
       "target": [
         "AppImage"
