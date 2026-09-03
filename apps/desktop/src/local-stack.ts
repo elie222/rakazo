@@ -195,8 +195,9 @@ function failureKind(result: RunDockerResult): DockerFailureKind {
   return classifyDockerFailure(`${result.stdout}\n${result.stderr}`);
 }
 
-function wasInterrupted(signal: AbortSignal, code: number): boolean {
-  return signal.aborted || code === 130;
+/** runDocker exits 130 after an abort; that is a quit or Stop, not a docker failure. */
+function interrupted(signal: AbortSignal, result: RunDockerResult): boolean {
+  return signal.aborted || result.code === 130;
 }
 
 export interface LocalStackDeps {
@@ -294,11 +295,9 @@ export class LocalStackController {
       COMPOSE_VERSION_TIMEOUT_MS,
       signal,
     );
+    if (interrupted(signal, version))
+      return this.push({ type: "failed", message: START_INTERRUPTED });
     if (version.code !== 0) {
-      if (wasInterrupted(signal, version.code)) {
-        this.push({ type: "failed", message: START_INTERRUPTED });
-        return;
-      }
       this.push({
         type: "docker-missing",
         message:
@@ -312,11 +311,8 @@ export class LocalStackController {
       DOCKER_INFO_TIMEOUT_MS,
       signal,
     );
+    if (interrupted(signal, info)) return this.push({ type: "failed", message: START_INTERRUPTED });
     if (info.code !== 0) {
-      if (wasInterrupted(signal, info.code)) {
-        this.push({ type: "failed", message: START_INTERRUPTED });
-        return;
-      }
       this.push({
         type: "docker-not-running",
         message:
@@ -337,11 +333,9 @@ export class LocalStackController {
 
     this.push({ type: "pull-start" });
     const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
+    if (interrupted(signal, pulled))
+      return this.push({ type: "failed", message: START_INTERRUPTED });
     if (pulled.code !== 0) {
-      if (wasInterrupted(signal, pulled.code)) {
-        this.push({ type: "failed", message: START_INTERRUPTED });
-        return;
-      }
       this.push({
         type: "failed",
         message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
@@ -354,11 +348,8 @@ export class LocalStackController {
       ? ["up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)]
       : ["up", "-d"];
     const up = await this.compose(binary, upArgs, UP_TIMEOUT_MS, signal);
+    if (interrupted(signal, up)) return this.push({ type: "failed", message: START_INTERRUPTED });
     if (up.code !== 0) {
-      if (wasInterrupted(signal, up.code)) {
-        this.push({ type: "failed", message: START_INTERRUPTED });
-        return;
-      }
       // Best effort: recent service logs usually name the failing service.
       await this.compose(binary, ["logs", "--tail", "30", "--no-color"], LOGS_TIMEOUT_MS, signal);
       this.push({

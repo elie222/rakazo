@@ -206,7 +206,9 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   await expect(setup.getByRole("button", { name: "Check connection" })).toBeVisible();
 
   // Main process still finishes the install; setup.json must stay untouched.
-  await expect.poll(async () => (await readLog()).some((line) => line.includes(" up -d"))).toBe(true);
+  await expect
+    .poll(async () => (await readLog()).some((line) => line.includes(" up -d")))
+    .toBe(true);
   await new Promise((resolve) => setTimeout(resolve, 2500));
   expect(await savedSetup()).toBeNull();
   expect(app.windows()).toHaveLength(1);

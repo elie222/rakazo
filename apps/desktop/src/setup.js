@@ -105,17 +105,15 @@
     }
   }
 
-  /** Follows a start already in flight in the main process until it settles. */
   /**
-   * Follows a start already in flight until it settles.
-   * Abandons the follow (and never auto-saves) if the person leaves "This computer".
+   * Follows a start already in flight until it settles. Leaving "This computer"
+   * ends the follow so the stack becoming ready never saves over that choice.
    */
   async function followStack() {
     if (stackPolling) return;
     stackPolling = true;
     try {
       while (true) {
-        // Mode can change while pull/up runs; do not keep following or force local save.
         if (selectedMode() !== "new") {
           setBusy(false);
           return;

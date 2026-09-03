@@ -386,7 +386,7 @@ describe("LocalStackController", () => {
     expect(calls.map((call) => call.args[5] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
   });
 
-it("reports interruption instead of a pull failure when docker returns 130", async () => {
+  it("reports interruption instead of a pull failure when docker returns 130", async () => {
     const stack = controller({}, (args) =>
       args[5] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
     );
@@ -397,7 +397,7 @@ it("reports interruption instead of a pull failure when docker returns 130", asy
     });
   });
 
-    it("collects service logs when up fails", async () => {
+  it("collects service logs when up fails", async () => {
     const stack = controller({}, (args) => {
       if (args[5] === "up") {
         return { code: 1, stderr: "port is already allocated", lines: ["web Error"] };
@@ -498,7 +498,6 @@ it("reports interruption instead of a pull failure when docker returns 130", asy
     expect(state).not.toEqual(initialStackState("v1.2.3"));
     expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
   });
-
 
   it("surfaces a broken resource bundle instead of hanging", async () => {
     const resourceDir = path.join(root, "empty");
