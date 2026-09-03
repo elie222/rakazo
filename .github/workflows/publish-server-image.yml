@@ -80,7 +80,8 @@ jobs:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}
     if: github.event_name != 'pull_request'
     # Each architecture builds natively on its own runner and pushes by digest only.
-    # No QEMU: emulated arm64 took hours for the desktop-sized computer image.
+    # No QEMU: GitHub hosts native arm64 runners, and emulated arm64 took hours for the
+    # desktop-sized computer image. See docs/self-host.md (Published images and tags).
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:

@@ -451,6 +451,13 @@ architecture builds natively on its own runner and one manifest is assembled per
 stable `vX.Y.Z` has been published, GHCR may only have `edge` and `sha-*` tags; do not pin
 `latest` unless that tag exists in the registry.
 
+Building the images yourself does not need QEMU. `docker compose up --build` builds for the host's
+own architecture, and a fork publishing multi-arch images should do what `publish-server-image.yml`
+does: build each architecture on a native runner (GitHub Actions provides `ubuntu-24.04-arm` for
+public repositories) and merge the digests into one manifest. QEMU emulation
+(`docker/setup-qemu-action`, `binfmt`) still works if you have no native arm64 machine, but it is
+many times slower, hours rather than minutes for the `computer` image.
+
 The updater resolves the newest stable `vX.Y.Z` source tag but deploys its `sha-<full-commit>` image,
 not `latest` or a moving minor tag. A registry tag is not an OCI digest and GHCR package writers can
 replace it, so the trust boundary remains this repository's publishing credentials. The workflow
