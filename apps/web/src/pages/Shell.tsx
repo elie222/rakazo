@@ -2337,18 +2337,19 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
-  const computerScreenError = computerError && !embeddedScreenUrl ? (
-    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
-      <p className="text-destructive">{computerError}</p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => active && void refreshComputerScreen(active.id)}
-      >
-        <Trans>Retry screen</Trans>
-      </Button>
-    </div>
-  ) : null;
+  const computerScreenError =
+    computerError && !embeddedScreenUrl ? (
+      <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+        <p className="text-destructive">{computerError}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => active && void refreshComputerScreen(active.id)}
+        >
+          <Trans>Retry screen</Trans>
+        </Button>
+      </div>
+    ) : null;
 
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
