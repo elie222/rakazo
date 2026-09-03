@@ -209,13 +209,24 @@ export interface LocalStackDeps {
   resourceDir: string;
   imageTag: string;
   /** Answers whether the web app is reachable; the final readiness gate. */
-  probe: () => Promise<boolean>;
+  probe: (signal: AbortSignal) => Promise<boolean>;
   randomHex: (bytes: number) => string;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
 }
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** Resolves early on abort so a stop never waits out a health poll. */
+function defaultSleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    }
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
 
 /**
  * Installs and starts the compose stack under the app's user data. Every docker call
@@ -224,6 +235,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 export class LocalStackController {
   private current: DesktopLocalStackState;
   private running: Promise<DesktopLocalStackState> | null = null;
+  private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
 
   constructor(private readonly deps: LocalStackDeps) {
@@ -234,12 +246,17 @@ export class LocalStackController {
     return this.current;
   }
 
-  /** Idempotent while a start is in flight; otherwise begins a fresh attempt from any phase. */
+  /**
+   * Idempotent while a start is in flight; otherwise begins a fresh attempt from any
+   * phase, after any stop still running so `compose up` and `compose stop` never overlap.
+   */
   start(): Promise<DesktopLocalStackState> {
     if (this.running !== null) return this.running;
-    const attempt = this.run().finally(() => {
-      if (this.running === attempt) this.running = null;
-    });
+    const attempt = (this.stopping ?? Promise.resolve())
+      .then(() => this.run())
+      .finally(() => {
+        if (this.running === attempt) this.running = null;
+      });
     this.running = attempt;
     return attempt;
   }
@@ -250,7 +267,16 @@ export class LocalStackController {
   }
 
   /** Stops the containers (`compose stop`); volumes and images stay for the next start. */
-  async stop(): Promise<DesktopLocalStackState> {
+  stop(): Promise<DesktopLocalStackState> {
+    if (this.stopping !== null) return this.stopping;
+    const stopping = this.runStop().finally(() => {
+      if (this.stopping === stopping) this.stopping = null;
+    });
+    this.stopping = stopping;
+    return stopping;
+  }
+
+  private async runStop(): Promise<DesktopLocalStackState> {
     this.abort();
     if (this.running !== null) await this.running.catch(() => undefined);
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
@@ -363,12 +389,12 @@ export class LocalStackController {
     const sleep = this.deps.sleep ?? defaultSleep;
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     while (!signal.aborted) {
-      if (await this.deps.probe()) {
+      if (await this.deps.probe(signal)) {
         this.push({ type: "ready" });
         return;
       }
       if (Date.now() >= deadline) break;
-      await sleep(HEALTH_POLL_INTERVAL_MS);
+      await sleep(HEALTH_POLL_INTERVAL_MS, signal);
     }
     this.push({
       type: "failed",

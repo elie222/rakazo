@@ -121,10 +121,8 @@
     stackPolling = true;
     try {
       while (true) {
-        if (selectedMode() !== "new") {
-          setBusy(false);
-          return;
-        }
+        // The mode change handler already unlocked the form; a save it started must stay busy.
+        if (selectedMode() !== "new") return;
         const stack = await bridge.stack.state();
         if (stack === null) throw new Error("Setup is not active");
         renderStack(stack);

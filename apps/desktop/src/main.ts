@@ -619,9 +619,10 @@ function fromSetupWindow(event: Electron.IpcMainInvokeEvent) {
   );
 }
 
-async function probeServer(rawUrl: string): Promise<DesktopReachability> {
+async function probeServer(rawUrl: string, signal?: AbortSignal): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
   if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
+  const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
   try {
     const response = await net.fetch(`${url}/rpc/health`, {
@@ -631,7 +632,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
       cache: "no-store",
       credentials: "omit",
       redirect: "manual",
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
     });
     if (response.status >= 300 && response.status < 400) {
       return {
@@ -867,7 +868,7 @@ app.whenReady().then(async () => {
       packaged: app.isPackaged,
       override: process.env.RAKAZO_IMAGE_TAG,
     }),
-    probe: async () => (await probeServer(LOCAL_WEB_URL)).ok,
+    probe: async (signal) => (await probeServer(LOCAL_WEB_URL, signal)).ok,
     randomHex: (bytes) => randomBytes(bytes).toString("hex"),
   });
   currentSetup = await readSetup(userDataDir);

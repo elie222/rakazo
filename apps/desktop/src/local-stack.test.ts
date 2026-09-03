@@ -198,13 +198,16 @@ interface RecordedCall {
   env: Record<string, string>;
 }
 
-type Script = (args: string[]) => Partial<RunDockerResult> & { lines?: string[] };
+type Script = (
+  args: string[],
+) => Partial<RunDockerResult> & { lines?: string[]; wait?: Promise<void> };
 
 function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
   return async (binary, args, options) => {
     calls.push({ binary, args, cwd: options.cwd, env: options.env });
-    const { lines = [], ...reply } = script(args);
+    const { lines = [], wait, ...reply } = script(args);
     for (const line of lines) options.onLine?.(line);
+    await wait;
     return { code: 0, stdout: "", stderr: "", ...reply };
   };
 }
@@ -251,9 +254,9 @@ describe("LocalStackController", () => {
         phases.push(stack.state().phase);
         return run(binary, args, options);
       },
-      probe: () => {
+      probe: (signal) => {
         phases.push(stack.state().phase);
-        return probe();
+        return probe(signal);
       },
     };
     const stack = new LocalStackController(deps);
@@ -497,6 +500,39 @@ describe("LocalStackController", () => {
     expect(state.message).not.toContain("/Users/me");
     expect(state).not.toEqual(initialStackState("v1.2.3"));
     expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+  });
+
+  it("queues a start behind a stop so up and stop never overlap", async () => {
+    let releaseStop: () => void = () => undefined;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const stack = controller({}, (args) => {
+      if (args[5] === "stop") return { wait: stopGate };
+      return ok(args);
+    });
+    await stack.start();
+    const stopping = stack.stop();
+    const restarted = stack.start();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    releaseStop();
+    await stopping;
+    expect((await restarted).phase).toBe("ready");
+    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("compose"));
+  });
+
+  it("does not wait out a slow health probe when stopped", async () => {
+    const stack = controller({
+      probe: (signal) =>
+        new Promise((resolve) => signal.addEventListener("abort", () => resolve(false))),
+    });
+    const started = stack.start();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const stopped = await stack.stop();
+    expect(stopped).toEqual(initialStackState("v1.2.3"));
+    expect((await started).message).toBe("The start was interrupted. Retry to continue.");
   });
 
   it("surfaces a broken resource bundle instead of hanging", async () => {
