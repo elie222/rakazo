@@ -29,7 +29,9 @@ test.describe("marketing homepage", () => {
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
     );
 
-    await selfHost.scrollIntoViewIfNeeded();
+    await expect(async () => {
+      await selfHost.scrollIntoViewIfNeeded();
+    }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "01-marketing-homepage-selfhost");
 
     await expect(async () => {
@@ -61,7 +63,9 @@ test.describe("marketing homepage", () => {
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
     );
 
-    await selfHost.scrollIntoViewIfNeeded();
+    await expect(async () => {
+      await selfHost.scrollIntoViewIfNeeded();
+    }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "03-marketing-homepage-zh-selfhost");
 
     await expect(async () => {
