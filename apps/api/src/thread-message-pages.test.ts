@@ -1,6 +1,11 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  isPeerRun,
+  loadAllMessages,
+  loadMessagePage,
+  shouldForwardPeerThreadEvent,
+} from "./thread-message-pages.js";
 
 describe("thread message pages", () => {
   it("caches peer-run classification for live events", async () => {
@@ -11,6 +16,31 @@ describe("thread message pages", () => {
     await expect(isPeerRun(prisma, "run-peer", cache)).resolves.toBe(true);
     await expect(isPeerRun(prisma, "run-peer", cache)).resolves.toBe(true);
     expect(findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards peer waiting and ask events on an open thread", () => {
+    expect(shouldForwardPeerThreadEvent({ type: "run.waiting_input", payload: {} })).toBe(true);
+    expect(shouldForwardPeerThreadEvent({ type: "computer.takeover.requested", payload: {} })).toBe(
+      true,
+    );
+    expect(
+      shouldForwardPeerThreadEvent({
+        type: "thread.message.created",
+        payload: { blocks: [{ kind: "ask", text: "Pick one" }] },
+      }),
+    ).toBe(true);
+    expect(
+      shouldForwardPeerThreadEvent({
+        type: "thread.message.created",
+        payload: { blocks: [{ kind: "text", text: "peer body" }] },
+      }),
+    ).toBe(false);
+    expect(
+      shouldForwardPeerThreadEvent({
+        type: "thread.progress",
+        payload: {},
+      }),
+    ).toBe(false);
   });
 
   it("keeps peer receipt rows when filtering peer-run output from pages", async () => {
