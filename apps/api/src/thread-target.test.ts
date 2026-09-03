@@ -918,9 +918,9 @@ describe("sendThreadMessage", () => {
         update: vi.fn(),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([
-          { id: "run-waiting", taskId: "task-1", status: "waiting_input" },
-        ]),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }]),
       },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn() },
