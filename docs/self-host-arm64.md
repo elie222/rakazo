@@ -46,7 +46,7 @@ On arm64:
    published **multi-arch** release tag (for example a `vX.Y.Z` or a
    multi-arch `workflow_dispatch` build).
 3. Changing **only** `RAKAZO_IMAGE_TAG` leaves the computer service on
-   amd64-only `edge`. That partial pin is a common footgun.
+   amd64-only `edge`. That partial pin is a common configuration error.
 
 Replace `v0.0.0` with a real multi-arch GHCR tag for **both** images, then
 pull/up from the install directory (or `infra/compose`):
@@ -89,9 +89,11 @@ RAKAZO_COMPUTER_IMAGE_TAG=v0.0.0
 ```
 
 Keep app and computer on the **same mirror** and the **same multi-arch tag**.
+Prefer **digest-pinned** refs when the mirror serves them (immutable content).
 Hub Postgres/busybox overrides (`POSTGRES_IMAGE` / `BUSYBOX_IMAGE`) are
-independent; prefer digest-less tags on mirrors. Registry override details:
-[docs/self-host.md](./self-host.md).
+independent — keep digests when available; use digest-less tags only if the
+mirror rejects digests, then verify the pulled digest before deploy. Registry
+override details: [docs/self-host.md](./self-host.md).
 
 Installer warnings when the host is arm64 and tags resolve to `edge` are
 complementary. The fix is still to pin both tags.
