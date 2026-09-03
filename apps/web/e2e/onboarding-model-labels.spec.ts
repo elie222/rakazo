@@ -4,6 +4,15 @@ import { captureScreenshot, signup } from "./helpers";
 test("onboarding model list never labels an older model the latest one", async ({
   page,
 }, testInfo) => {
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: { json: { ...body.json, needsModel: true } },
+    });
+  });
+
   const stamp = Date.now();
   await signup(page, `model-labels-${stamp}@rakazo.test`, "password12", `Model labels ${stamp}`);
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
