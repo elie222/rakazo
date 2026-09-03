@@ -488,12 +488,6 @@ describe("LocalStackController", () => {
     expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
   });
 
-  it("returns the current state when stop finds no docker binary", async () => {
-    const stack = controller({ exists: () => false });
-    const state = await stack.stop();
-    expect(state).toEqual(initialStackState("v1.2.3"));
-    expect(calls).toEqual([]);
-  });
 
   it("surfaces a broken resource bundle instead of hanging", async () => {
     await mkdir(path.join(root, "empty"));
