@@ -105,3 +105,91 @@ export function registerLocalProvider(models: MutableModels): MutableModels {
   if (provider) models.setProvider(provider);
   return models;
 }
+
+export const LOCAL_MLX_PROVIDER_ID = "local-mlx";
+
+const LOCAL_MLX_DEFAULT_BASE_URL = "http://127.0.0.1:8081/v1";
+const LOCAL_MLX_CONTEXT_WINDOW = 128_000;
+const LOCAL_MLX_MAX_TOKENS = 8_192;
+
+/**
+ * Self-hosted MLX OpenAI-compatible server (e.g. mlx-openai-server / Rapid MLX).
+ *
+ * Kept as its own provider id so an MLX endpoint can coexist with the generic
+ * `local` provider rather than being folded into it. Configured through
+ * `LOCAL_MLX_BASE_URL` / `LOCAL_MLX_MODEL_ID`, exactly as before the local-provider
+ * refactor. The endpoint is keyless: `resolve` returns a placeholder because the
+ * server ignores the header.
+ */
+function localMlxBaseUrl(): string {
+  const value = (process.env.LOCAL_MLX_BASE_URL ?? LOCAL_MLX_DEFAULT_BASE_URL).replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("LOCAL_MLX_BASE_URL must be an absolute HTTP(S) URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("LOCAL_MLX_BASE_URL must be an absolute HTTP(S) URL");
+  }
+  return value;
+}
+
+/** The model id exactly as the MLX server names it, from the environment. */
+function localMlxModelId(): string {
+  return (process.env.LOCAL_MLX_MODEL_ID ?? "").trim();
+}
+
+function localMlxModel(id: string, baseUrl: string): Model<"openai-completions"> {
+  return {
+    id,
+    name: id,
+    api: "openai-completions",
+    provider: LOCAL_MLX_PROVIDER_ID,
+    baseUrl,
+    reasoning: true,
+    compat: {
+      // mlx-openai-server rejects pi's default "developer" system role outright (422);
+      // "system" is the role every such server understands.
+      supportsDeveloperRole: false,
+      // Qwen chat templates read chat_template_kwargs.enable_thinking; without this
+      // the server defaults to reasoning_effort "xhigh" and can burn the whole
+      // maxTokens budget on thinking before ever reaching an answer.
+      thinkingFormat: "qwen-chat-template",
+    },
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: LOCAL_MLX_CONTEXT_WINDOW,
+    maxTokens: LOCAL_MLX_MAX_TOKENS,
+  };
+}
+
+/** The provider, or undefined when no MLX model id is configured. */
+export function localMlxProvider(): Provider | undefined {
+  const modelId = localMlxModelId();
+  if (!modelId) return undefined;
+  const baseUrl = localMlxBaseUrl();
+  return createProvider({
+    id: LOCAL_MLX_PROVIDER_ID,
+    name: "Local MLX server",
+    baseUrl,
+    auth: {
+      apiKey: {
+        name: "Local MLX server",
+        resolve: async () => ({
+          auth: { apiKey: "not-required", baseUrl },
+          source: "local MLX server",
+        }),
+      },
+    },
+    models: [localMlxModel(modelId, baseUrl)],
+    api: openAICompletionsApi(),
+  });
+}
+
+/** Register the local-mlx provider on a Models collection. No-op when unconfigured. */
+export function registerLocalMlxProvider(models: MutableModels): MutableModels {
+  const provider = localMlxProvider();
+  if (provider) models.setProvider(provider);
+  return models;
+}

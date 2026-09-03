@@ -1,8 +1,11 @@
+import { hasApi } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  LOCAL_MLX_PROVIDER_ID,
   LOCAL_PROVIDER_ID,
   localBaseUrl,
+  localMlxProvider,
   localProvider,
   registerLocalProvider,
 } from "./pi-local-provider.js";
@@ -12,6 +15,8 @@ const ENV_KEYS = [
   "RAKAZO_LOCAL_MODELS_URL",
   "RAKAZO_LOCAL_CONTEXT_WINDOW",
   "RAKAZO_LOCAL_MAX_TOKENS",
+  "LOCAL_MLX_BASE_URL",
+  "LOCAL_MLX_MODEL_ID",
 ] as const;
 
 const saved = new Map<string, string | undefined>();
@@ -113,5 +118,33 @@ describe("local model provider", () => {
     setModels("qwen3:4b");
     const withLocal = registerLocalProvider(builtinModels());
     expect(withLocal.getModel(LOCAL_PROVIDER_ID, "qwen3:4b")).toBeDefined();
+  });
+});
+
+describe("local-mlx provider", () => {
+  it("registers a reasoning-capable model at the configured endpoint", () => {
+    process.env.LOCAL_MLX_MODEL_ID = "/models/qwen3.8-27b-4bit";
+    process.env.LOCAL_MLX_BASE_URL = "http://127.0.0.1:8090/v1";
+    const provider = localMlxProvider();
+    expect(provider?.id).toBe(LOCAL_MLX_PROVIDER_ID);
+    const model = provider?.getModels()[0];
+    expect(model?.id).toBe("/models/qwen3.8-27b-4bit");
+    expect(model?.baseUrl).toBe("http://127.0.0.1:8090/v1");
+    expect(model?.reasoning).toBe(true);
+  });
+
+  it("uses the 'system' role and Qwen thinking format mlx-openai-server expects", () => {
+    process.env.LOCAL_MLX_MODEL_ID = "/models/qwen3.8-27b-4bit";
+    const model = localMlxProvider()?.getModels()[0];
+    if (!model || !hasApi(model, "openai-completions")) {
+      throw new Error("expected an openai-completions local-mlx model");
+    }
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.thinkingFormat).toBe("qwen-chat-template");
+  });
+
+  it("stays absent when no MLX model id is configured", () => {
+    delete process.env.LOCAL_MLX_MODEL_ID;
+    expect(localMlxProvider()).toBeUndefined();
   });
 });
